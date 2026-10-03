@@ -10,9 +10,9 @@
 
 私有 [pnpm ESLint 适配器](../../../packages/eslint-config/src/plugins/pnpm-plugin/index.ts)识别限定父包／版本的 overrides 中的 catalog 引用。上游 eslint-plugin-pnpm 1.9.1 错误地将整个 selector 当作包名；适配器只消除这类 unused-item 误报，保留真正未使用的条目报告。根 duplicate-catalog 规则在既有 Vite 允许项之外增加 `path-to-regexp`，因为部署依赖图需要 major 6 和 8 两套 API。这是具名 lint 允许项，不是 audit、trust 或依赖准入例外。ESLint 归属边界的回归测试使用真实临时 workspaces，包含 scoped、限定版本的 selector，并同时展示上游失败及适配后的结果。
 
-[依赖审查](../../../.github/workflows/dependency-review.yml)以 high 为门禁，覆盖 runtime／development／unknown scope。列表对应既有 [bundled-license 策略](../../../packages/build-tools/src/license-policy.ts)，由 [infrastructure:check](../../../scripts/infrastructure/check.ts)守卫，不导入旧许可证例外。Action 不穷尽拒绝未知 license metadata；bundle 门禁另行拒绝缺失／冲突／禁止的证据。未打包依赖仍需准入审查。
+[依赖审查](../../../.github/workflows/dependency-review.yml)以 high 为门禁，覆盖 runtime／development／unknown scope。允许列表在[配置](../../../.github/dependency-review-config.yml)中维护，与 [bundled-license 策略](../../../packages/build-tools/src/license-policy.ts)配套；没有单独的配置同步脚本。Action 不穷尽拒绝未知 license metadata；构建插件另行拒绝缺失／冲突／禁止的 bundle 证据。未打包依赖仍需准入审查。
 
-[安全 CI](../../../.github/workflows/security.yml)在 PR／main／每周／手动事件执行全类别审计及可达历史 secret scan。Gitleaks CLI 8.30.1 使用 MIT 许可证及官方 Linux archive 固定 SHA-256，避开旧的单独许可 action。不增加 fixture 全局或 VitePress-report 排除。报告脱敏，不自动发 issue／PR 消息。[审计解析](../../../scripts/infrastructure/audit.ts)接受 pnpm 11 advisory JSON，进程／registry／schema 异常失败。High／critical 按既有排除之后的明细判断，因为 metadata 可能仍统计排除项。既有 workspace GHSA／trust 例外保持可见，需单独审查；本次不增加例外。
+[安全 CI](../../../.github/workflows/security.yml)沿用 docs-islands 的 workflow 组织方式，在 PR／main／每周／手动事件集成依赖审计、许可证报告、目录级 SBOM 和可达历史 secret scan。Bash／jq 步骤直接解析 pnpm advisory JSON，进程／registry／schema 异常时失败；high／critical 按既有排除之后返回的 advisory 明细判断。报告作为 workflow artifacts 保留，Security Summary 拒绝失败／取消／skipped 状态。Gitleaks CLI 8.30.1 保留官方 Linux archive 校验值与脱敏报告。不增加自动 issue／PR 消息或 audit／trust 排除。
 
 安全维护使用[workspace 配置](../../../pnpm-workspace.yaml)中的 `security-patches` catalog。保留 undici 和 minimatch 10 brace-expansion overrides 的既有范围，新增 fast-uri 和 moment overrides 分别限定于 Ajv 8 和 rollup-plugin-license。2026-09-30 的本地全类别审计在未变更的 18 项 GHSA 排除下未返回 advisory 明细。Release-age、trust 和 peer 策略继续生效；未新增 audit、trust、release-age 或 deprecation 例外。
 
@@ -22,21 +22,21 @@
 
 ## CI 与制品
 
-共享 build action 调用根 `format:check` 脚本执行只读 Prettier 校验，根 manifest 必须提供该脚本；格式写入仍通过显式 `format:write` 执行。
+共享 build action 调用根 `format:check` 与 `lint:check` 脚本执行只读 Prettier 和 ESLint 校验，两命令覆盖整个仓库；修改仍显式通过 `format:write` 与 `lint:fix` 执行，复用当前 `format` 和 `lint` 命令。
 
 [CI](../../../.github/workflows/ci.yml)保留原生平台 build／test／smoke 和独立 Vue tuples。Linux quality 复用同提交／平台的 package artifacts，其他环境独立构建／检查。显式 build 后使用 test:smoke，不重复构建。不引入路径过滤、Nx cache 或缓存 .limina 状态。CI Status 依赖全部验证任务，失败／取消／skipped 都失败。
 
 完整矩阵的 Unit Tests 步骤通过 `VITEST_MAX_WORKERS` 将 Vitest 限制为两个 worker，为 CLI 子进程和框架宿主留出资源。隔离 CLI 夹具实际复制运行时源码，排除 `__tests__` 目录；依赖链接、编译器 shim 和仓库边界仍由夹具自身持有。测试选择、安全断言和超时保持不变。
 
-License plugin 从实际 bundler 输入生成 bundled-dependencies.json，包含实际打包的开发依赖，在保留既有许可证列表的同时拒绝缺失 metadata。artifacts:report 打包两个获准 dist 目录，要求迁移包精确依赖核心版本，检查包内 inventory，独立重算 SHA-512，记录实际 gzip／解包字节数。.reports/release 包含 tarball、许可证报告、CycloneDX 1.6 SBOM 及组 metadata。Components 描述 bundled code；外部 runtime／peer／optional ranges 单列为 properties。消费者最终版本与外部传递依赖不在范围内。
+[License plugin](../../../packages/build-tools/src/license.ts)保留来自实际 bundler 输入的 bundled-dependencies.json，包含实际打包的开发依赖，拒绝缺失／冲突／禁止的 metadata。安全工作流为 `pnpm licenses list --prod --json` 显式选择 limina 和 limina-migrate；这份基于源码 manifest 的依赖报告不替代 bundle license 门禁。构建两个产品后，固定版本的 Anchore／Syft Action 扫描工作目录，在 .reports/sbom 生成 CycloneDX SBOM。扫描范围是目录，不是逐 tarball 依赖 inventory，也不保证消费者最终解析结果。原始审计数据与 Markdown 报告位于 .reports/security，许可证数据与报告位于 .reports/licenses。自制的包体积、SHA-512 和逐包 SBOM 报告已移除。
 
-仓库报告与管理的 .limina namespace 分开。产品不变量 I01–I12 及 guards 不变，不将 I10／I11 推广到任意报告／外部服务。报告失败停止 CI／release 继续。
+仓库报告与管理的 .limina namespace 分开。产品不变量 I01–I12 及 guards 不变，不将 I10／I11 推广到任意报告／外部服务。Audit／license／SBOM 报告失败会使 Security 工作流失败。发布和部署分别要求原生依赖审计通过；合并或发布前强制通过 Security 工作流依赖仓库管理设置。
 
 ## 外部门禁与协作
 
-[发布](../../../.github/workflows/publish-npm.yml)保持手动，限制为 senaoxi/limina、LIMINA_RELEASE_ENABLED=1 和 Release。[Tag 检查](../../../scripts/release/check-tag-cli.ts)拒绝导入标签，要求两个源码版本一致、checkout 精确对应 tag 且位于 origin/main 历史中。既有双包 npm integrity／重试语义仍是权威。[GitHub release 工具](../../../scripts/release/github-release.ts)比对两个 registry／tarball integrity，先创建 draft，仅上传当前指定资产，全部成功后公开。重试比较既有字节，不替换不同资产；失败保留 draft。
+[发布](../../../.github/workflows/publish-npm.yml)保持手动，限制为 senaoxi/limina、LIMINA_RELEASE_ENABLED=1 和 Release。[Tag 检查](../../../scripts/release/check-tag-cli.ts)拒绝导入标签，要求两个公开源码包的名称／版本完整且一致、checkout 精确对应 tag 且位于 origin/main 历史中。既有双包 npm integrity／重试语义仍是权威。发布与部署使用原生 `pnpm audit --audit-level high` 在外部操作前执行审计。两个 npm 包完成核对与渠道更新后，发布工作流直接创建指向两包共享 changelog 的 GitHub release，链接使用 Git 解析的已 checkout 获准提交，而非 dispatch 事件 SHA。同一 tag 已存在的完整 release 可接受；draft 和查询错误时失败。SBOM 和许可证报告作为 workflow artifacts 保留，不再维护自制 tarball／报告附件流程。发布模块负责的导入标签名称守卫不依赖已删除的迁移 metadata；移动导入标签也不会使其名称可发布。
 
-[文档部署](../../../.github/workflows/deploy-docs.yml)单独手动，由 LIMINA_DOCS_DEPLOY_ENABLED=1 和 Production 控制。要求新的获准 tag、HTTPS DOCS_ORIGIN 和独立 Vercel 凭据／project。私有 workspace `packages/deploy-tools` 通过 dev catalog 和冻结锁文件消费 Apache-2.0 Vercel CLI 56.3.1，仅用于部署。pnpm 11 去重会为宿主 Vitest／Astro context 增加可选 `@edge-runtime/vm`、`@vercel/blob` peers；其包版本及独立兼容性 fixture workspaces 保持不变，并重新执行完整宿主测试门禁。尝试升级至 61.0.0 时，pnpm 返回 `ERR_PNPM_TRUST_DOWNGRADE`；未添加例外。所选版本的 registry、源码 tag 与 archive 许可证证据一致。部署也在外部操作之前执行依赖审计。限定父包的 catalog overrides 在新增部署依赖图中更新 tar、两个 path-to-regexp API major、Ajv 与 once，消除新增审计条目，不增加排除项，也不修改既有全局 peer／trust 策略。所选 CLI 未被 deprecated；其上游 stream-to-promise 传递依赖仍被 deprecated，作为明确的维护限制记录，不添加 allowedDeprecatedVersions 例外。维护者于 2026-10-01 告知的规范公开文档入口为 `https://senao.me/repos/limina/`。文档站在开发与生产环境都固定使用 `/repos/limina/` base；提供 origin 时，sitemap 也在该 base 下生成。Senao 站点负责将外部 `/repos/limina/*` gateway 映射到独立的 Limina Vercel 部署；Limina project 本身不重复维护这套路由契约。这里不额外推测 origin、旧 project 身份、redirect 或更广泛的切换权威。两个工作流保留[迁移前置条件](./migration.md)，本地集成不执行外部操作。
+[文档部署](../../../.github/workflows/deploy-docs.yml)保持单独手动，由 LIMINA_DOCS_DEPLOY_ENABLED=1 和 Production 控制。要求新的获准 tag、HTTPS DOCS_ORIGIN 和独立 Vercel 凭据／project。工作流从既有私有 docs workspace 执行 Vercel CLI，同时将仓库根目录保留为项目 cwd。既有 CLI 版本由 dev catalog 和冻结 lockfile 负责，保留相同的部署安全 overrides；已移除的部署 workspace 继续保持删除。CLI 是 docs 开发依赖，不进入两个发布包。维护者于 2026-10-01 告知的规范公开文档入口为 `https://senao.me/repos/limina/`。文档站保留固定 `/repos/limina/` base，提供 origin 时在该 base 下生成 sitemap。Senao 站点负责通往独立 Limina Vercel 部署的外部 gateway。两个工作流保留[迁移前置条件](./migration.md)，本地集成不执行外部操作。
 
 PR 标题通过仅处理 metadata 的 workflow 检查，不 checkout PR。模板收集包／命令／cwd／checker／复现／实际检查。提供英文贡献／安全政策及仅涉及项目的编辑器设置，不自动格式化 fixtures。
 
@@ -44,4 +44,6 @@ PR 标题通过仅处理 metadata 的 workflow 检查，不 checkout PR。模板
 
 ## 验证归属
 
-根 test:tooling 负责异常审计证据、误导性计数、缺失／冲突 bundle licenses、SBOM 范围及历史标签。既有测试未负责这些新边界；受测 exports 均有生产消费者，不增加 test-only seam。根 YAML 是既有 catalog 依赖，用于真实配置验证。部署 CLI 位于私有 workspace；两项新增引用均不进入产品代码。适用正常 build／tooling／unit／integration／smoke／typecheck／check／package／lint／format／docs 门禁；security:audit 与既有漏洞分开。实际结果及复现限制见[集成验证](../../../migration/INFRASTRUCTURE.md)。
+2026-10-02，维护者要求直接按 docs-islands 集成，不再维护基建脚本。根 test:tooling 在[发布边界](../../../scripts/release/publication.spec.ts)保留 bundle license 与历史标签守卫，以及双包 npm integrity／重试覆盖。已移除的 TypeScript 审计解析器与逐包 SBOM 测试随其生产接口退役。安全命令与报告行为归 workflow 所有；本地 shell 实验必须执行实际步骤，不另写一套解析器。报告与外部服务仍在 .limina 权威之外，因此产品不变量 I01–I12 不受影响。Build／tooling／unit／integration／smoke／typecheck／check／package／lint／format／docs 门禁仍适用；本地结果不证明 Actions 上的 Syft／Gitleaks 执行、远程平台验收、发布或部署。
+
+[Tag CLI 回归](../../../scripts/release/check-tag-cli.spec.ts)在缺少迁移 metadata 时使用真实 Git 标签，覆盖完整公开源码发布组、checkout 身份与 main 祖先关系。[发布 workflow 回归](../../../scripts/release/workflow.spec.ts)在受控 GitHub CLI 响应下执行实际 Bash 步骤，检查共享 changelog 存在于链接提交；Windows 跳过该 Bash 路径，因为此 Ubuntu 发布任务不在 Windows 上运行。[Changelog 覆盖](../../../scripts/release/shared.spec.ts)保护非空内容渲染及历史链接保留。

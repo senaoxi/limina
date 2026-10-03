@@ -54,8 +54,52 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
       - uses: ./.github/actions/setup-env
-      - run: pnpm run build:tools
-      - run: pnpm run security:audit
+      - name: Run dependency audit and generate report
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .reports/security
+          status=0
+          pnpm audit --json > .reports/security/audit.json 2> .reports/security/audit.stderr.log || status=$?
+          if [[ "$status" -gt 1 ]]; then
+            echo "Dependency audit could not complete." >&2
+            exit 1
+          fi
+          jq -e '
+            type == "object" and .error == null and
+            (.advisories | type == "object") and
+            (.metadata.vulnerabilities | type == "object") and
+            (.metadata.vulnerabilities as $counts |
+              all(["info", "low", "moderate", "high", "critical"][];
+                $counts[.] | type == "number" and . >= 0 and . == floor)) and
+            all(.advisories[];
+              type == "object" and
+              (.module_name | type == "string" and length > 0) and
+              (.title | type == "string" and length > 0) and
+              (.url | type == "string" and startswith("https://")) and
+              (.severity | IN("info", "low", "moderate", "high", "critical")))
+          ' .reports/security/audit.json > /dev/null
+          count=$(jq '.advisories | length' .reports/security/audit.json)
+          if [[ "$status" -eq 1 && "$count" -eq 0 ]]; then
+            echo "Dependency audit failed without usable advisory details." >&2
+            exit 1
+          fi
+          jq -r '
+            def clean: gsub("[|`<>\r\n]"; " ");
+            "# Dependency audit\n",
+            "Counts use advisory entries returned after pnpm exclusions.\n",
+            "| Severity | Advisory count |", "| --- | ---: |",
+            (["info", "low", "moderate", "high", "critical"][] as $severity |
+              "| \($severity) | \([.advisories[] | select(.severity == $severity)] | length) |"),
+            "\n| Package | Severity | Advisory |", "| --- | --- | --- |",
+            (.advisories[] | "| \(.module_name | clean) | \(.severity) | \(.title | clean) |")
+          ' .reports/security/audit.json > .reports/security/README.md
+          cat .reports/security/README.md >> "$GITHUB_STEP_SUMMARY"
+          serious=$(jq '[.advisories[] | select(.severity == "high" or .severity == "critical")] | length' .reports/security/audit.json)
+          if [[ "$serious" -gt 0 ]]; then
+            echo "Dependency audit found high or critical advisories." >&2
+            exit 1
+          fi
       - name: Retain audit evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -65,3 +109,94 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
+  licenses:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: ./.github/actions/setup-env
+      - name: Report public packages' production dependency licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .reports/licenses
+          pnpm --filter limina --filter limina-migrate licenses list --prod --json > .reports/licenses/licenses.json
+          jq -e '
+            type == "object" and length > 0 and
+            all(.[]; type == "array" and
+              all(.[]; type == "object" and
+                (.name | type == "string" and length > 0) and
+                (.license | type == "string" and length > 0)))
+          ' .reports/licenses/licenses.json > /dev/null
+          jq -r '
+            def clean: gsub("[|`<>\r\n]"; " ");
+            "# Production dependency licenses\n",
+            "This report covers the two public source packages declared production dependencies. Bundled code is checked by the build license plugin.\n",
+            "| License | Package count |", "| --- | ---: |",
+            (to_entries[] | "| \(.key | clean) | \(.value | length) |"),
+            "\n## Licenses requiring admission review\n",
+            (.[][] | select(.license | test("GPL|AGPL|LGPL|SSPL|UNKNOWN|UNLICENSED"; "i")) |
+              "- \(.name | clean): \(.license | clean)")
+          ' .reports/licenses/licenses.json > .reports/licenses/README.md
+          cat .reports/licenses/README.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain license report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: license-report
+          path: .reports/licenses/**
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - uses: ./.github/actions/setup-env
+      - name: Build both public packages
+        run: |
+          pnpm run build
+          mkdir -p .reports/sbom
+      - name: Generate directory SBOM with Syft
+        uses: anchore/sbom-action@8e94d75ddd33f69f691467e42275782e4bfefe84
+        with:
+          path: .
+          output-file: .reports/sbom/sbom.json
+          format: cyclonedx-json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Check SBOM and report component count
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '.bomFormat == "CycloneDX" and (.components | type == "array" and length > 0)' .reports/sbom/sbom.json > /dev/null
+          count=$(jq '.components | length' .reports/sbom/sbom.json)
+          echo "## Directory SBOM" >> "$GITHUB_STEP_SUMMARY"
+          echo "Components: $count. The scan covers the built working directory, not an individual npm tarball." >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain SBOM
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sbom
+          path: .reports/sbom/**
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+  summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [secrets, audit, licenses, sbom]
+    if: always()
+    steps:
+      - name: Aggregate security job status
+        shell: bash
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "## Security and dependency reports" >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESULTS" | jq -r 'to_entries[] | "- \(.key): \(.value.result)"' >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")' > /dev/null

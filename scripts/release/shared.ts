@@ -841,16 +841,5 @@ export function formatReleasePlans(plans: ReleasePlan[]): string {
 }
 
 export function getCommitUrl(commitHash: string): string {
-  const mapping = readFileSync(
-    path.join(REPO_ROOT, 'migration/commit-map'),
-    'utf8',
-  );
-  const match = mapping
-    .split('\n')
-    .slice(1)
-    .map((line) => line.split(/\s+/u))
-    .find(([, rewritten]) => rewritten?.startsWith(commitHash));
-  return match
-    ? `https://github.com/senaoxi/docs-islands/commit/${match[0]}`
-    : `${REPOSITORY_URL}/commit/${commitHash}`;
+  return `${REPOSITORY_URL}/commit/${commitHash}`;
 }

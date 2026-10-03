@@ -4,11 +4,11 @@
 The top-level `source` option configures three parts of `source:check`: `source.importAuthority` controls source import authorization, `source.declarations` governs explicit ambient declaration roles, and `source.knip` controls `Knip`-driven unused workspace dependency and unused source module checks. It is different from `config.source`, which defines the global source boundary used by coverage proof. For that option, see [Source Boundary](./source-boundary.md).
 :::
 
-`source check` is mainly about making source imports explainable by package ownership and dependency declarations. Limina discovers source independently from every validated activated package island, including external packages and nameless workspace packages identified by path. Each workspace package root manifest is its source owner. Explicit source selectors are relative to `config.rootDir`, may contain `../`, and only filter candidates already produced by those islands.
+`source check` checks source import authorization against package ownership and dependency declarations. Limina discovers source independently from every validated activated package island, including external packages and nameless workspace packages identified by path. Each workspace package root manifest is its source owner. Explicit source selectors are relative to `config.rootDir`, may contain `../`, and only filter candidates already produced by those islands.
 
 A nested `package.json` stops the current governed region by default, and a nested `pnpm-workspace.yaml` is always an automatic owner-local boundary. With [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes), an eligible nameless nested manifest can remain inside the surrounding region: its source inherits the outer workspace owner and dependency authority, while the nested manifest remains the package scope for relative imports and `#imports`. [`regions.exclude`](./regions.md#exclude) can remove activated packages or recognized nested package scopes from the current run. Imports into any stopped or excluded region are treated as cross-boundary access.
 
-Its `Knip`-backed branch uses package entries instead of `include` / `exclude` to report unused workspace dependencies and unused source modules from Limina's workspace-package module sets.
+The `Knip` checks use package entries instead of `include` / `exclude` to report unused workspace dependencies and unused source modules from Limina's workspace-package module sets.
 
 ```js
 import { defineConfig } from 'limina';
@@ -53,7 +53,7 @@ Vue resource type evidence uses the same bounded semantic adapter matrix as grap
 
 `source.importAuthority` controls bare package imports that are not declared by the owning workspace package manifest.
 
-Source import authorization is strict by default: the package scope that owns the importing file must declare the package in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. An owner-keyed grant can let that same source owner use dependency declarations from the governance root `package.json` for selected packages. The root manifest must declare the package in one of the same dependency sections.
+Source import authorization is strict by default: the validated source owner manifest must declare the package in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. An owner-keyed grant can let that same source owner use dependency declarations from the governance root `package.json` for selected packages. The root manifest must declare the package in one of the same dependency sections.
 
 Here, “source import” includes static imports, type imports, and re-exports collected by Limina. `Node` builtins, virtual modules, `URL` / `data` / `file` specifiers, and specifiers found only in comments are not treated as ordinary bare package dependencies.
 
@@ -95,7 +95,7 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 
 `workspaceRootDependencies` is not a direct import allowlist. It names package keys whose declarations may be read from the workspace root manifest when the owner grant and `include` scope match. Limina still requires the root manifest to declare the package, and it will not bypass an intermediate workspace package manifest between the source owner and the workspace root.
 
-Prefer an owner manifest dependency whenever the import is part of that owner's actual runtime.
+For imports used at runtime by the source owner, prefer declaring the dependency in that owner's manifest.
 
 ## declarations.ambient
 
@@ -201,7 +201,7 @@ Limina disables `Knip`'s implicit `index` / `main` / `cli` entry guessing by wri
 
 When package entries point at build artifacts, `Knip` may need a `tsconfig` with enough `rootDir` / `outDir` information to map those artifacts back to source files. In managed mode, declare that layout with `liminaOptions.outputs` on the source leaf and point a static `limina build <config>` package script at the managed source or aggregator config. For a package-local hand-authored build `tsconfig`, use `limina build <config> --raw --preset <checker>`.
 
-This is a general package design pattern: `package.json` describes the built files that consumers import, while the selected source tsconfig describes the source tree that writes those files. For example, `@example/utils` can expose only built files:
+In this example, `package.json` exposes the built files, and the selected source tsconfig describes their source tree. `@example/utils` exposes:
 
 ```json
 {
@@ -228,9 +228,9 @@ Then the source leaf can describe the source-to-output layout:
 }
 ```
 
-As long as the `Knip tsconfig`, whether `Knip`'s default or Limina's derived one, explains the source and output directories, such as `rootDir: "."` and `outDir: "./dist"`, `Knip` can map `utils/dist/src/env.js` back to `utils/src/env.ts`. The source module is then considered reachable from the package entry.
+With a matching source/output layout, `utils/dist/src/env.js` can correspond to `utils/src/env.ts`. Limina's managed artifact-to-source entries require a selected generated Knip config, a referenced generated output project with explicit `rootDir` / `outDir`, a manifest target inside that output root, and a candidate already in the owner's checked source module set. Directory options alone do not guarantee that every artifact entry becomes reachable; raw/default configs also depend on Knip's own resolution.
 
-Expose that intent through a static package script:
+Point a static package build script at the selected config:
 
 ```json
 {
@@ -281,7 +281,7 @@ export default defineConfig({
 
 - **Type:** `Array<{ files: string[]; reason: string }>`
 
-Use `entry` for package-owned source modules that are legitimate direct roots without being package exports. For example, test runners may load `*.spec.ts` files directly.
+Use `entry` to add package-owned source roots beyond package exports. For example, test runners may load `*.spec.ts` files directly.
 
 Entry configs must use positive config-root-relative `glob` patterns inside the keyed package directory and a non-empty reason. External activated packages use `../`; patterns still only filter files in the keyed owner's discovered source module set.
 

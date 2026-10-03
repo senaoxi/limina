@@ -1,6 +1,6 @@
 # Regions
 
-`regions` defines which package scopes belong to the current Limina run. It is a structural boundary: it decides where package ownership, checker discovery, source analysis, generated graphs, and dependency authority apply.
+`regions` selects the package scopes governed by the current Limina run. It sets the scope for package ownership, checker discovery, source analysis, generated graphs, and dependency authorization.
 
 ::: warning
 `regions.exclude` does not replace `config.source.exclude`. Package kinds remove package authority; checker `exclude` only changes entry selection. Use the exact `tsconfig` kind to isolate a config before output declarations are read, while leaving its package activated. It does not hide source files or make incoming references valid; migration must also prune those relations.
@@ -51,7 +51,7 @@ Workspace package discovery follows the selected manager's policy. Its traversal
 
 `test` and `tests` are ordinary candidate directories when matched. Glob selection is manager-specific: for example, later positive patterns can re-include packages in npm and Bun, while pnpm and Yarn retain exclusions. An exact exclusion of a package need not exclude its descendants; declare subtree exclusions when that is intended. Root manifests are included independently of the globs, and names are optional.
 
-The version suffix in `packageManager` does not select a historical discovery profile. Limina uses the declaration to identify the package manager, then applies the documented manager-specific selection policy above. These rules are therefore a bounded workspace-discovery compatibility contract, not a promise to reproduce every historical release. If an older manager release exposed discovery behavior that upstream later corrected as a fix, Limina does not restore that behavior merely because the project declares the older version. Projects that require exact workspace-membership parity with a historical manager release should not assume Limina will produce the same raw package set.
+Limina uses `packageManager` to identify the package manager and applies the selection policy above. The version suffix does not select historical discovery behavior, including behavior later corrected upstream. Projects requiring exact workspace-membership parity with a historical release need to check the resulting raw package set; Limina does not guarantee that parity.
 
 These supported discovery rules do not certify the manager's full configuration. Limina keeps the hard ignores above even where a manager version accepts an explicit metadata-directory shortcut.
 
@@ -83,7 +83,7 @@ Before source, proof, graph, checker, package, release, or artifact-producing wo
 - two lexical package roots that resolve to the same physical directory report `LIMINA_WORKSPACE_PACKAGE_IDENTITY_CONFLICT`;
 - unsafe output ownership and non-stable output visibility report `LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID` or `LIMINA_WORKSPACE_OUTPUT_CYCLE`.
 
-Migration uses the same package authority checks, but can inventory unreadable configs before final output validation to plan normalization and isolation. These are workspace validation errors. Invalid package regions do not participate in ownership, source discovery, generated graphs, migration, package selection, release selection, or artifact generation.
+Migration uses the same package authority checks and inventories configs for normalization or isolation. Discovery recovery is limited to recoverable `outputs` input errors; it uses trusted initial candidates and rereads input topology before and after writing. These are workspace validation errors. Invalid package regions do not participate in ownership, source discovery, generated graphs, migration, package selection, release selection, or artifact generation.
 
 ## extendNestedPackageScopes
 
@@ -154,4 +154,4 @@ Every declared output must be a dedicated directory. It may be a strict descenda
 
 Nested workspace roots are automatic owner-local boundaries, not public exclusion candidates. The parent island records the boundary but does not read or validate the nested workspace context. If packages below that boundary are activated by the raw workspace membership, each starts its own package-island job independently.
 
-Imports from governed source into an excluded or otherwise stopped region are treated as cross-boundary access. Checker entry `references` follow the same structural boundary: checker `exclude` does not make a cross-region reference valid and does not hide an existing ordinary source config reached from an effective entry. Diagnostics identify the boundary root and include the configured reason when one is available; when no registered boundary owns the path, the diagnostic states that no current-run activated workspace package owns it. If the intent is only to omit selected files while keeping the containing package governed, use a file-level source exclusion or checker entry exclusion instead.
+Imports from governed source into an excluded or otherwise stopped region are treated as cross-boundary access. Checker entry `references` follow the same structural boundary: checker `exclude` does not make a cross-region reference valid and does not hide an existing ordinary source config reached from an effective entry. Diagnostics identify the boundary root and include the configured reason when one is available; when no registered boundary owns the path, the diagnostic states that no current-run activated workspace package owns it. Use `config.source.exclude` to filter expected source files while keeping their package governed. A checker entry exclusion changes direct entry discovery; it does not filter source files or cut an established membership closure.

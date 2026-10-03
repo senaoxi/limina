@@ -30,7 +30,7 @@ After changing Limina tests or path behavior, run:
 
 ## Repository workflow
 
-Read `.agents/docs/README.md` and the relevant paired records before edits. Inspect Git status and preserve unrelated work. Use pnpm 11.9.0; install explicitly with `pnpm install --frozen-lockfile`. Build private tools with `pnpm run build:tools`; `pnpm run build` builds tools and the product. Never copy old node_modules or regenerate Logaria as part of this migration.
+Read `.agents/docs/README.md` and the relevant paired records before edits. Inspect Git status and preserve unrelated work. Use pnpm 11.28.3; install explicitly with `pnpm install --frozen-lockfile`. Build private tools with `pnpm run build:tools`; `pnpm run build` builds tools and the product. Never copy old node_modules or regenerate Logaria as part of this migration.
 
 Run the relevant `test:unit`, `test:tooling`, `test:integration`, `test:smoke`, `docs:build`, `typecheck`, `check` and `lint:packages` scripts. Lint and formatting checks are `lint:check` and `format:check`; mutation is explicit through `lint:fix` and `format:write`. Use `.agents/skills/test-audit/SKILL.md` when changing tests. Preserve fixture repository boundaries and deliberately invalid fixture contents.
 

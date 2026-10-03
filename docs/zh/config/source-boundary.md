@@ -1,10 +1,10 @@
 # 源码边界
 
-::: warning
+::: warning 注意
 `config.source` 定义被治理文件的边界，覆盖证明会用它判断哪些文件必须被检查器入口或允许清单覆盖。它不同于顶层 `source` 选项，后者配置源码导入授权和 `Knip` 驱动的源码使用检查。关于那个选项，请参见[源码检查](./source-checks.md)。
 :::
 
-`config.source` 定义 Limina 用于覆盖证明的全局源码边界。`proof check` 会用这条边界判断哪些文件必须被检查器入口或允许清单覆盖。
+`proof check` 根据 `config.source` 选出必须被检查器入口或允许清单覆盖的文件。
 
 ```js
 import { defineConfig } from 'limina';
@@ -19,19 +19,19 @@ export default defineConfig({
 });
 ```
 
-## include
+## `include`
 
 - **类型：** `string[]`
 
-`include` 是 Limina 需要检查的全局源码 `glob` 集合。省略时，Limina 使用默认 TypeScript 源码 glob 集合；显式配置后会替换默认集合。可以在需要展开默认集合的位置使用精确字符串 `...`。
+`include` 是 Limina 需要检查的全局源码通配模式集合。显式 `include` 和 `exclude` 都必须是非空字符串数组，每个数组最多使用一次 `...`。省略时，Limina 使用默认 TypeScript 源码通配模式集合；显式配置后会替换默认集合。可以在需要展开默认集合的位置使用精确字符串 `...`。
 
-模式相对于 `config.rootDir`，可以包含 `../`。它们只过滤每个激活 package island 已经发现的源码 candidate；模式不能让未激活目录或 owner-local 边界变得可见。默认发现同样会针对外部激活包运行。
+模式相对于 `config.rootDir`，可以包含 `../`。它们只过滤每个已激活包的独立治理范围（包治理单元）已经发现的源码候选；模式不能让未激活目录或仅对所属包生效的边界变得可见。默认发现同样会针对外部激活包运行。
 
-::: details 默认 include glob 集合
+::: details 默认 `include` 通配模式集合
 `**/*.ts`、`**/*.tsx`、`**/*.d.ts`、`**/*.cts`、`**/*.d.cts`、`**/*.mts` 和 `**/*.d.mts`。
 :::
 
-检查器扩展不会自动加入。如果希望默认 TypeScript 源码和 `packages/**/src` 下的 `Vue` 文件都进入治理，应展开默认集合并显式加入 `Vue` glob。之后新增的匹配文件会自动进入源码和覆盖证明检查范围。
+检查器扩展不会自动加入。如果希望默认 TypeScript 源码和 `packages/**/src` 下的 `Vue` 文件都进入治理，应展开默认集合并显式加入 Vue 通配模式。之后新增的匹配文件会自动进入源码和覆盖证明检查范围。
 
 ```js
 export default defineConfig({
@@ -43,19 +43,19 @@ export default defineConfig({
 });
 ```
 
-## exclude
+## `exclude`
 
 - **类型：** `string[]`
 
-`exclude` 是不进入被治理源码集合的目录或 `glob`。它适合排除 fixture、生成缓存和其他不应作为被检查源码的文件。省略时，Limina 使用默认排除集合。
+`exclude` 是不进入被治理源码集合的目录或通配模式。它适合排除测试夹具、生成缓存和其他不应作为被检查源码的文件。省略时，Limina 使用默认排除集合。
 
-显式配置 `exclude` 会替换默认排除集合，并且不再使用根 `.gitignore`。可以在需要展开默认排除集合（包括根 `.gitignore`）的位置使用精确字符串 `...`。显式数组如果没有 `...`，会关闭所有默认排除项。根 `.gitignore` 只应用于 `config.rootDir` 内的 candidate，绝不会过滤外部激活包的 candidate。
+显式配置 `exclude` 会替换默认排除集合，并且不再使用根 `.gitignore`。可以在需要展开默认排除集合（包括根 `.gitignore`）的位置使用精确字符串 `...`。显式数组如果没有 `...`，会关闭默认文件过滤集合；结构区域边界、固定发现忽略和已验证输出根仍会限制候选集合。根 `.gitignore` 只应用于 `config.rootDir` 内的候选文件，绝不会过滤外部激活包的候选文件。
 
 ::: details 默认排除集合
-`node_modules`、`bower_components`、`jspm_packages`、当前可见源码配置显式声明的 `liminaOptions.outputs.outDir` 路径，以及只用于 `config.rootDir` 内 candidate 的根 `.gitignore`。
+`node_modules`、`bower_components`、`jspm_packages`、来自 `package.entries` 和当前可见 `liminaOptions.outputs` 声明的已验证输出根，以及只用于 `config.rootDir` 内候选文件的根 `.gitignore`。
 :::
 
-只有显式声明的 `liminaOptions.outputs.outDir` 会进入这个集合。源码配置没有声明时，Limina 不会推断 `./dist`；一个配置声明的输出目录名也不会扩展成全局同名目录排除。
+声明 `liminaOptions.outputs: {}` 就会把相对该源码配置的 `./dist` 作为输出根；显式 `outDir` 会改用指定路径。没有 `outputs` 声明或包条目输出时，Limina 不会仅因目录名为 `dist` 就推断输出。输出路径只作用于声明它的配置或包条目，不会扩展成全局同名目录排除。
 
 `liminaOptions.outputs.outDir` 相对于声明它的源码配置。Limina 只从结构可达、且尚未位于无条件包条目输出内的 `tsconfig` 读取它；在稳定的工作区输出计算中，该 `tsconfig` 保持可见时，声明才继续生效。
 
@@ -66,9 +66,9 @@ export default defineConfig({
 export const runtimeName = 'core';
 ```
 
-如果它没有被检查器入口可达的项目覆盖，也没有写进 `proof.allowlist`，`limina proof check` 会把它当作未覆盖源码报告出来。相反，如果某类测试夹具不应该进入治理范围，就应该用 `exclude` 明确排除，而不是让它偶然逃过检查。
+如果它没有被检查器入口可达的项目覆盖，也没有写进 `proof.allowlist`，`limina proof check` 会将它报告为未覆盖源码。需要把测试夹具留在治理范围之外时，使用 `exclude` 排除对应目录。
 
-完整一点看，目录可以是：
+示例目录如下：
 
 ```text
 packages/core/

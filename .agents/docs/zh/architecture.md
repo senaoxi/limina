@@ -14,4 +14,4 @@
 
 独立迁移包保留既有迁移事务和治理语义。旧 `limina migration` 命令优先转调本地同版本包，否则通过 npm 下载该精确版本。两个包共享版本、发布组和 `limina/v<version>` 标签。证据和独立性门见[迁移状态](./migration.md)，产品不变量见[Limina 架构](./limina.md)。
 
-仅用于部署的 CLI 依赖由私有 `packages/deploy-tools` workspace 与 dev catalog 负责，不加入双包发布组；见[基建归属记录](./infrastructure.md)。
+Vercel 部署 CLI 是既有私有 `docs` workspace 的开发依赖，通过 dev catalog 与冻结 lockfile 解析，不加入双包发布组；见[基建归属记录](./infrastructure.md)。

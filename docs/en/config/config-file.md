@@ -18,6 +18,8 @@ Config-relative selection is stable across invoking directories: choosing the re
 
 Read-only `check --issues` uses an explicit `--config` path as a location anchor, so the module may have been deleted or renamed. It finds and validates the nearest manifest from that path's directory and reads persisted state there, without importing config, resolving manager membership, or running governance. Without `--config`, it must discover a currently existing default config. Missing records never trigger fallback to an ancestor workspace.
 
+`defineConfig` preserves the supplied object, promise, or function and provides configuration typing; runtime loading and schema validation happen in the loader. The public `limina` entry exports this helper, configuration and issue types, and validation error classes. Workspace-only `limina/internal/*` source exports are removed from the published package and are not a consumer API.
+
 Config can also be a function:
 
 ```ts
@@ -28,7 +30,7 @@ export default defineConfig(({ command, mode }) => ({
 }));
 ```
 
-Function configs are useful when local, `CI`, or release workflows need different checkers, rules, or package entries. The environment-specific differences stay in one reviewable config file.
+Use a function config when local, CI, or release workflows need different checkers, rules, or package entries.
 
 ::: tip
 If `config.checkers` is omitted, Limina uses auto checker discovery. See [Checker Entries](./checkers.md) when you need explicit checker routing.
@@ -48,7 +50,7 @@ The native loader imports the config through the current runtime and follows tha
 
 `mode` is resolved from `--mode`, then `NODE_ENV`, then `'default'`.
 
-Function configs are useful when local, `CI`, or release workflows need different checkers, rules, or package entries. The environment-specific differences stay in one reviewable config file.
+A function config can use `mode` to return different checkers, rules, or package entries for local, CI, and release workflows.
 
 Prefer `command` branching for package output entries that only matter to `package` and `release` commands. Reserve `mode` for broader environment-level differences.
 
@@ -65,9 +67,9 @@ export default defineConfig(({ mode }) => ({
 - **Type:** `'check' | 'graph' | 'package' | 'proof' | 'release' | 'source' | (string & {})`
 - **Related:** [Checker Entries](./checkers.md)
 
-`command` is the command family currently loading the config, such as `check`, `graph`, `source`, `package`, or `release`. The open string branch covers other current commands such as `build` and `migration`, and keeps function configs forward-compatible with additional command families. Use it when expensive configuration only matters for one command family.
+`command` is the command family loading the config, such as `check`, `graph`, `source`, `package`, or `release`. Its open string type also permits current values such as `build` and `migration`; it does not define additional supported commands. `checker build` without a config path and `checker typecheck` load the `check` family; `checker build <config>` and top-level `build` load `build`. Named `check` pipelines load configuration once with `command: 'check'`, including their package or release steps.
 
-For example, declare package output entries only for package-aware commands:
+For example, return package output entries only for `package` and `release`:
 
 ```ts
 export default defineConfig(({ command }) => ({
@@ -85,9 +87,9 @@ export default defineConfig(({ command }) => ({
 }));
 ```
 
-Normal graph and proof checks then stay independent from package output configuration.
+With this branch, graph and proof checks do not receive package output entries.
 
-In a fuller example, the directory can look like this:
+For the following directory:
 
 ```text
 limina.config.mts
@@ -96,7 +98,7 @@ packages/core/
   dist/package.json
 ```
 
-The config can declare package output only for package-aware commands:
+The config can select checkers and return package output for `package` and `release`:
 
 ```ts
 export default defineConfig(({ command }) => ({
@@ -123,4 +125,4 @@ export default defineConfig(({ command }) => ({
 
 When `pnpm exec limina check` runs, Limina loads the config for the `check` command and analyzes the pieces needed for graph, source, proof, checker build, and checker typecheck. When `pnpm exec limina package check` or `pnpm exec limina release check` runs, Limina loads the config for that command and reads `package.entries`.
 
-The result is that everyday local checks do not care whether `dist` exists, while package and release checks explicitly require `packages/core/dist` to be built and valid as package output.
+With this branch, everyday checks do not require built output files, while standalone package and release checks require `packages/core/dist`. To put `package:check` or `release:check` in a named `check` pipeline, also return the entries for `command: 'check'`, for example only when `mode === 'release'`, and run `limina --mode release check <name>`. Pipeline steps do not reload configuration for their own command family.

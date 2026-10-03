@@ -153,7 +153,7 @@
   // TypeScript 7 > Experimental: Use Tsgo
   "js/ts.experimental.useTsgo": true,
   // Optional: use a local TypeScript package directory.
-  "js/ts.tsdk.path": "./node_modules/typescript",
+  "js/ts.tsdk.path": "node_modules/@typescript/native-preview",
   // ESLint config: https://github.com/antfu/eslint-config
   "eslint.codeAction.showDocumentation": {
     "enable": true

@@ -4,8 +4,8 @@ import { resolveCommitId } from '../.vitepress/build-metadata';
 
 const commitId = resolveCommitId();
 const footerMessage = commitId
-  ? `根据 MIT 许可证发布。 (${commitId})`
-  : '根据 MIT 许可证发布。 (dev)';
+  ? `依据 MIT 许可证发布（${commitId}）。`
+  : '依据 MIT 许可证发布（开发版）。';
 
 const sidebar: DefaultTheme.SidebarItem[] = [
   {
@@ -47,12 +47,12 @@ const sidebar: DefaultTheme.SidebarItem[] = [
     collapsed: true,
     items: [
       {
-        text: '单体仓库约束',
+        text: '多包仓库约束',
         link: '/zh/monorepo-constraints',
       },
       {
         text: '为什么导入不能直接等于引用',
-        link: '/zh/why-import-is-not-references.md',
+        link: '/zh/why-import-is-not-references',
       },
       {
         text: '从导入解析到声明构建图',
@@ -118,10 +118,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
     ],
   },
   {
-    text: 'CLI 参考',
+    text: '命令行参考',
     items: [
       {
-        text: 'CLI 命令',
+        text: '命令行命令',
         link: '/zh/cli',
       },
     ],
@@ -136,7 +136,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
   lang: 'zh-CN',
   link: '/zh/',
   title: 'Limina',
-  description: '支持单包项目与工作区的 TypeScript 项目图和架构治理 CLI。',
+  description: '支持单包项目与工作区的 TypeScript 项目图与架构治理命令行工具。',
   themeConfig: {
     nav: [
       {
@@ -148,7 +148,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         link: '/zh/config/',
       },
       {
-        text: 'CLI',
+        text: '命令行',
         link: '/zh/cli',
       },
       {
@@ -168,7 +168,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
     sidebar,
     footer: {
       message: footerMessage,
-      copyright: '版权所有 © 2026-present Limina contributors',
+      copyright: '版权所有 © 2026 至今 Limina 贡献者',
     },
     docFooter: {
       prev: '上一页',
@@ -188,6 +188,12 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
     lightModeSwitchTitle: '切换到浅色模式',
     darkModeSwitchTitle: '切换到深色模式',
     skipToContentLabel: '跳转到内容',
+    notFound: {
+      title: '未找到页面',
+      quote: '请检查地址，或返回首页继续浏览。',
+      linkLabel: '前往中文首页',
+      linkText: '返回首页',
+    },
   },
 };
 

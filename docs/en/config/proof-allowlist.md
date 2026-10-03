@@ -21,7 +21,7 @@ export default defineConfig({
 
 - **Type:** `Array<{ file: string; reason: string }>`
 
-Each entry pairs a concrete source file with the reason it is safe to leave outside normal checker coverage. Allowlist entries are reviewable architecture exceptions, not a way to bulk-hide ordinary source files.
+Each entry names one source file and explains why it is excluded from normal checker coverage. Declare each exception separately for review.
 
 ```js
 proof: {
@@ -38,16 +38,16 @@ proof: {
 
 - **Type:** `string`
 
-`file` is the allowed source file path, relative to `config.rootDir`. It may contain `../` for an external activated package and should point at a concrete file instead of using a broad `glob`. It can only cover a file already present in the validated source boundary.
+`file` is the allowed source file path, relative to `config.rootDir`. It may contain `../` for an external activated package and should point at a concrete file instead of using a broad `glob`. It can only cover an existing file already present in the validated source boundary that has no checker or graph coverage. Missing files, files outside that boundary, and files already covered without the allowlist are reported as invalid entries. Remove an exception once normal coverage exists.
 
 ## reason
 
 - **Type:** `string`
 
-`reason` explains why this file is safe to leave outside normal checker coverage.
+`reason` explains why this file is excluded from normal checker coverage.
 
 ::: warning
-`reason` must not be empty. Allowlist entries are reviewable architecture exceptions, not only a switch to turn `CI` green.
+`reason` must not be empty. State why the file needs this coverage exception so that it can be reviewed.
 :::
 
 For example, a declaration file may be produced only by a build step:
@@ -57,9 +57,9 @@ For example, a declaration file may be produced only by a build step:
 declare const runtimeVersion: string;
 ```
 
-If it falls inside `config.source.include` but does not belong to any checker entry, `limina proof check` asks you to handle it. Adding it to `proof.allowlist` stops treating it as missing coverage, while the reason remains in config for future review.
+If it falls inside `config.source.include` but does not belong to any checker entry, `limina proof check` reports it as uncovered source. Adding it to `proof.allowlist` records a coverage exception and keeps the reason in config for review.
 
-::: details A fuller example
+::: details Example directory
 The directory can look like this:
 
 ```text
@@ -84,5 +84,5 @@ proof: {
 }
 ```
 
-the proof check accepts that exception while keeping the `reason` available for review. The point is to explain a small number of intentional exceptions, not to hide ordinary source files in bulk.
+the proof check accepts the coverage exception and keeps its `reason` in config. Review the entry when the file's coverage changes.
 :::

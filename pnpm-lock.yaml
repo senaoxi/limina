@@ -342,6 +342,9 @@ importers:
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
+      vercel:
+        specifier: catalog:dev
+        version: 56.3.1(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)
       vitepress:
         specifier: catalog:frameworks
         version: 1.6.4(patch_hash=ae56336e3fa10baaab04ac208146b4a00b0385bde11b766fc0d9bbfdc35184e3)(@algolia/client-search@5.42.0)(@types/node@22.18.0)(change-case@5.4.4)(lightningcss@1.33.0)(postcss@8.5.28)(typescript@6.0.3)
@@ -383,20 +386,14 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  packages/deploy-tools:
-    devDependencies:
-      vercel:
-        specifier: catalog:dev
-        version: 56.3.1(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)
-
   packages/eslint-config:
     devDependencies:
       '@eslint/js':
         specifier: catalog:lint
-        version: 10.0.1(eslint@10.11.0(jiti@2.7.0))
+        version: 10.0.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       '@html-eslint/eslint-plugin':
         specifier: catalog:lint
-        version: 0.66.1(eslint@10.11.0(jiti@2.7.0))
+        version: 0.66.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       '@html-eslint/parser':
         specifier: catalog:lint
         version: 0.66.1
@@ -405,34 +402,34 @@ importers:
         version: 22.18.0
       '@typescript-eslint/parser':
         specifier: catalog:lint
-        version: 8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)
+        version: 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       del-cli:
         specifier: catalog:dev
         version: 7.0.0
       eslint:
         specifier: catalog:lint
-        version: 10.11.0(jiti@2.7.0)
+        version: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       eslint-config-flat-gitignore:
         specifier: catalog:lint
-        version: 2.4.0(eslint@10.11.0(jiti@2.7.0))
+        version: 2.4.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       eslint-config-prettier:
         specifier: catalog:lint
-        version: 10.1.8(eslint@10.11.0(jiti@2.7.0))
+        version: 10.1.8(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       eslint-plugin-n:
         specifier: catalog:lint
-        version: 18.4.0(eslint@10.11.0(jiti@2.7.0))(typescript@6.0.3)
+        version: 18.4.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(typescript@6.0.3)
       eslint-plugin-pnpm:
         specifier: catalog:lint
-        version: 1.9.1(eslint@10.11.0(jiti@2.7.0))
+        version: 1.9.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       eslint-plugin-prettier:
         specifier: catalog:lint
-        version: 5.5.6(eslint-config-prettier@10.1.8(eslint@10.11.0(jiti@2.7.0)))(eslint@10.11.0(jiti@2.7.0))(prettier@3.5.3)
+        version: 5.5.6(eslint-config-prettier@10.1.8(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0)))(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(prettier@3.5.3)
       eslint-plugin-regexp:
         specifier: catalog:lint
-        version: 3.1.1(eslint@10.11.0(jiti@2.7.0))
+        version: 3.1.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       eslint-plugin-unicorn:
         specifier: catalog:lint
-        version: 76.0.0(eslint@10.11.0(jiti@2.7.0))
+        version: 76.0.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       globals:
         specifier: catalog:test
         version: 17.12.0
@@ -447,10 +444,10 @@ importers:
         version: 6.0.3
       typescript-eslint:
         specifier: catalog:lint
-        version: 8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)
+        version: 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       vitest:
         specifier: catalog:test
-        version: 4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0)(tsx@4.23.15)(yaml@2.9.1)
+        version: 4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0(supports-color@7.2.0))(tsx@4.23.15)(yaml@2.9.1)
       yaml-eslint-parser:
         specifier: catalog:lint
         version: 2.1.0
@@ -472,7 +469,7 @@ importers:
         version: 0.18.3
       '@astrojs/check':
         specifier: catalog:dev
-        version: 0.9.10(prettier@3.9.6)(typescript@6.0.3)
+        version: 0.9.10(prettier@3.5.3)(typescript@6.0.3)
       '@clack/prompts':
         specifier: catalog:dev
         version: 1.4.0
@@ -523,7 +520,7 @@ importers:
         version: 3.0.2
       eslint:
         specifier: catalog:lint
-        version: 10.11.0(jiti@2.7.0)
+        version: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       ignore:
         specifier: catalog:dev
         version: 7.0.10
@@ -532,7 +529,7 @@ importers:
         version: 6.0.0
       jsdom:
         specifier: catalog:test
-        version: 28.0.0
+        version: 28.0.0(supports-color@7.2.0)
       knip:
         specifier: catalog:lint
         version: 6.38.0
@@ -553,7 +550,7 @@ importers:
         version: 1.2.10
       rolldown-plugin-dts:
         specifier: catalog:dev
-        version: 0.28.6(@typescript/native-preview@7.0.0-dev.20260707.2)(@volar/typescript@2.4.28)(@vue/language-core@3.2.4)(oxc-resolver@11.24.2)(rolldown@1.2.10)(typescript@6.0.3)(vue-tsc@3.2.4(typescript@6.0.3))
+        version: 0.28.6(@typescript/native-preview@7.0.0-dev.20260707.2)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.2.4)(oxc-resolver@11.24.2)(rolldown@1.2.10)(typescript@6.0.3)(vue-tsc@3.2.4(typescript@6.0.3))
       semver:
         specifier: catalog:dev
         version: 7.8.5
@@ -586,7 +583,7 @@ importers:
         version: 8.3.0(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       vitest:
         specifier: catalog:test
-        version: 4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0)(tsx@4.23.15)(yaml@2.9.1)
+        version: 4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0(supports-color@7.2.0))(tsx@4.23.15)(yaml@2.9.1)
       vue:
         specifier: catalog:prod
         version: 3.5.39(typescript@6.0.3)
@@ -650,7 +647,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: catalog:test
-        version: 4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0)(tsx@4.23.15)(yaml@2.9.1)
+        version: 4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0(supports-color@7.2.0))(tsx@4.23.15)(yaml@2.9.1)
 
   smoke:
     devDependencies:
@@ -662,13 +659,13 @@ importers:
         version: 22.18.0
       '@typescript-eslint/parser':
         specifier: catalog:lint
-        version: 8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)
+        version: 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       del-cli:
         specifier: catalog:dev
         version: 7.0.0
       eslint:
         specifier: catalog:lint
-        version: 10.11.0(jiti@2.7.0)
+        version: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       execa:
         specifier: catalog:test
         version: 9.6.1
@@ -683,7 +680,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: catalog:test
-        version: 4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0)(tsx@4.23.15)(yaml@2.9.1)
+        version: 4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0(supports-color@7.2.0))(tsx@4.23.15)(yaml@2.9.1)
 
 packages:
   '@acemir/cssom@0.9.31':
@@ -5121,12 +5118,22 @@ packages:
       {
         integrity: sha512-NqcLnE5gERKuS4PUFwlhMxf6vqYo7hXtbMFbViXcbVkbZ905AIVWhnSo0ZNBC2V127H1/2zP7RvVOVnyITFfBw==,
       }
+    peerDependencies:
+      typescript: ~6.0.3
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   '@volar/language-service@2.4.28':
     resolution:
       {
         integrity: sha512-Rh/wYCZJrI5vCwMk9xyw/Z+MsWxlJY1rmMZPsxUoJKfzIRjS/NF1NmnuEcrMbEVGja00aVpCsInJfixQTMdvLw==,
       }
+    peerDependencies:
+      typescript: ~6.0.3
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   '@volar/source-map@2.4.27':
     resolution:
@@ -5145,12 +5152,22 @@ packages:
       {
         integrity: sha512-eWaYCcl/uAPInSK2Lze6IqVWaBu/itVqR5InXcHXFyles4zO++Mglt3oxdgj75BDcv1Knr9Y93nowS8U3wqhxg==,
       }
+    peerDependencies:
+      typescript: ~6.0.3
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   '@volar/typescript@2.4.28':
     resolution:
       {
         integrity: sha512-Ja6yvWrbis2QtN4ClAKreeUZPVYMARDYZl9LMEv1iQ1QdepB6wn0jTRxA9MftYmYa4DQ4k/DaSZpFPUfxl8giw==,
       }
+    peerDependencies:
+      typescript: ~6.0.3
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   '@vscode/emmet-helper@2.11.0':
     resolution:
@@ -10612,8 +10629,11 @@ packages:
       }
     peerDependencies:
       '@volar/language-service': ~2.4.0
+      typescript: ~6.0.3
     peerDependenciesMeta:
       '@volar/language-service':
+        optional: true
+      typescript:
         optional: true
 
   volar-service-typescript@0.0.71:
@@ -10623,8 +10643,11 @@ packages:
       }
     peerDependencies:
       '@volar/language-service': ~2.4.0
+      typescript: ~6.0.3
     peerDependenciesMeta:
       '@volar/language-service':
+        optional: true
+      typescript:
         optional: true
 
   volar-service-yaml@0.0.71:
@@ -11236,9 +11259,9 @@ snapshots:
 
   '@asamuzakjp/nwsapi@2.3.9': {}
 
-  '@astrojs/check@0.9.10(prettier@3.9.6)(typescript@6.0.3)':
+  '@astrojs/check@0.9.10(prettier@3.5.3)(typescript@6.0.3)':
     dependencies:
-      '@astrojs/language-server': 2.16.13(prettier@3.9.6)(typescript@6.0.3)
+      '@astrojs/language-server': 2.16.13(prettier@3.5.3)(typescript@6.0.3)
       chokidar: 4.0.3
       kleur: 4.1.5
       typescript: 6.0.3
@@ -11379,28 +11402,28 @@ snapshots:
       smol-toml: 1.7.1
       unified: 11.0.5
 
-  '@astrojs/language-server@2.16.13(prettier@3.9.6)(typescript@6.0.3)':
+  '@astrojs/language-server@2.16.13(prettier@3.5.3)(typescript@6.0.3)':
     dependencies:
       '@astrojs/compiler': 2.13.1
       '@astrojs/yaml2ts': 0.2.4
       '@jridgewell/sourcemap-codec': 1.6.0
       '@volar/kit': 2.4.28(typescript@6.0.3)
       '@volar/language-core': 2.4.28
-      '@volar/language-server': 2.4.28
-      '@volar/language-service': 2.4.28
+      '@volar/language-server': 2.4.28(typescript@6.0.3)
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
       muggle-string: 0.4.1
       tinyglobby: 0.2.17
-      volar-service-css: 0.0.71(@volar/language-service@2.4.28)
-      volar-service-emmet: 0.0.71(@volar/language-service@2.4.28)
-      volar-service-html: 0.0.71(@volar/language-service@2.4.28)
-      volar-service-prettier: 0.0.71(@volar/language-service@2.4.28)(prettier@3.9.6)
-      volar-service-typescript: 0.0.71(@volar/language-service@2.4.28)
-      volar-service-typescript-twoslash-queries: 0.0.71(@volar/language-service@2.4.28)
-      volar-service-yaml: 0.0.71(@volar/language-service@2.4.28)
+      volar-service-css: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))
+      volar-service-emmet: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))
+      volar-service-html: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))
+      volar-service-prettier: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))(prettier@3.5.3)
+      volar-service-typescript: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))(typescript@6.0.3)
+      volar-service-typescript-twoslash-queries: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))(typescript@6.0.3)
+      volar-service-yaml: 0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))
       vscode-html-languageservice: 5.6.2
       vscode-uri: 3.1.0
     optionalDependencies:
-      prettier: 3.9.6
+      prettier: 3.5.3
     transitivePeerDependencies:
       - typescript
 
@@ -11987,18 +12010,13 @@ snapshots:
       eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       eslint-visitor-keys: 3.4.3
 
-  '@eslint-community/eslint-utils@4.10.1(eslint@10.11.0(jiti@2.7.0))':
-    dependencies:
-      eslint: 10.11.0(jiti@2.7.0)
-      eslint-visitor-keys: 3.4.3
-
   '@eslint-community/regexpp@4.12.2': {}
 
-  '@eslint/compat@2.1.1(eslint@10.11.0(jiti@2.7.0))':
+  '@eslint/compat@2.1.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))':
     dependencies:
       '@eslint/core': 1.2.1
     optionalDependencies:
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
 
   '@eslint/config-array@0.23.5(supports-color@7.2.0)':
     dependencies:
@@ -12025,9 +12043,9 @@ snapshots:
       mdn-data: 2.35.0
       source-map-js: 1.2.1
 
-  '@eslint/js@10.0.1(eslint@10.11.0(jiti@2.7.0))':
+  '@eslint/js@10.0.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))':
     optionalDependencies:
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
 
   '@eslint/object-schema@3.0.5': {}
 
@@ -12050,7 +12068,7 @@ snapshots:
       '@html-eslint/types': 0.66.1
       html-standard: 0.0.13
 
-  '@html-eslint/eslint-plugin@0.66.1(eslint@10.11.0(jiti@2.7.0))':
+  '@html-eslint/eslint-plugin@0.66.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))':
     dependencies:
       '@eslint/plugin-kit': 0.4.1
       '@html-eslint/core': 0.66.1
@@ -12059,7 +12077,7 @@ snapshots:
       '@html-eslint/template-syntax-parser': 0.66.1
       '@html-eslint/types': 0.66.1
       '@rviscomi/capo.js': 2.3.1
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       html-standard: 0.0.13
 
   '@html-eslint/parser@0.66.1':
@@ -12248,11 +12266,11 @@ snapshots:
     dependencies:
       '@braidai/lang': 1.1.2
 
-  '@mapbox/node-pre-gyp@2.0.3':
+  '@mapbox/node-pre-gyp@2.0.3(supports-color@7.2.0)':
     dependencies:
       consola: 3.4.2
       detect-libc: 2.1.2
-      https-proxy-agent: 7.0.6
+      https-proxy-agent: 7.0.6(supports-color@7.2.0)
       node-fetch: 2.7.0
       nopt: 8.1.0
       semver: 7.8.5
@@ -12995,15 +13013,15 @@ snapshots:
 
   '@types/web-bluetooth@0.0.21': {}
 
-  '@typescript-eslint/eslint-plugin@8.71.0(@typescript-eslint/parser@8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)':
+  '@typescript-eslint/eslint-plugin@8.71.0(@typescript-eslint/parser@8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)':
     dependencies:
       '@eslint-community/regexpp': 4.12.2
-      '@typescript-eslint/parser': 8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)
+      '@typescript-eslint/parser': 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       '@typescript-eslint/scope-manager': 8.71.0
-      '@typescript-eslint/type-utils': 8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)
-      '@typescript-eslint/utils': 8.71.0(eslint@10.11.0(jiti@2.7.0))(typescript@6.0.3)
+      '@typescript-eslint/type-utils': 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.71.0
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       ignore: 7.0.10
       natural-compare: 1.4.0
       ts-api-utils: 2.5.0(typescript@6.0.3)
@@ -13011,14 +13029,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/parser@8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)':
+  '@typescript-eslint/parser@8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/scope-manager': 8.71.0
       '@typescript-eslint/types': 8.71.0
       '@typescript-eslint/typescript-estree': 8.71.0(supports-color@7.2.0)(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.71.0
       debug: 4.4.3(supports-color@7.2.0)
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
@@ -13041,13 +13059,13 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
-  '@typescript-eslint/type-utils@8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)':
+  '@typescript-eslint/type-utils@8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)':
     dependencies:
       '@typescript-eslint/types': 8.71.0
       '@typescript-eslint/typescript-estree': 8.71.0(supports-color@7.2.0)(typescript@6.0.3)
-      '@typescript-eslint/utils': 8.71.0(eslint@10.11.0(jiti@2.7.0))(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       debug: 4.4.3(supports-color@7.2.0)
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
     transitivePeerDependencies:
@@ -13070,13 +13088,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/utils@8.71.0(eslint@10.11.0(jiti@2.7.0))(typescript@6.0.3)':
+  '@typescript-eslint/utils@8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)':
     dependencies:
-      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0))
+      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       '@typescript-eslint/scope-manager': 8.71.0
       '@typescript-eslint/types': 8.71.0
       '@typescript-eslint/typescript-estree': 8.71.0(supports-color@7.2.0)(typescript@6.0.3)
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
@@ -13119,10 +13137,10 @@ snapshots:
 
   '@ungap/structured-clone@1.3.0': {}
 
-  '@vercel/backends@0.8.25(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)':
+  '@vercel/backends@0.8.25(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
       '@vercel/build-utils': 13.34.0
-      '@vercel/nft': 1.10.0(rollup@4.62.2)
+      '@vercel/nft': 1.10.0(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
       execa: 3.2.0
       fs-extra: 11.1.0
@@ -13156,9 +13174,9 @@ snapshots:
       cjs-module-lexer: 1.2.3
       es-module-lexer: 1.5.0
 
-  '@vercel/cervel@0.1.33(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)':
+  '@vercel/cervel@0.1.33(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/backends': 0.8.25(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)
+      '@vercel/backends': 0.8.25(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
@@ -13183,9 +13201,9 @@ snapshots:
 
   '@vercel/detect-agent@1.2.3': {}
 
-  '@vercel/elysia@0.1.102(rollup@4.62.2)':
+  '@vercel/elysia@0.1.102(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/node': 5.8.26(rollup@4.62.2)
+      '@vercel/node': 5.8.26(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
     transitivePeerDependencies:
       - encoding
@@ -13194,11 +13212,11 @@ snapshots:
 
   '@vercel/error-utils@2.2.0': {}
 
-  '@vercel/express@0.1.116(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)':
+  '@vercel/express@0.1.116(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/cervel': 0.1.33(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)
-      '@vercel/nft': 1.10.0(rollup@4.62.2)
-      '@vercel/node': 5.8.26(rollup@4.62.2)
+      '@vercel/cervel': 0.1.33(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/nft': 1.10.0(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/node': 5.8.26(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
       fs-extra: 11.1.0
       path-to-regexp: 8.4.0
@@ -13211,20 +13229,20 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/fastify@0.1.105(rollup@4.62.2)':
+  '@vercel/fastify@0.1.105(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/node': 5.8.26(rollup@4.62.2)
+      '@vercel/node': 5.8.26(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
     transitivePeerDependencies:
       - encoding
       - rollup
       - supports-color
 
-  '@vercel/fun@1.3.0':
+  '@vercel/fun@1.3.0(supports-color@7.2.0)':
     dependencies:
       '@tootallnate/once': 2.0.1
       async-listen: 1.2.0
-      debug: 4.3.4
+      debug: 4.3.4(supports-color@7.2.0)
       generic-pool: 3.4.2
       micro: 9.3.5-canary.3
       ms: 2.1.1
@@ -13258,19 +13276,19 @@ snapshots:
 
   '@vercel/go@3.10.2': {}
 
-  '@vercel/h3@0.1.111(rollup@4.62.2)':
+  '@vercel/h3@0.1.111(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/node': 5.8.26(rollup@4.62.2)
+      '@vercel/node': 5.8.26(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
     transitivePeerDependencies:
       - encoding
       - rollup
       - supports-color
 
-  '@vercel/hono@0.2.105(rollup@4.62.2)':
+  '@vercel/hono@0.2.105(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/nft': 1.10.0(rollup@4.62.2)
-      '@vercel/node': 5.8.26(rollup@4.62.2)
+      '@vercel/nft': 1.10.0(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/node': 5.8.26(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
       fs-extra: 11.1.0
       path-to-regexp: 8.4.0
@@ -13286,35 +13304,35 @@ snapshots:
       '@vercel/static-config': 3.4.0
       ts-morph: 12.0.0
 
-  '@vercel/koa@0.1.85(rollup@4.62.2)':
+  '@vercel/koa@0.1.85(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/node': 5.8.26(rollup@4.62.2)
+      '@vercel/node': 5.8.26(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
     transitivePeerDependencies:
       - encoding
       - rollup
       - supports-color
 
-  '@vercel/nestjs@0.2.106(rollup@4.62.2)':
+  '@vercel/nestjs@0.2.106(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/node': 5.8.26(rollup@4.62.2)
+      '@vercel/node': 5.8.26(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
     transitivePeerDependencies:
       - encoding
       - rollup
       - supports-color
 
-  '@vercel/next@4.20.4(rollup@4.62.2)':
+  '@vercel/next@4.20.4(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/nft': 1.10.0(rollup@4.62.2)
+      '@vercel/nft': 1.10.0(rollup@4.62.2)(supports-color@7.2.0)
     transitivePeerDependencies:
       - encoding
       - rollup
       - supports-color
 
-  '@vercel/nft@1.10.0(rollup@4.62.2)':
+  '@vercel/nft@1.10.0(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@mapbox/node-pre-gyp': 2.0.3
+      '@mapbox/node-pre-gyp': 2.0.3(supports-color@7.2.0)
       '@rollup/pluginutils': 5.4.0(rollup@4.62.2)
       acorn: 8.18.0
       acorn-import-attributes: 1.9.5(acorn@8.18.0)
@@ -13331,7 +13349,7 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/node@5.8.26(rollup@4.62.2)':
+  '@vercel/node@5.8.26(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
       '@edge-runtime/node-utils': 2.3.0
       '@edge-runtime/primitives': 4.1.0
@@ -13339,7 +13357,7 @@ snapshots:
       '@types/node': 22.18.0
       '@vercel/build-utils': 13.34.0
       '@vercel/error-utils': 2.2.0
-      '@vercel/nft': 1.10.0(rollup@4.62.2)
+      '@vercel/nft': 1.10.0(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
       async-listen: 3.0.0
       cjs-module-lexer: 1.2.3
@@ -13378,9 +13396,9 @@ snapshots:
     dependencies:
       '@vercel/python-analysis': 0.11.1
 
-  '@vercel/redwood@2.5.0(rollup@4.62.2)':
+  '@vercel/redwood@2.5.0(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
-      '@vercel/nft': 1.10.0(rollup@4.62.2)
+      '@vercel/nft': 1.10.0(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
       semver: 6.3.1
       ts-morph: 12.0.0
@@ -13389,10 +13407,10 @@ snapshots:
       - rollup
       - supports-color
 
-  '@vercel/remix-builder@5.9.1(rollup@4.62.2)':
+  '@vercel/remix-builder@5.9.1(rollup@4.62.2)(supports-color@7.2.0)':
     dependencies:
       '@vercel/error-utils': 2.2.0
-      '@vercel/nft': 1.10.0(rollup@4.62.2)
+      '@vercel/nft': 1.10.0(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/static-config': 3.4.0
       path-to-regexp: 6.3.0
       path-to-regexp-updated: path-to-regexp@6.3.0
@@ -13488,8 +13506,8 @@ snapshots:
 
   '@volar/kit@2.4.28(typescript@6.0.3)':
     dependencies:
-      '@volar/language-service': 2.4.28
-      '@volar/typescript': 2.4.28
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/typescript': 2.4.28(typescript@6.0.3)
       typesafe-path: 0.2.2
       typescript: 6.0.3
       vscode-languageserver-textdocument: 1.0.12
@@ -13503,40 +13521,48 @@ snapshots:
     dependencies:
       '@volar/source-map': 2.4.28
 
-  '@volar/language-server@2.4.28':
+  '@volar/language-server@2.4.28(typescript@6.0.3)':
     dependencies:
       '@volar/language-core': 2.4.28
-      '@volar/language-service': 2.4.28
-      '@volar/typescript': 2.4.28
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      '@volar/typescript': 2.4.28(typescript@6.0.3)
       path-browserify: 1.0.1
       request-light: 0.7.0
       vscode-languageserver: 9.0.1
       vscode-languageserver-protocol: 3.18.2
       vscode-languageserver-textdocument: 1.0.12
       vscode-uri: 3.1.0
+    optionalDependencies:
+      typescript: 6.0.3
 
-  '@volar/language-service@2.4.28':
+  '@volar/language-service@2.4.28(typescript@6.0.3)':
     dependencies:
       '@volar/language-core': 2.4.28
       vscode-languageserver-protocol: 3.18.2
       vscode-languageserver-textdocument: 1.0.12
       vscode-uri: 3.1.0
+    optionalDependencies:
+      typescript: 6.0.3
 
   '@volar/source-map@2.4.27': {}
 
   '@volar/source-map@2.4.28': {}
 
-  '@volar/typescript@2.4.27':
+  '@volar/typescript@2.4.27(typescript@6.0.3)':
     dependencies:
       '@volar/language-core': 2.4.27
       path-browserify: 1.0.1
       vscode-uri: 3.1.0
+    optionalDependencies:
+      typescript: 6.0.3
 
-  '@volar/typescript@2.4.28':
+  '@volar/typescript@2.4.28(typescript@6.0.3)':
     dependencies:
       '@volar/language-core': 2.4.28
       path-browserify: 1.0.1
       vscode-uri: 3.1.0
+    optionalDependencies:
+      typescript: 6.0.3
 
   '@vscode/emmet-helper@2.11.0':
     dependencies:
@@ -14299,9 +14325,11 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
 
-  debug@4.3.4:
+  debug@4.3.4(supports-color@7.2.0):
     dependencies:
       ms: 2.1.2
+    optionalDependencies:
+      supports-color: 7.2.0
 
   debug@4.4.3(supports-color@7.2.0):
     dependencies:
@@ -14569,39 +14597,39 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
-  eslint-compat-utils@0.5.1(eslint@10.11.0(jiti@2.7.0)):
+  eslint-compat-utils@0.5.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0)):
     dependencies:
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       semver: 7.8.5
 
-  eslint-config-flat-gitignore@2.4.0(eslint@10.11.0(jiti@2.7.0)):
+  eslint-config-flat-gitignore@2.4.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0)):
     dependencies:
-      '@eslint/compat': 2.1.1(eslint@10.11.0(jiti@2.7.0))
-      eslint: 10.11.0(jiti@2.7.0)
+      '@eslint/compat': 2.1.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
 
-  eslint-config-prettier@10.1.8(eslint@10.11.0(jiti@2.7.0)):
+  eslint-config-prettier@10.1.8(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0)):
     dependencies:
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
 
-  eslint-json-compat-utils@0.2.3(eslint@10.11.0(jiti@2.7.0))(jsonc-eslint-parser@3.3.0):
+  eslint-json-compat-utils@0.2.3(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(jsonc-eslint-parser@3.3.0):
     dependencies:
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       esquery: 1.6.0
       jsonc-eslint-parser: 3.3.0
 
-  eslint-plugin-es-x@7.8.0(eslint@10.11.0(jiti@2.7.0)):
+  eslint-plugin-es-x@7.8.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0)):
     dependencies:
-      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0))
+      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       '@eslint-community/regexpp': 4.12.2
-      eslint: 10.11.0(jiti@2.7.0)
-      eslint-compat-utils: 0.5.1(eslint@10.11.0(jiti@2.7.0))
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
+      eslint-compat-utils: 0.5.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
 
-  eslint-plugin-n@18.4.0(eslint@10.11.0(jiti@2.7.0))(typescript@6.0.3):
+  eslint-plugin-n@18.4.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(typescript@6.0.3):
     dependencies:
-      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0))
+      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       enhanced-resolve: 5.18.3
-      eslint: 10.11.0(jiti@2.7.0)
-      eslint-plugin-es-x: 7.8.0(eslint@10.11.0(jiti@2.7.0))
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
+      eslint-plugin-es-x: 7.8.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       get-tsconfig: 4.14.3
       globals: 15.15.0
       globrex: 0.1.2
@@ -14611,11 +14639,11 @@ snapshots:
     optionalDependencies:
       typescript: 6.0.3
 
-  eslint-plugin-pnpm@1.9.1(eslint@10.11.0(jiti@2.7.0)):
+  eslint-plugin-pnpm@1.9.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0)):
     dependencies:
       empathic: 2.0.1
-      eslint: 10.11.0(jiti@2.7.0)
-      eslint-json-compat-utils: 0.2.3(eslint@10.11.0(jiti@2.7.0))(jsonc-eslint-parser@3.3.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
+      eslint-json-compat-utils: 0.2.3(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(jsonc-eslint-parser@3.3.0)
       jsonc-eslint-parser: 3.3.0
       pathe: 2.0.3
       pnpm-workspace-yaml: 1.9.1
@@ -14625,29 +14653,29 @@ snapshots:
     transitivePeerDependencies:
       - '@eslint/json'
 
-  eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.11.0(jiti@2.7.0)))(eslint@10.11.0(jiti@2.7.0))(prettier@3.5.3):
+  eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0)))(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(prettier@3.5.3):
     dependencies:
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       prettier: 3.5.3
       prettier-linter-helpers: 1.0.1
       synckit: 0.11.13
     optionalDependencies:
-      eslint-config-prettier: 10.1.8(eslint@10.11.0(jiti@2.7.0))
+      eslint-config-prettier: 10.1.8(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
 
-  eslint-plugin-regexp@3.1.1(eslint@10.11.0(jiti@2.7.0)):
+  eslint-plugin-regexp@3.1.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0)):
     dependencies:
-      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0))
+      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       '@eslint-community/regexpp': 4.12.2
       comment-parser: 1.4.1
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       jsdoc-type-pratt-parser: 7.3.0
       refa: 0.12.1
       regexp-ast-analysis: 0.7.1
       scslre: 0.3.0
 
-  eslint-plugin-unicorn@76.0.0(eslint@10.11.0(jiti@2.7.0)):
+  eslint-plugin-unicorn@76.0.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0)):
     dependencies:
-      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0))
+      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
       '@eslint/css-tree': 4.1.1
       browserslist: 4.28.7
       change-case: 5.4.4
@@ -14655,7 +14683,7 @@ snapshots:
       core-js-compat: 3.50.0
       detect-indent: 7.0.2
       entities: 8.1.0
-      eslint: 10.11.0(jiti@2.7.0)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       find-up-simple: 1.0.1
       globals: 17.12.0
       identifier-regex: 1.1.0
@@ -14679,43 +14707,6 @@ snapshots:
   eslint-visitor-keys@3.4.3: {}
 
   eslint-visitor-keys@5.0.1: {}
-
-  eslint@10.11.0(jiti@2.7.0):
-    dependencies:
-      '@eslint-community/eslint-utils': 4.10.1(eslint@10.11.0(jiti@2.7.0))
-      '@eslint-community/regexpp': 4.12.2
-      '@eslint/config-array': 0.23.5(supports-color@7.2.0)
-      '@eslint/config-helpers': 0.7.0
-      '@eslint/core': 1.2.1
-      '@eslint/plugin-kit': 0.7.3
-      '@humanfs/node': 0.16.8
-      '@humanwhocodes/module-importer': 1.0.1
-      '@humanwhocodes/retry': 0.4.3
-      '@types/estree': 1.0.9
-      ajv: 6.14.0
-      cross-spawn: 7.0.6
-      debug: 4.4.3(supports-color@7.2.0)
-      escape-string-regexp: 4.0.0
-      eslint-scope: 9.1.2
-      eslint-visitor-keys: 5.0.1
-      espree: 11.2.0
-      esquery: 1.7.0
-      esutils: 2.0.3
-      fast-deep-equal: 3.1.3
-      file-entry-cache: 11.1.5
-      find-up: 5.0.0
-      glob-parent: 6.0.2
-      ignore: 5.3.2
-      imurmurhash: 0.1.4
-      is-glob: 4.0.3
-      json-stable-stringify-without-jsonify: 1.0.1
-      minimatch: 10.2.5
-      natural-compare: 1.4.0
-      optionator: 0.9.4
-    optionalDependencies:
-      jiti: 2.7.0
-    transitivePeerDependencies:
-      - supports-color
 
   eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0):
     dependencies:
@@ -15144,14 +15135,14 @@ snapshots:
       statuses: 1.5.0
       toidentifier: 1.0.0
 
-  http-proxy-agent@7.0.2:
+  http-proxy-agent@7.0.2(supports-color@7.2.0):
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@7.2.0)
     transitivePeerDependencies:
       - supports-color
 
-  https-proxy-agent@7.0.6:
+  https-proxy-agent@7.0.6(supports-color@7.2.0):
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@7.2.0)
@@ -15293,7 +15284,7 @@ snapshots:
 
   jsdoc-type-pratt-parser@7.3.0: {}
 
-  jsdom@28.0.0:
+  jsdom@28.0.0(supports-color@7.2.0):
     dependencies:
       '@acemir/cssom': 0.9.31
       '@asamuzakjp/dom-selector': 6.7.8
@@ -15302,8 +15293,8 @@ snapshots:
       data-urls: 7.0.0
       decimal.js: 10.6.0
       html-encoding-sniffer: 6.0.0
-      http-proxy-agent: 7.0.2
-      https-proxy-agent: 7.0.6
+      http-proxy-agent: 7.0.2(supports-color@7.2.0)
+      https-proxy-agent: 7.0.6(supports-color@7.2.0)
       is-potential-custom-element-name: 1.0.1
       parse5: 8.0.0
       saxes: 6.0.0
@@ -16143,7 +16134,7 @@ snapshots:
 
   rfdc@1.4.1: {}
 
-  rolldown-plugin-dts@0.28.6(@typescript/native-preview@7.0.0-dev.20260707.2)(@volar/typescript@2.4.28)(@vue/language-core@3.2.4)(oxc-resolver@11.24.2)(rolldown@1.2.10)(typescript@6.0.3)(vue-tsc@3.2.4(typescript@6.0.3)):
+  rolldown-plugin-dts@0.28.6(@typescript/native-preview@7.0.0-dev.20260707.2)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.2.4)(oxc-resolver@11.24.2)(rolldown@1.2.10)(typescript@6.0.3)(vue-tsc@3.2.4(typescript@6.0.3)):
     dependencies:
       dts-resolver: 3.0.0(oxc-resolver@11.24.2)
       get-tsconfig: 5.0.0-beta.6
@@ -16154,7 +16145,7 @@ snapshots:
       yuku-parser: 0.10.2
     optionalDependencies:
       '@typescript/native-preview': 7.0.0-dev.20260707.2
-      '@volar/typescript': 2.4.28
+      '@volar/typescript': 2.4.28(typescript@6.0.3)
       '@vue/language-core': 3.2.4
       typescript: 6.0.3
       vue-tsc: 3.2.4(typescript@6.0.3)
@@ -16729,13 +16720,13 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  typescript-eslint@8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3):
+  typescript-eslint@8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3):
     dependencies:
-      '@typescript-eslint/eslint-plugin': 8.71.0(@typescript-eslint/parser@8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)
-      '@typescript-eslint/parser': 8.71.0(eslint@10.11.0(jiti@2.7.0))(supports-color@7.2.0)(typescript@6.0.3)
+      '@typescript-eslint/eslint-plugin': 8.71.0(@typescript-eslint/parser@8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
+      '@typescript-eslint/parser': 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
       '@typescript-eslint/typescript-estree': 8.71.0(supports-color@7.2.0)(typescript@6.0.3)
-      '@typescript-eslint/utils': 8.71.0(eslint@10.11.0(jiti@2.7.0))(typescript@6.0.3)
-      eslint: 10.11.0(jiti@2.7.0)
+      '@typescript-eslint/utils': 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
+      eslint: 10.11.0(jiti@2.7.0)(supports-color@7.2.0)
       typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
@@ -16846,29 +16837,29 @@ snapshots:
 
   vercel@56.3.1(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0):
     dependencies:
-      '@vercel/backends': 0.8.25(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)
+      '@vercel/backends': 0.8.25(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/blob': 2.4.0
       '@vercel/build-utils': 13.34.0
       '@vercel/cli-auth': 0.3.0
       '@vercel/cli-config': 0.2.0
       '@vercel/container': 0.0.5
       '@vercel/detect-agent': 1.2.3
-      '@vercel/elysia': 0.1.102(rollup@4.62.2)
-      '@vercel/express': 0.1.116(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)
-      '@vercel/fastify': 0.1.105(rollup@4.62.2)
-      '@vercel/fun': 1.3.0
+      '@vercel/elysia': 0.1.102(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/express': 0.1.116(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/fastify': 0.1.105(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/fun': 1.3.0(supports-color@7.2.0)
       '@vercel/go': 3.10.2
-      '@vercel/h3': 0.1.111(rollup@4.62.2)
-      '@vercel/hono': 0.2.105(rollup@4.62.2)
+      '@vercel/h3': 0.1.111(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/hono': 0.2.105(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/hydrogen': 1.4.0
-      '@vercel/koa': 0.1.85(rollup@4.62.2)
-      '@vercel/nestjs': 0.2.106(rollup@4.62.2)
-      '@vercel/next': 4.20.4(rollup@4.62.2)
-      '@vercel/node': 5.8.26(rollup@4.62.2)
+      '@vercel/koa': 0.1.85(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/nestjs': 0.2.106(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/next': 4.20.4(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/node': 5.8.26(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/prepare-flags-definitions': 0.3.0
       '@vercel/python': 6.51.0
-      '@vercel/redwood': 2.5.0(rollup@4.62.2)
-      '@vercel/remix-builder': 5.9.1(rollup@4.62.2)
+      '@vercel/redwood': 2.5.0(rollup@4.62.2)(supports-color@7.2.0)
+      '@vercel/remix-builder': 5.9.1(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/ruby': 2.5.1
       '@vercel/rust': 1.4.0
       '@vercel/static-build': 2.11.8
@@ -16987,7 +16978,7 @@ snapshots:
       - typescript
       - universal-cookie
 
-  vitest@4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0)(tsx@4.23.15)(yaml@2.9.1):
+  vitest@4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0(supports-color@7.2.0))(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       '@vitest/expect': 4.1.11
       '@vitest/mocker': 4.1.11(vite@8.3.0(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -17012,7 +17003,7 @@ snapshots:
     optionalDependencies:
       '@edge-runtime/vm': 3.2.0
       '@types/node': 22.18.0
-      jsdom: 28.0.0
+      jsdom: 28.0.0(supports-color@7.2.0)
     transitivePeerDependencies:
       - '@vitejs/devtools'
       - esbuild
@@ -17027,45 +17018,46 @@ snapshots:
       - tsx
       - yaml
 
-  volar-service-css@0.0.71(@volar/language-service@2.4.28):
+  volar-service-css@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3)):
     dependencies:
       vscode-css-languageservice: 6.3.10
       vscode-languageserver-textdocument: 1.0.12
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
 
-  volar-service-emmet@0.0.71(@volar/language-service@2.4.28):
+  volar-service-emmet@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3)):
     dependencies:
       '@emmetio/css-parser': 0.4.1
       '@emmetio/html-matcher': 1.3.0
       '@vscode/emmet-helper': 2.11.0
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
 
-  volar-service-html@0.0.71(@volar/language-service@2.4.28):
+  volar-service-html@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3)):
     dependencies:
       vscode-html-languageservice: 5.6.2
       vscode-languageserver-textdocument: 1.0.12
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
 
-  volar-service-prettier@0.0.71(@volar/language-service@2.4.28)(prettier@3.9.6):
+  volar-service-prettier@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))(prettier@3.5.3):
     dependencies:
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28
-      prettier: 3.9.6
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      prettier: 3.5.3
 
-  volar-service-typescript-twoslash-queries@0.0.71(@volar/language-service@2.4.28):
+  volar-service-typescript-twoslash-queries@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))(typescript@6.0.3):
     dependencies:
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      typescript: 6.0.3
 
-  volar-service-typescript@0.0.71(@volar/language-service@2.4.28):
+  volar-service-typescript@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3))(typescript@6.0.3):
     dependencies:
       path-browserify: 1.0.1
       semver: 7.8.5
@@ -17074,14 +17066,15 @@ snapshots:
       vscode-nls: 5.2.0
       vscode-uri: 3.1.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
+      typescript: 6.0.3
 
-  volar-service-yaml@0.0.71(@volar/language-service@2.4.28):
+  volar-service-yaml@0.0.71(@volar/language-service@2.4.28(typescript@6.0.3)):
     dependencies:
       vscode-uri: 3.1.0
       yaml-language-server: 1.23.0
     optionalDependencies:
-      '@volar/language-service': 2.4.28
+      '@volar/language-service': 2.4.28(typescript@6.0.3)
 
   vscode-css-languageservice@6.3.10:
     dependencies:
@@ -17135,7 +17128,7 @@ snapshots:
 
   vue-tsc@3.2.4(typescript@6.0.3):
     dependencies:
-      '@volar/typescript': 2.4.27
+      '@volar/typescript': 2.4.27(typescript@6.0.3)
       '@vue/language-core': 3.2.4
       typescript: 6.0.3
 

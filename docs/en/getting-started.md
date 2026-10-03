@@ -6,7 +6,7 @@ Limina supports single-package projects and pnpm, npm, Yarn, and Bun workspaces 
 
 - Node.js `^22.18.0 || >=24.11.0`
 - A readable `package.json` whose top level is an object
-- TypeScript installed in the consuming project
+- TypeScript installed in the consuming project, within the installed Limina version's peer range (currently `>=5.4.0 <5.10.0 || >=6.0.0 <6.1.0`)
 - A Limina config module, usually `limina.config.mts`
 
 ## Governance root
@@ -17,7 +17,7 @@ Only workspace declarations at this root determine membership. With no declarati
 
 At the selected root, `pnpm-workspace.yaml` takes priority. It identifies pnpm unless an explicit `packageManager` conflicts. A `package.json#workspaces` declaration requires a determinable npm, Yarn, or Bun manager: its own `packageManager` wins, otherwise same-directory lockfiles provide evidence. Missing or ambiguous authority and invalid declarations fail; even a workspace containing only its root stays a workspace.
 
-The supported declaration projection is pnpm `packages: string[]` (absent means no child packages), npm `workspaces: string[]`, and Yarn/Bun either that array or `{ packages: string[] }`. Existing manager adapters retain their selection and ignore semantics. Catalog validity, installability, version availability, and lockfile consistency remain package-manager responsibilities.
+Limina reads these workspace declarations: pnpm `packages: string[]` (absent means no child packages), npm `workspaces: string[]`, and Yarn/Bun either that array or `{ packages: string[] }`. Manager adapters retain their selection and ignore rules. Catalog validity, installability, version availability, and lockfile consistency remain package-manager responsibilities.
 
 ### Selecting a config inside a monorepo
 
@@ -30,22 +30,24 @@ This changes the former ancestor-workspace-first root selection contract. Member
 ::: code-group
 
 ```bash [pnpm]
-pnpm add -D limina@latest typescript
+pnpm add -D limina@latest typescript@~6.0.3
 ```
 
 ```bash [npm]
-npm install -D limina@latest typescript
+npm install -D limina@latest typescript@~6.0.3
 ```
 
 ```bash [yarn]
-yarn add -D limina@latest typescript
+yarn add -D limina@latest typescript@~6.0.3
 ```
 
 ```bash [bun]
-bun add -d limina@latest typescript
+bun add -d limina@latest typescript@~6.0.3
 ```
 
 :::
+
+These examples select the TypeScript 6.0 range used by this source version. When installing a different Limina release, check its declared peer range before choosing TypeScript.
 
 The native `tsc` checker uses the TypeScript installation resolved by Limina itself, including version validation and execution. A different `tsc` earlier in PATH or a package-local `.bin` does not override that compiler.
 
@@ -53,7 +55,7 @@ The native `tsc` checker uses the TypeScript installation resolved by Limina its
 
 If your project does not yet have a Limina config, start with `limina init`. It writes a `limina.config.mts` with the flat `checkers.auto` configuration, adds the root script, ensures `.limina/` is ignored, and can install the optional Limina agent skill for this project.
 
-If your repository already has a clear `tsconfig` convention, writing the minimal `limina.config.mts` directly is faster. Automatic checker discovery is enough for many workspaces; use [Checker Entries](./config/checkers.md) only when you need explicit checker routing.
+You can also write the minimal `limina.config.mts` directly. Use [Checker Entries](./config/checkers.md) when automatic discovery needs explicit checker routing.
 
 ## Initialize an Existing Project
 
@@ -65,13 +67,15 @@ pnpm exec limina init
 
 `limina init` searches from cwd for the nearest `package.json`, validates it, and writes `limina.config.mts` beside it. An invalid nearest manifest stops initialization. Only when no manifest exists in the ancestor chain does init offer to create one at cwd. Init adds no workspace declaration. `--yes` also works without manager metadata and prints neutral next-step guidance.
 
+Init does not rewrite source tsconfigs. If ordinary source leaves still declare native `references` or need configuration conversion, use the matching `limina-migrate` after initialization; review its input-consumption result, then run `limina check`. See [Workflows](./workflows.md) and the [migration contract](./cli.md#limina-migration).
+
 For non-interactive environments, use:
 
 ```sh
 pnpm exec limina init --yes
 ```
 
-`--yes` accepts only the core initialization confirmations and skips the optional skill installation. To install the skill manually later, run:
+`--yes` accepts the core initialization confirmations, including overwriting an existing config or conflicting `limina:build` script, and skips the optional skill installation. To install the skill manually later, run:
 
 ```sh
 npx --yes skills add senaoxi/docs-islands --skill limina
@@ -85,10 +89,12 @@ Initialization can create or update:
 - missing root `limina` and `typescript` dev dependencies.
 
 ::: warning
+Init removes an existing root `.limina/` directory before writing the config, including generated files and persisted check/migration records. Review existing configuration before rerunning init, especially with `--yes`.
+
 `limina graph prepare` explicitly materializes generated checker files under `.limina/`. Managed `build`, checker execution, and `check` pipelines containing checker or `graph:prepare` tasks also materialize them when needed. Validation-only graph, source, and proof checks calculate the graph in memory without writing those files.
 :::
 
-When graph preparation fails, it usually means the checker's `include` matched a reserved config or a non-source `tsconfig`. Narrow `include` or add `exclude` entries until only ordinary source configs are selected.
+When graph preparation fails, inspect its config path and reason. An invalid checker entry selector, unsupported named solution, ordinary leaf with native `references`, region/input boundary violation, or checker ownership/provider conflict can prevent preparation. Checker `include` selects only default `tsconfig.json` entries; selector exclusions do not cut an already selected entry's references closure.
 
 Initialization reports commands for the selected manager:
 
@@ -142,7 +148,7 @@ export default defineConfig({
 });
 ```
 
-`limina init` starts with an empty array so you can add paths directly later.
+`limina init` sets `auto.exclude` to an empty array in the generated config.
 
 ```js
 import { defineConfig } from 'limina';
@@ -174,7 +180,7 @@ Run it:
 pnpm limina:build
 ```
 
-The build entry prepares Limina's checker graph first, then runs the checkers that support build mode. Once the build path is stable, run `pnpm exec limina check` to turn on the full check flow. The default check includes the following tasks. Results are displayed and recorded in this order, while scheduling can run tasks concurrently when the concurrency budget and resource locks allow it:
+The build entry prepares Limina's checker graph, then runs build-capable checkers. Run `pnpm exec limina check` for the default pipeline below. Results are displayed and recorded in this order; tasks may run concurrently when the concurrency budget and resource locks allow it:
 
 1. `graph:check` (which prepares the checker graph first)
 2. `source:check`
@@ -182,7 +188,9 @@ The build entry prepares Limina's checker graph first, then runs the checkers th
 4. `checker:build` (checker build)
 5. `checker:typecheck` (checker typecheck)
 
-When the run fails, first check the failed tasks and issue summary in the output. The same output can contain multiple failed tasks. Task names identify the broad problem category, while issue codes, file or config paths, failure reasons, and suggested fixes identify the concrete cause. `--issues` shows the issues recorded by the most recent check and can narrow them by task.
+This prepares declaration builds and runs the selected type checkers; it does not build every package's distributable output. Astro/Svelte application builds and other artifact builds remain in the project's own build flow. `checker:typecheck` is disabled when no typecheck targets are discovered, and package/release checks are outside the default pipeline. Inspect disabled, blocked, and skipped outcomes separately from passing checks.
+
+When the run fails, first check the failed tasks and issue summary in the output. The same output can contain multiple failed tasks. Task names identify the broad problem category, while issue codes, file or config paths, failure reasons, and suggested fixes identify the concrete cause. `--issues` reads persisted check state without running checks or importing the config. With current attempt metadata, it returns the latest attempt's completed inventory only when completion is consistent; a running, interrupted, aborted, corrupt, or persistence-failed latest attempt prevents fallback to older issues. You can narrow an available inventory by task.
 
 ```sh
 pnpm exec limina check --issues
@@ -200,13 +208,13 @@ pnpm exec limina check --issues --task checker:typecheck
 
 Common next steps:
 
-- `graph:check` failures usually mean source import relationships are not aligned with the TypeScript project graph that Limina generated or validated. First check whether project references inferred from static imports are missing or extra, whether cross-workspace-package references have matching dependency declarations, whether graph rules or labels deny the current dependency edge, and whether workspace imports can be resolved and mapped to the source graph consistently.
-- `source:check` failures usually mean source file ownership or source import authorization did not pass. First check source owners, tsconfig governance, whether relative imports cross the nearest `package.json` package boundary, whether `#...` imports match the current source owner's `package.json#imports`, whether bare package imports are authorized by dependency declarations or `source.importAuthority.allow`, and whether Knip reported unused source files or unused dependencies.
+- `graph:check` failures can mean a source relationship cannot form a legal declaration-provider reference, a cross-workspace-package reference lacks a dependency declaration, a graph rule or label denies an edge, or a consumed workspace import cannot be resolved under its checker. Ordinary source leaves must not hand-write native `references`; inspect the reported provider, ownership, or boundary reason before changing selectors or adding `implicitRefs`.
+- `source:check` failures usually mean source file ownership or source import authorization did not pass. First check source owners, tsconfig governance, whether relative imports cross the nearest `package.json` package boundary, whether `#...` imports match the importing file's nearest package scope's `package.json#imports`, whether bare package imports are authorized by the workspace source owner's dependency declarations or `source.importAuthority.allow`, and whether enabled Knip analysis reported unused source files or unused dependencies.
 - `proof:check` failures usually mean Limina cannot prove that the actual source files are covered by type checking. First check whether ownership is unique, solution leaves have one final owner, declaration build configs match their companion typecheck configs, Astro or Svelte owners have an executable leaf target, and files in `config.source` are covered by checkers, the graph, or `proof.allowlist`.
 - `checker:build` failures mean a build-capable checker did not pass. Common causes include non-zero exits from external `tsc`, `tsgo`, or `vue-tsc` commands, missing checker dependencies, or Limina being unable to select a valid build target for the current target. Check the checker, config path, and exit code in the Limina summary first, then inspect the corresponding checker raw log.
 - `checker:typecheck` failures mean a framework-owned leaf did not pass. Common causes include non-zero exits from `astro check` or `svelte-check`, missing leaf-local checker or parser dependencies, or missing Astro generated types. Use the Limina summary to identify the owner and config path, then inspect the corresponding issue or raw log.
 
-As a general order, handle structural problems from `graph:check`, `source:check`, and `proof:check` before executor failures from `checker:build` and `checker:typecheck`. The structural checks determine how Limina understands the project graph, source ownership, import authorization, and type-checking coverage; checker failures are usually the result of concrete source or framework type constraints. The default check displays and records issues in the task order above, but tasks can still run concurrently when resources allow it, so this order is an issue-reading and remediation order rather than a guarantee that later tasks are blocked by earlier tasks.
+Start with structural failures in `graph:check`, `source:check`, and `proof:check`, then inspect execution failures in `checker:build` and `checker:typecheck`. Structural checks concern declaration relationships, source ownership, import authorization, and coverage. Checker failures may come from source or framework type errors. This is a suggested reading and repair order; tasks may run concurrently, so it does not imply that earlier failures block later tasks.
 
 ## Configure Checker Ownership
 

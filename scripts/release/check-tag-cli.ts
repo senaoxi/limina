@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { assertNewReleaseTag } from './check-tag';
 import {
   discoverReleasePackages,
@@ -10,13 +8,19 @@ import {
 } from './shared';
 
 const tag = process.env.RELEASE_TAG ?? '';
-const historicalTags = JSON.parse(
-  readFileSync(path.join(REPO_ROOT, 'migration/original-tags.json'), 'utf8'),
-) as Record<string, string>;
-const version = assertNewReleaseTag(tag, Object.keys(historicalTags));
+const version = assertNewReleaseTag(tag);
 const packages = discoverReleasePackages();
-if (packages.some((config) => config.manifest.version !== version)) {
-  throw new Error('The release tag must match both source package versions.');
+if (
+  packages.length !== 2 ||
+  packages.some(
+    (config) =>
+      config.manifest.name !== config.packageName ||
+      config.manifest.version !== version,
+  )
+) {
+  throw new Error(
+    'The release tag must match both source package names and versions with public access.',
+  );
 }
 const commit = runCommand(
   getGitCommand(),

@@ -128,7 +128,6 @@ engineStrict: true
 failIfNoMatch: true
 hoist: false
 loglevel: info
-managePackageManagerVersions: true
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - logaria@0.0.4

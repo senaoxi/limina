@@ -25,18 +25,20 @@ export default defineConfig({
 });
 ```
 
-## pipelines
+## `pipelines`
 
 - **类型：** `Record<string, PipelineStep[]>`
 
 `pipelines` 把名称映射到一组有序步骤。`pnpm exec limina check <name>` 会按数组顺序调度该流水线的步骤，每一步都依赖前一步完成。它和默认 `limina check` 不同：默认检查会把内置任务作为可并发的独立任务调度；命名流水线会保留你写下来的顺序。
 
-Limina 会在每个依赖工作区拓扑的内置步骤前插入共享 preparation `workspace:validate`。不要把它写进 `pipelines`，它也不是可配置的 `BuiltinTaskName`。验证失败时，依赖的源码、证明、图、检查器、包、发布或产物生成步骤会在读取或写入拓扑状态前被阻塞。
+Limina 会在依赖工作区拓扑的内置工作前插入共享准备步骤 `workspace:validate`。包含 `graph:prepare`、`checker:build` 或 `checker:typecheck` 的任务段，还会在全部内置任务前获得共享准备步骤 `graph:materialize`。准备步骤自动注入，不是可配置的 `BuiltinTaskName` 步骤。必要准备步骤失败时，依赖任务会在消费拓扑或生成文件前记录为 `blocked`（被阻塞）。
 
-有序不等于所有失败都会立刻停止。内置任务失败会让最终流水线结果失败，但后续步骤仍会按顺序继续尝试；外部命令步骤失败会阻塞剩余步骤，并把它们记为 `skipped`。
+准备步骤成功后，已执行内置任务失败会让最终结果失败，但后续步骤仍按顺序尝试。外部命令失败会停止剩余步骤，并记为 `skipped`（已跳过）。
 
-::: tip
-团队常用流程可以固定成命名命令，例如 `publish` 先类型检查、构建，再检查包输出。本地和 `CI` 共享同一份顺序，能减少手写脚本漂移。
+外部命令会分隔分析代次。Limina 在进入下一代次前等待当前工作结束，释放默认输入数据提供组件，并重新创建数据提供与查询缓存，以及产物命名空间。下一代次仍复用已加载的配置对象，命令后不会重新执行配置模块或函数。
+
+::: tip 提示
+将团队共用流程配置为命名流水线，本地脚本和持续集成便可运行相同的步骤与顺序。例如，`publish` 可以先做类型检查和构建，再检查包输出。
 :::
 
 ## 字符串步骤
@@ -52,9 +54,9 @@ Limina 会在每个依赖工作区拓扑的内置步骤前插入共享 preparati
 - `release:check`
 - `source:check`
 
-也可以是简单外部命令。简单命令会按空白拆分；当参数里有空格、需要 `cwd` 或环境变量时，用对象形式更清楚。
+也可以是简单外部命令。简单命令会按空白拆分；当参数里有空格、需要 `cwd` 或环境变量时，应使用对象形式。
 
-`graph:prepare` 只负责物化图文件，不做校验。多数只做验证的流程可以直接使用 `graph:check`，因为图检查会在内存中计算所需结果，不会物化检查器配置。只有后续步骤确实需要磁盘文件时才添加 `graph:prepare`；检查器任务本身会自动获得物化 preparation。
+`graph:prepare` 会验证输入并物化图文件，但不执行图治理检查或编译器。只做验证的流程可使用 `graph:check`，它在内存中计算图，不物化检查器配置。检查器任务会自动获得物化准备步骤。`checker:build` 产出 Limina 内部声明；如果需要生成消费者产物，应在 `package:check` 或 `release:check` 前添加项目自己的构建命令。
 
 ## 对象命令步骤
 
@@ -80,7 +82,7 @@ Limina 会在每个依赖工作区拓扑的内置步骤前插入共享 preparati
 
 - **类型：** `{ type: 'task'; name: BuiltinTaskName }`，其中 `BuiltinTaskName` 是 `'graph:prepare' | 'graph:check' | 'source:check' | 'proof:check' | 'checker:build' | 'checker:typecheck' | 'package:check' | 'release:check'`
 
-如果你希望内置任务也保持显式形式，可以写：
+内置任务也可以写成对象：
 
 ```js
 {
@@ -96,9 +98,9 @@ Limina 会在每个依赖工作区拓扑的内置步骤前插入共享 preparati
 import { createClient } from '../../core/src/index';
 ```
 
-流水线会在 `source:check` 阶段记录失败，后面的构建、包检查和外部测试命令仍会按顺序尝试执行。最终结果会失败，用户可以先修最接近问题源头的检查。
+流水线会在 `source:check` 阶段记录失败，后面的构建、包检查和外部测试命令仍会按顺序尝试执行。最终结果会失败。修正源码导入后，再重新运行流水线。
 
-::: details 完整一点的失败例子
+::: details 跨包导入示例
 目录可以是：
 
 ```text
@@ -117,7 +119,7 @@ import { createClient } from '../../core/src/index';
 
 运行 `pnpm exec limina check publish` 时，Limina 会按流水线数组顺序执行。`graph:check` 会先校验声明边，然后 `source:check` 分析包归属方和相对路径边界。
 
-结果是流程在源码阶段记录失败，`checker:build`、`package:check` 和 `pnpm test` 仍会按顺序继续尝试。用户可以先修最近的源头问题：把跨包相对导入改成 `@acme/core` 包导出，并在清单文件和项目引用中表达这条依赖。
+共享准备步骤成功时，跨包相对导入可能在源码阶段产生失败，后续内置步骤与 `pnpm test` 仍按顺序尝试。应改用已授权的 `@acme/core` 包导出，并在导入方源码所属包的清单中声明依赖；Limina 再根据检查器证据推导符合条件的项目关系，不要求在源码叶子配置中手写 `references`。
 
-如果后续 `pnpm test` 这样的外部命令步骤失败，排在它后面的步骤会被阻塞并记为 `skipped`。这个阻塞行为只来自外部命令步骤，不来自内置检查任务。
+如果后续 `pnpm test` 这样的外部命令失败，剩余步骤记为 `skipped`（已跳过）；必要准备步骤失败则可能把依赖任务记为 `blocked`（被阻塞）。
 :::

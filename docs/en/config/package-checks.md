@@ -30,7 +30,7 @@ export default defineConfig({
 ```
 
 ::: tip
-Package checks validate the resolver and runtime behavior of the directory consumers install. Tarball and publish hygiene are handled separately by [Release Checks](./release-checks.md).
+Package checks analyze metadata and types in the packed artifact, and scan import boundaries in the configured output directory. Results cover the analyzers that ran and the files scanned; they do not prove every runtime or consumer environment. [Release Checks](./release-checks.md) inspect required files and release content separately.
 :::
 
 ## entries
@@ -39,24 +39,24 @@ Package checks validate the resolver and runtime behavior of the directory consu
 
 `entries` lists the built package outputs to check. Each entry is an independent output artifact: several entries may share a name, one source package may produce several entries, and an entry name does not have to equal a source package name. Limina does not infer or validate a source-to-output binding from this configuration.
 
-`--package <name>` selects every configured entry with that name. Without `--package`, running from inside an activated package selects entries through the validated activated-package index; lexical paths outside `config.rootDir` remain selectable. A nearby unactivated `package.json` does not become a package selector.
+`--package <name>` selects every configured entry with that name. Without it, the validated activated-package index resolves cwd, including lexical paths outside `config.rootDir`. A named activated cwd owner selects all entries of that name when a match exists; otherwise `package check` falls back to all configured entries. An unnamed owner or a cwd outside an activated package also selects all entries. A nearby unactivated `package.json` is not a selector. `release check` requires a matching named cwd owner instead of falling back.
 
 ## name
 
 - **Type:** `string`
 
-`name` is the selector name for this output artifact. The `CLI` uses it for `--package <name>`; duplicate names deliberately select multiple artifacts.
+`name` is the selector name for this output artifact. The `CLI` uses it for `--package <name>`; duplicate names select multiple artifacts.
 
 ## outDir
 
 - **Type:** `string`
 
-`outDir` is relative to `config.rootDir` and points at the built package directory consumers actually install, usually `packages/*/dist`. It may contain `../` and target the output of an external activated package. That directory should contain the publish-ready `package.json`, `JavaScript`, and declarations. `README.md`, `LICENSE.md`, and `tarball` hygiene are checked by `limina release check`.
+`outDir` is relative to `config.rootDir` and points at the built package directory consumers actually install, usually `packages/*/dist`. It may contain `../` and target the output of an external activated package. That directory should contain the publish-ready `package.json`, `JavaScript`, and declarations. `limina release check` inspects `README.md`, `LICENSE.md`, and the tarball's release content.
 
 The output is unconditional during workspace discovery. It must be a dedicated strict descendant output directory: it cannot equal or contain `config.rootDir` or an activated package root, and it cannot overlap Limina's `.limina` namespace in either direction. Invalid output ownership fails `workspace:validate` before package selection or artifact work begins.
 
 ::: info
-Each `outDir/package.json` must exist and look like a complete `npm` package manifest. Limina rejects `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`, because built output should already contain the publish-ready manifest that consumers and `npm` receive.
+Each `outDir/package.json` must exist and parse as an object with a non-empty name. Built-in manifest checks reject local `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`. Optional analyzers perform additional metadata and resolution checks; the built-in checks alone do not validate a complete npm manifest.
 :::
 
 Limina also rejects an `exports` root that mixes subpath keys (such as `"."` or `"./foo"`) with condition keys (such as `"import"`). These declaration checks run independently of the selected optional tools. They do not resolve or enumerate all export targets.
@@ -74,7 +74,7 @@ Missing export targets in the packed artifact are delegated to publint. If publi
 - `attw`: type resolution through Are The Types Wrong;
 - `boundary`: emitted `JavaScript` imports, runtime boundaries, and dependency boundaries.
 
-`checks` selects the base tool set. `publint` and `attw` can also be `true`, `false`, or an object to override that tool: `false` disables it, while `true` or an object enables it with default or custom settings.
+`checks` sets the base tool set. `publint` and `attw` may also be `true`, `false`, or an object: `false` disables that tool; `true` or an object enables it with default or custom configuration. CLI `--tool` filters the resulting enabled set and cannot re-enable a disabled tool. Entries with no enabled checks after filtering are not run; if none remain, `package check` fails.
 
 ::: warning
 `publint` and `@arethetypeswrong/core` are optional `peer dependency` packages of Limina. If an enabled analyzer is not installed, Limina marks that analyzer as `skipped` and continues the other package checks. A skipped optional analyzer alone does not make `package check` exit non-zero, including when it was selected with `--tool`. Install and verify both packages explicitly in CI when their coverage is required.
@@ -100,7 +100,7 @@ Only an absent analyzer package is skipped. If the package is installed but its 
 
 - **Type:** `'suggestion' | 'warning' | 'error'`
 
-`publint.level` controls the minimum message level reported by publint.
+`publint.level` controls the minimum message level requested from publint. Any returned messages at that level make this check fail, including warnings or suggestions; this is a reporting threshold, not a warning-only exit policy.
 
 ## attw
 
@@ -121,7 +121,7 @@ Only an absent analyzer package is skipped. If the package is installed but its 
 - **Type:** `'warn' | 'error'`
 - **Default:** `'error'`
 
-`attw.level: 'warn'` logs remaining ATTW problems without failing the package check. The default `'error'` keeps the existing fail-on-problem behavior.
+`attw.level: 'warn'` reports remaining filtered ATTW problems as warnings without failing the check. The default `'error'` fails on those problems. This setting does not suppress the hard failure when ATTW finds no package types, or failures to load or execute the analyzer.
 
 ### attw.ignoreRules
 
@@ -133,13 +133,15 @@ Only an absent analyzer package is skipped. If the package is installed but its 
 
 - **Type:** `'browser' | 'node' | (string & {}) | ((relativeFilePath: string) => 'browser' | 'node' | (string & {}))`
 
-`boundary.environment` can be a string or a function receiving the emitted relative file path. Use `'browser'` when the whole package is browser output; return different environments by file path when one output contains both node and browser files.
+`boundary.environment` may be a string or a function of the output-relative file path. Without it, files below `node/` or `plugin/` use `'node'`; all others use `'browser'`. Only the exact `'node'` result permits Node built-ins; a custom environment string does not.
+
+The boundary scan reads `.js`, `.mjs`, and `.cjs` throughout `outDir`, including files not selected for packing. It checks concrete module specifiers returned by `es-module-lexer`; CommonJS `require`, computed dynamic imports, and `import.meta` do not establish covered imports. It does not validate the existence of every relative output import.
 
 ## boundary.ignoredExternalPackages
 
 - **Type:** `string[]`
 
-`boundary.ignoredExternalPackages` declares the few external imports that are intentionally allowed even if they are not listed in the built package manifest.
+`boundary.ignoredExternalPackages` allows listed external package imports without a declaration in the built package manifest.
 
 For example, source typechecking can pass while the built output still contains problems:
 
@@ -159,7 +161,7 @@ import { readFileSync } from 'node:fs';
 
 `limina package check --package @acme/core` checks `types`, exports, and runtime imports at the output layer. If the entry uses `boundary.environment: 'browser'`, the remaining `node:fs` import is reported as a browser package boundary problem.
 
-::: details A fuller example
+::: details Built output example
 The directory can look like this:
 
 ```text
@@ -169,7 +171,7 @@ packages/core/
   dist/index.js
 ```
 
-Source `src/index.ts` may already pass checker build/source execution, but consumers install `dist`. When `pnpm exec limina package check --package @acme/core` runs, Limina finds the entry whose `name` matches the CLI filter, then runs the configured `publint`, `attw`, and `boundary` checks inside `packages/core/dist`.
+The source `src/index.ts` may pass type builds and source checks while consumers still receive a faulty `dist` artifact. When `pnpm exec limina package check --package @acme/core` runs, Limina finds the entry whose `name` matches the CLI filter, then runs the configured `publint`, `attw`, and `boundary` checks inside `packages/core/dist`.
 
-The result can include several output-layer failures: `attw` finds `types` pointing to `missing.d.ts`; `boundary` finds `node:fs` in a browser entry. Package checks validate resolver and runtime behavior for the package consumers receive, not only development-time source.
+The configured packed analyzers can report missing or incompatible type metadata; their installed versions and selected entrypoints determine the diagnostics. Independently, `boundary` reports the concrete `node:fs` import when this output file uses the browser environment. The findings describe static checks of the artifact and output directory. They do not come from running the package.
 :::

@@ -1,7 +1,7 @@
 # Condition Domains
 
-`graph.conditionDomains` tells Limina which condition set a real source entry
-should use when resolving imports. Limina finds the declaration build graph for
+`graph.conditionDomains` declares the expected import resolution conditions
+for a source entry. Limina finds the declaration build graph for
 that entry, expands its references, and checks that every reachable project uses
 the configured `compilerOptions.customConditions`.
 
@@ -13,12 +13,12 @@ export default defineConfig({
     conditionDomains: [
       {
         name: 'web',
-        entry: 'apps/web/tsconfig.json',
+        entry: 'apps/web/tsconfig.client.json',
         customConditions: ['browser', 'source'],
       },
       {
         name: 'node',
-        entry: 'apps/node/tsconfig.json',
+        entry: 'apps/node/tsconfig.server.json',
         customConditions: ['node', 'source'],
       },
     ],
@@ -34,26 +34,27 @@ Conditions such as `browser`, `node`, and `source` usually mean "resolve this
 code for a different environment or build mode." Other resolvers may instead
 use one global condition set, which is a different model.
 
-A declaration reference tree is only the project graph used by `tsc -b`. It does
-not say whether an entry should resolve as browser code, `Node` code, or source
-code. If one declaration tree mixes different `customConditions`, the same
-package export can resolve to different files in different projects:
-typechecking sees one file, while runtime resolution or graph import analysis
-sees another. That can quietly split emitted declarations, dependency edges, and
-workspace export classification.
+A declaration reference tree describes the project relationships used by
+`tsc -b`; resolution conditions come from each project's configuration. If the
+tree mixes different `customConditions`, the same package export can resolve to
+different files across projects. Typechecking, runtime resolution, and graph
+import analysis may then use different files, affecting emitted declarations,
+dependency edges, and workspace export classification.
 
-`graph.conditionDomains` makes that choice explicit: this entry belongs to this
-condition domain and should use this condition set. It does not replace
-`tsconfig`; `compilerOptions.customConditions` is still the real resolver input.
-Limina only compares the expected condition set with the actual project graph.
+`graph.conditionDomains` records the condition set expected for an entry.
+Limina compares that expectation with the project graph; the resolver continues
+to read `compilerOptions.customConditions` from `tsconfig`.
 
 ## conditionDomains
 
 - **Type:** `Array<{ name: string; entry: string; customConditions: string[] }>`
 
-`entry` should point to an ordinary source `tsconfig` selected by an active
-checker. Build aggregators such as `tsconfig.build.json` are not valid entries
-because a condition domain describes one concrete declaration reference tree.
+`entry` should point to an ordinary source leaf that maps to a generated declaration
+project reachable from an active checker entry. For this example, each selected
+`apps/*/tsconfig.json` solution references its named client or server leaf. A
+source-owning default `tsconfig.json` is also valid. Solutions, build aggregators
+such as `tsconfig.build.json`, and Astro/Svelte typecheck leaves do not have the
+required declaration-project mapping.
 
 Limina also runs a default check without explicit domains: for every checked
 declaration project, that project and all declaration projects reachable through
@@ -93,20 +94,19 @@ domain:
 - Limina expands the entry's declaration reference subtree and reuses the
   default consistency check.
 - The entry project's effective `compilerOptions.customConditions` must equal
-  the domain's `customConditions`.
+  the domain's `customConditions` after sorting and removing duplicates. Order
+  and repeated strings do not create separate condition sets.
 
-In other words, a condition domain only describes and checks "which conditions
-should this tree resolve with?" It does not create references, edit `tsconfig`, or
-discover projects outside the checker graph.
+A condition domain checks the expected resolution conditions. It does not
+create references, edit `tsconfig`, or discover projects outside the checker graph.
 
 ## What You Get
 
-Explicit condition domains turn "does this entry resolve as web, node, or
-source?" into a rule Limina can check. If it is wrong, graph check fails early
-instead of letting a package `exports` map choose the wrong branch and later show
-up as a missing edge, a false positive, or an incorrect artifact classification.
+Graph check reports a mismatch when an entry's effective conditions differ
+from its configured condition domain. This helps locate condition differences
+that may affect `exports` resolution, dependency edges, or artifact classification.
 
-They also let multi-entry workspaces govern multiple resolution domains in
-parallel. For example, a browser entry can use `['browser', 'source']` while a
+A workspace with multiple entries can declare a separate condition domain
+for each entry. For example, a browser entry can use `['browser', 'source']` while a
 `Node` entry uses `['node', 'source']`. Each entry's declaration reference tree
 stays internally consistent inside the condition domain Limina checks.

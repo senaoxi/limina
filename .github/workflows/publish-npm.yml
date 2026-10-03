@@ -34,14 +34,37 @@ jobs:
       - name: Build and run read-only quality gates
         uses: ./.github/actions/build-and-check
       - run: pnpm run test && pnpm run test:smoke && pnpm run typecheck && pnpm run check && pnpm run lint:packages
-      - run: pnpm run security:audit
-      - run: pnpm run artifacts:report
+      - name: Audit dependencies before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .reports/security
+          pnpm audit --audit-level high | tee .reports/security/audit.txt
       - name: Publish the approved same-version group with provenance
         run: pnpm exec tsx scripts/release/publish-approved.ts
-      - name: Publish matching GitHub assets after both npm packages are available
+      - name: Create GitHub release after both npm packages are available
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: pnpm exec tsx scripts/release/github-release.ts
+        run: |
+          set -euo pipefail
+          mkdir -p .reports/release
+          endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG//\//%2F}"
+          if gh api "$endpoint" > .reports/release/release.json 2> .reports/release/lookup.log; then
+            jq -e '.tag_name == env.RELEASE_TAG and .draft == false' .reports/release/release.json > /dev/null
+          else
+            if [[ "$(cat .reports/release/lookup.log)" != *"(HTTP 404)"* ]]; then
+              echo "GitHub release lookup failed." >&2
+              exit 1
+            fi
+            release_commit="$(git rev-parse HEAD)"
+            body="See the [shared changelog for Limina and limina-migrate](https://github.com/${GITHUB_REPOSITORY}/blob/${release_commit}/packages/limina/CHANGELOG.md)."
+            args=("${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --verify-tag --title "${RELEASE_TAG}" --notes "$body")
+            if [[ "${RELEASE_TAG#limina/v}" == *-* ]]; then
+              args+=(--prerelease)
+            fi
+            gh release create "${args[@]}"
+          fi
       - name: Retain release evidence even if an external step fails
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

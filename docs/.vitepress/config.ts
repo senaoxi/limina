@@ -14,7 +14,7 @@ export default defineConfig({
     : undefined,
   title: 'Limina',
   description:
-    'Project-reference graph compiler and architecture governance CLI for TypeScript monorepos',
+    'TypeScript project graph and architecture governance for single-package projects and workspaces',
   cleanUrls: true,
   lastUpdated: true,
   head: [

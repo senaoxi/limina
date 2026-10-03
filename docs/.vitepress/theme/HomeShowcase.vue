@@ -26,10 +26,12 @@ const groups = computed(() => {
       id: 'build',
       number: '01',
       eyebrow: zh ? '增量构建' : 'INCREMENTAL BUILDS',
-      title: zh ? '从现有工程开始' : 'Start with the project you have',
+      title: zh
+        ? '从现有配置生成构建图'
+        : 'Generate a graph from existing configs',
       intro: zh
-        ? '读取现有 TypeScript 配置与源码依赖，把项目关系转化为可复用的类型构建图。'
-        : 'Turn existing TypeScript configuration and source dependencies into a reusable type build graph.',
+        ? '读取 TypeScript 配置与源码依赖，生成类型构建所需的项目图。'
+        : 'Read TypeScript configs and source dependencies to generate a graph for type builds.',
       scenarios: [
         {
           label: zh ? '生成项目图' : 'Prepare graph',
@@ -49,19 +51,19 @@ const groups = computed(() => {
           demoIndex: 0,
           title: zh ? '接入增量构建' : 'Adopt incremental type builds',
           body: zh
-            ? '根据源码关系生成声明构建配置与项目引用，由底层检查器安排构建顺序。生成的配置可以重复使用，无需大改工程结构。'
-            : 'Generate declaration build configuration and project references from source relationships. The underlying checker follows the build order, and the generated configuration can be reused without reshaping the repository.',
+            ? '为受管理的 TypeScript 与 Vue 项目准备声明构建配置，再由选定的检查器执行增量构建。源码配置与跨项目引用须满足 Limina 的图约束。'
+            : 'Prepare declaration build configurations for managed TypeScript and Vue projects, then let the selected checker build them incrementally. Source configs and cross-project references must satisfy Limina’s graph requirements.',
           path: 'getting-started',
           link: zh ? '开始接入' : 'Get started',
         },
         {
           demoIndex: 1,
-          title: zh ? '沿用熟悉的检查器' : 'Keep your existing checkers',
+          title: zh ? '选择类型检查器' : 'Choose a type checker',
           body: zh
-            ? '支持 TypeScript、Vue 等检查方式。先接入类型构建，再按仓库需要逐步启用治理规则。'
-            : 'Supports TypeScript and Vue checker workflows. Adopt type builds first, then enable governance rules as your repository needs them.',
+            ? '使用兼容工具链进行 TypeScript、Vue、Astro 和 Svelte 检查。声明构建由 tsc、tsgo 或 vue-tsc 执行；Astro 与 Svelte 按叶子配置执行类型检查。'
+            : 'Check TypeScript, Vue, Astro, and Svelte with compatible toolchains. Declaration builds use tsc, tsgo, or vue-tsc; Astro and Svelte run typechecks for leaf configs.',
           path: 'config/checkers',
-          link: zh ? '了解检查器配置' : 'Explore checker configuration',
+          link: zh ? '配置检查器' : 'Configure checkers',
         },
       ],
     },
@@ -70,11 +72,11 @@ const groups = computed(() => {
       number: '02',
       eyebrow: zh ? '架构与覆盖' : 'ARCHITECTURE & COVERAGE',
       title: zh
-        ? '让关系、边界与覆盖可见'
-        : 'Make relationships and boundaries visible',
+        ? '检查依赖、边界与覆盖'
+        : 'Check dependencies, boundaries, and coverage',
       intro: zh
-        ? '把代码关系保持在清晰、可检查的状态，让诊断指向具体规则和源码位置。'
-        : 'Keep code relationships explicit and checkable, with diagnostics tied to a rule and a source location.',
+        ? '检查治理范围内的代码关系。诊断包含规则和能够取得的项目、包或源码证据。'
+        : 'Check code relationships within the governance scope. Diagnostics include the rule and available project, package, or source evidence.',
       scenarios: [
         {
           label: zh ? '依赖关系' : 'Graph',
@@ -94,8 +96,8 @@ const groups = computed(() => {
           demoIndex: 0,
           title: zh ? '治理依赖关系' : 'Govern the dependency graph',
           body: zh
-            ? '检查项目引用、访问边界与依赖声明，发现缺失、冗余或不合理的连接。随着仓库增长，代码关系仍然清晰、可维护。'
-            : 'Check project references, access boundaries, and dependency declarations for missing, redundant, or invalid relationships. Keep the graph reviewable as the repository grows.',
+            ? '检查项目引用、访问边界与依赖声明，报告缺失、冗余或不符合规则的连接。'
+            : 'Check project references, access boundaries, and dependency declarations for missing, redundant, or invalid relationships.',
           path: 'config/graph-rules',
           link: zh ? '配置图规则' : 'Configure graph rules',
         },
@@ -103,8 +105,8 @@ const groups = computed(() => {
           demoIndex: 1,
           title: zh ? '保护源码边界' : 'Protect source boundaries',
           body: zh
-            ? '发现跨包相对导入、未授权导入、漏写依赖与源码归属问题，让内部实现与预期的公共入口保持分离。'
-            : 'Detect cross-package relative imports, unauthorized imports, missing dependency declarations, and file ownership issues. Keep package internals separated from intended public entry points.',
+            ? '在配置的治理范围内，检查跨包相对导入、包导入授权、依赖声明和源码归属。'
+            : 'Check cross-package relative imports, package import authorization, dependency declarations, and source ownership within the configured scope.',
           path: 'config/source-boundary',
           link: zh ? '配置源码边界' : 'Configure source boundaries',
         },
@@ -112,8 +114,8 @@ const groups = computed(() => {
           demoIndex: 2,
           title: zh ? '确认检查覆盖' : 'Verify check coverage',
           body: zh
-            ? '找出未被检查覆盖、重复覆盖或与源码范围不一致的文件，明确哪些代码已有检查、哪些位置仍存在盲区。'
-            : 'Find files that are omitted, covered more than once, or covered by the wrong scope. See which code is already guarded and where blind spots remain.',
+            ? '将配置的源码范围与项目图、检查器目标和注明理由的允许清单进行对照，检查遗漏、重复覆盖与范围偏差。覆盖证明说明计划中的检查覆盖范围，不代表每个检查器进程都已执行。'
+            : 'Compare the configured source scope with graph and checker targets plus reasoned allowlist entries to find omissions, duplicate coverage, and scope mismatches. Coverage proof describes planned coverage; it does not certify that every checker process has run.',
           path: 'config/checkers',
           link: zh ? '配置检查入口' : 'Configure checker entries',
         },
@@ -123,12 +125,10 @@ const groups = computed(() => {
       id: 'pipeline',
       number: '03',
       eyebrow: zh ? '流水线与发布' : 'PIPELINES & RELEASES',
-      title: zh
-        ? '把检查编排进日常流程'
-        : 'Give your checks a place in the workflow',
+      title: zh ? '按需要组合检查任务' : 'Combine the checks you need',
       intro: zh
-        ? '独立运行所需检查，也可以把构建和产物检查组合成团队共用的命名流程。'
-        : 'Run the checks you need independently, or compose builds and artifact checks into a named workflow for your team.',
+        ? '检查可以独立运行，也可以将构建和产物检查组合成命名流水线。'
+        : 'Run checks independently or combine builds and artifact checks in a named pipeline.',
       scenarios: [
         {
           label: zh ? '默认检查' : 'Default check',
@@ -144,7 +144,7 @@ const groups = computed(() => {
           demoIndex: 0,
           title: zh ? '编排检查流程' : 'Compose check pipelines',
           body: zh
-            ? '构建、依赖关系、源码边界与覆盖证明都可以独立使用。默认检查在资源允许时并发执行；命名流水线按配置顺序运行，适用于本地开发、CI 与发布前场景。'
+            ? '构建、依赖关系、源码边界与覆盖证明都可以独立使用。默认检查在资源允许时并发执行；命名流水线按配置顺序运行，适用于本地开发、持续集成与发布前检查。'
             : 'Builds, graph checks, source-boundary checks, and coverage checks can run independently. Default checks may run concurrently when resources allow; named pipelines follow the configured order for local development, CI, and release gates.',
           path: 'config/pipelines',
           link: zh ? '配置检查流水线' : 'Configure pipelines',
@@ -153,8 +153,8 @@ const groups = computed(() => {
           demoIndex: 1,
           title: zh ? '补充发布检查' : 'Add release checks',
           body: zh
-            ? '先运行项目自身的构建，再验证包信息、类型入口、构建产物与打包内容。这些检查为正式发布或预发布增加一道防线，不代替构建与发布工具。'
-            : 'Run the project’s own build first, then validate package metadata, type entry points, build output, and packed contents. Add a guardrail for release and prerelease workflows while keeping your build and publishing tools.',
+            ? '发布或预发布前，先运行项目自身的构建，再检查包信息、类型入口、构建产物和打包内容。Limina 负责检查，构建与发布仍由项目的工具执行。'
+            : 'Before a release or prerelease, run the project’s build, then check package metadata, type entry points, build output, and packed contents. Limina performs these checks; the project’s tools handle building and publishing.',
           path: 'config/release-checks',
           link: zh ? '配置发布检查' : 'Configure release checks',
         },
@@ -236,7 +236,7 @@ function link(path: string) {
     <!-- Native anchors respect the sticky console’s scroll margin. -->
     <nav
       class="showcase-nav vp-raw"
-      :aria-label="chinese ? '首页能力演示' : 'Capability demos'"
+      :aria-label="chinese ? '首页功能演示' : 'Feature demos'"
     >
       <span>{{ chinese ? '查看 Limina 如何工作' : 'See Limina at work' }}</span>
       <a
@@ -311,12 +311,12 @@ function link(path: string) {
       <p>
         {{
           chinese
-            ? '先接入增量构建，再逐步打开架构治理。'
-            : 'Start with incremental builds. Enable governance as you go.'
+            ? '可以先接入增量构建，再按需启用治理检查。'
+            : 'Start with incremental builds, then enable governance checks as needed.'
         }}
       </p>
       <a :href="link('built-in-tasks')"
-        >{{ chinese ? '查看全部内置任务' : 'Explore all built-in tasks'
+        >{{ chinese ? '查看全部内置任务' : 'View all built-in tasks'
         }}<span aria-hidden="true">→</span></a
       >
     </div>

@@ -6,7 +6,6 @@ export default defineConfig({
       tsgo: {
         include: [
           'packages/eslint-config/tsconfig.json',
-          'packages/deploy-tools/tsconfig.json',
           'smoke/tsconfig.json',
         ],
       },
