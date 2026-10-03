@@ -370,19 +370,21 @@ async function createPublicationFixture() {
         import.meta.resolve('tsx'),
         '--input-type=module',
         '--eval',
-        isFastVisibilityTimeout
-          ? `
+        // Keep real npm/HTTP behavior, but advance the publication clock without
+        // sleeping. Four five-second polls otherwise exhaust Windows' process
+        // budget after packing and starting npm. The timeout control still
+        // advances beyond the production deadline and must refuse promotion.
+        `
             import { mock } from 'node:test';
             import { performance } from 'node:perf_hooks';
             let elapsed = 0;
             mock.method(performance, 'now', () => elapsed);
-            mock.method(Atomics, 'wait', () => {
-              elapsed += 3_600_000;
+            mock.method(Atomics, 'wait', (_buffer, _index, _value, milliseconds) => {
+              elapsed += ${isFastVisibilityTimeout ? 3_600_000 : 'milliseconds ?? 0'};
               return 'timed-out';
             });
             ${source}
-          `
-          : source,
+          `,
       ],
       {
         timeout: 45_000,
