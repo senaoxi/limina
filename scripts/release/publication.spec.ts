@@ -1,10 +1,13 @@
 import { collectBundledDependencies } from '@limina/build-tools/license-policy';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import {
   copyFile,
   mkdir,
   mkdtemp,
+  readFile,
+  readdir,
   realpath,
   rename,
   rm,
@@ -263,113 +266,287 @@ interface RegistryDocument {
   'dist-tags': Record<string, string>;
 }
 
+async function createPublicationFixture() {
+  const version = discoverReleasePackages()[0]!.manifest.version!;
+  const documents = new Map<string, RegistryDocument>();
+  const uploads: string[] = [];
+  let promotions = 0;
+  const controls = {
+    isFailMigration: false,
+    isCorruptIntegrity: false,
+    isFailPromotion: false,
+    isDropPromotion: false,
+    isLoseUploadResponse: false,
+  };
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const url = new URL(request.url!, 'http://localhost');
+    const parts = url.pathname.split('/');
+    const isTagRequest = parts[1] === '-';
+    const name = isTagRequest ? parts[3]! : parts[1]!;
+    const reply = (status: number, value: unknown) => {
+      response.writeHead(status, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(value));
+    };
+    if (request.method === 'PUT') {
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+      if (isTagRequest) {
+        promotions++;
+        if (name === 'limina-migrate' && controls.isFailPromotion) {
+          reply(503, { error: 'controlled second promotion failure' });
+          return;
+        }
+        if (!(name === 'limina-migrate' && controls.isDropPromotion))
+          documents.get(name)!['dist-tags'][parts[5]!] = body as string;
+      } else {
+        uploads.push(name);
+        if (name === 'limina-migrate' && controls.isFailMigration) {
+          reply(503, { error: 'controlled second upload failure' });
+          return;
+        }
+        if (documents.has(name)) {
+          reply(409, { error: 'immutable version already exists' });
+          return;
+        }
+        documents.set(name, body as RegistryDocument);
+        if (name === 'limina-migrate' && controls.isLoseUploadResponse) {
+          reply(503, {
+            error: 'controlled response failure after accepted upload',
+          });
+          return;
+        }
+      }
+      reply(201, { ok: true });
+      return;
+    }
+    const document = documents.get(name);
+    if (!document) {
+      reply(404, { error: 'not_found' });
+      return;
+    }
+    const copy = structuredClone(document);
+    if (name === 'limina' && controls.isCorruptIntegrity)
+      copy.versions[version]!.dist.integrity = 'sha512-invalid';
+    reply(200, isTagRequest ? copy['dist-tags'] : copy);
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const directory = await mkdtemp(path.join(tmpdir(), 'limina-publication-'));
+  const registry = `http://127.0.0.1:${address.port}`;
+  const userconfig = path.join(directory, 'npmrc');
+  await writeFile(
+    userconfig,
+    `//127.0.0.1:${address.port}/:_authToken=fixture-token\n`,
+  );
+  const source = `
+    import { publishReleaseGroup } from ${JSON.stringify(new URL('publication.ts', import.meta.url).href)};
+    import { discoverReleasePackages } from ${JSON.stringify(new URL('shared.ts', import.meta.url).href)};
+    const plans = discoverReleasePackages().map(config => ({ config, currentVersion: config.manifest.version, newVersion: config.manifest.version, gitTag: 'limina/v' + config.manifest.version, npmTag: 'beta' }));
+    publishReleaseGroup(plans, { registry: ${JSON.stringify(registry)}, provenance: false, evidenceDirectory: ${JSON.stringify(path.join(directory, 'evidence'))} });
+  `;
+  const run = () =>
+    promisify(execFile)(
+      process.execPath,
+      [
+        '--import',
+        import.meta.resolve('tsx'),
+        '--input-type=module',
+        '--eval',
+        source,
+      ],
+      {
+        timeout: 45_000,
+        env: {
+          ...process.env,
+          npm_config_userconfig: userconfig,
+          npm_config_cache: path.join(directory, 'cache'),
+          npm_config_fetch_retries: '0',
+        },
+      },
+    );
+  const readEvidence = async () => {
+    const evidenceDirectories = await readdir(path.join(directory, 'evidence'));
+    return Promise.all(
+      evidenceDirectories.map(async (name) => {
+        const attempt = path.join(directory, 'evidence', name);
+        const state = JSON.parse(
+          await readFile(path.join(attempt, 'publication.json'), 'utf8'),
+        );
+        for (const member of state.packages) {
+          assert.match(member.integrity, /^sha512-/u);
+          const bytes = await readFile(path.join(attempt, member.filename));
+          const integrity = createHash('sha512').update(bytes).digest('base64');
+          assert.equal(member.integrity, `sha512-${integrity}`);
+        }
+        return state;
+      }),
+    );
+  };
+  return {
+    version,
+    documents,
+    uploads,
+    controls,
+    get promotions() {
+      return promotions;
+    },
+    run,
+    readEvidence,
+    async close() {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+// Each fault owns a fresh registry and the existing 60-second case budget.
+// One serial case exceeded that budget on Windows after recovery coverage grew.
 it(
   'holds the channel after a partial upload and retries only matching immutable artifacts',
   { timeout: 60_000 },
   async () => {
-    const version = discoverReleasePackages()[0]!.manifest.version!;
-    const documents = new Map<string, RegistryDocument>();
-    const uploads: string[] = [];
-    let promotions = 0;
-    let isFailMigration = true;
-    let isCorruptIntegrity = false;
-    const server = createServer(async (request, response) => {
-      const chunks = [];
-      for await (const chunk of request) chunks.push(Buffer.from(chunk));
-      const url = new URL(request.url!, 'http://localhost');
-      const parts = url.pathname.split('/');
-      const isTagRequest = parts[1] === '-';
-      const name = isTagRequest ? parts[3]! : parts[1]!;
-      const reply = (status: number, value: unknown) => {
-        response.writeHead(status, { 'content-type': 'application/json' });
-        response.end(JSON.stringify(value));
-      };
-      if (request.method === 'PUT') {
-        const body = JSON.parse(Buffer.concat(chunks).toString());
-        if (isTagRequest) {
-          promotions++;
-          documents.get(name)!['dist-tags'][parts[5]!] = body as string;
-        } else {
-          uploads.push(name);
-          if (isFailMigration && name === 'limina-migrate') {
-            reply(503, { error: 'controlled second upload failure' });
-            return;
-          }
-          if (documents.has(name)) {
-            reply(409, { error: 'immutable version already exists' });
-            return;
-          }
-          documents.set(name, body as RegistryDocument);
-        }
-        reply(201, { ok: true });
-        return;
-      }
-      const document = documents.get(name);
-      if (!document) {
-        reply(404, { error: 'not_found' });
-        return;
-      }
-      const copy = structuredClone(document);
-      if (isCorruptIntegrity && name === 'limina')
-        copy.versions[version]!.dist.integrity = 'sha512-invalid';
-      reply(200, isTagRequest ? copy['dist-tags'] : copy);
-    });
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    const address = server.address();
-    assert.ok(address && typeof address !== 'string');
-    const directory = await mkdtemp(path.join(tmpdir(), 'limina-publication-'));
-    const registry = `http://127.0.0.1:${address.port}`;
-    const userconfig = path.join(directory, 'npmrc');
-    await writeFile(
-      userconfig,
-      `//127.0.0.1:${address.port}/:_authToken=fixture-token\n`,
-    );
-    const source = `
-    import { publishReleaseGroup } from ${JSON.stringify(new URL('publication.ts', import.meta.url).href)};
-    import { discoverReleasePackages } from ${JSON.stringify(new URL('shared.ts', import.meta.url).href)};
-    const plans = discoverReleasePackages().map(config => ({ config, currentVersion: config.manifest.version, newVersion: config.manifest.version, gitTag: 'limina/v' + config.manifest.version }));
-    publishReleaseGroup(plans, { registry: ${JSON.stringify(registry)}, provenance: false });
-  `;
-    const run = () =>
-      promisify(execFile)(
-        process.execPath,
-        [
-          '--import',
-          import.meta.resolve('tsx'),
-          '--input-type=module',
-          '--eval',
-          source,
-        ],
-        {
-          timeout: 45_000,
-          env: {
-            ...process.env,
-            npm_config_userconfig: userconfig,
-            npm_config_cache: path.join(directory, 'cache'),
-            npm_config_fetch_retries: '0',
-          },
-        },
-      );
+    const fixture = await createPublicationFixture();
     try {
-      await assert.rejects(run(), /controlled second upload failure/);
-      assert.deepEqual(documents.keys().toArray(), ['limina']);
-      assert.equal(promotions, 0);
-      assert.equal(documents.get('limina')!['dist-tags'].latest, undefined);
-      isFailMigration = false;
-      await run();
-      assert.deepEqual(uploads, ['limina', 'limina-migrate', 'limina-migrate']);
-      assert.equal(promotions, 2);
-      for (const document of documents.values())
-        assert.equal(document['dist-tags'].latest, version);
-      isCorruptIntegrity = true;
-      await assert.rejects(run(), /Published artifact differs/);
-      assert.equal(uploads.length, 3);
-      assert.equal(promotions, 2);
+      fixture.controls.isFailMigration = true;
+      await assert.rejects(fixture.run(), /controlled second upload failure/);
+      assert.deepEqual(fixture.documents.keys().toArray(), ['limina']);
+      assert.equal(fixture.promotions, 0);
+      assert.equal(
+        fixture.documents.get('limina')!['dist-tags'].beta,
+        undefined,
+      );
+      assert.equal(
+        fixture.documents.get('limina')!['dist-tags'].latest,
+        undefined,
+      );
+      fixture.controls.isFailMigration = false;
+      await fixture.run();
+      assert.deepEqual(fixture.uploads, [
+        'limina',
+        'limina-migrate',
+        'limina-migrate',
+      ]);
+      assert.equal(fixture.promotions, 2);
+      for (const document of fixture.documents.values())
+        assert.equal(document['dist-tags'].beta, fixture.version);
+      const evidence = await fixture.readEvidence();
+      assert.deepEqual(
+        evidence
+          .map((state) => state.status)
+          .sort((left, right) => left.localeCompare(right)),
+        ['complete', 'failed'],
+      );
+      const failed = evidence.find((state) => state.status === 'failed');
+      assert.equal(
+        failed.packages[0].registryIntegrity.startsWith('sha512-'),
+        true,
+      );
+      assert.equal(failed.packages[1].registryIntegrity, null);
+      fixture.controls.isCorruptIntegrity = true;
+      await assert.rejects(fixture.run(), /Published artifact differs/);
+      assert.equal(fixture.uploads.length, 3);
+      assert.equal(fixture.promotions, 2);
     } finally {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await rm(directory, { recursive: true, force: true });
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'repairs a split beta channel without reuploading versions or changing latest',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      await fixture.run();
+      for (const document of fixture.documents.values()) {
+        document['dist-tags'].latest = '0.3.0';
+        delete document['dist-tags'].beta;
+      }
+      fixture.controls.isFailPromotion = true;
+      await assert.rejects(
+        fixture.run(),
+        /controlled second promotion failure/,
+      );
+      assert.equal(
+        fixture.documents.get('limina')!['dist-tags'].beta,
+        fixture.version,
+      );
+      assert.equal(
+        fixture.documents.get('limina-migrate')!['dist-tags'].beta,
+        undefined,
+      );
+      const evidence = await fixture.readEvidence();
+      const failed = evidence.find((state) => state.status === 'failed');
+      assert.equal(failed.phase, 'promote');
+      assert.equal(failed.packages[0].tagsAfter.beta, fixture.version);
+      assert.equal(failed.packages[1].tagsAfter.beta, undefined);
+      fixture.controls.isFailPromotion = false;
+      await fixture.run();
+      assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
+      for (const document of fixture.documents.values()) {
+        assert.equal(document['dist-tags'].beta, fixture.version);
+        assert.equal(document['dist-tags'].latest, '0.3.0');
+      }
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'rejects an acknowledged promotion until the actual channel is verified',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      fixture.controls.isDropPromotion = true;
+      await assert.rejects(fixture.run(), /Channel verification failed/u);
+      assert.equal(fixture.documents.size, 2);
+      assert.equal(
+        fixture.documents.get('limina-migrate')!['dist-tags'].beta,
+        undefined,
+      );
+      fixture.controls.isDropPromotion = false;
+      await fixture.run();
+      assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
+      for (const document of fixture.documents.values())
+        assert.equal(document['dist-tags'].beta, fixture.version);
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'records accepted uploads after a failed response and retries without overwriting them',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      fixture.controls.isLoseUploadResponse = true;
+      await assert.rejects(
+        fixture.run(),
+        /controlled response failure after accepted upload/u,
+      );
+      assert.equal(fixture.documents.size, 2);
+      assert.equal(fixture.promotions, 0);
+      const evidence = await fixture.readEvidence();
+      const failed = evidence.find((state) => state.status === 'failed');
+      assert.equal(failed.phase, 'upload');
+      for (const member of failed.packages)
+        assert.equal(member.registryIntegrity, member.integrity);
+      fixture.controls.isLoseUploadResponse = false;
+      await fixture.run();
+      assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
+      for (const document of fixture.documents.values())
+        assert.equal(document['dist-tags'].beta, fixture.version);
+    } finally {
+      await fixture.close();
     }
   },
 );

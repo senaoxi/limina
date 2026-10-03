@@ -12,7 +12,169 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
+
+it(
+  'requires successful main push workflows at the checked-out release SHA',
+  { skip: process.platform === 'win32' },
+  () => {
+    const temporary = mkdtempSync(path.join(tmpdir(), 'limina release CI '));
+    const root = realpathSync(temporary);
+    try {
+      const workflow = parse(
+        readFileSync(
+          new URL('../../.github/workflows/publish-npm.yml', import.meta.url),
+          'utf8',
+        ),
+      ) as { jobs: { publish: { steps: { run?: string }[] } } };
+      const step = workflow.jobs.publish.steps.find((entry) =>
+        entry.run?.includes('actions/workflows/'),
+      );
+      assert.ok(step?.run, 'publication must check the remote workflow runs');
+      execFileSync('git', ['init', '--quiet'], { cwd: root });
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=Fixture',
+          '-c',
+          'user.email=fixture@example.invalid',
+          '-c',
+          'commit.gpgsign=false',
+          'commit',
+          '--quiet',
+          '--allow-empty',
+          '-m',
+          'release',
+        ],
+        { cwd: root },
+      );
+      const sha = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: root,
+        encoding: 'utf8',
+      }).trim();
+      const bin = path.join(root, 'bin');
+      mkdirSync(bin);
+      const gh = path.join(bin, 'gh');
+      writeFileSync(
+        gh,
+        `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.CAPTURE, JSON.stringify(args) + '\\n');
+if (process.env.CASE === 'lookup-error') process.exit(1);
+const run = { head_sha: process.env.RELEASE_SHA, head_branch: 'main', event: 'push', status: 'completed', conclusion: 'success', html_url: 'https://github.com/senaoxi/limina/actions/runs/1' };
+if (args.some(arg => arg.includes('security.yml'))) {
+  if (process.env.CASE === 'wrong-sha') run.head_sha = 'f'.repeat(40);
+  if (process.env.CASE === 'wrong-branch') run.head_branch = 'other';
+  if (process.env.CASE === 'pull-request') run.event = 'pull_request';
+  if (process.env.CASE === 'pending') run.status = 'in_progress';
+  if (['failure', 'cancelled', 'skipped'].includes(process.env.CASE)) run.conclusion = process.env.CASE;
+}
+process.stdout.write(process.env.CASE === 'missing' ? '{"workflow_runs":[]}' : JSON.stringify({workflow_runs:[run]}));
+`,
+      );
+      chmodSync(gh, 0o755);
+      const script = path.join(root, 'check-ci.sh');
+      writeFileSync(script, step.run);
+      const capture = path.join(root, 'calls.jsonl');
+      const run = (scenario: string) =>
+        execFileSync('bash', [script], {
+          cwd: root,
+          env: {
+            ...process.env,
+            PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+            CAPTURE: capture,
+            CASE: scenario,
+            RELEASE_SHA: sha,
+            GITHUB_SHA: scenario === 'dispatch-sha' ? '0'.repeat(40) : sha,
+            GITHUB_REPOSITORY: 'senaoxi/limina',
+          },
+          stdio: 'pipe',
+        });
+      writeFileSync(capture, '');
+      run('success');
+      const calls = readFileSync(capture, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as string[]);
+      assert.equal(calls.length, 3);
+      for (const file of ['ci.yml', 'security.yml', 'codeql.yml']) {
+        const call = calls.find((arguments_) =>
+          arguments_.some((argument) =>
+            argument.includes(`actions/workflows/${file}/runs`),
+          ),
+        );
+        assert.ok(call, file);
+        for (const filter of [`head_sha=${sha}`, 'branch=main', 'event=push'])
+          assert.ok(call.includes(filter), filter);
+      }
+      for (const scenario of [
+        'wrong-sha',
+        'wrong-branch',
+        'pull-request',
+        'pending',
+        'failure',
+        'cancelled',
+        'skipped',
+        'missing',
+        'lookup-error',
+        'dispatch-sha',
+      ])
+        assert.throws(() => run(scenario), /Command failed/u, scenario);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+it(
+  'rejects npm versions without trusted dist-tag support before package operations',
+  { skip: process.platform === 'win32' },
+  () => {
+    const temporary = mkdtempSync(path.join(tmpdir(), 'limina release npm '));
+    const root = realpathSync(temporary);
+    try {
+      const npm = path.join(root, 'npm');
+      writeFileSync(
+        npm,
+        `#!/usr/bin/env node
+if (process.argv[2] !== '--version') process.exit(99);
+process.stdout.write(process.env.FIXTURE_NPM_VERSION + '\\n');
+`,
+      );
+      chmodSync(npm, 0o755);
+      const run = (version: string) =>
+        execFileSync(
+          process.execPath,
+          [
+            '--import',
+            import.meta.resolve('tsx'),
+            fileURLToPath(new URL('publish-approved.ts', import.meta.url)),
+          ],
+          {
+            env: {
+              ...process.env,
+              PATH: `${root}${path.delimiter}${process.env.PATH}`,
+              FIXTURE_NPM_VERSION: version,
+              RELEASE_TAG: 'fixture-invalid-tag',
+            },
+            stdio: 'pipe',
+          },
+        );
+      for (const version of ['11.6.1', '11.20.0', '12.0.0', '12.1.0'])
+        assert.throws(run.bind(undefined, version), /trusted.*dist-tag/iu);
+      for (const version of ['11.21.0', '12.2.0'])
+        assert.throws(
+          run.bind(undefined, version),
+          /matching limina version tag/u,
+        );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
 it(
   'links GitHub releases to the shared changelog at the approved checkout',

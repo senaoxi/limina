@@ -15,3 +15,11 @@
 独立迁移包保留既有迁移事务和治理语义。旧 `limina migration` 命令优先转调本地同版本包，否则通过 npm 下载该精确版本。两个包共享版本、发布组和 `limina/v<version>` 标签。证据和独立性门见[迁移状态](./migration.md)，产品不变量见[Limina 架构](./limina.md)。
 
 Vercel 部署 CLI 是既有私有 `docs` workspace 的开发依赖，通过 dev catalog 与冻结 lockfile 解析，不加入双包发布组；见[基建归属记录](./infrastructure.md)。
+
+## 文档命令输出
+
+首页由 `HomeFeatures.vue` 负责功能导航，`CommandTerminal.vue` 负责命令输出与控件，`use-command-playback.ts` 负责回放状态。组件文件按职责命名；props、data attributes 和样式中的命令选项及索引使用命令术语。英文与中文文案共享同一份 CLI 运行记录。选择其他命令或功能组时，完整输出保持展开，方便读者对照。输出保留实际打印的列布局，窄屏通过横向滚动阅读。
+
+[命令运行记录](../../../docs/.vitepress/theme/command-transcripts.json)由[录制脚本](../../../scripts/docs/capture-command-transcripts.ts)在独立的双包 pnpm workspace 中运行新构建的 CLI 生成。先运行 `pnpm run build`，再运行 `pnpm exec tsx scripts/docs/capture-command-transcripts.ts <new-workspace>`；验证时使用 `~/Project/dev-server-repo/repros/` 下的新目录。可选参数指定输出 JSON，以及系统代理包装 pnpm 时使用的明确 pnpm 可执行文件。脚本拒绝已有 workspace 目录，移除父工作区的 bin 设置，并用当前 Node 执行链接的新构建 CLI。记录 JSON 纳入 docs TypeScript 项目。发布流水线从 `packages/core` 运行，其构建生成包／发布检查所需的清单与产物。边界失败使用跨包相对源码导入。
+
+2026-10-03 的记录使用 captured terminal 模式（`CI=1`、`TERM=dumb`），通过共用文件描述符保留 stdout／stderr 顺序，仅移除终端控制序列。空行、缩进、报告边框、诊断和 invocation 查询均按实际输出保留。界面标为 CI 下的 CLI 运行记录；回放节奏由界面负责，记录中的数量、耗时及本地查询路径描述该工作区／该次运行。记录同时保存源码与 CLI 哈希及工具链版本。CLI 输出变化时须刷新记录；这属于文档契约，不改变产品不变量 I01–I12，也不证明交互式 TTY／跨平台一致性。

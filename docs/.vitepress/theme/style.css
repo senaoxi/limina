@@ -158,7 +158,7 @@
   }
 }
 
-/* The homepage entrance uses the existing brand, then settles into the CLI demos. */
+/* The homepage entrance uses the existing brand, then settles into the CLI output playback. */
 .limina-home {
   --vp-c-bg: #fafaf7;
   --limina-c-grid: rgb(24 43 50 / 0.038);

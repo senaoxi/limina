@@ -7,28 +7,27 @@ import {
   ref,
   watch,
 } from 'vue';
-import type { DemoTranscript } from './demo-transcripts';
-import { useTerminalDemo } from './use-terminal-demo';
+import type { CommandTranscript } from './command-transcripts';
+import { useCommandPlayback } from './use-command-playback';
 
 const props = defineProps<{
   id: string;
-  scenario: number;
+  commandIndex: number;
   label: string;
-  scenarios: { label: string; transcript: DemoTranscript }[];
+  commands: { label: string; transcript: CommandTranscript }[];
   playing: boolean;
   paused: boolean;
   chinese: boolean;
   autoplay: boolean;
 }>();
 const emit = defineEmits<{ play: []; pause: []; 'user-pause': [] }>();
-const selected = ref(0);
+const selected = ref(props.commandIndex);
 const panel = ref<HTMLElement>();
 const log = ref<HTMLElement>();
-const details = ref<HTMLDetailsElement>();
 const transcript = computed(
-  () => (props.scenarios[selected.value] ?? props.scenarios[0])!.transcript,
+  () => (props.commands[selected.value] ?? props.commands[0])!.transcript,
 );
-const playback = useTerminalDemo(
+const playback = useCommandPlayback(
   () => transcript.value,
   () => props.playing,
   () => emit('pause'),
@@ -52,31 +51,32 @@ const labels = computed(() =>
         play: '播放',
         pause: '暂停',
         replay: '重播',
-        result: '显示结果',
+        outputAction: '显示输出',
         ready: '待播放',
         playing: '播放中',
         paused: '已暂停',
         complete: '播放完成',
         reduced: '已减弱动画',
-        transcript: '查看输出节选',
-        scenarios: '选择演示',
+        transcript: '查看完整输出',
+        commands: '选择命令',
         output: '终端输出',
-        excerpt: '示例项目的输出节选；数量与耗时会变化',
+        recording: 'CLI 运行记录（CI）；项目数量与耗时依工作区而异',
       }
     : {
         play: 'Play',
         pause: 'Pause',
         replay: 'Replay',
-        result: 'Show result',
+        outputAction: 'Show output',
         ready: 'Ready',
         playing: 'Playing',
         paused: 'Paused',
         complete: 'Complete',
         reduced: 'Reduced motion',
-        transcript: 'Read output excerpt',
-        scenarios: 'Choose a demo',
+        transcript: 'Read full output',
+        commands: 'Choose a command',
         output: 'Terminal output',
-        excerpt: 'Sample output; counts and times vary',
+        recording:
+          'Recorded CLI output (CI); counts and timings depend on the workspace',
       },
 );
 const status = computed(() => {
@@ -96,7 +96,7 @@ const fullOutput = computed(
     '$ ' + transcript.value.command + '\n' + transcript.value.lines.join('\n'),
 );
 
-function selectScenario(index: number) {
+function selectCommand(index: number) {
   autoStarted = true;
   if (selected.value === index) reset();
   else selected.value = index;
@@ -124,11 +124,10 @@ function lineClass(line: string) {
 }
 
 watch(
-  () => [props.id, props.scenario],
+  () => [props.id, props.commandIndex],
   () => {
-    selected.value = props.scenario;
+    selected.value = props.commandIndex;
     reset();
-    details.value?.removeAttribute('open');
     if (log.value) log.value.scrollTop = 0;
   },
 );
@@ -170,21 +169,21 @@ onBeforeUnmount(() => observer?.disconnect());
 </script>
 
 <template>
-  <div ref="panel" class="terminal-demo">
+  <div ref="panel" class="command-terminal">
     <div class="terminal-titlebar">
       <span class="window-dots" aria-hidden="true"><i /><i /><i /></span>
       <span class="terminal-workspace">{{ transcript.workspace }}</span>
       <span class="terminal-shell">CLI</span>
     </div>
-    <div class="terminal-scenarios" role="group" :aria-label="labels.scenarios">
+    <div class="terminal-commands" role="group" :aria-label="labels.commands">
       <button
-        v-for="(scenario, index) in scenarios"
-        :key="scenario.transcript.id"
+        v-for="(option, index) in commands"
+        :key="option.transcript.id"
         type="button"
         :aria-pressed="selected === index"
-        @click="selectScenario(index)"
+        @click="selectCommand(index)"
       >
-        {{ scenario.label }}
+        {{ option.label }}
       </button>
     </div>
     <div
@@ -203,7 +202,7 @@ onBeforeUnmount(() => observer?.disconnect());
         v-for="(line, index) in visibleLines"
         :key="index"
         :class="lineClass(line)"
-        >{{ line || ' ' }}</pre
+        >{{ line }}</pre
       >
     </div>
     <div class="terminal-controls">
@@ -243,14 +242,14 @@ onBeforeUnmount(() => observer?.disconnect());
           :aria-controls="'terminal-output-' + id"
           @click="showAll"
         >
-          {{ labels.result }}
+          {{ labels.outputAction }}
         </button>
       </div>
     </div>
-    <details ref="details" class="terminal-transcript">
+    <details class="terminal-transcript">
       <summary>
         {{ labels.transcript
-        }}<span>{{ labels.excerpt }} · exit {{ transcript.exitCode }}</span>
+        }}<span>{{ labels.recording }} · exit {{ transcript.exitCode }}</span>
       </summary>
       <pre>{{ fullOutput }}</pre>
     </details>
@@ -258,7 +257,7 @@ onBeforeUnmount(() => observer?.disconnect());
 </template>
 
 <style scoped>
-.terminal-demo {
+.command-terminal {
   min-width: 0;
   border: 1px solid var(--limina-c-line);
   border-radius: 10px;
@@ -294,25 +293,25 @@ onBeforeUnmount(() => observer?.disconnect());
   font-size: 10px;
   letter-spacing: 0.08em;
 }
-.terminal-scenarios {
+.terminal-commands {
   display: flex;
   gap: 4px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--limina-c-line);
   flex-wrap: wrap;
 }
-.terminal-scenarios button {
+.terminal-commands button {
   padding: 5px 10px;
   border-radius: 4px;
   font-size: 12px;
   line-height: 1.5;
   color: var(--vp-c-text-2);
 }
-.terminal-scenarios button[aria-pressed='true'] {
+.terminal-commands button[aria-pressed='true'] {
   color: var(--vp-c-brand-1);
   background: var(--vp-c-brand-soft);
 }
-.terminal-scenarios button:hover {
+.terminal-commands button:hover {
   color: var(--vp-c-text-1);
 }
 .terminal-log {
@@ -324,8 +323,9 @@ onBeforeUnmount(() => observer?.disconnect());
 }
 pre {
   margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  min-height: 1.8em;
+  white-space: pre;
+  overflow-wrap: normal;
   font: 12px/1.8 var(--vp-font-family-mono);
 }
 .terminal-command {

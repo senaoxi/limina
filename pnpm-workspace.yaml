@@ -7,24 +7,44 @@ allowBuilds:
   esbuild: true
 auditConfig:
   ignoreGhsas:
+    # VitePress 1.6.4 still depends on Vite 5, which pins esbuild below
+    # the first patched release. Remove once VitePress moves to a safe Vite line.
     - GHSA-67mh-4wv8-2f99
+
+    # VitePress 1.6.4 still depends on Vite 5. These advisories have no patched
+    # Vite 5 release; remove them once VitePress can use Vite >= 6.4.3.
     - GHSA-4w7w-66w2-5vf9
     - GHSA-fx2h-pf6j-xcff
     - GHSA-v6wh-96g9-6wx3
-    - GHSA-h67p-54hq-rp68
+
+    # Intentionally keep Svelte 4.0.0 as the minimum-version compatibility
+    # fixture. Raising it would reduce the Svelte 4 compatibility range tested.
     - GHSA-8266-84wp-wv5c
+
+    # These advisories affect the Svelte 4 compatibility fixture, while patched
+    # releases are only available on Svelte 5. Keep until Svelte 4 support is dropped.
     - GHSA-crpf-4hrx-3jrp
     - GHSA-m56q-vw4c-c2cp
     - GHSA-f7gr-6p89-r883
     - GHSA-phwv-c562-gvmh
     - GHSA-rcqx-6q8c-2c42
     - GHSA-pr6f-5x2q-rwfp
+
+    # Intentionally keep Astro 7.0.0 as the minimum-version compatibility
+    # fixture. Raising it would reduce the Astro 7 compatibility range tested.
     - GHSA-4g3v-8h47-v7g6
     - GHSA-8mv7-9c27-98vc
     - GHSA-f48w-9m4c-m7f5
     - GHSA-7pw4-f3q4-r2p2
     - GHSA-26w7-cxv4-gfx2
     - GHSA-376h-93r7-7g6f
+
+    # No patched http-cache-semantics release is currently available upstream.
+    - GHSA-ch52-4w7c-c8xp
+
+    # No patched braces release is currently available upstream.
+    - GHSA-vfj7-8cjw-p6xm
+
 autoInstallPeers: false
 catalogMode: strict
 catalogs:

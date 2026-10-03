@@ -1,9 +1,11 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -171,21 +173,15 @@ function registryArguments(registry?: string): string[] {
   return registry ? ['--registry', registry] : [];
 }
 
-function registryIntegrity(
-  plan: ReleasePlan,
+function registryOutput(
+  arguments_: string[],
   registry?: string,
 ): string | undefined {
   let output: string;
   try {
     output = execReleaseCommand(
       getNpmCommand(),
-      [
-        'view',
-        `${plan.config.packageName}@${plan.newVersion}`,
-        'dist.integrity',
-        '--json',
-        ...registryArguments(registry),
-      ],
+      [...arguments_, '--json', ...registryArguments(registry)],
       { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     );
   } catch (error) {
@@ -196,6 +192,18 @@ function registryIntegrity(
     }
     throw error;
   }
+  return output;
+}
+
+function registryIntegrity(
+  plan: ReleasePlan,
+  registry?: string,
+): string | undefined {
+  const output = registryOutput(
+    ['view', `${plan.config.packageName}@${plan.newVersion}`, 'dist.integrity'],
+    registry,
+  );
+  if (output === undefined) return undefined;
   const value: unknown = JSON.parse(output);
   if (typeof value !== 'string' || !value.startsWith('sha512-')) {
     throw new Error(
@@ -205,21 +213,83 @@ function registryIntegrity(
   return value;
 }
 
+function registryTags(
+  plan: ReleasePlan,
+  registry?: string,
+): Record<string, string> {
+  // `npm view name dist-tags` silently returns no output when a newly
+  // published package has a candidate tag but no latest version yet.
+  const output = registryOutput(
+    ['dist-tag', 'ls', plan.config.packageName],
+    registry,
+  );
+  if (output === undefined) return {};
+  return Object.fromEntries(
+    output
+      .trim()
+      .split('\n')
+      .map((line) => {
+        const entry = /^([^\s:]+): (\S+)$/u.exec(line);
+        if (!entry || !isValidVersion(entry[2]!))
+          throw new Error(
+            `Registry channels are unavailable for ${plan.config.packageName}.`,
+          );
+        return [entry[1]!, entry[2]!];
+      }),
+  );
+}
+
+interface PublicationMemberEvidence {
+  name: string;
+  version: string;
+  filename?: string;
+  integrity?: string;
+  registryIntegrity: string | null;
+  tagsBefore?: Record<string, string>;
+  tagsAfter?: Record<string, string>;
+}
+
 export function publishReleaseGroup(
   plans: ReleasePlan[],
   options: {
     registry?: string;
     provenance: boolean;
+    evidenceDirectory?: string;
   },
 ): void {
   assertReleaseGroup(plans);
   for (const plan of plans)
     validatePublicationTarget(plan.config, plan.newVersion, plan.gitTag);
+  if (options.evidenceDirectory)
+    mkdirSync(options.evidenceDirectory, { recursive: true });
   const temporaryDirectory = mkdtempSync(
-    path.join(tmpdir(), 'limina-release-'),
+    path.join(options.evidenceDirectory ?? tmpdir(), 'limina-release-'),
   );
+  const candidateTag = `limina-candidate-${plans[0]!.newVersion}`;
+  const evidence = {
+    gitTag: plans[0]!.gitTag,
+    channel: plans[0]!.npmTag ?? 'latest',
+    candidateTag,
+    status: 'in-progress',
+    phase: 'pack',
+    activePackage: '',
+    packages: plans.map<PublicationMemberEvidence>((plan) => ({
+      name: plan.config.packageName,
+      version: plan.newVersion,
+      registryIntegrity: null,
+    })),
+  };
+  const saveEvidence = () => {
+    if (options.evidenceDirectory)
+      writeFileSync(
+        path.join(temporaryDirectory, 'publication.json'),
+        `${JSON.stringify(evidence, null, 2)}\n`,
+      );
+  };
+  saveEvidence();
   try {
-    const packages = plans.map((plan) => {
+    const packages = plans.map((plan, index) => {
+      evidence.activePackage = plan.config.packageName;
       const packed = JSON.parse(
         runCommand(
           getNpmCommand(),
@@ -234,54 +304,120 @@ export function publishReleaseGroup(
         throw new Error(
           'npm pack did not produce one integrity-checked artifact.',
         );
-      return { plan, integrity: pack.integrity };
+      const member = evidence.packages[index]!;
+      member.filename = pack.filename;
+      member.integrity = pack.integrity;
+      saveEvidence();
+      return {
+        plan,
+        integrity: pack.integrity,
+        filename: pack.filename,
+        member,
+      };
     });
-    const candidateTag = `limina-candidate-${plans[0]!.newVersion}`;
     // Preflight the entire group before uploading any missing member.
-    const existing = packages.map(({ plan, integrity }) => {
+    evidence.phase = 'preflight';
+    const existing = packages.map(({ plan, integrity, member }) => {
+      evidence.activePackage = plan.config.packageName;
       const published = registryIntegrity(plan, options.registry);
+      member.registryIntegrity = published ?? null;
+      member.tagsBefore = registryTags(plan, options.registry);
+      saveEvidence();
       if (published !== undefined && published !== integrity)
         throw new Error(
           `Published artifact differs: ${plan.config.packageName}@${plan.newVersion}`,
         );
       return published !== undefined;
     });
-    for (const [index, { plan, integrity }] of packages.entries()) {
+    evidence.phase = 'upload';
+    for (const [
+      index,
+      { plan, integrity, filename, member },
+    ] of packages.entries()) {
+      evidence.activePackage = plan.config.packageName;
+      saveEvidence();
       if (!existing[index]) {
-        runCommand(
-          getNpmCommand(),
-          [
-            'publish',
-            '--access',
-            'public',
-            '--tag',
-            candidateTag,
-            ...registryArguments(options.registry),
-            ...(options.provenance ? ['--provenance'] : []),
-          ],
-          { cwd: plan.config.publishDir, stdio: 'inherit' },
-        );
+        try {
+          runCommand(
+            getNpmCommand(),
+            [
+              'publish',
+              path.join(temporaryDirectory, filename),
+              '--access',
+              'public',
+              '--tag',
+              candidateTag,
+              ...registryArguments(options.registry),
+              ...(options.provenance ? ['--provenance'] : []),
+            ],
+            { cwd: plan.config.publishDir, stdio: 'inherit' },
+          );
+        } catch (error) {
+          // A failed client response does not prove the immutable upload failed.
+          member.registryIntegrity =
+            registryIntegrity(plan, options.registry) ?? null;
+          saveEvidence();
+          throw error;
+        }
       }
-      if (registryIntegrity(plan, options.registry) !== integrity)
+      member.registryIntegrity =
+        registryIntegrity(plan, options.registry) ?? null;
+      saveEvidence();
+      if (member.registryIntegrity !== integrity)
         throw new Error(
           `Published integrity did not match ${plan.config.packageName}. Channels were not promoted.`,
         );
     }
     // Both immutable versions are now available; interruption here is safely retryable.
-    for (const { plan } of packages) {
-      runCommand(
-        getNpmCommand(),
-        [
-          'dist-tag',
-          'add',
-          `${plan.config.packageName}@${plan.newVersion}`,
-          plan.npmTag ?? 'latest',
-          ...registryArguments(options.registry),
-        ],
-        { cwd: REPO_ROOT, stdio: 'inherit' },
-      );
+    evidence.phase = 'promote';
+    for (const { plan, member } of packages) {
+      evidence.activePackage = plan.config.packageName;
+      saveEvidence();
+      try {
+        runCommand(
+          getNpmCommand(),
+          [
+            'dist-tag',
+            'add',
+            `${plan.config.packageName}@${plan.newVersion}`,
+            plan.npmTag ?? 'latest',
+            ...registryArguments(options.registry),
+          ],
+          { cwd: REPO_ROOT, stdio: 'inherit' },
+        );
+      } finally {
+        member.tagsAfter = registryTags(plan, options.registry);
+        saveEvidence();
+      }
+      if (member.tagsAfter[plan.npmTag ?? 'latest'] !== plan.newVersion)
+        throw new Error(
+          `Channel verification failed for ${plan.config.packageName}.`,
+        );
     }
+    evidence.phase = 'verify-channels';
+    for (const { plan, member } of packages) {
+      evidence.activePackage = plan.config.packageName;
+      member.tagsAfter = registryTags(plan, options.registry);
+      saveEvidence();
+      if (
+        member.tagsAfter[plan.npmTag ?? 'latest'] !== plan.newVersion ||
+        ((plan.npmTag ?? 'latest') !== 'latest' &&
+          member.tagsAfter.latest !== member.tagsBefore!.latest)
+      )
+        throw new Error(
+          `Channel verification failed for ${plan.config.packageName}.`,
+        );
+    }
+    evidence.status = 'complete';
+    evidence.phase = 'complete';
+    evidence.activePackage = '';
+    saveEvidence();
+  } catch (error) {
+    evidence.status = 'failed';
+    saveEvidence();
+    throw error;
   } finally {
-    rmSync(temporaryDirectory, { recursive: true, force: true });
+    if (!options.evidenceDirectory)
+      rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 }

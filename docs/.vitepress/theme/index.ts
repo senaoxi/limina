@@ -5,8 +5,8 @@ import type { Theme } from 'vitepress';
 import DefaultTheme from 'vitepress/theme';
 import { h } from 'vue';
 import HomeBrand from './HomeBrand.vue';
+import HomeFeatures from './HomeFeatures.vue';
 import HomeInstall from './HomeInstall.vue';
-import HomeShowcase from './HomeShowcase.vue';
 
 import './style.css';
 
@@ -16,7 +16,7 @@ const theme: Theme = {
     h(DefaultTheme.Layout, null, {
       'home-hero-info-before': () => h(HomeBrand),
       'home-hero-actions-after': () => h(HomeInstall),
-      'home-hero-after': () => h(HomeShowcase),
+      'home-hero-after': () => h(HomeFeatures),
     }),
 };
 

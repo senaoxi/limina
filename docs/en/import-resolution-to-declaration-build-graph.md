@@ -302,7 +302,7 @@ The current reference-inference path reads source dependency facts and explicit 
 
 If Limina were to run reference graph tree-shaking by default in this model, it would need to handle several additional problems:
 
-- how to efficiently obtain or simulate the final declaration output of each source `tsconfig`;
+- how to efficiently obtain or derive the final declaration output of each source `tsconfig`;
 - how to distinguish TypeScript’s raw `.d.ts` output, framework-checker output, declaration bundler output, and package public API shape;
 - how to avoid removing real project references based on stale `.d.ts` output;
 - how to reuse previous declaration-output analysis when source files change frequently, instead of rerunning full semantic analysis on every check;

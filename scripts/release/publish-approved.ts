@@ -1,16 +1,19 @@
+import path from 'node:path';
 import semver from 'semver';
 import { execReleaseCommand } from './command';
 import { validatePublicationTarget } from './publication';
 import { runPublishCommand } from './release';
-import { discoverReleasePackages } from './shared';
+import { discoverReleasePackages, REPO_ROOT } from './shared';
 
 if (
-  semver.lt(
+  !semver.satisfies(
     execReleaseCommand('npm', ['--version'], { encoding: 'utf8' }).trim(),
-    '11.5.2',
+    '^11.21.0 || >=12.2.0',
   )
 )
-  throw new Error('npm 11.5.2 or newer is required for trusted publishing');
+  throw new Error(
+    'npm ^11.21.0 or >=12.2.0 is required for trusted publication and dist-tag updates',
+  );
 
 const tag = process.env.RELEASE_TAG;
 const configs = discoverReleasePackages();
@@ -23,5 +26,6 @@ await runPublishCommand({
   skipTests: true,
   skipBuild: true,
   provenance: true,
+  evidenceDirectory: path.join(REPO_ROOT, '.reports/release/npm'),
   help: false,
 });
