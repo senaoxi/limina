@@ -15,6 +15,27 @@ import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
+it('bootstraps private tools before checking a cold release checkout', () => {
+  const workflow = parse(
+    readFileSync(
+      new URL('../../.github/workflows/publish-npm.yml', import.meta.url),
+      'utf8',
+    ),
+  ) as { jobs: { publish: { steps: { run?: string }[] } } };
+  const steps = workflow.jobs.publish.steps;
+  const tagCheck = steps.findIndex((step) =>
+    step.run?.includes('pnpm run release:check-tag'),
+  );
+  const bootstrap = steps.findIndex((step) =>
+    step.run?.includes('pnpm run build:tools'),
+  );
+  assert.ok(tagCheck !== -1, 'publication must check the release tag');
+  assert.ok(
+    bootstrap !== -1 && bootstrap < tagCheck,
+    'the tag CLI needs the private logger compiled before package resolution',
+  );
+});
+
 it(
   'requires successful main push workflows at the checked-out release SHA',
   { skip: process.platform === 'win32' },
