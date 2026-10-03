@@ -12,6 +12,7 @@
     "package.json",
     ".vitepress/*.ts",
     ".vitepress/theme/**/*.ts",
+    ".vitepress/theme/**/*.json",
     ".vitepress/theme/**/*.vue",
     "en/config.ts",
     "zh/config.ts",

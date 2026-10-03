@@ -1,8 +1,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type { DemoTranscript } from './demo-transcripts';
+import type { CommandTranscript } from './command-transcripts';
 
-export function useTerminalDemo(
-  transcript: () => DemoTranscript,
+export function useCommandPlayback(
+  transcript: () => CommandTranscript,
   isPlaying: () => boolean,
   finish: () => void,
 ) {

@@ -171,9 +171,9 @@ In a workspace, `package.json#exports` participates in the importing checker's r
 
 For example, a package may declare both entries:
 
-```json [packages/demo/package.json]
+```json [packages/utility/package.json]
 {
-  "name": "demo",
+  "name": "utility",
   "type": "module",
   "exports": {
     "./a": "./src/a.ts",
@@ -182,7 +182,7 @@ For example, a package may declare both entries:
 }
 ```
 
-If `src/a.ts` exists and a consumer imports only `demo/a`, the unused broken entry does not fail `limina graph check`. The consumed dependency still has to satisfy ownership, reference, and graph rules. If the consumer instead imports `demo/broken` and its checker cannot resolve it, graph checking fails at that import. `graph export` also reports the failure instead of silently omitting the dependency.
+If `src/a.ts` exists and a consumer imports only `utility/a`, the unused broken entry does not fail `limina graph check`. The consumed dependency still has to satisfy ownership, reference, and graph rules. If the consumer instead imports `utility/broken` and its checker cannot resolve it, graph checking fails at that import. `graph export` also reports the failure instead of silently omitting the dependency.
 
 The consumer's checker remains authoritative for self-name imports, conditions, `paths`, ambient modules, framework sources, and declarations. Another checker profile or a runtime file hit cannot repair its failed resolution or create a source edge. Graph checking does not enumerate the package's exports or expand wildcard entries to validate a public surface. Existing declaration-reference rules, including the exclusion of `require.resolve()`, continue to apply.
 

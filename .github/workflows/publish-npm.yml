@@ -8,6 +8,9 @@ name: Publish Limina
         type: string
 permissions:
   contents: read
+concurrency:
+  group: publish-limina
+  cancel-in-progress: false
 jobs:
   publish:
     if: github.repository == 'senaoxi/limina' && vars.LIMINA_RELEASE_ENABLED == '1'
@@ -15,10 +18,12 @@ jobs:
     environment: Release
     permissions:
       contents: write
+      actions: read
       id-token: write
     env:
       LIMINA_RELEASE_ENABLED: "1"
       RELEASE_TAG: ${{ inputs.tag }}
+      VITEST_MAX_WORKERS: "2"
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
         with:
@@ -27,6 +32,8 @@ jobs:
       - uses: ./.github/actions/setup-env
         with:
           node-version: 24.11.0
+      - name: Install npm with trusted publication and dist-tag support
+        run: npm install --global npm@11.21.0
       - name: Reject historical tags and require the tagged commit on main
         run: |
           git fetch --no-tags origin main:refs/remotes/origin/main
@@ -40,6 +47,32 @@ jobs:
           set -euo pipefail
           mkdir -p .reports/security
           pnpm audit --audit-level high | tee .reports/security/audit.txt
+      - name: Require successful main workflows for the exact tagged commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .reports/release
+          release_commit="$(git rev-parse HEAD)"
+          printf '%s\n' "$release_commit" > .reports/release/commit.txt
+          if [[ "$GITHUB_SHA" != "$release_commit" ]]; then
+            echo "Dispatch the workflow at the release commit so npm provenance identifies the actual source." >&2
+            exit 1
+          fi
+          for workflow in ci.yml security.yml codeql.yml; do
+            report=".reports/release/${workflow%.yml}.json"
+            gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
+              -f "head_sha=${release_commit}" -f branch=main -f event=push -f per_page=1 > "$report"
+            if ! jq -e --arg sha "$release_commit" '
+              .workflow_runs | length == 1 and
+              .[0].head_sha == $sha and .[0].head_branch == "main" and .[0].event == "push" and
+              .[0].status == "completed" and .[0].conclusion == "success"
+            ' "$report" > /dev/null; then
+              echo "${workflow} has no successful completed main push run at ${release_commit}." >&2
+              exit 1
+            fi
+          done
       - name: Publish the approved same-version group with provenance
         run: pnpm exec tsx scripts/release/publish-approved.ts
       - name: Create GitHub release after both npm packages are available
