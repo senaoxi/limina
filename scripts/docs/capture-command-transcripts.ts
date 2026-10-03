@@ -1,9 +1,18 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format } from 'prettier';
+import { privacyIssues } from './privacy';
+import { publicTerminalChunks } from './public-terminal';
 import { terminalFrames, type TerminalChunk } from './terminal-frames';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
@@ -45,6 +54,20 @@ if (!process.argv[2]) {
 }
 
 // Refuse an existing workspace so regeneration cannot overwrite other work.
+// Raw captures and local dependency links must stay outside public docs, even
+// when the workspace's parent reaches docs through a filesystem alias.
+const documentationRoot = await realpath(path.join(repo, 'docs'));
+const captureRoot = path.join(
+  await realpath(path.dirname(workspace)),
+  path.basename(workspace),
+);
+if (
+  captureRoot === documentationRoot ||
+  captureRoot.startsWith(documentationRoot + path.sep)
+)
+  throw new Error(
+    'Capture workspace must be outside the documentation source tree.',
+  );
 await mkdir(workspace);
 
 async function write(relative: string, content: string | object) {
@@ -228,9 +251,21 @@ async function run(
   await write(`${id}.log`, raw);
   if (exitCode !== expectedExitCode)
     throw new Error(
-      `${id}: expected exit ${expectedExitCode}, received ${exitCode}\n${raw}`,
+      `${id}: expected exit ${expectedExitCode}, received ${exitCode}; inspect the private capture workspace.`,
     );
-  const frames = await terminalFrames(chunks, columns, rows);
+  const publicChunks = publicTerminalChunks(
+    chunks,
+    new Map([
+      [process.execPath, 'node'],
+      [
+        path.join(repo, 'packages/limina/dist/bin/limina.js'),
+        'node_modules/limina/bin/limina.js',
+      ],
+      [workspace, '.'],
+      [path.resolve(repo), 'limina'],
+    ]),
+  );
+  const frames = await terminalFrames(publicChunks, columns, rows);
   if (frames.length === 0)
     throw new Error(`${id}: no terminal output captured`);
   const lines = frames.at(-1)!.lines;
@@ -238,11 +273,12 @@ async function run(
     id,
     command: argv.join(' '),
     argv,
-    cwd,
     workspace:
       directory === '.' ? 'limina-workspace' : `limina-workspace/${directory}`,
     exitCode,
-    rawSha256: createHash('sha256').update(raw).digest('hex'),
+    outputSha256: createHash('sha256')
+      .update(publicChunks.map((chunk) => chunk.text).join(''))
+      .digest('hex'),
     frames,
     lines,
   };
@@ -287,6 +323,7 @@ async function hashFiles(directory: string, hash = createHash('sha256')) {
 }
 const data = {
   capture: {
+    paths: 'workspace-relative',
     node: process.version,
     pnpm,
     typescript: typescript.version,
@@ -312,4 +349,9 @@ const data = {
   commands,
 };
 await mkdir(path.dirname(output), { recursive: true });
-await writeFile(output, await format(JSON.stringify(data), { parser: 'json' }));
+const publicData = JSON.stringify(data);
+if (privacyIssues(publicData).length > 0)
+  throw new Error(
+    'Capture contains private information; public output was not written.',
+  );
+await writeFile(output, await format(publicData, { parser: 'json' }));
