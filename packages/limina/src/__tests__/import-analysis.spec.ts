@@ -17,9 +17,10 @@ import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath } from './helpers/path';
 
 async function createTemporaryDirectory(): Promise<string> {
-  return await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-import-analysis-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-import-analysis-'),
   );
+  return await realpath(temporaryDirectory);
 }
 
 async function writeText(
