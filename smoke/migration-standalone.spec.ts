@@ -209,11 +209,17 @@ it('consumes neutral inputs with only the packed migrate product, preserves sche
       path.join(coreRoot, 'package.json'),
       'utf8',
     );
-    await assertPackageModuleClosure(coreRoot, JSON.parse(coreManifestText));
+    const coreManifest = JSON.parse(coreManifestText);
+    await assertPackageModuleClosure(coreRoot, coreManifest);
+    expect(
+      Object.keys(coreManifest.exports).filter(
+        (key) => key === './internal' || key.startsWith('./internal/'),
+      ),
+    ).toEqual([]);
     const publicApi = await node([
       '--input-type=module',
       '--eval',
-      'import { defineConfig } from "limina"; if (defineConfig({}).constructor !== Object) throw new Error("public config unavailable"); try { await import("limina/internal/migration"); throw new Error("internal exported"); } catch (error) { if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error; }',
+      'import { defineConfig } from "limina"; if (defineConfig({}).constructor !== Object) throw new Error("public config unavailable"); for (const specifier of ["limina/internal/core/tsconfig/actions", "limina/internal/config/runner", "limina/internal/logger"]) { try { await import(specifier); throw new Error("internal exported"); } catch (error) { if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error; } }',
     ]);
     expect(publicApi.exitCode, publicApi.stdout + publicApi.stderr).toBe(0);
     await put(

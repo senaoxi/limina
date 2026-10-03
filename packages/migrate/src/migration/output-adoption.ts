@@ -1,11 +1,11 @@
-import type { JsonObject } from 'limina/internal/migration';
 import {
   createInputTopologyReader,
   type InputTopologyResult,
-  isPlainRecord,
-  MigrationLogger,
   readInputTopology,
-} from 'limina/internal/migration';
+} from 'limina/internal/core/build-graph/input-topology';
+import type { JsonObject } from 'limina/internal/core/tsconfig/actions';
+import { MigrationLogger } from 'limina/internal/logger';
+import { isPlainRecord } from 'limina/internal/utils/values';
 import { normalizeDeclarations } from './declarations';
 import { type MigrationPlanningState, planningView } from './planning-state';
 import {

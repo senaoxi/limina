@@ -1,9 +1,9 @@
 import {
-  formatErrorMessage,
   ReplacementDriftError,
   RetryableReplacementValidationIoError,
   TerminalReplacementValidationError,
-} from 'limina/internal/migration';
+} from 'limina/internal/check-reporting/atomic-writer';
+import { formatErrorMessage } from 'limina/internal/logger';
 import type { MigrationRecord } from './declarations';
 import { isExpectedInputFailure } from './discovery';
 import type { FrozenMigrationPlan } from './planner';

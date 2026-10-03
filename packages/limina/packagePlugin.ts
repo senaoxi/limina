@@ -9,8 +9,13 @@ export default function generatePackage(): Plugin {
     packageJsonPath,
     rewriteTypes: true,
     transformPackageJson(packageJson) {
-      // Keep the source bridge in the workspace; it is not a published API.
-      delete packageJson.exports?.['./internal/migration'];
+      // Internal source modules are workspace-only and never a published API.
+      const exportKeys = Object.keys(packageJson.exports ?? {});
+      for (const key of exportKeys) {
+        if (key === './internal' || key.startsWith('./internal/')) {
+          delete packageJson.exports?.[key];
+        }
+      }
     },
   });
 }

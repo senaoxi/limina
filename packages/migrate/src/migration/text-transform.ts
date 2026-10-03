@@ -4,8 +4,8 @@ import {
   type ModificationOptions,
   modify,
 } from 'jsonc-parser';
-import type { JsonObject } from 'limina/internal/migration';
-import { isPlainRecord } from 'limina/internal/migration';
+import type { JsonObject } from 'limina/internal/core/tsconfig/actions';
+import { isPlainRecord } from 'limina/internal/utils/values';
 import { deleteJsoncProperty } from './jsonc-delete';
 
 function detectEol(content: string): string {

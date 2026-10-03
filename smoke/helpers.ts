@@ -733,13 +733,22 @@ try {
 if (!configExportRejected) {
   throw new Error('limina/config export should not be exposed.');
 }
-let internalExportRejected = false;
-try {
-  await import('limina/internal/migration');
-} catch (error) {
-  internalExportRejected = Boolean(error) && typeof error === 'object' && 'code' in error && error.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED';
+if (Object.keys(manifest.exports ?? {}).some(key => key === './internal' || key.startsWith('./internal/'))) {
+  throw new Error('Published Limina must not expose workspace-only internal modules.');
 }
-if (!internalExportRejected) throw new Error('Published Limina must not expose workspace-only migration support.');
+for (const specifier of [
+  'limina/internal/core/tsconfig/actions',
+  'limina/internal/config/runner',
+  'limina/internal/logger',
+]) {
+  let rejected = false;
+  try {
+    await import(specifier);
+  } catch (error) {
+    rejected = Boolean(error) && typeof error === 'object' && 'code' in error && error.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED';
+  }
+  if (!rejected) throw new Error(\`Published Limina must reject \${specifier}.\`);
+}
 if (manifest.name !== 'limina') {
   throw new Error('limina/package.json did not resolve to the installed package.');
 }

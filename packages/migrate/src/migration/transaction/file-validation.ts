@@ -1,9 +1,11 @@
 import {
-  isPathInsideDirectory,
-  normalizeAbsolutePath,
   ReplacementDriftError,
   TerminalReplacementValidationError,
-} from 'limina/internal/migration';
+} from 'limina/internal/check-reporting/atomic-writer';
+import {
+  isPathInsideDirectory,
+  normalizeAbsolutePath,
+} from 'limina/internal/utils/path';
 import { lstat, realpath, stat } from 'node:fs/promises';
 import path from 'pathe';
 import {

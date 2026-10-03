@@ -1,7 +1,5 @@
-import type {
-  LiminaFlowReporter,
-  ResolvedLiminaConfig,
-} from 'limina/internal/migration';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { LiminaFlowReporter } from 'limina/internal/flow';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';

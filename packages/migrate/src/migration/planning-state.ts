@@ -1,7 +1,5 @@
-import type {
-  JsonObject,
-  ResolvedLiminaConfig,
-} from 'limina/internal/migration';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { JsonObject } from 'limina/internal/core/tsconfig/actions';
 import type { MigrationRecord } from './declarations';
 import type { MigrationTarget } from './types';
 

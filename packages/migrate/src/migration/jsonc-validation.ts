@@ -1,5 +1,5 @@
 import { type Node, type ParseError, parseTree } from 'jsonc-parser';
-import type { JsonObject } from 'limina/internal/migration';
+import type { JsonObject } from 'limina/internal/core/tsconfig/actions';
 import { isDeepStrictEqual } from 'node:util';
 import ts from 'typescript';
 

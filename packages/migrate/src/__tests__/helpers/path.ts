@@ -1,4 +1,4 @@
-import { normalizeAbsolutePath } from 'limina/internal/migration';
+import { normalizeAbsolutePath } from 'limina/internal/utils/path';
 import path from 'node:path';
 
 export function createFixturePathResolver(
