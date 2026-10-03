@@ -1,16 +1,10 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  mkdir,
-  open,
-  readFile,
-  readdir,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { stripVTControlCharacters } from 'node:util';
+import { format } from 'prettier';
+import { terminalFrames, type TerminalChunk } from './terminal-frames';
 
 const repo = fileURLToPath(new URL('../../', import.meta.url));
 const workspace = path.resolve(process.argv[2] ?? '');
@@ -24,13 +18,25 @@ const environment = Object.fromEntries(
   Object.entries(process.env).filter(
     ([key]) =>
       !/^(?:npm_|PNPM_|VP_)/.test(key) &&
-      !['INIT_CWD', 'NODE_PATH'].includes(key),
+      ![
+        'INIT_CWD',
+        'NODE_PATH',
+        'NODE_OPTIONS',
+        'CI',
+        'CODEX_CI',
+        'NO_COLOR',
+        'FORCE_COLOR',
+        'pnpm_config_verify_deps_before_run',
+      ].includes(key),
   ),
 );
-environment.PATH = (process.env.PATH ?? '')
-  .split(path.delimiter)
-  .filter((entry) => !entry.includes(`${path.sep}node_modules${path.sep}`))
-  .join(path.delimiter);
+environment.PATH = [
+  path.dirname(process.execPath),
+  ...(process.env.PATH ?? '')
+    .split(path.delimiter)
+    .filter((entry) => !entry.includes(`${path.sep}node_modules${path.sep}`)),
+].join(path.delimiter);
+environment.TERM = 'xterm-256color';
 
 if (!process.argv[2]) {
   throw new Error(
@@ -63,6 +69,7 @@ const limina = JSON.parse(
 ) as { version: string };
 const pnpm = execFileSync(pnpmExecutable, ['--version'], {
   encoding: 'utf8',
+  env: environment,
 }).trim();
 if (pnpm !== '11.28.3')
   throw new Error(`Expected pnpm 11.28.3, received ${pnpm}`);
@@ -161,35 +168,34 @@ const appSource =
   "import { value } from '@repo/core';\nexport const result = value + 1;\n";
 await write('packages/app/src/index.ts', appSource);
 
-await mkdir(path.join(workspace, 'node_modules/.bin'), { recursive: true });
-for (const [name, target] of [
-  ['limina', 'packages/limina/dist'],
-  ['typescript', 'node_modules/typescript'],
-  ['publint', 'packages/limina/node_modules/publint'],
-  [
-    '@arethetypeswrong/core',
-    'packages/limina/node_modules/@arethetypeswrong/core',
-  ],
-] as const) {
-  const link = path.join(workspace, 'node_modules', name);
-  await mkdir(path.dirname(link), { recursive: true });
-  await symlink(path.join(repo, target), link, 'dir');
+if (pnpmExecutable !== 'pnpm') {
+  const bin = path.join(workspace, '.capture-bin');
+  await mkdir(bin);
+  await symlink(pnpmExecutable, path.join(bin, 'pnpm'));
+  environment.PATH = bin + path.delimiter + environment.PATH;
 }
-for (const [name, target] of [
-  ['limina', '../limina/bin/limina.js'],
-  ['tsc', '../typescript/bin/tsc'],
-] as const)
-  await symlink(target, path.join(workspace, 'node_modules/.bin', name));
-if (pnpmExecutable !== 'pnpm')
-  await symlink(pnpmExecutable, path.join(workspace, 'node_modules/.bin/pnpm'));
-await mkdir(path.join(workspace, 'packages/app/node_modules/@repo'), {
-  recursive: true,
-});
-await symlink(
-  path.join(workspace, 'packages/core'),
-  path.join(workspace, 'packages/app/node_modules/@repo/core'),
-  'dir',
-);
+// Let pnpm create its normal lockfile, workspace links and executable shims.
+// Keep its default dependency verification enabled, including nested scripts.
+for (const [id, arguments_] of [
+  ['install-lockfile', ['install', '--lockfile-only', '--offline']],
+  ['install-frozen', ['install', '--frozen-lockfile', '--offline']],
+] as const) {
+  const log = execFileSync('pnpm', arguments_, {
+    cwd: workspace,
+    env: environment,
+    encoding: 'utf8',
+  });
+  await write(`${id}.log`, log);
+}
+const installedNode = execFileSync('pnpm', ['exec', 'node', '--version'], {
+  cwd: workspace,
+  env: environment,
+  encoding: 'utf8',
+}).trim();
+if (installedNode !== process.version)
+  throw new Error(`Expected ${process.version}, received ${installedNode}`);
+const columns = 100;
+const rows = 80;
 
 async function run(
   id: string,
@@ -197,54 +203,47 @@ async function run(
   expectedExitCode = 0,
   directory = '.',
 ) {
-  const logPath = path.join(workspace, `${id}.log`);
-  const log = await open(logPath, 'w');
-  let exitCode: number | null;
-  try {
-    exitCode = await new Promise<number | null>((resolve, reject) => {
-      // One file descriptor preserves stdout/stderr ordering, including child tools.
-      const child = spawn(
-        process.execPath,
-        [
-          path.join(workspace, 'node_modules/limina/bin/limina.js'),
-          ...arguments_,
-        ],
-        {
-          cwd: path.join(workspace, directory),
-          env: {
-            ...environment,
-            PATH:
-              path.join(workspace, 'node_modules/.bin') +
-              path.delimiter +
-              environment.PATH,
-            CI: '1',
-            NO_COLOR: '1',
-            FORCE_COLOR: '0',
-            TERM: 'dumb',
-          },
-          stdio: ['ignore', log.fd, log.fd],
-        },
-      );
-      child.once('error', reject);
-      child.once('close', resolve);
-    });
-  } finally {
-    await log.close();
-  }
-  const raw = await readFile(logPath, 'utf8');
+  const argv = ['pnpm', 'exec', 'limina', ...arguments_];
+  const cwd = path.join(workspace, directory);
+  const capturePath = path.join(workspace, `${id}.capture.json`);
+  execFileSync(
+    'python3',
+    [
+      path.join(repo, 'scripts/docs/capture-terminal.py'),
+      '--columns',
+      String(columns),
+      '--rows',
+      String(rows),
+      cwd,
+      capturePath,
+      '--',
+      ...argv,
+    ],
+    { env: environment, timeout: 60_000 },
+  );
+  const { exitCode, chunks } = JSON.parse(
+    await readFile(capturePath, 'utf8'),
+  ) as { exitCode: number; chunks: TerminalChunk[] };
+  const raw = chunks.map((chunk) => chunk.text).join('');
+  await write(`${id}.log`, raw);
   if (exitCode !== expectedExitCode)
     throw new Error(
       `${id}: expected exit ${expectedExitCode}, received ${exitCode}\n${raw}`,
     );
-  // Strip only terminal control sequences. Retain every printed line and space.
-  const text = stripVTControlCharacters(raw);
-  const lines = (text.endsWith('\n') ? text.slice(0, -1) : text).split('\n');
+  const frames = await terminalFrames(chunks, columns, rows);
+  if (frames.length === 0)
+    throw new Error(`${id}: no terminal output captured`);
+  const lines = frames.at(-1)!.lines;
   return {
     id,
-    command: `limina ${arguments_.join(' ')}`,
+    command: argv.join(' '),
+    argv,
+    cwd,
     workspace:
       directory === '.' ? 'limina-workspace' : `limina-workspace/${directory}`,
     exitCode,
+    rawSha256: createHash('sha256').update(raw).digest('hex'),
+    frames,
     lines,
   };
 }
@@ -293,7 +292,16 @@ const data = {
     typescript: typescript.version,
     limina: limina.version,
     platform: `${process.platform}-${process.arch}`,
-    environment: { CI: '1', NO_COLOR: '1', FORCE_COLOR: '0', TERM: 'dumb' },
+    mode: 'interactive',
+    terminal: { columns, rows },
+    environment: {
+      CI: null,
+      CODEX_CI: null,
+      NO_COLOR: null,
+      FORCE_COLOR: null,
+      TERM: environment.TERM,
+      verifyDepsBeforeRun: 'default',
+    },
     sourceSha256: (
       await hashFiles(path.join(repo, 'packages/limina/src'))
     ).digest('hex'),
@@ -304,4 +312,4 @@ const data = {
   commands,
 };
 await mkdir(path.dirname(output), { recursive: true });
-await writeFile(output, JSON.stringify(data, null, 2) + '\n');
+await writeFile(output, await format(JSON.stringify(data), { parser: 'json' }));
