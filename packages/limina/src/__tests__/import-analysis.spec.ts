@@ -4,7 +4,7 @@ import {
   createImportAnalysisContext,
   resolveInternalImport,
 } from '#core/import-graph/context';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
@@ -17,7 +17,10 @@ import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath } from './helpers/path';
 
 async function createTemporaryDirectory(): Promise<string> {
-  return await mkdtemp(path.join(tmpdir(), 'limina-import-analysis-'));
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-import-analysis-'),
+  );
+  return await realpath(temporaryDirectory);
 }
 
 async function writeText(

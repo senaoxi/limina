@@ -9,10 +9,12 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { execReleaseCommand } from './command';
 import {
   getNpmCommand,
   isValidVersion,
+  ReleaseLogger,
   REPO_ROOT,
   runCommand,
   type ReleasePlan,
@@ -213,6 +215,31 @@ function registryIntegrity(
   return value;
 }
 
+function waitForPublishedIntegrity(
+  plan: ReleasePlan,
+  registry?: string,
+): string {
+  const deadline = performance.now() + 300_000;
+  const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
+  let hasReportedWait = false;
+  while (performance.now() < deadline) {
+    const integrity = registryIntegrity(plan, registry);
+    if (integrity !== undefined) return integrity;
+    if (!hasReportedWait) {
+      ReleaseLogger.info(
+        `Waiting up to five minutes for npm metadata: ${plan.config.packageName}@${plan.newVersion}`,
+      );
+      hasReportedWait = true;
+    }
+    const remaining = deadline - performance.now();
+    if (remaining > 0)
+      Atomics.wait(waitBuffer, 0, 0, Math.min(5000, remaining));
+  }
+  throw new Error(
+    `Published version did not become visible within five minutes: ${plan.config.packageName}@${plan.newVersion}. Channels were not promoted.`,
+  );
+}
+
 function registryTags(
   plan: ReleasePlan,
   registry?: string,
@@ -360,8 +387,10 @@ export function publishReleaseGroup(
           throw error;
         }
       }
-      member.registryIntegrity =
-        registryIntegrity(plan, options.registry) ?? null;
+      member.registryIntegrity = waitForPublishedIntegrity(
+        plan,
+        options.registry,
+      );
       saveEvidence();
       if (member.registryIntegrity !== integrity)
         throw new Error(
@@ -395,17 +424,27 @@ export function publishReleaseGroup(
         );
     }
     evidence.phase = 'verify-channels';
-    for (const { plan, member } of packages) {
+    for (const [index, { plan, member }] of packages.entries()) {
       evidence.activePackage = plan.config.packageName;
       member.tagsAfter = registryTags(plan, options.registry);
       saveEvidence();
-      if (
-        member.tagsAfter[plan.npmTag ?? 'latest'] !== plan.newVersion ||
-        ((plan.npmTag ?? 'latest') !== 'latest' &&
-          member.tagsAfter.latest !== member.tagsBefore!.latest)
-      )
+      if (member.tagsAfter[plan.npmTag ?? 'latest'] !== plan.newVersion)
         throw new Error(
           `Channel verification failed for ${plan.config.packageName}.`,
+        );
+      // npm requires a latest tag when the namespace is first created, even
+      // when the upload uses a candidate tag. An established latest stays fixed.
+      const isRegistryBootstrap =
+        !existing[index] &&
+        Object.keys(member.tagsBefore!).length === 0 &&
+        member.tagsAfter.latest === plan.newVersion;
+      if (
+        !isRegistryBootstrap &&
+        (plan.npmTag ?? 'latest') !== 'latest' &&
+        member.tagsAfter.latest !== member.tagsBefore!.latest
+      )
+        throw new Error(
+          `Latest channel changed for ${plan.config.packageName}: expected ${member.tagsBefore!.latest ?? 'absent'}, received ${member.tagsAfter.latest ?? 'absent'}.`,
         );
     }
     evidence.status = 'complete';

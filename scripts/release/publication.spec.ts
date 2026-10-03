@@ -271,12 +271,16 @@ async function createPublicationFixture() {
   const documents = new Map<string, RegistryDocument>();
   const uploads: string[] = [];
   let promotions = 0;
+  const metadataMissingPromotions: number[] = [];
   const controls = {
     isFailMigration: false,
     isCorruptIntegrity: false,
     isFailPromotion: false,
     isDropPromotion: false,
     isLoseUploadResponse: false,
+    metadataMisses: new Map<string, number>(),
+    bootstrapLatest: new Map<string, string>(),
+    isChangeLatest: false,
   };
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -299,6 +303,8 @@ async function createPublicationFixture() {
         }
         if (!(name === 'limina-migrate' && controls.isDropPromotion))
           documents.get(name)!['dist-tags'][parts[5]!] = body as string;
+        if (name === 'limina-migrate' && controls.isChangeLatest)
+          documents.get(name)!['dist-tags'].latest = version;
       } else {
         uploads.push(name);
         if (name === 'limina-migrate' && controls.isFailMigration) {
@@ -310,6 +316,9 @@ async function createPublicationFixture() {
           return;
         }
         documents.set(name, body as RegistryDocument);
+        const bootstrapLatest = controls.bootstrapLatest.get(name);
+        if (bootstrapLatest !== undefined)
+          documents.get(name)!['dist-tags'].latest = bootstrapLatest;
         if (name === 'limina-migrate' && controls.isLoseUploadResponse) {
           reply(503, {
             error: 'controlled response failure after accepted upload',
@@ -326,6 +335,12 @@ async function createPublicationFixture() {
       return;
     }
     const copy = structuredClone(document);
+    const misses = controls.metadataMisses.get(name) ?? 0;
+    if (!isTagRequest && misses > 0) {
+      controls.metadataMisses.set(name, misses - 1);
+      metadataMissingPromotions.push(promotions);
+      delete copy.versions[version];
+    }
     if (name === 'limina' && controls.isCorruptIntegrity)
       copy.versions[version]!.dist.integrity = 'sha512-invalid';
     reply(200, isTagRequest ? copy['dist-tags'] : copy);
@@ -347,7 +362,7 @@ async function createPublicationFixture() {
     const plans = discoverReleasePackages().map(config => ({ config, currentVersion: config.manifest.version, newVersion: config.manifest.version, gitTag: 'limina/v' + config.manifest.version, npmTag: 'beta' }));
     publishReleaseGroup(plans, { registry: ${JSON.stringify(registry)}, provenance: false, evidenceDirectory: ${JSON.stringify(path.join(directory, 'evidence'))} });
   `;
-  const run = () =>
+  const run = (isFastVisibilityTimeout = false) =>
     promisify(execFile)(
       process.execPath,
       [
@@ -355,7 +370,19 @@ async function createPublicationFixture() {
         import.meta.resolve('tsx'),
         '--input-type=module',
         '--eval',
-        source,
+        isFastVisibilityTimeout
+          ? `
+            import { mock } from 'node:test';
+            import { performance } from 'node:perf_hooks';
+            let elapsed = 0;
+            mock.method(performance, 'now', () => elapsed);
+            mock.method(Atomics, 'wait', () => {
+              elapsed += 3_600_000;
+              return 'timed-out';
+            });
+            ${source}
+          `
+          : source,
       ],
       {
         timeout: 45_000,
@@ -390,6 +417,7 @@ async function createPublicationFixture() {
     documents,
     uploads,
     controls,
+    metadataMissingPromotions,
     get promotions() {
       return promotions;
     },
@@ -545,6 +573,128 @@ it(
       assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
       for (const document of fixture.documents.values())
         assert.equal(document['dist-tags'].beta, fixture.version);
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'waits for both accepted versions to become visible before promoting the channel',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      fixture.controls.metadataMisses.set('limina', 2);
+      fixture.controls.metadataMisses.set('limina-migrate', 2);
+      await fixture.run();
+      assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
+      assert.deepEqual(fixture.metadataMissingPromotions, [0, 0, 0, 0]);
+      assert.equal(fixture.promotions, 2);
+      for (const document of fixture.documents.values()) {
+        assert.equal(document['dist-tags'].beta, fixture.version);
+        assert.equal(document['dist-tags'].latest, undefined);
+      }
+      const [evidence] = await fixture.readEvidence();
+      assert.equal(evidence.status, 'complete');
+      for (const member of evidence.packages)
+        assert.equal(member.registryIntegrity, member.integrity);
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'fails without promoting when an accepted version stays invisible past the deadline',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      fixture.controls.metadataMisses.set('limina', Infinity);
+      await assert.rejects(
+        fixture.run(true),
+        /Published version did not become visible within five minutes/u,
+      );
+      assert.deepEqual(fixture.uploads, ['limina']);
+      assert.equal(fixture.promotions, 0);
+      const [evidence] = await fixture.readEvidence();
+      assert.equal(evidence.status, 'failed');
+      assert.equal(evidence.phase, 'upload');
+      assert.equal(evidence.packages[0].registryIntegrity, null);
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'accepts registry bootstrap latest for previously missing packages',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      for (const name of ['limina', 'limina-migrate'])
+        fixture.controls.bootstrapLatest.set(name, fixture.version);
+      await fixture.run();
+      assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
+      const [evidence] = await fixture.readEvidence();
+      assert.equal(evidence.status, 'complete');
+      for (const member of evidence.packages) {
+        assert.deepEqual(member.tagsBefore, {});
+        assert.equal(member.tagsAfter.beta, fixture.version);
+        assert.equal(member.tagsAfter.latest, fixture.version);
+      }
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'rejects an unrelated latest during registry bootstrap',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      fixture.controls.bootstrapLatest.set('limina-migrate', '9.9.0');
+      await assert.rejects(
+        fixture.run(),
+        /Latest channel changed for limina-migrate/u,
+      );
+      const [evidence] = await fixture.readEvidence();
+      assert.equal(evidence.status, 'failed');
+      assert.equal(evidence.phase, 'verify-channels');
+      assert.equal(evidence.packages[1].tagsAfter.beta, fixture.version);
+      assert.equal(evidence.packages[1].tagsAfter.latest, '9.9.0');
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'preserves an existing latest even when registry changes it to the candidate',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      await fixture.run();
+      for (const document of fixture.documents.values()) {
+        document['dist-tags'].latest = '0.3.0';
+        document['dist-tags'].beta = '0.3.0';
+      }
+      fixture.controls.isChangeLatest = true;
+      await assert.rejects(
+        fixture.run(),
+        /Latest channel changed for limina-migrate/u,
+      );
+      assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
+      const evidence = await fixture.readEvidence();
+      const failed = evidence.find((state) => state.status === 'failed');
+      assert.equal(failed.phase, 'verify-channels');
+      assert.equal(failed.packages[1].tagsBefore.latest, '0.3.0');
+      assert.equal(failed.packages[1].tagsAfter.latest, fixture.version);
     } finally {
       await fixture.close();
     }
