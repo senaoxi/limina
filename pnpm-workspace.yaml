@@ -49,6 +49,7 @@ autoInstallPeers: false
 catalogMode: strict
 catalogs:
   dev:
+    '@xterm/headless': 6.0.0
     ini: 6.0.0
     '@types/ini': 4.1.1
     '@astrojs/check': 0.9.10
