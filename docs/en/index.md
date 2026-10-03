@@ -5,7 +5,7 @@ pageClass: limina-home
 hero:
   name: Limina
   text: TypeScript project graph and <span class="hero-accent">architecture governance</span>
-  tagline: Start with incremental type builds, then progressively enable architecture governance
+  tagline: Start with incremental type builds, then enable governance checks as needed
   actions:
     - theme: brand
       text: Get Started

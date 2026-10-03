@@ -1,9 +1,9 @@
 # Config Reference
 
-Limina configuration starts from `limina.config.mts` inside the workspace. Read the reference by topic:
+Limina reads a selected configuration module, usually `limina.config.mts` beside the governance root's `package.json`. Default discovery also accepts `.mjs`, `.ts`, and `.js`; see [Config File](./config-file.md). Read the reference by topic:
 
 - [Config File](./config-file.md): `defineConfig`, function config, `mode`, and `command`.
-- [Checker Configuration](./checkers.md): flat auto/named scopes, fixed checker ownership, solution constraints, dependency evidence, and execution targets.
+- [Checker Configuration](./checkers.md): flat auto/named scopes, semantic authority and final checker ownership, solution constraints, dependency evidence, and execution targets.
 - [Source Boundary](./source-boundary.md): `config.source.include` / `exclude` — the managed source boundary for source coverage checks.
 - [Regions](./regions.md): workspace package governance, nested package-scope extension, and region exclusion.
 - [Source Checks](./source-checks.md): top-level `source.knip` — dependency, module, and ordinary tsconfig ownership checks.
@@ -11,8 +11,8 @@ Limina configuration starts from `limina.config.mts` inside the workspace. Read 
 - [Condition Domains](./condition-domains.md): `graph.conditionDomains` — condition sets checked against declaration reference trees.
 - [Proof Allowlist](./proof-allowlist.md): source coverage exceptions (`file`, `reason`).
 - [Package Checks](./package-checks.md): built-output entries, `publint` / `attw` / `boundary`.
-- [Release Checks](./release-checks.md): `release.npmPackageJsonLint`, `release.contentHash`, tarball and publish hygiene.
+- [Release Checks](./release-checks.md): `release.npmPackageJsonLint`, `release.contentHash`, tarball and release-file checks.
 - [Pipelines](./pipelines.md): named workflows of built-in tasks and external commands.
 - [Execution Concurrency](./execution.md): concurrency limits for `execution.tasks`, checkers, package checks, and release checks.
 
-If you only want the first check running, start with [Config File](./config-file.md) and [Checker Entries](./checkers.md). If you are preparing to publish packages, add [Package Checks](./package-checks.md).
+For your first check, create a [Config File](./config-file.md) and choose [Checker Entries](./checkers.md). Before publishing packages, configure [Package Checks](./package-checks.md).

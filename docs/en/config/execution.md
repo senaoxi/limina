@@ -26,20 +26,20 @@ A concurrency value can be a positive integer or `'auto'`. Explicit numbers are 
 | `execution.checkerBuild`     | `'auto'` | The build-mode checker pool inside `checker:build`.                                                            |
 | `execution.checkerTypecheck` | `2`      | The non-build checker pool inside `checker:typecheck`.                                                         |
 | `execution.packageEntries`   | `'auto'` | How many package output entries `package:check` checks at once.                                                |
-| `execution.releaseEntries`   | `2`      | How many release entries `release:check --package <name>` checks at once.                                      |
+| `execution.releaseEntries`   | `2`      | How many release entries `release:check` checks at once.                                                       |
 
-`'auto'` is resolved conservatively from available parallelism:
+`'auto'` uses the machine's available parallelism as follows:
 
 - `execution.tasks` and `packageEntries` use `max(2, floor(availableParallelism / 2))`;
 - `checkerBuild` uses available parallelism;
-- `checkerTypecheck` and `releaseEntries` default to `2`.
+- `checkerTypecheck` and `releaseEntries` resolve `'auto'` to `2` (and also default to `2`).
 
 All results are clamped to the current item count. When there is runnable work, the result is at least `1`; with no items, it is `0`.
 
 ## Scheduling and Failure
 
-The default `limina check` schedules built-in tasks as independent work; when `execution.tasks` and resource locks allow it, multiple built-in tasks can run at the same time. Resource locks still win: tasks that need the same exclusive resource are not started together.
+The default `limina check` schedules built-in tasks as independent work; when `execution.tasks` and resource locks allow it, multiple built-in tasks can run at the same time. Tasks that need the same exclusive resource do not start together.
 
 Named pipelines are always scheduled in array order. `execution.tasks` does not turn ordered pipeline steps into concurrent work.
 
-Concurrency settings do not change failure policy. A built-in task failure makes the final result fail, but it does not block other built-in tasks or later ordered steps. An external command step failure blocks the remaining steps and records them as `skipped`.
+Concurrency settings do not change failure policy. A completed built-in task failure fails the final result but does not itself stop other tasks or later ordered steps. Failed required `workspace:validate` or `graph:materialize` preparation blocks dependent tasks. An external command failure stops remaining steps and records them as `skipped`. A disabled task or skipped analyzer does not mean that its checks ran.

@@ -14,4 +14,4 @@ Root release scripts, the product and build-tools consume registry Logaria throu
 
 The independent migration package preserves the existing migration transaction and governance semantics. The old `limina migration` command forwards to a local matching package or downloads that exact version through npm. Both packages share one version, release group and `limina/v<version>` tag. See [migration status](./migration.md) for evidence and the independence gate, and [Limina architecture](./limina.md) for product invariants.
 
-Deployment-only CLI dependencies belong to the private `packages/deploy-tools` workspace and the dev catalog. They do not join the two-package publication group; see the [infrastructure owner](./infrastructure.md).
+The Vercel deployment CLI is a development dependency of the existing private `docs` workspace, resolved through the dev catalog and frozen lockfile. It does not join the two-package publication group; see the [infrastructure owner](./infrastructure.md).

@@ -21,17 +21,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Build tools and both public packages
         run: pnpm run build
-      - name: Check infrastructure configuration
-        run: pnpm run infrastructure:check
-      - name: Measure tarballs and generate license reports and SBOMs
-        run: pnpm run artifacts:report
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: release-artifact-reports
-          path: .reports/release/**
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 14
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

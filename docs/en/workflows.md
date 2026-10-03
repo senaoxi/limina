@@ -1,10 +1,12 @@
 # Workflows
 
-The day-to-day command sequences, a `CI` example, best practices, FAQ, and the maintainer release checklist are collected here, all invoking the same checks documented in the [CLI Reference](./cli.md). Start with [Getting Started](./getting-started.md) if you are new to Limina.
+This page lists local command sequences, a CI example, configuration practices, FAQ, and a release checklist. See [CLI Reference](./cli.md) for command details, or [Getting Started](./getting-started.md) for initial setup.
 
 ## Recommended Workflows
 
-Run configuration migration with the separate `limina-migrate` package matching your Limina version; see the [migration contract](./cli.md#limina-migration).
+Run configuration migration with the separate `limina-migrate` package matching your Limina version; see the [migration contract](./cli.md#limina-migration). The distributed tool embeds that release's core input implementation; configs importing public `limina` still need it installed where the config resolves dependencies. `limina migration` is a deprecated forwarder that uses a matching local tool or invokes npm to obtain the exact core version. Workspace-only `limina/internal/*` entries are removed from the published core exports.
+
+After migration, inspect `.limina/migration/latest.json` and run `limina check`. Migration verifies that a fresh process can read the written input topology for the `check` and `graph` command configurations and that protected membership remains reachable. This does not run full graph governance or checker execution, or promise equivalent native `tsc -b` behavior. Incomplete dependency comparison preserves retained explicit source relations instead of treating missing facts as an empty inferred graph.
 
 ### Local Development
 
@@ -14,7 +16,7 @@ pnpm exec limina checker typecheck
 pnpm exec limina graph check
 ```
 
-Use these while changing `TypeScript` configs or package boundaries to confirm the generated graph, build checker entries, and non-build checker entries are still usable.
+Run these commands after changing TypeScript configs or package boundaries to check the graph and execute the selected build and check-only targets.
 
 When artifact consumption changes, export the dependency graph. Limina derives artifact dependency edges from actual imports that resolve into built output inside the managed tsconfig domains. The category follows source ownership first, then validated output roots declared by `liminaOptions.outputs` or package output entries. A custom output such as `lib/` is eligible; a directory named `dist/` alone is not proof of an artifact, and owned source inside it remains source.
 
@@ -28,7 +30,7 @@ pnpm exec limina graph export --view artifact --output .limina/dependency-graph.
 pnpm exec limina check
 ```
 
-This checks graph relationships, file ownership, coverage, build-mode checkers, and check-only runners together.
+The default pipeline checks graph relationships, file ownership, coverage, build-mode checkers, and check-only runners together. Review task and check-item outcomes: `disabled`, `blocked`, or `skipped` work has not passed a check. Package and release checks require their own commands or configured pipeline tasks.
 
 ### Pre-publish
 
@@ -39,8 +41,10 @@ pnpm exec limina release check --package <name>
 pnpm exec limina check publish
 ```
 
+Here `pnpm build` is your project's build script, `<name>` is a configured package entry name, and the final command requires a user-defined `pipelines.publish`. There is no built-in `publish` pipeline. The package and release check commands do not publish; project scripts and pipelines run the commands you configure.
+
 ::: warning
-Build first and confirm that `package.entries[].outDir` contains the files consumers will install.
+Build first and confirm that the selected `package.entries[].outDir` contains the files consumers will install. Configure and enable the intended package/release checks; an optional analyzer that is unavailable may be skipped, so a successful command alone does not prove it ran.
 :::
 
 ## CI Example
@@ -73,10 +77,10 @@ jobs:
 
 - Keep a source `tsconfig.json` aggregator's checker-resolved file set empty and declare its `references` directly; `files: []` is the clearest spelling.
 - Keep solution configs at the exact `tsconfig.json` entry path. A named `tsconfig.*.json` that resolves no files and declares `references` is a TypeScript solution, but it is an unsupported Limina solution name.
-- Keep source tsconfig file sets intentional, and let Limina own the declaration build configs under `.limina/`.
-- Keep workspace package exports intentional: source entries need references from real imports or `implicitRefs`, and artifact entries appear in `limina graph export --view artifact` as scoped artifact dependencies.
+- Configure source tsconfig file sets explicitly, and let Limina generate declaration build configs under `.limina/`.
+- Review workspace exports against actual consumption: consumed source entries may require declaration-provider references or `implicitRefs`; consumed artifacts under validated output roots can appear in `limina graph export --view artifact`. Unused exports do not create these edges.
 - Source, package, and release checks cover different layers; release-related checks should run after artifacts are built.
-- Keep allowlists small and explain why each exception is safe.
+- Limit allowlists to the needed exceptions and explain why each is safe.
 
 :::
 
@@ -84,7 +88,7 @@ jobs:
 
 ### How does Limina recognize a solution config?
 
-Limina uses the active checker to parse each reachable config. A config is a TypeScript solution when its effective file list is empty and it directly declares `references`; this can include configs that use `extends` or checker-supported framework files. Limina expands that role only when the path basename is exactly `tsconfig.json`. Migration can expand pure named membership wrappers into their parents, with path rebasing and source-membership protection. Wrappers with substantive Limina declarations, attributed edges or named-wrapper cycles require manual conversion; see [migration](./cli.md#limina-migration).
+Limina parses each reachable config with its active checker. A config has TypeScript solution semantics when its effective file list is empty and it directly declares `references`; `extends` and supported framework files still affect that file list. Limina expands solutions only at the exact `tsconfig.json` basename. Migration can expand pure named membership wrappers into retained solution parents, rebase paths, protect source membership, and prune path-only wrapper or solution-cycle edges while compensating retained reachability. Wrappers with substantive Limina declarations, or reference attributes that cannot be propagated or safely removed, need manual conversion; see [migration](./cli.md#limina-migration).
 
 ### How do `limina checker build` and `checker typecheck` choose targets?
 
@@ -97,12 +101,12 @@ Module semantics are selected earlier and frozen separately from target ownershi
 ### Why do package checks require a build first?
 
 ::: warning
-They inspect the package output under `package.entries[].outDir`. That output must already contain the built `package.json`, `exports`, `JavaScript`, and declarations. `release:check` additionally expects the packed output to contain `README.md` and `LICENSE.md`, and no source maps.
+They inspect selected package outputs under `package.entries[].outDir`. Each output needs a readable `package.json` and the files its published manifest declares; JavaScript, declarations, and `exports` depend on that package's public surface. When release tarball checks are enabled, the packed output must also contain `README.md` and `LICENSE.md`, and must not contain source map files or JavaScript `sourceMappingURL` directives.
 :::
 
 ### Can workspace exports point to dist?
 
-Yes. Workspace package exports may point to source entries or built artifacts. Limina first requires the active resolver configuration to resolve every public export. Generated graph references are required for imports whose resolved entry is owned source in a declaration project, with `liminaOptions.implicitRefs` available for real dynamic or virtual edges that static imports cannot prove. Built declarations such as `dist/*.d.ts` are artifact boundaries: they do not create manifest `declaration-provider` edges, generated project references, or output-build references. Limina may reverse-attribute a managed declaration to source for type evidence or diagnostics, but that attribution is not a build dependency or task-ordering guarantee.
+Yes. Workspace package exports may point to source entries or built artifacts. Graph checks follow entries actually consumed by imports under the importing checker's resolver configuration; an unused broken export does not fail graph checking. Generated graph references are required when a consumed source relation has a declaration-provider requirement and a valid managed provider, with `liminaOptions.implicitRefs` available for real dynamic or virtual edges that static imports cannot prove. Built declarations such as `dist/*.d.ts` are artifact boundaries: they do not create manifest `declaration-provider` edges, generated project references, or output-build references. Limina may reverse-attribute a managed declaration to source for type evidence or diagnostics, but that attribution is not a build dependency or task-ordering guarantee.
 
 ### Should `Vue` or `Svelte` files be placed in the TypeScript graph?
 
@@ -123,6 +127,8 @@ Before publishing Limina itself or a package governed by Limina, check that:
 - the package build has run;
 - `pnpm exec limina package check --package <name>` passes;
 - `pnpm exec limina release check --package <name>` passes.
+
+Check the reported coverage and skipped items as well as the exit code. Publishing Limina itself also follows the repository's release tooling for the same-version `limina` and `limina-migrate` pair and its CI gates; this checklist does not authorize or perform publication.
 
 ## See Also
 

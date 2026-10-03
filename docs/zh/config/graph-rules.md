@@ -13,17 +13,17 @@ export default defineConfig({
           refs: [
             {
               path: 'packages/app/src/node/tsconfig.lib.json',
-              reason: 'client runtime must not depend on Node runtime',
+              reason: '客户端运行时不得依赖 Node 运行时',
             },
           ],
           deps: [
             {
               name: 'node:*',
-              reason: 'browser output must stay free of Node builtins',
+              reason: '浏览器产物不得包含 Node 内置模块',
             },
             {
               name: '@acme/internal-node',
-              reason: 'browser output must not consume Node-only packages',
+              reason: '浏览器产物不得消费仅适用于 Node 的包',
             },
           ],
         },
@@ -31,7 +31,7 @@ export default defineConfig({
           refs: [
             {
               path: 'packages/app/src/generated/tsconfig.lib.json',
-              reason: 'generated declarations are wired by the build pipeline',
+              reason: '生成声明由构建流水线连接',
             },
           ],
         },
@@ -41,11 +41,11 @@ export default defineConfig({
 });
 ```
 
-## rules.\<label\>
+## `rules.<label>`
 
 - **类型：** `Record<string, GraphRule>`
 
-`rules` 的 `key` 必须和源码 `tsconfig` 里的 `liminaOptions.graphRules` 项对上。一个源码配置可以列出多个标签，Limina 会合并这些标签对应的规则。
+每个 `rules` 键名对应一个标签。源码配置在 `liminaOptions.graphRules` 中列出该标签时，才使用它的规则；同一配置可以列出多个标签并使用各自匹配的规则。未使用的标签不作用于任何源码配置。
 
 配合源码配置中的标签：
 
@@ -60,15 +60,15 @@ export default defineConfig({
 
 这个配置覆盖的源码会套用 `graph.rules.runtime-client`。
 
-## allow.refs
+## `allow.refs`
 
 - **类型：** `Array<{ path: string; reason: string }>`
 
-`allow.refs` 的条目形状和 `deny.refs` 相同，用来承认那些已经声明、但静态导入分析无法证明的额外 `references`。它不会创建引用，也不会让被拒绝的引用合规；同一路径同时被 `allow` 和 `deny` 命中时，仍然以 `deny.refs` 为准。
+`allow.refs` 的条目形状和 `deny.refs` 相同，用来承认那些已经声明、但静态导入分析无法证明的额外 `references`。每个 `path` 都相对 `config.rootDir` 解析，必须能映射到可达的生成声明叶子；可填写原源码叶子路径，外部激活包可使用 `../`。聚合配置或未治理配置不是合法规则目标。它不会创建引用，也不会让被拒绝的引用合规；同一路径同时被 `allow` 和 `deny` 命中时，仍然以 `deny.refs` 为准。
 
-生成引用会从源码导入和源码 `tsconfig` 上的 `liminaOptions.implicitRefs` 推导。动态导入、生成清单或虚拟模块确实形成源码边，但静态分析看不到时，使用 `implicitRefs` 补边。`allow.refs` 只用于解释已经存在的额外声明引用。
+生成引用会从源码导入和源码 `tsconfig` 上的 `liminaOptions.implicitRefs` 推导。字面量动态导入已经参与分析。计算后的运行时导入、生成清单或其他未被观察的代码形成明确声明构建关系时，使用 `implicitRefs` 补充；它不会新增模块解析器，也不会让不支持的虚拟模块变为可消费。`allow.refs` 只用于解释已经存在的额外声明引用。
 
-## deny.refs
+## `deny.refs`
 
 - **类型：** `Array<{ path: string; reason: string }>`
 
@@ -79,13 +79,13 @@ export default defineConfig({
 ```jsonc
 {
   "path": "packages/app/src/node/tsconfig.lib.json",
-  "reason": "client runtime must not depend on Node runtime",
+  "reason": "客户端运行时不得依赖 Node 运行时",
 }
 ```
 
 如果标记了 `runtime-client` 的项目在 `references` 里指向了这个仅 `Node` 源码配置对应的生成配置，`limina graph check` 会直接失败，并显示 `reason`。
 
-完整一点看，它对应这样的目录和配置：
+示例目录和配置如下：
 
 ```text
 packages/app/
@@ -95,7 +95,7 @@ packages/app/
   src/node/read-file.ts
 ```
 
-客户端源码配置标记为 `runtime-client`；引用由 Limina 生成：
+客户端源码配置标记为 `runtime-client`：
 
 ```jsonc
 // packages/app/src/client/tsconfig.lib.json
@@ -107,11 +107,11 @@ packages/app/
 }
 ```
 
-运行 `pnpm exec limina graph check` 时，Limina 会先准备生成图，再读取相关项目的 `references`。当它看到标记了 `runtime-client` 的项目引用到 `packages/app/src/node/tsconfig.lib.json` 对应的生成配置时，会拿源码路径和 `graph.rules.runtime-client.deny.refs` 对比。
+运行 `pnpm exec limina graph check` 时，Limina 会把源码提供者关系与 `graph.rules.runtime-client.deny.refs` 对比，同时检查实际项目引用。引用推断会从生成配置中省略被禁止的导入推导引用；省略引用不会让该源码导入合规。
 
-结果是图检查失败，并提示这条项目引用命中了禁止规则。这个结果说明问题不只是某个导入写错，而是 `TypeScript` 图里已经把客户端运行时和 `Node` 运行时建成了依赖关系。
+需要 Node 叶子配置的客户端导入会被报告为图访问遭拒，并显示配置中的 `reason`。应处理源码关系或规则，而不是修改生成文件。
 
-## deny.deps
+## `deny.deps`
 
 - **类型：** `Array<{ name: string; reason: string }>`
 
@@ -125,7 +125,7 @@ import { readFileSync } from 'node:fs';
 import { createServerClient } from '@acme/internal-node';
 ```
 
-`limina graph check` 会按 `runtime-client` 规则命中 `node:*` 和 `@acme/internal-node`，并显示规则里的 `reason`。这样浏览器 / 运行时边界不是靠口头约定，而是由配置和源码导入一起验证。
+`limina graph check` 会按 `runtime-client` 规则命中 `node:*` 和 `@acme/internal-node`，并显示规则里的 `reason`。
 
 对应的目录可以是：
 
@@ -147,4 +147,4 @@ import { createServerClient } from '@acme/internal-node';
 
 运行 `pnpm exec limina graph check` 时，Limina 会用 `TypeScript` 解析 `src/client/load.ts` 中的导入。因为这个文件属于配置了 `liminaOptions.graphRules: ["runtime-client"]` 的叶子，Limina 会把解析到的说明符和 `deny.deps` 对比：`node:fs` 命中 `node:*`，`@acme/internal-node` 命中同名包规则。
 
-结果是图检查失败，并显示每条命中规则的 `reason`。这能让评审者直接看到“浏览器运行时引入了仅 `Node` 能力”，而不需要自己推断这些导入会不会在浏览器里出问题。
+图检查会失败，并显示每条命中规则的 `reason`。

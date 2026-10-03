@@ -42,12 +42,13 @@ jobs:
           git fetch --no-tags origin main:refs/remotes/origin/main
           pnpm run release:check-tag
       - uses: ./.github/actions/build-and-check
-      - run: pnpm run security:audit
+      - name: Audit dependencies before deployment
+        run: pnpm audit --audit-level high
       - run: pnpm run docs:build
       - name: Build and deploy the independent documentation project
         shell: bash
         run: |
           set -euo pipefail
-          pnpm --dir packages/deploy-tools exec vercel pull --cwd="$GITHUB_WORKSPACE" --yes --environment=production --token="$VERCEL_TOKEN"
-          pnpm --dir packages/deploy-tools exec vercel build --cwd="$GITHUB_WORKSPACE" --prod --token="$VERCEL_TOKEN"
-          pnpm --dir packages/deploy-tools exec vercel deploy --cwd="$GITHUB_WORKSPACE" --prebuilt --prod --yes --token="$VERCEL_TOKEN"
+          pnpm --dir docs exec vercel pull --cwd="$GITHUB_WORKSPACE" --yes --environment=production --token="$VERCEL_TOKEN"
+          pnpm --dir docs exec vercel build --cwd="$GITHUB_WORKSPACE" --prod --token="$VERCEL_TOKEN"
+          pnpm --dir docs exec vercel deploy --cwd="$GITHUB_WORKSPACE" --prebuilt --prod --yes --token="$VERCEL_TOKEN"

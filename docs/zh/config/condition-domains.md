@@ -1,6 +1,6 @@
 # 条件域
 
-`graph.conditionDomains` 用来说明：某个真实源码入口应该按哪一组条件去解析依赖。Limina 会找到这个入口对应的声明构建图，沿着引用关系展开，并检查所有可达项目是否都使用配置中声明的 `compilerOptions.customConditions`。
+`graph.conditionDomains` 声明源码入口解析依赖时应使用的条件集合。Limina 会找到这个入口对应的声明构建图，沿着引用关系展开，并检查所有可达项目是否都使用配置中声明的 `compilerOptions.customConditions`。
 
 ```js
 import { defineConfig } from 'limina';
@@ -10,12 +10,12 @@ export default defineConfig({
     conditionDomains: [
       {
         name: 'web',
-        entry: 'apps/web/tsconfig.json',
+        entry: 'apps/web/tsconfig.client.json',
         customConditions: ['browser', 'source'],
       },
       {
         name: 'node',
-        entry: 'apps/node/tsconfig.json',
+        entry: 'apps/node/tsconfig.server.json',
         customConditions: ['node', 'source'],
       },
     ],
@@ -27,15 +27,15 @@ export default defineConfig({
 
 `compilerOptions.customConditions` 会影响 `TypeScript` 和 Limina 解析器在当前 `tsconfig` 域内读取包 `exports` 字段时选择哪一个分支。比如 `browser`、`node`、`source` 这些条件，通常就代表不同的运行环境或构建方式。其他解析器可能使用全局唯一条件集合，这是另一种模型。
 
-声明引用树只是 `tsc -b` 的项目图，它不会自动告诉你“这个入口应该按浏览器条件解析，还是按 `Node` 条件解析”。如果同一棵声明引用树里混用了不同的 `customConditions`，同一个包的 `exports` 可能在不同项目里指向不同文件：类型检查看见一个分支，运行时或图导入分析看见另一个分支。结果就是声明产物、依赖边、工作区包导出分类都可能悄悄分叉。
+声明引用树描述 `tsc -b` 使用的项目关系，解析条件则来自各项目的配置。如果同一棵树混用了不同的 `customConditions`，同一个包的 `exports` 可能在不同项目中指向不同文件。类型检查、运行时解析和图导入分析因此可能使用不同文件，影响声明产物、依赖边和工作区包导出分类。
 
-`graph.conditionDomains` 就是把这件事写清楚：这个入口属于哪个条件域，应该使用哪一组 `customConditions`。它不会替代 `tsconfig`；真正参与解析的仍然是 `tsconfig` 里的 `compilerOptions.customConditions`。Limina 只是拿配置里的期望值去检查实际项目图是否一致。
+`graph.conditionDomains` 记录入口期望的条件集合，Limina 将它与实际项目图比较。解析器仍从 `tsconfig` 读取 `compilerOptions.customConditions`。
 
-## conditionDomains
+## `conditionDomains`
 
 - **类型：** `Array<{ name: string; entry: string; customConditions: string[] }>`
 
-`entry` 应该指向被启用检查器选中的普通源码 `tsconfig`。`tsconfig.build.json` 这类构建聚合器不能作为条件域入口，因为条件域描述的是一棵具体的声明引用树。
+`entry` 应该指向能映射到生成声明项目、且从启用检查器入口可达的普通源码叶子。上例要求已选中的 `apps/*/tsconfig.json` 聚合配置分别引用命名的客户端或服务端叶子配置。直接拥有源码的默认 `tsconfig.json` 也可以使用；聚合配置、`tsconfig.build.json` 等构建聚合配置，以及 Astro/Svelte 类型检查叶子配置都没有所需的声明项目映射。
 
 即使没有显式配置 `conditionDomains`，Limina 也会运行默认检查：每个受检查的声明项目，以及从它的 `references` 可达的所有声明项目，都必须拥有相同的有效 `customConditions`。显式配置 `conditionDomains` 后，你还可以把真实入口期望的条件集合写出来，让 Limina 一起校验。
 
@@ -52,15 +52,15 @@ Limina 会先准备生成图，并从启用的检查器入口收集所有声明�
 配置了 `conditionDomains` 后，Limina 还会对每个条件域做额外校验：
 
 - `name` 和 `entry` 必须是非空字符串，`customConditions` 必须是字符串数组。
-- `entry` 必须相对于 `config.rootDir`，并指向激活 package island 已治理的现有源码 `tsconfig`。外部激活包可以使用 `../`。
+- `entry` 必须相对于 `config.rootDir`，并指向已激活包的治理范围内的现有源码 `tsconfig`。外部激活包可以使用 `../`。
 - `entry` 必须已经被启用的检查入口管辖；条件域不会把未纳入检查器的项目临时加入图中。
 - Limina 会展开 `entry` 的声明引用子树，并复用默认的一致性检查。
-- `entry` 项目的有效 `compilerOptions.customConditions` 必须等于条件域声明的 `customConditions`。
+- `entry` 项目的有效 `compilerOptions.customConditions` 在排序、去重后必须等于条件域声明的 `customConditions`；顺序和重复字符串不形成不同条件集合。
 
-换句话说，条件域只负责描述和检查“这棵树应该按什么条件解析”。它不创建引用、不改 `tsconfig`，也不负责寻找入口外的新项目。
+条件域只检查期望的解析条件，不创建引用、不改 `tsconfig`，也不寻找检查器图之外的项目。
 
 ## 能得到什么
 
-显式配置条件域后，“这个入口到底按 `web`、`node` 还是 `source` 条件解析”会变成一条可以检查的规则。配置错了会在图检查阶段失败，而不是等到某个包 `exports` 走错分支后，才表现成缺边、误报或产物分类错误。
+入口的有效条件与配置的条件域不一致时，图检查会报告差异。这有助于定位可能影响 `exports` 解析、依赖边或产物分类的条件配置问题。
 
-它也适合多入口仓库：比如浏览器入口使用 `['browser', 'source']`，`Node` 入口使用 `['node', 'source']`。每个入口的声明引用树都必须在 Limina 检查的条件域内保持一致。
+多入口仓库可以为各入口分别声明条件域。例如，浏览器入口使用 `['browser', 'source']`，`Node` 入口使用 `['node', 'source']`。每个入口的声明引用树都必须在 Limina 检查的条件域内保持一致。

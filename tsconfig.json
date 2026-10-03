@@ -8,7 +8,6 @@
   },
   "include": [
     "scripts/**/*.ts",
-    "migration/*.json",
     ".github/*.json",
     ".vscode/*.json",
     "limina.config.mts",

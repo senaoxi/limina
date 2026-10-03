@@ -2,13 +2,13 @@
 
 A TypeScript monorepo often starts simple: one root `tsconfig.json`, a few packages, and a type-check script.
 
-At that stage, the code structure is usually easy to understand. Which package a file belongs to, which modules it depends on, which config checks it, and where it should appear in build order can usually be judged directly.
+At that stage, a file's package, dependencies, checking config, and place in the build order are usually easy to identify.
 
-As the repository grows, a single package can become complex. It may contain browser runtime code, Node runtime code, shared modules, test modules, tool scripts, build configuration, and published entries at the same time. To give each of these files the correct type environment, teams usually create different `tsconfig` files for different scenarios.
+As the repository grows, one package may contain browser code, Node code, shared modules, tests, tools, build configuration, and published entries. These source groups often need different type environments and separate `tsconfig` files.
 
-At that point, the real burden is no longer “write one `tsconfig`.” It is maintaining an accurate TypeScript project reference graph across multiple `tsconfig` files over time. Every source import change can affect build order, runtime boundaries, and check coverage.
+With multiple configs, developers also have to maintain their TypeScript project references. Changes to source dependencies that require declarations can affect build order; runtime boundaries and check coverage need attention too.
 
-Limina's core problem is to build a verifiable project-reference graph on top of TypeScript project references, so code structure in complex monorepos stays understandable, reviewable, and predictable.
+Limina reads source configs and checker-derived dependency facts, generates supported declaration references, and checks configured ownership and dependency rules.
 
 ## One Package Can Contain Multiple Engineering Boundaries
 
@@ -23,9 +23,9 @@ In a complex TypeScript monorepo, a package may already contain multiple boundar
 - build scripts and tool scripts;
 - multiple public entries exposed to consumers.
 
-These files may live in the same package, but they should not be covered by one type environment without distinction. Browser code should not depend on Node builtins; shared modules should not accidentally bind to one specific runtime; test code and tool scripts should not pollute production build relationships.
+Files in the same package may need separate type environments. For example, a project may require browser code to avoid Node built-ins, shared modules to remain independent of a runtime, and tests and tools to stay outside production build relationships.
 
-Therefore, splitting multiple `tsconfig` files is reasonable. The problem is that, after the split, the dependency relationships between those configs also have to be maintained.
+Separate `tsconfig` files express these environments; their dependency relationships still need to be maintained.
 
 ## Project References Improve Builds, but Add Maintenance Cost
 
@@ -33,29 +33,29 @@ TypeScript project references are suitable for large repositories. They let type
 
 But project references assume that the reference graph is accurate.
 
-The most typical maintenance cost does not necessarily come from cross-package access. It often comes from [multiple engineering boundaries inside one package](#one-package-can-contain-multiple-engineering-boundaries). When a module uses a relative path to access another module in the same package, for example:
+This applies to cross-package access and to [different source scopes within one package](#one-package-can-contain-multiple-engineering-boundaries). A relative import within the same package may look like this:
 
 ```ts
 import { resolveThemeConfig } from '../shared/theme';
 ```
 
-it looks like a normal relative import. But if the importer and imported file are owned by different `tsconfig` files, that source dependency also needs to be reflected in the TypeScript project reference graph. Otherwise, the source relationship exists, but the build graph does not express it.
+A reference is needed only when the importer and imported file belong to different managed configs and the checker's semantic evidence requires a source declaration provider. Consuming an existing declaration artifact or observing a framework scheduling dependency does not by itself require that reference.
 
-Without automated checks, developers have to decide whether this import crosses different `tsconfig` ownership scopes, whether the dependent config needs a new `references` entry, whether old `references` are still necessary, and whether the relationship breaks runtime boundaries.
+When maintaining references by hand, developers must check config ownership, add or remove references as dependencies change, and review any runtime-boundary violations.
 
-The more configs a repository has, the harder this is to maintain by hand. Project references improve incremental build capability, but they also shift part of the structural maintenance cost onto developers: when real source dependencies change, `references` must change with them; when source dependencies are removed, stale references should be removed as well. As soon as these two relationship sets drift, build order, check coverage, and runtime boundaries become unpredictable.
+As configs multiply, keeping declaration dependencies and build references aligned takes more work. This alignment supports build ordering and incremental reuse; source coverage and runtime boundaries still need separate checks.
 
 ## Limina Starts Governance from the Project Reference Graph
 
-Limina's checks are not an extra rule system detached from TypeScript. They are built on top of TypeScript project references.
+Limina uses TypeScript project references for supported declaration builds.
 
-Teams still maintain their existing source configs and package boundaries. Limina reads those configs and real source imports, generates an incrementally executable type build graph, and checks whether that graph is consistent with the source structure.
+Teams still maintain their source configs and package boundaries. Limina reads those configs and checker-derived dependency facts, generates declaration build relations for build-capable owners, and checks those relations against configured governance rules. Astro and Svelte owners run per leaf without declaration projection; artifact consumption is exported separately and does not establish build-task ordering.
 
-This means users do not need to spend all their effort hand-writing and synchronizing `references`. More importantly, the build graph is no longer just static configuration; it becomes an engineering fact that can be generated, verified, and run continuously.
+Limina recalculates generated declaration references from the current configs and dependency facts, reducing manual reference maintenance. Local commands and CI can check the resulting graph.
 
-When the source structure changes, Limina continues to answer questions around that generated graph: whether real imports require new project references, whether existing project references are still necessary, whether cross-runtime dependencies violate boundary constraints, whether source files belong to clear check coverage, and whether the generated build relationship remains suitable for incremental execution.
+When source structure changes, Limina checks declaration-provider requirements, configured runtime rules, source ownership, and check coverage. The generated references let supported checkers run their declaration builds.
 
-The following scenarios all explain the same underlying point: put code relationships into one verifiable project-reference graph, rather than asking developers to manually reconstruct the entire `references` graph for every change.
+The following scenarios use these checks. Source ownership, declaration references, framework scheduling, and artifact consumption remain separate facts; they do not all become TypeScript `references`.
 
 ## Typical Scenario: One Package Supports Multiple Runtimes
 
@@ -76,11 +76,11 @@ src/node/tsconfig.json     # Node runtime
 src/shared/tsconfig.json   # shared modules
 ```
 
-The expected structure is clear: `client` may depend on `shared`, but should not depend on `node`; `shared` should remain reusable and should not bind to one concrete runtime; `node` may use Node types and Node builtins.
+For this example, suppose `client` may depend on `shared` but not `node`, `shared` must remain independent of a runtime, and `node` may use Node types and built-ins.
 
-The problem is that these expectations need to be reflected in the project reference graph and source boundaries. Otherwise, each time a developer adds a relative import across `tsconfig` ownership scopes, they have to make the same decisions described in [Project References Improve Builds, but Add Maintenance Cost](#project-references-improve-builds-but-add-maintenance-cost): whether the dependent config should add `references`, whether the edge violates runtime boundaries, and whether old references are still necessary.
+These requirements need source scopes and configured graph rules. Cross-config imports also need the declaration-reference review described in [Project References Improve Builds, but Add Maintenance Cost](#project-references-improve-builds-but-add-maintenance-cost).
 
-Limina's value is to turn those decisions into checks. Users express real dependencies through source code; Limina maintains a verifiable project-reference graph based on those dependencies and reports failures when the structure does not match expectations.
+Users declare source ownership scopes and graph rules. Limina builds the supported declaration graph from source dependencies and reports rule violations. Directory names such as `client` and `node` alone do not establish a runtime rule.
 
 ## Typical Scenario: Tests and Tooling Should Not Pollute the Main Build
 
@@ -95,13 +95,13 @@ packages/example/
   build.config.ts
 ```
 
-These files need type checking, but they should not necessarily participate in production build relationships.
+These files need type checking, but they should not necessarily participate in production artifact builds. A build-capable test or tool owner can still have a Limina declaration build for checking its own scope.
 
-Without clear configuration boundaries, test code may import dependencies that are only available in tests, tool scripts may import Node-only modules, and those relationships may be incorrectly mixed into the production build graph. This is the same problem as [one package supporting multiple runtimes](#typical-scenario-one-package-supports-multiple-runtimes): different source ranges need different type environments and explicit reference relationships.
+Tests may use test-only dependencies, and tools may use Node-only modules. Separate configs keep these type environments distinct from production source, as in the [multiple-runtime example](#typical-scenario-one-package-supports-multiple-runtimes).
 
-Limina is not concerned with how many check scripts a repository has. It is concerned with whether the source ranges behind those scripts are clear. Test files should enter only test configs, tool scripts should use their own suitable type environment, and production source should not be accidentally owned by test or tool configs.
+Configure the intended source ownership: test files belong to test configs, tools use a suitable type environment, and production source stays outside test and tool ownership.
 
-When these relationships can be checked, teams can understand more clearly where each piece of code sits in the repository structure.
+Ownership checks can report a file that is covered by conflicting configs.
 
 ## Typical Scenario: Code Runs, but the Structure Is No Longer Predictable
 
@@ -111,47 +111,47 @@ Cross-package relative imports are a common structural problem in monorepos:
 import { Button } from '../../ui/src/Button';
 ```
 
-This code may work in the short term, but it bypasses the package name, dependency declaration, and public entry. As a result, `package.json` does not show the real dependency, the package's public entries cannot constrain the way it is used, and developers still have to manually decide whether this import should enter the TypeScript project reference graph.
+This import bypasses the package name, dependency declaration, and public entry. The code may resolve even though `package.json` does not declare that dependency.
 
-A more predictable form is to access the package through its package name and public entry:
+Declare the dependency in the importing package and use its public entry:
 
 ```ts
 import { Button } from '@acme/ui';
 ```
 
-Then the code relationship appears in source imports, dependency declarations, public entries, and the project graph at the same time. Reviewers can also judge whether the change fits the repository structure.
+Limina can check this import against the dependency declaration and consumed public entry. Declaration-provider edges, framework scheduling, and artifact consumption still depend on checker facts and target ownership; a package name alone does not establish a project reference.
 
 `#imports` follow the same idea: a relative target is an internal entry of the declaring package scope and cannot be used to access another package; a package target may point to a third-party package or a workspace dependency, but it still needs to be authorized by the workspace package that owns the importing file.
 
-This is the same kind of problem as the earlier [cross-`tsconfig` relative import inside one package](#project-references-improve-builds-but-add-maintenance-cost): the fact that code resolves does not mean the structural relationship has been expressed correctly. Limina's checks help the team confirm whether the code is in a clear, reasonable, and predictable position in the overall repository structure.
+As with [cross-config imports within one package](#project-references-improve-builds-but-add-maintenance-cost), resolution alone does not establish ownership, authorization, or declaration-reference requirements.
 
 ## AI Iteration Makes Structural Feedback More Important
 
-The scenarios above point to the same problem: as a repository grows more complex, source relationships and the engineering graph are more likely to drift apart. In the past, this drift was often caught by experienced maintainers during code review: whether an import bypassed a package entry point, whether a dependency should be declared, whether a source file was covered by the intended check scope, or whether a configuration change expanded a boundary that should have remained constrained.
+Changes can leave imports outside package entries, dependencies undeclared, or source files outside their intended checking scope. Maintainers need to review these relationships as well as the changed code.
 
-This process can work, but it continuously consumes maintainer attention. Once AI coding agents participate in development, code changes can happen faster and in larger volumes. If mechanically expressible architecture rules still depend mainly on experienced maintainers identifying them one by one, teams will spend substantial effort on repeated judgment calls.
+AI-generated changes need the same review. Rules that can be expressed as checks reduce repeated manual inspection.
 
-Developers can, of course, describe the rules an AI should follow in the current repository through documentation, task descriptions, project-level instructions such as `AGENTS.md`, `CLAUDE.md`, or `.cursor/rules`, or project conventions. These natural-language constraints are useful, but they still depend on model understanding and context retention. They cannot provide deterministic engineering guarantees. AI may miss constraints, misinterpret rules, or produce changes that look reasonable while still violating the repository structure.
+Documentation, task descriptions, and instructions such as `AGENTS.md`, `CLAUDE.md`, or `.cursor/rules` can explain repository rules to AI. Check results are still needed to catch omissions and misinterpretations.
 
-Working with AI therefore cannot rely only on “telling it what to do”. There also needs to be tooling that verifies whether the result actually did it. Type checkers, static analysis tools, formatters, and similar tools work well with AI because they provide clear, localizable, and repeatable feedback. AI can use that feedback to fix type errors, syntax issues, style problems, or common static-rule violations.
+Type checkers, static analysis, and formatters provide repeatable diagnostics that AI can use to correct type, syntax, and style errors.
 
-Structural drift in a complex monorepo, however, often does not appear as a local error in a single file. Code may still pass the usual checks in the short term while bypassing package entry points, missing dependency declarations, or leaving some source files outside the intended check scope.
+A local type or style check may still pass when an import bypasses a package entry, a dependency is undeclared, or a file is outside the intended checking scope.
 
-This does not mean that `Limina` should determine whether business logic is correct. Business behavior still needs tests, review, and domain validation. `Limina` is better suited to infrastructure-level constraints: turning architecture rules that can be expressed generally into executable checks, so source ownership, project references, package boundaries, check coverage, and the build graph stay aligned during fast iteration.
+Limina checks configured source ownership, project references, package boundaries, and coverage. Business behavior still requires tests, review, and domain validation.
 
-In that sense, `Limina` provides architecture-level feedback. It moves structural issues that previously depended on maintainers noticing them earlier into local commands, `CI`, and `Pull Request` workflows, so fixes do not only focus on the current file but can also be brought back to the repository structure itself.
+These checks can run locally and in CI or pull request workflows, so structural diagnostics are available alongside other validation results.
 
 AI can use check results to fix ordinary violations, but changes involving allowlists, ignore rules, boundary exceptions, or a required `reason` are better confirmed by a developer. These changes are usually not ordinary fixes; they declare that the team accepts an architecture exception.
 
-AI makes the value of `Limina` more visible, but it does not change `Limina`’s responsibility boundary: tests validate business behavior, regular engineering tools provide local semantic, style, and static-rule feedback, and `Limina` validates monorepo infrastructure and architecture boundaries.
+Read AI-assisted fixes against the scope of each check: tests cover business behavior, ordinary tools provide type and static-rule feedback, and completed, enabled Limina checks cover their configured ownership and architecture rules.
 
 ## The Final Goal: Reduce Structural Maintenance Cost
 
-Limina's goal is not to add more rules to the repository. It is to reduce the maintenance cost caused by complex structure.
+Limina aims to reduce manual maintenance of declaration references and source boundaries.
 
-For large TypeScript monorepos, the hard part is not writing one `tsconfig`. It is keeping multiple packages, multiple runtimes, multiple checkers, and multiple published entries consistent over time. The scenarios above explain this from runtime boundaries, test/tool configs, and cross-package access, but they all point to the same requirement: source relationships must stay consistent with the TypeScript project reference graph.
+Multiple packages, runtimes, checkers, and published entries need consistent ownership and dependency configuration. The examples above cover runtime scopes, tests and tools, and cross-package access.
 
-After adopting Limina, teams can answer these questions more reliably:
+The configured checks help answer these questions:
 
 - Which source range does this file belong to?
 - Which `tsconfig` should govern it?
@@ -161,6 +161,6 @@ After adopting Limina, teams can answer these questions more reliably:
 - Are tests, tools, and production source clearly separated?
 - Before publishing, do artifacts still satisfy the structural expectations established at the source stage?
 
-When these questions can be answered by automated checks, developers do not need to manually reconstruct the entire project reference graph for every change.
+Interpret each result within the configured scope and completed checks; disabled, blocked, skipped, or unavailable analysis does not establish that the corresponding relationship is valid. Package and release checks require configured built outputs and remain supplementary to real consumer tests.
 
-That is Limina's core value: it builds a verifiable project-reference graph on top of TypeScript project references, so code structure in complex monorepos stays understandable, reviewable, and predictable.
+Use the reported config paths, files, and dependency evidence to locate and correct the relationships that fail these checks.

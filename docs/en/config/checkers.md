@@ -10,7 +10,7 @@
 | `svelte-check` | per-leaf framework typecheck target   | no                 |
 | `astro`        | per-leaf framework typecheck target   | no                 |
 
-The key is the checker identity. There is no `preset` field and no custom checker alias. This keeps ownership, generated paths, execution, and cache behavior under one name.
+The key identifies the checker for ownership, generated paths, execution, and caches. `preset` fields and custom checker aliases are not supported.
 
 `vue-tsc`, `svelte-check`, and `@typescript/native-preview` are optional external-checker peers. Their peer ranges state which checker versions Limina supports, and each checker resolves from the scope where its target actually executes. `svelte2tsx` is a separate optional checker-toolchain peer: install it in each Svelte leaf alongside `svelte-check`; Limina does not ship it as a production dependency. `typescript` remains Limina's required runtime peer and resolves from the workspace installation running Limina.
 
@@ -102,14 +102,14 @@ Non-entry configs such as `tsconfig.lib.json` or `tsconfig.test.json` enter the 
 
 ## Framework ownership and dependency boundaries
 
-Limina records two project identities that answer different questions:
+Limina records two project identities:
 
 - **Semantic authority** selects the checker-compatible module semantics used to interpret project dependencies.
 - **Final owner** selects the checker that executes the build or typecheck target.
 
 Explicit checker selection, checker-specific config evidence, effective root-file evidence, and a confirmed pending framework dependency are the only inputs that can lock semantic authority. After pending dependency requirements have been collected, Limina freezes that authority. Vue promotion, solution constraints, declaration-component coloring, the TypeScript fallback, and `finalOwner` can select or propagate a build owner, but cannot reinterpret the project's dependencies. A TypeScript-semantic project may therefore finish with `vue-tsc` as its build owner while retaining TypeScript module semantics.
 
-For a still-pending automatic scope, TypeScript is the neutral semantic baseline. Limina enumerates dependencies from the parsed TypeScript project and its TypeScript AST, then applies the checker type-evidence gate to every source-authored dependency. `ambient`, `concrete-declaration`, and `checker-source` evidence stop at the TypeScript boundary; unsupported semantic evidence fails closed. Only `missing` evidence may invoke Oxc, and then only to identify a physical framework-source candidate for ownership inference. The candidate must be an effective member of exactly one governed config and one framework semantic domain. Ordinary TypeScript files, resources, excluded files, and ambiguous targets cannot color the checker. Limina collects the complete requirement set before resolving the pending owner, so conflicting Astro/Svelte/Vue requirements are deterministic and independent of import order.
+For automatic scopes whose checker is still undetermined, Limina starts with TypeScript semantics. Limina enumerates dependencies from the parsed TypeScript project and its TypeScript AST, then applies the checker type-evidence gate to every source-authored dependency. `ambient`, `concrete-declaration`, and `checker-source` evidence stop at the TypeScript boundary; unsupported semantic evidence fails closed. Only `missing` evidence may invoke Oxc, and then only to identify a physical framework-source candidate for ownership inference. The candidate must be an effective member of exactly one governed config and one framework semantic domain. Ordinary TypeScript files, resources, excluded files, and ambiguous targets cannot color the checker. Limina collects the complete requirement set before resolving the pending owner, so conflicting Astro/Svelte/Vue requirements are deterministic and independent of import order.
 
 Once semantic authority is locked, all project-aware consumers use the corresponding TypeScript, Vue, Astro, or Svelte semantic provider. A checker-semantic miss remains missing; toolchain, materialization, source-map, ambiguity, and resolution-host failures fail closed. Locked project dependency resolution never uses Oxc or a lightweight collector as a fallback.
 
@@ -119,7 +119,7 @@ An explicit Astro owner observes TypeScript files plus `.astro`; an explicit Sve
 
 Astro and Svelte owners do not generate declaration projects, wrappers, or transparent build solutions. Their complete type config is checked once per leaf by `checker:typecheck`. TypeScript that must emit declarations must live in a separate `tsc`, `tsgo`, or `vue-tsc` config.
 
-When `checker:typecheck` has no framework-owned leaf, it is recorded as `disabled`, exits successfully, and does not run peer preflight or materialize generated checker artifacts.
+When `checker:typecheck` has no framework-owned leaf, it is recorded as `disabled` and exits successfully without target peer preflight or a checker process. The command still validates the workspace and materializes the generated graph before testing whether targets exist; graph preparation or materialization can fail first. A disabled result does not prove framework typechecking ran.
 
 ### Framework prerequisites
 
@@ -140,7 +140,7 @@ For a locked Astro project, Limina materializes the primary and extra TypeScript
 
 Only a strict source mapping can produce a mapped dependency. Limina first tries the complete generated literal token and tries its inner content only when the first strict lookup has no result; neither lookup permits a fallback match. Generated synthetic imports remain `unmapped-generated` observations even when they resolve to governed workspace source and never create graph edges. Damaged, ambiguous, or conflicting mappings, incompatible toolchains, service-script failures, and resolution-host failures fail closed. Oxc and workspace TypeScript export fallback are not consulted in this locked path.
 
-The first adapter family is intentionally bounded:
+The Astro adapter supports the following component versions:
 
 | Component                                 | Supported contract                      |
 | ----------------------------------------- | --------------------------------------- |
@@ -155,7 +155,7 @@ The first adapter family is intentionally bounded:
 
 The TypeScript peer range is `>=5.4.0 <5.10.0 || >=6.0.0 <6.1.0`. Astro `7.0.0` is the supported floor, not the only accepted Astro version. The adapter also checks the internal API shape, so matching version strings with incompatible exports still fail closed.
 
-The check range also requires every other component in the table and the supported internal API shape. `@astrojs/check` versions `0.9.6`–`0.9.8` declare a TypeScript 5 peer; use `0.9.9` or later for TypeScript 6, as recorded in the [upstream changelog](https://github.com/withastro/astro/blob/main/packages/language-tools/astro-check/CHANGELOG.md). Limina's runtime check-version admission retains `includePrerelease: true`, so versions such as `0.9.7-beta.1` and `0.10.0-beta.1` can satisfy this range. Package managers apply their own peer-range matching rules.
+The check range also requires every other component in the table and the supported internal API shape. Limina's runtime check-version admission uses `includePrerelease: true`, so `0.9.7-beta.1` and `0.10.0-beta.1` can satisfy that range. This runtime admission does not validate every installed package's own peer declarations; those remain part of the consuming installation.
 
 Dependency resolution follows package ownership. Limina creates resolution scopes from the owning leaf, then `@astrojs/check`, then the Language Server, and finally `@volar/kit`. A package must be declared by the scope that owns that dependency; Limina does not retry from the workspace root after an owner-scoped failure. The resolved files may physically live in a pnpm store, a hoisted directory, or another symlink layout. Their paths are recorded as provenance and keep different module instances isolated, but physical-path equality is never a compatibility condition. Two supported TypeScript instances may therefore have different real paths, or even different supported versions.
 
@@ -176,7 +176,7 @@ Vue import collection has no configuration field. Framework files are not accept
 
 For a locked Vue-semantic project, Limina first resolves `vue-tsc` from the checker's execution scope, then resolves Vue Language Core, Volar TypeScript, and the toolchain's TypeScript from that installed `vue-tsc` dependency environment. It materializes the Vue service script, enumerates generated TypeScript dependencies with the same toolchain TypeScript, strictly backprojects each dependency, and resolves the generated semantic literal through the Volar-aware host. The semantic identity is the generated `semanticSpecifier`, resolution mode, checker target, resolver, kind, and canonical type evidence; source spelling is not a second authority. Consequently, `ImportRecord.specifier` and reported `importedSpecifier` may expose `./entry.js` for source `<script src="./entry.ts">`, while file and line locations still point to the `.vue` source. Synthetic service-script imports remain observations and never become graph edges. There is no Oxc or workspace-resolution rescue. TypeScript-only source directives retain bounded direct-source TypeScript semantics.
 
-The supported adapter matrix is deliberately bounded:
+The Vue adapter supports the following component combinations:
 
 | `vue-tsc` family | Matching `@vue/language-core` | `@volar/typescript` | TypeScript           |
 | ---------------- | ----------------------------- | ------------------- | -------------------- |
@@ -195,7 +195,7 @@ For a locked Svelte project, Limina resolves the public `svelte/compiler`, suppo
 
 This bounded path does not load `svelte.config.js`, run preprocess/default-language hooks, import private `svelte-check` or Language Server subpaths, or recreate their snapshot and Language Service lifecycle. It uses a minimal explicit `lang="ts"`/`lang="typescript"` detector only to provide the public `svelte2tsx.isTsFile` input; it does not distinguish instance and module scripts for graph policy. The bounded Program overlay may query ambient TypeChecker evidence for an already-enumerated literal but is not a second `.svelte` module resolver. A generated synthetic dependency is observation-only, and locked Svelte resolution never falls back to Oxc.
 
-For every locked framework, preparation records the checker target and existing `TypeEvidence` together. A governed source target becomes a project dependency, a concrete declaration remains a declaration boundary, `target = null` with ambient evidence becomes a typed non-source observation, and `target = null` with missing evidence remains genuinely missing. File existence, resource extensions, virtual-module allowlists, workspace export resolution, and Oxc cannot turn a checker miss into a new target.
+For every locked framework, preparation records the checker target and existing `TypeEvidence` together. A governed source target becomes a project dependency, a concrete declaration remains a declaration boundary, `target = null` with ambient evidence becomes a typed non-source observation, and `target = null` with missing evidence remains missing. File existence, resource extensions, virtual-module allowlists, workspace export resolution, and Oxc cannot turn a checker miss into a new target.
 
 ### Breaking migration from `config.imports.vue`
 
@@ -242,7 +242,7 @@ checkers: {
 }
 ```
 
-If multiple aliases previously used the same `preset`, merge their non-overlapping selectors into one fixed key. If their selectors overlap or their policies conflict, resolve that conflict explicitly; Limina will not guess which alias should win. Configuration files are TypeScript/MTS, so Limina reports a deterministic schema diagnostic but does not rewrite them automatically.
+If multiple aliases previously used the same `preset`, merge their non-overlapping selectors into one fixed key. Resolve overlapping selectors or conflicting policies explicitly; Limina does not assign precedence to old aliases. Configuration files are TypeScript/MTS, so Limina reports a deterministic schema diagnostic but does not rewrite them automatically.
 
 ## Generated graph and manifest
 

@@ -58,10 +58,10 @@ const labels = computed(() =>
         paused: '已暂停',
         complete: '播放完成',
         reduced: '已减弱动画',
-        transcript: '查看完整输出',
+        transcript: '查看输出节选',
         scenarios: '选择演示',
         output: '终端输出',
-        excerpt: '真实输出节选',
+        excerpt: '示例项目的输出节选；数量与耗时会变化',
       }
     : {
         play: 'Play',
@@ -73,10 +73,10 @@ const labels = computed(() =>
         paused: 'Paused',
         complete: 'Complete',
         reduced: 'Reduced motion',
-        transcript: 'Read full output',
+        transcript: 'Read output excerpt',
         scenarios: 'Choose a demo',
         output: 'Terminal output',
-        excerpt: 'Recorded output excerpts',
+        excerpt: 'Sample output; counts and times vary',
       },
 );
 const status = computed(() => {

@@ -8,11 +8,11 @@ When a package declares a dependency in `package.json`, it only means that the p
 During declaration builds, which upstream declaration build output should the current tsconfig consume first?
 ```
 
-This is why we cannot simply say “it has already been imported, so a reference should be generated automatically”. Limina’s job is not to copy an import list into `references`; it is to determine what type declarations this import actually needs in `TypeScript` declaration builds, and who provides those declarations.
+Limina identifies the types an import needs for TypeScript declaration builds and the provider of those types. An import list alone does not establish the required `references`.
 
 ## references are not a regular dependency list
 
-First, separate these relationships:
+These relationships describe:
 
 ```text
 package.json dependency: this package declares that it depends on another package
@@ -24,9 +24,9 @@ references: which upstream project output should be built first and consumed dur
 
 They affect each other, but they cannot replace each other.
 
-For example, declaring `@acme/core` in `dependencies` does not mean that every `tsconfig` importing `@acme/core` should reference the source build config of `core`. An entry of `@acme/core` may expose source code, already generated `.d.ts` files, or only runtime resources. For `references`, what really matters is how TypeScript, under the current `tsconfig` and checker semantics, obtains the type declarations for that entry.
+For example, declaring `@acme/core` in `dependencies` does not mean that every `tsconfig` importing `@acme/core` should reference the source build config of `core`. An entry of `@acme/core` may expose source code, already generated `.d.ts` files, or only runtime resources. Reference inference combines resolution, type evidence, and compiler relation requirements under the current `tsconfig` and checker semantics.
 
-In other words, `references` do not mean “who I depend on”; they mean “which upstream declaration project my declaration build needs”.
+`references` record which upstream declaration projects the current declaration build needs.
 
 ## A single import may have different meanings
 
@@ -51,7 +51,7 @@ Another package imports it:
 import { createClient } from '@acme/core';
 ```
 
-Here, we cannot only look at `default` pointing to `./src/index.ts`. For declaration builds, the more important question is whether `TypeScript` has already obtained `./dist/index.d.ts` through `types`. If `TypeScript`'s type resolution result under the current checker and `tsconfig` is already a `.d.ts` file, this edge is closer to declaration-file consumption. It should not be forced into a project reference merely to make the graph look more like a source dependency graph.
+The current checker and `tsconfig` determine which entry TypeScript resolves. If it resolves through `types` to `./dist/index.d.ts`, Limina does not generate a source project reference for that target. The `default` branch pointing to `./src/index.ts` does not change that result.
 
 Now consider another import:
 
@@ -59,15 +59,15 @@ Now consider another import:
 import { createInternalClient } from '@acme/core/internal';
 ```
 
-If `TypeScript` resolves this to `packages/core/src/internal.ts`, and that file belongs to another Limina-managed source `tsconfig`, then this edge may become a declaration build `reference`. The reason is not that “the package name is the same”, nor that “this package exists in dependencies”. The reason is that the type declarations required by this import need to be provided by another source scope through declaration build output.
+If TypeScript resolves this to `packages/core/src/internal.ts` in another Limina-managed source `tsconfig`, the relationship may become a declaration build `reference`. It requires that source scope to provide declaration output; package identity or a dependency declaration alone is insufficient.
 
-These two examples show that under the same package and the same dependency declaration, different entries may correspond to different engineering relationships. This is why Limina now frames the problem as determining the “declaration provider”: first determine where the type declarations come from, then decide whether a project reference is needed.
+Different entries in the same package can use different declaration providers. Limina identifies that provider before deciding whether a project reference is needed.
 
 For how each resolution result (`.d.ts`, source in the current scope, source in another scope, external dependency, unresolved) maps to references, declaration-file consumption, or diagnostics, see [Import Resolution to Declaration Build Graph](./import-resolution-to-declaration-build-graph.md).
 
 ## Why Limina requires boundaries to be declared first
 
-`TypeScript` has to serve the entire ecosystem. It cannot assume that every monorepo uses the same package structure, the same tsconfig layout, or the same bundling strategy.
+Monorepos can use different package structures, tsconfig layouts, and bundling strategies. Those boundaries need to be declared in project configuration.
 
 A single package may contain several configs at the same time:
 
@@ -80,9 +80,9 @@ packages/app/
   tsconfig.server.json
 ```
 
-These configs should not necessarily all participate in declaration builds. Test configs, browser configs, `Node` configs, and framework checker configs may have different file sets and compiler options. If TypeScript inferred `references` from imports or `package.json` dependencies by default, it would have to decide build boundaries between these configs on behalf of the user. That decision is difficult to make safe as a default semantic for all projects.
+These configs may have different file sets and compiler options, and may not all need declaration builds. Imports and `package.json` dependencies alone do not specify which configs should participate. The checker entries and source config boundaries supply that scope.
 
-Limina narrows the scope instead. Users first declare which tsconfigs are source entries governed by Limina:
+Limina first activates package regions and discovers default `tsconfig.json` entries within them. Automatic ownership remains enabled; named checker `include` scopes can fix selected entry identities, while unclaimed entries use automatic discovery. For example:
 
 ```ts [limina.config.mts]
 export default defineConfig({
@@ -96,17 +96,13 @@ export default defineConfig({
 });
 ```
 
-This configuration does not ask Limina to scan the entire repository and guess freely. It tells Limina:
+This configuration fixes the `tsc` identity of matching default entries. It does not disable automatic discovery for other activated entries. Each selected default entry may reach ordinary named source leaves through its `references` closure. Structural package boundaries still constrain every entry and file.
 
-```text
-These tsconfigs are source entries that may enter the governed scope.
-```
-
-Within this scope, Limina then resolves the file set, checker capability, compiler options, and source imports for each entry. The generated `references` therefore have a clear premise: they come from type-checking boundaries already declared by the user, not from every file in the repository that happens to look like source code.
+Within that scope, Limina resolves effective source inputs, checker capability, compiler options, and dependency facts. Read-only input topology uses TypeScript config readers; it is not yet frozen semantic authority or an executable declaration graph. See [Concepts](./concepts.md#input-topology-and-dependency-graphs).
 
 ## Source type configs and declaration build configs should be separated
 
-One important constraint in Limina is: users maintain source type configs, and Limina generates declaration build configs.
+Users maintain source type configs; Limina generates declaration build configs.
 
 | Config                   | Location                             | Maintainer | Purpose                                                                             |
 | ------------------------ | ------------------------------------ | ---------- | ----------------------------------------------------------------------------------- |
@@ -122,22 +118,23 @@ Which TypeScript options should be used to check these files.
 
 The `declaration`, `emitDeclarationOnly`, `outDir`, `tsBuildInfoFile`, and generated `references` needed for declaration builds are written by Limina into configs under `.limina/`.
 
-This reduces a common source of confusion: should an ordinary source tsconfig contain native TypeScript solution references, or tool-generated edges used to complete the dependency graph? In Limina’s model, ordinary source configs do not carry this implicit edge-completion responsibility. The declaration build graph lives under `.limina/`, and Limina generates it from relationships that can be proven.
+Ordinary source leaf configs do not maintain declaration build references. Limina generates those references from validated relationships in the declaration build graph under `.limina/`.
 
 ## What Limina actually determines is the declaration provider
 
-From a user’s perspective, references inference can be understood as the following chain:
+Limina infers references through these steps:
 
 ```text
 import/export in source code
   -> TypeScript type resolution under the current checker and tsconfig
   -> Determine the declaration provider
-  -> Generate a reference only when the provider is another source tsconfig
+  -> Validate the compiler relation requirement, source owner, checker capability and identity, and graph policy
+  -> Generate a reference to the accepted declaration provider
 ```
 
-The key point is that `references` are produced only from declaration providers that TypeScript can confirm. Oxc can help Limina quickly extract imports from source code and can also indicate, in diagnostics, where runtime resolution may have found a file. But it does not decide the `.limina` declaration build graph on behalf of TypeScript.
+The source collector uses the owning TypeScript AST for native inputs and the official generated representation for locked framework inputs. The dependency fact keeps resolution, Program admission, existing type evidence, and compiler relation requirement separate. An absent type provider does not automatically erase a source-semantic requirement, and a concrete declaration provider may stop a new source reference. Oxc does not rescue a locked semantic miss.
 
-For the full four-branch decision rules, how each resolution result maps, and how to investigate diagnostics such as “Oxc can resolve this specifier, but TypeScript cannot”, see [Import Resolution to Declaration Build Graph](./import-resolution-to-declaration-build-graph.md).
+For those decision rules and the current diagnostics, see [Import Resolution to Declaration Build Graph](./import-resolution-to-declaration-build-graph.md).
 
 ## Edges invisible to static import analysis must be declared explicitly
 
@@ -149,7 +146,7 @@ Some real dependencies do not appear directly as source imports, for example:
 - Dependencies produced by framework macros or compiler plugins;
 - Virtual modules that are mapped to real source files only during the build phase.
 
-These relationships may be real, but the static import graph cannot prove them. Limina should not guess them, nor should it write them into native TypeScript `references` in ordinary source tsconfigs.
+The static import graph cannot prove these relationships. Limina does not infer them or write them into native TypeScript `references` in ordinary source tsconfigs.
 
 Such edges should be declared explicitly through `liminaOptions.implicitRefs`:
 
@@ -171,7 +168,7 @@ Such edges should be declared explicitly through `liminaOptions.implicitRefs`:
 
 `implicitRefs` means that this edge is invisible in static source imports, but the user explicitly declares it as part of the declaration build graph.
 
-It is not an allowlist, nor a switch to bypass rules. Later graph rules can still determine whether this edge is allowed to exist.
+It is not an allowlist, nor a switch to bypass rules. Its path is relative to the declaring source config and must map to a governed declaration leaf. It does not supply missing resolver semantics or make unsupported virtual modules consumable. Later graph rules can still determine whether this edge is allowed.
 
 ## Runtime Cycles Are Not Project Reference Cycles
 
@@ -179,7 +176,7 @@ Both ESM and CommonJS allow circular dependencies between modules. This capabili
 
 TypeScript **project references** solve an entirely different problem. The `references` field describes which upstream project outputs should be consumed first at **build time**. When integrated into the `.limina` dependency graph, these reference relationships across different source configurations must be sortable and executable by build-time checkers. Just because a cycle is permitted at runtime does not mean it belongs across a TypeScript project reference boundary.
 
-For example, the following source code relationship might work perfectly fine at runtime:
+For example, the runtime module system may permit the following relationship:
 
 ::: code-group
 
@@ -219,13 +216,13 @@ packages/a/tsconfig.dts.json -> packages/b/tsconfig.dts.json
 packages/b/tsconfig.dts.json -> packages/a/tsconfig.dts.json
 ```
 
-Such relationships cannot be stably executed as a TypeScript project reference graph. The issue here is not that ESM or CommonJS forbids cycles, but rather that the two source scopes have become so tightly coupled that they can no longer be sorted as independent declaration build units.
+These cross-config references form a declaration build cycle and cannot be ordered as independent build units.
 
-The solution is usually not to make Limina judge whether an import ultimately contributes to `.d.ts` outputs, nor to bypass checks using `paths`, dynamic string imports, or ignore rules. A more robust approach is to align the source code structure with the type-building boundaries.
+Adjust the source structure and type-build boundaries to resolve the cycle. Avoid using `paths`, computed runtime imports, or ignore rules merely to bypass checks; Limina does not remove edges by analyzing emitted `.d.ts` output.
 
 ### Merge Tightly Coupled Source Scopes
 
-If two source scopes frequently invoke each other and share the same lifecycle, they are likely unfit to exist as two independent declaration build units. You should bring them back under the governance of a single source `tsconfig`.
+If two source scopes frequently call each other and cannot be built independently, consider placing them under one source `tsconfig`.
 
 Splitting tightly coupled source code into two mutually referencing projects is discouraged:
 
@@ -237,7 +234,7 @@ a -> b
 b -> a
 ```
 
-A better practice is to let a single source configuration cover this entire set of tightly coupled files:
+One source config can cover both sets of files:
 
 ::: code-group
 
@@ -256,7 +253,7 @@ packages/runtime/src/b/index.ts
 packages/runtime/tsconfig.json
 ```
 
-This way, cycles can still exist within internal source modules, but they will never cross the TypeScript project reference boundary.
+The two source modules now belong to the same project, so their mutual dependency stays within that project.
 
 ### Extract Lower-Level Shared Contracts
 
@@ -306,11 +303,11 @@ export const metrics: MetricsSink = {
 
 :::
 
-This type of refactoring ensures a unidirectional declaration build graph and makes dependency boundaries much easier to audit.
+In this example, both source scopes depend on `contracts` rather than each other. Other imports and explicit edges still need to be checked for cycles.
 
 ### Move Runtime Assembly Upstream
 
-If the cycle is caused by registration, bootstrapping, plugin assembly, or runtime glue code, you generally shouldn't let the two underlying modules import each other. A sounder approach is to have both sides expose only their capabilities and let a higher-level composition entry point wire them together.
+For cycles caused by registration, startup, plugin assembly, or runtime wiring, move that wiring to a higher-level entry that imports both modules and calls their exposed functions.
 
 Instead of:
 
@@ -374,7 +371,7 @@ a -> b
 b -> a
 ```
 
-This preserves runtime assembly capabilities while preventing assembly relationships from degrading into project reference cycles.
+In this example, `app` performs the registration, and `a` and `b` no longer depend on each other through that registration code.
 
 ### Using explicitly maintained declaration boundaries
 
@@ -398,53 +395,55 @@ If the importer resolves to `packages/b/dist/index.d.ts` under the current TypeS
 
 This approach fits scenarios where the declaration files of `packages/b` are maintained by a bundler, a declaration bundler, or hand-written declarations. It is not meant to hide a real source dependency that should be expressed through a source project reference.
 
-Limina does not treat minimizing the final `.d.ts` artifacts as the goal of generating project references. It cares more about whether the check graph is reliable, whether the declaration build order is executable, and whether source relationships can be explained by the current TypeScript configuration. Final declaration bundling, removing unexposed types, and entry optimization are better handled in a declaration bundler or a release build process.
+The current reference generator does not minimize emitted `.d.ts` dependencies. Final declaration bundling and entry optimization are separate build steps. Adding explicit public types can control declaration leakage, but it does not remove a project reference while the source-derived compiler relation still exists.
 
 ## Why failure is necessary
 
-If TypeScript cannot confirm the declaration provider, or if a source file is governed by multiple tsconfigs at the same time, Limina should not keep guessing.
+When inferring a reference from an import, unresolved checker targets or ambiguous source ownership need to be investigated.
 
-These cases should be surfaced:
+Common cases and their implications include:
 
-| Symptom                                              | What it more likely indicates                                                                 |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| TypeScript cannot resolve the import                 | The type entry, path alias, or tsconfig resolution configuration needs to be fixed            |
-| Oxc can resolve it but TypeScript cannot             | Runtime resolution and type resolution are not aligned                                        |
-| The import reaches another package’s internal source | It may be bypassing the public entry                                                          |
-| The import resolves to `.d.ts`                       | It is closer to declaration-file consumption and should not be forced into a source reference |
-| A source file is governed by multiple tsconfigs      | File ownership is unclear                                                                     |
-| A real edge is invisible to static imports           | It needs to be declared explicitly through `implicitRefs`                                     |
-| A generated reference violates graph rules           | The source relationship exists, but the architecture rules do not allow it                    |
+| Symptom                                                          | What it more likely indicates                                                                 |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| TypeScript cannot resolve the import                             | The type entry, path alias, or tsconfig resolution configuration needs to be fixed            |
+| Consuming checker has no target for an observed workspace import | The checker cannot resolve the workspace entry under its current options                      |
+| The import reaches another package’s internal source             | It may be bypassing the public entry                                                          |
+| The import resolves to `.d.ts`                                   | It is closer to declaration-file consumption and should not be forced into a source reference |
+| A source file is governed by multiple tsconfigs                  | File ownership is unclear                                                                     |
+| A real edge is invisible to static imports                       | It needs to be declared explicitly through `implicitRefs`                                     |
+| A generated reference violates graph rules                       | The source relationship exists, but the architecture rules do not allow it                    |
+| Generated references form a cycle                                | Source relationships cross independently ordered declaration build boundaries                 |
 
-These failures are not intended to make adoption harder. They prevent uncertain relationships from being written into the declaration build graph. Once generated, `references` affect TypeScript’s build order, incremental cache, and upstream declaration consumption. For this kind of relationship, being conservative is more reliable than guessing.
+A generated declaration reference needs valid source ownership and permission under graph rules. Generated `references` affect TypeScript build order, incremental caches, and upstream declaration consumption, so their evidence and boundaries need to be checked.
 
 ## When this inference should be trusted
 
-Limina’s references inference is more stable when a repository satisfies these conditions:
+Check these repository conditions to understand inferred references and diagnose failures:
 
 - Source tsconfig boundaries are clear;
 - Each checked source file belongs to only one source type config as much as possible;
 - Cross-package imports preferably go through package names and public entries;
 - Type entries and runtime entries in package exports are clearly defined;
 - Framework files such as Vue and Svelte are handled by their corresponding checkers;
-- Real edges invisible to static analysis are declared explicitly through `implicitRefs`;
+- Real declaration edges invisible to static analysis are declared explicitly through `implicitRefs`;
+- Runtime cycles stay inside one source config where appropriate, while declaration relations between configs remain orderable;
 - Limina runs in CI, keeping graph generation, graph checks, and checker builds consistent.
 
-If a repository heavily depends on cross-package relative paths, mixes tsconfig scopes, has unstable public entries, or keeps build artifacts and type entries inconsistent over time, Limina will not automatically turn these problems into a healthy architecture. It is more likely to expose the issues first, so users can decide whether to fix entries, adjust tsconfig boundaries, or declare explicit exceptions.
+Cross-package relative paths, overlapping tsconfig scopes, unstable public entries, and inconsistent artifacts or type entries need to be addressed separately. Use the diagnostics to decide whether to fix entries, adjust tsconfig boundaries, or declare explicit exceptions; graph generation does not repair those inputs.
 
 ::: tip
 
-Limina can generate references, but not because it simply translates import into project references.
+Generated `references` follow validated declaration relationships.
 
-More accurately, Limina does this:
+The process is:
 
 ```text
 Within the user-declared governance scope,
 use TypeScript type resolution under the current checker and tsconfig to determine the declaration provider,
-then convert declaration relationships confirmed to be provided by another source tsconfig
-into declaration build references under .limina.
+validate the compiler relation requirement, source ownership, checker capability and identity, and graph rules,
+then convert accepted declaration relationships into build references under .limina.
 ```
 
-This means references no longer depend on manually written supplemental edges, and they do not degrade into a copy of dependencies. They express only source relationships that TypeScript declaration builds actually need and that Limina can prove within the current repository boundaries.
+Observed compiler relations and explicit `implicitRefs` jointly form the generated graph. They do not copy `dependencies`, and they do not claim the minimal dependency graph of final `.d.ts` output. Unobserved real declaration relationships still require explicit supplements.
 
 :::

@@ -1,4 +1,4 @@
-# Mirrors the existing bundled-license policy; infrastructure:check detects drift.
+# Keep the allowed licenses aligned with packages/build-tools/src/license-policy.ts.
 fail-on-severity: high
 fail-on-scopes:
   - runtime

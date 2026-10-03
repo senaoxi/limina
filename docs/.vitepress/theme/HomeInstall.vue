@@ -11,8 +11,8 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 // These commands are the paired getting-started pages' installation examples.
 const command = computed(() =>
   manager.value === 'pnpm'
-    ? 'pnpm add -D limina@latest typescript'
-    : 'npm install -D limina@latest typescript',
+    ? 'pnpm add -D limina@latest typescript@~6.0.3'
+    : 'npm install -D limina@latest typescript@~6.0.3',
 );
 function selectManager(value: string) {
   manager.value = value;
@@ -53,7 +53,7 @@ onBeforeUnmount(() => clearTimeout(timer));
           {{ item }}
         </button>
       </div>
-      <span>{{ chinese ? '安装到你的工程' : 'INSTALL IN YOUR PROJECT' }}</span>
+      <span>{{ chinese ? '安装到你的项目' : 'INSTALL IN YOUR PROJECT' }}</span>
     </div>
     <div class="install-command">
       <code><span aria-hidden="true">$ </span>{{ command }}</code>
@@ -68,7 +68,7 @@ onBeforeUnmount(() => clearTimeout(timer));
     <span class="install-feedback" role="status" aria-live="polite">{{
       hasCopyFailed
         ? chinese
-          ? '复制不可用，请手动选择命令。'
+          ? '无法复制，请手动选择命令。'
           : 'Copy is unavailable. Select the command manually.'
         : isCopied
           ? chinese
