@@ -42,7 +42,7 @@
 
 [双包发布](../../../scripts/release/publication.ts)先打包两个产品，在上传前比对 registry 的不可变 integrity，用 candidate tag 发布这些精确 tarball，然后才将两个包推进到请求的渠道。流程回读渠道，非 latest 发布要求 `latest` 保持 preflight 值。npm 操作仍不具原子性：第二包上传失败时第一包的 candidate 已可用；第二包渠道推进失败时两个版本已存在，但渠道可能暂时不一致。获准 CI attempt 在 `.reports/release/npm` 保留实际 tarball、预期／观测 integrity、渠道快照与失败阶段；客户端失败后回读 registry integrity 核实实际上传情况。对未变更产物重试时跳过匹配的上传、修复渠道，并拒绝不同的不可变内容。失败 attempt 不会报告为双包成功。这些证据由 publisher 负责，不恢复已移除的通用包体积／逐包 SBOM 报告流程。
 
-两个 npm 包完成核对与渠道更新后，发布工作流直接创建指向两包共享 changelog 的 GitHub release，链接使用 Git 解析的已 checkout 获准提交，而非 dispatch 事件 SHA。同一 tag 已存在的完整 release 可接受；draft 和查询错误时失败。SBOM 和许可证报告作为 workflow artifacts 保留，不再维护自制 GitHub release 附件流程。发布模块负责的导入标签名称守卫不依赖已删除的迁移 metadata；移动导入标签也不会使其名称可发布。
+两个 npm 包完成核对与渠道更新后，发布工作流直接创建指向两包共享 changelog 的 GitHub release，链接使用 Git 解析的已 checkout 获准提交，而非 dispatch 事件 SHA。本地 release 预览明确说明，GitHub release 由这个手动触发的工作流负责创建。同一 tag 已存在的完整 release 可接受；draft 和查询错误时失败。SBOM 和许可证报告作为 workflow artifacts 保留，不再维护自制 GitHub release 附件流程。发布模块负责的导入标签名称守卫不依赖已删除的迁移 metadata；移动导入标签也不会使其名称可发布。
 
 [文档部署](../../../.github/workflows/deploy-docs.yml)保持单独手动，由 LIMINA_DOCS_DEPLOY_ENABLED=1 和 Production 控制。要求新的获准 tag、HTTPS DOCS_ORIGIN 和独立 Vercel 凭据／project。工作流从既有私有 docs workspace 执行 Vercel CLI，同时将仓库根目录保留为项目 cwd。既有 CLI 版本由 dev catalog 和冻结 lockfile 负责，保留相同的部署安全 overrides；已移除的部署 workspace 继续保持删除。CLI 是 docs 开发依赖，不进入两个发布包。维护者于 2026-10-01 告知的规范公开文档入口为 `https://senao.me/repos/limina/`。文档站保留固定 `/repos/limina/` base，提供 origin 时在该 base 下生成 sitemap。Senao 站点负责通往独立 Limina Vercel 部署的外部 gateway。两个工作流保留[迁移前置条件](./migration.md)，本地集成不执行外部操作。
 

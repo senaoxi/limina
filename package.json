@@ -46,6 +46,7 @@
     "@types/node": "catalog:dev",
     "@types/semver": "catalog:dev",
     "@types/prompts": "catalog:dev",
+    "@xterm/headless": "catalog:dev",
     "prompts": "catalog:dev",
     "semver": "catalog:dev",
     "yaml": "catalog:dev",

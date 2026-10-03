@@ -648,7 +648,7 @@ function previewReleasePlan(context: ReleaseRunContext): void {
         : 'current process without provenance'
       : 'deferred to the manually dispatched Publish Limina workflow for provenance';
   const githubReleaseMode =
-    'not automated; prepare separately after publication';
+    'created by the manually dispatched Publish Limina workflow after both npm packages are verified and promoted';
 
   ReleaseLogger.info(
     [

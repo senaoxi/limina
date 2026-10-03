@@ -7,7 +7,7 @@ export function useCommandPlayback(
   finish: () => void,
 ) {
   const typedCharacters = ref(0);
-  const visibleLineCount = ref(0);
+  const visibleFrameIndex = ref(-1);
   const reducedMotion = ref(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let motionQuery: MediaQueryList | undefined;
@@ -15,13 +15,13 @@ export function useCommandPlayback(
   const complete = computed(
     () =>
       typedCharacters.value === transcript().command.length &&
-      visibleLineCount.value === transcript().lines.length,
+      visibleFrameIndex.value === transcript().frames.length - 1,
   );
   const typedCommand = computed(() =>
     transcript().command.slice(0, typedCharacters.value),
   );
-  const visibleLines = computed(() =>
-    transcript().lines.slice(0, visibleLineCount.value),
+  const visibleLines = computed(
+    () => transcript().frames[visibleFrameIndex.value]?.lines ?? [],
   );
 
   function stop() {
@@ -32,7 +32,7 @@ export function useCommandPlayback(
   function showAll() {
     stop();
     typedCharacters.value = transcript().command.length;
-    visibleLineCount.value = transcript().lines.length;
+    visibleFrameIndex.value = transcript().frames.length - 1;
     finish();
   }
 
@@ -47,13 +47,21 @@ export function useCommandPlayback(
     if (!isPlaying() || reducedMotion.value || document.hidden) return;
     if (typedCharacters.value < transcript().command.length) {
       typedCharacters.value += 1;
-      schedule(38);
+      schedule(
+        typedCharacters.value === transcript().command.length
+          ? transcript().frames[0]!.atMs
+          : 38,
+      );
       return;
     }
-    if (visibleLineCount.value < transcript().lines.length) {
-      visibleLineCount.value += 1;
-      const line = transcript().lines[visibleLineCount.value - 1];
-      schedule(line?.includes('[start]') ? 720 : 480);
+    if (visibleFrameIndex.value < transcript().frames.length - 1) {
+      visibleFrameIndex.value += 1;
+      const next = transcript().frames[visibleFrameIndex.value + 1];
+      if (next)
+        schedule(
+          next.atMs - transcript().frames[visibleFrameIndex.value]!.atMs,
+        );
+      else finish();
       return;
     }
     finish();
@@ -62,7 +70,7 @@ export function useCommandPlayback(
   function reset() {
     stop();
     typedCharacters.value = 0;
-    visibleLineCount.value = 0;
+    visibleFrameIndex.value = -1;
     if (reducedMotion.value) showAll();
     else if (isPlaying()) schedule();
   }
@@ -106,7 +114,7 @@ export function useCommandPlayback(
     showAll,
     typedCharacters,
     typedCommand,
-    visibleLineCount,
+    visibleFrameIndex,
     visibleLines,
   };
 }
