@@ -20,9 +20,17 @@
 
 2026-10-03，对 main `772e3c1cb2c58de42a3ae0055580cba69dc6296b` 的本地与远程审计在未变更的排除项下返回两项新的 high advisory：经 Astro 引入的 [http-cache-semantics](https://github.com/advisories/GHSA-ch52-4w7c-c8xp)和经清理／部署开发工具引入的 [braces](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)。当时 registry 的最新版本分别为 4.2.0 和 3.0.3，两项 advisory 均未列出已修复发布版。两个实际 bundle inventory 中均未出现这些包。但全 workspace 的 Security 门禁仍失败；这项观察不授权新增排除或越过失败门禁发布。
 
+docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开始，该基线在此前 18 项之外已经排除这两项 advisory。它的 Security workflow 和采用相同政策的本地审计通过。仅移除这两项排除的独立 manifest／lockfile 控制审计再次返回两项 high advisory；截至 2026-10-03，上游公告仍未列出修复版本。继承的排除是现有门禁的限制，不证明有漏洞的依赖已得到修复。本任务不修改排除项或依赖版本，也不执行 npm 发布或手动部署。
+
 [CodeQL](../../../.github/workflows/codeql.yml)显式加载[范围](../../../.github/codeql-config.yml)，无需产品构建即可分析 JavaScript／TypeScript，覆盖两个产品／私有工具／脚本，排除生成产物／fixtures／测试。静态扫描不代表穷尽运行时／文件系统证明。
 
 ## CI 与制品
+
+每次 `docs:build` 都在构建前后运行 `docs:privacy`，覆盖 CI 的 Build Validation 和另行设有门禁的部署构建。[扫描器](../../../scripts/docs/privacy.ts)检查中英文源码、演示数据、public 资源和所有构建文件，包括 HTML、JavaScript、搜索数据及存在的 source map。它解码常见 JSON／URL／HTML 转义、内联文本／source-map 数据、压缩产物和 PNG 文本元数据，拒绝个人／机器路径、本地文件链接、私有主机、终端身份及凭证特征；错误只报告相对位置与类别。仅源码扫描排除依赖目录和不公开的构建／缓存目录；构建目标被独立要求并扫描。这是有边界的模式防护，由 Gitleaks 和人工图片／链接审查补充，不是穷尽的密钥检测或图片 OCR。
+
+[终端录制](../../../scripts/docs/capture-command-transcripts.ts)移除绝对 cwd 元数据，并在终端渲染前替换工作区、CLI 和运行时路径，涵盖被 PTY 读取分块切开的路径。公开查询示例保留可运行的工作区相对命令与交互帧；输出 hash 描述该公开流。写入前再次检查录制输出。录制工作区必须在 docs 的物理目录之外，包括经父目录别名访问的情形，从而避免原始日志和本地链接成为文档输入。[隐私控制测试](../../../scripts/docs/privacy.spec.ts)覆盖录制进程边界、终端渲染、编码输入、嵌套公开文件、压缩图片元数据和不回显隐私的失败报告。2026-10-03 的源码基线因录制个人路径未通过新防护；重新生成的 Linux 录制通过。产品 authority 不变量和安全豁免均未变更。
+
+发布集成 fixture 使用子进程内的时钟推进元数据轮询等待，不实际休眠，同时保留对本地测试 registry 的真实 npm 请求。这移除导致 main 在 2026-10-03 Windows 进程超时的四次五秒等待。既有断言仍要求两个版本的 integrity 可见后才提升渠道，并拒绝已过截止时间的情况；生产轮询、超时限制和手动发布门禁保持原状。
 
 共享 build action 调用根 `format:check` 与 `lint:check` 脚本执行只读 Prettier 和 ESLint 校验，两命令覆盖整个仓库；修改仍显式通过 `format:write` 与 `lint:fix` 执行，复用当前 `format` 和 `lint` 命令。
 
