@@ -1,8 +1,6 @@
-import {
-  collectReferencePathInfosFromConfigObject,
-  collectStronglyConnectedComponents,
-  isPlainRecord,
-} from 'limina/internal/migration';
+import { collectReferencePathInfosFromConfigObject } from 'limina/internal/core/tsconfig/actions';
+import { collectStronglyConnectedComponents } from 'limina/internal/utils/strongly-connected-components';
+import { isPlainRecord } from 'limina/internal/utils/values';
 import type { MigrationPlanningState } from './planning-state';
 import type { MigrationWritePlanItem } from './transaction';
 

@@ -1,13 +1,8 @@
-import type {
-  DependencyAnalysisResult,
-  LiminaPreflightManager,
-  ResolvedLiminaConfig,
-} from 'limina/internal/migration';
-import {
-  formatErrorMessage,
-  MigrationLogger,
-  writeJsonAtomically,
-} from 'limina/internal/migration';
+import { writeJsonAtomically } from 'limina/internal/check-reporting/atomic-writer';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { DependencyAnalysisResult } from 'limina/internal/core/build-graph/types';
+import { formatErrorMessage, MigrationLogger } from 'limina/internal/logger';
+import type { LiminaPreflightManager } from 'limina/internal/preflight';
 import { readFile } from 'node:fs/promises';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'pathe';

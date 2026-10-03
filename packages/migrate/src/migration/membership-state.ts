@@ -1,9 +1,9 @@
 import {
   collectReferencePathInfosFromConfigObject,
-  isPlainRecord,
   type JsonObject,
   resolveReferencePath,
-} from 'limina/internal/migration';
+} from 'limina/internal/core/tsconfig/actions';
+import { isPlainRecord } from 'limina/internal/utils/values';
 import { MigrationInputError, type MigrationRecord } from './declarations';
 import type { MigrationTarget } from './types';
 

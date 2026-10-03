@@ -1,9 +1,9 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/migration';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
 import {
   createLiminaTsconfigSchemaPath,
-  isPlainRecord,
   type JsonObject,
-} from 'limina/internal/migration';
+} from 'limina/internal/core/tsconfig/actions';
+import { isPlainRecord } from 'limina/internal/utils/values';
 import path from 'pathe';
 import {
   assertMigrationTextMatchesPlan,

@@ -1,8 +1,8 @@
+import { TerminalReplacementValidationError } from 'limina/internal/check-reporting/atomic-writer';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
-  TerminalReplacementValidationError,
-} from 'limina/internal/migration';
+} from 'limina/internal/utils/path';
 import { mkdtemp, open, readFile, realpath, rm } from 'node:fs/promises';
 import { assertUniquePhysicalTargets } from './cleanup';
 import { collectModifiedSnapshot } from './file-validation';

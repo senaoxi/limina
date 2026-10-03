@@ -1,7 +1,5 @@
-import {
-  formatErrorMessage,
-  normalizeAbsolutePath,
-} from 'limina/internal/migration';
+import { formatErrorMessage } from 'limina/internal/logger';
+import { normalizeAbsolutePath } from 'limina/internal/utils/path';
 import { execFile } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
 import path from 'pathe';

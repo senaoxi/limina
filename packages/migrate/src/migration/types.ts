@@ -1,8 +1,6 @@
-import type {
-  JsonObject,
-  LiminaFlowReporter,
-  PreflightCapableOptions,
-} from 'limina/internal/migration';
+import type { JsonObject } from 'limina/internal/core/tsconfig/actions';
+import type { LiminaFlowReporter } from 'limina/internal/flow';
+import type { PreflightCapableOptions } from 'limina/internal/preflight';
 import type ts from 'typescript';
 import type { MigrationCleanupWarning } from './transaction';
 

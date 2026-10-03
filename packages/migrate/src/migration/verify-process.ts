@@ -1,4 +1,5 @@
-import { loadConfig, readInputTopology } from 'limina/internal/migration';
+import { loadConfig } from 'limina/internal/config/runner';
+import { readInputTopology } from 'limina/internal/core/build-graph/input-topology';
 import { assertRuntimeVersion } from '../runtime-version';
 
 function loaderName(value: string | undefined): 'native' | 'tsx' {

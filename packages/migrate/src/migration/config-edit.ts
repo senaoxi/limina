@@ -1,4 +1,4 @@
-import type { RegionExcludeConfig } from 'limina/internal/migration';
+import type { RegionExcludeConfig } from 'limina/internal/config/runner';
 import ts from 'typescript';
 import { StaticConfigSyntax, unsupportedConfigEdit } from './config-syntax';
 

@@ -1,4 +1,4 @@
-import { MigrationLogger } from 'limina/internal/migration';
+import { MigrationLogger } from 'limina/internal/logger';
 import type { MigrationRecord } from './declarations';
 import type { MigrationPlanningState } from './planning-state';
 

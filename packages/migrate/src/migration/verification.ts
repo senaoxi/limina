@@ -1,8 +1,6 @@
-import type {
-  InputTopologyResult,
-  ResolvedLiminaConfig,
-} from 'limina/internal/migration';
-import { formatErrorMessage } from 'limina/internal/migration';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { InputTopologyResult } from 'limina/internal/core/build-graph/input-topology';
+import { formatErrorMessage } from 'limina/internal/logger';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { missingTopologyMembers } from './output-adoption';

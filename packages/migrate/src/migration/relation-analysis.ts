@@ -1,13 +1,9 @@
-import type {
-  DependencyAnalysisResult,
-  InputTopologyResult,
-  LiminaArtifactNamespace,
-} from 'limina/internal/migration';
-import {
-  analyzeProjectDependencies,
-  formatErrorMessage,
-  readInputTopology,
-} from 'limina/internal/migration';
+import type { InputTopologyResult } from 'limina/internal/core/build-graph/input-topology';
+import { readInputTopology } from 'limina/internal/core/build-graph/input-topology';
+import { analyzeProjectDependencies } from 'limina/internal/core/build-graph/prepare';
+import type { DependencyAnalysisResult } from 'limina/internal/core/build-graph/types';
+import type { LiminaArtifactNamespace } from 'limina/internal/domain/artifacts/namespace';
+import { formatErrorMessage } from 'limina/internal/logger';
 import { type MigrationPlanningState, planningView } from './planning-state';
 
 export async function collectAnalysis(

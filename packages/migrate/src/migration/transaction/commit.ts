@@ -1,4 +1,4 @@
-import { replaceFileWithRetry } from 'limina/internal/migration';
+import { replaceFileWithRetry } from 'limina/internal/check-reporting/atomic-writer';
 import type { FileHandle } from 'node:fs/promises';
 import { rename } from 'node:fs/promises';
 import { formatUnknownError } from './error';

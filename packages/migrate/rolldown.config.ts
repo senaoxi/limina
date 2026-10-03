@@ -53,10 +53,6 @@ const jsoncParserEsmEntry = resolveJsoncParserEsmEntry();
 const coreSourceDirectory = path.normalize(
   realpathSync(path.resolve(packageDirectory, '../limina/src')),
 );
-const coreSupportEntry = path.join(
-  coreSourceDirectory,
-  'internal/migration.ts',
-);
 
 function modulePackageName(
   id: string,
@@ -106,16 +102,8 @@ function embeddedCorePlugin(): NonNullable<RolldownOptions['plugins']> {
         );
       }
     },
-    resolveId(source) {
-      return source === 'limina/internal/migration' ? coreSupportEntry : null;
-    },
     generateBundle(this: PluginContext, _options, bundle) {
       const modules = [...this.getModuleIds()];
-      if (modules.every((id) => path.normalize(id) !== coreSupportEntry)) {
-        this.error(
-          'Migration must embed the current Limina source support entry.',
-        );
-      }
       const owners = new Map<string, string | undefined>();
       const coreModules = new Set<string>();
       for (const moduleId of modules) {
@@ -147,6 +135,9 @@ function embeddedCorePlugin(): NonNullable<RolldownOptions['plugins']> {
             `Migration contains duplicate core module instances: ${id}`,
           );
         coreModules.add(identity);
+      }
+      if (coreModules.size === 0) {
+        this.error('Migration must embed current Limina source modules.');
       }
       for (const output of Object.values(bundle)) {
         if (output.type !== 'chunk') continue;
@@ -200,7 +191,9 @@ const moduleConfig: RolldownOptions = defineConfig({
   input: {
     cli: 'src/cli.ts',
     'migration-verify-process': 'src/migration/verify-process.ts',
-    'flow-renderer-process': '../limina/src/flow/renderer-process.ts',
+    'flow-renderer-process': fileURLToPath(
+      import.meta.resolve('limina/internal/flow/renderer-process'),
+    ),
     'bin/limina-migrate': 'bin/limina-migrate.js',
   },
   platform: 'node',

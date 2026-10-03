@@ -1,16 +1,16 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/migration';
+import { LiminaStructuredError } from 'limina/internal/check-reporting/errors';
+import { TypeScriptConfigInputError } from 'limina/internal/checker/project-base';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import { isOrdinarySourceTypecheckConfigPath } from 'limina/internal/core/tsconfig/actions';
+import { TsconfigInputError } from 'limina/internal/core/tsconfig/config-paths';
+import { collectRawWorkspacePackages } from 'limina/internal/core/workspace/actions';
 import {
-  collectOutputDeclarations,
-  collectRawWorkspacePackages,
   collectValidatedWorkspaceContext,
   collectWorkspaceInputSnapshot,
-  excludeTsconfigDescriptors,
-  isOrdinarySourceTypecheckConfigPath,
-  LiminaStructuredError,
-  resolveStableDescriptors,
-  TsconfigInputError,
-  TypeScriptConfigInputError,
-} from 'limina/internal/migration';
+} from 'limina/internal/core/workspace/validated-context';
+import { resolveStableDescriptors } from 'limina/internal/core/workspace/validated/descriptors/stability';
+import { excludeTsconfigDescriptors } from 'limina/internal/core/workspace/validated/exclusions';
+import { collectOutputDeclarations } from 'limina/internal/core/workspace/validated/outputs/collection';
 import { MigrationInputError } from './declarations';
 
 function isReadableIoFailure(error: Error): boolean {

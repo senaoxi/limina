@@ -61,13 +61,17 @@ function rethrowMigrationConfigError(error: unknown): never {
 
 async function runMigrationAction(flags: MigrationFlags): Promise<void> {
   assertRuntimeVersion();
-  const {
-    clearCliScreen,
-    createCliFlow,
-    loadConfig,
-    parseConfigLoader,
-    runCliFlowWithCleanup,
-  } = await import('limina/internal/migration');
+  const [
+    { clearCliScreen },
+    { createCliFlow, isRunCliFlowWithCleanup: runCliFlowWithCleanup },
+    { loadConfig },
+    { parseConfigLoader },
+  ] = await Promise.all([
+    import('limina/internal/logger'),
+    import('limina/internal/cli/flow'),
+    import('limina/internal/config/runner'),
+    import('limina/internal/cli/parse'),
+  ]);
   const { runMigration } = await import('./migration');
   clearCliScreen();
   const flow = createCliFlow();

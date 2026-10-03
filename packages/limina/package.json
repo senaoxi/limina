@@ -154,11 +154,19 @@
     ".": "./src/index.ts",
     "./schemas/tsconfig-schema.json": "./schemas/tsconfig-schema.json",
     "./package.json": "./package.json",
-    "./internal/migration": {
-      "types": "./src/internal/migration.ts",
-      "development": "./src/internal/migration.ts",
-      "default": "./dist/internal/migration.js"
-    }
+    "./internal/check-reporting/*": "./src/check-reporting/*.ts",
+    "./internal/checker/project-base": "./src/checker/project-base.ts",
+    "./internal/checkers": "./src/checkers.ts",
+    "./internal/cli/flow": "./src/cli/flow.ts",
+    "./internal/cli/parse": "./src/cli/parse.ts",
+    "./internal/config/runner": "./src/config/runner.ts",
+    "./internal/core/*": "./src/core/*.ts",
+    "./internal/domain/artifacts/namespace": "./src/domain/artifacts/namespace.ts",
+    "./internal/flow": "./src/flow.ts",
+    "./internal/flow/*": "./src/flow/*.ts",
+    "./internal/logger": "./src/logger.ts",
+    "./internal/preflight": "./src/preflight/index.ts",
+    "./internal/utils/*": "./src/utils/*.ts"
   },
   "sideEffects": false
 }

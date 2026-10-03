@@ -1,11 +1,13 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/migration';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
 import {
-  isPlainRecord,
-  type JsonObject,
-  readImplicitRefs,
+  readImplicitReferences,
   readOutputOptions,
+} from 'limina/internal/core/build-graph/generated/config-readers';
+import {
+  type JsonObject,
   resolveReferencePath,
-} from 'limina/internal/migration';
+} from 'limina/internal/core/tsconfig/actions';
+import { isPlainRecord } from 'limina/internal/utils/values';
 import path from 'pathe';
 import { relativeConfigPath } from './transform';
 
@@ -201,7 +203,7 @@ function validateDeclarations(options: DeclarationNormalization): void {
   const config = { ...options.config, virtualFiles };
   const problems = [
     ...readOutputOptions(config, options.configPath, options.object).problems,
-    ...readImplicitRefs(config, options.configPath).problems,
+    ...readImplicitReferences(config, options.configPath).problems,
   ];
   if (problems.length > 0) throw new MigrationInputError(problems.join('\n\n'));
 }

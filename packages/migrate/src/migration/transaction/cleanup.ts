@@ -1,4 +1,4 @@
-import { TerminalReplacementValidationError } from 'limina/internal/migration';
+import { TerminalReplacementValidationError } from 'limina/internal/check-reporting/atomic-writer';
 import type { FileHandle } from 'node:fs/promises';
 import { rmdir } from 'node:fs/promises';
 import { formatUnknownError, hasErrorCode } from './error';

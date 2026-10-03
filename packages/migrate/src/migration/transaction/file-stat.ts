@@ -2,7 +2,7 @@ import {
   ReplacementDriftError,
   RetryableReplacementValidationIoError,
   TerminalReplacementValidationError,
-} from 'limina/internal/migration';
+} from 'limina/internal/check-reporting/atomic-writer';
 import { createHash } from 'node:crypto';
 import type { BigIntStats } from 'node:fs';
 import { formatUnknownError, hasErrorCode } from './error';
