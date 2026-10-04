@@ -1,0 +1,272 @@
+.limina-reading {
+  --vp-sidebar-width: 272px;
+  background: var(--limina-doc-canvas);
+  color: var(--limina-doc-ink);
+}
+
+.limina-reading :is(a, button, summary, input, [tabindex]):focus-visible,
+.limina-reading-portal :is(a, button, input):focus-visible {
+  outline: 2px solid var(--limina-doc-link);
+  outline-offset: 3px;
+}
+
+.limina-reading .VPDoc {
+  padding-right: 20px;
+  padding-left: 20px;
+}
+
+.limina-reading .VPDoc .content {
+  min-width: 0;
+}
+
+.limina-reading .VPDoc .content-container,
+.limina-reading .VPDoc.has-aside .content-container {
+  max-width: 720px;
+}
+
+.limina-doc-context {
+  margin-bottom: 18px;
+  color: var(--limina-doc-muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.limina-reading .vp-doc {
+  overflow-wrap: break-word;
+  font-size: var(--limina-doc-body-size);
+  line-height: var(--limina-doc-body-leading);
+}
+
+.limina-reading .vp-doc p {
+  margin: 18px 0;
+  line-height: var(--limina-doc-body-leading);
+}
+
+.limina-reading .vp-doc h1 {
+  margin-bottom: 24px;
+  font-size: 34px;
+  line-height: 44px;
+}
+
+.limina-reading .vp-doc h2 {
+  margin: 48px 0 18px;
+  padding-top: 20px;
+  font-size: 25px;
+  line-height: 34px;
+}
+
+.limina-reading .vp-doc h2 .header-anchor {
+  top: 20px;
+}
+
+.limina-reading .vp-doc h3 {
+  margin: 32px 0 12px;
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.limina-reading .vp-doc h4 {
+  margin: 28px 0 10px;
+  font-size: 17px;
+  line-height: 26px;
+}
+
+.limina-reading .vp-doc :is(h1, h2, h3, h4) {
+  scroll-margin-top: 120px;
+}
+
+.limina-reading .vp-doc a:not(.header-anchor) {
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.limina-reading .vp-doc :not(pre) > code {
+  overflow-wrap: anywhere;
+  font-size: 0.86em;
+}
+
+.limina-reading .vp-doc div[class*='language-'] {
+  margin: 24px 0;
+  border: 1px solid var(--limina-doc-line);
+  border-radius: 4px;
+}
+
+.limina-reading .vp-doc [class*='language-'] pre {
+  padding-top: 48px;
+}
+
+.limina-reading .vp-doc [class*='language-'] > span.lang {
+  top: 12px;
+  right: auto;
+  left: 20px;
+}
+
+.limina-reading .vp-doc [class*='language-'] > button.copy {
+  top: 4px;
+  right: 4px;
+  opacity: 1;
+}
+
+.limina-reading .vp-code-group .tabs {
+  margin: 0;
+  border: 1px solid var(--limina-doc-line);
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 0 12px;
+}
+
+.limina-reading .vp-code-group div[class*='language-'] {
+  margin-top: 0;
+  border-radius: 0 0 4px 4px;
+}
+
+.limina-reading .vp-code-group input:focus-visible + label {
+  outline: 2px solid var(--limina-doc-link);
+  outline-offset: -3px;
+}
+
+.limina-reading .vp-doc .custom-block {
+  margin: 24px 0;
+  border-width: 0 0 0 2px;
+  border-radius: 0;
+}
+
+.limina-reading .vp-doc .custom-block p {
+  margin: 8px 0;
+}
+
+.limina-reading .vp-doc .custom-block div[class*='language-'] {
+  margin: 12px 0;
+}
+
+.limina-reading .limina-table {
+  margin: 24px 0;
+}
+
+.limina-reading .vp-doc .limina-table-hint {
+  margin: 0 0 8px;
+  color: var(--limina-doc-muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.limina-reading .limina-table-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.limina-reading .limina-table-scroll table {
+  display: table;
+  margin: 0;
+  min-width: 100%;
+  overflow: visible;
+}
+
+.limina-reading .limina-table.is-wide table {
+  min-width: 960px;
+}
+
+.limina-reading .vp-doc :is(th, td) {
+  border-width: 0 0 1px;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.limina-reading .vp-doc tr:nth-child(2n) {
+  background: transparent;
+}
+
+.limina-reading :is(.outline-link, .VPSidebarItem .text) {
+  overflow: visible;
+  line-height: 22px;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: break-word;
+}
+
+.limina-reading .outline-link {
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.limina-reading .VPSidebarItem.is-active > .item > .link {
+  border-left: 2px solid var(--limina-doc-link);
+  background: var(--limina-doc-soft);
+  padding-left: 8px;
+}
+
+.limina-reading .VPLocalNavOutlineDropdown button {
+  min-height: 24px;
+}
+
+.limina-reading .VPDocFooter .pager-link {
+  border: 0;
+  border-radius: 0;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.limina-reading-portal .shell {
+  border-radius: 4px;
+}
+
+.limina-reading-portal .result {
+  border-radius: 2px;
+}
+
+@media (min-width: 640px) {
+  .limina-reading .VPDoc {
+    padding-right: 32px;
+    padding-left: 32px;
+  }
+}
+
+@media (min-width: 960px) {
+  .limina-reading .VPDoc .content {
+    padding-right: 0;
+    padding-left: 0;
+  }
+}
+
+@media (min-width: 1280px) {
+  .limina-reading .VPDoc .container {
+    max-width: 944px;
+  }
+
+  .limina-reading .VPDoc .content {
+    flex: 1;
+  }
+
+  .limina-reading .VPDoc .aside {
+    flex: 0 0 224px;
+    max-width: 224px;
+  }
+
+  .limina-reading .VPDoc :is(.aside-container, .aside-curtain) {
+    width: 192px;
+  }
+}
+
+@media (max-width: 639px) {
+  .limina-reading .vp-doc h1 {
+    font-size: 28px;
+    line-height: 36px;
+  }
+
+  .limina-reading .vp-doc h2 {
+    margin-top: 36px;
+    font-size: 23px;
+    line-height: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .limina-reading *,
+  .limina-reading-portal * {
+    scroll-behavior: auto;
+    transition-duration: 0s;
+  }
+}

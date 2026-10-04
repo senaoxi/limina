@@ -1,0 +1,62 @@
+.limina-reading,
+.limina-reading-portal {
+  --limina-doc-canvas: #fafaf7;
+  --limina-doc-surface: #fff;
+  --limina-doc-ink: var(--limina-c-ink);
+  --limina-doc-muted: var(--limina-c-terminal-text);
+  --limina-doc-link: var(--vp-c-brand-1);
+  --limina-doc-line: var(--limina-c-line);
+  --limina-doc-code: var(--limina-c-terminal);
+  --limina-doc-soft: rgb(15 118 110 / 0.06);
+  --limina-doc-body-size: 16px;
+  --limina-doc-body-leading: 28px;
+  --vp-c-bg: var(--limina-doc-canvas);
+  --vp-c-bg-alt: var(--limina-doc-canvas);
+  --vp-c-bg-soft: var(--limina-doc-code);
+  --vp-c-bg-elv: var(--limina-doc-surface);
+  --vp-c-text-1: var(--limina-doc-ink);
+  --vp-c-text-2: var(--limina-doc-muted);
+  --vp-c-text-3: var(--limina-doc-muted);
+  --vp-c-divider: var(--limina-doc-line);
+  --vp-c-border: var(--limina-doc-line);
+  --vp-c-gutter: var(--limina-doc-line);
+  --vp-nav-bg-color: var(--limina-doc-canvas);
+  --vp-sidebar-bg-color: var(--limina-doc-canvas);
+  --vp-local-nav-bg-color: var(--limina-doc-canvas);
+  --vp-code-block-bg: var(--limina-doc-code);
+  --vp-code-font-size: 14px;
+  --vp-code-line-height: 23.8px;
+  --vp-code-bg: var(--limina-doc-soft);
+  --vp-code-color: var(--limina-doc-link);
+  --vp-code-tab-bg: var(--limina-doc-code);
+  --vp-code-copy-code-bg: var(--limina-doc-code);
+  --vp-code-copy-code-hover-bg: var(--limina-doc-soft);
+  --vp-code-lang-color: var(--limina-doc-muted);
+  --vp-custom-block-tip-bg: var(--limina-doc-soft);
+  --vp-custom-block-tip-text: var(--limina-doc-ink);
+  --vp-custom-block-tip-border: var(--limina-doc-link);
+  --vp-custom-block-info-bg: var(--limina-doc-soft);
+  --vp-custom-block-info-text: var(--limina-doc-ink);
+  --vp-custom-block-info-border: var(--limina-doc-link);
+  --vp-custom-block-warning-border: var(--limina-c-warning);
+  --vp-custom-block-danger-border: var(--limina-c-error);
+}
+
+.dark .limina-reading,
+.dark .limina-reading-portal {
+  --limina-doc-canvas: #141a1e;
+  --limina-doc-surface: #171d22;
+  --limina-doc-soft: rgb(130 216 201 / 0.07);
+}
+
+.limina-reading:lang(zh) {
+  --limina-doc-body-size: 17px;
+  --limina-doc-body-leading: 30.6px;
+}
+
+@media (max-width: 639px) {
+  .limina-reading:lang(zh) {
+    --limina-doc-body-size: 16px;
+    --limina-doc-body-leading: 28.8px;
+  }
+}
