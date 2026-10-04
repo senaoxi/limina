@@ -57,7 +57,7 @@ flowchart TB
 
 Owner 的对外英文文件为 `.agents/docs/<name>.md`，对应中文文件为 `.agents/docs/zh/<name>.md`，文件名相同且均由 Git 跟踪。每次触发 PCR 更新，必须在同一次变更中同步维护完整文件对，包括纯文字纠正以及新增、重命名、移动和删除。遵循[仓库双语规则](../../../AGENTS.md#bilingual-pcr-maintenance)与[索引中的维护步骤](./README.md#双语发布与维护)。它们是同一个 owner 的两种语言版本，含义和证据完全一致，不是独立的事实记录。
 
-`Confirmed / Derived / Candidate / NOT VERIFIED` 随证据更新；source-established 与 runtime verified 分开。source 与 vouched direction 冲突时保留冲突，不伪造 rationale 或 vouch；decision ledger 只有 human 明确建立后才使用。公开目录不引用私人 memory 作为产品方向。
+`Confirmed / Derived / Candidate / NOT VERIFIED` 随证据更新；source-established 与 runtime verified 分开。source 与 vouched direction 冲突时保留冲突，不伪造 rationale 或 vouch；decision ledger 只有 human 明确建立后才使用。公开目录不引用私人 memory 作为产品方向。 决策摘要与交付前隐私复核遵循 [project-context-writing](../../skills/project-context-writing/SKILL.md)；来源字段指向仓库证据或必要公共引用，不记录私人对话。
 
 一次维护结束前检查：map 能否快速找到 owning page；Mermaid 是否与实际依赖/时序一致；每条 core invariant 是否有 statement、适用范围、问题/原因/机制/例子/保护目标、source/tests、strength/confidence；未决问题是否被误写成默认承诺。逐节比较两种版本，确保语义完全一致，文件名、例子、证据、日期和状态一一对应；检查两个位置的链接与标题锚点。
 

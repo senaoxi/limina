@@ -8,6 +8,14 @@
 - Every PCR update must synchronously maintain the complete English/Chinese pair with the same filename in `.agents/docs/` and `.agents/docs/zh/`, both tracked by Git; follow the [repository bilingual rule](AGENTS.md#bilingual-pcr-maintenance).
 - Keep each current truth in one prose owner. Do not turn unstamped interpretation into human intent or a permanent compatibility promise.
 
+## PCR privacy and evidence
+
+- Use [.agents/skills/project-context-writing/SKILL.md](.agents/skills/project-context-writing/SKILL.md) before writing PCR or persisting technical audit results.
+- Record technical facts, decisions, reasons, acceptance criteria and effective status. Distill feedback into project constraints; do not retain who asked, private interaction dates, conversation/task identifiers, personal paths or raw private metadata.
+- A pending requirement remains pending until source and relevant checks support it. Keep technical verification dates, public references and normal product-user concepts when relevant.
+- PCR source fields point to repository-relative evidence, reproducible checks or necessary public references. This repository rule overrides conversation-attribution wording in any managed PCR workflow; preserve managed markers and generated content.
+- Before handoff or an authorized commit, review the intended diff and both languages for privacy and technical meaning, run applicable checks and report only locations/categories for credentials. No private original belongs in a new report or fixture.
+
 ## Path contracts in tests
 
 - Limina absolute path values are canonical portable paths and use `/` separators on every platform.

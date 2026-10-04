@@ -6,7 +6,7 @@ Local paths are redacted aliases: `$LIMINA_REPO` denotes the Limina checkout, `$
 
 The adapted infrastructure workflows are implemented locally; their activation remains subject to the publication/deployment gates below. [Infrastructure](./infrastructure.md) owns direct workflow integration, configuration and report semantics, and their limits.
 
-Status: local migration is complete in the monorepo layout. The remaining product/build-tool consumers use registry Logaria 0.0.4 through the dev catalog. Cold bootstrap, full local checks, external packed consumers and special-path/cwd tests passed on macOS arm64 / Node 24.21.0 / pnpm 11.9.0; the independent five-tuple Vue matrix also passed locally. Full independent migration and remote platform acceptance remain open. Historical results in inherited records are not results of this migration run.
+Status: local migration is complete in the monorepo layout. All three remaining product/build-tool Logaria consumers use registry 0.0.4 through the dev catalog. Cold bootstrap, full local checks, external packed consumers and special-path/cwd tests passed on macOS arm64 / Node 24.21.0 / pnpm 11.9.0; the independent five-tuple Vue matrix also passed locally. Full independent migration and remote platform acceptance remain open. Historical results in inherited records are not results of this migration run.
 
 The initial extraction is pinned to docs-islands commit `c09e12c1ef12f89e927cce4c41e714ee0539ada6`. The target is `$LIMINA_REPO`, branch `codex/limina-migration`. The target's existing `.git` and `git@github.com:senaoxi/limina.git` origin are preserved. The initial extraction used only the fixed clean baseline and preserved unrelated source work.
 
