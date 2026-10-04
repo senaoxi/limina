@@ -176,7 +176,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
     },
     outline: {
       label: '页面导航',
-      level: 'deep',
+      level: [2, 3],
     },
     lastUpdated: {
       text: '最后更新于',
