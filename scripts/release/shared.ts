@@ -456,20 +456,19 @@ export function incrementVersion(
       parsed.prerelease = undefined;
       break;
     case 'prerelease': {
-      if (parsed.prerelease) {
-        const prereleaseMatch = /^(.+)\.(\d+)$/.exec(parsed.prerelease);
-        if (prereleaseMatch) {
-          parsed.prerelease = `${prereleaseMatch[1]}.${
-            Number(prereleaseMatch[2]) + 1
-          }`;
-        } else {
-          parsed.prerelease = `${parsed.prerelease}.1`;
-        }
-      } else {
-        parsed.patch++;
-        parsed.prerelease = `${preId || 'alpha'}.0`;
-      }
-      break;
+      if (preId && semver.valid(preId))
+        throw new Error(
+          'Prerelease id must be an identifier such as beta; use --version for a complete version.',
+        );
+      const next = semver.inc(
+        version,
+        'prerelease',
+        undefined,
+        preId ?? (parsed.prerelease ? undefined : 'alpha'),
+      );
+      if (!next)
+        throw new Error(`Invalid prerelease identifier: ${preId ?? ''}`);
+      return next;
     }
   }
 
@@ -498,9 +497,9 @@ export function resolveNextVersion(
 export function resolveDefaultNpmTag(
   version: string,
   explicitTag?: string,
-  preId?: string,
 ): string | undefined {
-  if (explicitTag) {
+  if (explicitTag !== undefined) {
+    assertValidNpmTag(explicitTag);
     return explicitTag;
   }
 
@@ -509,12 +508,24 @@ export function resolveDefaultNpmTag(
     return undefined;
   }
 
-  if (preId) {
-    return preId;
-  }
-
   const [prereleaseId] = parsed.prerelease.split('.', 1);
-  return prereleaseId || 'next';
+  const tag =
+    prereleaseId && !semver.validRange(prereleaseId) ? prereleaseId : 'next';
+  assertValidNpmTag(tag);
+  return tag;
+}
+
+export function assertValidNpmTag(tag: string): void {
+  if (
+    !tag ||
+    tag !== tag.trim() ||
+    tag.startsWith('-') ||
+    encodeURIComponent(tag) !== tag ||
+    semver.validRange(tag)
+  )
+    throw new Error(
+      `Invalid npm tag: ${tag}. Use a nonempty channel name such as beta, without encoded characters or a SemVer range.`,
+    );
 }
 
 export function createGitTag(
@@ -717,10 +728,15 @@ export async function promptForVersionSelection(
         return { mode: 'major' };
       }
       if (normalized === '4') {
+        const currentPrerelease = parseVersion(
+          config.manifest.version!,
+        ).prerelease;
+        const defaultPreId =
+          currentPrerelease?.replace(/\.\d+$/u, '') ?? 'alpha';
         const preId = (
-          await rl.question('Prerelease id (default: alpha): ')
+          await rl.question(`Prerelease id (default: ${defaultPreId}): `)
         ).trim();
-        return { mode: 'prerelease', preId: preId || 'alpha' };
+        return { mode: 'prerelease', preId: preId || undefined };
       }
       if (normalized === '5') {
         const version = (await rl.question('Custom version: ')).trim();

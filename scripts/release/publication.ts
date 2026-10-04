@@ -12,6 +12,7 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { execReleaseCommand } from './command';
 import {
+  assertValidNpmTag,
   getNpmCommand,
   isValidVersion,
   ReleaseLogger,
@@ -169,6 +170,7 @@ export function assertReleaseGroup(plans: ReleasePlan[]): void {
       'Publication requires both packages at one version and one channel.',
     );
   }
+  assertValidNpmTag(plans[0]!.npmTag ?? 'latest');
 }
 
 function registryArguments(registry?: string): string[] {

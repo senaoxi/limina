@@ -52,6 +52,14 @@ function plan(from: string, to: string) {
   });
 }
 
+function planWithTag(tag: string) {
+  return createReleasePlanFromVersionSelection(
+    releaseConfig('1.2.3-beta.1'),
+    { mode: 'prerelease' },
+    { explicitNpmTag: tag },
+  );
+}
+
 it('renders nonempty changelogs without migration maps and preserves historical links', () => {
   const section = buildChangelogSection(
     '1.2.3',
@@ -93,6 +101,57 @@ it('renders nonempty changelogs without migration maps and preserves historical 
 });
 
 describe('release version precedence', () => {
+  it('uses the selected prerelease identifier and derives the channel from the resulting version', () => {
+    for (const [from, preId, to, tag] of [
+      ['1.2.3-beta.1', 'rc', '1.2.3-rc.0', 'rc'],
+      ['1.2.3-beta.1', undefined, '1.2.3-beta.2', 'beta'],
+      ['1.2.3-alpha.1', 'beta', '1.2.3-beta.0', 'beta'],
+      ['1.2.3-beta.1.9', undefined, '1.2.3-beta.1.10', 'beta'],
+      ['1.2.3', 'rc', '1.2.4-rc.0', 'rc'],
+      ['1.2.3', undefined, '1.2.4-alpha.0', 'alpha'],
+      ['1.2.3', '1', '1.2.4-1.0', 'next'],
+    ] as const) {
+      const result = createReleasePlanFromVersionSelection(
+        releaseConfig(from),
+        {
+          mode: 'prerelease',
+          preId,
+        },
+      );
+      assert.equal(result.newVersion, to);
+      assert.equal(result.npmTag, tag);
+    }
+    assert.equal(plan('1.2.3', '1.3.0-1.0').npmTag, 'next');
+    assert.throws(
+      () =>
+        createReleasePlanFromVersionSelection(releaseConfig('1.2.3-beta.1'), {
+          mode: 'prerelease',
+          preId: 'alpha',
+        }),
+      /must be greater/u,
+    );
+    assert.throws(
+      () =>
+        createReleasePlanFromVersionSelection(releaseConfig('1.2.3-beta.1'), {
+          mode: 'prerelease',
+          preId: '1.2.3-beta.2',
+        }),
+      /use --version/u,
+    );
+  });
+  it('rejects invalid explicit channels during planning and retains valid overrides', () => {
+    for (const tag of [
+      '1.2.3-beta.2',
+      '>=1.2',
+      '1',
+      '',
+      'beta next',
+      ' beta',
+      '--beta',
+    ])
+      assert.throws(() => planWithTag(tag), /Invalid npm tag/u);
+    assert.equal(planWithTag('canary').npmTag, 'canary');
+  });
   it('compares numeric prerelease identifiers numerically at every depth', () => {
     for (const [before, after] of [
       ['1.0.0-beta.9', '1.0.0-beta.10'],

@@ -227,11 +227,7 @@ export function createReleasePlanFromVersionSelection(
     currentVersion,
     newVersion,
     gitTag: createGitTag(config, newVersion),
-    npmTag: resolveDefaultNpmTag(
-      newVersion,
-      options.explicitNpmTag,
-      selection.preId,
-    ),
+    npmTag: resolveDefaultNpmTag(newVersion, options.explicitNpmTag),
   };
 }
 
