@@ -8,7 +8,7 @@ Run `pnpm install --frozen-lockfile`, then `pnpm run build`. `build:tools` compi
 
 `lint:check` and `format:check` are read-only. Mutating counterparts are `lint:fix` and `format:write`. `typecheck`, `check` and `lint:packages` invoke the product CLI wrapper from the root. Root tooling, product, docs and build-tools use vue-tsc; ESLint and smoke use tsgo. Automatic discovery remains enabled.
 
-CI retains Linux, macOS and Windows test/build/smoke responsibilities and the isolated Vue semantic matrix. Required status rejects skipped validation jobs. All Logaria consumers now use registry 0.0.4 through the dev catalog. The setup action still rejects temporary Logaria links before frozen installation; no old-repository build is required. The 2026-09-30 replacement evidence and remote/platform limits remain in the archived Logaria report; [migration history](./migration.md#historical-evidence) explains retrieval from Git. Historical evidence does not establish acceptance of the current checkout.
+CI retains Linux, macOS and Windows test/build/smoke responsibilities and the isolated Vue semantic matrix. Required status rejects skipped validation jobs. All Logaria consumers use registry 0.0.4 through the dev catalog. The setup action installs locked dependencies with `pnpm install --frozen-lockfile`; no Logaria source build is required. The 2026-09-30 replacement evidence and remote/platform limits remain in the archived Logaria report; [migration history](./migration.md#historical-evidence) explains retrieval from Git. Historical evidence does not establish acceptance of the current checkout.
 
 ## ESLint 10 migration
 

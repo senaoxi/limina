@@ -200,8 +200,11 @@ function createReleaseCli() {
       'Package key or full package name (repeatable or comma-separated)',
     )
     .option('--dry-run', 'Preview the publish plan without publishing')
-    .option('--skip-tests', 'Skip package test steps')
-    .option('--skip-build', 'Skip package build and verification steps')
+    .option('--skip-tests', 'Skip workspace test steps')
+    .option(
+      '--skip-build',
+      'Reuse built artifacts; skip build and package verification',
+    )
     .option('--registry <url>', 'Custom npm registry')
     .option('--npm-tag <tag>', 'Override the npm dist-tag')
     .option('--no-provenance', 'Publish without npm provenance attestations')
@@ -225,8 +228,11 @@ function createReleaseCli() {
     .option('--preid <id>', 'Prerelease identifier (alpha|beta|rc)')
     .option('--dry-run', 'Preview the release plan without modifying files')
     .option('-y, --yes', 'Skip initial interactive confirmation prompts')
-    .option('--skip-tests', 'Skip package test steps')
-    .option('--skip-build', 'Skip package build and verification steps')
+    .option('--skip-tests', 'Skip workspace test steps')
+    .option(
+      '--skip-build',
+      'Reuse built artifacts; skip build and package verification',
+    )
     .option('--skip-changelog', 'Skip changelog generation')
     .option(
       '--skip-npm-publish',

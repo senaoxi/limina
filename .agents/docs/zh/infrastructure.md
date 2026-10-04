@@ -30,7 +30,7 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 [终端录制](../../../scripts/docs/capture-command-transcripts.ts)移除绝对 cwd 元数据，并在终端渲染前替换工作区、CLI 和运行时路径，涵盖被 PTY 读取分块切开的路径。公开查询示例保留可运行的工作区相对命令与交互帧；输出 hash 描述该公开流。写入前再次检查录制输出。录制工作区必须在 docs 的物理目录之外，包括经父目录别名访问的情形，从而避免原始日志和本地链接成为文档输入。[隐私控制测试](../../../scripts/docs/privacy.spec.ts)覆盖录制进程边界、终端渲染、编码输入、嵌套公开文件、压缩图片元数据和不回显隐私的失败报告。2026-10-03 的源码基线因录制个人路径未通过新防护；重新生成的 Linux 录制通过。产品 authority 不变量和安全豁免均未变更。
 
-发布集成 fixture 使用子进程内的时钟推进元数据轮询等待，不实际休眠，同时保留对本地测试 registry 的真实 npm 请求。这移除导致 main 在 2026-10-03 Windows 进程超时的四次五秒等待。既有断言仍要求两个版本的 integrity 可见后才提升渠道，并拒绝已过截止时间的情况；生产轮询、超时限制和手动发布门禁保持原状。
+发布集成 fixture 使用子进程内的时钟推进元数据轮询等待，不实际休眠，同时保留对本地测试 registry 的真实 npm 请求。这移除导致 main 在 2026-10-03 Windows 进程超时的四次五秒等待。既有断言仍要求两个版本的 integrity 可见后才提升渠道，并拒绝已过截止时间的情况；生产轮询、超时限制和手动 workflow dispatch 保持原状。
 
 共享 build action 调用根 `format:check` 与 `lint:check` 脚本执行只读 Prettier 和 ESLint 校验，两命令覆盖整个仓库；修改仍显式通过 `format:write` 与 `lint:fix` 执行，复用当前 `format` 和 `lint` 命令。
 
@@ -44,7 +44,11 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 ## 外部门禁与协作
 
-[发布](../../../.github/workflows/publish-npm.yml)保持手动，限制为 senaoxi/limina、LIMINA_RELEASE_ENABLED=1 和 Release。runner 在 tag 检查前执行 `pnpm run build:tools`：检查入口的私有 logger 使用已编译的包导出，而全新依赖安装不会构建这些产物。[Tag 检查](../../../scripts/release/check-tag-cli.ts)拒绝导入标签，要求两个公开源码包的名称／版本完整且一致、checkout 精确对应 tag 且位于 origin/main 历史中。发布前，实际 Bash workflow 按 Git 解析的 checkout SHA 查询 CI、Security 和 CodeQL 最近一次 main push run，拒绝缺失／pending／失败／取消／skipped 或身份不符的响应，并保留响应与 SHA。其他分支或提交的绿色 run 不能满足此门禁。Checkout 还必须等于 npm provenance 使用的 dispatch 事件 `GITHUB_SHA`；应以 release tag dispatch，或在 main 仍指向同一提交时使用 main。仅改变 checkout 不会改变证明中的事件提交。发布 jobs 串行执行；Vitest 保留 CI 的两个 worker 限制。发布与部署使用原生 `pnpm audit --audit-level high` 在外部操作前执行审计。
+[发布](../../../.github/workflows/publish-npm.yml)保持手动，限制为 senaoxi/limina 和 Release environment。仓库通过 dev catalog 消费 registry Logaria，因此本地 release CLI 和 workflow 均不再要求迁移启用变量。[Release CLI](../../../scripts/release/release.ts)执行通常的 Git、版本、认证和包检查。本地 release 准备仍将 provenance 发布交给手动 dispatch 的工作流；移除启用变量不会触发工作流，也不授权 npm 上传。发布与部署 runner 均在 tag 检查前执行 `pnpm run build:tools`：检查入口的私有 logger 使用已编译的包导出，而全新依赖安装不会构建这些产物。[Tag 检查](../../../scripts/release/check-tag-cli.ts)拒绝导入标签，要求两个公开源码包的名称／版本完整且一致、checkout 精确对应 tag 且位于 origin/main 历史中。发布前，实际 Bash workflow 按 Git 解析的 checkout SHA 查询 CI、Security 和 CodeQL 最近一次 main push run，拒绝缺失／pending／失败／取消／skipped 或身份不符的响应，并保留响应与 SHA。其他分支或提交的绿色 run 不能满足此门禁。Checkout 还必须等于 npm provenance 使用的 dispatch 事件 `GITHUB_SHA`；应以 release tag dispatch，或在 main 仍指向同一提交时使用 main。仅改变 checkout 不会改变证明中的事件提交。发布 jobs 串行执行；Vitest 保留 CI 的两个 worker 限制。发布与部署使用原生 `pnpm audit --audit-level high` 在外部操作前执行审计。
+
+[版本规划](../../../scripts/release/shared.ts)在未指定 preid 时沿用已有预发布标识，稳定版默认使用 alpha；显式标识参与 SemVer 递增，降级仍会拒绝。交互提示显示当前标识；完整版本号需使用 `--version`。默认 npm 渠道根据最终版本的首个预发布标识选择；数字或 SemVer range 形状的标识使用 `next`。显式 `--npm-tag` 可覆盖渠道，但空值、编码字符、选项形状及版本范围会在规划阶段拒绝。[双包边界](../../../scripts/release/publication.ts)再次检查渠道，确保非法标签在打包或上传前失败。
+
+[整仓检查](../../../scripts/release/release.ts)按发布组执行一次 build、unit、tooling、integration 和所需 smoke，然后分别检查两包的版本、产物、发布一致性与 pack。直接运行 test:\* 脚本避免 test／smoke 包装器再次构建。`--skip-tests` 只跳过测试；`--skip-build` 复用既有产物并跳过构建及逐包检查，不再隐式重建；未跳过的测试仍执行，上传边界校验仍生效。这些是外部发布编排契约，不改变 I01–I12 的产品 authority／generation／namespace 规则。
 
 发布 runner 安装 npm 11.21.0，获准入口拒绝 `^11.21.0 || >=12.2.0` 之外的版本，与 [npm 的可信 dist-tag 要求](https://docs.npmjs.com/trusted-publishers/#managing-dist-tags-with-trusted-publishing)一致。两个包均需已有获准的 publisher，并允许 publish 和 dist-tag 操作；dist-tag 能力默认单独关闭。新包必须先存在，才可配置 publisher。这些账户前置条件不会因 workflow 修改、公开包 metadata 或 `npm whoami` 成功而启用。
 
@@ -61,6 +65,8 @@ PR 标题通过仅处理 metadata 的 workflow 检查，不 checkout PR。模板
 ## 验证归属
 
 基建参照 docs-islands 直接集成到 workflow，不另维护一层基建脚本。根 test:tooling 在[发布边界](../../../scripts/release/publication.spec.ts)保留 bundle license 与历史标签守卫，以及双包 npm integrity／重试覆盖。已移除的 TypeScript 审计解析器与逐包 SBOM 测试随其生产接口退役。安全命令与报告行为归 workflow 所有；本地 shell 实验必须执行实际步骤，不另写一套解析器。报告与外部服务仍在 .limina 权威之外，因此产品不变量 I01–I12 不受影响。Build／tooling／unit／integration／smoke／typecheck／check／package／lint／format／docs 门禁仍适用；本地结果不证明 Actions 上的 Syft／Gitleaks 执行、远程平台验收、发布或部署。
+
+[Release CLI 回归](../../../scripts/release/cli.spec.ts)覆盖正式版与预发布计划在没有启用变量时进入正常预检，并保留本地 provenance 要求。Workflow 配置回归保留手动 dispatch、仓库范围和 Release environment。这些属于外部发布契约，产品不变量 I01–I12 不变。
 
 [Tag CLI 回归](../../../scripts/release/check-tag-cli.spec.ts)在缺少迁移 metadata 时使用真实 Git 标签，覆盖完整公开源码发布组、checkout 身份与 main 祖先关系。[发布 workflow 回归](../../../scripts/release/workflow.spec.ts)在受控 GitHub CLI 响应下执行实际 Bash 步骤，检查共享 changelog 存在于链接提交；Windows 跳过该 Bash 路径，因为此 Ubuntu 发布任务不在 Windows 上运行。[Changelog 覆盖](../../../scripts/release/shared.spec.ts)保护非空内容渲染及历史链接保留。
 

@@ -15,26 +15,45 @@ import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
-it('bootstraps private tools before checking a cold release checkout', () => {
+it('allows manual publication in the owning repository without an activation variable', () => {
   const workflow = parse(
     readFileSync(
       new URL('../../.github/workflows/publish-npm.yml', import.meta.url),
       'utf8',
     ),
-  ) as { jobs: { publish: { steps: { run?: string }[] } } };
-  const steps = workflow.jobs.publish.steps;
-  const tagCheck = steps.findIndex((step) =>
-    step.run?.includes('pnpm run release:check-tag'),
+  ) as {
+    on: { workflow_dispatch?: unknown };
+    jobs: { publish: { if: string; environment: string } };
+  };
+  assert.ok(workflow.on.workflow_dispatch);
+  assert.equal(
+    workflow.jobs.publish.if,
+    "github.repository == 'senaoxi/limina'",
   );
-  const bootstrap = steps.findIndex((step) =>
-    step.run?.includes('pnpm run build:tools'),
-  );
-  assert.ok(tagCheck !== -1, 'publication must check the release tag');
-  assert.ok(
-    bootstrap !== -1 && bootstrap < tagCheck,
-    'the tag CLI needs the private logger compiled before package resolution',
-  );
+  assert.equal(workflow.jobs.publish.environment, 'Release');
 });
+
+for (const workflowFile of ['publish-npm.yml', 'deploy-docs.yml'])
+  it(`bootstraps private tools before checking a cold ${workflowFile} checkout`, () => {
+    const workflow = parse(
+      readFileSync(
+        new URL(`../../.github/workflows/${workflowFile}`, import.meta.url),
+        'utf8',
+      ),
+    ) as { jobs: Record<string, { steps: { run?: string }[] }> };
+    const steps = Object.values(workflow.jobs)[0]!.steps;
+    const tagCheck = steps.findIndex((step) =>
+      step.run?.includes('pnpm run release:check-tag'),
+    );
+    const bootstrap = steps.findIndex((step) =>
+      step.run?.includes('pnpm run build:tools'),
+    );
+    assert.ok(tagCheck !== -1, 'publication must check the release tag');
+    assert.ok(
+      bootstrap !== -1 && bootstrap < tagCheck,
+      'the tag CLI needs the private logger compiled before package resolution',
+    );
+  });
 
 it(
   'requires successful main push workflows at the checked-out release SHA',

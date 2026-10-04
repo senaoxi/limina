@@ -38,17 +38,17 @@ After changing Limina tests or path behavior, run:
 
 ## Repository workflow
 
-Read `.agents/docs/README.md` and the relevant paired records before edits. Inspect Git status and preserve unrelated work. Use pnpm 11.28.3; install explicitly with `pnpm install --frozen-lockfile`. Build private tools with `pnpm run build:tools`; `pnpm run build` builds tools and the product. Never copy old node_modules or regenerate Logaria as part of this migration.
+Read `.agents/docs/README.md` and the relevant paired records before edits. Inspect Git status and preserve unrelated work. Use pnpm 11.28.3; install explicitly with `pnpm install --frozen-lockfile`. Build private tools with `pnpm run build:tools`; `pnpm run build` builds tools and the product. Never copy old node_modules.
 
 Run the relevant `test:unit`, `test:tooling`, `test:integration`, `test:smoke`, `docs:build`, `typecheck`, `check` and `lint:packages` scripts. Lint and formatting checks are `lint:check` and `format:check`; mutation is explicit through `lint:fix` and `format:write`. Use `.agents/skills/test-audit/SKILL.md` when changing tests. Preserve fixture repository boundaries and deliberately invalid fixture contents.
 
 Do not hand-edit generated `dist`, `.limina`, declarations or caches. Dependency versions belong in catalogs; generate lockfiles through pnpm. Read the dependency-admission record before adding third-party dependencies. Do not add reason-field governance exceptions; report the exact issue and alternatives for the user's decision. Keep full English/Chinese PCR pairs synchronized; never add a vouch or decision ledger without explicit direction.
 
-This repository consumes registry Logaria through the dev catalog. CI rejects temporary Logaria links; remote platform acceptance, npm publication and documentation deployment remain subject to their gates in `.agents/docs/migration.md`. Do not push, publish, replace old consumers or remove old source as part of local migration work. Finish with `git diff --check`, Git status, and an explicit list of executed and unexecuted validation.
+This repository consumes registry Logaria through the dev catalog. Remote platform acceptance, npm publication and documentation deployment remain subject to their gates in `.agents/docs/migration.md`. Do not push, publish, replace old consumers or remove old source as part of local migration work. Finish with `git diff --check`, Git status, and an explicit list of executed and unexecuted validation.
 
 ## Commit messages
 
-Follow the existing Git log when choosing Conventional Commit types, scopes and wording. Name the affected subsystem when a scope is useful. Omit the scope for cross-cutting changes; do not use `limina` as a universal scope. Preserve imported historical commit messages.
+Follow [the commit convention](.github/commit-convention.md) when drafting commit messages or PR titles. Use its rules and examples directly; do not read Git history to infer commit style.
 
 ## Bilingual PCR maintenance
 

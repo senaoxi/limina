@@ -31,6 +31,8 @@ jobs:
       - uses: ./.github/actions/setup-env
         with:
           node-version: 24.11.0
+      - name: Build private release tools
+        run: pnpm run build:tools
       - name: Require the new tagged commit and deployment configuration
         shell: bash
         run: |

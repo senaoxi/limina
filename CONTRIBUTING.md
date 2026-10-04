@@ -19,7 +19,7 @@ The private root orchestrates the monorepo. `packages/limina` and `packages/migr
 
 Use `lint:fix` or `format:write` only when you intend to modify files. Clean commands remove their own generated output. Preserve fixture lockfiles, independent workspace boundaries, and all existing test contracts. Use `docs:dev` and `docs:preview` for the bilingual documentation workspace. Read [AGENTS.md](AGENTS.md) for validation and bilingual record maintenance.
 
-Publishing, deployment and source-repository retirement are separate, currently closed migration gates.
+Publishing uses manual dispatch and the Release environment. Deployment and source-repository retirement retain their separate migration gates.
 
 Use Conventional Commit PR titles and name the affected subsystem when a scope helps. Describe observable behavior, actual validation, pre-existing failures and checks not run. Preserve checker compatibility fixtures and synchronized English/Chinese PCR records. Optional VS Code settings use the root ESLint configuration and local TypeScript; they do not automatically format fixture files.
 
