@@ -3,21 +3,19 @@
 
 import type { Theme } from 'vitepress';
 import DefaultTheme from 'vitepress/theme';
-import { h } from 'vue';
-import HomeBrand from './HomeBrand.vue';
-import HomeFeatures from './HomeFeatures.vue';
-import HomeInstall from './HomeInstall.vue';
+import ArticleLayout from './ArticleLayout.vue';
+import ReadingTable from './ReadingTable.vue';
 
 import './style.css';
+import './styles/reading-tokens.css';
+import './styles/reading.css';
 
 const theme: Theme = {
   extends: DefaultTheme,
-  Layout: () =>
-    h(DefaultTheme.Layout, null, {
-      'home-hero-info-before': () => h(HomeBrand),
-      'home-hero-actions-after': () => h(HomeInstall),
-      'home-hero-after': () => h(HomeFeatures),
-    }),
+  Layout: ArticleLayout,
+  enhanceApp: ({ app }) => {
+    app.component('ReadingTable', ReadingTable);
+  },
 };
 
 export default theme;

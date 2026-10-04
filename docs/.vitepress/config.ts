@@ -3,6 +3,7 @@ import { defineConfig } from 'vitepress';
 import enConfig from '../en/config';
 import zhConfig from '../zh/config';
 import { resolveDocumentationOrigin } from './build-metadata';
+import { configureReadingMarkdown } from './reading-markdown';
 
 const base = '/repos/limina/';
 const documentationOrigin = resolveDocumentationOrigin();
@@ -17,6 +18,9 @@ export default defineConfig({
     'TypeScript project graph and architecture governance for single-package projects and workspaces',
   cleanUrls: true,
   lastUpdated: true,
+  markdown: {
+    config: configureReadingMarkdown,
+  },
   head: [
     [
       'link',
@@ -37,7 +41,7 @@ export default defineConfig({
   },
   themeConfig: {
     logo: '/logo.svg',
-    outline: 'deep',
+    outline: [2, 3],
     search: {
       provider: 'local',
       options: {
