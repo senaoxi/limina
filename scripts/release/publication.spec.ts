@@ -266,7 +266,7 @@ interface RegistryDocument {
   'dist-tags': Record<string, string>;
 }
 
-async function createPublicationFixture() {
+async function createPublicationFixture(npmTag = 'beta') {
   const version = discoverReleasePackages()[0]!.manifest.version!;
   const documents = new Map<string, RegistryDocument>();
   const uploads: string[] = [];
@@ -359,7 +359,7 @@ async function createPublicationFixture() {
   const source = `
     import { publishReleaseGroup } from ${JSON.stringify(new URL('publication.ts', import.meta.url).href)};
     import { discoverReleasePackages } from ${JSON.stringify(new URL('shared.ts', import.meta.url).href)};
-    const plans = discoverReleasePackages().map(config => ({ config, currentVersion: config.manifest.version, newVersion: config.manifest.version, gitTag: 'limina/v' + config.manifest.version, npmTag: 'beta' }));
+    const plans = discoverReleasePackages().map(config => ({ config, currentVersion: config.manifest.version, newVersion: config.manifest.version, gitTag: 'limina/v' + config.manifest.version, npmTag: ${JSON.stringify(npmTag)} }));
     publishReleaseGroup(plans, { registry: ${JSON.stringify(registry)}, provenance: false, evidenceDirectory: ${JSON.stringify(path.join(directory, 'evidence'))} });
   `;
   const run = (isFastVisibilityTimeout = false) =>
@@ -432,6 +432,20 @@ async function createPublicationFixture() {
     },
   };
 }
+
+it('rejects invalid channels before uploading either member', async () => {
+  for (const tag of ['0.5.0-beta.2', '>=0.5', '1', 'beta next']) {
+    const fixture = await createPublicationFixture(tag);
+    try {
+      await assert.rejects(fixture.run(), /Invalid npm tag/u);
+      assert.equal(fixture.documents.size, 0);
+      assert.deepEqual(fixture.uploads, []);
+      assert.equal(fixture.promotions, 0);
+    } finally {
+      await fixture.close();
+    }
+  }
+});
 
 // Each fault owns a fresh registry and the existing 60-second case budget.
 // One serial case exceeded that budget on Windows after recovery coverage grew.
