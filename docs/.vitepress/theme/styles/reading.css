@@ -15,12 +15,11 @@
   padding-left: 20px;
 }
 
-.limina-reading .VPDoc .content {
+.limina-reading .VPDoc > .container > .content {
   min-width: 0;
 }
 
-.limina-reading .VPDoc .content-container,
-.limina-reading .VPDoc.has-aside .content-container {
+.limina-reading .VPDoc > .container > .content > .content-container {
   max-width: 720px;
 }
 
@@ -225,27 +224,31 @@
 }
 
 @media (min-width: 960px) {
-  .limina-reading .VPDoc .content {
+  .limina-reading .VPDoc > .container > .content {
     padding-right: 0;
     padding-left: 0;
   }
 }
 
 @media (min-width: 1280px) {
-  .limina-reading .VPDoc .container {
+  .limina-reading .VPDoc > .container {
     max-width: 944px;
   }
 
-  .limina-reading .VPDoc .content {
+  .limina-reading .VPDoc > .container > .content {
     flex: 1;
   }
 
-  .limina-reading .VPDoc .aside {
+  .limina-reading .VPDoc > .container > .aside {
     flex: 0 0 224px;
     max-width: 224px;
   }
 
-  .limina-reading .VPDoc :is(.aside-container, .aside-curtain) {
+  .limina-reading
+    .VPDoc
+    > .container
+    > .aside
+    > :is(.aside-container, .aside-curtain) {
     width: 192px;
   }
 }
