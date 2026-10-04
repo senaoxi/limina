@@ -2,7 +2,7 @@
 
 [English](../technology-stack.md) | [简体中文](./technology-stack.md)
 
-工具版本由清单和 lockfile 负责。当前工具链使用 pnpm 11.28.3、TypeScript 6.0.3、Rolldown 1.2.10 和 Vitest 4.1.11。Node 范围为 `^22.18.0 || >=24.11.0`，代码保持 ESM。依赖使用 pnpm catalog、严格 peer、禁用自动 peer 与 hoist、1,440 分钟 release-age 以及既有 trust 策略。保留三份可达 patch 和 manifest-utils 扩展。`verifyDepsBeforeRun: error` 要求显式执行安装以同步依赖。维护者仅批准 `logaria@0.0.4` 的 release-age 例外；其余迁移与发布门禁仍然有效。
+工具版本由清单和 lockfile 负责。当前工具链使用 pnpm 11.28.3、TypeScript 6.0.3、Rolldown 1.2.10 和 Vitest 4.1.11。Node 范围为 `^22.18.0 || >=24.11.0`，代码保持 ESM。依赖使用 pnpm catalog、严格 peer、禁用自动 peer 与 hoist、1,440 分钟 release-age 以及既有 trust 策略。保留三份可达 patch 和 manifest-utils 扩展。`verifyDepsBeforeRun: error` 要求显式执行安装以同步依赖。已检入的 release-age 例外仅适用于 `logaria@0.0.4`；其余迁移与发布门禁仍然有效。
 
 先运行 `pnpm install --frozen-lockfile`，再运行 `pnpm run build`。`build:tools` 先编译两个私有工具，随后 Rolldown 生成 JavaScript、声明、发布清单和许可证。`test` 在单元、工具和 integration 测试前构建；`smoke` 在打包消费者测试前构建。`docs:build` 使用本地构建模式和提交信息，以 `/` 为 base 构建双语文档。
 

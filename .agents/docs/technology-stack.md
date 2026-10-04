@@ -2,7 +2,7 @@
 
 [English](./technology-stack.md) | [简体中文](./zh/technology-stack.md)
 
-The manifests and lockfile own tool versions. The current toolchain uses pnpm 11.28.3, TypeScript 6.0.3, Rolldown 1.2.10 and Vitest 4.1.11. The Node floor is `^22.18.0 || >=24.11.0`; the code remains ESM. Dependencies use pnpm catalogs, strict peers, no automatic peers or hoisting, the 1,440-minute release-age policy and the existing trust policy. Three reachable patches and the manifest-utils extension remain. `verifyDepsBeforeRun: error` makes dependency synchronization an explicit install operation. The maintainer approved a release-age exception only for `logaria@0.0.4`; it does not waive the remaining migration/publication gates.
+The manifests and lockfile own tool versions. The current toolchain uses pnpm 11.28.3, TypeScript 6.0.3, Rolldown 1.2.10 and Vitest 4.1.11. The Node floor is `^22.18.0 || >=24.11.0`; the code remains ESM. Dependencies use pnpm catalogs, strict peers, no automatic peers or hoisting, the 1,440-minute release-age policy and the existing trust policy. Three reachable patches and the manifest-utils extension remain. `verifyDepsBeforeRun: error` makes dependency synchronization an explicit install operation. The checked-in release-age exception applies only to `logaria@0.0.4`; it does not waive the remaining migration/publication gates.
 
 Run `pnpm install --frozen-lockfile`, then `pnpm run build`. `build:tools` compiles the two private tools before Rolldown generates JavaScript, declarations, the published manifest and licenses. `test` builds before unit, tooling and integration tests; `smoke` builds before packed-consumer tests. `docs:build` builds both languages at base `/` with local build/commit metadata.
 

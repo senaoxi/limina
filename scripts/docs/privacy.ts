@@ -5,11 +5,11 @@ import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
 const rules = [
   [
     'personal-path',
-    /\/(?:Users|home)\/[^/\s"'<>]+|[a-z]:[\\/]Users[\\/][^\\/\s"'<>]+/iu,
+    /(?<![\w./-])\/(?:Users|home)\/[^/\s"'<>]+|(?<![\w.-])[a-z]:[\\/]Users[\\/][^\\/\s"'<>]+/iu,
   ],
   [
     'machine-path',
-    /\/(?:workspace|opt|tmp|private\/tmp|private\/var\/folders|var\/folders|home\/runner)\//u,
+    /(?<![\w./-])\/(?:workspace|opt|tmp|private\/tmp|private\/var\/folders|var\/folders|home\/runner)\//u,
   ],
   ['local-file-link', /(?:file|vscode(?:-insiders)?|smb):\/\//iu],
   [
@@ -26,6 +26,26 @@ const rules = [
   [
     'credential-assignment',
     /\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)["']?\s*[=:]\s*["'][\w/+.-]{20,}["']/iu,
+  ],
+] as const;
+
+// Opt-in for PCR prose: ordinary product users, dates and task names remain valid.
+const contextRules = [
+  [
+    'conversation-attribution',
+    /\b(?:user|maintainer)\s+(?:(?:explicitly|additionally|then)\s+)?(?:requested|asked|clarified|stated)\b/iu,
+  ],
+  [
+    'conversation-attribution',
+    /(?:用户|维护者)(?:在|于)?\s*20\d{2}-\d{2}-\d{2}[^\n]{0,60}(?:要求|请求|提出|告知|选定|指定)|20\d{2}-\d{2}-\d{2}[\s，,]{0,6}(?:用户|维护者)[^\n]{0,12}(?:要求|请求|提出|告知|指定)/u,
+  ],
+  [
+    'conversation-attribution',
+    /^(?:Source|来源)\s*[:：][^\n]{0,60}(?:user's\s+(?:request|conversation|chat)|(?:用户|维护者)[^\n]{0,16}(?:请求|对话|会话|要求|提出))/imu,
+  ],
+  [
+    'private-run-identifier',
+    /\b(?:source_(?:thread|task)_id|(?:codex[_-])?(?:conversation|session|thread)[_-]?id)\s*[:=]\s*["']?[\w-]{8,}/iu,
   ],
 ] as const;
 
@@ -65,23 +85,27 @@ function decodeText(input: string): string {
 // Locations/categories only: neither matches nor surrounding text are reported.
 export function privacyIssues(
   input: string,
+  shouldCheckContextRecords = false,
 ): { category: string; line: number }[] {
   const text = decodeText(input);
-  const issues: { category: string; line: number }[] = rules.flatMap(
-    ([category, pattern]) =>
-      text
-        .matchAll(new RegExp(pattern.source, `${pattern.flags}g`))
-        .map((match) => ({
-          category,
-          line: text.slice(0, match.index).split('\n').length,
-        }))
-        .toArray(),
+  const issues: { category: string; line: number }[] = [
+    ...rules,
+    ...(shouldCheckContextRecords ? contextRules : []),
+  ].flatMap(([category, pattern]) =>
+    text
+      .matchAll(new RegExp(pattern.source, `${pattern.flags}g`))
+      .map((match) => ({
+        category,
+        line: text.slice(0, match.index).split('\n').length,
+      }))
+      .toArray(),
   );
   for (const match of text.matchAll(
     /data:(?:application\/json|image\/svg\+xml|text\/[\w+-])[^,\s]*;base64,([\w+/=]+)/gu,
   )) {
     const embeddedIssues = privacyIssues(
       Buffer.from(match[1]!, 'base64').toString('utf8'),
+      shouldCheckContextRecords,
     );
     for (const issue of embeddedIssues)
       issues.push({
@@ -133,6 +157,7 @@ function pngMetadata(buffer: Buffer): string[] {
 export async function scanDocumentation(
   root: string,
   excludes: readonly string[] = [],
+  shouldCheckContextRecords = false,
 ): Promise<{
   files: number;
   issues: { file: string; category: string; line: number }[];
@@ -152,7 +177,9 @@ export async function scanDocumentation(
       )
         continue;
       const file =
-        privacyIssues(relative).length > 0 ? '[redacted file name]' : relative;
+        privacyIssues(relative, shouldCheckContextRecords).length > 0
+          ? '[redacted file name]'
+          : relative;
       if (entry.isSymbolicLink()) {
         issues.push({ file, category: 'symbolic-link', line: 1 });
       } else if (entry.isDirectory()) await visit(target);
@@ -170,7 +197,7 @@ export async function scanDocumentation(
           buffer.toString('utf8'),
           ...pngMetadata(buffer),
         ])
-          for (const issue of privacyIssues(text))
+          for (const issue of privacyIssues(text, shouldCheckContextRecords))
             issues.push({ file, ...issue });
       }
     }

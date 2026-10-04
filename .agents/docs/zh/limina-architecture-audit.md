@@ -8,9 +8,9 @@
 
 ## Scope 与方法
 
-分析对象是本次开始时的 **dirty working tree**。HEAD `561683d2f11985eea85d0921ed2ed1a2768f48da` 仅标识基线来源，不能代表 staged semantic repairs。baseline 包含用户已 staged 的 `.agents/docs/limina.md`、EN/ZH dependency graph 文章、生产 semantic/build-graph/import-analysis 改动及回归 tests，以及 untracked `a.ts`、`b.ts`。
+审计覆盖被检查的 working tree，包括 semantic/build-graph/import-analysis 修复及已有回归测试。HEAD `561683d2f11985eea85d0921ed2ed1a2768f48da` 仅标识基线来源；不能假设该 HEAD 独自包含这些修复并据此复现下列结果。
 
-先记录 status/index/content fingerprints；从 CLI/config → pipeline/preflight → workspace/ownership → semantic fact → graph/validation → mutation/reporting 重建调用链；再用 tests、installed compiler oracle 和外部 repro 挑战模型；最后逐段比对旧 PCR。memory 只用于工作边界和检索提示，不作为技术事实或产品方向。没有生产行为修改，没有新增/弱化 tests，没有 stage/commit。
+先记录 status/index/content fingerprints；从 CLI/config → pipeline/preflight → workspace/ownership → semantic fact → graph/validation → mutation/reporting 重建调用链；再用 tests、installed compiler oracle 和外部 repro 挑战模型；最后逐段比对旧 PCR。源码与实际执行的检查建立技术事实；检索提示不能建立产品方向。没有生产行为修改，没有新增/弱化 tests，没有 stage/commit。
 
 **Source-established**：本记录集的 phase、field、guard、调用边界，来自直接源码。**Test-backed**：下述实际执行的现有回归。**Empirically verified**：外部 repro 中列出的具体条件。**Derived**：缓存/API integration 风险。**NOT VERIFIED**：完整 optional checker version matrix、Windows 实机、远端 CI、任意并发 filesystem race，以及未执行的 integration/build/release checks。
 
@@ -50,7 +50,7 @@
 | cross-platform fixtures、CLI process budgets、Corepack cache                                      | **移动**至 workflow supporting traps，保留 source/test owners；不升为 core 性质                                | workflow；path helpers、detector environment、CLI/recovery tests           |
 | root architecture 与 technology 重复 package-local定义                                            | **保留 repository integration**，default pipeline 只链接 system model                                          | architecture / technology-stack                                            |
 | intent 中独立 release units                                                                       | **保留不改**：manifest/release unit 事实未见冲突；长远产品关系仍未决                                           | intent；package/release 配置                                               |
-| 从 Codex memory 推来的“human direction”列表                                                       | **删除其人类方向归因**；本任务明确授权的操作机制写 workflow，长期兼容/扩展意图保持 Open                        | 入口；本次用户请求，不假装已有 vouch                                       |
+| 旧文中缺乏依据的长期方向                                                                          | **保持 Open**：维护规范归 workflow；兼容与扩展意图需明确的项目决策                                             | 入口；实现证据与明确的不确定性                                             |
 
 ## 四轮 adversarial architecture review
 
@@ -73,11 +73,11 @@
 | F02 | **P2 / NON-BLOCKING / architecture risk + missing enforcement** | preflight ensure-after-dispose 没有统一 runtime gate，外部 cache reuse 也无通用 content版本；内部 pipeline 自建 preflight 没有与 CLI 相同的 finally dispose。CLI check/standalone 与 owned graph export 有明确释放，未证实当前 CLI 结束后误用。直接重复调用内部 API 或支持 daemon 前，先定 ownership/lifecycle contract，再补入口拒绝与 mutation-version tests |
 | F03 | **P2 / NON-BLOCKING / unresolved integration boundary**         | application typed ArchitectureValidationWorkflow 存在，但无当前生产 caller；直接 runner 与该抽象并存。不能把理想接线写成事实。是否统一及迁移范围由 human 决定，本次不接线、不删除                                                                                                                                                                              |
 | F04 | **P3 / NON-BLOCKING / partial architecture guard**              | architecture-boundaries 只覆盖所解析的相对静态 runtime imports 和特定 named calls；alias/dynamic/namespace 等未普遍追踪。当前未发现被它漏过且实际造成错误的具体环；今后引入这些语法边界时扩充针对性反例，不冻结目录布局                                                                                                                                        |
-| F05 | **P3 / NON-BLOCKING（已修正）/ documentation drift**            | manifest 版本与 snapshot v7过时、root map泛化 verified、tuple重复、memory被归因为 human intent；分别改源链接、v8/独立schema、证据范围与 Open 问题                                                                                                                                                                                                              |
+| F05 | **P3 / NON-BLOCKING（已修正）/ documentation drift**            | manifest 版本与 snapshot v7过时、root map泛化 verified、tuple重复、缺乏依据的产品意图归因；分别改源链接、v8/独立schema、证据范围与 Open 问题                                                                                                                                                                                                                   |
 | N01 | **NO DEFECT / semantic distinction**                            | TypeScript semantic authority + vue-tsc final owner、ambient+compiler-membership、concrete output不回推source、pure schedule SCC，均是当前合法语义，不能当不一致修掉                                                                                                                                                                                           |
 | N02 | **NO DEFECT / validation environment**                          | 8 个 CLI 断言失败的 stderr 指向 tsx `listen EPERM`；原样解除 IPC 沙箱后两组73项通过。不是已观察到的 Limina freshness regression                                                                                                                                                                                                                                |
 
-没有由本次证据确立的 production P0/P1 defect；这不等于全系统不存在 defect。F02–F04 是带边界的风险/缺口，未擅自实施生产修复。没有新增 executable guards：已有 guards 覆盖核心语义，剩余缺口涉及待决定的契约或会冻结实现结构。本次用户预先 staged 的 native repair tests 不能归功为本次新增。
+没有由本次证据确立的 production P0/P1 defect；这不等于全系统不存在 defect。F02–F04 是带边界的风险/缺口，未擅自实施生产修复。没有新增 executable guards：已有 guards 覆盖核心语义，剩余缺口涉及待决定的契约或会冻结实现结构。基线中的 native repair tests 是已有证据，不是记录审查新增的守卫。
 
 ## Validation
 
@@ -115,13 +115,13 @@ NX_DAEMON=false pnpm nx run limina:test:unit
 
 前两组分别为 **66 passed / 7 failed / 1 skipped**、**314 passed / 1 failed**。原样两文件 sandbox 重跑仍失败；临时 child_process diagnostic preload 捕获 7 个 check-attempt 子进程的 `tsx listen EPERM`。解除该 IPC 限制后原样两文件重跑 **73 passed**。诊断 preload 位于外部临时目录，没有改 tests；正式通过的重跑不带 preload。`node bin/limina.js --help` 成功；外部 fixture 的 `check --issues --format json` 返回预期 exit1/aborted。
 
-完整 unit 在相同 working tree、解除 IPC 限制下完成：**92 files passed，1873 tests passed，2 skipped**。两个跳过项为仅 Windows 运行的 mutation-boundary 与 standalone-invocation case；本机未覆盖这些分支。文档检查：11 个修改文件的 Prettier check 通过；Markdown parser 检查 217 个相对链接与 heading anchors，无错误；4 张 Mermaid 已按源码人工检查节点/边/时序，未运行 Mermaid renderer。非 fixing ESLint 实际运行返回 11 个 ignored warnings，当前配置没有检查这些 Markdown，不能把它报告为 lint coverage。初稿 Prettier 检出 8 个格式问题，只格式化外部草稿后重新检查通过。未执行 integration/typecheck/build/smoke/package/release/Limina check：本次只改 PCR 与维护指引，不修改 governed source/config/tests；不把已有用户 staged 改动变成本次额外实施范围。完整 unit 用于挑战本次跨域模型，不替代上述未执行的检查。
+完整 unit 在相同 working tree、解除 IPC 限制下完成：**92 files passed，1873 tests passed，2 skipped**。两个跳过项为仅 Windows 运行的 mutation-boundary 与 standalone-invocation case；本机未覆盖这些分支。文档检查：11 个修改文件的 Prettier check 通过；Markdown parser 检查 217 个相对链接与 heading anchors，无错误；4 张 Mermaid 已按源码人工检查节点/边/时序，未运行 Mermaid renderer。非 fixing ESLint 实际运行返回 11 个 ignored warnings，当前配置没有检查这些 Markdown，不能把它报告为 lint coverage。初稿 Prettier 检出 8 个格式问题，只格式化外部草稿后重新检查通过。未执行 integration/typecheck/build/smoke/package/release/Limina check：本次只改 PCR 与维护指引，不修改 governed source/config/tests；保持基线实现修复不变。完整 unit 用于挑战本次跨域模型，不替代上述未执行的检查。
 
 ## Change 与 ownership
 
 重写 `limina.md` 为入口，新增六个有独立责任的 PCR topics；更新 README map、root architecture/technology 的路由与去重；在 package AGENTS 添加未来变更的 invariant impact 路由。`intent.md` 与 dependency-admission 保持原文。
 
-最终 content/index 对比通过：3116 个 baseline 文件中，排除本次修改的 5 个已有路径后，其余 3111 个 content fingerprints 不变；`git ls-files --stage` 与 baseline 完全相同；只有预期的 6 个新 PCR 文件，没有意外 untracked 文件。EN/ZH 用户文章、所有 production/tests 和 a.ts/b.ts 原样保留。本次新增文档没有 stage。`git diff --check` 与 `git diff --cached --check` 均通过，并检查了最终 `git status --short`。证据临时日志不作为新的 repo authority，复现路径用于复跑而非替代 source/test anchors。
+历史保留检查确认：3116 个基线文件中有 3111 个内容指纹不变，仅五个已有 PCR／指引路径及六个新 PCR 页面在范围内。Index 与基线完全相同；既有文章、生产源码、测试及无关 untracked 文件均保留。记录审查没有 stage。`git diff --check` 与 `git diff --cached --check` 通过，并检查了最终 Git status。临时证据日志不是仓库 authority；当前复跑应使用 source/test 锚点与新的指纹。
 
 ## 文档与边界检查命令
 
@@ -131,11 +131,11 @@ NX_DAEMON=false pnpm nx run limina:test:unit
 FILES=(.agents/docs/README.md .agents/docs/architecture.md .agents/docs/technology-stack.md .agents/docs/limina.md .agents/docs/limina-system-model.md .agents/docs/limina-semantics.md .agents/docs/limina-lifecycle.md .agents/docs/limina-invariants.md .agents/docs/limina-architecture-workflow.md .agents/docs/limina-architecture-audit.md AGENTS.md)
 pnpm exec prettier --check "${FILES[@]}"
 pnpm exec eslint "${FILES[@]}"
-node /tmp/limina-architecture-20260911/validate-docs.mjs --live
-python3 /tmp/limina-architecture-20260911/verify-preservation.py
 git diff --check
 git diff --cached --check
 git status --short
 ```
 
-诊断复跑额外用过 `NODE_OPTIONS=--require=/tmp/limina-architecture-20260911/capture-child.cjs NX_DAEMON=false pnpm nx run limina:test:unit -- src/__tests__/check-attempt.spec.ts`，仅捕获失败子进程 stderr。外部 draft 的格式修正使用 `pnpm exec prettier --write --parser markdown --config $SOURCE_REPO/.prettierrc.json`，参数只列本次的临时草稿文件。最终 source claims 的检查使用 `rg` 追调用者/字段与读生产实现；这类静态结构结果单列 Source-established。
+历史链接／保留检查 helper 是外部资产，此处不提供。应重新检查相对链接与标题锚点，比较新的 index／内容指纹；不得把旧 helper 路径视为可运行的仓库工具。
+
+诊断复跑使用过外部子进程 stderr 捕获 hook；该 hook 未检入，也不是正常复跑的必要条件。临时 Markdown 草稿单独格式化，没有广泛修改仓库。最终 source claims 通过 `rg` 追调用者／字段并读取生产实现检查；这些静态结构结果仍单列 Source-established。

@@ -192,3 +192,62 @@ it('fails the real scan command for nested public output and compressed PNG meta
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it('scans context records without leaking attribution or rejecting product users, evidence dates and repository-relative paths', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'limina-context-privacy-'));
+  const script = fileURLToPath(new URL('check-privacy.ts', import.meta.url));
+  const scan = (shouldCheckContextRecords: boolean) =>
+    spawnSync(
+      process.execPath,
+      [
+        '--import',
+        import.meta.resolve('tsx'),
+        script,
+        ...(shouldCheckContextRecords ? ['--context-records'] : []),
+        root,
+      ],
+      { encoding: 'utf8' },
+    );
+  const sourceAttribution =
+    'The user requested on 2040-01-02 that DemoPanel hydrate immediately.';
+  const translatedAttribution =
+    '用户在 2040-01-02 要求 DemoPanel 立即 hydration。';
+  const privateIdentifier = 'source_thread_id: fixture-thread-0001';
+  const technicalFacts = [
+    'The 2040-01-02 compatibility audit covered Node 24; other platforms were not run.',
+    'Users can select a workspace. 用户可以选择工作区。',
+    'src/core/workspace/create.ts packages/core/src/index.ts ./tmp/example.ts',
+    'https://example.invalid/home/guide https://example.invalid/workspace/docs',
+    'The pipeline task id is graph:check.',
+  ].join('\n');
+  try {
+    await writeFile(
+      path.join(root, 'record.md'),
+      `${sourceAttribution}\n${privateIdentifier}\n`,
+    );
+    await mkdir(path.join(root, 'zh'));
+    await writeFile(path.join(root, 'zh/record.md'), translatedAttribution);
+    // Attribution checks are deliberately scoped to context records.
+    assert.equal(scan(false).status, 0);
+    const rejected = scan(true);
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, /record\.md:1 \[conversation-attribution\]/u);
+    assert.match(rejected.stderr, /record\.md:2 \[private-run-identifier\]/u);
+    assert.match(
+      rejected.stderr,
+      /zh\/record\.md:1 \[conversation-attribution\]/u,
+    );
+    for (const privateText of [
+      sourceAttribution,
+      translatedAttribution,
+      privateIdentifier,
+    ])
+      assert.ok(!rejected.stderr.includes(privateText));
+    await writeFile(path.join(root, 'record.md'), technicalFacts);
+    await writeFile(path.join(root, 'zh/record.md'), technicalFacts);
+    assert.equal(scan(true).status, 0);
+    assert.deepEqual(privacyIssues(technicalFacts), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

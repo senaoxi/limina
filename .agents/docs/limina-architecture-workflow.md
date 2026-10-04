@@ -4,7 +4,7 @@
 
 Local reproduction roots use the redacted `$EVIDENCE_ROOT` alias; set it to the evidence directory when reproducing a recorded experiment.
 
-This page defines the repo-native workflow established by this work. It contains maintenance guidance and repository operating conventions, not historical design intent inferred from source. Start at [limina.md](./limina.md); do not create separate docs/architecture or ADR copies.
+This page defines the repository architecture-maintenance workflow. It contains maintenance guidance and repository operating conventions, not historical design intent inferred from source. Start at [limina.md](./limina.md); do not create separate docs/architecture or ADR copies.
 
 ## Explain invariant impact in the PR
 
@@ -57,7 +57,7 @@ Keep each current truth in one full owner. Other pages retain short conclusions 
 
 The owner's public-facing English file is `.agents/docs/<name>.md`; its Chinese counterpart is `.agents/docs/zh/<name>.md`, with the same filename and both tracked by Git. Every PCR update trigger requires synchronous maintenance of the complete pair in the same change, including prose-only corrections and additions/renames/moves/deletions. Follow the [repository bilingual rule](../../AGENTS.md#bilingual-pcr-maintenance) and the [map's maintenance procedure](./README.md#bilingual-publishing-and-maintenance). These are two language editions of one owner, with identical meaning and evidence, not independent records of truth.
 
-Update `Confirmed / Derived / Candidate / NOT VERIFIED` with the evidence, keeping source-established and runtime-verified claims distinct. Preserve conflicts between source and vouched direction without inventing rationale or vouches. Use a decision ledger only after a human explicitly establishes it. Do not cite private memory as product direction in public records.
+Update `Confirmed / Derived / Candidate / NOT VERIFIED` with the evidence, keeping source-established and runtime-verified claims distinct. Preserve conflicts between source and vouched direction without inventing rationale or vouches. Use a decision ledger only after a human explicitly establishes it. Do not cite private memory as product direction in public records. Follow [project-context-writing](../skills/project-context-writing/SKILL.md) for decision summaries and pre-handoff privacy review; source fields identify repository evidence or necessary public references, not private conversations.
 
 Before completing maintenance, check whether the map quickly locates the owning page, Mermaid matches actual dependencies/timing, each core invariant has a statement, scope, problem/cause/mechanism/example/protected property, source/tests, strength/confidence, and open questions have not become implicit commitments. Compare both editions section by section for complete semantic equivalence, matching filenames, examples, evidence, dates, and status; check links and heading anchors in both locations.
 

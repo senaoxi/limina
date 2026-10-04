@@ -20,3 +20,7 @@ Source, tests and configuration establish current behavior; records preserve dur
 ## Bilingual publishing and maintenance
 
 Maintain complete, same-named English and Chinese topics together. Every semantic change, evidence limit, caveat, map route and link correction belongs in both editions. Neither edition is an independent source of truth; translation does not create new evidence or a human vouch.
+
+## Writing and privacy review
+
+Use [project-context-writing](../skills/project-context-writing/SKILL.md) when changing records or saving audit results. Keep technical facts, reasons, decisions, acceptance criteria, evidence dates and implementation limits; remove private conversation attribution, personal paths and session/task identifiers. Review both editions before handoff or an authorized commit.

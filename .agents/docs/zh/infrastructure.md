@@ -20,13 +20,13 @@
 
 2026-10-03，对 main `772e3c1cb2c58de42a3ae0055580cba69dc6296b` 的本地与远程审计在未变更的排除项下返回两项新的 high advisory：经 Astro 引入的 [http-cache-semantics](https://github.com/advisories/GHSA-ch52-4w7c-c8xp)和经清理／部署开发工具引入的 [braces](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)。当时 registry 的最新版本分别为 4.2.0 和 3.0.3，两项 advisory 均未列出已修复发布版。两个实际 bundle inventory 中均未出现这些包。但全 workspace 的 Security 门禁仍失败；这项观察不授权新增排除或越过失败门禁发布。
 
-docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开始，该基线在此前 18 项之外已经排除这两项 advisory。它的 Security workflow 和采用相同政策的本地审计通过。仅移除这两项排除的独立 manifest／lockfile 控制审计再次返回两项 high advisory；截至 2026-10-03，上游公告仍未列出修复版本。继承的排除是现有门禁的限制，不证明有漏洞的依赖已得到修复。本任务不修改排除项或依赖版本，也不执行 npm 发布或手动部署。
+docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开始，该基线在此前 18 项之外已经排除这两项 advisory。它的 Security workflow 和采用相同政策的本地审计通过。仅移除这两项排除的独立 manifest／lockfile 控制审计再次返回两项 high advisory；截至 2026-10-03，上游公告仍未列出修复版本。继承的排除是现有门禁的限制，不证明有漏洞的依赖已得到修复。隐私守卫独立于安全排除项和依赖版本；通过该守卫不授权 npm 发布或手动部署。
 
 [CodeQL](../../../.github/workflows/codeql.yml)显式加载[范围](../../../.github/codeql-config.yml)，无需产品构建即可分析 JavaScript／TypeScript，覆盖两个产品／私有工具／脚本，排除生成产物／fixtures／测试。静态扫描不代表穷尽运行时／文件系统证明。
 
 ## CI 与制品
 
-每次 `docs:build` 都在构建前后运行 `docs:privacy`，覆盖 CI 的 Build Validation 和另行设有门禁的部署构建。[扫描器](../../../scripts/docs/privacy.ts)检查中英文源码、演示数据、public 资源和所有构建文件，包括 HTML、JavaScript、搜索数据及存在的 source map。它解码常见 JSON／URL／HTML 转义、内联文本／source-map 数据、压缩产物和 PNG 文本元数据，拒绝个人／机器路径、本地文件链接、私有主机、终端身份及凭证特征；错误只报告相对位置与类别。仅源码扫描排除依赖目录和不公开的构建／缓存目录；构建目标被独立要求并扫描。这是有边界的模式防护，由 Gitleaks 和人工图片／链接审查补充，不是穷尽的密钥检测或图片 OCR。
+每次 `docs:build` 都在构建前后运行 `docs:privacy`，覆盖 CI 的 Build Validation 和另行设有门禁的部署构建。[扫描器](../../../scripts/docs/privacy.ts)检查中英文源码、演示数据、public 资源和所有构建文件，包括 HTML、JavaScript、搜索数据及存在的 source map。它解码常见 JSON／URL／HTML 转义、内联文本／source-map 数据、压缩产物和 PNG 文本元数据，拒绝个人／机器路径、本地文件链接、私有主机、终端身份及凭证特征；错误只报告相对位置与类别。仅源码扫描排除依赖目录和不公开的构建／缓存目录；构建目标被独立要求并扫描。这是有边界的模式防护，由 Gitleaks 和人工图片／链接审查补充，不是穷尽的密钥检测或图片 OCR。 PCR 与保存的审计文字通过显式 `--context-records` 使用同一扫描器，增加窄范围的对话归因与私有运行标识检查。仓库相对源码路径、技术证据日期和产品用户概念仍然有效；模式检查仍需语义复核。
 
 [终端录制](../../../scripts/docs/capture-command-transcripts.ts)移除绝对 cwd 元数据，并在终端渲染前替换工作区、CLI 和运行时路径，涵盖被 PTY 读取分块切开的路径。公开查询示例保留可运行的工作区相对命令与交互帧；输出 hash 描述该公开流。写入前再次检查录制输出。录制工作区必须在 docs 的物理目录之外，包括经父目录别名访问的情形，从而避免原始日志和本地链接成为文档输入。[隐私控制测试](../../../scripts/docs/privacy.spec.ts)覆盖录制进程边界、终端渲染、编码输入、嵌套公开文件、压缩图片元数据和不回显隐私的失败报告。2026-10-03 的源码基线因录制个人路径未通过新防护；重新生成的 Linux 录制通过。产品 authority 不变量和安全豁免均未变更。
 
@@ -52,7 +52,7 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 两个 npm 包完成核对与渠道更新后，发布工作流直接创建指向两包共享 changelog 的 GitHub release，链接使用 Git 解析的已 checkout 获准提交，而非 dispatch 事件 SHA。本地 release 预览明确说明，GitHub release 由这个手动触发的工作流负责创建。同一 tag 已存在的完整 release 可接受；draft 和查询错误时失败。SBOM 和许可证报告作为 workflow artifacts 保留，不再维护自制 GitHub release 附件流程。发布模块负责的导入标签名称守卫不依赖已删除的迁移 metadata；移动导入标签也不会使其名称可发布。
 
-[文档部署](../../../.github/workflows/deploy-docs.yml)保持单独手动，由 LIMINA_DOCS_DEPLOY_ENABLED=1 和 Production 控制。要求新的获准 tag、HTTPS DOCS_ORIGIN 和独立 Vercel 凭据／project。工作流从既有私有 docs workspace 执行 Vercel CLI，同时将仓库根目录保留为项目 cwd。既有 CLI 版本由 dev catalog 和冻结 lockfile 负责，保留相同的部署安全 overrides；已移除的部署 workspace 继续保持删除。CLI 是 docs 开发依赖，不进入两个发布包。维护者于 2026-10-01 告知的规范公开文档入口为 `https://senao.me/repos/limina/`。文档站保留固定 `/repos/limina/` base，提供 origin 时在该 base 下生成 sitemap。Senao 站点负责通往独立 Limina Vercel 部署的外部 gateway。两个工作流保留[迁移前置条件](./migration.md)，本地集成不执行外部操作。
+[文档部署](../../../.github/workflows/deploy-docs.yml)保持单独手动，由 LIMINA_DOCS_DEPLOY_ENABLED=1 和 Production 控制。要求新的获准 tag、HTTPS DOCS_ORIGIN 和独立 Vercel 凭据／project。工作流从既有私有 docs workspace 执行 Vercel CLI，同时将仓库根目录保留为项目 cwd。既有 CLI 版本由 dev catalog 和冻结 lockfile 负责，保留相同的部署安全 overrides；已移除的部署 workspace 继续保持删除。CLI 是 docs 开发依赖，不进入两个发布包。记录中的规范公开文档入口为 `https://senao.me/repos/limina/`。文档站保留固定 `/repos/limina/` base，提供 origin 时在该 base 下生成 sitemap。Senao 站点负责通往独立 Limina Vercel 部署的外部 gateway。两个工作流保留[迁移前置条件](./migration.md)，本地集成不执行外部操作。
 
 PR 标题通过仅处理 metadata 的 workflow 检查，不 checkout PR。模板收集包／命令／cwd／checker／复现／实际检查。提供英文贡献／安全政策及仅涉及项目的编辑器设置，不自动格式化 fixtures。
 
@@ -60,7 +60,7 @@ PR 标题通过仅处理 metadata 的 workflow 检查，不 checkout PR。模板
 
 ## 验证归属
 
-2026-10-02，维护者要求直接按 docs-islands 集成，不再维护基建脚本。根 test:tooling 在[发布边界](../../../scripts/release/publication.spec.ts)保留 bundle license 与历史标签守卫，以及双包 npm integrity／重试覆盖。已移除的 TypeScript 审计解析器与逐包 SBOM 测试随其生产接口退役。安全命令与报告行为归 workflow 所有；本地 shell 实验必须执行实际步骤，不另写一套解析器。报告与外部服务仍在 .limina 权威之外，因此产品不变量 I01–I12 不受影响。Build／tooling／unit／integration／smoke／typecheck／check／package／lint／format／docs 门禁仍适用；本地结果不证明 Actions 上的 Syft／Gitleaks 执行、远程平台验收、发布或部署。
+基建参照 docs-islands 直接集成到 workflow，不另维护一层基建脚本。根 test:tooling 在[发布边界](../../../scripts/release/publication.spec.ts)保留 bundle license 与历史标签守卫，以及双包 npm integrity／重试覆盖。已移除的 TypeScript 审计解析器与逐包 SBOM 测试随其生产接口退役。安全命令与报告行为归 workflow 所有；本地 shell 实验必须执行实际步骤，不另写一套解析器。报告与外部服务仍在 .limina 权威之外，因此产品不变量 I01–I12 不受影响。Build／tooling／unit／integration／smoke／typecheck／check／package／lint／format／docs 门禁仍适用；本地结果不证明 Actions 上的 Syft／Gitleaks 执行、远程平台验收、发布或部署。
 
 [Tag CLI 回归](../../../scripts/release/check-tag-cli.spec.ts)在缺少迁移 metadata 时使用真实 Git 标签，覆盖完整公开源码发布组、checkout 身份与 main 祖先关系。[发布 workflow 回归](../../../scripts/release/workflow.spec.ts)在受控 GitHub CLI 响应下执行实际 Bash 步骤，检查共享 changelog 存在于链接提交；Windows 跳过该 Bash 路径，因为此 Ubuntu 发布任务不在 Windows 上运行。[Changelog 覆盖](../../../scripts/release/shared.spec.ts)保护非空内容渲染及历史链接保留。
 

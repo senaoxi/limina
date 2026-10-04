@@ -150,3 +150,8 @@ Hand off with the [SKILL.md](SKILL.md) report, plus:
 - preservation findings and any mutation/control proof;
 - product defects discovered;
 - checks run, checks skipped, and remaining uncertainty.
+
+Persisted campaign reports and PCR updates follow the
+[project-context-writing privacy review](../project-context-writing/SKILL.md#privacy-review-before-handoff-or-an-authorized-commit).
+Distill technical outcomes without private conversation attribution or raw local
+metadata; keep validation scope and unresolved contracts explicit.

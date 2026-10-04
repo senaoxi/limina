@@ -171,7 +171,7 @@ executor 区分 passed、failed、disabled、blocked、skipped 等 task outcome�
 
 消费者图的正确性取决于实际 import。未使用的损坏 exports 不使 graph check 失败；已消费但无法解析的工作区入口在 import 处失败，graph export 同样拒绝。两者消费[保留的依赖证据](../../../packages/limina/src/core/project-dependencies/evidence.ts)，不增加并行 resolver 或 wildcard surface 枚举。Declaration-entry inventory 仅保留给 source ambient-policy 分类，不是 graph resolution authority。[Graph 回归](../../../packages/limina/src/__tests__/graph.spec.ts)覆盖精确、pattern、null 入口及 ATTW 独立性。
 
-发布端检查只覆盖配置的输出 entries。Limina 负责 manifest 声明一致性（包括本地协议和混合 exports 根键）；可选 publint 负责 packed target 存在性及发布质量；可选 ATTW 负责 runtime/type 兼容性；boundary 与 release 保留既有契约。禁用或无法使用 publint 时，目标存在性未检查。所有这些检查均不从工作区使用情况推断公开 API 设计，package checks 也不扩展 ATTW entrypoints。这一职责划分落实用户契约，不表示覆盖所有可能的声明或类型缺陷。
+发布端检查只覆盖配置的输出 entries。Limina 负责 manifest 声明一致性（包括本地协议和混合 exports 根键）；可选 publint 负责 packed target 存在性及发布质量；可选 ATTW 负责 runtime/type 兼容性；boundary 与 release 保留既有契约。禁用或无法使用 publint 时，目标存在性未检查。所有这些检查均不从工作区使用情况推断公开 API 设计，package checks 也不扩展 ATTW entrypoints。这一划分界定各项检查的职责边界，不表示覆盖所有可能的声明或类型缺陷。
 
 导出的依赖边优先依据实际源码归属，而不是目录拼写。只有位于工作区已验证输出根内的目标才归为 artifact 边；这些根与工作区路径索引使用相同的规范路径。导出器不把 `dist` 视为证据，也不从产物归因推断 compiler relation。[图投影测试](../../../packages/limina/src/__tests__/dependency-graph.spec.ts) 覆盖自定义/嵌套输出、`dist` 内源码、未声明的输出候选项以及三个视图。
 
@@ -191,6 +191,6 @@ release 命令在运行各 entry 前，以有效 cwd 创建 npm registry 配置�
 
 [响应体读取器](../../../packages/limina/src/package-check/release/registry/body.ts)拒绝有效且超限的 Content-Length，并始终累计 HTTP 解码后的字节数；metadata 超过 16 MiB、tarball 超过 128 MiB 即取消读取。只有通过限制的响应体才进入 JSON 解析或原有 integrity/打包路径。这些上限不约束 tar 归档解压、并发累计分配或所有 OOM 路径。触发原始来源控制问题需要控制 registry metadata/重定向响应，或已被信任的配置 registry；未建立普通包发布者能够任意控制 registry 生成的 dist URL 的证据。
 
-[Authority 与上限回归测试](../../../packages/limina/src/__tests__/release-registry.spec.ts)覆盖 scope 优先级、cwd 定位、快照隔离、包含路径的缓存身份、fetch 前 URL 拒绝、声明/实际大小及恰好上限。[测试 authority 守卫](../../../packages/limina/src/__tests__/release-registry-test-seam.spec.ts)保持 HTTP 例外显式。每条 importer 边的内容策略仍由原有遍历负责。该用户指定边界于 2026-09-26 实施；这不代表人工背书，也不承诺完整 npm 网络兼容性。
+[Authority 与上限回归测试](../../../packages/limina/src/__tests__/release-registry.spec.ts)覆盖 scope 优先级、cwd 定位、快照隔离、包含路径的缓存身份、fetch 前 URL 拒绝、声明/实际大小及恰好上限。[测试 authority 守卫](../../../packages/limina/src/__tests__/release-registry-test-seam.spec.ts)保持 HTTP 例外显式。每条 importer 边的内容策略仍由原有遍历负责。该边界由链接的 registry 配置、authority 与 body reader 实现；这不代表人工背书，也不承诺完整 npm 网络兼容性。
 
 依赖准入：npm 的 `ini@6.0.0` 提供成熟 INI 解析，避免手写解析器。它支持 Node 22.18，声明 ISC 许可，无运行时依赖，所查 npm metadata 未标记 deprecated。npm 维护中的 v7 要求更高 Node 下限，因此选择 v6。`@types/ini@4.1.1` 为 MIT、仅类型依赖，未标记 deprecated。通过隔离注入解析器，使用相同生产 Rolldown 入口与配置，按逐文件 gzip level 9 测量整个输出：682,319 → 684,176 字节（+0.27%）；原始体积 3,304,349 → 3,310,226 字节。生成的许可证保留 ISC 声明。2026-09-26 获取的 npm 下载信号为最近一周 144,168,301、最近一月 511,393,973；这些信号不能覆盖硬准入门槛。[上游版本](https://github.com/npm/ini/tree/v6.0.0)、[维护发布](https://github.com/npm/ini/releases)与[准入策略](./dependency-admission.md)界定证据与决策边界。

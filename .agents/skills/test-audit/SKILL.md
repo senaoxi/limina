@@ -204,6 +204,14 @@ from this skill. Preserve unrelated working-tree and index changes.
 For a continuing audit, refresh discovery from the current branch state before
 starting the next owner-boundary batch.
 
+## Persisted audit records
+
+When saving a report or updating PCR, follow
+[project-context-writing](../project-context-writing/SKILL.md). Preserve contract,
+rationale, counterexample, validation and uncertainty; remove private dialogue
+attribution and raw local metadata. Review privacy before handoff or an authorized
+commit, and use only fictional data in any scan regression fixture.
+
 ## Handoff
 
 Report:
