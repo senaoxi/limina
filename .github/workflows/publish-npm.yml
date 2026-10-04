@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   publish:
-    if: github.repository == 'senaoxi/limina' && vars.LIMINA_RELEASE_ENABLED == '1'
+    if: github.repository == 'senaoxi/limina'
     runs-on: ubuntu-latest
     environment: Release
     permissions:
@@ -21,7 +21,6 @@ jobs:
       actions: read
       id-token: write
     env:
-      LIMINA_RELEASE_ENABLED: "1"
       RELEASE_TAG: ${{ inputs.tag }}
       VITEST_MAX_WORKERS: "2"
     steps:

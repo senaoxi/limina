@@ -8,7 +8,7 @@
 
 `lint:check` 和 `format:check` 只读；修改入口分别为 `lint:fix` 和 `format:write`。`typecheck`、`check` 和 `lint:packages` 从根目录调用产品 CLI wrapper。根工具、产品、docs 和 build-tools 使用 vue-tsc；ESLint 和 smoke 使用 tsgo。自动发现保持启用。
 
-CI 保留 Linux、macOS 和 Windows 的测试、构建与 smoke 职责，以及独立 Vue semantic matrix。required status 拒绝被跳过的验证任务。所有 Logaria 消费者现均通过 dev catalog 使用 registry 0.0.4。setup action 仍在 frozen install 前拒绝临时 Logaria link，不再需要旧仓库构建。2026-09-30 的替换证据和远程／平台限制保留在归档的 Logaria 报告中；[迁移历史](./migration.md#历史证据)说明如何从 Git 获取。历史证据不证明当前 checkout 已通过验收。
+CI 保留 Linux、macOS 和 Windows 的测试、构建与 smoke 职责，以及独立 Vue semantic matrix。required status 拒绝被跳过的验证任务。所有 Logaria 消费者均通过 dev catalog 使用 registry 0.0.4。setup action 使用 `pnpm install --frozen-lockfile` 安装锁定的依赖，不需要构建 Logaria 源码。2026-09-30 的替换证据和远程／平台限制保留在归档的 Logaria 报告中；[迁移历史](./migration.md#历史证据)说明如何从 Git 获取。历史证据不证明当前 checkout 已通过验收。
 
 ## ESLint 10 迁移
 
