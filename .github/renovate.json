@@ -13,8 +13,7 @@
     "**/node_modules/**",
     "**/dist/**",
     "**/fixtures/**",
-    "**/__fixtures__/**",
-    "migration/**"
+    "**/__fixtures__/**"
   ],
   "lockFileMaintenance": {
     "enabled": true,

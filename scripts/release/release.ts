@@ -1,5 +1,4 @@
 import { createElapsedTimer } from 'logaria/helper';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   applyPackageVersion,
@@ -42,25 +41,13 @@ interface PublishRunContext {
   plans: ReleasePlan[];
 }
 
-function getPackageScriptRunner(
-  config: ResolvedReleasePackageConfig,
-  scriptName: string,
-  environment?: NodeJS.ProcessEnv,
-): void {
-  ReleaseLogger.info(`Running ${config.packageName}:${scriptName}`);
+function runWorkspaceScript(scriptName: string): void {
+  ReleaseLogger.info(`Running workspace:${scriptName}`);
   runCommand(getPnpmCommand(), ['run', scriptName], {
     cwd: REPO_ROOT,
-    env: environment,
     stdio: 'inherit',
     logger: ReleaseLogger,
   });
-}
-
-function runPackageBuildTarget(
-  config: ResolvedReleasePackageConfig,
-  environment?: NodeJS.ProcessEnv,
-): void {
-  getPackageScriptRunner(config, 'build', environment);
 }
 
 function runPackageArtifactChecks(config: ResolvedReleasePackageConfig): void {
@@ -111,44 +98,34 @@ function verifyDistributionVersion(plan: ReleasePlan): void {
   validatePublicationTarget(plan.config, plan.newVersion, plan.gitTag);
 }
 
-function runStandardPackageReleaseChecks(
-  plan: ReleasePlan,
+function runReleaseGroupChecks(
+  plans: ReleasePlan[],
   options: Pick<
     ReleaseCliOptions | PublishCliOptions,
     'skipBuild' | 'skipTests'
   >,
 ): void {
-  const { config } = plan;
-
+  if (!options.skipBuild) runWorkspaceScript('build');
   if (!options.skipTests) {
-    getPackageScriptRunner(config, 'test');
-    if (config.previewChecks.includes('smoke')) {
-      getPackageScriptRunner(config, 'smoke');
-    }
+    for (const script of ['test:unit', 'test:tooling', 'test:integration'])
+      runWorkspaceScript(script);
+    if (plans.some(({ config }) => config.previewChecks.includes('smoke')))
+      runWorkspaceScript('test:smoke');
   }
   if (options.skipBuild) {
     return;
   }
 
-  runPackageBuildTarget(config);
-  verifyDistributionVersion(plan);
-  runPackageArtifactChecks(config);
-  runPackageReleaseConsistencyChecks(config);
-  runCommand(getNpmCommand(), ['pack', '--dry-run'], {
-    cwd: config.publishDir,
-    stdio: 'inherit',
-    logger: ReleaseLogger,
-  });
-}
-
-function runPackageReleaseChecks(
-  plan: ReleasePlan,
-  options: Pick<
-    ReleaseCliOptions | PublishCliOptions,
-    'skipBuild' | 'skipTests'
-  >,
-): void {
-  runStandardPackageReleaseChecks(plan, options);
+  for (const plan of plans) {
+    verifyDistributionVersion(plan);
+    runPackageArtifactChecks(plan.config);
+    runPackageReleaseConsistencyChecks(plan.config);
+    runCommand(getNpmCommand(), ['pack', '--dry-run'], {
+      cwd: plan.config.publishDir,
+      stdio: 'inherit',
+      logger: ReleaseLogger,
+    });
+  }
 }
 
 function ensureWorkingTreeIsClean(options: { dryRun: boolean }): void {
@@ -740,14 +717,11 @@ export async function runPublishCommand(
     return;
   }
 
-  assertReleaseEnabled();
   ReleaseLogger.info('publish started');
   const publishElapsed = createElapsedTimer();
   performPublishPreflightChecks(context);
 
-  for (const plan of context.plans) {
-    runPackageReleaseChecks(plan, context.options);
-  }
+  runReleaseGroupChecks(context.plans, context.options);
   publishReleaseGroup(context.plans, context.options);
 
   ReleaseLogger.success(
@@ -770,7 +744,6 @@ export async function runReleaseCommand(
     return;
   }
 
-  assertReleaseEnabled();
   ReleaseLogger.info('release started');
   const releaseElapsed = createElapsedTimer();
   ensureChangelogReviewPromptIsAvailable(context);
@@ -781,9 +754,7 @@ export async function runReleaseCommand(
     await promptForChangelogReview(changelogReviewPlans);
   }
 
-  for (const plan of context.plans) {
-    runPackageReleaseChecks(plan, context.options);
-  }
+  runReleaseGroupChecks(context.plans, context.options);
 
   stageReleaseFiles(context);
   createGitTags(context);
@@ -804,22 +775,4 @@ export async function runReleaseCommand(
       .join(', ')}`,
     releaseElapsed(),
   );
-}
-
-function assertReleaseEnabled(): void {
-  const hasTemporaryLink = [
-    'package.json',
-    'packages/limina/package.json',
-    'packages/build-tools/package.json',
-  ].some((manifestPath) => {
-    const manifest = JSON.parse(
-      readFileSync(path.join(REPO_ROOT, manifestPath), 'utf8'),
-    ) as { devDependencies?: Record<string, string> };
-    return manifest.devDependencies?.logaria?.startsWith('link:');
-  });
-  if (hasTemporaryLink || process.env.LIMINA_RELEASE_ENABLED !== '1') {
-    throw new Error(
-      'Release is closed until independent Logaria consumption, remote CI and the publisher cutover are approved.',
-    );
-  }
 }

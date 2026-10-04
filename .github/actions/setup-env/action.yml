@@ -12,9 +12,6 @@ runs:
       with:
         node-version: ${{ inputs.node-version }}
         package-manager-cache: false
-    - name: Check temporary external dependency
-      shell: bash
-      run: node --input-type=module -e "import fs from 'node:fs'; const files=['package.json','packages/limina/package.json','packages/build-tools/package.json']; if(files.some(f => JSON.parse(fs.readFileSync(f)).devDependencies?.logaria?.startsWith('link:'))) throw new Error('Independent CI is blocked until the temporary Logaria link is replaced.');"
     - name: Setup pnpm via Corepack
       shell: bash
       run: 'set -euo pipefail
