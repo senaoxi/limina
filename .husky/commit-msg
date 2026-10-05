@@ -1,1 +1,1 @@
-limina check commit -- "$1"
+node scripts/git/commit-message.ts "$1"

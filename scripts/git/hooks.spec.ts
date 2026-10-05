@@ -21,7 +21,6 @@ function linkDependencies(directory: string) {
     '@commitlint/cli',
     '@commitlint/config-conventional',
     'husky',
-    'limina',
     'semver',
   ]) {
     const destination = path.join(directory, 'node_modules', name);
@@ -38,7 +37,6 @@ function createFixture() {
   for (const file of [
     '.husky/commit-msg',
     'commitlint.config.mjs',
-    'limina.config.mts',
     'scripts/git/commit-message.ts',
   ]) {
     mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
@@ -338,7 +336,6 @@ it('rejects literal scissors under strip cleanup and accepts edited verbose comm
       'add',
       '.husky',
       'commitlint.config.mjs',
-      'limina.config.mts',
       'scripts',
       'package.json',
     );
@@ -407,7 +404,6 @@ it('installs idempotently and blocks an invalid real Git commit while retaining 
       'add',
       '.husky',
       'commitlint.config.mjs',
-      'limina.config.mts',
       'scripts',
       'package.json',
     );
@@ -458,7 +454,6 @@ it('honors HUSKY=0 and validates commits in a linked Git worktree', () => {
       'add',
       '.husky',
       'commitlint.config.mjs',
-      'limina.config.mts',
       'scripts',
       'package.json',
     );

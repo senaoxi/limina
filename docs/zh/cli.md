@@ -225,6 +225,8 @@ checker:typecheck
 
 默认组合中的任务按可用资源独立调度。命名流水线来自配置中的 `pipelines`，通过 `limina check <name>` 运行，步骤按配置顺序执行。流水线步骤可以是内置任务，也可以是外部命令；外部命令支持对象形式配置 `command`、`args`、`cwd` 和 `env`。
 
+`limina graph check` 调度内置命令；`limina check graph` 只选择 `pipelines.graph`。命名工作流接受下方已声明的 Limina 选项，但拒绝额外的位置参数、未知选项和 `--` 透传。所有选项都归 Limina 所有；下游命令输入由[流水线配置](./config/pipelines.md)定义。
+
 常用选项：
 
 | 选项                   | 类型                      | 默认行为           | 示例                                                          | 边界                                              |
