@@ -6,7 +6,7 @@
     "docs:build": "pnpm --dir .. run docs:privacy && LIMINA_DOCS_BUILD=1 vitepress build && pnpm --dir .. run docs:privacy --built",
     "docs:dev": "vitepress dev --host 0.0.0.0",
     "docs:preview": "vitepress preview --host 0.0.0.0",
-    "typecheck": "limina checker build",
+    "typecheck": "limina --config ../limina.config.mts check typecheck",
     "clean": "del-cli .vitepress/cache .vitepress/dist .tsbuild"
   },
   "packageManager": "pnpm@11.28.3",

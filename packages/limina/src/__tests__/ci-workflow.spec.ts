@@ -1,3 +1,4 @@
+import { loadConfig } from '#config/runner';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'pathe';
@@ -73,8 +74,28 @@ describe('Limina CI validation contract', () => {
       'lint:packages',
     ])
       expect(quality).toContain(`pnpm run ${command}`);
-    expect(manifest.scripts['lint:check']).not.toContain('--fix');
-    expect(manifest.scripts['format:check']).toContain('--check');
+    const config = await loadConfig({
+      configLoader: 'tsx',
+      configPath: path.join(root, 'limina.config.mts'),
+      cwd: root,
+    });
+    for (const [script, pipeline, tool, requiredFlag, forbiddenFlag] of [
+      ['format:check', 'format', 'prettier', '--check', '--write'],
+      ['lint:check', 'lint', 'eslint', '--config', '--fix'],
+    ] as const) {
+      expect(manifest.scripts[script]).toContain(`check ${pipeline} --`);
+      const step = config.pipelines?.[pipeline]?.find(
+        (candidate) =>
+          typeof candidate === 'object' &&
+          candidate.type === 'command' &&
+          candidate.command === tool,
+      );
+      if (typeof step !== 'object' || step.type !== 'command')
+        throw new Error(`Missing ${tool} command in ${pipeline}.`);
+      expect(step.args).toContain('.');
+      expect(step.args).toContain(requiredFlag);
+      expect(step.args).not.toContain(forbiddenFlag);
+    }
   });
   it('waits for all validation jobs and rejects failure, cancellation and skipped gates', async () => {
     const { jobs } = await workflow();

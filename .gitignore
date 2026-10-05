@@ -4,6 +4,7 @@ dist
 .reports/
 .limina/
 node_modules
+.husky/_
 .eslintcache
 cache
 

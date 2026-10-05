@@ -8,6 +8,8 @@
 
 [Renovate](../../../.github/renovate.json)提出需审查的 catalog／lockfile 更新，不 automerge。排除 peer／engine 契约和独立 fixtures。Checker 家族、package-manager 变化及 major 更新需 dashboard approval；Vite 5 保持既有版本线。不引入第二套更新 bot 或旧 postinstall 自举。
 
+提交校验使用 `@commitlint/cli` 与 `@commitlint/config-conventional` 21.2.3 提供共享解析器、规则引擎、配置和诊断，使用 Husky 9.1.7 安装与执行钩子。仓库特有的排版规则保留在 [commitlint 配置](../../../commitlint.config.mjs)中。这些根开发依赖归属 [catalogs](../../../pnpm-workspace.yaml)，不进入两个产品产物。2026-10-04 的[准入审查](./dependency-admission.md)发现 registry metadata、带标签源码与分发包中的 MIT 许可证一致，所选版本均未废弃，维护者与受维护的发布来源可识别，Node 下限兼容仓库要求（commitlint 为 `>=22.12.0`，Husky 为 `>=18`）。npm 在 9 月 27 日至 10 月 3 日的下载量为两个 commitlint 包各约 1290 万、Husky 约 4410 万，近期七天窗口总量呈上升趋势。来源为 [CLI registry](https://registry.npmjs.org/@commitlint/cli)、[conventional-config registry](https://registry.npmjs.org/@commitlint/config-conventional)、[Husky registry](https://registry.npmjs.org/husky)及其 npm 下载 API。未新增依赖准入、release-age、trust 或 audit 例外。
+
 私有 [pnpm ESLint 适配器](../../../packages/eslint-config/src/plugins/pnpm-plugin/index.ts)识别限定父包／版本的 overrides 中的 catalog 引用。上游 eslint-plugin-pnpm 1.9.1 错误地将整个 selector 当作包名；适配器只消除这类 unused-item 误报，保留真正未使用的条目报告。根 duplicate-catalog 规则在既有 Vite 允许项之外增加 `path-to-regexp`，因为部署依赖图需要 major 6 和 8 两套 API。这是具名 lint 允许项，不是 audit、trust 或依赖准入例外。ESLint 归属边界的回归测试使用真实临时 workspaces，包含 scoped、限定版本的 selector，并同时展示上游失败及适配后的结果。
 
 [依赖审查](../../../.github/workflows/dependency-review.yml)以 high 为门禁，覆盖 runtime／development／unknown scope。允许列表在[配置](../../../.github/dependency-review-config.yml)中维护，与 [bundled-license 策略](../../../packages/build-tools/src/license-policy.ts)配套；没有单独的配置同步脚本。Action 不穷尽拒绝未知 license metadata；构建插件另行拒绝缺失／冲突／禁止的 bundle 证据。未打包依赖仍需准入审查。
@@ -32,7 +34,9 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 发布集成 fixture 使用子进程内的时钟推进元数据轮询等待，不实际休眠，同时保留对本地测试 registry 的真实 npm 请求。这移除导致 main 在 2026-10-03 Windows 进程超时的四次五秒等待。既有断言仍要求两个版本的 integrity 可见后才提升渠道，并拒绝已过截止时间的情况；生产轮询、超时限制和手动 workflow dispatch 保持原状。
 
-共享 build action 调用根 `format:check` 与 `lint:check` 脚本执行只读 Prettier 和 ESLint 校验，两命令覆盖整个仓库；修改仍显式通过 `format:write` 与 `lint:fix` 执行，复用当前 `format` 和 `lint` 命令。
+仓库检查通过 `limina check` 使用 Limina 的[内置默认工作流](../../../packages/limina/src/pipeline/steps.ts)，通过 `limina check <pipeline>` 执行 [limina.config.mts](../../../limina.config.mts)中的命名 pipelines。根脚本、commit-msg 钩子、文档构建和发布编排间接调用这些入口。根配置不再重复定义 `pipelines.check`，默认流程保留 graph、source、proof 与 checker 验证。自定义 pipeline 按检查用途命名：`typecheck`、`format`、`lint`、`packages`、`privacy`、`commit`、`release-tag` 与 `release`。`typecheck` 运行受管理的 `checker:build` 任务，由任务选择并落盘当前 TypeScript 与 Vue 图入口。外部命令别名把工具参数放在 `--` 后，保留消息文件名及 `--built`、`--context-records` 等隐私扫描选项。根配置读取这段参数；该仓库约定不新增公共 CLI 参数转发契约。未使用的 `graph`、`lib`、`vue`、`package` 与 `publish` 别名已移除：前三者手动选择生成的 checker 路径，`lib` 与 `graph` 使用同一 tsgo 入口，包／发布检查现在由实际入口调用。[根配置集成守卫](../../../packages/limina/integration/tests/root-config.spec.ts)在小型 workspace 中执行两个配置的编译器范围，分别拒绝 TypeScript 与 Vue 源码错误。产品不变量 I01–I12 不变。
+
+共享 build action 调用根 `format:check` 与 `lint:check` 别名，分别通过 `limina check format` 和 `limina check lint` 执行只读 Prettier 和 ESLint 校验。[CI 守卫](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)解析实际配置的命令步骤，保护只读参数。两命令覆盖整个仓库；修改仍显式通过 `format:write` 与 `lint:fix` 执行，复用当前 `format` 和 `lint` 脚本。
 
 [CI](../../../.github/workflows/ci.yml)保留原生平台 build／test／smoke 和独立 Vue tuples。Linux quality 复用同提交／平台的 package artifacts，其他环境独立构建／检查。显式 build 后使用 test:smoke，不重复构建。不引入路径过滤、Nx cache 或缓存 .limina 状态。CI Status 依赖全部验证任务，失败／取消／skipped 都失败。
 
@@ -59,6 +63,8 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 [文档部署](../../../.github/workflows/deploy-docs.yml)保持单独手动，由 LIMINA_DOCS_DEPLOY_ENABLED=1 和 Production 控制。要求新的获准 tag、HTTPS DOCS_ORIGIN 和独立 Vercel 凭据／project。工作流从既有私有 docs workspace 执行 Vercel CLI，同时将仓库根目录保留为项目 cwd。既有 CLI 版本由 dev catalog 和冻结 lockfile 负责，保留相同的部署安全 overrides；已移除的部署 workspace 继续保持删除。CLI 是 docs 开发依赖，不进入两个发布包。记录中的规范公开文档入口为 `https://senao.me/repos/limina/`。文档站保留固定 `/repos/limina/` base，提供 origin 时在该 base 下生成 sitemap。Senao 站点负责通往独立 Limina Vercel 部署的外部 gateway。两个工作流保留[迁移前置条件](./migration.md)，本地集成不执行外部操作。
 
 PR 标题通过仅处理 metadata 的 workflow 检查，不 checkout PR。模板收集包／命令／cwd／checker／复现／实际检查。提供英文贡献／安全政策及仅涉及项目的编辑器设置，不自动格式化 fixtures。
+
+本地提交通过跟踪的 [Husky commit-msg 钩子](../../../.husky/commit-msg)、Limina `commit` pipeline 与[消息文件入口](../../../scripts/git/commit-message.ts)，按共享配置调用 commitlint，执行[提交约定](../../../.github/commit-convention.md)。根 `prepare` 和 `hooks:install` 直接调用 Husky CLI，由其将本地 `core.hooksPath` 配置为 `.husky/_` 并提供 hook 执行层。在 Husky 可用时，安装与执行遵循原生的 `HUSKY=0` 禁用机制。生成的 Husky 文件不受 Git 跟踪。根 `commit:check` 别名运行 `limina check commit -- <message-file>`，支持按 Git cleanup 语义直接检查消息文件。机械检查保留独立的 50 字符 subject 上限、小写开头、连续正文项目、精确分隔空行、breaking footer、revert 正文及生成的同版本发布消息；禁用冲突的 conventional 行长默认值，以及 merge／fixup／squash 自动忽略。文案语义仍由审查负责，消息文件不会被改写。[工具测试](../../../scripts/git/hooks.spec.ts)覆盖共享 commitlint 配置、CLI 接受／拒绝、Git cleanup、真实提交拒绝时保留 HEAD／index、幂等安装、显式禁用及关联 worktree 中的提交校验，通过 `test:tooling` 进入既有 CI 矩阵；本地执行不证明远程平台验收。产品不变量 I01–I12 不受影响。
 
 管理操作需单独启用 Renovate、受支持的 dependency review／code scanning、私有安全报告、labels、受保护 environments 和 required checks。建议检查：CI Status、Dependency Review、Dependency Audit、Secret Scan、CodeQL、PR Title。本地文件不启用设置，也不证明功能可用。
 
