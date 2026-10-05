@@ -204,9 +204,9 @@ it('checks the workspace once per release group and retains per-package checks',
             realpathSync(fileURLToPath(new URL('../../', import.meta.url))),
         ),
       );
-      for (const command of ['package', 'release']) {
+      for (const pipeline of ['packages', 'release']) {
         const checks = calls.filter(
-          ({ args }) => args[0] === 'exec' && args.includes(command),
+          ({ args }) => args[0] === 'exec' && args.includes(pipeline),
         );
         assert.deepEqual(
           checks.map(({ args }) => args.at(-1)),
