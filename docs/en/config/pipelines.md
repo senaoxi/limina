@@ -31,6 +31,27 @@ export default defineConfig({
 
 `pipelines` maps a name to an ordered list of steps. `pnpm exec limina check <name>` schedules that pipeline's steps in array order, with each step depending on the previous one. This differs from the default `limina check`: the default check schedules built-in tasks as independent work that can run concurrently, while a named pipeline preserves the order you wrote.
 
+The name selects only `pipelines[name]`. For example, `limina check graph` requires a configured `pipelines.graph`; it does not implicitly run `limina graph check` or the `graph:check` task. Include `graph:check` explicitly in that pipeline when it belongs to the workflow.
+
+A named pipeline defines a complete workflow. It accepts Limina's declared CLI options, but no additional runtime arguments: extra positional values, unknown options, and a `--` separator are rejected before the config module is evaluated. These commands are invalid:
+
+```sh
+limina check lint --fix
+limina check commit message.txt
+limina check format -- --write
+```
+
+For example, the first command reports:
+
+```text
+`limina check lint` does not accept runtime arguments.
+Configure the pipeline in the Limina config under `pipelines.lint`.
+```
+
+Define each external command's `command`, `args`, `cwd`, and `env` in configuration. All `check` options, including `--package`, `--verbose`, and the issue-query options, belong to Limina and are never appended to downstream command arguments. Issue-query options retain their own requirements; `--issues` cannot accompany a pipeline name.
+
+The [config file](./config-file.md) is a JS/TS module loaded and evaluated at runtime. Module evaluation and exported config functions can construct workflow configuration dynamically. Reading `process.argv` to forward extra arguments is outside the CLI contract. Integrations needing per-invocation input, such as a `commit-msg` message file, should use a dedicated entry point with its own input contract.
+
 Limina inserts shared `workspace:validate` preparation before topology-dependent built-in work. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives shared `graph:materialize` preparation before all its built-in tasks. Preparations are injected automatically, not accepted as `BuiltinTaskName` steps. A failed required preparation records its dependent tasks as `blocked` before they consume topology or generated files.
 
 After preparations succeed, a completed built-in task failure fails the final result, while later steps are still attempted in order. An external command failure stops the remaining steps and records them as `skipped`.

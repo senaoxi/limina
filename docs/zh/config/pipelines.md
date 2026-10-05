@@ -31,6 +31,27 @@ export default defineConfig({
 
 `pipelines` 把名称映射到一组有序步骤。`pnpm exec limina check <name>` 会按数组顺序调度该流水线的步骤，每一步都依赖前一步完成。它和默认 `limina check` 不同：默认检查会把内置任务作为可并发的独立任务调度；命名流水线会保留你写下来的顺序。
 
+名称只选择 `pipelines[name]`。例如，`limina check graph` 要求配置中存在 `pipelines.graph`，不会隐式运行 `limina graph check` 或 `graph:check` 任务。如果该工作流需要图检查，应在流水线中显式包含 `graph:check`。
+
+命名流水线定义完整工作流。它接受 Limina 已声明的 CLI 选项，但不接受额外的运行时参数：多余的位置参数、未知选项和 `--` 分隔符都会在配置模块求值前被拒绝。以下命令属于错误用法：
+
+```sh
+limina check lint --fix
+limina check commit message.txt
+limina check format -- --write
+```
+
+例如，第一条命令会报告：
+
+```text
+`limina check lint` does not accept runtime arguments.
+Configure the pipeline in the Limina config under `pipelines.lint`.
+```
+
+每个外部命令的 `command`、`args`、`cwd` 和 `env` 都在配置中定义。所有 `check` 选项，包括 `--package`、`--verbose` 和问题查询选项，都归 Limina 所有，不会追加到下游命令参数中。问题查询选项仍遵循各自的使用条件；`--issues` 不能与流水线名称同时使用。
+
+[配置文件](./config-file.md)是运行时加载并求值的 JS/TS 模块。模块求值和导出的配置函数可以动态构造工作流配置。读取 `process.argv` 以转发额外参数不属于 CLI 契约。`commit-msg` 消息文件这类需要每次调用输入的集成，应使用拥有独立输入契约的专用入口。
+
 Limina 会在依赖工作区拓扑的内置工作前插入共享准备步骤 `workspace:validate`。包含 `graph:prepare`、`checker:build` 或 `checker:typecheck` 的任务段，还会在全部内置任务前获得共享准备步骤 `graph:materialize`。准备步骤自动注入，不是可配置的 `BuiltinTaskName` 步骤。必要准备步骤失败时，依赖任务会在消费拓扑或生成文件前记录为 `blocked`（被阻塞）。
 
 准备步骤成功后，已执行内置任务失败会让最终结果失败，但后续步骤仍按顺序尝试。外部命令失败会停止剩余步骤，并记为 `skipped`（已跳过）。
