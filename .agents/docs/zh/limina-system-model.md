@@ -120,7 +120,9 @@ flowchart TB
   Command --> Workspace
 ```
 
-箭头表示依赖，不表示所有任务逐个串行执行。[steps](../../../packages/limina/src/pipeline/steps.ts) 定义默认 graph/source/proof/checker build/checker typecheck 五类任务；[plan](../../../packages/limina/src/pipeline/plan.ts) 将默认 tasks 标为 independent，named pipeline 标为 ordered。`after` 表示等待结束，`requiresSuccessOf` 表示成功前提。命令划分 generation；需要文件的 segment 插入 materialization prerequisite，该 segment 的 tasks 等它成功。用户的根 `lib` pipeline 是配置选择，不是默认 pipeline。
+箭头表示依赖，不表示所有任务逐个串行执行。[steps](../../../packages/limina/src/pipeline/steps.ts) 定义默认 graph/source/proof/checker build/checker typecheck 五类任务；[plan](../../../packages/limina/src/pipeline/plan.ts) 将默认 tasks 标为 independent，named pipeline 标为 ordered。`after` 表示等待结束，`requiresSuccessOf` 表示成功前提。命令划分 generation；需要文件的 segment 插入 materialization prerequisite，该 segment 的 tasks 等它成功。仓库的命名 pipeline 属于配置选择，与默认工作流分开。
+
+**CLI 工作流输入边界**：[check 注册入口](../../../packages/limina/src/cli/register/check.ts)只接受一个 pipeline 选择器，以及已声明的全局／check 选项。`limina graph check` 调度领域命令及其 builtin task；`limina check graph` 只选择 `config.pipelines.graph`。额外的位置参数、未知选项和 `--` 在 CLI 校验阶段被拒绝，先于配置模块求值、计划创建与 attempt 发布。已加载的 JS/TS 模块产生完整工作流配置；外部 `command`、`args`、`cwd` 和 `env` 归该配置所有，不转发运行时 argv。此输入边界仍允许动态模块／函数求值。[CLI 契约守卫](../../../packages/limina/src/__tests__/cli-check-contract.spec.ts)覆盖拒绝时不求值配置或替换快照、独立命令调度，以及有序多命令步骤的选项归属。I09 的 generation／provider 生命周期不变；I12 仍允许在任何新 check attempt 创建前拒绝 CLI 调用。
 
 | Phase                     | 合法输入 → 输出                                                                                                           | 不得提前使用的事实 / 失败边界                                                                                                                                                 |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

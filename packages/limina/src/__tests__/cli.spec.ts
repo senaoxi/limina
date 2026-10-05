@@ -1985,158 +1985,97 @@ export default {
     });
   }, 30_000);
 
-  it('rejects removed and invalid checker build options from the public command', async () => {
-    const cliPath = fileURLToPath(
-      new URL('../../bin/limina.js', import.meta.url),
-    );
-
-    const removedOptions = [
-      {
-        args: [
-          'checker',
-          'build',
-          'packages/pkg/tsconfig.lib.json',
-          '--checker',
-          'vue-tsc',
-        ],
-        option: 'checker',
-      },
-      {
-        args: [
-          'checker',
-          'typecheck',
-          'packages/pkg/tsconfig.lib.json',
-          '--checker',
-          'vue-tsc',
-        ],
-        option: 'checker',
-      },
-      {
-        args: [
-          'build',
-          'packages/pkg/tsconfig.lib.json',
-          '--checker',
-          'vue-tsc',
-        ],
-        option: 'checker',
-      },
-      {
-        args: [
-          'checker',
-          'build',
-          '--project',
-          'packages/pkg/tsconfig.lib.json',
-        ],
-        option: 'project',
-      },
-      {
-        args: [
-          'checker',
-          'typecheck',
-          '--project',
-          'packages/pkg/tsconfig.lib.json',
-        ],
-        option: 'project',
-      },
-    ];
-
-    const assertRemovedOption = async ({
-      args,
-      option,
-    }: (typeof removedOptions)[number]): Promise<void> => {
+  it.each([
+    [
+      [
+        'checker',
+        'build',
+        'packages/pkg/tsconfig.lib.json',
+        '--checker',
+        'vue-tsc',
+      ],
+      'Unknown option: --checker.',
+    ],
+    [
+      [
+        'checker',
+        'typecheck',
+        'packages/pkg/tsconfig.lib.json',
+        '--checker',
+        'vue-tsc',
+      ],
+      'Unknown option: --checker.',
+    ],
+    [
+      ['build', 'packages/pkg/tsconfig.lib.json', '--checker', 'vue-tsc'],
+      'Unknown option: --checker.',
+    ],
+    [
+      ['checker', 'build', '--project', 'packages/pkg/tsconfig.lib.json'],
+      'Unknown option: --project.',
+    ],
+    [
+      ['checker', 'typecheck', '--project', 'packages/pkg/tsconfig.lib.json'],
+      'Unknown option: --project.',
+    ],
+    [
+      ['checker', 'build', '--preset', 'vue-tsc'],
+      'checker build --preset requires a config argument.',
+    ],
+    [
+      ['checker', 'build', '--watch'],
+      'checker build --watch requires a config argument.',
+    ],
+    [
+      ['checker', 'typecheck', '--watch'],
+      'checker typecheck does not accept --watch; rerun it after source config, parser package, generated type, or framework source changes.',
+    ],
+    [
+      ['build', 'packages/pkg/tsconfig.lib.json', '--raw'],
+      'limina build --raw requires --preset.',
+    ],
+    ...['vue-tsgo', 'svelte-check'].map(
+      (preset) =>
+        [
+          [
+            'build',
+            'packages/pkg/tsconfig.lib.json',
+            '--raw',
+            '--preset',
+            preset,
+          ],
+          `Invalid build --preset "${preset}". Expected one of: tsc, vue-tsc, tsgo.`,
+        ] as const,
+    ),
+  ] as const)(
+    'rejects removed and invalid checker build options from the public command: %j',
+    async (arguments_, diagnostic) => {
+      const cliPath = fileURLToPath(
+        new URL('../../bin/limina.js', import.meta.url),
+      );
       let failure:
-        | {
-            code?: number;
-            stderr?: string;
-            stdout?: string;
-          }
+        | { code?: number; stderr?: string; stdout?: string }
         | undefined;
-
       try {
-        await execFileAsync(process.execPath, [cliPath, ...args]);
+        await execFileAsync(process.execPath, [cliPath, ...arguments_]);
       } catch (error) {
         failure = error as typeof failure;
       }
 
-      expect(failure?.code).not.toBe(0);
-      expect(failure?.stderr).toContain(`Unknown option: --${option}.`);
+      expect(failure).toMatchObject({
+        code: 1,
+        stderr: expect.stringContaining(diagnostic),
+      });
+      if (!diagnostic.startsWith('Unknown option: ')) return;
       expect(failure?.stderr).not.toContain('Use --preset instead.');
       expect(failure?.stderr).not.toContain(
         'Pass the config as a positional argument.',
       );
       expect(failure?.stdout ?? '').not.toContain('limina checker');
       expect(failure?.stdout ?? '').not.toContain('limina build');
-    };
-
-    await Promise.all([
-      expect(
-        execFileAsync(process.execPath, [
-          cliPath,
-          'checker',
-          'build',
-          '--preset',
-          'vue-tsc',
-        ]),
-      ).rejects.toMatchObject({
-        stderr: expect.stringContaining(
-          'checker build --preset requires a config argument.',
-        ),
-      }),
-      expect(
-        execFileAsync(process.execPath, [
-          cliPath,
-          'checker',
-          'build',
-          '--watch',
-        ]),
-      ).rejects.toMatchObject({
-        stderr: expect.stringContaining(
-          'checker build --watch requires a config argument.',
-        ),
-      }),
-      expect(
-        execFileAsync(process.execPath, [
-          cliPath,
-          'checker',
-          'typecheck',
-          '--watch',
-        ]),
-      ).rejects.toMatchObject({
-        stderr: expect.stringContaining(
-          'checker typecheck does not accept --watch; rerun it after source config, parser package, generated type, or framework source changes.',
-        ),
-      }),
-      ...removedOptions.map(assertRemovedOption),
-      expect(
-        execFileAsync(process.execPath, [
-          cliPath,
-          'build',
-          'packages/pkg/tsconfig.lib.json',
-          '--raw',
-        ]),
-      ).rejects.toMatchObject({
-        stderr: expect.stringContaining(
-          'limina build --raw requires --preset.',
-        ),
-      }),
-      ...['vue-tsgo', 'svelte-check'].map((preset) =>
-        expect(
-          execFileAsync(process.execPath, [
-            cliPath,
-            'build',
-            'packages/pkg/tsconfig.lib.json',
-            '--raw',
-            '--preset',
-            preset,
-          ]),
-        ).rejects.toMatchObject({
-          stderr: expect.stringContaining(
-            `Invalid build --preset "${preset}". Expected one of: tsc, vue-tsc, tsgo.`,
-          ),
-        }),
-      ),
-    ]);
-  }, 30_000);
+    },
+    30_000,
+  );
 
   it('runs source check from the public command', async () => {
     const rootDirectoryTemporaryPath = await mkdtemp(

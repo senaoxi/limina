@@ -1,6 +1,9 @@
 import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertIssueInventoryLimitArgv } from './cli/argv';
+import {
+  assertIssueInventoryLimitArgv,
+  parseCheckIssueFilterHelpKind,
+} from './cli/argv';
 import { createLiminaCli } from './cli/factory';
 import { isPrintCheckIssueFilterHelpIfRequested } from './cli/filter-help';
 import { isForwardMigrationIfRequested } from './cli/migration-forward';
@@ -15,6 +18,14 @@ function assertMatchedCommand(cli: ReturnType<typeof createLiminaCli>): void {
   throw new Error(`Unknown command "${commandName}".`);
 }
 
+function assertCheckCommandArguments(
+  cli: ReturnType<typeof createLiminaCli>,
+): void {
+  if (cli.matchedCommand?.name === 'check') {
+    cli.matchedCommand.checkUnknownOptions();
+  }
+}
+
 export async function executeCli(argv: string[]): Promise<void> {
   if (await isForwardMigrationIfRequested(argv)) return;
   await executeProductCli(argv);
@@ -23,17 +34,24 @@ export async function executeCli(argv: string[]): Promise<void> {
 async function executeProductCli(argv: string[]): Promise<void> {
   clearCliScreen();
 
-  assertIssueInventoryLimitArgv(argv);
-  if (await isPrintCheckIssueFilterHelpIfRequested(argv)) return;
   const cli = createLiminaCli();
+  cli.showHelpOnExit = parseCheckIssueFilterHelpKind(argv) === null;
   let isDisplayedCommandHelp = false;
   cli.globalCommand.helpCallback = (sections) => {
+    assertCheckCommandArguments(cli);
     // CAC clears matchedCommand after displaying help; preserve that outcome.
     isDisplayedCommandHelp = cli.matchedCommand !== undefined;
     return sections;
   };
   cli.parse(argv, { run: false });
-  if (isDisplayedCommandHelp) return;
+  assertCheckCommandArguments(cli);
+  assertIssueInventoryLimitArgv(argv);
+  if (
+    isDisplayedCommandHelp ||
+    (await isPrintCheckIssueFilterHelpIfRequested(argv))
+  ) {
+    return;
+  }
   assertMatchedCommand(cli);
   await cli.runMatchedCommand();
 }

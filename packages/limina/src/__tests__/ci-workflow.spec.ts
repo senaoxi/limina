@@ -83,7 +83,7 @@ describe('Limina CI validation contract', () => {
       ['format:check', 'format', 'prettier', '--check', '--write'],
       ['lint:check', 'lint', 'eslint', '--config', '--fix'],
     ] as const) {
-      expect(manifest.scripts[script]).toContain(`check ${pipeline} --`);
+      expect(manifest.scripts[script]).toBe(`limina check ${pipeline}`);
       const step = config.pipelines?.[pipeline]?.find(
         (candidate) =>
           typeof candidate === 'object' &&

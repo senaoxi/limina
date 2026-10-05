@@ -225,6 +225,8 @@ checker:typecheck
 
 Tasks in the default group are scheduled independently according to available resources. Named pipelines come from configured `pipelines` and run through `limina check <name>`, with steps executed in configured order. Pipeline steps may be built-in tasks or external commands. External commands support object-form configuration with `command`, `args`, `cwd`, and `env`.
 
+`limina graph check` dispatches a built-in command; `limina check graph` selects only `pipelines.graph`. A named workflow accepts the declared Limina options below, but rejects extra positional arguments, unknown options, and `--` passthrough. All options belong to Limina; downstream command inputs are defined in [pipeline configuration](./config/pipelines.md).
+
 Common options:
 
 | Option                 | Type                      | Default behavior            | Example                                                       | Boundary                                                             |

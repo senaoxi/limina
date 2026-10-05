@@ -1,12 +1,7 @@
 import { defineConfig, type PipelineStep } from 'limina';
 
 function checkCommand(command: string, arguments_: string[]): PipelineStep {
-  // Repository script aliases put tool arguments after `--`, so Limina's
-  // options remain separate from message files and privacy/lint flags.
-  const separator = process.argv.indexOf('--', 2);
-  const toolArguments =
-    separator === -1 ? [] : process.argv.slice(separator + 1);
-  return { type: 'command', command, args: [...arguments_, ...toolArguments] };
+  return { type: 'command', command, args: arguments_ };
 }
 
 export default defineConfig({

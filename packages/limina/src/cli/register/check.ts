@@ -5,6 +5,58 @@ import { assertStandaloneIssuesFlag } from '../parse';
 import type { CheckFlags } from '../types';
 
 type LiminaCli = ReturnType<typeof cac>;
+type LiminaCheckCommand = ReturnType<LiminaCli['command']>;
+
+function isStructuredCheckOption(value: unknown): boolean {
+  // Check has no structured options; CAC accepts dotted keys under known names.
+  return typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasUnknownNamedCheckOptions(
+  cli: LiminaCli,
+  command: LiminaCheckCommand,
+): boolean {
+  if (cli.args[0] === undefined) return false;
+  const knownOptions = new Set(
+    [...command.options, ...cli.globalCommand.options].flatMap(
+      (option) => option.names,
+    ),
+  );
+  knownOptions.add('--');
+  return Object.entries(cli.options).some(
+    ([name, value]) =>
+      !knownOptions.has(name) || isStructuredCheckOption(value),
+  );
+}
+
+function hasCheckRuntimeArguments(
+  cli: LiminaCli,
+  command: LiminaCheckCommand,
+): boolean {
+  return (
+    cli.args.length > 1 ||
+    cli.rawArgs.slice(2).includes('--') ||
+    hasUnknownNamedCheckOptions(cli, command)
+  );
+}
+
+function createCheckRuntimeArgumentsError(pipeline: string | undefined): Error {
+  const commandLabel =
+    pipeline === undefined ? 'limina check' : `limina check ${pipeline}`;
+  const instruction =
+    pipeline === undefined
+      ? 'Use `limina check --help` for Limina CLI options.'
+      : `Configure the pipeline in the Limina config under \`pipelines.${pipeline}\`.`;
+  return new Error(
+    `\`${commandLabel}\` does not accept runtime arguments.\n${instruction}`,
+  );
+}
+
+function assertCheckRuntimeArguments(cli: LiminaCli): void {
+  const command = cli.matchedCommand;
+  if (command === undefined || !hasCheckRuntimeArguments(cli, command)) return;
+  throw createCheckRuntimeArgumentsError(cli.args[0]);
+}
 
 async function runCheckAction(
   pipeline: string | undefined,
@@ -19,7 +71,7 @@ async function runCheckAction(
 }
 
 export function registerCheckCommand(cli: LiminaCli): void {
-  cli
+  const command = cli
     .command(
       'check [pipeline]',
       'Run the default check or a configured pipeline',
@@ -45,4 +97,10 @@ export function registerCheckCommand(cli: LiminaCli): void {
     )
     .option('--format <format>', 'Issue output format: human, json, or ndjson')
     .action(runCheckAction);
+  // Validate synchronously before CAC can enter the action or config loading.
+  const checkUnknownOptions = command.checkUnknownOptions.bind(command);
+  command.checkUnknownOptions = () => {
+    assertCheckRuntimeArguments(cli);
+    checkUnknownOptions();
+  };
 }
