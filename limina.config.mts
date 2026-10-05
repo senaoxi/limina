@@ -1,4 +1,13 @@
-import { defineConfig } from 'limina';
+import { defineConfig, type PipelineStep } from 'limina';
+
+function checkCommand(command: string, arguments_: string[]): PipelineStep {
+  // Repository script aliases put tool arguments after `--`, so Limina's
+  // options remain separate from message files and privacy/lint flags.
+  const separator = process.argv.indexOf('--', 2);
+  const toolArguments =
+    separator === -1 ? [] : process.argv.slice(separator + 1);
+  return { type: 'command', command, args: [...arguments_, ...toolArguments] };
+}
 
 export default defineConfig({
   config: {
@@ -59,67 +68,14 @@ export default defineConfig({
   },
   release: { contentHash: { baselineTag: 'latest', builtinIgnore: true } },
   pipelines: {
-    // Main typecheck pipeline: run graph checks, source authority checks,
-    // proof checks, and the configured checker entries.
-    typecheck: [
-      'graph:check',
-      'source:check',
-      'proof:check',
-      'checker:build',
-      'checker:typecheck',
-    ],
-    // Default TypeScript project-reference graph check.
-    graph: [
-      'graph:prepare',
-      'graph:check',
-      {
-        type: 'command',
-        command: 'tsgo',
-        args: [
-          '-b',
-          '.limina/tsconfig/checkers/tsgo/tsconfig.build.json',
-          '--pretty',
-          'false',
-        ],
-      },
-    ],
-    // Production library/runtime declaration graph.
-    lib: [
-      'graph:prepare',
-      {
-        type: 'command',
-        command: 'tsgo',
-        args: [
-          '-b',
-          '.limina/tsconfig/checkers/tsgo/tsconfig.build.json',
-          '--pretty',
-          'false',
-        ],
-      },
-    ],
-    // Source-owned Vue SFC checks that are intentionally outside native tsc -b.
-    vue: [
-      'graph:prepare',
-      {
-        type: 'command',
-        command: 'vue-tsc',
-        args: [
-          '-b',
-          '.limina/tsconfig/checkers/vue-tsc/tsconfig.build.json',
-          '--pretty',
-          'false',
-        ],
-      },
-    ],
-    // Package artifact checks for dist output.
-    package: ['package:check'],
-    // Governance checks to run before publishing.
-    publish: [
-      'graph:check',
-      'source:check',
-      'proof:check',
-      'package:check',
-      'release:check',
-    ],
+    // Current TypeScript and Vue scopes both execute through checker:build.
+    typecheck: ['checker:build'],
+    format: [checkCommand('prettier', ['--check', '.'])],
+    lint: [checkCommand('eslint', ['.', '--config', './eslint.config.mjs'])],
+    packages: ['package:check'],
+    privacy: [checkCommand('tsx', ['scripts/docs/check-privacy.ts'])],
+    commit: [checkCommand('node', ['scripts/git/commit-message.ts'])],
+    'release-tag': [checkCommand('tsx', ['scripts/release/check-tag-cli.ts'])],
+    release: ['release:check'],
   },
 });

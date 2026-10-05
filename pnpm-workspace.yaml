@@ -49,6 +49,7 @@ autoInstallPeers: false
 catalogMode: strict
 catalogs:
   dev:
+    husky: ^9.1.7
     '@xterm/headless': 6.0.0
     ini: 6.0.0
     '@types/ini': 4.1.1
@@ -101,6 +102,8 @@ catalogs:
   frameworks:
     vitepress: ^1.6.4
   lint:
+    '@commitlint/cli': ^21.2.3
+    '@commitlint/config-conventional': ^21.2.3
     '@arethetypeswrong/core': ^0.18.3
     '@eslint/js': ^10.0.1
     '@html-eslint/eslint-plugin': ^0.66.1

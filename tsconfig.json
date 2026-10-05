@@ -12,6 +12,7 @@
     ".vscode/*.json",
     "limina.config.mts",
     "eslint.config.mjs",
+    "commitlint.config.mjs",
     ".pnpmfile.cjs",
     "package.json",
   ],

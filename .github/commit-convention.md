@@ -6,6 +6,14 @@ Use this convention for commit messages and PR titles. The title rules apply to 
 
 Before drafting, inspect the intended diff. Before an authorized commit, verify that the complete `git diff --cached` matches the intended change and contains no unrelated work.
 
+## Local commit validation
+
+`pnpm install --frozen-lockfile` installs the tracked [Husky commit-msg hook](../.husky/commit-msg) through the root `prepare` script, which invokes `husky` directly. Run `pnpm run hooks:install` to reinstall it through the same Husky CLI, or `pnpm run commit:check <message-file>` to check a message file directly. Husky configures the local `core.hooksPath` as `.husky/_` and provides the hook execution layer. Set `HUSKY=0` to opt out of installation or hook execution when Husky is available. Husky's generated `.husky/_` files stay untracked.
+
+The [message-file entry point](../scripts/git/commit-message.ts) invokes `@commitlint/cli` with the [shared configuration](../commitlint.config.mjs), which extends `@commitlint/config-conventional`. Repository rules retain the separate 50-character subject limit, lowercase starts, consecutive body bullets, exact blank-line separators, revert bodies and agreement between `!` and the exact `BREAKING CHANGE: ` footer. The conventional header/body/footer line-length defaults are disabled because this convention limits only the subject. Automatic merge, fixup and squash ignores are disabled; `release` is reserved for the exact generated same-version `limina`/`migrate` pair. Messages are inspected without rewriting them.
+
+Git editor comments are handled using the configured cleanup mode and Git's default editor signal. Use `git -c commit.cleanup=scissors commit -v` for edited verbose commits: only configured `scissors` cleanup permits discarding the cut-line tail. Under `strip`, the hook validates retained non-comment text after a literal cut line. Command-line `--cleanup` and `--verbose` overrides are not exposed to this hook; select cleanup through `git -c commit.cleanup=<mode> commit`. Type selection, English grammar, imperative verbs, factual accuracy and the quality of a migration explanation still require review. Local hooks do not establish remote acceptance.
+
 ## Header format
 
 Ordinary titles must match the following header pattern. Generated release messages are the tooling-specific exception described below.
