@@ -74,7 +74,7 @@ export default defineConfig({
     lint: [checkCommand('eslint', ['.', '--config', './eslint.config.mjs'])],
     packages: ['package:check'],
     privacy: [checkCommand('tsx', ['scripts/docs/check-privacy.ts'])],
-    commit: [checkCommand('node', ['scripts/git/commit-message.ts'])],
+    commit: [checkCommand(process.execPath, ['scripts/git/commit-message.ts'])],
     'release-tag': [checkCommand('tsx', ['scripts/release/check-tag-cli.ts'])],
     release: ['release:check'],
   },
