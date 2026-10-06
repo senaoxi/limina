@@ -1,10 +1,10 @@
 # Limina Architecture Reconstruction Audit — 2026-09-11
 
-[English](./limina-architecture-audit.md) | [简体中文](./zh/limina-architecture-audit.md)
+[English](./architecture-audit.md) | [简体中文](./zh/architecture-audit.md)
 
 Historical local paths below are redacted aliases: `$EVIDENCE_ROOT` denotes the reproduction root and `$SOURCE_REPO` the original source checkout. Command results and evidence dates are unchanged; the aliases do not make private evidence publicly available.
 
-This page records evidence and reconciliation for this reconstruction; it does not independently define system semantics. Current definitions belong to the [system model](./limina-system-model.md), [semantics](./limina-semantics.md), and [lifecycle](./limina-lifecycle.md); properties belong to [I01–I12](./limina-invariants.md).
+This page records evidence and reconciliation for this reconstruction; it does not independently define system semantics. Current definitions belong to the [system model](./system-model.md), [semantics](./semantics.md), and [lifecycle](./lifecycle.md); properties belong to [I01–I12](./invariants.md).
 
 ## Scope and method
 
@@ -128,7 +128,7 @@ The historical preservation check confirmed 3111 unchanged content fingerprints 
 The following `FILES` lists the 11 files actually checked in this task and can be reused for reruns. No broad formatting or fixing lint was run.
 
 ```sh
-FILES=(.agents/docs/README.md .agents/docs/architecture.md .agents/docs/technology-stack.md .agents/docs/limina.md .agents/docs/limina-system-model.md .agents/docs/limina-semantics.md .agents/docs/limina-lifecycle.md .agents/docs/limina-invariants.md .agents/docs/limina-architecture-workflow.md .agents/docs/limina-architecture-audit.md AGENTS.md)
+FILES=(.agents/docs/README.md .agents/docs/architecture.md .agents/docs/technology-stack.md .agents/docs/limina.md .agents/docs/system-model.md .agents/docs/semantics.md .agents/docs/lifecycle.md .agents/docs/invariants.md .agents/docs/architecture-workflow.md .agents/docs/architecture-audit.md AGENTS.md)
 pnpm exec prettier --check "${FILES[@]}"
 pnpm exec eslint "${FILES[@]}"
 git diff --check

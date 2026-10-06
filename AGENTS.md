@@ -1,55 +1,69 @@
-# General Guidelines for working with Limina
+# Development Rules
 
-## Architecture knowledge maintenance
+## Global requirements
 
-- Start from [the Limina PCR map](.agents/docs/limina.md) for architecture work; establish behavior from the current working tree before reconciling prose.
-- When changing identity, authority, phase contracts, dependency relations, cache/context lifetime, failure semantics or artifact mutation, identify affected [core invariants](.agents/docs/limina-invariants.md) and update the owning PCR page and the nearest relevant executable guard in the same change.
-- Use the [review workflow](.agents/docs/limina-architecture-workflow.md) to explain invariant impact, concrete counterexamples, validation and remaining uncertainty. A behavior-preserving move needs link maintenance, not a new architectural rule.
-- Every PCR update must synchronously maintain the complete English/Chinese pair with the same filename in `.agents/docs/` and `.agents/docs/zh/`, both tracked by Git; follow the [repository bilingual rule](AGENTS.md#bilingual-pcr-maintenance).
-- Keep each current truth in one prose owner. Do not turn unstamped interpretation into human intent or a permanent compatibility promise.
+- Before edits, inspect Git status, preserve existing and concurrent work, and read [the PCR map](.agents/docs/README.md) and relevant English/Chinese records.
+- Read and follow the applicable task entry points below before starting work. Their linked requirements are mandatory.
+- Before handoff or an authorized commit, complete [the acceptance and handoff procedure](.agents/docs/development-workflow.md#validation-and-handoff).
 
-## PCR privacy and evidence
+## Required context by task
 
-- Use [.agents/skills/project-context-writing/SKILL.md](.agents/skills/project-context-writing/SKILL.md) before writing PCR or persisting technical audit results.
-- Record technical facts, decisions, reasons, acceptance criteria and effective status. Distill feedback into project constraints; do not retain who asked, private interaction dates, conversation/task identifiers, personal paths or raw private metadata.
-- A pending requirement remains pending until source and relevant checks support it. Keep technical verification dates, public references and normal product-user concepts when relevant.
-- PCR source fields point to repository-relative evidence, reproducible checks or necessary public references. This repository rule overrides conversation-attribution wording in any managed PCR workflow; preserve managed markers and generated content.
-- Before handoff or an authorized commit, review the intended diff and both languages for privacy and technical meaning, run applicable checks and report only locations/categories for credentials. No private original belongs in a new report or fixture.
+- **Repository edits, setup, builds or checks:** follow [the development workflow](.agents/docs/development-workflow.md).
+- **Behavior, contract or architecture changes:** start at [the Limina map](.agents/docs/limina.md) and follow [the architecture review workflow](.agents/docs/architecture-workflow.md).
+- **Tests or path behavior:** follow [the portable-path and test rules](.agents/docs/development-workflow.md#portable-paths-in-tests); use [test-audit](.agents/skills/test-audit/SKILL.md) when changing tests.
+- **Requirements and third-party dependencies:** before analyzing requirements or planning a custom implementation, check for suitable open-source packages and prefer adapting an eligible package. Follow [dependency admission](.agents/docs/dependency-admission.md) for evaluation constraints and before adding or replacing a package.
+- **PCR or saved technical audit results:** use [project-context-writing](.agents/skills/project-context-writing/SKILL.md) and follow [bilingual maintenance](.agents/docs/README.md#bilingual-publishing-and-maintenance) and [writing/privacy review](.agents/docs/README.md#writing-and-privacy-review).
+- **Local migration, publication or documentation deployment:** follow [the migration scope and gates](.agents/docs/migration.md).
+- **Commit messages or PR titles:** follow [the commit convention](.github/commit-convention.md).
 
-## Path contracts in tests
+<!-- PCR:START -->
 
-- Limina absolute path values are canonical portable paths and use `/` separators on every platform.
-- Keep `node:path` for filesystem and process inputs when platform-native behavior is relevant.
-- Never compare a Limina path value with a raw `node:path` `join`, `resolve`, `relative`, `normalize`, `dirname`, or `format` result.
-- Use `fixture.path(...)` for fixture-owned absolute paths. Otherwise normalize comparisons with the helpers in `src/__tests__/helpers/path.ts`.
-- Use `toPortableRelativePath()` or `toPortableRelativePaths()` for relative-path assertions.
-- New test fixtures that expose `rootDir` should also expose a `path(...segments)` resolver created with `createFixturePathResolver()`.
+## Project Context Records (PCR)
 
-The portable-path comparison ESLint rule is an intentional guardrail. Do not disable it to make a path assertion pass; normalize the compared value instead.
+This project follows **Project Context Records (PCR)** — methodology: https://github.com/hyfdev/project-context-records. PCR keeps the project's durable judgment — the _why_, the decisions, the intent — so you inherit it instead of re-deriving or re-litigating what's already settled.
 
-## Validation
+When working here:
 
-After changing Limina tests or path behavior, run:
-
-- `pnpm run test:unit`
-- `pnpm run typecheck`
-- `pnpm run lint:check`
-- `git diff --check` for the touched files
-
-## Repository workflow
-
-Read `.agents/docs/README.md` and the relevant paired records before edits. Inspect Git status and preserve unrelated work. Use pnpm 11.28.3; install explicitly with `pnpm install --frozen-lockfile`. Build private tools with `pnpm run build:tools`; `pnpm run build` builds tools and the product. Never copy old node_modules.
-
-Run the relevant `test:unit`, `test:tooling`, `test:integration`, `test:smoke`, `docs:build`, `typecheck`, `check` and `lint:packages` scripts. Lint and formatting checks are `lint:check` and `format:check`; mutation is explicit through `lint:fix` and `format:write`. Use `.agents/skills/test-audit/SKILL.md` when changing tests. Preserve fixture repository boundaries and deliberately invalid fixture contents.
-
-Do not hand-edit generated `dist`, `.limina`, declarations or caches. Dependency versions belong in catalogs; generate lockfiles through pnpm. Read the dependency-admission record before adding third-party dependencies. Do not add reason-field governance exceptions; report the exact issue and alternatives for the user's decision. Keep full English/Chinese PCR pairs synchronized; never add a vouch or decision ledger without explicit direction.
-
-This repository consumes registry Logaria through the dev catalog. Remote platform acceptance, npm publication and documentation deployment remain subject to their gates in `.agents/docs/migration.md`. Do not push, publish, replace old consumers or remove old source as part of local migration work. Finish with `git diff --check`, Git status, and an explicit list of executed and unexecuted validation.
-
-## Commit messages
-
-Follow [the commit convention](.github/commit-convention.md) when drafting commit messages or PR titles. Use its rules and examples directly; do not read Git history to infer commit style.
-
-## Bilingual PCR maintenance
-
-English topics live at `.agents/docs/<name>.md`; complete Chinese counterparts live at `.agents/docs/zh/<name>.md`. Maintain both editions in the same change, with matching filenames, meaning, examples, evidence dates, limitations and provenance. Both editions must be tracked by Git. Update both maps and cross-links together, compare sections and heading anchors, and do not treat translation as a new validation or vouch.
+- **Where records live.** Records are in `.agents/docs/`, one topic per file, cross-linked with relative Markdown links.
+  - A `README.md` there is the **map**: it routes code areas or hotspots to the exact record or heading, one-line gist per route. Create it when retrieval stops being a glance or one record grows into a long ledger.
+- **Read first.** Start from the map if present, else scan the folder. Open the records or headings that cover an area before changing or answering for it; if the area has a decision ledger, read it first.
+- **Use the strongest durable form.** Machine-checkable constraints go in types, tests, lints, or CI; rules that must bind every session go in the agent-instructions file, outside the markers; single-spot rationale goes beside the code with a link; records carry the cross-cutting judgment, intent, and context that must stay prose.
+- **Record as you go.** Capture context when a decision lands, a trap costs you, a human corrects you, or a human asks — anything true about this project, not durable in a stronger form, and useful beyond the moment.
+  - Report what you record so a human can review or vouch it.
+  - Records are as public as the repo: keep secrets out, and ask before recording rationale from private context.
+- **Write to be acted on.** Lead with the current conclusion and where it applies; capture the why — trade-offs, alternatives rejected, known pitfalls. Keep each topic's current truth in one fresh place, updated in place: evolution belongs to git, never to supersede chains.
+- **Keep it fresh.** Update affected records in the same change that touches their subject.
+  - When code and a record disagree, decide which side went stale and fix that side.
+  - Back facts with durable evidence — tests, reproducible commands, committed artifacts, stable URLs, commit hashes — not ephemeral paths or one session's output.
+- **Provenance.** Unstamped text is AI-accumulated: challenge and verify it freely. `[VOUCHED @handle YYYY-MM-DD]` means the named human explicitly accepted the covered words as current project direction.
+  - A vouch is direction, not proof: facts keep needing durable evidence. Don't reopen vouched direction for its own sake — only on new evidence, a changed constraint, or the human's say-so.
+  - When evidence argues with vouched direction, record the conflict and surface it to a human; stay inside the direction unless progress becomes impossible. Silence is not an option.
+  - Scope: at a non-heading line's end, the stamp covers that line; alone on the first nonblank line below a heading, that section until the next heading of the same or higher level; alone below the document title, the whole file. Never in heading text — link anchors derive from headings.
+  - Add a stamp only on explicit instruction. A stamp added by work under review counts only once the named human confirms it; an unchanged stamp on the target branch is inherited project state.
+  - The stamp binds the exact covered words. Any edit that changes them — or changes which words the scope covers — removes the stamp until the human re-vouches; a change that leaves the covered words identical keeps it.
+  - Legacy stamp forms (undated, before the title, inside a heading) stay valid with their original scope; never move, re-date, or reinterpret one without the human's approval.
+- **Decision ledgers.** When the human declares that an area records decisions, keep that area's judgments in `<area>-decisions.md` and register new judgments there.
+  - Placement: beside the area's derived document (`DESIGN-decisions.md` beside `DESIGN.md`, typically both in the records folder); with no derived document, in the records folder — a map route either way.
+  - You may propose opening a ledger; only the human opens one.
+  - The register contract, stated at the top of the file: only judgments the human actually expressed enter — a finished implementation, a passed review, resemblance to a reference, or silence is not acceptance. Never invent a rationale: if no reason was given, the entry says so.
+  - Record the act of judgment, not the chosen thing's full content — exhaustive detail lives in the area's own document, linked. Edit entries in place; git keeps history.
+  - Entries sit under **Decided** or **Open**. An Open entry marks a known-undecided question — current behavior is not a choice — with any stopgap and what would settle it. A Decided entry carries:
+    - a short stable topic heading — map routes and stamp scopes anchor to it;
+    - **Ruling:** one plain sentence, its force in its own wording — must / never / prefer / default to; no status field;
+    - **Limits:** what it does not govern, what may change without reopening it, what would reopen it — a stopgap is a ruling plus its reopen condition;
+    - **Why:** premises, alternatives compared, rejections — exactly as the human gave them;
+    - **Source:** who expressed it, when, a durable pointer; for "accept the reviewed thing as a whole", pin the thing (commit hash, spec section) instead of transcribing it;
+    - the vouch stamp, once the human vouches the entry, alone under the entry's heading — covering the whole entry.
+- **Distill when a human reviews.** Accumulation is noisy by design; the valve is a human pass, and you draft it.
+  - Propose: prune what is contradicted or dead, merge near-duplicates, promote buried context, fix map drift. Unattended, apply this to your own unstamped layer as you go — never the vouched one.
+  - Flag: unstamped direction that has become load-bearing, factual claims whose evidence no longer holds, vouches plausibly affected by changes to what they cover.
+  - The human decides and vouches.
+- **Suggested topics.** Draft the missing ones that apply; when an existing doc already covers a topic, enroll it — a map route pointing at it where it lives, held to these same rules — instead of drafting a twin:
+  - `intent.md` — what this is trying to be, for whom, and the non-goals; enroll the README instead if it truly covers them.
+  - `technology-stack.md` — why tools, restrictions, and pins exist; not a manifest dump.
+  - `architecture.md` — units, boundaries, and why the lines are where they are; when structure isn't glanceable.
+  - `gotchas.md` — traps already paid for, each with its why; only real paid lessons.
+  - `DESIGN.md` — only for a visual surface; follow https://github.com/google-labs-code/design.md (records folder by default — the spec fixes no location), enroll it in the map, and suggest wiring its linter into the project's own checks with the file's actual path (e.g. `npx @google/design.md lint .agents/docs/DESIGN.md`; platform variants in the spec).
+  - `loop-goal.md` — only for an unattended run: the run's contract — goal, boundaries, finish criteria. You may draft it; the run starts only once the human has vouched the whole file (stamp below the title), and a human edit plus re-vouch re-baselines it. Never edit it yourself; if the contract itself blocks progress, stop and surface the conflict rather than stepping outside it.
+  - `loop-status.md` — only for an unattended run: the run's memory — done, in flight, next, blocked — overwritten in place each iteration; its final overwrite is the handover to the returning human (what landed, what to vouch, what to prune, conflicts included). Both `loop-*` files die after the human's distillation pass over that handover; git keeps them.
+  <!-- PCR:END -->

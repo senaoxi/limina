@@ -1,6 +1,6 @@
 # Limina 系统模型
 
-[English](../limina-system-model.md) | [简体中文](./limina-system-model.md)
+[English](../system-model.md) | [简体中文](./system-model.md)
 
 本页拥有实体、authority、phase 和 relation 的定义。证据等级与维护规则见[入口](./limina.md)。本模型来自当前生产调用链；目录名称或一个未接入的抽象不构成运行证据。
 
@@ -40,7 +40,7 @@
 | Artifact authority  | namespace/authenticated plan/revision 与 managed-output attribution                                                                              | 输出反向归属不重新创造源码 reference；有输出路径不等于允许写      |
 | Mutation authority  | trusted base 的物理 identity、scope、generation、path/identity guards                                                                            | lexical containment 不充分；计划写某路径不能授权沿 symlink 改别处 |
 
-一个项目可以有 TypeScript semantic authority、`vue-tsc` final owner、source package owner 与独立 output authority；这是合法组合。[I01–I12](./limina-invariants.md) 说明哪些转换受保护。
+一个项目可以有 TypeScript semantic authority、`vue-tsc` final owner、source package owner 与独立 output authority；这是合法组合。[I01–I12](./invariants.md) 说明哪些转换受保护。
 
 ## 工作区发现 authority
 
@@ -48,7 +48,7 @@
 
 [root classifier](../../../packages/limina/src/utils/workspace-root.ts) 只检查这个目录。`WorkspaceRoot` 保留真实 descriptor 和必需的明确 manager；`SinglePackageRoot` 不伪造 descriptor 或 manager，提供 `[rootPackage]`。有效 workspace 即使只有根包仍是 workspace。单包治理接受 `{}`，缺失、歧义或无效 manager 元信息延迟到真正需要它的 consumer。workspace 必须先明确 manager 再调用成员 adapter，出错不降级为 single。两分支进入同一 activated-package core。config、preflight、validated context、graph export、migration 消费已选根，生产代码中不再有 `resolveNearestWorkspaceRoot()`。
 
-从子目录选择仓库根配置仍治理该 workspace；选择子包配置则由其最近 manifest 固定根，即使祖先有 workspace。这明确改变了旧的祖先 workspace 优先契约；同根声明优先级与成员选择语义保留。默认配置发现不再停在 workspace 边界。init 尚无模块时，从 cwd 寻找并验证最近 manifest，在其旁边写入配置；只有完全没有 manifest 才在 cwd bootstrap，无效与缺失必须区分。query 的独立 anchor 契约见[生命周期](./limina-lifecycle.md#issue-identity-与-freshness)。
+从子目录选择仓库根配置仍治理该 workspace；选择子包配置则由其最近 manifest 固定根，即使祖先有 workspace。这明确改变了旧的祖先 workspace 优先契约；同根声明优先级与成员选择语义保留。默认配置发现不再停在 workspace 边界。init 尚无模块时，从 cwd 寻找并验证最近 manifest，在其旁边写入配置；只有完全没有 manifest 才在 cwd bootstrap，无效与缺失必须区分。query 的独立 anchor 契约见[生命周期](./lifecycle.md#issue-identity-与-freshness)。
 
 pnpm 的 workspace authority 来自 YAML，显式声明其他 manager 会产生冲突。对于 `package.json#workspaces`，自有 `packageManager` 提供 identity；只有缺少该字段时才使用同目录 lockfile。lockfile 按 manager 去重，先判断 ambiguity 再判断 pnpm descriptor 缺失，不读取祖先 lockfile。resolver 识别 identity，不校验 semver 合法性或可安装性。声明解析归 [manager adapters](../../../packages/limina/src/core/workspace/selection-policy.ts)：pnpm 只消费 `packages`，npm 接受数组，Yarn/Bun 接受数组或包含 packages 数组的对象。无关 catalogs 和 manager 配置不属于 Limina discovery schema。
 
@@ -98,7 +98,7 @@ lexical exact cache 仍位于 canonicalization 之前；未命中才使用原 ca
 
 其他 path algorithm 各有独立职责：builder 在发布 trie 前归因 boundary cuts；candidate glob ignores 先剪枝枚举，再由 index 最终检查 membership；importer matching 保留 lexical 语义；project ownership 与已知 package 的 artifact/config grouping 仍是局部关系。[Package-scope lookup](../../../packages/limina/src/core/workspace/lookup/package-scope.ts) 先从 trie 获得 activated package，再搜索 manifest。在向上遍历祖先前，它利用查询路径和已选包根的 canonical path，将查询转换到该包保留的 lexical directory 下。因此，搜索路径与停止根使用同一种路径写法，即使 alias 直接指向包内子目录，或查询带有尚不存在的尾部路径，也能成立。无名称的 activated root 会让 named-scope lookup 返回 null，不能借用包外祖先的名称。返回的 manifest 路径保留 exact package-path map 使用的包身份。这一转换发生在 trie 准入之后，不会选择另一个 owner；未激活的路径仍被拒绝，独立的 node_modules lookup 保留 lexical search。[Package-scope guards](../../../packages/limina/src/__tests__/workspace-package-scope.spec.ts) 覆盖 alias 双向查询、查询与缓存顺序、nested scopes、boundary 拒绝及 resolved-target facade。
 
-可执行边界由 [workspace directory index tests](../../../packages/limina/src/__tests__/workspace-directory-index.spec.ts) 的仅限测试的 trie semantic equivalence 线性 oracle、跨 cut 与重入的 package/owner facade 直接对比、重入/同根事件/canonical relocation/cache/error 与深目录停止条件保护；[workspace validation tests](../../../packages/limina/src/__tests__/workspace-validation.spec.ts) 检查最终治理事实与指标。索引有效期见[生命周期页](./limina-lifecycle.md#cache-identity-与能力范围)。
+可执行边界由 [workspace directory index tests](../../../packages/limina/src/__tests__/workspace-directory-index.spec.ts) 的仅限测试的 trie semantic equivalence 线性 oracle、跨 cut 与重入的 package/owner facade 直接对比、重入/同根事件/canonical relocation/cache/error 与深目录停止条件保护；[workspace validation tests](../../../packages/limina/src/__tests__/workspace-validation.spec.ts) 检查最终治理事实与指标。索引有效期见[生命周期页](./lifecycle.md#cache-identity-与能力范围)。
 
 [FileOwnerLookup](../../../packages/limina/src/core/build-graph/file-owner-lookup.ts) 为 build-graph 消费者独立索引已登记文件归属。effective membership 服务 pending qualification、ownership dependency 与 coloring；governed owned files 服务 declaration selection 与 framework scheduling。exact lexical 命中保持已有 overlap 规则，仅 miss 时查询 canonical identity；fallback 返回所有已登记 config、按 config 去重，只接受唯一 owner，多 owner 报歧义，不按目录深度选择。结果同时返回 owner 登记路径，用于 `ownedFileNames` 与 Vue profile 匹配；resolution、occurrence 和诊断保留原始 lexical 写法。不通过目录遍历虚构 owner，WorkspaceSourceBoundary 仍只回答 Boolean membership。[Owner lookup tests](../../../packages/limina/src/__tests__/file-owner-lookup.spec.ts) 覆盖双向 alias、exact/fallback 冲突、查询顺序、跨 checker provider 匹配和 alias 变化后的新索引；[generated graph tests](../../../packages/limina/src/__tests__/generated-graph.spec.ts) 覆盖关系消费者。
 
