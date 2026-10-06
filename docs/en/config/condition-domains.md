@@ -1,9 +1,6 @@
 # Condition Domains
 
-`graph.conditionDomains` declares the expected import resolution conditions
-for a source entry. Limina finds the declaration build graph for
-that entry, expands its references, and checks that every reachable project uses
-the configured `compilerOptions.customConditions`.
+`graph.conditionDomains` records the `compilerOptions.customConditions` expected for a source entry. Limina compares that expectation with the entry's effective config and checks condition-set consistency along declaration references. Actual resolution still reads each project's tsconfig; this field does not rewrite resolution conditions.
 
 ```js
 import { defineConfig } from 'limina';
@@ -28,11 +25,7 @@ export default defineConfig({
 
 ## Why This Exists
 
-`compilerOptions.customConditions` decides which branch of a package `exports`
-map `TypeScript` and Limina's resolver use inside a governed `tsconfig` domain.
-Conditions such as `browser`, `node`, and `source` usually mean "resolve this
-code for a different environment or build mode." Other resolvers may instead
-use one global condition set, which is a different model.
+`compilerOptions.customConditions` affects which conditional branches are available when the checker reads package `exports`. Names such as `browser`, `node`, and `source` can express runtime environments or source consumption; their exact meaning comes from the package's export configuration.
 
 A declaration reference tree describes the project relationships used by
 `tsc -b`; resolution conditions come from each project's configuration. If the
@@ -110,3 +103,5 @@ A workspace with multiple entries can declare a separate condition domain
 for each entry. For example, a browser entry can use `['browser', 'source']` while a
 `Node` entry uses `['node', 'source']`. Each entry's declaration reference tree
 stays internally consistent inside the condition domain Limina checks.
+
+If the two entries above share a leaf project through declaration references, that leaf has only one effective condition set and cannot satisfy two different expectations at once. Reconsider the source and declaration-consumption boundaries; adding two condition domains does not create two resolution configs for the shared project.

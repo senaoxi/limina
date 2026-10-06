@@ -2,11 +2,13 @@
 
 Limina derives a project graph from source `tsconfig` files, project references, imports, and workspace packages. Its built-in tasks check the graph, source boundaries, and coverage, run type checkers, and inspect configured release artifacts.
 
-This page describes each task's scope. See the configuration docs for fields, rules, and CLI options.
+This page explains task responsibilities and execution states. Task names appear in pipelines, for example `graph:check`; the standalone command is `limina graph check`. `limina check graph` requires a configured pipeline named `graph`. These forms are not interchangeable.
+
+See the [CLI reference](./cli.md) for commands and options, and [pipeline configuration](./config/pipelines.md) for team workflows.
 
 ## Default Check {#understand-the-default-check-first}
 
-When `limina check` is run without a pipeline name, it runs the shared `workspace:validate` preparation and five default tasks:
+When `limina check` is run without a pipeline name, it runs the shared `workspace:validate` preparation, materializes the generated graph needed by this check, and schedules five default tasks:
 
 1. `graph:check`
 2. `source:check`
@@ -16,16 +18,21 @@ When `limina check` is run without a pipeline name, it runs the shared `workspac
 
 This order is the display and recording order for results. It does not mean the default check runs these tasks serially. The default check schedules them as independent tasks; when the concurrency budget and resource locks allow it, they may run concurrently. A failed task fails the current check; other default tasks can continue.
 
-`workspace:validate` is shared by all topology-dependent work. It must pass before source, proof, graph, checker, migration, package, release, or artifact-producing work can begin. It is recorded as a preparation and as a `LiminaCheckTaskName`, so `limina check --issues --task workspace:validate` can query its structured issues. It is injected automatically and is not a user-configurable pipeline step.
+`workspace:validate` is shared by all topology-dependent work. It must pass before source, proof, graph, checker, migration, package, release, or Limina-managed artifact-producing work can begin. It is recorded as a preparation and as a `LiminaCheckTaskName`, so `limina check --issues --task workspace:validate` can query its structured issues. It is injected automatically and is not a user-configurable pipeline step.
 
 Named pipelines are different. `limina check <name>` runs according to the configured pipeline step order and is used to express explicit sequencing, such as building first and then checking artifacts.
 
-Built-in tasks can be written directly as strings:
+Built-in tasks can be written directly as strings. This example assumes the project has a production build script, `pnpm build`, and configured `package.entries`. It does not publish packages:
 
 ```js
 export default defineConfig({
   pipelines: {
-    release: ['graph:prepare', 'checker:build', 'package:check', 'release:check'],
+    release: [
+      'checker:build',
+      { type: 'command', command: 'pnpm', args: ['build'] },
+      'package:check',
+      'release:check',
+    ],
   },
 });
 ```
@@ -36,7 +43,7 @@ They can also be written as explicit objects:
 { type: 'task', name: 'graph:check' }
 ```
 
-Besides built-in tasks, pipeline steps may be external commands. A completed built-in task failure fails the final result but does not itself stop later ordered steps. Required preparations are different: a failed `workspace:validate` or `graph:materialize` blocks its dependent tasks. External command failure stops the remaining steps and records them as `skipped`.
+Besides built-in tasks, pipeline steps may be external commands. A completed built-in task failure fails the final result but does not itself stop later ordered steps. Required preparations are different: a failed `workspace:validate` or `graph:materialize` blocks its dependent tasks. External command failure stops the remaining steps and records them as `skipped`. A failed preparation does not itself cancel later external commands; see the [pipeline failure policy](./config/pipelines.md#pipelines) for an example.
 
 ## Task Overview
 
@@ -51,13 +58,25 @@ Besides built-in tasks, pipeline steps may be external commands. A completed bui
 | `package:check`     | No            | Built package artifacts                                                                                 | Runs package-shape, type-resolution, and artifact import-boundary checks on `outDir` artifacts                 |
 | `release:check`     | No            | Release-phase artifact consistency                                                                      | Supplemental pre-release checks; not a publishing system or security guarantee                                 |
 
-Tasks in this table reuse the current generation's validated workspace context. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives a shared `graph:materialize` preparation before its built-in tasks. Failed required preparation records dependent tasks as `blocked`. A workspace issue can still be persisted in `.limina/check/last-run.json`; a secondary snapshot-write failure does not replace the original validation error.
+External commands separate consecutive built-in tasks into segments. Each segment reuses the validated workspace context of the current analysis generation. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives a shared `graph:materialize` preparation before its built-in tasks. Failed required preparation records dependent tasks as `blocked`. A workspace issue can still be persisted in `.limina/check/last-run.json`; a secondary snapshot-write failure does not replace the original validation error.
 
-`disabled` means the task has no applicable enabled work, while `skipped` means work was not run, for example after an external command failure. Optional package analyzers also report `skipped` when absent. These states do not establish that the corresponding checks executed successfully.
+### Task Status
+
+| Status     | Meaning                                                                             |
+| ---------- | ----------------------------------------------------------------------------------- |
+| `passed`   | The task ran and produced no failing result within its check scope                  |
+| `failed`   | The task failed to execute or found issues that fail the task                       |
+| `disabled` | No applicable enabled work exists, for example no Astro or Svelte typecheck target  |
+| `blocked`  | A required preparation failed, so dependent tasks could not start                   |
+| `skipped`  | Work did not run, for example the remaining steps after an external command failure |
+
+Missing optional package analyzers also report `skipped`; that alone may still allow a successful exit. Inspect both task and tool states to determine whether the intended checks ran. A zero exit code does not mean every check executed.
+
+::: details Multiple Processes Share Generated Files
 
 Generated checker configs are protected by a canonical-workspace cross-process reader/writer lease. Managed build and typecheck processes hold a read lease while consuming those files; materialization waits for readers and publishes an in-progress marker before changing artifacts. If a writer stops partway through, readers fail closed instead of consuming a mixed tree. The next materializing writer rebuilds the complete current plan and removes obsolete owned files before readers resume. Lease waits are bounded to 30 seconds.
 
-The default check includes `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. Add `package:check` and `release:check` to a release pipeline when built artifacts need inspection.
+:::
 
 ## The Generated Graph Is the Basis for Later Checks
 
@@ -85,9 +104,9 @@ Most reference edges come from static imports in source. Suppose one package imp
 import { createClient } from '@acme/core';
 ```
 
-Limina analyzes each static import; the import alone does not establish that a declaration reference is needed. Limina uses the source config's frozen semantic authority and retained checker evidence to decide whether the occurrence requires a source-semantic or compiler-membership relation, then selects an eligible declaration provider. Existing declaration resolution, ambient evidence, or a runtime-resolved path alone does not automatically create a source reference. Required and allowed relations can then enter the generated declaration graph.
+An import into another managed source leaf is only a candidate relationship. It must require a declaration build, have a unique target owner and build-capable endpoints with the same checker identity, and pass graph rules before becoming a generated reference. If the current checker already consumes concrete declaration files, the relationship stops at the declaration boundary. See [From Import Resolution to the Declaration Build Graph](./import-resolution-to-declaration-build-graph.md) for the full process.
 
-Some relationships cannot be expressed by static imports, such as generated files, virtual modules, or runtime conventions. In those cases, write `liminaOptions.implicitRefs` in the source `tsconfig` that declares the relationship:
+Some relationships cannot be expressed by static imports, such as declaration build relationships required by generated code or runtime manifests. Declare these with `liminaOptions.implicitRefs` in the source `tsconfig` that owns the relationship:
 
 ```jsonc
 {
@@ -95,7 +114,7 @@ Some relationships cannot be expressed by static imports, such as generated file
     "implicitRefs": [
       {
         "path": "../core/tsconfig.json",
-        "reason": "Loaded by generated route manifest.",
+        "reason": "This leaf's declaration build needs core source referenced by the generated route manifest.",
       },
     ],
   },
@@ -116,7 +135,7 @@ When retained checker evidence requires a relation to another managed project an
 
 Semantic authority and final checker owner have different roles. Authority fixes how the source config is interpreted; final ownership selects its checker execution lane. Build coloring or solution constraints can assign `vue-tsc` to an ordinary TypeScript config without changing its frozen TypeScript semantics.
 
-If a real edge is invisible to static analysis, use `liminaOptions.implicitRefs` or an allowed graph-rule entry to explain the reason, rather than hand-writing `references` in an ordinary leaf `tsconfig`.
+Use `liminaOptions.implicitRefs` to add a relationship that static analysis cannot see. Graph-rule allowances only explain existing extra references. Neither replaces deny rules or resolution evidence.
 
 ### Whether Workspace Package Exports Are Suitable for Source Imports
 
@@ -198,7 +217,7 @@ It differs from `source:check` as follows:
 
 In a monorepo using `TypeScript` project references, a missing source file may not immediately appear as a project-reference error. It may simply be unreachable from any checker entry. `proof:check` exposes these “unchecked” files.
 
-For a file that should remain outside the regular check scope, add an allowlist entry with a reason.
+For a governed file intentionally lacking ordinary coverage, explain the reason in the [allowlist](./config/proof-allowlist.md). An allowlist entry does not change checker inputs or mean the file passed type checking.
 
 For framework source, proof also checks that each type config has exactly one checker owner, every governed framework source belongs to that owner's effective file set, every framework target is executable from its leaf package, every solution has a consistent leaf owner, and generated declaration configs contain no `.astro` or `.svelte` inputs.
 
@@ -216,7 +235,7 @@ These checkers run in build mode, for example `tsc -b`, `tsgo -b`, or `vue-tsc -
 
 Because generated declaration build configs enable `emitDeclarationOnly` and disable `noEmit`, `checker:build` is not a side-effect-free check. It runs the real underlying checker and may write `.d.ts`, `.tsbuildinfo`, and related outputs.
 
-Limina prepares and checks the graph, then delegates the type build to the selected checker.
+Limina prepares the generated graph, then delegates the type build to the selected checker.
 
 Before running, Limina checks whether `peer dependency` packages required by configured checkers are resolvable. Missing dependencies fail before checker execution and include installation guidance.
 
@@ -256,14 +275,6 @@ If a project does not yet have an artifact directory or artifact manifest, run t
 
 If you need to put `release:check` in `CI`, put it in the same named pipeline as the project's own build, tests, and package artifact checks, so execution order is explicit.
 
-## Task Groups {#recommended-mental-model}
+## Choose the Next Step {#recommended-mental-model}
 
-The tasks fall into three groups:
-
-`graph:prepare` and `graph:check` generate project references and check them against source imports.
-
-`source:check` and `proof:check` check source ownership, import authorization, and file coverage.
-
-`checker:build` and `checker:typecheck` run type checkers. `package:check` and `release:check` inspect built artifacts for package and release issues.
-
-Limina supplies these checks and delegates type checking to the selected compiler or framework checker. The project's own commands handle bundling, tests, and publishing.
+Use the default `check` for daily work and standalone commands to investigate a failing task. After changing source scope, entries, or rules, return to the full check. Before release, use the project build to produce consumer artifacts, then run the configured package and release checks. See [Workflows](./workflows.md) for examples.

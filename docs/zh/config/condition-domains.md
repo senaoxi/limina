@@ -1,6 +1,6 @@
 # 条件域
 
-`graph.conditionDomains` 声明源码入口解析依赖时应使用的条件集合。Limina 会找到这个入口对应的声明构建图，沿着引用关系展开，并检查所有可达项目是否都使用配置中声明的 `compilerOptions.customConditions`。
+`graph.conditionDomains` 记录某个源码入口期望的 `compilerOptions.customConditions`。Limina 将这个期望与入口的有效配置比较，并沿声明引用检查条件集合是否一致。实际解析仍读取各自的 `tsconfig`；这个字段不会改写解析条件。
 
 ```js
 import { defineConfig } from 'limina';
@@ -25,7 +25,7 @@ export default defineConfig({
 
 ## 为什么需要条件域
 
-`compilerOptions.customConditions` 会影响 `TypeScript` 和 Limina 解析器在当前 `tsconfig` 域内读取包 `exports` 字段时选择哪一个分支。比如 `browser`、`node`、`source` 这些条件，通常就代表不同的运行环境或构建方式。其他解析器可能使用全局唯一条件集合，这是另一种模型。
+`compilerOptions.customConditions` 会影响检查器读取包 `exports` 时可选的条件分支。`browser`、`node`、`source` 等名称可以表达运行环境或源码消费方式，具体含义由包的导出配置决定。
 
 声明引用树描述 `tsc -b` 使用的项目关系，解析条件则来自各项目的配置。如果同一棵树混用了不同的 `customConditions`，同一个包的 `exports` 可能在不同项目中指向不同文件。类型检查、运行时解析和图导入分析因此可能使用不同文件，影响声明产物、依赖边和工作区包导出分类。
 
@@ -64,3 +64,5 @@ Limina 会先准备生成图，并从启用的检查器入口收集所有声明�
 入口的有效条件与配置的条件域不一致时，图检查会报告差异。这有助于定位可能影响 `exports` 解析、依赖边或产物分类的条件配置问题。
 
 多入口仓库可以为各入口分别声明条件域。例如，浏览器入口使用 `['browser', 'source']`，`Node` 入口使用 `['node', 'source']`。每个入口的声明引用树都必须在 Limina 检查的条件域内保持一致。
+
+如果上例的两个入口通过声明引用共享同一个叶子项目，该叶子只有一套有效条件，无法同时满足两套不同的期望。应重新划分对应的源码与声明消费边界；添加两个条件域不会为共享项目复制出两份解析配置。

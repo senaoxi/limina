@@ -1,6 +1,8 @@
 # Checker Configuration
 
-`config.checkers` selects active default `tsconfig.json` entries. Limina then assigns exactly one checker owner to every managed type config in the complete references closure. Checker names are fixed identities:
+`config.checkers` selects default `tsconfig.json` entries and determines which checker owns their reachable source leaf configs. Automatic discovery is already enabled when this field is omitted; configure it only to fix checker ownership or exclude direct entries.
+
+Checkers use these fixed names:
 
 | Key            | Execution                             | Emits declarations |
 | -------------- | ------------------------------------- | ------------------ |
@@ -16,29 +18,21 @@ The key identifies the checker for ownership, generated paths, execution, and ca
 
 Auto discovery is always enabled. Named scopes claim selected entries first; entries not claimed by a named scope are still analyzed automatically.
 
-```js
+```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   config: {
     checkers: {
-      tsc: {
-        include: ['packages/shared/tsconfig.json'],
-      },
-      tsgo: {
-        include: ['packages/native/**/tsconfig.json'],
-      },
       'vue-tsc': {
         include: ['apps/web/tsconfig.json'],
-      },
-      'svelte-check': {
-        include: ['apps/svelte/tsconfig.json'],
-        exclude: ['apps/legacy/tsconfig.json'],
       },
     },
   },
 });
 ```
+
+This fixes the web entry to `vue-tsc` while other entries continue through automatic discovery. Do not fix a shared TypeScript project to another checker merely to make the config look complete: connected projects that need to share declaration caches must use the same build checker. Conflicts cause graph preparation to fail.
 
 Every named `include` must be a non-empty array; `exclude` is optional. Framework-only named configurations are valid. The same entry cannot match two named checker scopes.
 
@@ -100,28 +94,7 @@ A reference may go directly from a default solution to a named terminal config, 
 
 Non-entry configs such as `tsconfig.lib.json` or `tsconfig.test.json` enter the managed graph only when selected `tsconfig.json` entries reference them. Generated files stay under Limina's `.limina` namespace; source config paths remain the paths used in user configuration and diagnostics.
 
-## Framework ownership and dependency boundaries
-
-Limina records two project identities:
-
-- **Semantic authority** selects the checker-compatible module semantics used to interpret project dependencies.
-- **Final owner** selects the checker that executes the build or typecheck target.
-
-Explicit checker selection, checker-specific config evidence, effective root-file evidence, and a confirmed pending framework dependency are the only inputs that can lock semantic authority. After pending dependency requirements have been collected, Limina freezes that authority. Vue promotion, solution constraints, declaration-component coloring, the TypeScript fallback, and `finalOwner` can select or propagate a build owner, but cannot reinterpret the project's dependencies. A TypeScript-semantic project may therefore finish with `vue-tsc` as its build owner while retaining TypeScript module semantics.
-
-For automatic scopes whose checker is still undetermined, Limina starts with TypeScript semantics. Limina enumerates dependencies from the parsed TypeScript project and its TypeScript AST, then applies the checker type-evidence gate to every source-authored dependency. `ambient`, `concrete-declaration`, and `checker-source` evidence stop at the TypeScript boundary; unsupported semantic evidence fails closed. Only `missing` evidence may invoke Oxc, and then only to identify a physical framework-source candidate for ownership inference. The candidate must be an effective member of exactly one governed config and one framework semantic domain. Ordinary TypeScript files, resources, excluded files, and ambiguous targets cannot color the checker. Limina collects the complete requirement set before resolving the pending owner, so conflicting Astro/Svelte/Vue requirements are deterministic and independent of import order.
-
-Once semantic authority is locked, all project-aware consumers use the corresponding TypeScript, Vue, Astro, or Svelte semantic provider. A checker-semantic miss remains missing; toolchain, materialization, source-map, ambiguity, and resolution-host failures fail closed. Locked project dependency resolution never uses Oxc or a lightweight collector as a fallback.
-
-`SourceEvidence` remains a source-only view for syntax, diagnostics, and source coordinates. It is not graph or checker authority. Architecture consumers accept only source-authored `ProjectDependency` values with `direct-source` or strict `mapped-source` provenance. Generated dependencies that cannot be mapped to one source dependency are observations only and never create source-derived edges; an ambiguous reverse mapping is an error.
-
-An explicit Astro owner observes TypeScript files plus `.astro`; an explicit Svelte owner observes TypeScript files plus `.svelte`; an explicit `vue-tsc` owner observes TypeScript and its checker-resolved Vue extensions. A framework name does not implicitly add the other framework extensions. Files inside the configured proof source boundary that the final owner cannot observe do not block graph preparation merely because they exist; `proof check` reports them with `LIMINA_PROOF_UNCOVERED_SOURCE_FILE`.
-
-Astro and Svelte owners do not generate declaration projects, wrappers, or transparent build solutions. Their complete type config is checked once per leaf by `checker:typecheck`. TypeScript that must emit declarations must live in a separate `tsc`, `tsgo`, or `vue-tsc` config.
-
-When `checker:typecheck` has no framework-owned leaf, it is recorded as `disabled` and exits successfully without target peer preflight or a checker process. The command still validates the workspace and materializes the generated graph before testing whether targets exist; graph preparation or materialization can fail first. A disabled result does not prove framework typechecking ran.
-
-### Framework prerequisites
+## Framework Prerequisites
 
 Framework checker commands and their execution runtimes resolve from the leaf package that owns the source config:
 
@@ -133,6 +106,33 @@ Framework checker commands and their execution runtimes resolve from the leaf pa
 Framework dependency collection uses the owning checker's generated TypeScript representation. Astro resolves its compiler only through the installed `@astrojs/check` → `@astrojs/language-server` toolchain; Limina has no direct `@astrojs/compiler` dependency, peer, or workspace fallback, and a competing leaf compiler cannot shadow the Language Server-owned instance. Svelte semantic analysis resolves the public `svelte/compiler`, `svelte2tsx`, and TypeScript instances from the owning leaf. Missing framework checker dependencies still fail preflight before checker processes start.
 
 `checker typecheck` is a full rerun, not framework watch mode. Stable target IDs preserve target identity between runs but do not provide incremental invalidation.
+
+## Framework ownership and dependency boundaries
+
+Limina records two project identities:
+
+- **Semantic authority** selects the checker-compatible module semantics used to interpret project dependencies.
+- **Final owner** selects the checker that executes the build or typecheck target.
+
+For example, an ordinary TypeScript project and a Vue project that need to share declaration caches can both be built by `vue-tsc`. Imports in the ordinary project still use its established TypeScript semantics.
+
+::: details How checker ownership and dependency evidence are determined
+
+Explicit checker selection, checker-specific config evidence, effective root-file evidence, and a confirmed pending framework dependency are the only inputs that can lock semantic authority. After pending dependency requirements have been collected, Limina freezes that authority. Vue promotion, solution constraints, declaration-component coloring, the TypeScript fallback, and `finalOwner` can select or propagate a build owner, but cannot reinterpret the project's dependencies. A TypeScript-semantic project may therefore finish with `vue-tsc` as its build owner while retaining TypeScript module semantics.
+
+For automatic scopes whose checker is still undetermined, Limina starts with TypeScript semantics. Limina enumerates dependencies from the parsed TypeScript project and its TypeScript AST, then applies the checker type-evidence gate to every source-authored dependency. `ambient`, `concrete-declaration`, and `checker-source` evidence stop at the TypeScript boundary; unsupported semantic evidence fails closed. Only `missing` evidence may invoke Oxc, and then only to identify a physical framework-source candidate for ownership inference. The candidate must be an effective member of exactly one governed config and one framework semantic domain. Ordinary TypeScript files, resources, excluded files, and ambiguous targets cannot color the checker. Limina collects the complete requirement set before resolving the pending owner, so conflicting Astro/Svelte/Vue requirements are deterministic and independent of import order.
+
+Once semantic authority is locked, all project-aware consumers use the corresponding TypeScript, Vue, Astro, or Svelte semantic provider. A checker-semantic miss remains missing; toolchain, materialization, source-map, ambiguity, and resolution-host failures fail closed. Locked project dependency resolution never uses Oxc or a lightweight collector as a fallback.
+
+`SourceEvidence` remains a source-only view for syntax, diagnostics, and source coordinates. It is not graph or checker authority. Architecture consumers accept only source-authored `ProjectDependency` values with `direct-source` or strict `mapped-source` provenance. Generated dependencies that cannot be mapped to one source dependency are observations only and never create source-derived edges; an ambiguous reverse mapping is an error.
+
+:::
+
+An explicit Astro owner observes TypeScript files plus `.astro`; an explicit Svelte owner observes TypeScript files plus `.svelte`; an explicit `vue-tsc` owner observes TypeScript and its checker-resolved Vue extensions. A framework name does not implicitly add the other framework extensions. Files inside the configured proof source boundary that the final owner cannot observe do not block graph preparation merely because they exist; `proof check` reports them with `LIMINA_PROOF_UNCOVERED_SOURCE_FILE`.
+
+Astro and Svelte owners do not generate declaration projects, wrappers, or transparent build solutions. Their complete type config is checked once per leaf by `checker:typecheck`. TypeScript that must emit declarations must live in a separate `tsc`, `tsgo`, or `vue-tsc` config.
+
+When `checker:typecheck` has no framework-owned leaf, it is recorded as `disabled` and exits successfully without target peer preflight or a checker process. The command still validates the workspace and materializes the generated graph before testing whether targets exist; graph preparation or materialization can fail first. A disabled result does not prove framework typechecking ran.
 
 ## Astro semantic import resolution
 
@@ -212,7 +212,7 @@ Limina distinguishes declaration dependencies from framework scheduling dependen
 
 Providers run before consumers. Pure framework-scheduling cycles run as one scheduling component; declaration cycles still fail.
 
-Every successful `declaration-provider` edge has the same `tsc`, `tsgo`, or `vue-tsc` identity on both ends and records `cacheReuse: "reusable"` in manifest version 5. A canonical declaration relation therefore colors its whole build component before generated configs and targets are materialized. If the component already contains different build identities, graph preparation fails instead of preserving a cross-checker reference or issuing a cache-churn warning. `framework-schedule` may still cross checker identities because it is not a compiler project reference.
+Every successful `declaration-provider` edge has the same `tsc`, `tsgo`, or `vue-tsc` identity on both ends and records `cacheReuse: "reusable"` in manifest version 5. A canonical declaration relation therefore colors its whole build component before generated configs and targets are materialized. If a connected group of configs that need to share declaration caches already contains different build identities, graph preparation fails instead of preserving a cross-checker reference or issuing a cache-churn warning. `framework-schedule` may still cross checker identities because it is not a compiler project reference.
 
 ## Migrating from named aliases and `preset`
 

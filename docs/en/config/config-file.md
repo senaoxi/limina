@@ -1,6 +1,6 @@
 # Config File
 
-Limina reads a selected configuration module, usually `limina.config.mts` beside the project's `package.json`:
+Limina normally reads `limina.config.mts` beside the project's `package.json`. Start with the defaults and add fields when you need to change checking scopes or rules:
 
 ```ts
 import { defineConfig } from 'limina';
@@ -10,119 +10,81 @@ export default defineConfig({
 });
 ```
 
-When `--config` is omitted, Limina searches the current directory and its ancestors, checking `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, then `limina.config.js` at each directory. Explicit `--config` is resolved relative to cwd. Execution commands require that module to exist.
+A config module can export an object, a `Promise`, or a function that receives `{ command, mode }`. `defineConfig` provides type hints and preserves its input; Limina handles loading and validation. See the [configuration overview](./index.md) for each field's responsibility.
 
-The nearest `package.json` above the selected module fixes the governance root. It must be a readable regular file containing a non-null, non-array object. Limina never skips an invalid nearest manifest. Only that root's workspace declarations determine whether the run governs a workspace or one package. See [Governance root](../getting-started.md#governance-root) for manager authority and migration details.
+## Config Discovery and Governance Root {#governance-root}
 
-Config-relative selection is stable across invoking directories: choosing the repository root config still governs its workspace; choosing a child config uses the child's nearest manifest. The config directory itself need not be the package root.
+Limina selects the config module first. Without `--config`, it searches upward from the current working directory, checking `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, and `limina.config.js` in that order in each directory. It then finds the nearest `package.json` above the selected config's directory to establish the governance root. If that nearest manifest is unreadable, not a regular file, invalid JSON, or not an object at the top level, loading fails there instead of skipping it.
 
-Read-only `check --issues` uses an explicit `--config` path as a location anchor, so the module may have been deleted or renamed. It finds and validates the nearest manifest from that path's directory and reads persisted state there, without importing config, resolving manager membership, or running governance. Without `--config`, it must discover a currently existing default config. Missing records never trigger fallback to an ancestor workspace.
+Only that root's own workspace declarations determine membership. Without a declaration, the root package is the only package before region exclusions. An empty `{}` is sufficient: name, version, package manager, and lockfiles are all optional. Missing, ambiguous, or invalid package-manager metadata does not block governance that needs no package-manager semantics.
 
-`defineConfig` preserves the supplied object, promise, or function and provides configuration typing; runtime loading and schema validation happen in the loader. The public `limina` entry exports this helper, configuration and issue types, and validation error classes. Workspace-only `limina/internal/*` source exports are removed from the published package and are not a consumer API.
+Within the selected root, `pnpm-workspace.yaml` takes precedence and can establish pnpm unless an explicit `packageManager` conflicts with it. `package.json#workspaces` requires an unambiguous npm, Yarn, or Bun identity: the root's `packageManager` takes precedence, otherwise same-directory lockfiles are used. Missing authority, ambiguity, or invalid declarations cause failure. A valid workspace remains a workspace even when its final membership contains only the root package.
 
-Config can also be a function:
+Supported declaration forms are pnpm's `packages: string[]` (omission means no child packages), npm's `workspaces: string[]`, and the array or `{ packages: string[] }` form for Yarn and Bun. Package-manager adapters preserve their respective membership-selection and ignore rules. The package manager remains responsible for valid dependency catalogs, installability, version availability, and lockfile consistency.
 
-```ts
-export default defineConfig(({ command, mode }) => ({
-  config: {
-    // return different entries for `CI`, local, or release usage
-  },
-}));
+In this documentation, `config.rootDir` means the governance root determined by the loader. It is a resolved runtime value, not a user-configurable field or TypeScript's `compilerOptions.rootDir`. Unless stated otherwise, paths in the Limina config are relative to this directory.
+
+Once the same config is selected, invoking it from different directories preserves the same governance root. A repository root config governs its workspace; a child package config uses its nearest package manifest. The config module's directory need not itself be the package root. Explicit `--config` paths are relative to the command's current working directory.
+
+```sh
+pnpm exec limina --config ./limina.config.mts check
 ```
 
-Use a function config when local, CI, or release workflows need different checkers, rules, or package entries.
+See [Regions](./regions.md) for workspace membership discovery and exclusion rules.
 
-::: tip
-If `config.checkers` is omitted, Limina uses auto checker discovery. See [Checker Entries](./checkers.md) when you need explicit checker routing.
-:::
+### Locating Issue Records
 
-## config loader
+Read-only `check --issues` does not import the config, resolve package-manager membership, or run checks. An explicit `--config` is only a location anchor, so the module may already have been deleted or renamed; the nearest `package.json` above its directory must still exist and be valid. Without `--config`, an existing default config must be discoverable. Missing records do not trigger fallback to an ancestor workspace.
+
+## Config Loader
 
 - **Type:** `'native' | 'tsx'`
 - **Default:** `'native'`
 - **CLI:** `--config-loader native` or `--config-loader tsx`
 
-The native loader imports the config through the current runtime and follows that runtime's module rules. An existing `limina.config.js` can therefore use CommonJS when Node treats the file as CommonJS; `.mts` and `.mjs` use ESM. Use `tsx` when your config relies on TypeScript syntax that the runtime cannot import natively. The `tsx` loader uses `tsx/esm/api`, so install `tsx` in the consuming workspace before using it.
+The `native` loader imports the config directly through the current runtime and follows its module rules. An existing `limina.config.js` can therefore use CommonJS when Node treats it as CommonJS; `.mts` and `.mjs` use ESM. Use `tsx` when the config contains TypeScript syntax that the current runtime cannot import natively. The `tsx` loader uses `tsx/esm/api`, so install `tsx` in the adopting workspace first.
 
-## mode
+## `mode`
 
 - **Type:** `string`
+- **Precedence:** `--mode` → `NODE_ENV` → `'default'`
 
-`mode` is resolved from `--mode`, then `NODE_ENV`, then `'default'`.
+`mode` passes an environment name to the config function; the function decides what changes. For example, `limina --mode ci check` passes `mode: 'ci'` without automatically enabling a set of CI rules.
 
-A function config can use `mode` to return different checkers, rules, or package entries for local, CI, and release workflows.
-
-Prefer `command` branching for package output entries that only matter to `package` and `release` commands. Reserve `mode` for broader environment-level differences.
-
-```ts
-export default defineConfig(({ mode }) => ({
-  config: {
-    // return different entries for `CI`, local, or release usage
-  },
-}));
-```
-
-## command
+## `command`
 
 - **Type:** `'check' | 'graph' | 'package' | 'proof' | 'release' | 'source' | (string & {})`
-- **Related:** [Checker Entries](./checkers.md)
 
-`command` is the command family loading the config, such as `check`, `graph`, `source`, `package`, or `release`. Its open string type also permits current values such as `build` and `migration`; it does not define additional supported commands. `checker build` without a config path and `checker typecheck` load the `check` family; `checker build <config>` and top-level `build` load `build`. Named `check` pipelines load configuration once with `command: 'check'`, including their package or release steps.
+`command` identifies the command family loading the config. The open string type also accommodates current values such as `build` and `migration`; it does not mean every value names a top-level command.
 
-For example, return package output entries only for `package` and `release`:
+| Invocation                                                 | `command` received by the config function         |
+| ---------------------------------------------------------- | ------------------------------------------------- |
+| `check`, `check <name>`                                    | `'check'`                                         |
+| `graph ...`, `source check`, `proof check`                 | `'graph'`, `'source'`, or `'proof'`, respectively |
+| `package check`, `release check`                           | `'package'` or `'release'`, respectively          |
+| `checker build`, `checker typecheck` without a config path | `'check'`                                         |
+| `checker build <config>`, `build <config>`                 | `'build'`                                         |
+| `limina-migrate`                                           | `'migration'`                                     |
+
+Output entries needed only for standalone package and release checks can be supplied by command family:
 
 ```ts
+import { defineConfig } from 'limina';
+
 export default defineConfig(({ command }) => ({
   package:
     command === 'package' || command === 'release'
       ? {
-          entries: [
-            {
-              name: '@acme/core',
-              outDir: 'packages/core/dist',
-            },
-          ],
+          entries: [{ name: '@acme/core', outDir: 'packages/core/dist' }],
         }
       : undefined,
 }));
 ```
 
-With this branch, graph and proof checks do not receive package output entries.
+With this config, daily `check` runs do not receive these entries, while standalone `package check` and `release check` require the corresponding outputs to have been built.
 
-For the following directory:
+A named pipeline loads the config once with `command: 'check'`. Its `package:check` and `release:check` steps do not reload the config under their own command families. To use package outputs in a pipeline, return the entries during that config evaluation. For example, supply entries when `mode === 'release'`, then run `limina --mode release check publish`. External commands do not cause config re-evaluation either.
 
-```text
-limina.config.mts
-packages/core/
-  src/index.ts
-  dist/package.json
-```
+## Public API
 
-The config can select checkers and return package output for `package` and `release`:
-
-```ts
-export default defineConfig(({ command }) => ({
-  config: {
-    checkers: {
-      tsc: {
-        include: ['packages/**/tsconfig.json'],
-      },
-    },
-  },
-  package:
-    command === 'package' || command === 'release'
-      ? {
-          entries: [
-            {
-              name: '@acme/core',
-              outDir: 'packages/core/dist',
-            },
-          ],
-        }
-      : undefined,
-}));
-```
-
-When `pnpm exec limina check` runs, Limina loads the config for the `check` command and analyzes the pieces needed for graph, source, proof, checker build, and checker typecheck. When `pnpm exec limina package check` or `pnpm exec limina release check` runs, Limina loads the config for that command and reads `package.entries`.
-
-With this branch, everyday checks do not require built output files, while standalone package and release checks require `packages/core/dist`. To put `package:check` or `release:check` in a named `check` pipeline, also return the entries for `command: 'check'`, for example only when `mode === 'release'`, and run `limina --mode release check <name>`. Pipeline steps do not reload configuration for their own command family.
+The public `limina` entry exports `defineConfig`, config and issue types, and validation error classes. `limina/internal/*` is for repository-internal use; its source exports are removed from published packages and are not consumer APIs.
