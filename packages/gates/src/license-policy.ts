@@ -1,12 +1,12 @@
-export const allowedLicenses: readonly string[] = [
-  'MIT',
-  'Apache-2.0',
-  'BSD-2-Clause',
-  'BSD-3-Clause',
-  'BlueOak-1.0.0',
-  'ISC',
-  'MPL-2.0',
-];
+import { readFileSync } from 'node:fs';
+import { parseAllowedLicenses } from './licenses.ts';
+
+export const allowedLicenses: readonly string[] = parseAllowedLicenses(
+  readFileSync(
+    new URL('../../../.agents/docs/license-policy.md', import.meta.url),
+    'utf8',
+  ),
+);
 
 export interface BundledDependency {
   name: string;

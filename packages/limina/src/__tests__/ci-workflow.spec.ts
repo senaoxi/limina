@@ -59,7 +59,7 @@ describe('Limina CI validation contract', () => {
       'pnpm run build:tools && pnpm --filter limina run build && pnpm --filter limina-migrate run build',
     );
     expect(manifest.scripts['build:tools']).toBe(
-      'pnpm --filter @limina/build-tools run build && pnpm --filter @limina/eslint-config run build',
+      'pnpm --filter @limina/gates run build && pnpm --filter @limina/build-tools run build',
     );
     const quality = await readFile(
       path.join(root, '.github/actions/build-and-check/action.yml'),
@@ -67,6 +67,7 @@ describe('Limina CI validation contract', () => {
     );
     for (const command of [
       'build',
+      'gates:check',
       'format:check',
       'lint:check',
       'typecheck',

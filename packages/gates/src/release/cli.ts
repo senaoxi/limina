@@ -1,8 +1,8 @@
 import { cac } from 'cac';
 import { createElapsedTimer, formatErrorMessage } from 'logaria/helper';
 import process from 'node:process';
-import { runChangelogCommand } from './changelog';
-import { runPublishCommand, runReleaseCommand } from './release';
+import { runChangelogCommand } from './changelog.ts';
+import { runPublishCommand, runReleaseCommand } from './release.ts';
 import {
   ChangelogLogger,
   ReleaseLogger,
@@ -12,7 +12,7 @@ import {
   type PublishCliOptions,
   type ReleaseCliOptions,
   type ReleaseType,
-} from './shared';
+} from './shared.ts';
 
 type RepeatableStringOption = string | string[] | undefined;
 type PositionalArguments = string | string[] | undefined;

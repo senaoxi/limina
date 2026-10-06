@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { execReleaseCommand } from './command';
+import { execReleaseCommand } from './command.ts';
 import {
   assertValidNpmTag,
   getNpmCommand,
@@ -20,7 +20,7 @@ import {
   runCommand,
   type ReleasePlan,
   type ResolvedReleasePackageConfig,
-} from './shared';
+} from './shared.ts';
 
 const publicationDirectories = new Map([
   ['limina', 'packages/limina/dist'],

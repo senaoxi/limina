@@ -19,14 +19,10 @@
     "rolldown": "catalog:dev",
     "rollup-plugin-license": "catalog:dev",
     "del-cli": "catalog:dev",
-    "logaria": "catalog:dev"
+    "logaria": "catalog:dev",
+    "@limina/gates": "workspace:*"
   },
   "exports": {
-    "./license-policy": {
-      "source": "./src/license-policy.ts",
-      "types": "./dist/license-policy.d.ts",
-      "default": "./dist/license-policy.js"
-    },
     "./package-plugin": {
       "source": "./src/package-plugin.ts",
       "types": "./dist/package-plugin.d.ts",

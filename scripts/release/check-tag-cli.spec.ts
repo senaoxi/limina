@@ -6,13 +6,13 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { installGatesFixture } from '../gates-fixture';
 
 it('checks real tag checkout, source versions and main ancestry without migration metadata', () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'limina-tag-check-'));
@@ -51,36 +51,12 @@ it('checks real tag checkout, source versions and main ancestry without migratio
       path.join(root, 'package.json'),
       JSON.stringify({ private: true, type: 'module' }),
     );
-    const scripts = path.join(root, 'scripts/release');
-    mkdirSync(scripts, { recursive: true });
-    for (const file of [
-      'check-tag-cli.ts',
-      'check-tag.ts',
-      'shared.ts',
-      'command.ts',
-    ])
-      copyFileSync(
-        fileURLToPath(new URL(file, import.meta.url)),
-        path.join(scripts, file),
-      );
-    // Tooling dependencies stay outside the fixture's source-version inputs.
-    const dependencies = fileURLToPath(
-      new URL('../../node_modules/', import.meta.url),
+    installGatesFixture(root);
+    mkdirSync(path.join(root, 'scripts/release'), { recursive: true });
+    copyFileSync(
+      fileURLToPath(new URL('check-tag-cli.ts', import.meta.url)),
+      path.join(root, 'scripts/release/check-tag-cli.ts'),
     );
-    for (const name of [
-      '@limina/build-tools',
-      'logaria',
-      'prompts',
-      'semver',
-    ]) {
-      const target = path.join(root, 'node_modules', name);
-      mkdirSync(path.dirname(target), { recursive: true });
-      symlinkSync(
-        realpathSync(path.join(dependencies, name)),
-        target,
-        process.platform === 'win32' ? 'junction' : 'dir',
-      );
-    }
     setVersions('1.2.3-beta.1');
     git('init', '--quiet');
     git('config', 'user.email', 'fixture@example.invalid');

@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { installGatesFixture } from '../gates-fixture';
 
 function linkDependencies(directory: string) {
   for (const name of [
@@ -21,7 +22,6 @@ function linkDependencies(directory: string) {
     '@commitlint/cli',
     '@commitlint/config-conventional',
     'husky',
-    'semver',
   ]) {
     const destination = path.join(directory, 'node_modules', name);
     const source = fileURLToPath(
@@ -34,11 +34,7 @@ function linkDependencies(directory: string) {
 
 function createFixture() {
   const directory = mkdtempSync(path.join(tmpdir(), 'limina git hooks '));
-  for (const file of [
-    '.husky/commit-msg',
-    'commitlint.config.mjs',
-    'scripts/git/commit-message.ts',
-  ]) {
+  for (const file of ['.husky/commit-msg', 'commitlint.config.mjs']) {
     mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
     copyFileSync(
       fileURLToPath(new URL(`../../${file}`, import.meta.url)),
@@ -49,8 +45,13 @@ function createFixture() {
     path.join(directory, 'package.json'),
     JSON.stringify({ private: true, type: 'module' }),
   );
+  writeFileSync(
+    path.join(directory, '.gitignore'),
+    '**/node_modules/\n**/dist/\n.husky/_/\n',
+  );
   writeFileSync(path.join(directory, 'global.config'), '');
   linkDependencies(directory);
+  installGatesFixture(directory);
   const environment = {
     ...process.env,
     CI: '',
@@ -81,7 +82,7 @@ function createFixture() {
     writeFileSync(messageFile, message);
     const result = spawnSync(
       process.execPath,
-      ['scripts/git/commit-message.ts', messageFile],
+      ['packages/gates/src/commit/message.ts', messageFile],
       {
         cwd: directory,
         env: environment,
@@ -336,7 +337,7 @@ it('rejects literal scissors under strip cleanup and accepts edited verbose comm
       'add',
       '.husky',
       'commitlint.config.mjs',
-      'scripts',
+      'packages/gates',
       'package.json',
     );
     fixture.git('commit', '--quiet', '-m', 'chore: add Git hooks');
@@ -404,7 +405,7 @@ it('installs idempotently and blocks an invalid real Git commit while retaining 
       'add',
       '.husky',
       'commitlint.config.mjs',
-      'scripts',
+      'packages/gates',
       'package.json',
     );
     fixture.git('commit', '--quiet', '-m', 'chore: add Git hooks');
@@ -454,7 +455,7 @@ it('honors HUSKY=0 and validates commits in a linked Git worktree', () => {
       'add',
       '.husky',
       'commitlint.config.mjs',
-      'scripts',
+      'packages/gates',
       'package.json',
     );
     fixture.git(
@@ -467,6 +468,7 @@ it('honors HUSKY=0 and validates commits in a linked Git worktree', () => {
     );
     fixture.git('worktree', 'add', '--quiet', '--detach', worktree);
     linkDependencies(worktree);
+    installGatesFixture(worktree);
     const linked = spawnSync(
       process.execPath,
       [path.join(worktree, 'node_modules/husky/bin.js')],

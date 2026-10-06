@@ -31,7 +31,7 @@ it('checks both compiler scopes through the repository typecheck pipeline', asyn
     );
     await writeFile(
       fixturePath('pnpm-workspace.yaml'),
-      'packages:\n  - packages/*\n',
+      'packages:\n  - packages/*\n  - smoke\n',
     );
     await writeFile(
       fixturePath('limina.config.mts'),
@@ -59,7 +59,7 @@ it('checks both compiler scopes through the repository typecheck pipeline', asyn
     const projects = [
       {
         checker: 'tsgo',
-        directory: 'packages/eslint-config',
+        directory: 'smoke',
         file: 'index.ts',
       },
       { checker: 'vue-tsc', directory: 'packages/limina', file: 'index.vue' },

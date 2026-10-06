@@ -72,6 +72,9 @@ catalogs:
     logaria:
       specifier: ^0.0.4
       version: 0.0.4
+    marked:
+      specifier: 18.0.14
+      version: 18.0.14
     pathe:
       specifier: ^2.0.3
       version: 2.0.3
@@ -281,30 +284,18 @@ importers:
       '@commitlint/config-conventional':
         specifier: catalog:lint
         version: 21.2.3
-      '@limina/build-tools':
+      '@limina/gates':
         specifier: workspace:*
-        version: link:packages/build-tools
-      '@limina/eslint-config':
-        specifier: workspace:*
-        version: link:packages/eslint-config
+        version: link:packages/gates
       '@types/node':
         specifier: 22.18.0
         version: 22.18.0
-      '@types/prompts':
-        specifier: catalog:dev
-        version: 2.4.9
-      '@types/semver':
-        specifier: catalog:dev
-        version: 7.8.0
       '@typescript/native-preview':
         specifier: catalog:dev
         version: 7.0.0-dev.20260707.2
       '@xterm/headless':
         specifier: catalog:dev
         version: 6.0.0
-      cac:
-        specifier: catalog:dev
-        version: 7.0.0
       del-cli:
         specifier: catalog:dev
         version: 7.0.0
@@ -329,12 +320,6 @@ importers:
       prettier-plugin-organize-imports:
         specifier: catalog:format
         version: 4.3.0(prettier@3.5.3)(typescript@6.0.3)(vue-tsc@3.2.4(typescript@6.0.3))
-      prompts:
-        specifier: catalog:dev
-        version: 2.4.2
-      semver:
-        specifier: catalog:dev
-        version: 7.8.5
       tsx:
         specifier: catalog:dev
         version: 4.23.15
@@ -379,6 +364,9 @@ importers:
         specifier: catalog:prod
         version: 0.2.17
     devDependencies:
+      '@limina/gates':
+        specifier: workspace:*
+        version: link:../gates
       '@pnpm/catalogs.types':
         specifier: catalog:dev
         version: 1100.0.0
@@ -410,8 +398,14 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  packages/eslint-config:
+  packages/gates:
     devDependencies:
+      '@commitlint/cli':
+        specifier: catalog:lint
+        version: 21.2.3(@types/node@22.18.0)(conventional-commits-parser@7.1.2)(typescript@6.0.3)
+      '@commitlint/config-conventional':
+        specifier: catalog:lint
+        version: 21.2.3
       '@eslint/js':
         specifier: catalog:lint
         version: 10.0.1(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))
@@ -424,9 +418,18 @@ importers:
       '@types/node':
         specifier: 22.18.0
         version: 22.18.0
+      '@types/prompts':
+        specifier: catalog:dev
+        version: 2.4.9
+      '@types/semver':
+        specifier: catalog:dev
+        version: 7.8.0
       '@typescript-eslint/parser':
         specifier: catalog:lint
         version: 8.71.0(eslint@10.11.0(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
+      cac:
+        specifier: catalog:dev
+        version: 7.0.0
       del-cli:
         specifier: catalog:dev
         version: 7.0.0
@@ -460,9 +463,24 @@ importers:
       jsonc-eslint-parser:
         specifier: catalog:lint
         version: 3.3.0
+      logaria:
+        specifier: catalog:dev
+        version: 0.0.4(esbuild@0.28.2)(rolldown@1.2.10)(rollup@4.62.2)(vite@8.3.0(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      marked:
+        specifier: catalog:dev
+        version: 18.0.14
       prettier:
         specifier: catalog:format
         version: 3.5.3
+      prompts:
+        specifier: catalog:dev
+        version: 2.4.2
+      semver:
+        specifier: catalog:dev
+        version: 7.8.5
+      tsx:
+        specifier: catalog:dev
+        version: 4.23.15
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
@@ -472,6 +490,9 @@ importers:
       vitest:
         specifier: catalog:test
         version: 4.1.11(@edge-runtime/vm@3.2.0)(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0(supports-color@7.2.0))(tsx@4.23.15)(yaml@2.9.1)
+      yaml:
+        specifier: catalog:dev
+        version: 2.9.1
       yaml-eslint-parser:
         specifier: catalog:lint
         version: 2.1.0
@@ -675,9 +696,9 @@ importers:
 
   smoke:
     devDependencies:
-      '@limina/eslint-config':
+      '@limina/gates':
         specifier: workspace:*
-        version: link:../packages/eslint-config
+        version: link:../packages/gates
       '@types/node':
         specifier: 22.18.0
         version: 22.18.0
@@ -8475,6 +8496,14 @@ packages:
         integrity: sha512-1I+1qpDt4idfgLQG+BNWmrqku+7/2bi5nLf4YwF8y8zXvmfiTBY3PV3ZibfrjBueCByROpuBjLLFCajqkgYoLQ==,
       }
 
+  marked@18.0.14:
+    resolution:
+      {
+        integrity: sha512-mBHK6FBHuBAlhgRe88w9F0O1AbwwXJUcQibUbC/QcdTbVGAD7aWza+xt3N6oT/jCZx3/OMeS+8rnuiHZcQ9s7A==,
+      }
+    engines: { node: '>= 20' }
+    hasBin: true
+
   mdast-util-to-hast@13.2.1:
     resolution:
       {
@@ -15956,6 +15985,8 @@ snapshots:
   map-obj@4.3.0: {}
 
   mark.js@8.11.1: {}
+
+  marked@18.0.14: {}
 
   mdast-util-to-hast@13.2.1:
     dependencies:

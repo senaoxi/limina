@@ -9,6 +9,7 @@ export const markdownVirtualFiles: string[] = ['**/*.md/*'];
 
 export const nodeFilePatterns: string[] = [
   'packages/build-tools/src/{package-plugin,path,logger}.ts',
+  'packages/gates/src/**/*.{ts,mjs}',
   '**/.vitepress/**/*.{js,cjs,mjs,ts,cts,mts}',
   '**/*.config.{js,cjs,mjs,ts,cts,mts}',
   '**/bin/**/*.{js,cjs,mjs,ts,cts,mts}',

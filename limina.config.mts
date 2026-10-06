@@ -8,10 +8,7 @@ export default defineConfig({
   config: {
     checkers: {
       tsgo: {
-        include: [
-          'packages/eslint-config/tsconfig.json',
-          'smoke/tsconfig.json',
-        ],
+        include: ['smoke/tsconfig.json'],
       },
       'vue-tsc': {
         include: [
@@ -20,6 +17,7 @@ export default defineConfig({
           'packages/migrate/tsconfig.json',
           'docs/tsconfig.json',
           'packages/build-tools/tsconfig.json',
+          'packages/gates/tsconfig.json',
         ],
       },
     },
@@ -68,8 +66,12 @@ export default defineConfig({
     format: [checkCommand('prettier', ['--check', '.'])],
     lint: [checkCommand('eslint', ['.', '--config', './eslint.config.mjs'])],
     packages: ['package:check'],
-    privacy: [checkCommand('tsx', ['scripts/docs/check-privacy.ts'])],
-    commit: [checkCommand(process.execPath, ['scripts/git/commit-message.ts'])],
+    privacy: [
+      checkCommand(process.execPath, ['packages/gates/src/privacy/check.ts']),
+    ],
+    gates: [
+      checkCommand(process.execPath, ['packages/gates/src/commit/staged.ts']),
+    ],
     'release-tag': [checkCommand('tsx', ['scripts/release/check-tag-cli.ts'])],
     release: ['release:check'],
   },

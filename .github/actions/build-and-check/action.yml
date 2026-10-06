@@ -11,6 +11,8 @@ runs:
       if: inputs.skip-build != 'true'
       run: pnpm run build
     - shell: bash
+      run: pnpm run gates:check
+    - shell: bash
       run: pnpm run format:check
     - shell: bash
       run: pnpm run lint:check
