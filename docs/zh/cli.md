@@ -1,119 +1,14 @@
 # CLI 参考
 
-日常检查使用 `limina check`；需要写出生成的检查器文件时使用 `graph prepare`；检查已构建产物时使用 `package check` 或 `release check`。
+日常运行 `limina check`。默认检查包含真实的检查器构建，会按需写入 `.limina` 配置、内部声明和缓存；若只需定位图、源码或覆盖问题，可以使用对应的独立检查命令。
 
-Limina 根据配置和源码计算工程图，检查源码归属、包依赖、项目引用、检查器入口和源码覆盖。需要生成检查器文件的命令会将文件写到 `.limina`；只读取图事实的检查使用内存中的结果。
-
-类型检查和声明构建由 TypeScript 及框架检查器执行。打包、测试、依赖安装和发布使用项目自己的工具与命令。包检查和发布检查针对配置的产物，检查结果不能作为发布安全保证。
-
-## 快速开始
-
-Limina 需要运行在工作区内。当前包配置要求 `Node.js ^22.18.0 || >=24.11.0`。如果手动安装，使用：
-
-```sh
-pnpm add -D limina@latest typescript@^5.9.0
-```
-
-在已有工作区中初始化：
-
-```sh
-pnpm exec limina init --yes
-pnpm i
-pnpm limina:build
-pnpm exec limina check
-```
-
-`limina init --yes` 会使用默认确认流程，适合非交互环境。它会写入或更新 `limina.config.mts`、根 `package.json` 中的 `limina:build` 脚本和必要依赖，并确保 `.gitignore` 忽略 `.limina/`。如果依赖已经存在，`pnpm i` 可能不产生变化；如果初始化过程新增了依赖，则需要先安装依赖再运行构建。
-
-默认生成的配置只启用自动检查器发现：
-
-```js
-import { defineConfig } from 'limina';
-
-export default defineConfig({
-  config: {
-    checkers: {
-      auto: {
-        exclude: [],
-      },
-    },
-  },
-});
-```
-
-需要自定义检查器入口、图规则、源码例外、包产物检查或发布一致性检查时，在 `limina.config.mts` 中添加相应配置。
-
-## 命令入口与全局选项
-
-基础格式：
-
-```sh
-limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
-```
-
-全局选项适用于需要加载 Limina 配置文件的命令。`init` 直接面向所属工作区，不依赖已有配置。
-
-| 选项                       | 类型             | 默认行为                                 | 相关配置                    | 示例                                        | 边界                                                                     |
-| -------------------------- | ---------------- | ---------------------------------------- | --------------------------- | ------------------------------------------- | ------------------------------------------------------------------------ |
-| `--config <path>`          | 路径             | 从当前工作目录及祖先目录发现默认配置文件 | Limina 配置模块             | `limina --config ./limina.config.mts check` | 最近的 `package.json` 固定治理根；显式查询的定位锚点可以指向不存在的配置 |
-| `--config-loader <loader>` | `native` / `tsx` | `native`                                 | 配置模块加载器              | `limina --config-loader tsx check`          | `tsx` 需要接入工作区安装 `tsx`                                           |
-| `--mode <mode>`            | 字符串           | `process.env.NODE_ENV`，否则为 `default` | 函数式配置接收的 `env.mode` | `limina --mode ci check`                    | 只把模式传给配置函数；具体差异由配置文件实现                             |
-
-配置文件可以导出对象、`Promise`，或接收 `{ command, mode }` 的函数。`command` 表示当前命令族，例如 `check`、`graph`、`source`、`package` 或 `release`；它也保留开放字符串类型，以覆盖 `build`、`migration` 等当前命令值。
-
-## 推荐工作流
-
-日常使用通常从 `limina check` 开始。它运行默认检查组合：`graph:check`、`source:check`、`proof:check`、`checker:build`、`checker:typecheck`。这些任务共同检查工程图、源码边界、覆盖关系和检查器入口是否仍然一致。
-
-这些任务之前，Limina 会运行共享准备步骤 `workspace:validate`。独立的源码、证明、图、构建、检查器、迁移、包和发布命令也由同一份已验证激活包索引把关。工作区问题使用相对于 `config.rootDir` 的词法路径，外部激活包会保留 `../`。
-
-需要在后续构建或检查器执行前显式刷新磁盘上的检查器文件时，运行：
-
-```sh
-pnpm exec limina graph prepare
-```
-
-`graph check`、`source check`、`proof check` 这类只做验证的命令会在内存中计算生成图，不会写出检查器配置。托管模式的 `build`、`checker build`、`checker typecheck`，以及包含检查器任务或 `graph:prepare` 的 `check` 流水线，会在执行前物化所需文件。
-
-查看先前失败时，可以查询已保存的问题清单。查询会定位治理根，不加载或执行 Limina 配置：
-
-```sh
-pnpm exec limina check --issues
-pnpm exec limina check --issues --limit 20
-pnpm exec limina check --issues --task workspace:validate
-pnpm exec limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING --verbose
-pnpm exec limina check --issues --verbose --limit all
-pnpm exec limina check --issues --format json
-pnpm exec limina check --issues --invocation <uuid>
-```
-
-不带 `--invocation` 的查询会验证结果是否属于最新检查尝试。检查尝试一旦发布，只有同一次尝试已完成，且元数据与版本 8 的快照一致时，`--issues` 才会返回问题清单。最新尝试处于 `running`（正在运行）、`interrupted`（已中断）、`aborted`（已终止）或 `persistence-failed`（持久化失败）状态，或者结果时效元数据损坏或不匹配时，查询会拒绝返回问题并以退出码 `1` 结束，不会回退到更早已完成的结果。必要元数据缺失时同样失败；只有 `latest-attempt` 与 `latest-completed` 元数据都不存在时，读取器才使用兼容旧快照的路径。人类可读格式（`human`）、JSON 与 NDJSON 输出会明确报告不可用状态；机器响应中表示不可用的 `status` 与零问题数不表示检查成功且没有问题。
-
-在检查尝试发布前发生的配置发现、配置验证或执行计划失败，不会替换上一份已完成的问题清单。如果进程恰好在写入 `last-run.json` 与结果时效索引之间退出，后续序号更高的成功检查会完整覆盖这两个文件，并自动恢复查询。
-
-`checker build` 构建 Limina 的内部声明；顶层 `build` 命令生成配置指定的消费者产物：
-
-```sh
-pnpm exec limina checker build packages/app/tsconfig.json
-pnpm exec limina build packages/app/tsconfig.json
-pnpm exec limina build packages/app/tsconfig.json --preset vue-tsc
-pnpm exec limina build packages/app/tsconfig.raw.json --raw --preset tsc
-```
-
-当你准备发布包时，应先运行项目自己的构建流程，再运行补充检查：
-
-```sh
-pnpm exec limina package check --package @scope/pkg
-pnpm exec limina release check --package @scope/pkg
-```
-
-两个命令都读取已构建的 `outDir`，不执行产物构建或发布。
+首次安装和初始化见[快速开始](./getting-started.md)。包检查与发布检查读取已构建的消费者产物，生产构建、测试和发布仍由项目命令完成。
 
 ## 决策表
 
 | 目标                             | 推荐命令                                   | 判断依据                                                                                                             |
 | -------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| 初始化工作区中的 Limina 文件     | `limina init` 或 `limina init --yes`       | 首次接入，或需要生成基础配置与 `limina:build` 脚本                                                                   |
+| 初始化选定项目中的 Limina 文件   | `limina init` 或 `limina init --yes`       | 首次接入，或需要生成基础配置与 `limina:build` 脚本                                                                   |
 | 迁移被治理的源码 `tsconfig`      | `limina-migrate`                           | 规范化配置拓扑，并在新进程中检查写入磁盘后的输入                                                                     |
 | 日常检查仓库结构和类型构建入口   | `limina check`                             | 默认组合覆盖工程图、源码、证明和检查器入口                                                                           |
 | 自定义一组按顺序运行的检查       | `limina check <name>`                      | `<name>` 来自配置中的 `pipelines`                                                                                    |
@@ -124,17 +19,35 @@ pnpm exec limina release check --package @scope/pkg
 | 检查源码是否被工程图或检查器覆盖 | `limina proof check`                       | 关注遗漏源码、检查器覆盖和允许清单有效性                                                                             |
 | 运行内部声明图构建入口           | `limina checker build`                     | 使用生成图中的构建型检查器入口，只产出 `.limina` 内部声明文件                                                        |
 | 对指定配置运行内部声明图构建     | `limina checker build <config>`            | 只接受 Limina 管理的源码配置或聚合配置，不执行原始构建                                                               |
-| 构建用户可消费产物               | `limina build <config>`                    | 只接受 Limina 管理且声明了 `liminaOptions.outputs` 的源码叶子或聚合配置                                              |
+| 构建用户可消费产物               | `limina build <config>`                    | 接受声明 `liminaOptions.outputs` 的受管源码叶子，或递归引用至少一个此类叶子的聚合配置                                |
 | 直接构建用户维护的 `tsconfig`    | `limina build <config> --raw --preset tsc` | 不读取 Limina 输出配置，不使用生成图                                                                                 |
 | 运行框架检查器负责的叶子配置     | `limina checker typecheck`                 | 对最终由 Astro 或 Svelte 检查器负责的类型配置，每个叶子配置执行一次；无目标时记录 `disabled`（无适用工作）并成功退出 |
 | 检查已构建包产物                 | `limina package check`                     | 已有 `package.entries[].outDir`，需要检查清单文件、`publint`、`ATTW` 或产物导入边界                                  |
 | 检查发布前产物一致性             | `limina release check`                     | 已构建产物，且需要检查本地依赖声明、私有包、打包结果或配置的发布一致性                                               |
 
+## 命令入口与全局选项
+
+基础格式：
+
+```sh
+limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
+```
+
+全局选项适用于需要加载 Limina 配置文件的命令。`init` 直接面向选定项目，不依赖已有配置。
+
+| 选项                       | 类型             | 默认行为                                 | 相关配置                    | 示例                                        | 边界                                                                     |
+| -------------------------- | ---------------- | ---------------------------------------- | --------------------------- | ------------------------------------------- | ------------------------------------------------------------------------ |
+| `--config <path>`          | 路径             | 从当前工作目录及祖先目录发现默认配置文件 | Limina 配置模块             | `limina --config ./limina.config.mts check` | 最近的 `package.json` 固定治理根；显式查询的定位锚点可以指向不存在的配置 |
+| `--config-loader <loader>` | `native` / `tsx` | `native`                                 | 配置模块加载器              | `limina --config-loader tsx check`          | `tsx` 需要接入工作区安装 `tsx`                                           |
+| `--mode <mode>`            | 字符串           | `process.env.NODE_ENV`，否则为 `default` | 函数式配置接收的 `env.mode` | `limina --mode ci check`                    | 只把模式传给配置函数；具体差异由配置文件实现                             |
+
+配置文件可以导出对象、`Promise`，或接收 `{ command, mode }` 的函数。`command` 表示当前命令族，例如 `check`、`graph`、`source`、`package` 或 `release`；它也保留开放字符串类型，以覆盖 `build`、`migration` 等当前命令值。
+
 ## 命令参考
 
 ### `limina init`
 
-`init` 用于在工作区中生成 Limina 的基础接入文件。
+`init` 在选定项目中生成 Limina 的基础接入文件。
 
 ```sh
 pnpm exec limina init
@@ -146,6 +59,14 @@ pnpm exec limina init --yes
 `--yes` 会接受默认确认，并跳过交互式技能安装提示。非交互环境中如果不使用 `--yes`，需要用户确认的步骤会失败。
 
 初始化后，按仓库结构配置图规则和允许的包边界；`init` 不会从业务结构推断这些规则。
+
+需要单独安装初始化流程提供的可选智能体技能时，可运行同一安装命令：
+
+```sh
+npx --yes skills add senaoxi/docs-islands --skill limina
+```
+
+此步骤安装技能，不改写源码 `tsconfig`；已有源码项目引用需按下一节判断是否迁移。
 
 ### `limina-migrate` {#limina-migration}
 
@@ -205,7 +126,7 @@ JSONC 编辑保留无关文本、注释和换行符。受管字段存在重复�
 
 ### `limina check [pipeline]`
 
-`check` 是日常入口。
+`check` 是日常入口。它检查结构并运行类型检查器；其中 `checker:build` 写出内部声明，不负责生产打包。
 
 ```sh
 pnpm exec limina check
@@ -231,7 +152,7 @@ checker:typecheck
 
 | 选项                   | 类型                      | 默认行为           | 示例                                                          | 边界                                              |
 | ---------------------- | ------------------------- | ------------------ | ------------------------------------------------------------- | ------------------------------------------------- |
-| `-p, --package <name>` | 可重复字符串              | 不限制包           | `limina check -p @scope/pkg`                                  | 只影响支持包选择的任务                            |
+| `-p, --package <name>` | 可重复字符串              | 不限制包           | `limina check -p @scope/pkg`                                  | 包输出选择及源码报告筛选，见下文                  |
 | `--verbose`            | 布尔值                    | 输出精简摘要       | `limina check --verbose`                                      | 扩展实时运行摘要；配合 `--issues` 时输出详细卡片  |
 | `--rule <code>`        | 可重复字符串              | 不按规则过滤       | `limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING` | 作为问题查询时需要配合 `--issues`                 |
 | `--file <path>`        | 可重复路径                | 不按文件过滤       | `limina check --issues --file packages/a/src/index.ts`        | 匹配精确文件路径                                  |
@@ -243,7 +164,30 @@ checker:typecheck
 | `--invocation <uuid>`  | UUID                      | 读取最近检查       | `limina check --issues --invocation <uuid>`                   | 读取一条不可变的独立调用失败记录                  |
 | `--format <format>`    | `human`、`json`、`ndjson` | `human`            | `limina check --issues --format json`                         | 必须配合 `--issues`                               |
 
+运行时的 `--package` 传给 `package:check` / `release:check` 选择输出条目，并用于 `source:check` 的问题报告筛选；它不会把图检查、覆盖证明或检查器构建裁剪成单包任务。配合 `--issues` 时，`--package` 只是过滤已保存的问题。`--task` 也只用于问题查询，不能用它选择本次执行的任务。
+
+命令结束后还应查看[任务与分析器状态](./built-in-tasks.md#任务状态)。例如没有框架目标时 `checker:typecheck` 为 `disabled`；可选包分析器缺失可能为 `skipped`，同时进程正常退出。这些情况都不代表该项检查实际通过。
+
+#### 查询已有问题
+
+```sh
+pnpm exec limina check --issues
+pnpm exec limina check --issues --task workspace:validate
+pnpm exec limina check --issues --verbose --limit all
+pnpm exec limina check --issues --format json
+```
+
 `--issues` 不会重新运行检查。不带 `--invocation` 时，它会按最新已发布的 `limina check` 检查尝试验证问题清单。新尝试正在运行或已中断时，以前完成的 `last-run.json` 可能仍留在磁盘上，但查询不会把它作为当前结果返回。独立命令使用各自的调用记录。工作区验证失败也可以记录：可信的 `.limina` 快照命名空间在验证前创建，因此结构性失败可出现在 `workspace:validate` 任务下。首次读取检查问题清单前，先让一次 `limina check` 完成。
+
+若本次错误发生在配置发现、加载或执行计划建立阶段，检查尝试可能尚未登记，查询仍可能返回上一次完成记录。请先对照记录时间与本次终端错误；“当前结果不可用”也不等于“零问题”。
+
+::: details 最新尝试、快照版本与恢复
+
+不带 `--invocation` 的查询会验证结果是否属于最新检查尝试。检查尝试一旦发布，只有同一次尝试已完成，且元数据与版本 8 的快照一致时，`--issues` 才会返回问题清单。最新尝试处于 `running`（正在运行）、`interrupted`（已中断）、`aborted`（已终止）或 `persistence-failed`（持久化失败）状态，或者结果时效元数据损坏或不匹配时，查询会拒绝返回问题并以退出码 `1` 结束，不会回退到更早已完成的结果。必要元数据缺失时同样失败；只有 `latest-attempt` 与 `latest-completed` 元数据都不存在时，读取器才使用兼容旧快照的路径。人类可读格式（`human`）、JSON 与 NDJSON 输出会明确报告不可用状态；机器响应中表示不可用的 `status` 与零问题数不表示检查成功且没有问题。
+
+在检查尝试发布前发生的配置发现、配置验证或执行计划失败，不会替换上一份已完成的问题清单。如果进程恰好在写入 `last-run.json` 与结果时效索引之间退出，后续序号更高的成功检查会完整覆盖这两个文件，并自动恢复查询。
+
+:::
 
 问题输出分为四档：
 
@@ -268,7 +212,7 @@ checker:typecheck
 
 `--file` 做精确匹配，`--scope` 接受目录或通配模式。两者都接受工作区相对路径、`./` 路径、绝对路径以及两种斜杠形式。它们只匹配问题文件、包清单等带路径的候选；配置字段范围等诊断标签不会被当作路径。同一过滤项重复传入时，只需匹配其中任一项。
 
-检查快照使用版本 8 的数据格式，读取器也只接受版本 8。
+检查快照使用版本 8，读取器只接受该版本。
 
 辅助查询：
 
@@ -292,11 +236,11 @@ pnpm exec limina graph export
 pnpm exec limina graph export --view source --output graph.json
 ```
 
-`graph prepare` 根据检查器配置、源码 `tsconfig`、工作区包和源码导入关系生成 `.limina` 下的工程图与检查器入口。它适合在 `tsconfig`、检查器包含范围、源码结构或项目引用关系变化后运行。
+`graph prepare` 验证输入并生成 `.limina` 下的工程图与检查器入口，不运行图治理检查或编译器。受管构建和类型检查会自动物化所需文件；需要单独查看或刷新磁盘文件时再运行它。`graph check`、`source check` 和 `proof check` 在内存中计算图，不物化检查器配置。
 
 `graph check` 检查生成图与源码事实是否一致。它覆盖项目引用、源码图路由、条件域、引用完整性、图规则、工作区包依赖声明和部分解析边界。典型问题包括：源码导入对应的项目引用缺失；项目引用多余；跨包项目引用缺少依赖声明；图规则拒绝访问；工作区导入无法解析或目标不在工程图中。
 
-`graph export` 输出包级依赖图 `JSON`。`--view` 可取 `all`、`source` 或 `artifact`，默认是 `all`。不传 `--output` 时输出到标准输出；传入 `--output <path>` 时写入文件。导出的图可作为外部任务工具或分析工具的输入。
+`graph export` 输出包级依赖图 `JSON`。`--view` 可取 `all`、`source` 或 `artifact`，默认是 `all`。不传 `--output` 时输出到标准输出；传入 `--output <path>` 时写入文件。导出的图可供外部分析使用；它记录包级依赖事实，不定义任务顺序，尤其不能根据产物边推断生产构建计划。
 
 ### `limina source check`
 
@@ -413,7 +357,7 @@ pnpm exec limina release check --package @scope/pkg --verbose
 
 ## 排障
 
-下表第一列保留程序实际输出的英文诊断片段，便于检索；可能原因和处理方式使用中文说明。
+不确定从哪里排查时，先读[故障排查](./troubleshooting.md#先定位失败任务)。下表第一列保留程序实际输出的英文诊断片段，便于检索；可能原因和处理方式使用中文说明。
 
 | 症状或错误信息                                                                          | 可能原因                                                       | 处理方式                                                                            |
 | --------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |

@@ -1,10 +1,6 @@
 # 源码边界
 
-::: warning 注意
-`config.source` 定义被治理文件的边界，覆盖证明会用它判断哪些文件必须被检查器入口或允许清单覆盖。它不同于顶层 `source` 选项，后者配置源码导入授权和 `Knip` 驱动的源码使用检查。关于那个选项，请参见[源码检查](./source-checks.md)。
-:::
-
-`proof check` 根据 `config.source` 选出必须被检查器入口或允许清单覆盖的文件。
+`config.source` 选择被治理的源码文件。`proof check` 将这个集合与检查器入口、生成图项目和允许清单比较，找出遗漏文件或不一致的覆盖范围。顶层 `source` 则配置导入授权、环境声明和可选 Knip 检查，见[源码检查](./source-checks.md)。
 
 ```js
 import { defineConfig } from 'limina';
@@ -33,16 +29,6 @@ export default defineConfig({
 
 检查器扩展不会自动加入。如果希望默认 TypeScript 源码和 `packages/**/src` 下的 `Vue` 文件都进入治理，应展开默认集合并显式加入 Vue 通配模式。之后新增的匹配文件会自动进入源码和覆盖证明检查范围。
 
-```js
-export default defineConfig({
-  config: {
-    source: {
-      include: ['...', 'packages/**/src/**/*.vue'],
-    },
-  },
-});
-```
-
 ## `exclude`
 
 - **类型：** `string[]`
@@ -59,24 +45,14 @@ export default defineConfig({
 
 `liminaOptions.outputs.outDir` 相对于声明它的源码配置。Limina 只从结构可达、且尚未位于无条件包条目输出内的 `tsconfig` 读取它；在稳定的工作区输出计算中，该 `tsconfig` 保持可见时，声明才继续生效。
 
-例如 `include` 覆盖了 `packages/**/src/**/*.{ts,tsx,vue}` 后，新增这个文件：
+## 排除文件时要同步检查 `tsconfig`
 
-```ts
-// packages/core/src/generated/runtime.ts
-export const runtimeName = 'core';
-```
+`config.source.exclude` 只改变 Limina 的源码治理集合，不会改写检查器的 `files`、`include` 或导入后纳入的文件。若检查器或生成图仍覆盖这些文件，`proof check` 可以报告 `LIMINA_PROOF_SOURCE_BOUNDARY_MISMATCH`：两边描述的文件集合不同。
 
-如果它没有被检查器入口可达的项目覆盖，也没有写进 `proof.allowlist`，`limina proof check` 会将它报告为未覆盖源码。需要把测试夹具留在治理范围之外时，使用 `exclude` 排除对应目录。
+例如，`packages/core/src/generated/runtime.ts` 被源码边界排除，但仍在 `tsconfig.lib.json` 的有效文件集合中，单独添加排除项并不能解决覆盖问题。应按文件的实际用途选择：
 
-示例目录如下：
+- 它属于项目源码：保留在 `config.source` 中，并让一个源码叶子配置拥有它。
+- 它不属于本次治理：同时调整相关 `tsconfig` 的覆盖范围；还需留意导入是否会把它重新带入检查器。
+- 它留在治理范围内，却有意没有普通覆盖：使用带原因的[覆盖证明允许清单](./proof-allowlist.md)。
 
-```text
-packages/core/
-  src/index.ts
-  src/generated/runtime.ts
-  tsconfig.lib.json
-```
-
-`config.source.include` 覆盖了 `packages/**/src/**/*.{ts,tsx,vue}`，所以 `src/generated/runtime.ts` 会被视为被治理源码。运行 `pnpm exec limina proof check` 时，Limina 会收集 `include` 命中的源码文件，再检查它们是否被图项目、检查器入口或 `proof.allowlist` 覆盖。
-
-如果 `runtime.ts` 没有被任何检查器覆盖，结果是覆盖证明检查失败，并把这个文件列为未覆盖源码。若它其实是测试夹具或缓存，就把对应目录写进 `exclude`；若它是有意例外，就写进 `proof.allowlist` 并说明原因。
+覆盖允许清单只解释未覆盖文件，不用来消除边界外仍有检查器覆盖的问题。
