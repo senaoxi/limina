@@ -3,6 +3,7 @@ packages:
   - smoke
   - packages/*
   - '!**/dist'
+
 allowBuilds:
   esbuild: true
 auditConfig:
@@ -47,6 +48,7 @@ auditConfig:
 
 autoInstallPeers: false
 catalogMode: strict
+
 catalogs:
   dev:
     husky: ^9.1.7
@@ -130,7 +132,7 @@ catalogs:
     oxc-resolver: ^11.24.2
     picomatch: ^4.0.5
     tinyglobby: ^0.2.17
-    vue: ^3.5.39
+    vue: ^3.5.43
   security-patches:
     brace-expansion: 5.0.12
     devalue: 5.9.3
@@ -146,6 +148,7 @@ catalogs:
     svelte-check-v4-min: npm:svelte-check@4.0.0
     svelte-v4-min: npm:svelte@4.0.0
     jsdom: ^28.0.0
+
 cleanupUnusedCatalogs: true
 dedupeInjectedDeps: false
 enablePrePostScripts: false
@@ -157,6 +160,7 @@ minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - logaria@0.0.4
 nodeVersion: 22.18.0
+
 overrides:
   # Repair only the newly introduced deployment graph; keep both regexp API majors.
   '@vercel/fun>tar': catalog:deployment-patches
@@ -185,21 +189,25 @@ overrides:
   typescript: ~6.0.3
   shell-quote: 1.10.0
   postcss: ^8.5.23
-  smol-toml: 1.7.1
+  smol-toml: 1.9.0
+
 packageExtensions:
   '@pnpm/manifest-utils@*':
     dependencies:
       '@pnpm/logger': 1001.0.1
+
 patchedDependencies:
   '@vueuse/core': patches/@vueuse__core@12.8.2.patch
   vite@5.4.21: patches/vite@5.4.21.patch
   vitepress: patches/vitepress@1.6.4.patch
+
 patchesDir: patches
 publishBranch: main
 sharedWorkspaceLockfile: true
 shellEmulator: true
 strictDepBuilds: true
 strictPeerDependencies: true
+
 trustPolicy: no-downgrade
 trustPolicyExclude:
   - vite@5.4.21
