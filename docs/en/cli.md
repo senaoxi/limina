@@ -128,6 +128,8 @@ Migration does not install framework dependencies, run `astro sync`, or rewrite 
 
 `check` is the daily entry point. It checks structure and runs type checkers; `checker:build` writes internal declarations and does not produce the production bundle.
 
+`limina check [pipeline] --no-analysis-cache` runs without reading or writing Limina’s persistent analysis cache. Use it after operations that may preserve or roll back file timestamps. Checker build caches keep their own behavior. Persistent native fact reuse currently targets TypeScript 6.0.3; unproven framework or custom-provider contexts are analyzed afresh. This option cannot be combined with `--issues`, which only queries an existing result.
+
 ```sh
 pnpm exec limina check
 pnpm exec limina check ci

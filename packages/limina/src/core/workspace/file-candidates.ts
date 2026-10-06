@@ -1,3 +1,4 @@
+import { observeAnalysisRead } from '#utils/analysis-input';
 import {
   normalizeAbsolutePath,
   toPosixPath,
@@ -74,19 +75,28 @@ async function collectPackageCandidates(
   context: ValidatedWorkspaceContext,
   packageDirectory: string,
 ): Promise<string[]> {
-  return glob('**/*', {
-    absolute: true,
-    cwd: packageDirectory,
-    dot: true,
-    followSymbolicLinks: false,
-    ignore: [
-      '**/.git/**',
-      '**/.limina/**',
-      '**/node_modules/**',
-      ...new Set(collectStructuralIgnores(context, packageDirectory)),
-    ],
-    onlyFiles: true,
+  const read = () =>
+    glob('**/*', {
+      absolute: true,
+      cwd: packageDirectory,
+      dot: true,
+      followSymbolicLinks: false,
+      ignore: [
+        '**/.git/**',
+        '**/.limina/**',
+        '**/node_modules/**',
+        ...new Set(collectStructuralIgnores(context, packageDirectory)),
+      ],
+      onlyFiles: true,
+    });
+  const value = await read();
+  observeAnalysisRead({
+    path: packageDirectory,
+    key: `candidates:${packageDirectory}`,
+    value,
+    read,
   });
+  return value;
 }
 
 export async function collectActivatedPackageFileCandidates(

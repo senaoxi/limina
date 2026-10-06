@@ -1,3 +1,4 @@
+import { observeAnalysisRead } from '#utils/analysis-input';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
@@ -48,6 +49,17 @@ export function createProjectParseHost(
   if (recorder === undefined) return base;
   return {
     ...base,
+    readDirectory: (...arguments_) => {
+      const read = () => base.readDirectory(...arguments_);
+      const value = read();
+      observeAnalysisRead({
+        path: arguments_[0],
+        key: JSON.stringify(['config-files', arguments_]),
+        value,
+        read,
+      });
+      return value;
+    },
     readFile(fileName, encoding): string | undefined {
       const content = base.readFile(fileName, encoding);
       if (content !== undefined) {

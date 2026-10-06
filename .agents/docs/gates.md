@@ -31,3 +31,5 @@ These are mechanical checks. [Dependency admission](./dependency-admission.md), 
 ## Regression owners
 
 The [staged-gate tests](../../packages/gates/src/commit/staged.spec.ts) exercise real rejected/accepted Git commits, index authority, malformed inputs and unchanged HEAD/index/worktree. Existing [Git hook](../../scripts/git/hooks.spec.ts), [release](../../scripts/release/publication.spec.ts), [tag CLI](../../scripts/release/check-tag-cli.spec.ts), [workflow](../../scripts/release/workflow.spec.ts) and [privacy](../../scripts/docs/privacy.spec.ts) tests retain their process and integration boundaries while using the package. The package's ESLint tests retain the existing parser/rule regressions. Root `test:tooling` executes both groups.
+
+Fixture repositories ignore installed `node_modules` before staging their baseline. Git can traverse Windows directory junctions as dependency files, while POSIX directory symlinks can themselves enter the index. The staged-gate regression checks that Git's actual index contains no runtime dependencies, so commits exercise only owned fixture inputs. The real hook and staged whitespace check remain active.

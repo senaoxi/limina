@@ -26,6 +26,8 @@
 | 改变 CI、安全、报告或外部 workflow 集成                    | [基础设施](./infrastructure.md)             |
 | 核对本地迁移范围与远程／发布／部署门禁                     | [迁移](./migration.md)                      |
 
+持久化 importer 有效性及 provider 支持边界由[语义记录](./semantics.md#持久化-importer-有效性)维护；mtime 检查点、冷分析、epoch 与快照发布由[生命周期](./lifecycle.md#原生持久化分析缓存)维护。
+
 ## 双语发布与维护
 
 英文主题位于 `.agents/docs/<name>.md`，完整中文对应版本位于 `.agents/docs/zh/<name>.md`。两个文件必须同名且均由 Git 跟踪；它们是同一个 prose owner 的两种语言版本。

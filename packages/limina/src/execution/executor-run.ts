@@ -44,6 +44,7 @@ export async function runExecutionPlanWithController(
     try {
       const context = createSchedulerContext(plan, options, controller);
       await runScheduler(context);
+      await options.preflight.publishAnalysisCache();
       const completedOutcome = createCompletedRunOutcome(
         context.orderedTasks,
         context.outcomes,

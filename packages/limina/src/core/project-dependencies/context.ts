@@ -16,6 +16,7 @@ import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-ref
 import type { ProjectSemanticContext } from './contracts';
 
 interface SemanticContextProject {
+  analysisChecker?: string;
   virtualFiles?: ReadonlyMap<string, string>;
   analysisGeneration: number;
   astroSemanticProject?: AstroSemanticProject;
@@ -37,6 +38,7 @@ function createContext(options: {
   project: SemanticContextProject;
 }): ProjectSemanticContext {
   return {
+    analysisChecker: options.project.analysisChecker,
     virtualFiles: options.project.virtualFiles,
     astroSemanticProject: options.project.astroSemanticProject,
     compilerOptions: options.project.options,
@@ -106,6 +108,7 @@ export function createAutoProjectSemanticContext(options: {
     authority: options.authority,
     project: {
       virtualFiles: options.project.virtualFiles,
+      analysisChecker: options.project.context.checkerPresets.join(':'),
       analysisGeneration: options.project.analysisGeneration,
       astroSemanticProject:
         options.authority.family === 'astro'
@@ -160,6 +163,7 @@ export function createSourceProjectSemanticContext(options: {
     project: {
       virtualFiles: options.project.virtualFiles,
       analysisGeneration: getSourceAnalysisGeneration(options.project),
+      analysisChecker: options.project.checkerName,
       astroSemanticProject: getSourceAstroProject(options.source),
       configPath: options.project.configPath,
       extensions: options.project.context.extensions,
@@ -193,6 +197,7 @@ export function createParsedProjectSemanticContext(options: {
     project: {
       analysisGeneration: options.project.analysisGeneration,
       virtualFiles: options.project.virtualFiles,
+      analysisChecker: options.project.checkerPresets.join(':'),
       astroSemanticProject: options.project.astroSemanticProject,
       configPath: options.project.configPath,
       extensions: options.project.extensions,
