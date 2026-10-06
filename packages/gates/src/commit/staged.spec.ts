@@ -23,6 +23,7 @@ function createFixture() {
     writeFileSync(target, value);
   };
   put('package.json', '{"type":"module"}\n');
+  put('.gitignore', 'node_modules/\n');
   for (const file of ['licenses.ts', 'repo.ts', 'commit/staged.ts']) {
     const target = path.join(root, 'packages/gates/src', file);
     mkdirSync(path.dirname(target), { recursive: true });
@@ -99,6 +100,7 @@ it('blocks a real commit using the index when an unstaged repair would pass, wit
     fixture.put('.agents/docs/license-policy.md', policy);
     fixture.put('.github/dependency-review-config.yml', review);
     fixture.git('add', '.');
+    assert.equal(fixture.git('ls-files', '--', 'node_modules'), '');
     fixture.git('commit', '--quiet', '-m', 'fixture baseline');
     const head = fixture.git('rev-parse', 'HEAD');
     fixture.put(
