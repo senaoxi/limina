@@ -17,7 +17,7 @@ pnpm run docs:build
 
 The private root orchestrates the monorepo. `packages/limina` and `packages/migrate` own the public `limina` and `limina-migrate` packages. They form one same-version release group; the migration package embeds the matching core implementation at build time. Publication targets only their generated `dist` directories. Docs, smoke and shared scripts stay at the root; build/lint tools compile first. Fixtures retain independent workspace and lockfile boundaries.
 
-Use `lint:fix` or `format:write` only when you intend to modify files. Clean commands remove their own generated output. Preserve fixture lockfiles, independent workspace boundaries, and all existing test contracts. Use `docs:dev` and `docs:preview` for the bilingual documentation workspace. Read [AGENTS.md](AGENTS.md) for validation and bilingual record maintenance.
+Use `lint:fix` or `format:write` only when you intend to modify files. Clean commands remove their own generated output. Preserve fixture lockfiles, independent workspace boundaries, and all existing test contracts. Use `docs:dev` and `docs:preview` for the bilingual documentation workspace. Read [AGENTS.md](AGENTS.md) and the project context it routes to before changes that depend on repository architecture or machine-enforced boundaries; they also define validation and bilingual record maintenance.
 
 Publishing uses manual dispatch and the Release environment. Deployment and source-repository retirement retain their separate migration gates.
 

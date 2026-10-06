@@ -1,8 +1,8 @@
 # Limina Core Invariants
 
-[English](../limina-invariants.md) | [简体中文](./limina-invariants.md)
+[English](../invariants.md) | [简体中文](./invariants.md)
 
-这里登记 12 条会影响系统正确性的性质。它们来自当前实现，不声称永久设计意图。`Confirmed` 表示生产类型/控制流直接支持；运行样例及未覆盖条件见[审计](./limina-architecture-audit.md)。完整定义分别归[系统模型](./limina-system-model.md)、[语义事实](./limina-semantics.md)、[生命周期](./limina-lifecycle.md)，本页拥有 invariant 的约束、解释与 evidence matrix。
+这里登记 12 条会影响系统正确性的性质。它们来自当前实现，不声称永久设计意图。`Confirmed` 表示生产类型/控制流直接支持；运行样例及未覆盖条件见[审计](./architecture-audit.md)。完整定义分别归[系统模型](./system-model.md)、[语义事实](./semantics.md)、[生命周期](./lifecycle.md)，本页拥有 invariant 的约束、解释与 evidence matrix。
 
 **Enforcement strength**：Strongly executable 表示作用范围内有直接类型或运行时 guard，并有反例测试；Partially executable 表示主要生产路径受保护，但仍依赖调用方生命周期/输入契约；Prose-only 表示没有机械 guard。测试存在和本次测试通过分开记录，不以行数或测试数量代替覆盖判断。
 
@@ -11,15 +11,15 @@
 - **Statement / Applies when**：所选配置最近的 package.json 固定治理根及配置解析 generation 中已验证的 manifest fact，只有同根 workspace 语义决定成员分类。graph/source/proof 使用该根激活的包投影 authority；raw package discovery 仅为输入证据。对已激活 package，重复 physical identity、非法 overlap/boundary 必须先失败。
 - **Problem**：被排除或另属 nested workspace 的包若仍参与 owner 选择，就可能错误授权 import 或写输出。
 - **Root cause**：package manager 发现范围、逻辑目录和治理范围是不同集合；symlink alias 又会使一个物理包有两个名字。
-- **Enforcement / Why it works**：[validated create](../../../packages/limina/src/core/workspace/validated/create.ts) 先校验 exclusions、islands、overlap、package identities 与 output authority，后发布 context；[package-identities](../../../packages/limina/src/core/workspace/validated/package-identities.ts) 拒绝重复 canonical directory。下游运行时 package/owner/boundary 查询通过 WorkspaceRegionPathIndex / WorkspaceLookupIndex 使用 canonical Governance Trie；package/owner 数组不能通过 directory containment 重建该 authority。construction 与局部关系的边界见 [region index owner](./limina-system-model.md#validated-region-的内部查询索引)。
+- **Enforcement / Why it works**：[validated create](../../../packages/limina/src/core/workspace/validated/create.ts) 先校验 exclusions、islands、overlap、package identities 与 output authority，后发布 context；[package-identities](../../../packages/limina/src/core/workspace/validated/package-identities.ts) 拒绝重复 canonical directory。下游运行时 package/owner/boundary 查询通过 WorkspaceRegionPathIndex / WorkspaceLookupIndex 使用 canonical Governance Trie；package/owner 数组不能通过 directory containment 重建该 authority。construction 与局部关系的边界见 [region index owner](./system-model.md#validated-region-的内部查询索引)。
 - **Concrete example**：`workspace-validation.spec.ts` 的 package alias / nested boundary 用例挑战同一物理包被双重激活；另一个无 name 的包仍可拥有 source，只有依赖 name 的 graph export 要求名称。`workspace-directory-index.spec.ts` 中，A activation → B cut → C activation 必须经 path index 与 package/owner lookup facade 均返回 A / null+B / C，并覆盖 external packages。`workspace-package-scope.spec.ts` 中，无名称 activated package 的真实路径与子目录 alias 均不能获取包外祖先的名称；最近 manifest 的路径保留所选 package 的原有身份。
 - **Protected property**：治理归属唯一、范围隔离、输出授权不扩大。
 - **Evidence / Strength / Confidence**：[workspace tests](../../../packages/limina/src/__tests__/workspace-validation.spec.ts)、[region/facade guards](../../../packages/limina/src/__tests__/workspace-directory-index.spec.ts)、[package-scope guards](../../../packages/limina/src/__tests__/workspace-package-scope.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：canonical package 校验不能证明任意 config alias 都已物理合并；name-based graph 和 path-based source owner 不能合成一个 identity。
 
-- **Discovery guard**：`governance-root.spec.ts` 挑战配置选择、最近 manifest fail-fast、祖先独立性、共享根 manifest 内容、workspace manager 必需与 single manager 可选。`workspace-discovery.spec.ts` 保留同根 descriptor 优先级、显式 manager 优先、所消费声明投影、manager-specific selection 和 lexical alias。`single-package-knip.spec.ts` 将 validated canonical identity 贯通无名称 dependency/owner 匹配，并拒绝重复物理根。即使 manager identity 缺失或开启 nameless-scope extension，嵌套 workspace 声明仍是 hard cut。兼容边界见[发现 authority](./limina-system-model.md#工作区发现-authority)。
+- **Discovery guard**：`governance-root.spec.ts` 挑战配置选择、最近 manifest fail-fast、祖先独立性、共享根 manifest 内容、workspace manager 必需与 single manager 可选。`workspace-discovery.spec.ts` 保留同根 descriptor 优先级、显式 manager 优先、所消费声明投影、manager-specific selection 和 lexical alias。`single-package-knip.spec.ts` 将 validated canonical identity 贯通无名称 dependency/owner 匹配，并拒绝重复物理根。即使 manager identity 缺失或开启 nameless-scope extension，嵌套 workspace 声明仍是 hard cut。兼容边界见[发现 authority](./system-model.md#工作区发现-authority)。
 
-**Migration 输入守卫**：精确 `tsconfig` 排除在 outputs 声明读取前生效，不改变 package 激活。可选 outputs 试加入复用完整 reader，保护入口、managed source 与每个 solution 的可达集合；仅 descriptor 数量不能授予接受资格。[Migration 拓扑测试](../../../packages/migrate/src/__tests__/migration-topology.spec.ts)与[新进程 CLI 覆盖](../../../packages/migrate/integration/tests/migration.spec.ts)覆盖自隐藏、稳定隐藏正常成员、缺源码保留、空输入隔离、域外目标内容／路径探测规避及 solution 声明展开。输入消费只验证声明可读与激活范围，checker mapping 留给正常语义分析。完整行为归[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)所有。
+**Migration 输入守卫**：精确 `tsconfig` 排除在 outputs 声明读取前生效，不改变 package 激活。可选 outputs 试加入复用完整 reader，保护入口、managed source 与每个 solution 的可达集合；仅 descriptor 数量不能授予接受资格。[Migration 拓扑测试](../../../packages/migrate/src/__tests__/migration-topology.spec.ts)与[新进程 CLI 覆盖](../../../packages/migrate/integration/tests/migration.spec.ts)覆盖自隐藏、稳定隐藏正常成员、缺源码保留、空输入隔离、域外目标内容／路径探测规避及 solution 声明展开。输入消费只验证声明可读与激活范围，checker mapping 留给正常语义分析。完整行为归[迁移生命周期](./lifecycle.md#migration-是另一种事务)所有。
 
 ## I02 — semantic authority 不随 final checker owner 改写
 
@@ -59,7 +59,7 @@
 
 ## I05 — TypeEvidence 与 referenceRequirement 独立保真
 
-- **Statement / Applies when**：原生事实分别记录类型供给与 compiler relation 需求；evidence 表达 bounded scope 中实际 provider（包括 missing），requirement 表达候选 compiler relation。完整真值表归[语义事实](./limina-semantics.md#occurrence证据与建图需求)。
+- **Statement / Applies when**：原生事实分别记录类型供给与 compiler relation 需求；evidence 表达 bounded scope 中实际 provider（包括 missing），requirement 表达候选 compiler relation。完整真值表归[语义事实](./semantics.md#occurrence证据与建图需求)。
 - **Problem**：为了建边重分类 ambient 会说错类型来源；看到 ambient 就停止建边又会漏掉必要 compiler membership。
 - **Root cause**：symbol 的类型供给和 compiler 对 source implementation 的输入关系并不是同一命题。
 - **Enforcement / Why it works**：[dependency-fact](../../../packages/limina/src/core/typescript-semantic/dependency-fact.ts) 区分物理 resolution、原目标 admission、provider proof 与 requirement；[provider evidence](../../../packages/limina/src/core/typescript-semantic/provider-evidence.ts) 检查 occurrence Symbol/Program 对象身份及实际 compiler input，Core 保留原生结果；[native-dependency](../../../packages/limina/src/core/project-dependencies/native-dependency.ts) 保留 fact，只有 ambient 且无 requirement 才作为纯 observation。
@@ -112,7 +112,7 @@
 - **Evidence / Strength / Confidence**：[preflight tests](../../../packages/limina/src/__tests__/preflight.spec.ts)、[context tests](../../../packages/limina/src/__tests__/typescript-semantic-context.spec.ts)；**Partially executable / Confirmed**。
 - **Boundaries**：外部复用 caches 必须尊重 lifecycle；key 没有普遍 file-content digest；manager ensure-after-dispose 没有统一 guard；Vue active slot 的共享模式另见生命周期页。
 
-**规划输入 identity**：Migration 配置 overlay 纳入 semantic/provider cache identity，并贯穿 parser、ownership 与 TypeScript host。原生 reference 清单与规范化 source 输入上的推导相分离。Outputs 试加入只在封闭 reader 内复用单次发现快照，重新验证候选输出与物理 authority；末次规划和磁盘消费重新发现。已读取的 manifest 与 workspace descriptor 也纳入写入前漂移检查。Migration bundle 将 provider、namespace、错误类和 writer 的生产消费作为整体内联；新进程 worker 使用同一内嵌源码版本重新读取磁盘，不借用规划 context。包版本元数据观察不成为 semantic evidence。构建源码来源守卫、配对发布守卫与打包消费者测试挑战旧 dist、self metadata 不一致及 worker 资源缺失。这是 generation 内的输入边界，不是持久 read-view runtime；见[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)。
+**规划输入 identity**：Migration 配置 overlay 纳入 semantic/provider cache identity，并贯穿 parser、ownership 与 TypeScript host。原生 reference 清单与规范化 source 输入上的推导相分离。Outputs 试加入只在封闭 reader 内复用单次发现快照，重新验证候选输出与物理 authority；末次规划和磁盘消费重新发现。已读取的 manifest 与 workspace descriptor 也纳入写入前漂移检查。Migration bundle 将 provider、namespace、错误类和 writer 的生产消费作为整体内联；新进程 worker 使用同一内嵌源码版本重新读取磁盘，不借用规划 context。包版本元数据观察不成为 semantic evidence。构建源码来源守卫、配对发布守卫与打包消费者测试挑战旧 dist、self metadata 不一致及 worker 资源缺失。这是 generation 内的输入边界，不是持久 read-view runtime；见[迁移生命周期](./lifecycle.md#migration-是另一种事务)。
 
 ## I10 — mutation 权限不能从路径字符串推导
 
@@ -125,7 +125,7 @@
 - **Evidence / Strength / Confidence**：[mutation tests](../../../packages/limina/src/__tests__/mutation-boundary.spec.ts)、[materialization recovery](../../../packages/limina/src/__tests__/materialization-recovery.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：raw external build、export 用户文件和 migration 是不同 writer contract；不能推广成所有写入经过同一个 namespace，或绝无 OS race。
 
-**Migration 写入边界**：冻结补丁使用隔离的一致性组及既有物理 identity/rollback 守卫。Report 发布失败绝不回滚已提交配置。接入成功还要求新进程消费实际磁盘拓扑；必要写入失败即使伴随其他组成功，也仍为未完成。分析不完整与可消费性分别报告；异常尝试尽可能发布失败审计，不能回退成旧成功。见[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)。
+**Migration 写入边界**：冻结补丁使用隔离的一致性组及既有物理 identity/rollback 守卫。Report 发布失败绝不回滚已提交配置。接入成功还要求新进程消费实际磁盘拓扑；必要写入失败即使伴随其他组成功，也仍为未完成。分析不完整与可消费性分别报告；异常尝试尽可能发布失败审计，不能回退成旧成功。见[迁移生命周期](./lifecycle.md#migration-是另一种事务)。
 
 ## I11 — artifact 发布失败留下可识别的不完整状态
 
@@ -173,6 +173,6 @@
 ## Supporting invariants 与 implementation details
 
 - [architecture-boundaries.spec.ts](../../../packages/limina/src/__tests__/architecture-boundaries.spec.ts) 保护选定生产 materializer/controller caller 和相对 runtime import SCC。扫描不完整覆盖 alias、dynamic import、namespace call、re-export tracing，也不证明任意隐式依赖无环。这是 supporting module-boundary guard，不能上升为“整个系统所有依赖静态无环”。
-- portable `/` path、code-unit sorting、snapshot schema versions、manifest legacy cleanup policy、Svelte source-map 不重复 rebasing Windows drive 都是重要 supporting contracts；归各 source/tests 与[生命周期页](./limina-lifecycle.md)。
+- portable `/` path、code-unit sorting、snapshot schema versions、manifest legacy cleanup policy、Svelte source-map 不重复 rebasing Windows drive 都是重要 supporting contracts；归各 source/tests 与[生命周期页](./lifecycle.md)。
 - helper 命名、目录层数、active context slot 数量、默认 timeout、adapter version tag 是 implementation details；只有当改动影响上述 core 性质时才触发 architecture review。
 - 产品受众、长期插件扩展、兼容承诺与为何选某工具链是 human judgments。不能用测试写死尚未决定的方向。
