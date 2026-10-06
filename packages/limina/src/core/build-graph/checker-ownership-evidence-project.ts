@@ -19,6 +19,7 @@ import type {
 export interface EvidenceProject {
   checkerName: CheckerName;
   project: {
+    analysisBinding: { phase: 'pending' | 'locked'; checker: string };
     virtualFiles?: ReadonlyMap<string, string>;
     checkerPresets: CheckerProjectParseContext['checkerPresets'];
     configPath: string;
@@ -167,6 +168,10 @@ export function createEvidenceProject(options: {
   return {
     checkerName,
     project: {
+      analysisBinding: {
+        phase: options.state.semanticAuthority.kind,
+        checker: checkerName,
+      },
       virtualFiles: options.project.virtualFiles,
       checkerPresets: [checkerName],
       astroSemanticProject: getAstroSemanticProject(semanticContext),

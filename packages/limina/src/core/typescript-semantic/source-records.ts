@@ -1,5 +1,6 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptInclusionLedger } from './admission';
 import { findDirectiveRecord } from './import-record';
@@ -10,6 +11,8 @@ import type { SourceSyntaxFactsCache } from './syntax-cache';
 import type { OwnedSyntaxInput } from './syntax-input';
 
 export function collectSemanticSourceRecords(options: {
+  analysisCache?: NativeAnalysisCache;
+  analysisContextId?: string;
   admission: TypeScriptInclusionLedger;
   contextIdentity: string;
   ledger: TypeScriptResolutionLedger;
@@ -33,6 +36,8 @@ export function collectSemanticSourceRecords(options: {
 }
 
 function admitExplicitReferences(options: {
+  analysisCache?: NativeAnalysisCache;
+  analysisContextId?: string;
   admission: TypeScriptInclusionLedger;
   contextIdentity: string;
   filePath: string;
@@ -72,6 +77,8 @@ function nextOccurrence(
 }
 
 function storeExplicitReference(options: {
+  analysisCache?: NativeAnalysisCache;
+  analysisContextId?: string;
   contextIdentity: string;
   ledger: TypeScriptResolutionLedger;
   record: ImportRecord | undefined;
@@ -84,6 +91,8 @@ function storeExplicitReference(options: {
       contextIdentity: options.contextIdentity,
       importRecord: options.record,
       tsModule: options.tsModule,
+      analysisCache: options.analysisCache,
+      analysisContextId: options.analysisContextId,
     }),
   );
 }

@@ -29,6 +29,7 @@ export interface ResolveImportEvidenceOptions {
     | 'svelteSemanticProject'
     | 'vueSemanticIdentity'
   > & {
+    analysisBinding?: { phase: 'pending' | 'locked'; checker: string };
     projectReferences?: readonly ts.ProjectReference[];
     semanticFamily?: 'astro' | 'svelte' | 'typescript' | 'vue';
   };

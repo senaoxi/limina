@@ -1,3 +1,4 @@
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { cloneTypeEvidence } from '../framework-semantic/prepared-dependency';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeEvidence } from '../type-evidence/cache';
@@ -19,8 +20,10 @@ export {
 
 export function createProjectDependencyCaches(
   syntaxFacts?: SourceSyntaxFactsCache,
+  analysisCache?: NativeAnalysisCache,
 ): ProjectDependencyCaches {
   return {
+    analysisCache,
     syntaxFacts,
     pendingOwnershipEvidenceCache: new Map(),
     projectDependencyCache: new Map(),

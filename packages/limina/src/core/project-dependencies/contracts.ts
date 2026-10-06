@@ -7,6 +7,7 @@ import type {
   ImportRecord,
 } from '#core/import-analysis/runner';
 import type ts from 'typescript';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-types';
 import type { PreparedDependencyFact } from '../framework-semantic/contracts';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
@@ -26,6 +27,7 @@ import type {
 import type { ProjectDependencyEvidence } from './evidence';
 
 export interface ProjectSemanticContext {
+  analysisChecker?: string;
   virtualFiles?: ReadonlyMap<string, string>;
   astroSemanticProject?: AstroSemanticProject;
   compilerOptions: ts.CompilerOptions;
@@ -148,6 +150,7 @@ export interface ProjectDependencyRequest {
 }
 
 export interface ProjectDependencyCaches {
+  readonly analysisCache?: NativeAnalysisCache;
   readonly syntaxFacts?: SourceSyntaxFactsCache;
   pendingOwnershipEvidenceCache: Map<string, unknown>;
   projectDependencyCache: Map<string, ProjectDependencyCollection>;

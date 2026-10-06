@@ -164,17 +164,13 @@ function createPlan(options: {
       );
 }
 
-function getPipelineName(pipeline: string | undefined): string {
-  return pipeline === undefined ? 'default' : pipeline;
-}
-
 function createRecorder(
   context: CheckExecutionContext,
 ): ReturnType<typeof createCheckRunRecorder> {
   return createCheckRunRecorder({
     command: context.command,
     configPath: context.config.configPath,
-    pipeline: getPipelineName(context.pipeline),
+    pipeline: context.pipeline ?? 'default',
     plannedTasks: context.plan.tasks,
     rootDir: context.config.rootDir,
   });
@@ -241,7 +237,11 @@ async function createExecutionContext(options: {
   const config = await loadCliConfig(options.flags, 'check');
   const command = createCommandLabel(options.pipeline);
   const metrics = createProfileMetrics();
-  const preflight = new LiminaPreflightManager({ config, metrics });
+  const preflight = new LiminaPreflightManager({
+    config,
+    metrics,
+    analysisCache: options.flags.analysisCache !== false,
+  });
   const profileSession = await createProfileSessionIfEnabled({
     command,
     metrics,

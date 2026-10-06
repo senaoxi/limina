@@ -63,6 +63,7 @@ async function runCheckAction(
   flags: CheckFlags,
 ): Promise<void> {
   assertStandaloneIssuesFlag(pipeline, flags);
+  assertAnalysisCacheFlags(flags);
   if (flags.issues === true) {
     await showIssueInventory(flags);
     return;
@@ -88,6 +89,10 @@ export function registerCheckCommand(cli: LiminaCli): void {
     .option('--checker <name>', 'Filter issue inventory by checker')
     .option('--issues', 'Show issues from the last completed check')
     .option(
+      '--no-analysis-cache',
+      'Disable persistent Limina analysis cache reads and writes',
+    )
+    .option(
       '--limit <limit>',
       'Limit human issue cards to a positive integer or all',
     )
@@ -103,4 +108,9 @@ export function registerCheckCommand(cli: LiminaCli): void {
     assertCheckRuntimeArguments(cli);
     checkUnknownOptions();
   };
+}
+
+function assertAnalysisCacheFlags(flags: CheckFlags): void {
+  if (flags.issues === true && flags.analysisCache === false)
+    throw new Error('--no-analysis-cache cannot be combined with --issues.');
 }

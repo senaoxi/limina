@@ -4,10 +4,9 @@ import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import type * as CheckerRoutes from '#core/tsconfig/actions';
 import type * as Workspace from '#core/workspace/actions';
-import {
-  type AnalysisMetricsRecorder,
-  type AnalysisRun,
-  createAnalysisRun,
+import type {
+  AnalysisMetricsRecorder,
+  AnalysisRun,
 } from '../application/analysis/analysis-run';
 import type { WorkspaceDependencyDeclaration } from '../core/packages/authority';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
@@ -17,29 +16,13 @@ import {
   createLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
 } from '../domain/artifacts/namespace';
-import { identifier } from '../domain/shared/identifiers';
-import {
-  createPackageEntrySelectionPlan,
-  type PackageEntrySelectionPlan,
-} from '../package-check/entry/selection';
+import type { PackageEntrySelectionPlan } from '../package-check/entry/selection';
+import type { AnalysisCacheController } from './analysis-cache';
 import { PreflightGenerationCache } from './cache';
 import { registerPreflightGenerationAdvancer } from './generation';
 import { ensurePreflightGraphMaterialized } from './materialization';
-import {
-  loadCheckerEntryProjectRoutes,
-  loadCheckerRouteSnapshot,
-  loadExpectedSourceFiles,
-  loadGeneratedGraph,
-  loadGraphProjectRoutes,
-  loadSourceGraphProjectExtensions,
-  loadWorkspacePackages,
-} from './queries';
-import {
-  resolveArtifactNamespace,
-  resolveMetrics,
-  resolveProviders,
-  resolveSignal,
-} from './setup';
+import * as queries from './queries';
+import * as setup from './setup';
 import type {
   LiminaPreflightManagerOptions,
   MaterializationReceipt,
@@ -63,6 +46,7 @@ export class LiminaPreflightManager {
   #providerGeneration = 0;
 
   readonly #usesCustomProviders: boolean;
+  readonly #analysisCache: AnalysisCacheController | undefined;
 
   #disposed = false;
 
@@ -77,12 +61,17 @@ export class LiminaPreflightManager {
   constructor(options: LiminaPreflightManagerOptions) {
     this.config = options.config;
     this.#generatedGraphProvider = options.generatedGraphProvider;
-    this.#metrics = resolveMetrics(options);
+    this.#metrics = setup.resolveMetrics(options);
     this.#profilingMetrics = options.metrics;
-    this.#signal = resolveSignal(options);
+    this.#signal = setup.resolveSignal(options);
     this.#usesCustomProviders = options.providers !== undefined;
-    this.artifactNamespace = resolveArtifactNamespace(options);
-    this.providers = resolveProviders({
+    this.artifactNamespace = setup.resolveArtifactNamespace(options);
+    this.#analysisCache = setup.createAnalysisCache(
+      options,
+      this.artifactNamespace,
+    );
+    this.providers = setup.resolveProviders({
+      analysisCache: this.#analysisCache?.cache,
       artifactNamespace: this.artifactNamespace,
       managerOptions: options,
     });
@@ -93,7 +82,7 @@ export class LiminaPreflightManager {
   }
 
   #ensureCheckerRouteSnapshot(): Promise<CheckerRoutes.CheckerRouteSnapshotCollection> {
-    this.#cache.checkerRouteSnapshot ??= loadCheckerRouteSnapshot(
+    this.#cache.checkerRouteSnapshot ??= queries.loadCheckerRouteSnapshot(
       this.config,
       this.ensureGeneratedGraph(),
       () => this.run.metrics,
@@ -116,11 +105,10 @@ export class LiminaPreflightManager {
     isAdvance: boolean,
     slot?: PreflightGenerationCache['materializationSlot'],
   ): void {
-    if (this.#disposed) {
-      throw new Error('Preflight manager has been disposed.');
-    }
+    this.#assertActive();
     this.#assertDefaultProvidersCanAdvance();
     this.#disposeProviders();
+    const analysisCache = this.#refreshAnalysis();
     if (isAdvance) this.#generation += 1;
     this.#providerGeneration += 1;
     this.#cache = new PreflightGenerationCache(this.#generation, slot);
@@ -132,6 +120,7 @@ export class LiminaPreflightManager {
       this.config,
       this.artifactNamespace,
       this.#profilingMetrics,
+      { analysisCache },
     );
     this.run = this.#createRun();
   }
@@ -140,19 +129,47 @@ export class LiminaPreflightManager {
     this.providers.dispose?.();
   }
 
+  #assertActive(): void {
+    if (this.#disposed) throw new Error('Preflight manager has been disposed.');
+  }
+
+  #refreshAnalysis() {
+    this.#analysisCache?.refresh();
+    return this.#analysisCache?.cache;
+  }
+
   #createRun(): AnalysisRun {
-    return createAnalysisRun({
-      generation: identifier<'AnalysisGeneration'>(String(this.#generation)),
+    return setup.createPreflightRun({
+      generation: this.#generation,
+      providerGeneration: this.#providerGeneration,
+      rootDir: this.config.rootDir,
       metrics: this.#metrics,
       signal: this.#signal,
-      snapshotToken: identifier<'RepositorySnapshotToken'>(
-        `${this.config.rootDir}:${this.#generation}:${this.#providerGeneration}`,
-      ),
     });
+  }
+
+  #loadAnalyzedGraph(): Promise<GeneratedTsconfigGraphResult> {
+    return queries.loadAnalyzedGraph({
+      cache: this.#analysisCache,
+      source: this,
+      getGraph: this.#generatedGraphProvider,
+      refresh: () => this.#retryAnalysis(),
+    });
+  }
+
+  #retryAnalysis(): void {
+    const pending = this.#cache.generatedGraph;
+    this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
+    this.#cache.generatedGraph = pending;
   }
 
   get profilingMetrics(): AnalysisMetricsRecorder | undefined {
     return this.#profilingMetrics;
+  }
+
+  async publishAnalysisCache(): Promise<void> {
+    this.#signal.throwIfAborted();
+    await this.#analysisCache?.publish();
   }
 
   dispose(): void {
@@ -165,14 +182,7 @@ export class LiminaPreflightManager {
   }
 
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
-    if (this.#cache.generatedGraph === undefined) {
-      const providers = this.providers;
-      const generatedGraphProvider = this.#generatedGraphProvider;
-      this.#cache.generatedGraph = loadGeneratedGraph(
-        this.ensureWorkspaceValidated(),
-        () => generatedGraphProvider?.() ?? providers.buildGraph.getGraph(),
-      );
-    }
+    this.#cache.generatedGraph ??= this.#loadAnalyzedGraph();
     return this.#cache.generatedGraph;
   }
 
@@ -193,7 +203,7 @@ export class LiminaPreflightManager {
   }
 
   ensureWorkspacePackages(): Promise<Workspace.WorkspacePackage[]> {
-    this.#cache.workspacePackages ??= loadWorkspacePackages(
+    this.#cache.workspacePackages ??= queries.loadWorkspacePackages(
       this.ensureWorkspaceValidated(),
     );
     return this.#cache.workspacePackages;
@@ -240,7 +250,7 @@ export class LiminaPreflightManager {
 
   async ensureSourceGraphProjectExtensions(): Promise<CheckerRoutes.CollectSourceGraphProjectExtensionsResult> {
     this.#cache.sourceGraphProjectExtensions ??=
-      loadSourceGraphProjectExtensions(
+      queries.loadSourceGraphProjectExtensions(
         this.config,
         Promise.all([
           this.#ensureCheckerRouteSnapshot(),
@@ -251,7 +261,7 @@ export class LiminaPreflightManager {
   }
 
   async ensureGraphProjectRoutes(): Promise<CheckerRoutes.CollectCheckerGraphProjectRoutesResult> {
-    this.#cache.graphProjectRoutes ??= loadGraphProjectRoutes(
+    this.#cache.graphProjectRoutes ??= queries.loadGraphProjectRoutes(
       this.config,
       this.#ensureCheckerRouteSnapshot(),
     );
@@ -259,15 +269,16 @@ export class LiminaPreflightManager {
   }
 
   async ensureCheckerEntryProjectRoutes(): Promise<CheckerRoutes.CollectCheckerGraphProjectRoutesResult> {
-    this.#cache.checkerEntryProjectRoutes ??= loadCheckerEntryProjectRoutes(
-      this.config,
-      this.#ensureCheckerRouteSnapshot(),
-    );
+    this.#cache.checkerEntryProjectRoutes ??=
+      queries.loadCheckerEntryProjectRoutes(
+        this.config,
+        this.#ensureCheckerRouteSnapshot(),
+      );
     return this.#cache.checkerEntryProjectRoutes;
   }
 
   ensureExpectedSourceFiles(): Promise<Set<string>> {
-    this.#cache.expectedSourceFiles ??= loadExpectedSourceFiles(
+    this.#cache.expectedSourceFiles ??= queries.loadExpectedSourceFiles(
       this.config,
       Promise.all([
         this.ensureGeneratedGraph(),
@@ -280,15 +291,7 @@ export class LiminaPreflightManager {
   async ensurePackageEntrySelectionPlan(
     options: PackageEntryPlanOptions,
   ): Promise<PackageEntrySelectionPlan> {
-    const context = await this.ensureWorkspaceValidated();
-    return createPackageEntrySelectionPlan({
-      config: this.config,
-      cwd: options.cwd,
-      packageNames: options.packageNames,
-      requireCwdPackageMatch: options.requireCwdPackageMatch,
-      tool: options.tool,
-      workspaceContext: context,
-    });
+    return queries.loadPackageEntrySelectionPlan(this, options);
   }
 
   get importAnalysis(): ImportAnalysisContext {

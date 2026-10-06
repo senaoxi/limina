@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type ts from 'typescript';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type {
   ImportRecord,
   ImportRecordKind,
@@ -31,6 +32,8 @@ import type { TypeScriptResolutionLedger } from './resolution-ledger';
 import { TypeScriptTypeReferenceResolver } from './type-reference-resolver';
 
 export interface TypeScriptImportResolverOptions {
+  analysisCache?: NativeAnalysisCache;
+  analysisContextId?: string;
   admission: TypeScriptInclusionLedger;
   contextIdentity: string;
   getHost(): ts.ModuleResolutionHost;
@@ -138,6 +141,8 @@ export class TypeScriptImportResolver {
       importRecord,
       moduleResolutionCache: this.#moduleResolutionCache,
       tsModule: this.options.tsModule,
+      analysisCache: this.options.analysisCache,
+      analysisContextId: this.options.analysisContextId,
     });
     this.#storeOptionalModuleOccurrence({
       importRecord: options.record,
@@ -202,6 +207,8 @@ export class TypeScriptImportResolver {
           contextIdentity: this.options.contextIdentity,
           importRecord: record,
           tsModule: this.options.tsModule,
+          analysisCache: this.options.analysisCache,
+          analysisContextId: this.options.analysisContextId,
         }),
       'triple-slash-types': (record) =>
         this.#typeReferences.resolveStandalone(record),
@@ -277,6 +284,8 @@ export class TypeScriptImportResolver {
       host: this.options.getHost(),
       input,
       tsModule: this.options.tsModule,
+      analysisCache: this.options.analysisCache,
+      analysisContextId: this.options.analysisContextId,
     });
   }
 

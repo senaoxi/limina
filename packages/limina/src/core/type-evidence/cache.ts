@@ -1,6 +1,7 @@
 import type { ImportRecord } from '#core/import-analysis/runner';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
 import type ts from 'typescript';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ManagedOutputDeclarationProvider } from '../import-graph/managed-output-provider';
 import type { TypeScriptSemanticContext } from '../typescript-semantic';
 import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
@@ -145,13 +146,16 @@ export class TypeEvidenceGenerationCache {
   readonly typeEvidenceProviderCache: TypeEvidenceProviderCache = new Map();
 
   readonly syntaxFacts: SourceSyntaxFactsCache | undefined;
+  readonly analysisCache: NativeAnalysisCache | undefined;
 
   constructor(
     metrics?: TypeEvidenceMetricsRecorder,
     syntaxFacts?: SourceSyntaxFactsCache,
+    analysisCache?: NativeAnalysisCache,
   ) {
     this.#metrics = metrics;
     this.syntaxFacts = syntaxFacts;
+    this.analysisCache = analysisCache;
 
     if (metrics) {
       for (const name of TYPE_EVIDENCE_METRIC_NAMES) {

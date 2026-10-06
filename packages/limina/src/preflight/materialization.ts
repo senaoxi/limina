@@ -117,9 +117,11 @@ export function ensurePreflightGraphMaterialized(options: {
     materialize: () =>
       materializePreflightGraph({
         getGraph: () => options.source.ensureGeneratedGraph(),
-        getNamespace: () => options.source.artifactNamespace,
+        getNamespace: () =>
+          options.getCurrentSlot() === options.slot
+            ? options.source.artifactNamespace
+            : namespace,
         metrics,
-        namespace,
         refreshProviders: options.refreshProviders,
         slot: options.slot,
       }),
@@ -131,13 +133,12 @@ async function materializePreflightGraph(options: {
   getGraph: () => Promise<GeneratedTsconfigGraphResult>;
   getNamespace: () => LiminaArtifactNamespace;
   metrics: AnalysisMetricsRecorder;
-  namespace: LiminaArtifactNamespace;
   refreshProviders: () => void;
   slot: MaterializationSlot;
 }): Promise<MaterializationReceipt> {
   let graph = await options.getGraph();
   const materialized = await materializeGeneratedArtifactPlan(
-    options.namespace,
+    options.getNamespace(),
     graph.artifactPlan,
     {
       metrics: options.metrics,

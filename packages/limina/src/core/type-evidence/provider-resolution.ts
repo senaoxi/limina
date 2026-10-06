@@ -149,7 +149,13 @@ export function resolveTypeScriptProviderEvidence(options: {
       createTypeScriptTypeEvidenceProvider({
         cache: options.context.cache,
         programKey: providerKey,
-        project: options.input.options.project,
+        project: {
+          ...options.input.options.project,
+          analysisBinding: options.input.options.project.analysisBinding ?? {
+            phase: 'locked',
+            checker: options.input.options.checkerName,
+          },
+        },
       }),
     options.input.preset,
   );

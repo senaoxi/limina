@@ -119,6 +119,7 @@ function addSelectedProviderReference(options: {
       'Declaration reference requires an explicit semantic or compiler membership requirement.',
     );
   const edge = createDependencyEdge(options);
+  recordContribution(options, edge);
   options.base.context.dependencyEdgesByKey.set(
     createDependencyEdgeKey(edge),
     edge,
@@ -214,4 +215,20 @@ function recordSemanticFact(
     file: options.base.fileName,
     specifier: options.base.importRecord.specifier,
   });
+}
+
+function recordContribution(
+  options: Parameters<typeof addSelectedProviderReference>[0],
+  edge: GeneratedDependencyEdge,
+): void {
+  options.base.context.projectDependencyCaches.analysisCache?.contributions.record(
+    {
+      occurrence: options.base.importRecord,
+      fromChecker: edge.fromChecker,
+      toChecker: edge.toChecker,
+      fromConfigPath: edge.fromConfigPath,
+      toConfigPath: edge.toConfigPath,
+      kind: edge.kind,
+    },
+  );
 }

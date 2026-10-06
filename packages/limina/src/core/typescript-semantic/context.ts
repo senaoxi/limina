@@ -1,9 +1,17 @@
 import { isNativeTypeScriptProjectInput } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
+import { nativeContextId } from '../analysis-cache/identity';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ImportRecord } from '../import-analysis/records';
-import { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
+import type { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
 import { TypeScriptInclusionLedger } from './admission';
+import {
+  activeSyntaxScope,
+  type ContextServices,
+  resolveAnalysisCache,
+  resolveServices,
+} from './context-services';
 import type {
   TypeScriptSemanticContext,
   TypeScriptSemanticProject,
@@ -16,6 +24,7 @@ import {
 import { getEffectiveImporterRoots } from './effective-roots';
 import { createTypeScriptSemanticHost } from './host';
 import { createTypeScriptSemanticContextIdentity } from './identity';
+import { createImportRecordIdentity } from './import-record';
 import { TypeScriptImportResolver } from './import-resolver';
 import { measureBoundedProgram, TypeCheckerObservation } from './metrics';
 import { TypeScriptResolutionLedger } from './resolution-ledger';
@@ -34,24 +43,6 @@ function normalizeProject(
   };
 }
 
-interface ContextServices {
-  getAmbientEvidence?: typeof createAmbientTypeEvidence;
-  syntaxFacts?: SourceSyntaxFactsCache;
-}
-function resolveServices(options: ContextServices) {
-  return {
-    getAmbientEvidence: options.getAmbientEvidence ?? createAmbientTypeEvidence,
-    syntaxFacts: options.syntaxFacts,
-    metrics: options.syntaxFacts?.metrics,
-  };
-}
-function activeSyntaxScope(
-  cache: SourceSyntaxFactsCache | undefined,
-  scope: OwnedSyntaxScope,
-) {
-  return cache === undefined ? undefined : scope;
-}
-
 export class BoundedTypeScriptSemanticContext
   implements TypeScriptSemanticContext
 {
@@ -62,6 +53,7 @@ export class BoundedTypeScriptSemanticContext
   readonly #ledger = new TypeScriptResolutionLedger();
 
   readonly #recordsByFile = new Map<string, readonly ImportRecord[]>();
+  readonly #facts = new Map<string, NativeDependencyFact>();
 
   readonly #resolver: TypeScriptImportResolver;
 
@@ -72,6 +64,7 @@ export class BoundedTypeScriptSemanticContext
   readonly #syntaxFacts: SourceSyntaxFactsCache | undefined;
 
   readonly #checkerObservation: TypeCheckerObservation;
+  readonly #analysisCache: NativeAnalysisCache | undefined;
 
   #disposed = false;
 
@@ -94,6 +87,11 @@ export class BoundedTypeScriptSemanticContext
     this.#checkerObservation = new TypeCheckerObservation(services.metrics);
     const syntaxScope = new OwnedSyntaxScope(project.options, tsModule);
     this.project = normalizeProject(project);
+    this.#analysisCache = resolveAnalysisCache({
+      project: this.project,
+      tsModule,
+      cache: options.analysisCache,
+    });
     this.tsModule = tsModule;
     this.identity = createTypeScriptSemanticContextIdentity(this.project);
     this.#admission = new TypeScriptInclusionLedger(this.project, tsModule);
@@ -107,6 +105,8 @@ export class BoundedTypeScriptSemanticContext
       ledger: this.#ledger,
       project: this.project,
       tsModule,
+      analysisCache: this.#analysisCache,
+      analysisContextId: nativeContextId(this.project),
     });
     this.#host = createTypeScriptSemanticHost({
       callbacks: {
@@ -124,6 +124,7 @@ export class BoundedTypeScriptSemanticContext
       virtualFiles: this.project.virtualFiles,
       syntaxScope: activeSyntaxScope(options.syntaxFacts, syntaxScope),
       tsModule,
+      analysisCache: this.#analysisCache,
     });
     this.program = measureBoundedProgram(
       () =>
@@ -135,6 +136,11 @@ export class BoundedTypeScriptSemanticContext
         }),
       services.metrics,
     );
+    this.#prepareAnalysis();
+  }
+
+  #prepareAnalysis(): void {
+    this.#analysisCache?.prepare(this.project, this.program, this.tsModule);
   }
 
   #allowSourceFile(fileName: string): boolean {
@@ -160,6 +166,8 @@ export class BoundedTypeScriptSemanticContext
         syntaxInput,
         sourceFile,
         tsModule: this.tsModule,
+        analysisCache: this.#analysisCache,
+        analysisContextId: nativeContextId(this.project),
       }),
     );
   }
@@ -184,20 +192,46 @@ export class BoundedTypeScriptSemanticContext
     }
   }
 
+  #collectFact(record: ImportRecord): NativeDependencyFact {
+    const collect = () =>
+      collectNativeDependencyFact({
+        getAmbientEvidence: this.#getAmbientEvidence,
+        context: this,
+        record,
+        tsModule: this.tsModule,
+      });
+    if (this.#analysisCache === undefined) return collect();
+    return this.#analysisCache.fact({
+      project: this.project,
+      record,
+      occurrences: this.#getRecords(record.filePath),
+      resolution: this.resolveImportRecord(record),
+      collect,
+    });
+  }
+
   dispose(): void {
     this.#disposed = true;
     this.#recordsByFile.clear();
+    this.#facts.clear();
     this.#resolver.dispose();
     this.#sourceFiles.clear();
   }
 
   getDependencyFact(record: ImportRecord): NativeDependencyFact {
-    return collectNativeDependencyFact({
-      getAmbientEvidence: this.#getAmbientEvidence,
-      context: this,
-      record,
-      tsModule: this.tsModule,
-    });
+    this.#assertActive();
+    const key = createImportRecordIdentity(record);
+    let fact = this.#facts.get(key);
+    if (fact === undefined) {
+      fact = this.#collectFact(record);
+      this.#facts.set(key, fact);
+    }
+    return structuredClone(fact);
+  }
+
+  getCollectedDependencyFacts(): ReadonlyMap<string, NativeDependencyFact> {
+    this.#assertActive();
+    return this.#facts;
   }
 
   getImportRecords(fileName: string): readonly ImportRecord[] {
@@ -239,6 +273,7 @@ export function createBoundedTypeScriptSemanticContext(
     dependencyFactsOnly?: boolean;
     syntaxFacts?: SourceSyntaxFactsCache;
     getAmbientEvidence?: typeof createAmbientTypeEvidence;
+    analysisCache?: NativeAnalysisCache;
   } = {},
 ): TypeScriptSemanticContext {
   return new BoundedTypeScriptSemanticContext(
