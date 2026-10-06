@@ -1,6 +1,6 @@
 # Regions
 
-`regions` selects the package scopes governed by the current Limina run. It sets the scope for package ownership, checker discovery, source analysis, generated graphs, and dependency authorization.
+`regions` determines which packages and nested package scopes belong to the current run. Establish package scope here first, then use `config.source` to select files within it and `config.checkers` to select checker entries.
 
 ::: warning
 `regions.exclude` does not replace `config.source.exclude`. Package kinds remove package authority; checker `exclude` only changes entry selection. Use the exact `tsconfig` kind to isolate a config before output declarations are read, while leaving its package activated. It does not hide source files or make incoming references valid; migration must also prune those relations.
@@ -38,7 +38,7 @@ export default defineConfig({
 
 ## Default Governed Region
 
-The selected config's nearest `package.json` fixes the governance root. At that root, a workspace declaration supplies raw membership through its manager adapter; without one, the raw set is `[rootPackage]`. See [Governance root](../getting-started.md#governance-root). It validates `workspace-package` exclusion rules against that complete raw set and applies them before constructing the activated package index. Each remaining package is a separate package island, and its root `package.json` is the owner manifest for source ownership and dependency authorization. An activated package may be outside `config.rootDir`; reports keep its lexical display path, such as `../shared`, while ownership and collision checks use its canonical physical directory.
+The selected config's nearest `package.json` fixes the governance root. At that root, a workspace declaration supplies raw membership through its manager adapter; without one, the raw set is `[rootPackage]`. See [Config Discovery and Governance Root](./config-file.md#governance-root). It validates `workspace-package` exclusion rules against that complete raw set and applies them before constructing the activated package index. Each remaining package is a separate package island, and its root `package.json` is the owner manifest for source ownership and dependency authorization. An activated package may be outside `config.rootDir`; reports keep its lexical display path, such as `../shared`, while ownership and collision checks use its canonical physical directory.
 
 Workspace package discovery follows the selected manager's policy. Its traversal always excludes the following directory names:
 
@@ -116,7 +116,7 @@ For `workspace-package` and `package-scope`, `include` patterns match only confi
 Each package kind has one candidate set:
 
 - `workspace-package` selects exact package-root candidates from the complete raw membership of the selected governance root, including a single-package root. Limina validates these rules before overlap checks, then removes each matched package from ownership, dependency authority, source and checker discovery, and generated graphs. A matched parent does not cascade to unmatched activated descendants; match every descendant explicitly when that is intended. Use `include: ['.']` to exclude only the root package when it is activated; this does not exclude the workspace or other activated packages. Explicit `package.entries` remain independent artifact entries and are not deleted by this rule.
-- `package-scope` selects nested `package.json` roots. It covers both eligible extended scopes and scopes where governance already stops. An excluded scope and all descendants stay outside the current run.
+- `package-scope` selects nested `package.json` roots. It covers both eligible extended scopes and scopes where governance already stops. After exclusion, governance by the current outer package stops at that root and discovers no files below it. An independently activated workspace package beneath the boundary still starts governance from its own root; use a separate `workspace-package` exclusion to remove it from the run.
 
 A rule is matched only against candidates of the same kind. A directory that is both an activated package and a nested package scope therefore keeps those identities separate.
 

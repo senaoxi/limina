@@ -1,6 +1,6 @@
 # Pipelines
 
-Pipelines are named workflows for `limina check <name>`.
+Pipelines store shared team steps in configuration and run them in order through `limina check <name>`. The `publish` example below performs pre-publish checks only. It assumes the project has `pnpm build` and `pnpm test` scripts and has configured the `package.entries` to check:
 
 ```js
 import { defineConfig } from 'limina';
@@ -13,6 +13,7 @@ export default defineConfig({
       'proof:check',
       'checker:build',
       'checker:typecheck',
+      { type: 'command', command: 'pnpm', args: ['build'] },
       'package:check',
       'release:check',
       {
@@ -24,6 +25,8 @@ export default defineConfig({
   },
 });
 ```
+
+Run `pnpm exec limina check publish --package @acme/core` to select this pipeline and the package outputs with that name. `checker:build` generates internal declarations under `.limina`; `pnpm build` in the example prepares the consumer artifacts.
 
 ## pipelines
 
@@ -52,15 +55,13 @@ Define each external command's `command`, `args`, `cwd`, and `env` in configurat
 
 The [config file](./config-file.md) is a JS/TS module loaded and evaluated at runtime. Module evaluation and exported config functions can construct workflow configuration dynamically. Reading `process.argv` to forward extra arguments is outside the CLI contract. Integrations needing per-invocation input, such as a `commit-msg` message file, should use a dedicated entry point with its own input contract.
 
-Limina inserts shared `workspace:validate` preparation before topology-dependent built-in work. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives shared `graph:materialize` preparation before all its built-in tasks. Preparations are injected automatically, not accepted as `BuiltinTaskName` steps. A failed required preparation records its dependent tasks as `blocked` before they consume topology or generated files.
+Consecutive built-in tasks form a task segment, and external commands separate these segments. Limina inserts shared `workspace:validate` preparation before each segment. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives shared `graph:materialize` preparation before all its built-in tasks. Preparations are injected automatically, not accepted as `BuiltinTaskName` steps. A failed required preparation records its dependent tasks as `blocked` before they consume topology or generated files.
 
-After preparations succeed, a completed built-in task failure fails the final result, while later steps are still attempted in order. An external command failure stops the remaining steps and records them as `skipped`.
+A built-in task that runs and fails makes the final result fail, but later steps are still attempted in order. Preparation failure blocks only the built-in tasks that depend on it; it does not automatically cancel subsequent external commands.
+
+For example, in `checker:build → pnpm build → package:check`, failure to prepare the first segment blocks `checker:build`, but `pnpm build` is still attempted. If it succeeds, the next segment prepares the workspace again before attempting the package check. The earlier failure remains in the final result. Only an external command failure stops the remaining steps and records them as `skipped`.
 
 An external command separates analysis generations. Limina joins current work before the next generation, disposes its default analysis providers, and recreates provider/query caches and the artifact namespace. The next generation reuses the loaded configuration object; it does not rerun the config module or function after the command.
-
-::: tip
-Give a shared workflow a pipeline name so local scripts and CI run the same steps in the same order. For example, `publish` can typecheck, build, and then inspect package output.
-:::
 
 ## String steps
 
@@ -121,26 +122,4 @@ import { createClient } from '../../core/src/index';
 
 the pipeline records a failure during `source:check`, and later build, package check, and external test commands are still attempted in order. The final result fails. Fix the source import before rerunning the pipeline.
 
-::: details Cross-package import example
-The directory can look like this:
-
-```text
-packages/app/
-  src/main.ts
-packages/core/
-  src/index.ts
-```
-
-The module imports across package folders with a relative path:
-
-```ts
-// packages/app/src/main.ts
-import { createClient } from '../../core/src/index';
-```
-
-When `pnpm exec limina check publish` runs, Limina executes pipeline steps in array order. `graph:check` first validates declaration edges, then `source:check` analyzes workspace package ownership and relative import boundaries.
-
-Assuming shared preparations pass, the relative cross-package import can produce a source-stage failure. Later built-in steps and `pnpm test` are still attempted in order. Replace it with an authorized `@acme/core` package export and declare the dependency in the importing source owner's manifest; Limina then infers eligible project relations from checker evidence, without requiring handwritten source-leaf `references`.
-
-If a later external command such as `pnpm test` fails, remaining steps are recorded as `skipped`. A failed required preparation can instead record dependent tasks as `blocked`.
-:::
+Use an authorized `@acme/core` package export and declare the dependency in the importing source owner's manifest. Limina derives generated references from checker evidence and graph rules; source leaf configs do not need handwritten `references`.

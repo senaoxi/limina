@@ -1,12 +1,19 @@
 # 发布检查
 
-`limina release check` 根据 `package.entries` 选择输出，生成 npm 打包文件，检查发布文件，并根据 npm 注册表内容校验工作区发布依赖的一致性。它与 `package check` 分别运行。
+`limina release check` 根据 `package.entries` 选择输出，生成 npm 打包文件，检查发布文件，并根据 npm 注册表内容校验工作区发布依赖的一致性。它与 `package check` 分别运行，不执行构建或发布。
+
+```sh
+pnpm build
+pnpm exec limina release check --package @acme/core
+```
+
+先在 [`package.entries`](./package-checks.md#entries) 配置对应输出。打包使用 `pnpm pack --ignore-scripts`，因此需要可用的 pnpm；工作区依赖的基线比较还需要访问所选注册表。
 
 内置发布检查属于此命令，不需要启用可选分析器。输出清单无效或标记为私有包（`private: true`）等早期失败，可能使该条目在打包与后续检查前停止。可选的 `release.npmPackageJsonLint` 集成会额外使用 `npm-package-json-lint` 检查打包后的 `package.json`。
 
-对于工作区发布依赖，Limina 会把本地打包内容与 npm 发布标签基线（`release.contentHash.baselineTag`，默认 `latest`）比较，报告 `changed`（已更改）、`local-only`（仅本地存在）、`remote-only`（仅远程存在）文件。按配置忽略后内容相同，只表示该次比较没有内容差异诊断；其余发布检查仍适用。
+对于工作区发布依赖，Limina 会把本地打包内容与 npm 发布标签基线（`release.contentHash.baselineTag`，默认 `latest`）比较，报告 `changed`（已更改）、`local-only`（仅本地存在）、`remote-only`（仅远程存在）文件。存在未被忽略的差异时，发布检查会失败。按配置忽略后内容相同，只表示该次比较没有内容差异诊断；其余发布检查仍适用。
 
-只有输出清单的 `name` 命中具有名称的激活源码包时，才启动工作区遍历。它读取该源码所属包清单的 `dependencies`、`optionalDependencies` 与 `peerDependencies` 中的 `workspace:` 依赖，并拒绝 `link:` 条目。普通语义化版本依赖不会仅因本地存在同名包而被遍历。未命中源码包时，发布文件与清单检查仍执行，但不遍历工作区依赖。每个依赖的比较使用首个与源码包名称相同的配置输出条目；没有条目时使用 `<source-package>/dist`，不会逐一比较全部同名依赖输出。
+只有输出清单的 `name` 命中具有名称的激活源码包时，才启动工作区遍历。它读取该源码所属包清单的 `dependencies`、`optionalDependencies` 与 `peerDependencies` 中的 `workspace:` 依赖，并拒绝 `link:` 条目。普通语义化版本依赖不会仅因本地存在同名包而被遍历。未命中源码包时，发布文件与清单检查仍执行，但不遍历工作区依赖。对每个工作区依赖，Limina 使用首个 `name` 等于**该依赖包名称**的配置输出条目；没有条目时使用该依赖源码包目录下的 `dist`，不会逐一比较全部同名依赖输出。
 
 在解包或比较注册表基线的打包文件之前，Limina 会先使用 `dist.integrity` 校验它；若该字段缺失，则回退使用 SHA-1 `dist.shasum`。完整性校验元数据缺失、格式错误或摘要不匹配都会让 `release check` 失败，且不能跳过这项校验。
 
@@ -92,10 +99,6 @@ pnpm add -D npm-package-json-lint@^9.1.0
 默认 `contentHash.builtinIgnore` 是 `false`，不忽略任何内置文件。开启时，内置集合包含根目录下精确名称 `README`、`README.md`、`CHANGELOG.md`、`HISTORY.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`，以及 `docs/` 和 `examples/` 下的路径；其他大小写或位置不会自动加入。
 
 设置 `builtinIgnore: true` 后，内置忽略集只会在 `release.contentHash.ignore` 未配置或忽略函数返回 `undefined` 时作为默认忽略集。
-
-::: info 说明
-忽略函数返回 `[]` 表示该依赖包不忽略任何文件（不应用内置集）；返回 `undefined` 才会回退到内置集。
-:::
 
 ## `contentHash.ignore`
 

@@ -1,119 +1,14 @@
 # CLI Reference
 
-Use `limina check` for daily checks, `graph prepare` to write generated checker files, and `package check` or `release check` to inspect built artifacts.
+Run `limina check` for daily work. The default check includes real checker builds and writes generated configs, internal declarations, and caches under `.limina` when needed. Use standalone graph, source, or proof checks to investigate a specific problem.
 
-Limina calculates a project graph from configuration and source, then checks file ownership, package dependencies, project references, checker entries, and source coverage. Commands that need generated checker files write them under `.limina`; checks that only need graph facts use the calculated graph in memory.
-
-Type checking and declaration builds run through `TypeScript` and framework checkers. The project supplies its bundler, tests, package manager, and publishing commands. Package and release checks inspect configured artifacts; their results do not establish release safety.
-
-## Quick Start
-
-Limina must run inside a supported workspace. The current package configuration requires `Node.js ^22.18.0 || >=24.11.0`. For manual installation, use:
-
-```sh
-pnpm add -D limina@latest typescript@^5.9.0
-```
-
-Initialize it in an existing workspace:
-
-```sh
-pnpm exec limina init --yes
-pnpm i
-pnpm limina:build
-pnpm exec limina check
-```
-
-`limina init --yes` uses the default confirmation flow and is suitable for non-interactive environments. It writes or updates `limina.config.mts`, the `limina:build` script in the root `package.json`, and required dependencies, and ensures `.gitignore` ignores `.limina/`. If dependencies already exist, `pnpm i` may not change anything; if initialization added dependencies, install them before running the build.
-
-The default generated config only enables automatic checker discovery:
-
-```js
-import { defineConfig } from 'limina';
-
-export default defineConfig({
-  config: {
-    checkers: {
-      auto: {
-        exclude: [],
-      },
-    },
-  },
-});
-```
-
-Add custom checker entries, graph rules, source exceptions, package artifact checks, or release consistency checks in `limina.config.mts` as needed.
-
-## Command Entry and Global Options
-
-Basic form:
-
-```sh
-limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
-```
-
-Global options apply to commands that need to load a Limina config file. `init` operates directly on the owning workspace and does not depend on an existing config.
-
-| Option                     | Type             | Default behavior                                            | Related configuration                   | Example                                     | Boundary                                                                                                   |
-| -------------------------- | ---------------- | ----------------------------------------------------------- | --------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `--config <path>`          | path             | Searches cwd and ancestors for the default config filenames | Limina config module                    | `limina --config ./limina.config.mts check` | Its nearest `package.json` fixes the governance root; explicit query anchors may refer to a missing config |
-| `--config-loader <loader>` | `native` / `tsx` | `native`                                                    | Config module loader                    | `limina --config-loader tsx check`          | `tsx` requires `tsx` to be installed in the consuming workspace                                            |
-| `--mode <mode>`            | string           | `process.env.NODE_ENV`, otherwise `default`                 | `env.mode` passed to functional configs | `limina --mode ci check`                    | Only passes the mode to the config function; differences are implemented by the config file                |
-
-The config file can export an object, a `Promise`, or a function that receives `{ command, mode }`. `command` indicates the current command family, such as `check`, `graph`, `source`, `package`, or `release`; the type remains open for other current command values such as `build` and `migration`.
-
-## Recommended Workflow
-
-Daily use usually starts with `limina check`. It runs the default check group: `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. Together, these tasks check whether the generated graph, source boundaries, coverage relationships, and checker entries remain consistent.
-
-Before those tasks, Limina runs the shared `workspace:validate` preparation. The same validated activated-package index gates standalone source, proof, graph, build, checker, migration, package, and release commands. Workspace issues use config-root-relative lexical paths, including `../` for external activated packages.
-
-When you want to materialize refreshed checker files before later build or checker execution, run:
-
-```sh
-pnpm exec limina graph prepare
-```
-
-Validation-only commands such as `graph check`, `source check`, and `proof check` calculate the generated graph in memory and do not write its checker configs. Managed `build`, `checker build`, `checker typecheck`, and `check` pipelines that contain checker or `graph:prepare` tasks materialize the required files before execution.
-
-To inspect a previous failure, query the saved issue inventory. The query locates the governance root without loading or executing Limina configuration:
-
-```sh
-pnpm exec limina check --issues
-pnpm exec limina check --issues --limit 20
-pnpm exec limina check --issues --task workspace:validate
-pnpm exec limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING --verbose
-pnpm exec limina check --issues --verbose --limit all
-pnpm exec limina check --issues --format json
-pnpm exec limina check --issues --invocation <uuid>
-```
-
-The unqualified query is freshness-aware. Once a check attempt has been published, `--issues` returns inventory only when that same attempt completed and its metadata matches the version-8 snapshot. A running, interrupted, aborted, or persistence-failed latest attempt, or corrupt or mismatched freshness metadata, makes the query fail closed with exit code `1`; it never falls back to older completed issues. Missing required metadata also fails closed. Only when both latest-attempt and latest-completed metadata are absent does the reader use the legacy snapshot path. Human, JSON, and NDJSON output report unavailable explicitly; a machine response with unavailable `status` and zero issues is not a successful zero-issue check.
-
-Configuration discovery, validation, and execution-plan failures that happen before an attempt is published do not replace the previous completed inventory. If a process stops between the `last-run.json` and freshness-index writes, a later successful check with a higher sequence rewrites both files and restores query availability automatically.
-
-`checker build` builds Limina's internal declarations. The top-level `build` command produces configured consumer artifacts:
-
-```sh
-pnpm exec limina checker build packages/app/tsconfig.json
-pnpm exec limina build packages/app/tsconfig.json
-pnpm exec limina build packages/app/tsconfig.json --preset vue-tsc
-pnpm exec limina build packages/app/tsconfig.raw.json --raw --preset tsc
-```
-
-When preparing packages for release, run the project's own build flow first, then run supplemental checks:
-
-```sh
-pnpm exec limina package check --package @scope/pkg
-pnpm exec limina release check --package @scope/pkg
-```
-
-Both commands read the already-built `outDir`; neither builds or publishes artifacts.
+See [Getting Started](./getting-started.md) for installation and initialization. Package and release checks consume already-built outputs; the project supplies its production build, tests, and publishing commands.
 
 ## Decision Table
 
 | Goal                                                               | Recommended command                        | Basis for choosing it                                                                                                                     |
 | ------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Initialize Limina files in a supported workspace                   | `limina init` or `limina init --yes`       | First adoption, or generating the base config and `limina:build` script                                                                   |
+| Initialize Limina files in the selected project                    | `limina init` or `limina init --yes`       | First adoption, or generating the base config and `limina:build` script                                                                   |
 | Migrate governed source `tsconfig` files                           | `limina-migrate`                           | Normalizes config topology and checks the persisted inputs in a fresh process                                                             |
 | Daily repository-structure and type build entry checks             | `limina check`                             | Default group covers graph, source, coverage, and checker entries                                                                         |
 | Run a custom ordered check group                                   | `limina check <name>`                      | `<name>` comes from configured `pipelines`                                                                                                |
@@ -124,17 +19,35 @@ Both commands read the already-built `outDir`; neither builds or publishes artif
 | Check whether source is covered by the generated graph or checkers | `limina proof check`                       | Focuses on omitted source, checker coverage, and allowlist validity                                                                       |
 | Run internal declaration graph build entries                       | `limina checker build`                     | Uses build checker entries from the generated graph and emits only internal declaration files under `.limina`                             |
 | Run internal declaration graph build for a specific config         | `limina checker build <config>`            | Accepts only Limina-managed source configs or aggregator configs; does not perform `raw build`                                            |
-| Build user-consumable artifacts                                    | `limina build <config>`                    | Accepts only Limina-managed source leaves or aggregator configs that declare `liminaOptions.outputs`                                      |
+| Build user-consumable artifacts                                    | `limina build <config>`                    | Managed source leaves declaring `liminaOptions.outputs`, or aggregators recursively referencing at least one such leaf                    |
 | Build a user-maintained `tsconfig` directly                        | `limina build <config> --raw --preset tsc` | Does not read Limina output config and does not use the generated graph                                                                   |
 | Run framework-owned leaf targets                                   | `limina checker typecheck`                 | Runs Astro- and Svelte-owned type configs once per leaf; succeeds as disabled when no target exists                                       |
 | Check built package artifacts                                      | `limina package check`                     | Requires `package.entries[].outDir`; checks package manifest, `publint`, `ATTW`, or artifact import boundaries                            |
 | Check pre-release artifact consistency                             | `limina release check`                     | Requires built artifacts and checks local dependency declarations, private packages, `tarball` results, or configured release consistency |
 
+## Command Entry and Global Options
+
+Basic form:
+
+```sh
+limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
+```
+
+Global options apply to commands that need to load a Limina config file. `init` operates directly on the selected project and does not depend on an existing config.
+
+| Option                     | Type             | Default behavior                                            | Related configuration                   | Example                                     | Boundary                                                                                                   |
+| -------------------------- | ---------------- | ----------------------------------------------------------- | --------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `--config <path>`          | path             | Searches cwd and ancestors for the default config filenames | Limina config module                    | `limina --config ./limina.config.mts check` | Its nearest `package.json` fixes the governance root; explicit query anchors may refer to a missing config |
+| `--config-loader <loader>` | `native` / `tsx` | `native`                                                    | Config module loader                    | `limina --config-loader tsx check`          | `tsx` requires `tsx` to be installed in the consuming workspace                                            |
+| `--mode <mode>`            | string           | `process.env.NODE_ENV`, otherwise `default`                 | `env.mode` passed to functional configs | `limina --mode ci check`                    | Only passes the mode to the config function; differences are implemented by the config file                |
+
+The config file can export an object, a `Promise`, or a function that receives `{ command, mode }`. `command` indicates the current command family, such as `check`, `graph`, `source`, `package`, or `release`; the type remains open for other current command values such as `build` and `migration`.
+
 ## Command Reference
 
 ### limina init
 
-`init` generates the base adoption files for Limina in a supported workspace.
+`init` generates the base adoption files for Limina in the selected project.
 
 ```sh
 pnpm exec limina init
@@ -146,6 +59,14 @@ It finds the nearest `package.json` from cwd, validates it, and places `limina.c
 `--yes` accepts the default confirmation and skips the interactive `skill` installation prompt. In non-interactive environments, steps that require confirmation fail unless `--yes` is used.
 
 Configure graph rules and permitted package boundaries for your repository after initialization; `init` does not infer them from business structure.
+
+To install the optional agent skill offered by initialization separately, use the same command:
+
+```sh
+npx --yes skills add senaoxi/docs-islands --skill limina
+```
+
+This installs the skill without rewriting source `tsconfig` files. For existing source project references, use the next section to decide whether migration is needed.
 
 ### limina-migrate {#limina-migration}
 
@@ -205,7 +126,7 @@ Migration does not install framework dependencies, run `astro sync`, or rewrite 
 
 ### limina check [pipeline]
 
-`check` is the daily entry point.
+`check` is the daily entry point. It checks structure and runs type checkers; `checker:build` writes internal declarations and does not produce the production bundle.
 
 ```sh
 pnpm exec limina check
@@ -231,7 +152,7 @@ Common options:
 
 | Option                 | Type                      | Default behavior            | Example                                                       | Boundary                                                             |
 | ---------------------- | ------------------------- | --------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `-p, --package <name>` | repeatable string         | Do not restrict packages    | `limina check -p @scope/pkg`                                  | Only affects tasks that support package selection                    |
+| `-p, --package <name>` | repeatable string         | Do not restrict packages    | `limina check -p @scope/pkg`                                  | Package output selection and source-report filtering; see below      |
 | `--verbose`            | boolean                   | Output compact summaries    | `limina check --verbose`                                      | Expands a live run summary; with `--issues`, renders detailed cards  |
 | `--rule <code>`        | repeatable string         | Do not filter by rule       | `limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING` | Requires `--issues` for issue queries                                |
 | `--file <path>`        | repeatable path           | Do not filter by file       | `limina check --issues --file packages/a/src/index.ts`        | Matches exact file paths                                             |
@@ -243,7 +164,30 @@ Common options:
 | `--invocation <uuid>`  | UUID                      | Read the last check         | `limina check --issues --invocation <uuid>`                   | Reads one immutable standalone failure record                        |
 | `--format <format>`    | `human`, `json`, `ndjson` | `human`                     | `limina check --issues --format json`                         | Must be used with `--issues`                                         |
 
+Runtime `--package` selects output entries for `package:check` and `release:check` and filters the issue report from `source:check`. It does not restrict graph checks, proof checks, or checker builds to one package. With `--issues`, `--package` only filters saved issues. `--task` also only applies to issue queries; it cannot select tasks for the current run.
+
+Inspect [task and analyzer states](./built-in-tasks.md#task-status) after a command completes. For example, `checker:typecheck` is `disabled` when there are no framework targets. Missing optional package analyzers may be `skipped` while the process exits successfully. Neither means that check actually passed.
+
+#### Query Saved Issues
+
+```sh
+pnpm exec limina check --issues
+pnpm exec limina check --issues --task workspace:validate
+pnpm exec limina check --issues --verbose --limit all
+pnpm exec limina check --issues --format json
+```
+
 `--issues` does not rerun checks. Without `--invocation`, it authenticates the issue inventory against the latest published `limina check` attempt. A previous completed `last-run.json` may remain on disk while a newer attempt is running or interrupted, but the query refuses to return it as current. Standalone commands use separate invocation records. Workspace validation failures are recordable too: the trusted `.limina` snapshot namespace is created before validation, so a structural failure can appear under task `workspace:validate`. Let `limina check` finish once before using its issue inventory.
+
+If the current error occurred during config discovery, loading, or execution-plan setup, the attempt may not have been registered yet and the query may still return the previous completed record. Compare its timestamp with the current terminal error. An unavailable current result does not mean zero issues.
+
+::: details Latest Attempts, Snapshot Versions, and Recovery
+
+The unqualified query is freshness-aware. Once a check attempt has been published, `--issues` returns inventory only when that same attempt completed and its metadata matches the version-8 snapshot. A running, interrupted, aborted, or persistence-failed latest attempt, or corrupt or mismatched freshness metadata, makes the query fail closed with exit code `1`; it never falls back to older completed issues. Missing required metadata also fails closed. Only when both latest-attempt and latest-completed metadata are absent does the reader use the legacy snapshot path. Human, JSON, and NDJSON output report unavailable explicitly; a machine response with unavailable `status` and zero issues is not a successful zero-issue check.
+
+Configuration discovery, validation, and execution-plan failures that happen before an attempt is published do not replace the previous completed inventory. If a process stops between the `last-run.json` and freshness-index writes, a later successful check with a higher sequence rewrites both files and restores query availability automatically.
+
+:::
 
 Issue output is progressive:
 
@@ -292,11 +236,11 @@ pnpm exec limina graph export
 pnpm exec limina graph export --view source --output graph.json
 ```
 
-`graph prepare` generates the project graph and checker entries under `.limina` from checker configuration, source `tsconfig` files, workspace packages, and source import relationships. It is suitable after changes to `tsconfig`, checker include ranges, source structure, or project reference relationships.
+`graph prepare` validates inputs and generates the project graph and checker entries under `.limina`. It does not run graph governance checks or the compiler. Managed builds and typechecks automatically materialize the files they need; run it separately to inspect or refresh files on disk. `graph check`, `source check`, and `proof check` calculate the graph in memory without materializing checker configs.
 
 `graph check` checks whether the generated graph is consistent with source import relationships. It covers project references, source graph routing, condition domains, reference completeness, graph rules, workspace package dependency declarations, and some resolution boundaries. Typical issues include missing project references for source imports, extra project references, missing dependency declarations for cross-package project references, graph-rule denials, and workspace imports that cannot resolve or whose targets are not in the generated graph.
 
-`graph export` outputs a package-level dependency graph as `JSON`. `--view` can be `all`, `source`, or `artifact`; the default is `all`. Without `--output`, it writes to stdout; with `--output <path>`, it writes to a file. Use the exported graph as input to external task or analysis tools.
+`graph export` outputs a package-level dependency graph as `JSON`. `--view` can be `all`, `source`, or `artifact`; the default is `all`. Without `--output`, it writes to stdout; with `--output <path>`, it writes to a file. The exported graph is available for external analysis. It records package-level dependency facts and does not define task order; in particular, artifact edges do not establish a production build plan.
 
 ### limina source check
 
@@ -413,31 +357,31 @@ Package and release tarball checks use `pnpm pack --ignore-scripts` on the confi
 
 ## Troubleshooting
 
-The first column preserves CLI output fragments so you can search for the reported message.
+Start with [Troubleshooting](./troubleshooting.md#identify-the-failing-task) if you are unsure where to look. The first column below preserves actual English diagnostic fragments so you can search for the reported message.
 
-| Symptom or error message                                                                              | Likely cause                                                                                                | Action                                                                                                                        |
-| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `No package.json found`                                                                               | No manifest exists above the selected configuration                                                         | Add a package manifest or select the intended config                                                                          |
-| `Unable to find limina config`                                                                        | No supported Limina config file was found                                                                   | Run `limina init`, or pass a config path through `--config`                                                                   |
-| `Invalid package.json object` / `Unable to read root package.json`                                    | The nearest manifest is invalid                                                                             | Fix that file; an ancestor manifest cannot replace it                                                                         |
-| `checker build --preset requires a config argument`                                                   | `--preset` can only choose the build checker for a specific config                                          | Use `limina checker build <config> --preset tsc`                                                                              |
-| `checker build --watch requires a config argument`                                                    | Watch mode only supports a specified config                                                                 | Use `limina checker build <config> --watch`                                                                                   |
-| `limina build --raw requires --preset`                                                                | Raw mode did not specify a checker preset                                                                   | Use `limina build <config> --raw --preset tsc`                                                                                |
-| `checker typecheck does not accept --preset` or `--watch`                                             | Typecheck runs the complete framework leaf target set; per-target framework watch is unsupported            | Rerun `checker typecheck` after source config, parser package, generated type, or framework source changes                    |
-| `No package checks are enabled`                                                                       | The selected package entries do not enable any package checks                                               | Check `package.entries[].checks`, or remove the unneeded package check task                                                   |
-| `outDir package.json not found`                                                                       | Package artifacts have not been built, or `outDir` is incorrect                                             | Run the project build first, then check `package.entries[].outDir`                                                            |
-| `Missing Limina runtime dependency`                                                                   | A Limina-owned runtime is unavailable or outside its supported range                                        | Install or adjust it in the workspace running Limina                                                                          |
-| `Missing external checker`                                                                            | A configured external checker is unavailable in its execution scope                                         | Install the checker in the reported checker scope                                                                             |
-| `Unsupported external checker`                                                                        | The selected external checker version is outside Limina's supported range                                   | Upgrade or downgrade the checker in the reported checker scope                                                                |
-| `Missing Astro semantic toolchain dependency`                                                         | An eligible Astro source import cannot resolve a dependency declared by its owner scope                     | Install or reinstall the supported Astro/check toolchain in the owning leaf; do not rely on an undeclared workspace-root copy |
-| `Unsupported Astro semantic toolchain`                                                                | The owner-scoped Astro/check tuple or internal API shape is outside the supported adapter                   | Align the owning leaf with the documented tuple; physical pnpm store or hoist paths do not need to match                      |
-| `Unsupported vue-tsc toolchain`                                                                       | The `vue-tsc` installation has an incomplete or incompatible internal tuple                                 | Upgrade, downgrade, or reinstall `vue-tsc`; do not install its internal packages for Limina                                   |
-| `Missing framework checker dependencies`                                                              | A leaf framework target is missing its command or execution runtime                                         | Install the reported Astro or Svelte dependencies in the owning leaf                                                          |
-| `Astro generated types are missing`                                                                   | The leaf package has not produced `.astro/types.d.ts`                                                       | Run `pnpm --dir <leaf> exec astro sync`; Limina never runs this command automatically                                         |
-| `publint is not installed; skipping check` or `attw is not installed; skipping check`                 | Enabled optional package analyzer is missing                                                                | Install the analyzer when CI requires that coverage; a skipped package analyzer alone does not make the command exit non-zero |
-| `Missing Limina runtime dependency:` (`package: knip`)                                                | The explicit Knip source-usage feature has no Limina runtime dependency                                     | Install `knip` in the workspace running Limina, or set `source.knip` to `false`/omit it to disable the feature                |
-| `` `limina check --task`, `--checker`, `--format`, `--invocation`, and `--limit` require --issues. `` | Snapshot query options were used on the rerun-check command                                                 | Add `--issues`, or remove those query options                                                                                 |
-| `` `limina check --issues` does not accept a pipeline name. ``                                        | `--issues` reads the latest snapshot and does not run a pipeline                                            | Use `limina check --issues`; do not add a pipeline name                                                                       |
-| `Invalid check --issues --limit ...`                                                                  | The limit is zero, negative, fractional, exponential notation, non-numeric, or above the safe integer range | Use a positive decimal integer or `all`                                                                                       |
-| `` `limina check --issues --limit` is only available with --format human. ``                          | A human card limit was combined with JSON or NDJSON                                                         | Remove `--limit`, or use human output                                                                                         |
-| `Invalid graph export --view`                                                                         | `--view` is outside the supported range                                                                     | Use `all`, `source`, or `artifact`                                                                                            |
+| Symptom or error message                                                                | Likely cause                                                                                                | Action                                                                                                                        |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `No package.json found`                                                                 | No manifest exists above the selected configuration                                                         | Add a package manifest or select the intended config                                                                          |
+| `Unable to find limina config`                                                          | No supported Limina config file was found                                                                   | Run `limina init`, or pass a config path through `--config`                                                                   |
+| `Invalid package.json object` / `Unable to read root package.json`                      | The nearest manifest is invalid                                                                             | Fix that file; an ancestor manifest cannot replace it                                                                         |
+| `checker build --preset requires a config argument`                                     | `--preset` can only choose the build checker for a specific config                                          | Use `limina checker build <config> --preset tsc`                                                                              |
+| `checker build --watch requires a config argument`                                      | Watch mode only supports a specified config                                                                 | Use `limina checker build <config> --watch`                                                                                   |
+| `limina build --raw requires --preset`                                                  | Raw mode did not specify a checker preset                                                                   | Use `limina build <config> --raw --preset tsc`                                                                                |
+| `checker typecheck does not accept --preset` or `--watch`                               | Typecheck runs the complete framework leaf target set; per-target framework watch is unsupported            | Rerun `checker typecheck` after source config, parser package, generated type, or framework source changes                    |
+| `No package checks are enabled`                                                         | The selected package entries do not enable any package checks                                               | Check `package.entries[].checks`, or remove the unneeded package check task                                                   |
+| `outDir package.json not found`                                                         | Package artifacts have not been built, or `outDir` is incorrect                                             | Run the project build first, then check `package.entries[].outDir`                                                            |
+| `Missing Limina runtime dependency`                                                     | A Limina-owned runtime is unavailable or outside its supported range                                        | Install or adjust it in the workspace running Limina                                                                          |
+| `Missing external checker`                                                              | A configured external checker is unavailable in its execution scope                                         | Install the checker in the reported checker scope                                                                             |
+| `Unsupported external checker`                                                          | The selected external checker version is outside Limina's supported range                                   | Upgrade or downgrade the checker in the reported checker scope                                                                |
+| `Missing Astro semantic toolchain dependency`                                           | An eligible Astro source import cannot resolve a dependency declared by its owner scope                     | Install or reinstall the supported Astro/check toolchain in the owning leaf; do not rely on an undeclared workspace-root copy |
+| `Unsupported Astro semantic toolchain`                                                  | The owner-scoped Astro/check tuple or internal API shape is outside the supported adapter                   | Align the owning leaf with the documented tuple; physical pnpm store or hoist paths do not need to match                      |
+| `Unsupported vue-tsc toolchain`                                                         | The `vue-tsc` installation has an incomplete or incompatible internal tuple                                 | Upgrade, downgrade, or reinstall `vue-tsc`; do not install its internal packages for Limina                                   |
+| `Missing framework checker dependencies`                                                | A leaf framework target is missing its command or execution runtime                                         | Install the reported Astro or Svelte dependencies in the owning leaf                                                          |
+| `Astro generated types are missing`                                                     | The leaf package has not produced `.astro/types.d.ts`                                                       | Run `pnpm --dir <leaf> exec astro sync`; Limina never runs this command automatically                                         |
+| `publint is not installed; skipping check` or `attw is not installed; skipping check`   | Enabled optional package analyzer is missing                                                                | Install the analyzer when CI requires that coverage; a skipped package analyzer alone does not make the command exit non-zero |
+| `Missing Limina runtime dependency:` (`package: knip`)                                  | The explicit Knip source-usage feature has no Limina runtime dependency                                     | Install `knip` in the workspace running Limina, or set `source.knip` to `false`/omit it to disable the feature                |
+| `limina check --task, --checker, --format, --invocation, and --limit require --issues.` | Snapshot query options were used on the rerun-check command                                                 | Add `--issues`, or remove those query options                                                                                 |
+| `limina check --issues does not accept a pipeline name.`                                | `--issues` reads the latest snapshot and does not run a pipeline                                            | Use `limina check --issues`; do not add a pipeline name                                                                       |
+| `Invalid check --issues --limit ...`                                                    | The limit is zero, negative, fractional, exponential notation, non-numeric, or above the safe integer range | Use a positive decimal integer or `all`                                                                                       |
+| `limina check --issues --limit is only available with --format human.`                  | A human card limit was combined with JSON or NDJSON                                                         | Remove `--limit`, or use human output                                                                                         |
+| `Invalid graph export --view`                                                           | `--view` is outside the supported range                                                                     | Use `all`, `source`, or `artifact`                                                                                            |

@@ -2,11 +2,13 @@
 
 Limina 根据源码 `tsconfig`、项目引用、导入关系和工作区包生成工程图。内置任务分别检查图、源码边界和覆盖范围，运行类型检查器，并检查配置的发布产物。
 
-本页说明各任务的职责。配置字段、规则细节和命令行参数见配置文档。
+本页说明各任务的职责与执行状态。任务名用于流水线，例如 `graph:check`；独立命令写成 `limina graph check`。`limina check graph` 则要求配置了名为 `graph` 的流水线，三种写法不能互换。
+
+具体命令和参数见 [CLI 参考](./cli.md)，团队工作流见[流水线配置](./config/pipelines.md)。
 
 ## 默认检查 {#先理解默认检查}
 
-`limina check` 不带流水线名时，会先运行共享准备步骤 `workspace:validate`，再运行五个默认任务：
+`limina check` 不带流水线名时，会先运行共享准备步骤 `workspace:validate`，并物化本次检查所需的生成图，再调度五个默认任务：
 
 1. `graph:check`
 2. `source:check`
@@ -16,16 +18,21 @@ Limina 根据源码 `tsconfig`、项目引用、导入关系和工作区包生�
 
 这个顺序是结果展示和记录顺序，不表示默认检查按这个顺序串行执行。默认检查会把这些任务作为独立任务调度；在并发额度和资源锁允许时，它们可以同时运行。某个任务失败会让本次检查失败，其他默认任务仍可继续。
 
-`workspace:validate` 由所有依赖拓扑的工作共享。它必须先成功，源码、证明、图、检查器、迁移、包、发布或产物生成工作才能开始。它既会记录为准备步骤，也是一个 `LiminaCheckTaskName`，因此可以用 `limina check --issues --task workspace:validate` 查询结构化问题。它由 Limina 自动注入，不是用户可配置的流水线步骤。
+`workspace:validate` 由所有依赖拓扑的工作共享。它必须先成功，源码、证明、图、检查器、迁移、包、发布或 Limina 托管的产物生成工作才能开始。它既会记录为准备步骤，也是一个 `LiminaCheckTaskName`，因此可以用 `limina check --issues --task workspace:validate` 查询结构化问题。它由 Limina 自动注入，不是用户可配置的流水线步骤。
 
 命名流水线不同。`limina check <name>` 会按照配置中的流水线步骤顺序执行，用于表达明确的先后关系，例如先构建再检查产物。
 
-内置任务可以直接写成字符串：
+内置任务可以直接写成字符串。以下示例假设项目已有生产构建脚本 `pnpm build`，并配置了 `package.entries`；它不执行发布：
 
 ```js
 export default defineConfig({
   pipelines: {
-    release: ['graph:prepare', 'checker:build', 'package:check', 'release:check'],
+    release: [
+      'checker:build',
+      { type: 'command', command: 'pnpm', args: ['build'] },
+      'package:check',
+      'release:check',
+    ],
   },
 });
 ```
@@ -36,7 +43,7 @@ export default defineConfig({
 { type: 'task', name: 'graph:check' }
 ```
 
-除内置任务外，流水线步骤也可以是外部命令。已执行内置任务失败会让最终结果失败，但不会因此停止后续有序步骤。必要准备步骤不同：`workspace:validate` 或 `graph:materialize` 失败会阻塞依赖任务。外部命令失败会停止剩余步骤，并把它们记为 `skipped`（已跳过）。
+除内置任务外，流水线步骤也可以是外部命令。已执行内置任务失败会让最终结果失败，但不会因此停止后续有序步骤。必要准备步骤不同：`workspace:validate` 或 `graph:materialize` 失败会阻塞依赖任务。外部命令失败会停止剩余步骤，并把它们记为 `skipped`（已跳过）。准备失败本身不会取消后续外部命令，具体例子见[流水线的失败策略](./config/pipelines.md#pipelines)。
 
 ## 任务总览
 
@@ -51,13 +58,25 @@ export default defineConfig({
 | `package:check`     | 否       | 已构建包产物                                          | 对 `outDir` 产物运行打包、类型解析和产物导入边界检查             |
 | `release:check`     | 否       | 发布期产物一致性                                      | 发布前补充检查；不应理解为发布系统或安全保证                     |
 
-表中任务复用当前分析代次已验证的工作区上下文。包含 `graph:prepare`、`checker:build` 或 `checker:typecheck` 的任务段，还会在内置任务前获得共享准备步骤 `graph:materialize`。必要准备步骤失败时，依赖任务记录为 `blocked`（被阻塞）。工作区问题仍可写入 `.limina/check/last-run.json`；后续快照写入失败不会替换最初的验证错误。
+外部命令把连续内置任务分成不同任务段。每段复用当前分析代次已验证的工作区上下文。包含 `graph:prepare`、`checker:build` 或 `checker:typecheck` 的任务段，还会在内置任务前获得共享准备步骤 `graph:materialize`。必要准备步骤失败时，依赖任务记录为 `blocked`（被阻塞）。工作区问题仍可写入 `.limina/check/last-run.json`；后续快照写入失败不会替换最初的验证错误。
 
-`disabled`（无适用工作）表示任务没有适用的已启用工作；`skipped`（已跳过）表示工作未运行，例如外部命令失败后的步骤。未安装的可选包分析器也会报告 `skipped`。这些状态不能证明对应检查已经执行并通过。
+### 任务状态
+
+| 状态       | 含义                                                         |
+| ---------- | ------------------------------------------------------------ |
+| `passed`   | 任务已执行，其检查范围内未产生失败结果                       |
+| `failed`   | 任务执行失败或发现使该任务失败的问题                         |
+| `disabled` | 没有适用的已启用工作，例如不存在 Astro / Svelte 类型检查目标 |
+| `blocked`  | 必要准备步骤失败，依赖任务无法开始                           |
+| `skipped`  | 工作没有执行，例如外部命令失败后的剩余步骤                   |
+
+可选包分析器未安装时也会报告 `skipped`，仅发生这种跳过仍可能正常退出。判断是否覆盖预期检查，需要同时看任务与工具状态；零退出码不等于每项检查都实际运行。
+
+::: details 多个进程共享生成文件时
 
 生成的检查器配置由工作区根的规范路径上的跨进程读写租约保护。托管构建与类型检查进程会在完整消费期间持有读租约；物化会等待读取方退出，并在修改产物前发布进行中标记。如果写入方中途退出，读取方会拒绝继续，不会读取混合状态的文件树。下一个执行物化的写入方会按当前完整计划重写目标、删除不再归属的旧文件，完成后才允许读取方继续。租约等待上限为 30 秒。
 
-默认检查包含 `graph:check`、`source:check`、`proof:check`、`checker:build` 和 `checker:typecheck`。需要检查已构建产物时，可在发布流水线中加入 `package:check` 和 `release:check`。
+:::
 
 ## 生成图是后续检查的基础
 
@@ -85,9 +104,9 @@ Limina 根据源码导入、配置入口和显式例外推导符合条件的 `re
 import { createClient } from '@acme/core';
 ```
 
-Limina 会逐项分析静态导入；导入本身不证明必须生成声明引用。Limina 使用解析源码时确定并冻结的语义判定依据，以及保留的检查器证据，判断是否需要 `source-semantic`（源码语义）或 `compiler-membership`（编译器成员）关系，再选择符合条件的声明提供者。既有声明解析、环境类型证据或单独的运行时解析路径，都不会自动变成源码引用；需要且被允许的关系才能进入生成声明图。
+导入到另一受管源码叶子只是候选关系。它还要有声明构建需求、唯一的目标归属、可构建且检查器身份一致的端点，并通过图规则，才能成为生成引用。若当前检查器已经消费具体声明文件，则停在声明边界。完整过程见[从导入解析到声明构建图](./import-resolution-to-declaration-build-graph.md)。
 
-也存在静态导入无法表达的关系，例如生成文件、虚拟模块或运行时约定。此时可以在声明该关系的源码 `tsconfig` 中写 `liminaOptions.implicitRefs`：
+也存在静态导入无法表达的关系，例如生成代码或运行时清单中确实需要的声明构建关系。此时可以在声明该关系的源码 `tsconfig` 中写 `liminaOptions.implicitRefs`：
 
 ```jsonc
 {
@@ -95,7 +114,7 @@ Limina 会逐项分析静态导入；导入本身不证明必须生成声明引�
     "implicitRefs": [
       {
         "path": "../core/tsconfig.json",
-        "reason": "由生成的路由清单加载。",
+        "reason": "本叶子的声明构建需要生成路由清单引用的 core 源码。",
       },
     ],
   },
@@ -116,7 +135,7 @@ Limina 会逐项分析静态导入；导入本身不证明必须生成声明引�
 
 语义判定依据与最终负责该配置的检查器各有职责：前者固定源码配置的解释方式，后者选择执行检查器。构建着色或聚合约束可以把普通 TypeScript 配置分配给 `vue-tsc`，但不会改变其已冻结的 TypeScript 语义。
 
-如果确实存在静态分析看不见的边，应使用 `liminaOptions.implicitRefs` 或图规则中的允许项说明原因，而不是在普通叶子 `tsconfig` 里手写 `references`。
+新增静态分析看不见的关系时使用 `liminaOptions.implicitRefs`；图规则中的允许项只解释已有的额外引用。两者都不能替代禁止规则或解析证据。
 
 ### 工作区包导出是否适合源码导入
 
@@ -198,7 +217,7 @@ Knip 的结论取决于分析的入口，不证明完整的运行时可达性。
 
 在使用 `TypeScript` 项目引用的多包仓库里，遗漏一个源码文件并不一定会立刻表现为项目引用错误。它可能只是没有被任何检查器入口触达。`proof:check` 用来把这类“没人检查”的文件暴露出来。
 
-不应纳入常规检查范围的文件，应在允许清单中说明原因。
+仍在治理范围内、却有意没有普通覆盖的文件，可以在[允许清单](./config/proof-allowlist.md)中说明原因。允许清单不改变检查器输入，也不表示文件已通过类型检查。
 
 对框架源码，覆盖证明还会检查：每个类型配置恰有一个负责的检查器；每个受治理框架源码实际位于该检查器的有效文件集合；每个框架目标都能从所属叶子包执行；每个聚合配置的叶子配置归属一致；生成声明配置不包含 `.astro` 或 `.svelte` 输入。
 
@@ -216,7 +235,7 @@ Knip 的结论取决于分析的入口，不证明完整的运行时可达性。
 
 因为生成的声明构建配置会开启 `emitDeclarationOnly` 并关闭 `noEmit`，所以 `checker:build` 不是无副作用检查。它会运行真实的底层检查器，并可能写出 `.d.ts` 和 `.tsbuildinfo` 等产物。
 
-Limina 准备并检查工程图，再由所选检查器执行类型构建。
+Limina 准备生成图，再由所选检查器执行类型构建。
 
 运行前，Limina 会检查已配置检查器需要的对等依赖是否可解析。缺失依赖时会在执行检查器前失败，并给出安装提示。
 
@@ -256,14 +275,6 @@ Limina 准备并检查工程图，再由所选检查器执行类型构建。
 
 如果需要把 `release:check` 放进持续集成，建议把它和项目自己的构建、测试、包产物检查放在同一个命名流水线中，让执行顺序明确。
 
-## 任务分工 {#推荐理解方式}
+## 选择下一步 {#推荐理解方式}
 
-按用途可将任务分成三组：
-
-`graph:prepare` 和 `graph:check` 负责生成项目引用，并检查它们与源码导入的关系。
-
-`source:check` 和 `proof:check` 检查源码归属、导入授权和文件覆盖。
-
-`checker:build` 和 `checker:typecheck` 运行类型检查器；`package:check` 和 `release:check` 检查已构建产物中的包和发布问题。
-
-Limina 提供上述检查，并调用所选编译器或框架检查器完成类型检查。打包、测试和发布由项目自己的命令执行。
+日常使用默认 `check`；定位问题时按失败任务运行独立命令。修改源码范围、入口或规则后，仍应回到完整检查。准备发布时，再用项目构建生成消费者产物，并运行已配置的包检查和发布检查。可直接参考[工作流](./workflows.md)。

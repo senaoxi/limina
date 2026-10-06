@@ -8,7 +8,7 @@
 声明构建时，当前 tsconfig 应该先消费哪个上游声明构建结果？
 ```
 
-Limina 确认导入在 TypeScript 声明构建中需要的类型及其提供者。仅有导入列表不能确定所需的 `references`。
+Limina 需要知道当前检查器从哪里获得类型、是否需要上游源码项目参与声明构建。仅有导入列表无法回答这两个问题。本文先解释这种区分为何必要；具体判定过程见[从导入解析到声明构建图](./import-resolution-to-declaration-build-graph.md)。
 
 ## 项目引用不是普通依赖列表 {#references-不是普通依赖列表}
 
@@ -25,8 +25,6 @@ references：声明构建时应该先构建并消费哪个上游项目输出
 它们会互相影响，但不能互相替代。
 
 例如，`dependencies` 里声明了 `@acme/core`，不代表每个导入 `@acme/core` 的 `tsconfig` 都应该引用到 `core` 的源码构建配置。因为 `@acme/core` 的某个入口可能暴露源码，也可能暴露已经生成好的 `.d.ts`，还可能只是运行时资源。引用推断要结合当前 `tsconfig` 和检查器语义下的解析结果、类型证据和编译关系需求。
-
-`references` 记录当前声明构建需要的上游声明项目。
 
 ## 一个导入可能有不同含义
 
@@ -82,23 +80,7 @@ packages/app/
 
 这些配置可能使用不同的文件集合和编译选项，也不一定都需要声明构建。仅有导入和 `package.json` 依赖，无法确定哪些配置应该参与构建；这个范围由检查器入口和源码配置边界确定。
 
-Limina 先激活包治理区域，并在其中发现默认 `tsconfig.json` 入口。自动归属发现始终启用；具名检查器的 `include` 可以固定所选入口身份，未被认领的入口继续自动发现。例如：
-
-```ts [limina.config.mts]
-export default defineConfig({
-  config: {
-    checkers: {
-      tsc: {
-        include: ['packages/*/tsconfig.json'],
-      },
-    },
-  },
-});
-```
-
-这个配置固定匹配默认入口的 `tsc` 身份，不会关闭其他已激活入口的自动发现。所选默认入口可以通过 `references` 闭包到达普通命名源码叶子配置。结构性包边界仍约束每个入口和文件。
-
-在该范围内，Limina 解析有效源码输入、检查器能力、编译选项和依赖事实。解析源码时确定的语义判定依据，后文简称“语义判定依据”。只读输入拓扑使用 TypeScript 配置读取器，还不代表冻结后的语义判定依据或可执行声明图。见[基本概念](./concepts.md#输入拓扑与依赖图)。
+Limina 在已激活的包范围内发现默认 `tsconfig.json`，再从聚合入口到达各个源码叶子。自动发现已经启用，需要固定检查器时才添加具名范围。关键是让每个实现文件有唯一归属，而不是让所有配置重复包含整个包。入口和成员规则见[核心概念](./concepts.md#聚合器配置)。
 
 ## 源码类型配置和声明构建配置要分开
 
@@ -118,35 +100,22 @@ export default defineConfig({
 
 声明构建需要的 `declaration`、`emitDeclarationOnly`、`outDir`、`tsBuildInfoFile` 和生成后的 `references`，由 Limina 写入 `.limina/` 下的配置。
 
-普通源码叶子配置不维护声明构建引用。Limina 根据通过校验的关系，在 `.limina/` 下的声明构建图中生成这些引用。
+这里需要区分两种 `references`：
+
+- **聚合成员引用**：由用户在默认 `tsconfig.json` 中维护，将多个叶子纳入入口；聚合配置解析后的文件集合必须为空。
+- **叶子间声明构建引用**：由 Limina 写入生成配置。用户的源码叶子不能直接声明原生 `references`，空数组也不允许。
 
 ## Limina 实际判断的是声明提供者 {#limina-实际判断的是-declaration-provider}
 
-Limina 按以下步骤推断 `references`：
+假设 `app` 需要 `core` 的类型。类型可能已经由 `core/dist/index.d.ts` 提供，也可能需要 `core` 的源码叶子先生成声明。后一种情况下，这个叶子才是候选的声明提供者。
 
-```text
-源码里的 import/export
-  -> 当前检查器和 tsconfig 下的 TypeScript 类型解析
-  -> 判断声明提供者
-  -> 验证编译关系需求、源码归属、检查器能力与身份、图策略
-  -> 为允许的声明提供者生成项目引用
-```
+Limina 还要检查：目标源码归谁所有、该配置能否生成声明、两侧能否使用同一构建检查器，以及图规则是否允许这条关系。只有符合这些条件的声明构建关系才进入生成的 `references`。
 
-源码收集器对原生输入使用所属 TypeScript AST，对语义判定依据已锁定的框架输入使用官方生成表示。依赖事实分别记录解析结果、文件纳入 TypeScript `Program` 的情况、已有类型证据和编译关系需求。缺少类型提供者不会自动抹掉 `source-semantic` 需求；具体声明提供者则可能终止新的源码引用。Oxc 不修复已锁定语义下的解析失败。
-
-完整判定规则与当前诊断见[从导入解析到声明构建图](./import-resolution-to-declaration-build-graph.md)。
+Astro / Svelte 的受支持依赖还可能只需要安排检查顺序。这类框架调度关系不提供声明项目，也不写成 TypeScript 引用。具体的类型证据与调度区别见[判定过程](./import-resolution-to-declaration-build-graph.md#limina-如何判断一条导入是否需要项目引用)。
 
 ## 静态导入看不到的边要显式声明 {#静态-import-看不到的边要显式声明}
 
-有些真实依赖不会直接出现在源码 `import` 里，例如：
-
-- 代码生成后才出现的导入；
-- 由路由表、插件表、命令表连接的模块；
-- 运行时通过清单注册的模块；
-- 框架宏或编译插件转换后产生的依赖；
-- 构建阶段才映射到真实源码的虚拟模块。
-
-静态导入图无法证明这些关系。Limina 不会推断它们，也不会将它们写入普通源码 `tsconfig` 的 TypeScript 原生 `references`。
+代码生成后的导入、路由清单或插件注册表，可能包含源码分析暂时看不到的连接。只有这些连接确实构成声明构建依赖时，才需要补充关系；普通运行时依赖不必一律变成项目引用。字面量动态导入 `import('./module.js')` 已参与分析，不属于这种遗漏。
 
 这类边应该通过 `liminaOptions.implicitRefs` 显式声明：
 
@@ -159,7 +128,7 @@ Limina 按以下步骤推断 `references`：
     "implicitRefs": [
       {
         "path": "../core/tsconfig.lib.json",
-        "reason": "app 的路由清单由构建插件生成，生成后会加载 core；源码中没有静态导入。"
+        "reason": "app 的声明构建需要生成路由清单引用的 core 源码；当前被分析的源码中没有这条导入。"
       }
     ]
   }
@@ -212,8 +181,8 @@ export function initB(options?: BOptions) {
 如果 `packages/a` 和 `packages/b` 由两个独立源码 `tsconfig` 管辖，`TypeScript` 在检查源码时会解析这两条导入。Limina 生成的声明构建图面向检测和增量构建，会按 `TypeScript` 能确认的声明提供者保守生成引用。即使最终 `.d.ts` 产物表面上没有互相导入，这组源码关系仍然可能变成：
 
 ```text
-packages/a/tsconfig.dts.json -> packages/b/tsconfig.dts.json
-packages/b/tsconfig.dts.json -> packages/a/tsconfig.dts.json
+a 的生成声明配置 -> b 的生成声明配置
+b 的生成声明配置 -> a 的生成声明配置
 ```
 
 这组跨配置引用形成声明构建循环，不能作为独立构建单元排序执行。
@@ -234,9 +203,7 @@ a -> b
 b -> a
 ```
 
-可以用同一个源码配置覆盖两组文件：
-
-::: code-group
+如果包职责也适合合并，可以把两组实现移入同一个包，再由该包的一个源码叶子覆盖。不能只扩大一个配置的 `include`，让它跨越两个仍然独立的包：
 
 ```json [packages/runtime/tsconfig.json]
 {
@@ -244,8 +211,6 @@ b -> a
   "include": ["src/a/**/*.ts", "src/b/**/*.ts"]
 }
 ```
-
-:::
 
 ```text
 packages/runtime/src/a/index.ts
@@ -309,29 +274,7 @@ export const metrics: MetricsSink = {
 
 如果循环来自注册、启动、插件装配或运行时装配代码，可以把装配移到上层入口，由它导入两侧模块并调用各自导出的函数。
 
-不建议：
-
-::: code-group
-
-```ts [packages/a/src/index.ts]
-import { registerB } from '@repo/b';
-
-export function startA() {
-  registerB();
-}
-```
-
-```ts [packages/b/src/index.ts]
-import { registerA } from '@repo/a';
-
-export function startB() {
-  registerA();
-}
-```
-
-:::
-
-可以改成：
+原本 `a` 与 `b` 为了互相注册而形成双向关系，可以把注册动作交给 `app`：
 
 ::: code-group
 
@@ -391,7 +334,7 @@ b -> a
 }
 ```
 
-如果导入方在当前 `TypeScript` 配置下解析到的是 `packages/b/dist/index.d.ts`，这更接近声明文件消费。它不需要通过 `TypeScript` 项目引用约束 `packages/b` 的源码声明构建。
+如果导入方在当前 `TypeScript` 配置下解析到的是 `packages/b/dist/index.d.ts`，这就是已有声明文件消费。它不需要通过 `TypeScript` 项目引用约束 `packages/b` 的源码声明构建。
 
 这种做法适合 `packages/b` 的声明文件由打包器、声明打包器或手写声明维护的场景。它不适合用来掩盖本应由源码项目引用表达的真实源码依赖。
 
@@ -408,7 +351,7 @@ b -> a
 | `TypeScript` 解析不到导入                | 类型入口、路径别名或 `tsconfig` 解析配置需要修正 |
 | 实际工作区导入的消费方检查器没有解析目标 | 当前检查器选项下无法解析该工作区入口             |
 | 导入落到另一个包的内部源码               | 可能绕过公开入口                                 |
-| 导入落到 `.d.ts`                         | 更接近声明文件消费，不应强行生成源码 `reference` |
+| 导入落到 `.d.ts`                         | 已有声明文件消费，不反推源码项目引用             |
 | 一个源码文件被多个 `tsconfig` 管辖       | 文件归属不清楚                                   |
 | 静态导入看不到真实边                     | 需要 `implicitRefs` 显式声明                     |
 | 生成的 `reference` 违反图规则            | 源码关系存在，但架构规则不允许                   |
@@ -421,7 +364,7 @@ b -> a
 接入时应核对以下仓库条件，以便理解引用来源并排查失败原因：
 
 - 源码 `tsconfig` 边界清楚；
-- 每个被检查的源码文件尽量只归属于一个源码类型配置；
+- 每个受管实现文件只归属于一个源码叶子配置；声明文件另按声明规则处理；
 - 跨包导入优先经过包名和公开入口；
 - 包导出的类型入口和运行时入口有清楚约定；
 - `Vue`、`Svelte` 等框架文件交给对应检查器处理；
@@ -431,19 +374,4 @@ b -> a
 
 跨包相对路径、重叠的 `tsconfig` 范围、不稳定的公开入口，以及不一致的构建产物或类型入口，需要分别处理。可结合诊断修正入口、调整 `tsconfig` 边界或显式声明例外；生成图本身不会修复这些输入问题。
 
-::: tip 结论
-
-生成的 `references` 来自通过校验的声明关系。
-
-处理过程如下：
-
-```text
-在用户声明的治理范围内，
-用当前检查器和 tsconfig 下的 TypeScript 类型解析确定声明提供者，
-验证编译关系需求、源码归属、检查器能力与身份、图规则，
-再把允许的声明关系转换成 .limina 下的构建 references。
-```
-
-观察到的编译关系和显式 `implicitRefs` 共同组成生成图。它们不会复制 `dependencies`，也不承诺是最终 `.d.ts` 的最小依赖图。观察不到的真实声明关系仍需要显式补充。
-
-:::
+观察到的编译关系和显式 `implicitRefs` 共同组成生成图。它们不会复制 `dependencies`，也不承诺是最终 `.d.ts` 的最小依赖图。下一篇会展开[解析目标、类型证据与编译关系需求](./import-resolution-to-declaration-build-graph.md)如何共同决定结果。

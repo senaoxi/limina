@@ -1,16 +1,16 @@
 # 覆盖证明允许清单
 
-允许清单条目是显式源码覆盖例外。
+`proof.allowlist` 为留在源码治理范围内、却有意没有检查器或生成图覆盖的具体文件记录例外。它只影响覆盖证明，不改变检查器输入、不隐藏类型诊断，也不授予跨包导入权限。
 
-```js
+```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   proof: {
     allowlist: [
       {
-        file: 'src/generated/runtime.d.ts',
-        reason: '由运行时构建步骤生成。',
+        file: 'packages/core/src/generated/runtime.d.ts',
+        reason: '由运行时构建步骤生成；本次类型检查不消费该文件。',
       },
     ],
   },
@@ -21,68 +21,24 @@ export default defineConfig({
 
 - **类型：** `Array<{ file: string; reason: string }>`
 
-每个条目指定一个源码文件，并说明它不纳入普通检查器覆盖的理由。逐文件声明例外，便于评审。
-
-```js
-proof: {
-  allowlist: [
-    {
-      file: 'src/generated/runtime.d.ts',
-      reason: '由运行时构建步骤生成。',
-    },
-  ],
-}
-```
+逐文件声明例外，便于在文件用途或检查范围变化后重新评审。若文件本来就不属于本次治理，应先调整[源码边界](./source-boundary.md)，而不是给它添加覆盖例外。
 
 ## `file`
 
 - **类型：** `string`
 
-`file` 是允许例外的源码文件路径，相对于 `config.rootDir`。外部激活包可以使用 `../`；它必须指向已验证源码边界内、尚无检查器或图覆盖的现有具体文件，不应该用模糊通配模式扩大例外范围。文件不存在、已在边界之外或无需允许清单就已有覆盖时，都会报告无效条目；恢复普通覆盖后应移除例外。
+`file` 相对于 `config.rootDir`，外部激活包可以使用 `../`。它必须指向源码边界内、尚无检查器或生成图覆盖的现有具体文件，不能用通配模式扩大例外范围。
+
+文件不存在、已在源码边界之外，或无需允许清单就已有覆盖时，条目无效。文件恢复普通覆盖后，应删除对应例外。
 
 ## `reason`
 
-- **类型：** `string`
+- **类型：** `string`，不能为空
 
-`reason` 说明该文件不纳入普通检查器覆盖的理由。
+说明为什么保留这个文件、为什么当前检查范围不覆盖它。原因应能帮助维护者判断例外是否仍然成立。
 
-::: warning 注意
-`reason` 不能为空。应说明文件需要这一覆盖例外的原因，供后续评审。
-:::
+## 例外如何影响结果
 
-例如某个声明文件只由构建步骤生成：
+以上配置中的 `runtime.d.ts` 若位于 `config.source` 范围内，却既没有检查器覆盖，也没有生成图项目覆盖，`proof check` 会将其报告为未覆盖源码。有效的允许清单条目让覆盖证明接受这一例外，并在配置中保留原因。
 
-```ts
-// src/generated/runtime.d.ts
-declare const runtimeVersion: string;
-```
-
-如果它落在 `config.source.include` 范围内，却不属于任何检查器入口，`limina proof check` 会将它报告为未覆盖源码。加到 `proof.allowlist` 后，它会被记录为覆盖例外，理由保留在配置中供评审。
-
-::: details 示例目录
-目录可以是：
-
-```text
-packages/core/
-  src/index.ts
-  src/generated/runtime.d.ts
-  tsconfig.lib.json
-```
-
-`src/generated/runtime.d.ts` 在 `config.source.include` 范围内，但它不是由本仓库源码维护，而是构建步骤写出的声明文件。运行 `pnpm exec limina proof check` 时，Limina 会发现这个文件没有被检查器入口覆盖，于是把它报告为未覆盖源码。
-
-把它加入允许清单后：
-
-```js
-proof: {
-  allowlist: [
-    {
-      file: 'packages/core/src/generated/runtime.d.ts',
-      reason: '由运行时构建步骤生成。',
-    },
-  ],
-}
-```
-
-覆盖证明检查接受这一覆盖例外，并在配置中保留 `reason`。文件覆盖情况变化时，应重新评审该条目。
-:::
+这不表示文件已经通过类型检查。后来若某个检查器入口开始覆盖它，允许清单会变为多余条目；应移除例外，再按普通覆盖规则维护。

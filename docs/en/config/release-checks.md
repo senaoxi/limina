@@ -1,12 +1,19 @@
 # Release Checks
 
-`limina release check` uses `package.entries` to select outputs, packs them into an npm tarball, checks release files, and compares workspace publish dependencies against npm registry content. It runs separately from `package check`.
+`limina release check` uses `package.entries` to select outputs, packs them into an npm tarball, checks release files, and compares workspace publish dependencies against npm registry content. It runs separately from `package check` and does not build or publish.
+
+```sh
+pnpm build
+pnpm exec limina release check --package @acme/core
+```
+
+Configure the corresponding output in [`package.entries`](./package-checks.md#entries) first. Packing uses `pnpm pack --ignore-scripts`, so pnpm must be available. Workspace dependency baseline comparisons also require access to the selected registry.
 
 Built-in release checks are part of the command and do not depend on enabling an optional analyzer. An early failure, such as an invalid or private output manifest, can stop that entry before packing and later checks. The optional `release.npmPackageJsonLint` integration additionally lints the packed `package.json` with `npm-package-json-lint`.
 
-For workspace publish dependencies, Limina compares local packed content with an npm dist-tag baseline (`release.contentHash.baselineTag`, default `latest`). It reports `changed`, `local-only`, and `remote-only` files. Equal content after configured ignores produces no content-difference finding for that comparison; other release checks still apply.
+For workspace publish dependencies, Limina compares local packed content with an npm dist-tag baseline (`release.contentHash.baselineTag`, default `latest`). It reports `changed`, `local-only`, and `remote-only` files. Differences that are not ignored fail the release check. Equal content after configured ignores produces no content-difference finding for that comparison; other release checks still apply.
 
-Workspace traversal starts only when the output manifest name matches a named activated source package. It reads that source manifest's `workspace:` dependencies in `dependencies`, `optionalDependencies`, and `peerDependencies`, and rejects `link:` entries. An ordinary semver dependency is not traversed solely because a local package has that name. Without a matching source package, release-file and manifest checks still run, but workspace dependency traversal is absent. For each dependency, comparison uses the first configured output entry with its source name, or `<source-package>/dist` if none exists; multiple same-name entries are not all compared as dependency outputs.
+Workspace traversal starts only when the output manifest name matches a named activated source package. It reads that source manifest's `workspace:` dependencies in `dependencies`, `optionalDependencies`, and `peerDependencies`, and rejects `link:` entries. An ordinary semver dependency is not traversed solely because a local package has that name. Without a matching source package, release-file and manifest checks still run, but workspace dependency traversal is absent. For each workspace dependency, Limina uses the first configured output entry whose `name` equals **that dependency package's name**. If no entry exists, it uses `dist` under the dependency's source package directory. It does not compare every same-name output for that dependency.
 
 Before unpacking or comparing a registry baseline tarball, Limina verifies it against `dist.integrity`. If that field is absent, Limina verifies the SHA-1 `dist.shasum` fallback. Missing, malformed, or mismatched integrity metadata fails `release check`; this verification cannot be skipped.
 
@@ -92,10 +99,6 @@ Each importer → dependency edge evaluates its baseline and ignore policy indep
 By default `contentHash.builtinIgnore` is `false`, so no built-in files are ignored. When enabled, the built-in set contains exact root names `README`, `README.md`, `CHANGELOG.md`, `HISTORY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md`, plus paths below `docs/` and `examples/`. Other spellings or locations are not added automatically.
 
 Set `builtinIgnore: true` to use that built-in ignore set only as a fallback when `release.contentHash.ignore` is omitted or an ignore function returns `undefined`.
-
-::: info
-An ignore function returning `[]` means that dependency ignores no files (the built-in set is not applied). Returning `undefined` is what falls back to the built-in set.
-:::
 
 ## contentHash.ignore
 

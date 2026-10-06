@@ -1,29 +1,20 @@
 # 源码检查
 
-::: warning 注意
-顶层 `source` 选项配置 `source:check` 中的三类行为：`source.importAuthority` 用于源码导入授权，`source.declarations` 管理显式环境声明角色，`source.knip` 用于 `Knip` 驱动的未使用工作区依赖和未使用源码模块检查。它不同于 `config.source`，后者定义覆盖证明使用的全局源码边界。`config.source` 见 [源码边界](./source-boundary.md)。
-:::
+顶层 `source` 配置源码导入授权、环境声明角色和可选的源码使用分析。`source check` 默认按源码所属包及其依赖声明检查导入；不必先填写空的 `allow` 或 `knip` 对象。
 
-`source check` 根据包归属和依赖声明检查源码导入是否获得授权。Limina 会从每个已验证、已激活包的独立治理范围（包治理单元）发现源码，包括外部包和没有 `name`、只能用路径标识的工作区包；每个工作区包根目录的清单用于确定其源码归属。显式源码选择器相对于 `config.rootDir`，可以包含 `../`，并且只过滤这些治理单元已经产生的候选文件。
+| 字段                          | 用途                                   | 未配置时                   |
+| ----------------------------- | -------------------------------------- | -------------------------- |
+| `source.importAuthority`      | 为指定源码授予使用治理根依赖声明的权限 | 裸包依赖须由源码所属包声明 |
+| `source.declarations.ambient` | 标记需要显式管理的环境声明角色         | 不增加显式环境声明授权     |
+| `source.knip`                 | 检查未使用工作区依赖和未使用源码模块   | 关闭；启用后须安装 `knip`  |
 
-默认情况下，嵌套 `package.json` 会停止当前治理区域，嵌套 `pnpm-workspace.yaml` 则永远是自动生效、仅对所属包生效的边界。启用 [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，满足条件的无名嵌套清单可以继续留在外层区域：其中源码继承外层工作区包的归属和依赖授权，这份嵌套清单仍负责相对导入和 `#imports` 的包作用域。[`regions.exclude`](./regions.md#exclude) 可以从当前运行中裁剪激活包或已识别的嵌套包作用域；导入任何已停止或被排除的区域都会按跨边界访问处理。
+这些字段不选择全局源码集合。文件范围由 [`config.source`](./source-boundary.md) 决定。
 
-`Knip` 检查使用包入口而不是 `include` / `exclude`，根据 Limina 的源码归属方模块集合报告未使用工作区依赖和未使用源码模块。
+## 包归属与发现范围
 
-```js
-import { defineConfig } from 'limina';
+Limina 从每个已验证、已激活包的独立治理范围发现源码，包括外部包和无名称包。包根的清单决定源码归属和依赖授权。相对 `config.rootDir` 的源码选择器可以包含 `../`，但只能过滤已发现的候选，不能把未激活目录加入治理。
 
-export default defineConfig({
-  source: {
-    importAuthority: {
-      allow: {},
-    },
-    knip: {
-      workspaces: {},
-    },
-  },
-});
-```
+默认情况下，嵌套 `package.json` 会停止外层包的遍历。启用 [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，符合条件的无名嵌套作用域可以继续留在外层区域；其中源码使用外层包的依赖声明，嵌套清单仍负责相对导入和 `#imports` 的包作用域。嵌套工作区边界与区域排除的完整规则见[治理区域](./regions.md)。
 
 ## 资源模块导入
 
@@ -47,7 +38,7 @@ Limina 只在 `source:check` 中报告这两类问题：
 
 虚拟模块和框架注入模块的运行时行为仍不受支持；只有环境声明不能让这类运行时模块自动变为合法，Limina 也不会把它误报为物理资源缺失。
 
-Vue 资源类型证据与图分析使用同一套有界语义适配器组合：`vue-tsc` 2.2.0–2.2.12 搭配相同版本的 `@vue/language-core` 和 `@volar/typescript` 2.4.11–2.4.28，或 `vue-tsc` 3.2.0–3.2.4 搭配相同版本的 Language Core 和 Volar TypeScript 2.4.27。两个版本系列都接受 TypeScript 5.4.x–5.9.x 或 6.0.x。其他 Vue 检查器组件版本组合会被视为不受支持，不会误报成缺少类型声明。
+Vue 资源类型证据与图分析使用同一套受支持的语义适配器组合，具体版本见[Vue 检查器兼容范围](./checkers.md#vue-语义-import-分析)。不兼容的组件组合会被报告为工具链问题，不会误报成缺少资源类型声明。
 
 ## `importAuthority`
 
@@ -143,6 +134,10 @@ export default defineConfig({
 
 `source.knip` 控制 `source:check` 中由 `Knip` 驱动的部分：未使用工作区依赖和未使用源码模块。
 
+::: warning 注意
+`knip` 是 Limina 的可选对等依赖。如果启用了 `source.knip`，但运行 Limina 的工作区没有安装 `knip`，`source check` 会在源码分析开始前以缺少对等依赖错误失败。关闭 `source.knip` 时，Limina 不会解析或运行 Knip。如果持续集成需要覆盖未使用依赖和未使用模块检查，应显式安装并校验 `knip`。
+:::
+
 写 `knip: true` 时，Limina 使用自动生成的默认 `Knip` 配置。省略该选项或写 `knip: false` 时，会关闭这些 `Knip` 驱动的检查。对象形式会启用检查，并且至少声明 `root` 或 `workspaces` 之一，也可同时声明。治理根包使用 `{ root: {} }`，不需要额外规则时也可使用 `{ workspaces: {} }`：
 
 ```ts
@@ -193,10 +188,6 @@ interface SourceKnipCheckConfig {
 
 `<config>` 会从这个包目录解析。它必须是工作区内的 `JSON` 文件。托管脚本必须指向 Limina 管理且存在输出构建模块的配置。原始包脚本必须使用 `--raw --preset <tsc|tsgo|vue-tsc>`，配置还必须留在所属包目录里，并且不能指向生成的 `.limina` 配置。Limina 只支持 `limina build tsconfig.json`、`limina build tsconfig.dts.json --raw --preset tsgo`、`pnpm limina build tsconfig.json`、`pnpm exec limina build tsconfig.json` 这类直接静态写法。像 `limina build $CONFIG` 这样的动态 shell 脚本会被报告为不支持。单包支持没有把解析器接受的调用语法扩大到 npm、Yarn 或 Bun 包装命令；这些项目仍可使用直接的 `limina build`。
 
-::: warning 注意
-`knip` 是 Limina 的可选对等依赖。如果启用了 `source.knip`，但运行 Limina 的工作区没有安装 `knip`，`source check` 会在源码分析开始前以缺少对等依赖错误失败。关闭 `source.knip` 时，Limina 不会解析或运行 Knip。如果持续集成需要覆盖未使用依赖和未使用模块检查，应显式安装并校验 `knip`。
-:::
-
 Limina 会为受治理的源码归属方工作区写入 `entry: []`，从而关闭 `Knip` 隐式的 `index` / `main` / `cli` 入口猜测。默认可达性仍然包含包清单入口（`exports`、`main`、`module`、`browser`、`bin`、`types`、`typings`）、`Knip` 插件推断入口、包脚本，以及 Limina 为应用型源码归属方生成的虚拟入口。
 
 当包入口指向构建产物时，`Knip` 可能需要一个能说明 `rootDir` / `outDir` 的 `tsconfig`，才能把这些产物映射回源码文件。托管模式下，把这个布局写在源码叶子的 `liminaOptions.outputs` 中，再让包里的静态 `limina build <config>` 脚本指向托管源码配置或聚合配置。如果使用包内手写构建 `tsconfig`，则使用 `limina build <config> --raw --preset <checker>`。
@@ -230,15 +221,7 @@ Limina 会为受治理的源码归属方工作区写入 `entry: []`，从而关�
 
 布局匹配时，`utils/dist/src/env.js` 可以对应 `utils/src/env.ts`。Limina 将受管产物入口映射回源码时，需要已选中的生成 Knip 配置、该配置引用的生成输出项目中明确的 `rootDir` / `outDir`、位于输出根内的包清单目标，以及已属于该源码归属方受检查源码模块集合的候选。仅有目录选项不保证每个产物入口都可达；原始配置和默认配置还依赖 Knip 自身解析。
 
-再用静态包构建脚本指定所选配置：
-
-```json
-{
-  "scripts": {
-    "build": "limina build tsconfig.json"
-  }
-}
-```
+配合前面的 `"build": "limina build tsconfig.json"` 包脚本，Limina 才会选择该配置作为包入口分析的依据。
 
 如果推导出的 `Knip tsconfig` 未能说明 `outDir` / `rootDir`，`Knip` 可能看到 `dist` 入口却找不到对应源码，进而将源码文件报告为未使用模块。遇到这种情况，优先修正 `liminaOptions.outputs`，或使用显式原始构建的 `limina build <config> --raw --preset <checker>` 包内配置，而不是为了让 `Knip` 通过而给 `package.json` 补只给工具看的导出条件。
 
@@ -283,7 +266,7 @@ export default defineConfig({
 
 `entry` 用于补充包导出之外的直接源码入口。例如测试运行器可能会直接加载 `*.spec.ts` 文件。
 
-`entry` 配置必须使用相对于 `config.rootDir` 的正向通配模式，且必须位于键名指向的包目录内，并提供非空 `reason`。外部激活包使用 `../`；模式仍然只能过滤对应源码归属方已发现的源码模块集合。
+`entry` 配置必须使用相对于 `config.rootDir` 的正向通配模式，且必须位于 `root` 或 `workspaces[pkg]` 对应的包目录内，并提供非空 `reason`。外部激活包使用 `../`；模式仍然只能过滤对应源码归属方已发现的源码模块集合。
 
 ### `root.ignoreDependencies` / `workspaces[pkg].ignoreDependencies`
 
@@ -291,9 +274,9 @@ export default defineConfig({
 
 `source check` 会验证 `package.json` 中声明的工作区依赖能从导入方包的公开入口图触达。这个规则适用于每个工作区包，包括工作区根目录。
 
-如果依赖确实由生成代码、运行时字符串或 `Knip` 看不见的路径使用，可以在导入方包名对应的键下添加忽略条目。
+如果依赖确实由生成代码、运行时字符串或 `Knip` 看不见的路径使用，可以添加带原因的忽略条目：治理根包写在 `source.knip.root`，具名非根包写在 `source.knip.workspaces[pkg]`。
 
-忽略条目的 `dep` 必须是已存在的工作区包，并且这个依赖关系仍然声明在键名指向的导入方包清单中。确实需要保留时，把 `reason` 写在配置旁；不再需要时，应该删除依赖。
+忽略条目的 `dep` 必须是已存在的工作区包，并且这个依赖关系仍然声明在`root` 或 `workspaces[pkg]` 对应的导入方包清单中。确实需要保留时，把 `reason` 写在配置旁；不再需要时，应该删除依赖。
 
 ### `root.ignoreFiles` / `workspaces[pkg].ignoreFiles`
 
@@ -301,4 +284,4 @@ export default defineConfig({
 
 `ignoreFiles` 只用于确实要保留、但 `Knip` 看不见的源码模块。
 
-忽略条目必须使用相对于 `config.rootDir` 的文件路径，并提供非空 `reason`。路径可以包含 `../`，但该文件还必须属于键名指向的包的 Limina 已知源码模块集合。
+忽略条目必须使用相对于 `config.rootDir` 的文件路径，并提供非空 `reason`。路径可以包含 `../`，但该文件还必须属于`root` 或 `workspaces[pkg]` 对应包的已知源码模块集合。

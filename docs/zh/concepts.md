@@ -1,44 +1,17 @@
 # 核心概念
 
-Limina 选择需要治理的 `tsconfig`，根据源码导入和模块解析结果生成声明构建图，并在同一套流程中检查源码依赖、产物依赖和包边界。
+Limina 从用户维护的源码配置出发，确定文件归属和检查器，再生成内部声明构建关系。理解这条过程，先区分下面几种配置：
 
-它不替代 TypeScript、框架检查器、打包器、测试框架或包管理器。Limina 负责把这些工具已经依赖的配置关系显式化，并报告源码、配置和包边界之间不一致的地方。
+| 对象         | 谁维护                              | 回答的问题                                          |
+| ------------ | ----------------------------------- | --------------------------------------------------- |
+| 源码叶子配置 | 用户                                | 哪些文件属于同一个类型检查范围，使用哪些编译选项？  |
+| 聚合配置     | 用户                                | 一个默认 `tsconfig.json` 入口需要纳入哪些叶子配置？ |
+| 声明构建配置 | Limina                              | 内部声明写到哪里，构建前需要哪些上游声明项目？      |
+| 用户产物输出 | 用户声明，Limina 或项目构建工具执行 | 消费者安装的 JavaScript、声明等文件写到哪里？       |
 
-## 检查器入口
+“叶子”指实际拥有源码的配置，“聚合”指只组织成员、不拥有源码的配置。聚合配置里的 `references` 由用户维护；源码叶子之间的声明构建引用由 Limina 生成。
 
-[检查器入口](./config/checkers.md)指定由哪个检查器处理选中的源码 `tsconfig.json`。
-
-自动发现始终启用，即使同时配置了具名检查器范围。它发现普通 `tsconfig.json` 入口，并为每个可达的类型配置在 `tsc`、`tsgo`、`vue-tsc`、`astro`、`svelte-check` 中确定唯一负责的检查器。普通 TypeScript 项目的默认检查器只有在设置 `auto.useTsgo: true` 时才会选择 `tsgo`；具名检查器范围则直接为选中的默认入口提供归属证据。
-
-```js
-import { defineConfig } from 'limina';
-
-export default defineConfig({
-  config: {
-    checkers: {
-      auto: {
-        exclude: ['**/docs/**'],
-        useTsgo: false,
-      },
-      tsc: {
-        include: ['packages/core/tsconfig.json'],
-      },
-      'vue-tsc': {
-        include: ['packages/app/tsconfig.json'],
-      },
-    },
-  },
-});
-```
-
-入口选择受治理区域约束。具名检查器范围的 `include` 只选择默认源码 `tsconfig.json` 入口，`auto.exclude` 只过滤自动发现的根入口。不要把 `tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.build.json` 或 `.limina` 下的生成配置直接写进具名检查器范围。`tsconfig.lib.json`、`tsconfig.test.json` 等普通命名源码配置只有经已选中 `tsconfig.json` 的 `references` 触达时才会进入管理范围；保留的 `tsconfig*.build.json`、`tsconfig*.dts.json`、`tsconfig*.base.json` 和 `tsconfig*.check.json` 不属于受管源码入口。`auto.exclude` 与具名检查器范围的 `exclude` 都不会切断已经建立的引用闭包；如果引用触达已激活区域之外的现有普通源码配置，Limina 会报告跨区域引用。
-
-各个固定检查器身份的角色不同：
-
-- `tsc`、`tsgo` 和 `vue-tsc` 可以拥有源码配置，并执行 Limina 生成的声明构建入口；
-- `svelte-check` 和 `astro` 负责完整的框架类型配置，按叶子配置执行且不产出声明。
-
-这个区分会影响后续命令。`limina checker build` 运行能生成声明的检查器，`limina checker typecheck` 运行由框架检查器负责的叶子配置。
+整个过程先受[治理区域](./config/regions.md)约束：所选配置决定治理根，根的工作区声明决定包集合，激活包再提供各自的源码范围。Limina 负责检查这些关系，类型检查、打包和测试仍由相应工具执行。
 
 ## 源码配置
 
@@ -55,7 +28,7 @@ packages/core/tsconfig.test.json
 packages/core/tsconfig.tools.json
 ```
 
-常见布局中，`tsconfig.json` 是入口或聚合配置，`tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.tools.json` 是源码叶子配置。源码叶子配置应该描述自己拥有的源码文件，不应该手工维护 `references`。Limina 会根据静态导入和 `liminaOptions.implicitRefs` 推导声明构建引用。
+常见布局中，`tsconfig.json` 是入口或聚合配置，`tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.tools.json` 是源码叶子配置。源码叶子配置描述自己拥有的源码文件，不允许直接声明原生 `references`，空数组也不行。Limina 会根据静态导入和 `liminaOptions.implicitRefs` 推导声明构建引用。
 
 `import("./module.js")` 这类字面量动态导入已经参与依赖收集。如果声明构建关系来自生成代码、计算后的运行时导入或其他依赖分析无法观察的关系，可以在源码叶子配置里声明 `liminaOptions.implicitRefs`：
 
@@ -65,14 +38,14 @@ packages/core/tsconfig.tools.json
     "implicitRefs": [
       {
         "path": "../contracts/tsconfig.lib.json",
-        "reason": "运行时模式定义生成过程通过生成代码导入此项目",
+        "reason": "本叶子的声明构建需要生成的模式代码引用的 contracts 源码。",
       },
     ],
   },
 }
 ```
 
-`implicitRefs` 的 `path` 必须指向同一检查器可达范围内的普通源码 `tsconfig*.json`，不能指向 `.limina` 生成配置、构建配置、基础配置或自身。
+`implicitRefs.path` 相对声明它的源码配置解析，必须指向同一检查器可达范围内、具有声明构建能力的普通源码叶子，不能指向 `.limina` 生成配置、构建配置、基础配置或自身。这些关系仍须通过图规则；它不会补充模块解析能力。
 
 ## 聚合配置 {#聚合器配置}
 
@@ -91,20 +64,22 @@ packages/core/tsconfig.tools.json
 
 不要把聚合配置当成源码拥有者。需要区分不同运行环境、测试范围或构建目标时，应让聚合配置引用多个源码叶子配置，而不是让一个配置同时承担聚合和源码归属两种职责。
 
-## 输入拓扑与依赖图
+## 检查器入口
 
-只读输入拓扑通过 TypeScript 配置读取器展开已选默认入口与聚合配置引用；它不会锁定解析源码时确定的语义判定依据，也不会建立可执行的检查器图。因此，输入拓扑的 `complete` 状态只证明该次配置与入口拓扑读取没有输入诊断。
+[检查器入口](./config/checkers.md)指定由哪个检查器处理选中的源码 `tsconfig.json`。
 
-下面几类关系必须区分：
+自动发现始终启用，即使同时配置了具名检查器范围。它发现普通 `tsconfig.json` 入口，并为每个可达的源码叶子配置在 `tsc`、`tsgo`、`vue-tsc`、`astro`、`svelte-check` 中确定唯一负责的检查器。普通 TypeScript 项目的默认检查器只有在设置 `auto.useTsgo: true` 时才会选择 `tsgo`；具名检查器范围则直接为选中的默认入口提供归属证据。
 
-| 图视图         | 事实与边界                                                                                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| 原生引用       | 用户书写的 TypeScript `references`；聚合配置引用建立成员关系，原生叶子构建引用必须从受管源码叶子配置中迁出。                               |
-| 补充声明       | `liminaOptions.implicitRefs`；显式声明关系，仍须通过目标、检查器和规则校验。                                                               |
-| 已观察源码关系 | 来自已锁定检查器上下文的依赖分析；已观察到部分关系时，`complete` 仍可能为 `false`。                                                        |
-| 有效生成图     | 执行所用的有效生成声明引用与 `declaration-provider`（声明提供者）或 `framework-schedule`（框架调度）类型边；并非每个已观察目标都变成引用。 |
+例如，默认 `tsconfig.json` 直接包含普通 TypeScript 源码时，可由自动发现交给 `tsc`；若它只引用多个叶子配置，Limina 会沿成员引用递归找到这些叶子，再确定各自的检查器。通常可以先使用默认行为，具体配置见[检查器入口](./config/checkers.md)。
 
-不完整的比较不能证明未观察到的原生关系多余。比较不可用时，迁移会把保留的显式关系转为 `implicitRefs` 并报告分析不完整，而不会把缺少证据当作空依赖图。包依赖图导出则另行提供源码与产物两类视图。
+入口选择受治理区域约束。具名检查器范围的 `include` 只选择默认源码 `tsconfig.json` 入口，`auto.exclude` 只过滤自动发现的根入口。不要把 `tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.build.json` 或 `.limina` 下的生成配置直接写进具名检查器范围。`tsconfig.lib.json`、`tsconfig.test.json` 等普通命名源码配置只有经已选中 `tsconfig.json` 的 `references` 触达时才会进入管理范围；保留的 `tsconfig*.build.json`、`tsconfig*.dts.json`、`tsconfig*.base.json` 和 `tsconfig*.check.json` 不属于受管源码入口。`auto.exclude` 与具名检查器范围的 `exclude` 都不会切断已经建立的引用闭包；如果引用触达已激活区域之外的现有普通源码配置，Limina 会报告跨区域引用。
+
+各个固定检查器身份的角色不同：
+
+- `tsc`、`tsgo` 和 `vue-tsc` 可以拥有源码配置，并执行 Limina 生成的声明构建入口；
+- `svelte-check` 和 `astro` 负责完整的框架类型配置，按叶子配置执行且不产出声明。
+
+这个区分会影响后续命令。`limina checker build` 运行能生成声明的检查器，`limina checker typecheck` 运行由框架检查器负责的叶子配置。
 
 ## 声明构建配置
 
@@ -142,7 +117,7 @@ packages/core/tsconfig.tools.json
 
 声明文件会写到 `.limina/dts/checkers/<checker>/...`，构建缓存会写到 `.limina/tsbuildinfo/checkers/<checker>/...`。生成的声明配置会把 `outDir` 和 `declarationDir` 同时设为这个受管根目录，因此源码配置继承的 `declarationDir` 不会把检查器输出重定向到用户目录。这些路径属于 Limina 的内部输出，不应该手工编辑，也不应该写进用户维护的源码配置。
 
-生成的声明目录和缓存分区保留完整源配置文件名，避免同目录下的配置在去掉前缀后共用位置。此布局升级会重新生成受管配置，并可能产生一次增量缓存失效。清理只删除此前登记为受管的路径，未登记的文件会保留。
+声明目录和缓存分区保留完整源码配置文件名，避免同目录下的叶子共用输出。生成文件由 Limina 维护；需要刷新时运行 `graph prepare` 或相应检查器命令。
 
 生成的 `references` 来自通过验证的源码编译关系和显式 `liminaOptions.implicitRefs`。仅有源码目标不足以生成引用：关系还需要非空的编译关系需求、有效的声明提供者归属和声明生成能力、相同的最终检查器身份，并且图规则允许。指向 `.d.ts` 系列文件的目标或具体声明提供者仍属于声明消费，不产生新的源码引用。
 
@@ -176,7 +151,17 @@ Limina 会在 `.limina/tsconfig/checkers/<checker>/outputs/...` 下生成输出�
 
 ## 源码边、声明边与产物边
 
-一条 `import` 不一定等于一条 `references`。Limina 会先看这条导入在当前源码配置和检查器语义下解析到哪里，再决定它属于哪类关系。
+一条 `import` 不一定对应一条项目引用。Limina 先按当前检查器和源码配置解析，再判断关系：
+
+| 观察到的关系                        | 后续含义                                                 |
+| ----------------------------------- | -------------------------------------------------------- |
+| 导入当前叶子拥有的源码              | 留在当前项目内部，无需跨项目引用                         |
+| 导入另一受管叶子的源码              | 候选源码关系；满足声明需求、检查器和规则条件后才生成引用 |
+| 解析到已有 `.d.ts` 系列文件         | 消费现有声明，不反推其源码项目                           |
+| Astro / Svelte 等框架间的受支持关系 | 可以形成调度边，不等于声明项目引用                       |
+| 无源码归属的目标位于已验证输出根    | 包依赖导出可记录为产物消费，不能据此安排生产构建         |
+
+例如，`app` 通过包名导入 `core/src/index.ts`，两侧都有唯一源码归属、同一构建检查器，且存在允许的声明构建需求时，Limina 会让 `app` 的生成配置引用 `core` 的生成配置。若同一导入解析到 `core/dist/index.d.ts`，则停在已有声明边界；其更新由项目的构建流程负责。
 
 检查器解析到受管源码目标，只能建立候选源码关系。生成声明引用还要求非空的编译关系需求、有效源码归属、允许的目标，以及由同一检查器最终负责的声明构建端点。即使原解析保留源码路径，具体声明证据也可能阻止新增源码关系。Astro/Svelte 源码关系可以转为 `framework-schedule`（框架调度）边，这类边绝不会成为声明引用；包依赖授权则单独检查源码所属包的清单。
 
@@ -240,3 +225,18 @@ export default defineConfig({
 `deny.refs` 用来禁止项目引用指向某些源码配置，`deny.deps` 用来禁止源码导入某些包、`#imports` 或 Node 内置模块。`allow.refs` 只解释已经存在的额外引用，不会创建引用，也不会覆盖 `deny.refs`。
 
 图规则适合表达浏览器与 Node、公开 API 与内部工具、生产代码与测试代码这类边界。Limina 会把规则、源码导入和生成声明图一起检查；如果带有 `runtime-client` 标签的源码导入了 `node:fs`，图检查会失败，并显示规则里的 `reason`。
+
+## 输入拓扑与依赖图
+
+只读输入拓扑通过 TypeScript 配置读取器展开已选默认入口与聚合配置引用；它不会锁定解析源码时确定的语义判定依据，也不会建立可执行的检查器图。因此，输入拓扑的 `complete` 状态只证明该次配置与入口拓扑读取没有输入诊断。
+
+下面几类关系必须区分：
+
+| 图视图         | 事实与边界                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 原生引用       | 用户书写的 TypeScript `references`；聚合配置引用建立成员关系，原生叶子构建引用必须从受管源码叶子配置中迁出。                               |
+| 补充声明       | `liminaOptions.implicitRefs`；显式声明关系，仍须通过目标、检查器和规则校验。                                                               |
+| 已观察源码关系 | 来自已锁定检查器上下文的依赖分析；已观察到部分关系时，`complete` 仍可能为 `false`。                                                        |
+| 有效生成图     | 执行所用的有效生成声明引用与 `declaration-provider`（声明提供者）或 `framework-schedule`（框架调度）类型边；并非每个已观察目标都变成引用。 |
+
+不完整的比较不能证明未观察到的原生关系多余。比较不可用时，迁移会把保留的显式关系转为 `implicitRefs` 并报告分析不完整，而不会把缺少证据当作空依赖图。包依赖图导出则另行提供源码与产物两类视图。

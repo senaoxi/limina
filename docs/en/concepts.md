@@ -1,44 +1,17 @@
 # Core Concepts
 
-Limina selects the `tsconfig` files to govern, generates a declaration build graph from source imports and module resolution results, and checks source dependencies, artifact dependencies, and package boundaries in the same flow.
+Limina starts from user-maintained source configs, determines file ownership and checkers, then generates internal declaration build relationships. Begin by distinguishing these kinds of configuration:
 
-It does not replace `TypeScript`, framework checkers, bundlers, test frameworks, or package managers. Limina makes the configuration relationships that those tools already depend on explicit, and reports inconsistencies between source code, configuration, and package boundaries.
+| Object                   | Maintained by                                                      | Question it answers                                                                             |
+| ------------------------ | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Source leaf config       | User                                                               | Which files share a type-checking scope, and which compiler options apply?                      |
+| Aggregator config        | User                                                               | Which leaf configs should a default `tsconfig.json` entry include?                              |
+| Declaration build config | Limina                                                             | Where do internal declarations go, and which upstream declaration projects must be built first? |
+| User artifact output     | Declared by the user; built by Limina or the project's build tools | Where do the JavaScript, declarations, and other files consumers install go?                    |
 
-## Checker Entry
+A “leaf” owns source files; an “aggregator” organizes members without owning source. Users maintain `references` in aggregators, while Limina generates declaration build references between source leaves.
 
-A [checker entry](./config/checkers.md) specifies which checker handles each selected source `tsconfig.json`.
-
-Auto discovery is always enabled, including when named checker scopes are present. It discovers ordinary `tsconfig.json` entries and assigns each reachable type config exactly one owner from `tsc`, `tsgo`, `vue-tsc`, `astro`, or `svelte-check`. Use `auto.useTsgo: true` to choose `tsgo` as the ordinary TypeScript fallback; named scopes provide direct ownership evidence for selected default entries.
-
-```js
-import { defineConfig } from 'limina';
-
-export default defineConfig({
-  config: {
-    checkers: {
-      auto: {
-        exclude: ['**/docs/**'],
-        useTsgo: false,
-      },
-      tsc: {
-        include: ['packages/core/tsconfig.json'],
-      },
-      'vue-tsc': {
-        include: ['packages/app/tsconfig.json'],
-      },
-    },
-  },
-});
-```
-
-Entry selection is region-scoped. Named `include` fields only select default source `tsconfig.json` entries, while `auto.exclude` filters automatic root discovery. Do not list `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, or generated configs under `.limina` directly in a named checker scope. Ordinary named source configs such as `tsconfig.lib.json` and `tsconfig.test.json` enter Limina's managed scope only through `references` from a selected `tsconfig.json` entry. Reserved `tsconfig*.build.json`, `tsconfig*.dts.json`, `tsconfig*.base.json`, and `tsconfig*.check.json` are not managed source entries. Neither `auto.exclude` nor a named scope's `exclude` cuts an established references closure; an existing ordinary source config reached outside the activated regions is reported as a cross-region reference.
-
-Fixed checker identities have different roles:
-
-- `tsc`, `tsgo`, and `vue-tsc` own source configs and execute generated declaration build entries;
-- `svelte-check` and `astro` own complete framework type configs and execute them per leaf without declaration output.
-
-This distinction affects later commands. `limina checker build` runs declaration-capable owners, while `limina checker typecheck` runs framework-owned leaves.
+The entire process is constrained by [regions](./config/regions.md): the selected config determines the governance root, the root's workspace declarations determine the packages, and activated packages supply their own source scopes. Limina checks these relationships; the corresponding tools still perform type checking, bundling, and testing.
 
 ## Source Config
 
@@ -55,7 +28,7 @@ packages/core/tsconfig.test.json
 packages/core/tsconfig.tools.json
 ```
 
-In a typical layout, `tsconfig.json` is the entry or aggregator, and configs such as `tsconfig.lib.json`, `tsconfig.test.json`, and `tsconfig.tools.json` are source leaves. A source leaf config should describe the source files it owns, and should not manually maintain `references`. Limina infers declaration build references from static imports and `liminaOptions.implicitRefs`.
+In a typical layout, `tsconfig.json` is the entry or aggregator, and configs such as `tsconfig.lib.json`, `tsconfig.test.json`, and `tsconfig.tools.json` are source leaves. A source leaf config describes the files it owns and must not directly declare native `references`, even as an empty array. Limina infers declaration build references from static imports and `liminaOptions.implicitRefs`.
 
 Literal dynamic imports such as `import("./module.js")` already participate in dependency collection. If a declaration-build relationship comes from generated code, computed runtime imports, or another relationship that dependency analysis cannot observe, declare it in the source leaf config through `liminaOptions.implicitRefs`:
 
@@ -65,14 +38,14 @@ Literal dynamic imports such as `import("./module.js")` already participate in d
     "implicitRefs": [
       {
         "path": "../contracts/tsconfig.lib.json",
-        "reason": "runtime schema generation imports this project through generated code",
+        "reason": "This leaf's declaration build needs contracts source referenced by generated schema code.",
       },
     ],
   },
 }
 ```
 
-The `path` of an `implicitRefs` entry must point to an ordinary source `tsconfig*.json` reachable by the same checker. It cannot point to a generated `.limina` config, a build config, a base config, or itself.
+`implicitRefs.path` is relative to the source config declaring it and must point to an ordinary, declaration-capable source leaf reachable by the same checker. It cannot point to a generated `.limina` config, a build config, a base config, or itself. These relationships still need to pass graph rules; they do not add module-resolution capabilities.
 
 ## Aggregator Config
 
@@ -91,20 +64,22 @@ When `limina graph prepare` runs, Limina starts from checker entries, follows va
 
 Do not treat an aggregator as a source owner. When different runtime environments, test scopes, or build targets need to be separated, let the aggregator reference multiple source leaf configs instead of making one config both aggregate projects and own source files.
 
-## Input Topology and Dependency Graphs
+## Checker Entry
 
-The read-only input topology expands selected default entries and solution references with TypeScript config readers. It does not lock framework semantic authority or establish an executable checker graph. A complete input topology therefore proves only that this config/entry topology was consumed without input diagnostics.
+A [checker entry](./config/checkers.md) specifies which checker handles each selected source `tsconfig.json`.
 
-Several relations must stay distinct:
+Auto discovery is always enabled, including when named checker scopes are present. It discovers ordinary `tsconfig.json` entries and assigns each reachable source leaf config exactly one owner from `tsc`, `tsgo`, `vue-tsc`, `astro`, or `svelte-check`. Use `auto.useTsgo: true` to choose `tsgo` as the ordinary TypeScript fallback; named scopes provide direct ownership evidence for selected default entries.
 
-| Graph view                    | Facts and limits                                                                                                                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Native references             | User-authored TypeScript `references`; solutions establish membership. Native leaf build references must be migrated out of managed source leaves.                                   |
-| Supplementary declarations    | `liminaOptions.implicitRefs`; explicit declaration relationships, subject to target, checker, and rule validation.                                                                   |
-| Observed source relationships | Dependency analysis from the locked checker context. Its `complete` flag can be false while some relationships have been observed.                                                   |
-| Effective generated graph     | Validated generated declaration references and typed `declaration-provider` / `framework-schedule` edges used by execution. It does not turn every observed target into a reference. |
+For example, if a default `tsconfig.json` directly contains ordinary TypeScript source, automatic discovery can assign it to `tsc`. If it only references leaf configs, Limina recursively follows those memberships and determines each leaf's checker. Start with the defaults in most cases; see [Checker Configuration](./config/checkers.md) for configuration details.
 
-An incomplete comparison cannot prove that an unobserved native relationship is unnecessary. Migration preserves retained explicit relationships as `implicitRefs` when comparison is unavailable, and reports the incomplete analysis; it does not treat missing evidence as an empty dependency graph. Package graph export is a separate source/artifact view.
+Entry selection is region-scoped. Named `include` fields only select default source `tsconfig.json` entries, while `auto.exclude` filters automatic root discovery. Do not list `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, or generated configs under `.limina` directly in a named checker scope. Ordinary named source configs such as `tsconfig.lib.json` and `tsconfig.test.json` enter Limina's managed scope only through `references` from a selected `tsconfig.json` entry. Reserved `tsconfig*.build.json`, `tsconfig*.dts.json`, `tsconfig*.base.json`, and `tsconfig*.check.json` are not managed source entries. Neither `auto.exclude` nor a named scope's `exclude` cuts an established references closure; an existing ordinary source config reached outside the activated regions is reported as a cross-region reference.
+
+Fixed checker identities have different roles:
+
+- `tsc`, `tsgo`, and `vue-tsc` own source configs and execute generated declaration build entries;
+- `svelte-check` and `astro` own complete framework type configs and execute them per leaf without declaration output.
+
+This distinction affects later commands. `limina checker build` runs declaration-capable owners, while `limina checker typecheck` runs framework-owned leaves.
 
 ## Declaration Build Config
 
@@ -142,7 +117,7 @@ Project-level declaration build configs extend the corresponding source config a
 
 Declaration files are written under `.limina/dts/checkers/<checker>/...`, and build cache files are written under `.limina/tsbuildinfo/checkers/<checker>/...`. Generated declaration configs set both `outDir` and `declarationDir` to that same managed root, so an inherited source `declarationDir` cannot redirect the checker output. These paths are Limina internal outputs. Do not edit them by hand, and do not write them into user-maintained source configs.
 
-The generated declaration and cache scopes retain the complete source config filename, so sibling configurations cannot share a scope just because removing their prefixes would produce the same name. Upgrading this layout regenerates managed configurations and may cause one incremental cache miss. Cleanup removes only previously recorded owned paths; unrecorded files are retained.
+Declaration directories and cache scopes retain the full source config filename so sibling leaves do not share output. Limina maintains the generated files; run `graph prepare` or the corresponding checker command when they need refreshing.
 
 Generated `references` come from validated source compiler relationships and explicit `liminaOptions.implicitRefs`. A source target alone is insufficient: the relation needs a non-null requirement, valid provider ownership and declaration capability, the same final checker identity, and permission under graph rules. A `.d.ts`-family target or concrete declaration provider remains declaration consumption rather than a new source reference.
 
@@ -176,7 +151,17 @@ The generated user-output config sets both `outDir` and `declarationDir` to `lim
 
 ## Source Edges, Declaration Edges, and Artifact Edges
 
-An `import` is not necessarily a `references` edge. Limina first checks where the import resolves under the current source config and checker semantics, then decides which relationship it represents.
+An `import` does not necessarily correspond to a project reference. Limina resolves it under the current checker and source config before classifying the relationship:
+
+| Observed relationship                                                  | Consequence                                                                                                                             |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Imports source owned by the current leaf                               | Stays within the current project; no cross-project reference is needed                                                                  |
+| Imports source owned by another managed leaf                           | A candidate source relationship; a reference is generated only when declaration requirements, checker compatibility, and rules allow it |
+| Resolves to an existing `.d.ts`-family file                            | Consumes existing declarations without inferring a reference back to the source project                                                 |
+| A supported relationship involving frameworks such as Astro / Svelte   | May form a scheduling edge, distinct from a declaration project reference                                                               |
+| A target without source ownership falls within a validated output root | Package graph export may record artifact consumption; this does not schedule a production build                                         |
+
+For example, if `app` imports `core/src/index.ts` through a package name, both sides have unique source owners and the same build checker, and an allowed declaration-build requirement exists, Limina makes the generated config for `app` reference the generated config for `core`. If the same import resolves to `core/dist/index.d.ts`, it stops at the existing declaration boundary. The project's build workflow is responsible for updating those declarations.
 
 A checker-resolved managed source target is a candidate source relationship. A generated declaration reference also requires a non-null compiler relation requirement, valid source ownership, an allowed target, and declaration-capable endpoints with the same final checker identity. Concrete declaration evidence can stop a new source relation even when the original resolution records source. Astro/Svelte source relationships can instead produce `framework-schedule` edges, which never become declaration references. Package dependency authorization is checked separately against the source owner manifest.
 
@@ -240,3 +225,18 @@ export default defineConfig({
 `deny.refs` forbids project references to specific source configs. `deny.deps` forbids source imports of specific packages, `#imports`, or Node builtins. `allow.refs` only explains additional existing references. It does not create references and does not override `deny.refs`.
 
 Graph rules are useful for boundaries such as browser vs Node, public API vs internal tools, and production source vs tests. Limina checks rules together with source imports and the generated declaration graph. If source tagged with `runtime-client` imports `node:fs`, graph check fails and reports the rule's `reason`.
+
+## Input Topology and Dependency Graphs
+
+The read-only input topology expands selected default entries and solution references with TypeScript config readers. It does not lock framework semantic authority or establish an executable checker graph. A complete input topology therefore proves only that this config/entry topology was consumed without input diagnostics.
+
+Several relations must stay distinct:
+
+| Graph view                    | Facts and limits                                                                                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Native references             | User-authored TypeScript `references`; solutions establish membership. Native leaf build references must be migrated out of managed source leaves.                                   |
+| Supplementary declarations    | `liminaOptions.implicitRefs`; explicit declaration relationships, subject to target, checker, and rule validation.                                                                   |
+| Observed source relationships | Dependency analysis from the locked checker context. Its `complete` flag can be false while some relationships have been observed.                                                   |
+| Effective generated graph     | Validated generated declaration references and typed `declaration-provider` / `framework-schedule` edges used by execution. It does not turn every observed target into a reference. |
+
+An incomplete comparison cannot prove that an unobserved native relationship is unnecessary. Migration preserves retained explicit relationships as `implicitRefs` when comparison is unavailable, and reports the incomplete analysis; it does not treat missing evidence as an empty dependency graph. Package graph export is a separate source/artifact view.

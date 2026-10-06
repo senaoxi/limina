@@ -16,7 +16,7 @@ export default defineConfig({
 });
 ```
 
-A concurrency value can be a positive integer or `'auto'`. Explicit numbers are clamped to the number of runnable items; for example, if only 3 tasks can run, `tasks: 10` still starts at most 3 tasks.
+A concurrency value can be a positive integer or `'auto'`. Explicit numbers are clamped to the number of runnable tasks or entries at the corresponding level; for example, if only 3 tasks can run, `tasks: 10` still starts at most 3 tasks.
 
 ## Fields
 
@@ -35,6 +35,8 @@ A concurrency value can be a positive integer or `'auto'`. Explicit numbers are 
 - `checkerTypecheck` and `releaseEntries` resolve `'auto'` to `2` (and also default to `2`).
 
 All results are clamped to the current item count. When there is runnable work, the result is at least `1`; with no items, it is `0`.
+
+`tasks: 1` serializes only top-level tasks; a running task can still use its own worker pool. To also limit internal checker processes or output-entry concurrency, set the corresponding fields separately.
 
 ## Scheduling and Failure
 

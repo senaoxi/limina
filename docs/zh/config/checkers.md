@@ -1,6 +1,8 @@
 # 检查器配置
 
-`config.checkers` 选择已激活的默认 `tsconfig.json` 入口。Limina 随后为完整引用闭包中的每个受管类型配置分配恰好一个负责的检查器。检查器名称就是固定的身份标识：
+`config.checkers` 选择默认 `tsconfig.json` 入口，并确定由哪个检查器负责它们可达的源码叶子配置。未配置时自动发现已经启用；只有需要固定检查器或排除直接入口时，才需要填写这个字段。
+
+检查器使用以下固定名称：
 
 | 键名           | 执行方式                     | 生成声明 |
 | -------------- | ---------------------------- | -------- |
@@ -16,29 +18,21 @@
 
 自动发现始终启用。具名检查器范围先接管命中的入口；未被具名范围接管的入口仍然自动分析：
 
-```js
+```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   config: {
     checkers: {
-      tsc: {
-        include: ['packages/shared/tsconfig.json'],
-      },
-      tsgo: {
-        include: ['packages/native/**/tsconfig.json'],
-      },
       'vue-tsc': {
         include: ['apps/web/tsconfig.json'],
-      },
-      'svelte-check': {
-        include: ['apps/svelte/tsconfig.json'],
-        exclude: ['apps/legacy/tsconfig.json'],
       },
     },
   },
 });
 ```
+
+上例固定 Web 入口使用 `vue-tsc`，其余入口继续自动发现。不要仅为“写完整”而给共享 TypeScript 项目固定另一个检查器：需要共享声明缓存的相连项目必须使用同一个构建检查器，冲突会导致图准备失败。
 
 每个具名检查器范围的 `include` 都必须是非空数组，`exclude` 可省略。只配置框架检查器也合法。同一个入口不能同时匹配两个具名检查器范围。
 
@@ -100,28 +94,7 @@ Limina 区分聚合配置与终端类型配置。聚合配置只组织引用，�
 
 `tsconfig.lib.json`、`tsconfig.test.json` 等非入口配置，只有被已选 `tsconfig.json` 入口引用时才会进入治理图。生成配置都位于 Limina 的 `.limina` 命名空间；用户配置和诊断继续使用源码配置路径。
 
-## 框架检查器归属与依赖边界 {#framework-ownership-与-dependency-boundary}
-
-Limina 为每个项目分别记录：
-
-- **解析源码时确定的语义判定依据**（后文简称“语义判定依据”）决定使用哪一种与检查器兼容的模块语义解释项目依赖。
-- **最终负责该配置的检查器**决定由哪个检查器执行构建或类型检查目标。
-
-只有显式检查器选择、检查器专属配置证据、有效根文件证据，以及已确认的待定框架依赖可以锁定语义判定依据。Limina 收集完待定依赖需求后会冻结该依据。Vue 检查器提升、聚合配置约束、声明连通分量的检查器身份传播、TypeScript 默认选择与 `finalOwner` 可以选择或传播构建检查器归属，但不能重新解释项目依赖。因此，采用 TypeScript 语义的项目可以在构建检查器身份传播后由 `vue-tsc` 构建，同时继续使用 TypeScript 模块语义。
-
-检查器归属尚未确定的自动范围先使用 TypeScript 语义。Limina 从已解析的 TypeScript 项目及其 TypeScript AST 枚举依赖，再对每条源于用户源码的依赖执行检查器类型证据校验。`ambient`、`concrete-declaration` 与 `checker-source` 证据都停在 TypeScript 边界；不受支持的语义证据会使分析失败并停止。只有 `missing` 证据可以调用 Oxc，而且 Oxc 在这里仅用于在归属推断时识别物理框架源码候选。候选必须恰好属于一个受治理配置的有效文件集合，并且只属于一个框架语义域。普通 TypeScript 文件、资源、被排除文件与有歧义的目标都不能用来确定检查器身份。Limina 会先收集完整需求集合，再确定待定的检查器归属，因此 Astro/Svelte/Vue 冲突是确定性的，不受导入顺序影响。
-
-语义判定依据一旦锁定，所有依赖项目上下文的分析方都使用对应的 TypeScript、Vue、Astro 或 Svelte 语义数据提供组件。检查器语义解析失败的最终结果仍是 `missing`；工具链、物化、源码映射、歧义与解析宿主故障都会使分析失败并停止。已锁定项目的依赖解析不会把 Oxc 或轻量收集器当作后备方案。
-
-`SourceEvidence` 继续提供仅来自源码的语法、诊断与源码坐标，但不能作为图或检查器的判定依据。架构分析方只接受源于用户源码、且具有 `direct-source` 或严格 `mapped-source` 来源证明的 `ProjectDependency`。无法唯一映射到源码依赖的生成依赖只能成为观察记录，绝不会创建源码推导边；有歧义的反向映射会直接报错。
-
-显式选定 Astro 检查器时会观测 TypeScript 文件与 `.astro`；显式选定 Svelte 检查器时会观测 TypeScript 文件与 `.svelte`；显式选定 `vue-tsc` 时会观测 TypeScript 文件与检查器实际解析出的 Vue 扩展。一个框架名称不会顺带加入其他框架扩展。位于覆盖证明源码边界内、但最终负责该配置的检查器无法观测的文件，不会仅因存在就阻断 `graph prepare`；`proof check` 会以 `LIMINA_PROOF_UNCOVERED_SOURCE_FILE` 报告。
-
-Astro/Svelte 检查器不生成声明项目、包装配置或透明构建聚合配置。`checker:typecheck` 会对其完整类型配置按叶子执行一次。需要生成声明的 TypeScript 源码必须拆到独立的 `tsc`、`tsgo` 或 `vue-tsc` 配置中。
-
-如果 `checker:typecheck` 没有由框架检查器负责的叶子配置，它会被记录为 `disabled` 并正常退出，不运行目标对等依赖预检或检查器进程。命令仍先验证工作区并物化生成图，之后才判断是否存在目标；图准备或物化也可能先失败。`disabled` 结果不能证明执行过框架类型检查。
-
-### 框架前置条件
+## 框架前置条件
 
 框架检查器命令及其运行时都从拥有源码配置的叶子包解析：
 
@@ -133,6 +106,33 @@ Astro/Svelte 检查器不生成声明项目、包装配置或透明构建聚合�
 框架依赖收集使用所属检查器生成的 TypeScript 表示。Astro 只从已安装的 `@astrojs/check` → `@astrojs/language-server` 工具链解析编译器；Limina 不再直接依赖 `@astrojs/compiler`，也不再将其声明为对等依赖，不会回退到工作区安装，叶子包中其他编译器实例无法覆盖语言服务器所属的实例。Svelte 语义分析从所属叶子包解析公共 `svelte/compiler`、`svelte2tsx` 与 TypeScript。框架检查器依赖缺失时，预检仍会在启动检查器进程前失败。
 
 `checker typecheck` 是完整重跑，不是框架监听模式。稳定的目标 ID 只表示多次运行之间的目标身份稳定，不提供增量失效能力。
+
+## 框架检查器归属与依赖边界 {#framework-ownership-与-dependency-boundary}
+
+Limina 为每个项目分别记录：
+
+- **解析源码时确定的语义判定依据**（后文简称“语义判定依据”）决定使用哪一种与检查器兼容的模块语义解释项目依赖。
+- **最终负责该配置的检查器**决定由哪个检查器执行构建或类型检查目标。
+
+例如，普通 TypeScript 项目与 Vue 项目需要共享声明缓存时，可以统一由 `vue-tsc` 构建；普通项目的导入仍按其已确定的 TypeScript 语义解释。
+
+::: details 检查器归属与依赖证据的判定边界
+
+只有显式检查器选择、检查器专属配置证据、有效根文件证据，以及已确认的待定框架依赖可以锁定语义判定依据。Limina 收集完待定依赖需求后会冻结该依据。Vue 检查器提升、聚合配置约束、声明连通分量的检查器身份传播、TypeScript 默认选择与 `finalOwner` 可以选择或传播构建检查器归属，但不能重新解释项目依赖。因此，采用 TypeScript 语义的项目可以在构建检查器身份传播后由 `vue-tsc` 构建，同时继续使用 TypeScript 模块语义。
+
+检查器归属尚未确定的自动范围先使用 TypeScript 语义。Limina 从已解析的 TypeScript 项目及其 TypeScript AST 枚举依赖，再对每条源于用户源码的依赖执行检查器类型证据校验。`ambient`、`concrete-declaration` 与 `checker-source` 证据都停在 TypeScript 边界；不受支持的语义证据会使分析失败并停止。只有 `missing` 证据可以调用 Oxc，而且 Oxc 在这里仅用于在归属推断时识别物理框架源码候选。候选必须恰好属于一个受治理配置的有效文件集合，并且只属于一个框架语义域。普通 TypeScript 文件、资源、被排除文件与有歧义的目标都不能用来确定检查器身份。Limina 会先收集完整需求集合，再确定待定的检查器归属，因此 Astro/Svelte/Vue 冲突是确定性的，不受导入顺序影响。
+
+语义判定依据一旦锁定，所有依赖项目上下文的分析方都使用对应的 TypeScript、Vue、Astro 或 Svelte 语义数据提供组件。检查器语义解析失败的最终结果仍是 `missing`；工具链、物化、源码映射、歧义与解析宿主故障都会使分析失败并停止。已锁定项目的依赖解析不会把 Oxc 或轻量收集器当作后备方案。
+
+`SourceEvidence` 继续提供仅来自源码的语法、诊断与源码坐标，但不能作为图或检查器的判定依据。架构分析方只接受源于用户源码、且具有 `direct-source` 或严格 `mapped-source` 来源证明的 `ProjectDependency`。无法唯一映射到源码依赖的生成依赖只能成为观察记录，绝不会创建源码推导边；有歧义的反向映射会直接报错。
+
+:::
+
+显式选定 Astro 检查器时会观测 TypeScript 文件与 `.astro`；显式选定 Svelte 检查器时会观测 TypeScript 文件与 `.svelte`；显式选定 `vue-tsc` 时会观测 TypeScript 文件与检查器实际解析出的 Vue 扩展。一个框架名称不会顺带加入其他框架扩展。位于覆盖证明源码边界内、但最终负责该配置的检查器无法观测的文件，不会仅因存在就阻断 `graph prepare`；`proof check` 会以 `LIMINA_PROOF_UNCOVERED_SOURCE_FILE` 报告。
+
+Astro/Svelte 检查器不生成声明项目、包装配置或透明构建聚合配置。`checker:typecheck` 会对其完整类型配置按叶子执行一次。需要生成声明的 TypeScript 源码必须拆到独立的 `tsc`、`tsgo` 或 `vue-tsc` 配置中。
+
+如果 `checker:typecheck` 没有由框架检查器负责的叶子配置，它会被记录为 `disabled` 并正常退出，不运行目标对等依赖预检或检查器进程。命令仍先验证工作区并物化生成图，之后才判断是否存在目标；图准备或物化也可能先失败。`disabled` 结果不能证明执行过框架类型检查。
 
 ## Astro 语义导入解析 {#astro-语义-import-解析}
 
@@ -212,7 +212,7 @@ Limina 会区分声明依赖和框架调度依赖：
 
 提供方会先于消费方运行。纯框架调度循环会作为一个调度连通分量执行；声明循环仍然失败。
 
-每条成功生成的 `declaration-provider`（声明提供者）边两端都具有完全相同的 `tsc`、`tsgo` 或 `vue-tsc` 身份，并在版本 5 的生成清单中记录 `cacheReuse: "reusable"`。因此，规范声明关系会在生成配置与目标物化前，把检查器身份传播到整个构建连通分量。连通分量已包含不同构建检查器身份时，`graph prepare` 会失败，不再保留跨检查器引用，也不再发出缓存反复失效警告。`framework-schedule` 不是编译器项目引用，因此仍可跨检查器身份。
+每条成功生成的 `declaration-provider`（声明提供者）边两端都具有完全相同的 `tsc`、`tsgo` 或 `vue-tsc` 身份，并在版本 5 的生成清单中记录 `cacheReuse: "reusable"`。因此，规范声明关系会在生成配置与目标物化前，把检查器身份传播到整个构建连通分量。需要共享声明缓存的一组相连配置已包含不同构建检查器身份时，`graph prepare` 会失败，不再保留跨检查器引用，也不再发出缓存反复失效警告。`framework-schedule` 不是编译器项目引用，因此仍可跨检查器身份。
 
 ## 从别名与 `preset` 迁移 {#从-alias-与-preset-迁移}
 

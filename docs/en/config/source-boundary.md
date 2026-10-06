@@ -1,10 +1,6 @@
 # Source Boundary
 
-::: warning
-`config.source` is the **managed source boundary** that source coverage checks use to decide which files must be covered by checker entries or an allowlist. It is different from the top-level `source` option, which configures source import authorization and `Knip`-driven source usage checks. For that option, see [Source Checks](./source-checks.md).
-:::
-
-`proof check` uses `config.source` to select files that must be covered by checker entries or an allowlist.
+`config.source` selects governed source files. `proof check` compares this set with checker entries, generated graph projects, and the allowlist to find missing files or inconsistent coverage. Top-level `source` instead configures import authorization, ambient declarations, and optional Knip checks; see [Source Checks](./source-checks.md).
 
 ```js
 import { defineConfig } from 'limina';
@@ -19,64 +15,44 @@ export default defineConfig({
 });
 ```
 
-## include
+## `include`
 
 - **Type:** `string[]`
 
-`include` is the global source `glob` set that Limina should inspect. Configured `include` and `exclude` must each be non-empty string arrays, and each may contain `...` at most once. When it is omitted, Limina uses the default TypeScript source glob set. When it is configured, it replaces that default set. Use the exact string `...` to expand the default include set at that position.
+`include` is the global set of source globs Limina needs to check. Explicit `include` and `exclude` values must be non-empty arrays of non-empty strings, with at most one `...` in each array. When omitted, Limina uses the default TypeScript source globs. An explicit value replaces the defaults; use the exact string `...` where you want to expand the default set.
 
-Patterns are relative to `config.rootDir` and may contain `../`. They filter source candidates already discovered from each activated package island; a pattern cannot make an unactivated directory or an owner-local boundary visible. Default discovery also runs for external activated packages.
+Patterns are relative to `config.rootDir` and may contain `../`. They only filter source candidates already discovered within each activated package's independent governance scope, or package island. Patterns cannot make inactive directories or paths behind an owner-local boundary visible. Default discovery also runs for external activated packages.
 
-::: details Default include glob set
+::: details Default `include` globs
 `**/*.ts`, `**/*.tsx`, `**/*.d.ts`, `**/*.cts`, `**/*.d.cts`, `**/*.mts`, and `**/*.d.mts`.
 :::
 
-Checker extensions are not added automatically. If every default TypeScript source file and every `Vue` file under `packages/**/src` should be managed by Limina, expand the defaults and add the `Vue` glob explicitly. New matching files then automatically become part of source and coverage checks.
+Checker extensions are not added automatically. To govern both the default TypeScript source and Vue files under `packages/**/src`, expand the defaults and explicitly add the Vue glob. New matching files then enter source and coverage-proof checks automatically.
 
-```js
-export default defineConfig({
-  config: {
-    source: {
-      include: ['...', 'packages/**/src/**/*.vue'],
-    },
-  },
-});
-```
-
-## exclude
+## `exclude`
 
 - **Type:** `string[]`
 
-`exclude` is the directory or `glob` set that should stay outside the managed source set. Use it for fixtures, generated caches, and other files that should not be treated as checked source. When `exclude` is omitted, Limina uses the default exclude bundle.
+`exclude` lists directories or globs that stay outside the governed source set. Use it for fixtures, generated caches, and other files that should not be treated as checked source. When omitted, Limina uses the default exclusions.
 
-When `exclude` is configured, it replaces the default exclude bundle and the root `.gitignore` is not used. Use the exact string `...` to expand the default exclude bundle, including root `.gitignore`, at that position. An explicit `exclude` array without `...` disables the default file-filter bundle. Structural region boundaries, fixed discovery ignores, and validated output roots still limit the candidate set. Root `.gitignore` rules are applied only to candidates inside `config.rootDir`; they never filter candidates from an external activated package.
+An explicit `exclude` replaces the default set and stops using the root `.gitignore`. Use the exact string `...` where you want to expand the defaults, including the root `.gitignore`. An explicit array without `...` disables default file filters; structural region boundaries, fixed discovery ignores, and validated output roots still constrain the candidate set. The root `.gitignore` applies only to candidates inside `config.rootDir`, never to external activated packages.
 
-::: details Default exclude bundle
-`node_modules`, `bower_components`, `jspm_packages`, validated output roots from `package.entries` and currently visible `liminaOptions.outputs` declarations, and the root `.gitignore` for candidates inside `config.rootDir`.
+::: details Default exclusions
+`node_modules`, `bower_components`, `jspm_packages`, validated output roots from `package.entries` and currently visible `liminaOptions.outputs` declarations, and the root `.gitignore` for candidates inside `config.rootDir` only.
 :::
 
-Declaring `liminaOptions.outputs: {}` already establishes `./dist` relative to that source config as an output root; an explicit `outDir` changes that path. Without an `outputs` declaration or a package-entry output, Limina does not infer a directory merely because it is named `dist`. Output paths remain scoped to the declaring config or package entry rather than becoming global directory-name excludes.
+Declaring `liminaOptions.outputs: {}` makes `./dist`, relative to that source config, an output root; an explicit `outDir` uses the specified path instead. Without an `outputs` declaration or a package output entry, Limina does not infer an output merely from the name `dist`. Output paths apply only to the declaring config or package entry, not to every directory with the same name.
 
-`liminaOptions.outputs.outDir` is relative to the source config that declares it. Limina reads it only from a structurally reachable `tsconfig` that is not already inside an unconditional package-entry output. The declaration remains active only while that `tsconfig` stays visible in the stable workspace output calculation.
+`liminaOptions.outputs.outDir` is relative to the declaring source config. Limina reads it only from structurally reachable tsconfigs that are not already inside unconditional package-entry outputs. The declaration remains effective only while that tsconfig stays visible in the stable workspace output calculation.
 
-For example, after `include` covers `packages/**/src/**/*.{ts,tsx,vue}`, adding this file makes it part of the source coverage boundary:
+## Review the tsconfig When Excluding Files
 
-```ts
-// packages/core/src/generated/runtime.ts
-export const runtimeName = 'core';
-```
+`config.source.exclude` changes only Limina's governed source set. It does not rewrite a checker's `files`, `include`, or files admitted through imports. If a checker or generated graph still covers those files, `proof check` can report `LIMINA_PROOF_SOURCE_BOUNDARY_MISMATCH`: the two sides describe different file sets.
 
-If the file is not covered by a project reachable from a checker entry and is not listed in `proof.allowlist`, `limina proof check` reports it as uncovered source. Use `exclude` to keep a fixture directory outside the managed source set.
+For example, if `packages/core/src/generated/runtime.ts` is excluded from the source boundary but remains in the effective file set of `tsconfig.lib.json`, adding the exclusion alone does not resolve coverage. Choose according to the file's actual purpose:
 
-The example directory contains:
+- It is project source: keep it in `config.source` and assign it to one source leaf config.
+- It is outside this run's governance: also adjust the relevant tsconfig coverage, and watch for imports that can bring it back into the checker.
+- It remains governed but intentionally has no ordinary coverage: use a [proof allowlist](./proof-allowlist.md) entry with a reason.
 
-```text
-packages/core/
-  src/index.ts
-  src/generated/runtime.ts
-  tsconfig.lib.json
-```
-
-`config.source.include` covers `packages/**/src/**/*.{ts,tsx,vue}`, so `src/generated/runtime.ts` is considered checked source. When `pnpm exec limina proof check` runs, Limina collects source files matched by `include`, then checks whether each file is covered by a graph project, checker entry, or `proof.allowlist`.
-
-If `runtime.ts` is not covered by any checker, the result is a proof check failure listing it as uncovered source. If it is actually a fixture or cache file, exclude that directory; if it is an intentional exception, add it to `proof.allowlist` with a reason.
+A coverage allowlist explains uncovered files; it does not resolve checker coverage that remains outside the source boundary.

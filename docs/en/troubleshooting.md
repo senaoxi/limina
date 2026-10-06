@@ -1,5 +1,32 @@
 # Troubleshooting
 
+Identify the failing task first, then follow its issue codes, source paths, and config paths. Start with the general guidance below; later sections address specific JSON root-file and governance-region problems.
+
+## Identify the Failing Task
+
+The current terminal output is the first clue. To revisit saved issues, use:
+
+```sh
+pnpm exec limina check --issues
+pnpm exec limina check --issues --task source:check
+```
+
+`--issues` does not rerun checks. It reads persisted state from the selected governance root. If the latest registered attempt is incomplete, interrupted, or corrupt, it does not return older issues. Errors before attempt registration, such as config-loading failures, can leave the previous completed record available, so compare its timestamp with the current terminal error. See [issue queries](./cli.md#limina-check-pipeline) for scope and options.
+
+| Failing task                      | Inspect first                                                                                                              |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `workspace:validate`              | Governance root, package regions, duplicate package identities, and unsafe output directories                              |
+| `graph:check`                     | Declaration providers, resolution of consumed entries, package dependency declarations, and graph rules                    |
+| `source:check`                    | Source owner, cross-package relative imports, `#imports`, and bare-import authorization; usage findings if Knip is enabled |
+| `proof:check`                     | Coverage of expected source, duplicate ownership, and agreement between source and checker configs                         |
+| `checker:build`                   | Responsible build checker, config path, exit code, and raw logs                                                            |
+| `checker:typecheck`               | Astro or Svelte checker dependencies, generated framework types, and source diagnostics                                    |
+| `package:check` / `release:check` | Configured output directories, packed files, analyzers, and release dependencies                                           |
+
+Fix structural issues before addressing checker errors that depend on them. This is troubleshooting guidance, not a strict task execution order. `disabled`, `blocked`, and `skipped` mean no applicable work, a failed prerequisite, or work not run; none means the corresponding check passed.
+
+When changing source scope or rules, edit the user-maintained config and rerun the relevant command. Do not patch generated configs under `.limina/` by hand.
+
 ## JSON imports report `TS6307` after adopting Limina
 
 A non-composite project using `tsc -p` may accept JSON imported through `resolveJsonModule` even when the JSON is not selected by source `files` or `include`. Composite projects can already enforce the root-file list when run directly. For example:
