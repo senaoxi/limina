@@ -1,8 +1,8 @@
 # Limina 语义事实
 
-[English](../limina-semantics.md) | [简体中文](./limina-semantics.md)
+[English](../semantics.md) | [简体中文](./semantics.md)
 
-本页解释 dependency fact 如何产生及其能力边界；实体和 relation 定义归[系统模型](./limina-system-model.md)，不可意外改变的性质归 [I02–I07](./limina-invariants.md)。本页描述当前 adapter 的行为，不宣称与所有上游版本的完整 checker 完全等价。
+本页解释 dependency fact 如何产生及其能力边界；实体和 relation 定义归[系统模型](./system-model.md)，不可意外改变的性质归 [I02–I07](./invariants.md)。本页描述当前 adapter 的行为，不宣称与所有上游版本的完整 checker 完全等价。
 
 ## 从 ownership 候选到 locked context
 
@@ -88,7 +88,7 @@ Toolchain 来源、accepted versions 和 capability checks 以 [checker](../../.
 
 具体 tuple owner 是 [Vue compatibility](../../../packages/limina/src/checker/vue-semantic-compatibility.ts)、[Astro compatibility](../../../packages/limina/src/checker/astro-semantic-compatibility.ts) 和 [Svelte toolchain](../../../packages/limina/src/core/svelte-semantic/toolchain.ts)。Vue 从 vue-tsc 解析 Language Core/Volar/TypeScript；Astro 从 check-owned Language Server 解析 compiler，不能用 workspace-root retry 隐藏 leaf 缺依赖。路径用于 provenance/instance identity，不是 pnpm 布局兼容谓词。
 
-截至 **2026-10-01**，Astro check 准入使用共享的 external-checker 契约 `>=0.9.6 <0.10.0`，并保留既有 `includePrerelease: true` 策略。Language Server、compiler 和 Volar 继续要求精确 tuple 与 internal API shape；不受支持的组合仍按 [I04](./limina-invariants.md) fail closed。[Astro toolchain 守卫](../../../packages/limina/src/__tests__/astro-semantic-toolchain.spec.ts)覆盖版本与预发布边界，[打包消费者守卫](../../../smoke/consumer.spec.ts)覆盖实际安装的 `0.9.6` 搭配 TypeScript `5.9.3`，以及 `0.9.10` 搭配 TypeScript `6.0.3`。这些样例不能证明未来所有补丁或预发布版本都兼容。
+截至 **2026-10-01**，Astro check 准入使用共享的 external-checker 契约 `>=0.9.6 <0.10.0`，并保留既有 `includePrerelease: true` 策略。Language Server、compiler 和 Volar 继续要求精确 tuple 与 internal API shape；不受支持的组合仍按 [I04](./invariants.md) fail closed。[Astro toolchain 守卫](../../../packages/limina/src/__tests__/astro-semantic-toolchain.spec.ts)覆盖版本与预发布边界，[打包消费者守卫](../../../smoke/consumer.spec.ts)覆盖实际安装的 `0.9.6` 搭配 TypeScript `5.9.3`，以及 `0.9.10` 搭配 TypeScript `6.0.3`。这些样例不能证明未来所有补丁或预发布版本都兼容。
 
 Svelte [source-mapping](../../../packages/limina/src/core/svelte-semantic/source-mapping.ts) 要求 generated dependency 每个 UTF-16 offset 被明确 segments 连续、单调映射到当前 source；部分覆盖、cross-source 或非连续映射产生 mismatch，完全未映射保留 unmapped observation。[generated-script](../../../packages/limina/src/core/svelte-semantic/generated-script.ts) 构造 TraceMap 不加 map URL，避免 absolute Windows source drive 被再次 rebasing。Vue/Astro 则通过自身 mapping 算法处理 full-token/inner-content、ambiguity 与 mismatch，不能把一种框架的 map 条件套给全部框架。
 
@@ -106,4 +106,4 @@ Vue 语义上下文中的原生文件使用同一套 Vue 所属 TypeScript 实�
 
 治理层的 source type leaf 不允许手写 `references`；[config reader](../../../packages/limina/src/core/build-graph/generated/config-reader-basics.ts) 拒绝该形状，solution 负责聚合，`implicitRefs` 记录明确动态/虚拟关系。底层 semantic context 支持 raw references，不等于治理层放宽 leaf shape。[generated-configs](../../../packages/limina/src/core/build-graph/generated-configs.ts) 将 declaration outDir/declarationDir 指向同一 managed dts root，防继承输出改写；`rewriteRelativeImportExtensions` 仅在 effective source 启用时覆盖，避免无条件引入旧 compiler 不认识的 option。支持的 solution 不带 outputs。
 
-Concrete managed declaration 可以由 managed-output lookup 解释来源，但不会因此变成 source implementation。locked ownership 与 build coloring 只保留合格 requirement 或已确认的 pending candidate；保留的 source resolution 若 redirect 到 declaration，不能触发 Vue promotion。framework scheduling 只消费合格 source-semantic 关系，包括 missing source prerequisite；ambient compiler-membership 不进入 scheduling。修改这些入口时，同步检查 [I03–I07](./limina-invariants.md)，而不只看 resolver 单测是否仍命中同一路径。
+Concrete managed declaration 可以由 managed-output lookup 解释来源，但不会因此变成 source implementation。locked ownership 与 build coloring 只保留合格 requirement 或已确认的 pending candidate；保留的 source resolution 若 redirect 到 declaration，不能触发 Vue promotion。framework scheduling 只消费合格 source-semantic 关系，包括 missing source prerequisite；ambient compiler-membership 不进入 scheduling。修改这些入口时，同步检查 [I03–I07](./invariants.md)，而不只看 resolver 单测是否仍命中同一路径。

@@ -1,10 +1,10 @@
 # Limina Architecture Reconstruction Audit — 2026-09-11
 
-[English](../limina-architecture-audit.md) | [简体中文](./limina-architecture-audit.md)
+[English](../architecture-audit.md) | [简体中文](./architecture-audit.md)
 
 下文历史本地路径使用脱敏别名：`$EVIDENCE_ROOT` 表示复现根目录，`$SOURCE_REPO` 表示原始源 checkout。命令结果与证据日期保持不变；别名不表示私有证据已公开。
 
-本页记录本次 reconstruction 的 evidence 与 reconciliation，不另定义系统语义。当前定义归[system model](./limina-system-model.md)、[semantics](./limina-semantics.md)、[lifecycle](./limina-lifecycle.md)；性质归 [I01–I12](./limina-invariants.md)。
+本页记录本次 reconstruction 的 evidence 与 reconciliation，不另定义系统语义。当前定义归[system model](./system-model.md)、[semantics](./semantics.md)、[lifecycle](./lifecycle.md)；性质归 [I01–I12](./invariants.md)。
 
 ## Scope 与方法
 
@@ -128,7 +128,7 @@ NX_DAEMON=false pnpm nx run limina:test:unit
 以下 `FILES` 是本次实际检查的 11 个文件，后续复跑可直接使用。没有执行 broad format 或 fixing lint。
 
 ```sh
-FILES=(.agents/docs/README.md .agents/docs/architecture.md .agents/docs/technology-stack.md .agents/docs/limina.md .agents/docs/limina-system-model.md .agents/docs/limina-semantics.md .agents/docs/limina-lifecycle.md .agents/docs/limina-invariants.md .agents/docs/limina-architecture-workflow.md .agents/docs/limina-architecture-audit.md AGENTS.md)
+FILES=(.agents/docs/README.md .agents/docs/architecture.md .agents/docs/technology-stack.md .agents/docs/limina.md .agents/docs/system-model.md .agents/docs/semantics.md .agents/docs/lifecycle.md .agents/docs/invariants.md .agents/docs/architecture-workflow.md .agents/docs/architecture-audit.md AGENTS.md)
 pnpm exec prettier --check "${FILES[@]}"
 pnpm exec eslint "${FILES[@]}"
 git diff --check

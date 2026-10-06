@@ -8,7 +8,7 @@
 
 私有根包 `@limina/monorepo` 编排命令与共享工具。在这个 monorepo 中，`packages/limina` 承载公开核心包 `limina`，其中 `src`、`bin`、`schemas`、`fixtures` 和 `integration` 保留内部组织。第二个公开包 `limina-migrate` 位于 `packages/migrate`。发布目标仅为两个包生成的 `dist` 目录。迁移包仅将 `limina` 作为 workspace 开发依赖，构建时内联当前源码中需要的核心实现。两产品仍共享发布版本；发布态 migrate 没有 Limina dependency、peer 或 optional dependency，并显式声明自身运行依赖及能力 peers。核心包不反向依赖迁移包。Workspace 包通过 `limina/internal/*` 源码模块消费核心。`flow`、`core`、`utils` 和 `check-reporting` 目录使用通配符映射，其余入口采用显式映射。所有目标直接指向当前 `.ts` 源码文件。单文件入口 `limina/internal/flow` 单独映射到 `src/flow.ts`。这些同次发行入口仅供 workspace 使用；核心发布 hook 删除 `./internal` 及全部 `./internal/` 映射，同时保留正常 workers、公开 API、类型与 schema。Migrate 通过此 export map 解析并内联源码模块，不再依赖 migration 专用聚合入口。仅提供 CLI 的迁移包运行 publint 和运行时边界检查，安装后的 CLI 由 tarball smoke 测试覆盖；主包保留针对 TypeScript API 的 ATTW 检查。开发依赖可以被打包，其清单分类不等于运行时依赖声明。
 
-其他私有 workspace 为 `docs`、`smoke`、`packages/build-tools` 和 `packages/eslint-config`。根级 `scripts` 负责发布工具。Fixture 仓库保留独立 workspace 清单和 lockfile，不纳入主 workspace。构建工具和 ESLint 规则通过 TypeScript 自举，不调用 Limina。随后 Rolldown 构建产品，再执行治理与消费者检查。工具链与依赖版本由 [technology-stack](./technology-stack.md) 记录。
+其他私有 workspace 为 `docs`、`smoke`、`packages/build-tools` 和 `packages/gates`。私有 `@limina/gates` 负责仓库的许可证、提交、隐私、发布与 ESLint 检查；根脚本与配置转调其明确入口，见[仓库门禁](./gates.md)。Fixture 仓库保留独立 workspace 清单和 lockfile，不纳入主 workspace。门禁包先于构建工具通过 TypeScript 自举，不调用 Limina。随后 Rolldown 构建产品，再执行治理与消费者检查。工具链与依赖版本由 [technology-stack](./technology-stack.md) 记录。
 
 根级发布脚本、产品和 build-tools 均通过 dev catalog（`^0.0.4`）消费 registry Logaria，锁定为 0.0.4，不再需要兄弟仓库的 Logaria 构建。包生成器通过 pnpm 解析 catalog，并拒绝不支持的本地协议。
 

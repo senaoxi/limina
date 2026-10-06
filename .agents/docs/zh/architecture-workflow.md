@@ -1,14 +1,16 @@
 # Limina Architecture Review 与维护
 
-[English](../limina-architecture-workflow.md) | [简体中文](./limina-architecture-workflow.md)
+[English](../architecture-workflow.md) | [简体中文](./architecture-workflow.md)
 
 本地复现根目录使用脱敏别名 `$EVIDENCE_ROOT`；复现实验时将其设为实际证据目录。
 
-本页定义本次建立的 repo-native 工作机制。它是维护建议与本仓库的操作约定，不是由源码推得的历史设计意图。入口为 [limina.md](./limina.md)，不另建 docs/architecture 或 ADR 副本。
+本页定义本仓库的架构维护 workflow。它是维护建议与本仓库的操作约定，不是由源码推得的历史设计意图。通过 [limina.md](./limina.md#从问题进入记录) 定位架构 owner，review 步骤由本页负责。不另建 docs/architecture 或 ADR 副本。
 
 ## PR 先说明 invariant impact
 
 先保留 `git status --short` 的 index/worktree baseline，读取最近的 AGENTS 与 owning PCR；以当前改动后的代码重建受影响链路，再核对旧 prose。用一个具体 trigger 解释 before/after，按下表定位影响。
+
+修改 identity、authority、phase contract、dependency relation、cache/context lifetime、失败语义或 artifact mutation 时，识别受影响的 [core invariants](./invariants.md)，并在同一变更中更新唯一 owning PCR 页面与最近的相关 executable guard。通过本 workflow 说明 invariant impact、反例、验证与剩余不确定性。
 
 | 修改入口                                                                        | 必须追踪到的消费者                                                        | Invariants / prose owner                        |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------- |
@@ -34,7 +36,7 @@ review 必须回答具体问题，而不是勾选“架构没有影响”：
 
 优先在非法状态形成的最近入口用类型或 assertion 拒绝；跨模块性质用 focused semantic test；静态依赖规则可用 architecture test/lint。不要以越来越多的 downstream snapshots 代替缺失的入口契约，也不要为文件搬家写恒等测试。
 
-只有同时满足“当前 invariant 明确、长期语义边界明确、确有缺口、diff 小、无需改生产行为或冻结偶然结构”时才在此类知识维护任务新增 guard。生产 defect 需要行为修复时，先交付可审查的 finding 和反例，不借 prose maintenance 顺手修行为。[evidence matrix](./limina-invariants.md#evidence-matrix-与-guard-决策) 记录本次选择。
+只有同时满足“当前 invariant 明确、长期语义边界明确、确有缺口、diff 小、无需改生产行为或冻结偶然结构”时才在此类知识维护任务新增 guard。生产 defect 需要行为修复时，先交付可审查的 finding 和反例，不借 prose maintenance 顺手修行为。[evidence matrix](./invariants.md#evidence-matrix-与-guard-决策) 记录本次选择。
 
 稳定的 guard 应能回答“去掉这条检查，哪个错误状态会被接受”。仅检查某类/方法仍存在、使用某个 helper 或文档出现某字符串，通常无法回答。
 
@@ -55,11 +57,11 @@ flowchart TB
 
 每个 current truth 只编辑一个完整 owner。其他页保留简短结论和链接；不要附加“后来又改成……”的 supersede 链。旧错误直接删除/收窄，在 commit diff 或本次 audit 说明纠正原因。schema/version/tuple 的机械表尽量链接 source 常量；不要让 PCR 第二份枚举成为兼容 authority。
 
-Owner 的对外英文文件为 `.agents/docs/<name>.md`，对应中文文件为 `.agents/docs/zh/<name>.md`，文件名相同且均由 Git 跟踪。每次触发 PCR 更新，必须在同一次变更中同步维护完整文件对，包括纯文字纠正以及新增、重命名、移动和删除。遵循[仓库双语规则](../../../AGENTS.md#bilingual-pcr-maintenance)与[索引中的维护步骤](./README.md#双语发布与维护)。它们是同一个 owner 的两种语言版本，含义和证据完全一致，不是独立的事实记录。
+每次 PCR 更新都必须遵循[地图中的双语维护步骤](./README.md#双语发布与维护)。完整英中文件对是同一个 prose owner，不是独立的事实记录。
 
-`Confirmed / Derived / Candidate / NOT VERIFIED` 随证据更新；source-established 与 runtime verified 分开。source 与 vouched direction 冲突时保留冲突，不伪造 rationale 或 vouch；decision ledger 只有 human 明确建立后才使用。公开目录不引用私人 memory 作为产品方向。 决策摘要与交付前隐私复核遵循 [project-context-writing](../../skills/project-context-writing/SKILL.md)；来源字段指向仓库证据或必要公共引用，不记录私人对话。
+`Confirmed / Derived / Candidate / NOT VERIFIED` 随证据更新；source-established 与 runtime verified 分开。source 与 vouched direction 冲突时保留冲突，不伪造 rationale 或 vouch；decision ledger 只有 human 明确建立后才使用。公开目录不引用私人 memory 作为产品方向。来源依据与交付前必需检查遵循[地图中的写入与隐私规则](./README.md#写入与隐私复核)。
 
-一次维护结束前检查：map 能否快速找到 owning page；Mermaid 是否与实际依赖/时序一致；每条 core invariant 是否有 statement、适用范围、问题/原因/机制/例子/保护目标、source/tests、strength/confidence；未决问题是否被误写成默认承诺。逐节比较两种版本，确保语义完全一致，文件名、例子、证据、日期和状态一一对应；检查两个位置的链接与标题锚点。
+一次维护结束前检查：map 能否快速找到 owning page；Mermaid 是否与实际依赖/时序一致；每条 core invariant 是否有 statement、适用范围、问题/原因/机制/例子/保护目标、source/tests、strength/confidence；未决问题是否被误写成默认承诺。完成[双语步骤](./README.md#双语发布与维护)中的内容配对、地图、链接与标题检查。
 
 ## 可复用的 PR review 记录
 
@@ -78,19 +80,19 @@ P0/P1 表示严重 correctness/authority/freshness 破坏；P2 是受限缺陷�
 
 ## 验证选择与已知运行陷阱
 
-先从根目录与归属 package 的 `package.json` 发现可用脚本。涉及 production governed source/config 时按 root AGENTS 执行 `pnpm run check`，失败读取 `pnpm exec limina check --issues --format json`。涉及 tests/guard 按 root 及现有 package AGENTS 运行 unit/typecheck/lint；`lint:check` 与 `format:check` 为只读检查，`lint:fix` 与 `format:write` 为显式修改。只改 PCR 时检查格式、中英文内容一致性、links、source anchors、相关 semantic evidence 与 Git 边界，不强制触发 build/package/release 全套任务。
+按[开发验证与交付步骤](./development-workflow.md#验证与交付)选择源码、配置、tests/guard 或纯 PCR 改动的必需检查。仓库命令选择与验收边界由该步骤负责；下文的语义反证与已知运行陷阱补充这些检查。
 
-实证结论遵守 root verification protocol：在 `$EVIDENCE_ROOT/<topic>/` 建立忠实最小复现；至少三轮独立改变会影响结果的维度，以推翻命题为目标；记录 intent、独立性、命令/条件、观察。修正命题后重做相应反证。无法保留 toolchain/platform 条件时写 NOT VERIFIED，不用 source 阅读冒充实测。
+实证结论需在 `$EVIDENCE_ROOT/<topic>/` 建立忠实最小复现；至少三轮独立改变会影响结果的维度，以推翻命题为目标；记录 intent、独立性、命令/条件、观察。修正命题后重做相应反证。无法保留 toolchain/platform 条件时写 NOT VERIFIED，不用 source 阅读冒充实测。
 
 以下 supporting traps 保留已发生的原因与 source/test 锚点，不提升为新的 core invariant：
 
 | Trap                                         | 操作与原因                                                                                                                                                                                | Evidence owner                                                                                                                                                                                                                        |
 | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI 子进程返回空 stdout                      | 先保留 stderr/exit；tsx `listen EPERM` 发生于 IPC 启动，未到业务断言                                                                                                                      | `bin/limina.js`；[本次验证](./limina-architecture-audit.md#validation)                                                                                                                                                                |
+| CLI 子进程返回空 stdout                      | 先保留 stderr/exit；tsx `listen EPERM` 发生于 IPC 启动，未到业务断言                                                                                                                      | `bin/limina.js`；[本次验证](./architecture-audit.md#validation)                                                                                                                                                                       |
 | 同一 `.limina` 的进程测试相互污染            | namespace-mutating commands 顺序执行；已产生 inventory 后的独立 queries 可只读；矩阵优先 in-process，保留代表性 CLI wiring                                                                | [cli tests](../../../packages/limina/src/__tests__/cli.spec.ts)、[attempt tests](../../../packages/limina/src/__tests__/check-attempt.spec.ts)                                                                                        |
 | Windows 单测超过单个用例时限或丢失定时器重叠 | 将独立的 CLI 与语法矩阵拆为有界用例，不删减输入；并发断言等待 runner 实际启动，不假定负载下 10–30 毫秒定时器必然重叠                                                                      | [CLI 测试](../../../packages/limina/src/__tests__/cli.spec.ts)、[语法差分](../../../packages/limina/src/__tests__/source-syntax-differential.spec.ts)、[checker build 测试](../../../packages/limina/src/__tests__/typecheck.spec.ts) |
 | 生成配置投影测试重复启动编译器进程           | 每个变体用 TypeScript Program 检查源配置，再用一次 SolutionBuilder 构建两个生成配置；断言声明和输出产物。完整测试集负载下，启动三个进程的单个用例可能超过 Windows 的 30 秒时限。          | [生成图测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)                                                                                                                                                          |
-| Windows path / inline ESM                    | fixture.path/portable helpers 用于比较；filesystem 可用 native path；child import 使用 file URL                                                                                           | [package AGENTS](../../../AGENTS.md)、[path helpers](../../../packages/limina/src/__tests__/helpers/path.ts)                                                                                                                          |
+| Windows path / inline ESM                    | fixture.path/portable helpers 用于比较；filesystem 可用 native path；child import 使用 file URL                                                                                           | [测试中的 portable path](./development-workflow.md#测试中的-portable-path)、[path helpers](../../../packages/limina/src/__tests__/helpers/path.ts)                                                                                    |
 | materialization contention 夹杂轮询竞态      | paused child 使用已打开 IPC 通道释放，失败附带 stdout/stderr                                                                                                                              | [recovery tests](../../../packages/limina/src/__tests__/materialization-recovery.spec.ts)                                                                                                                                             |
 | Region 索引 cut 后丢失 owner 归因            | 预计算必须保留最近 activated package 的归因身份：同一 owner 的更深 boundary 仍需替换先前 boundary，descendant activation 则重新选择 owner；只传播 cut 后的 null owner 会改变 diagnostics  | [workspace directory index tests](../../../packages/limina/src/__tests__/workspace-directory-index.spec.ts) 的 nearest owner cut、canonical relocation 与 re-entry 反例                                                               |
 | repository config 集成测试重复全仓语义分析   | 在临时最小 pnpm workspace 中加载真实 root config 并运行 typecheck pipeline，覆盖两个编译器范围和各自无效源码控制组。全仓 graph 仍由 CI 的 `pnpm check` 覆盖，避免此守卫成本随仓库规模增长 | [root config test](../../../packages/limina/integration/tests/root-config.spec.ts)、[CI](../../../.github/workflows/ci.yml)                                                                                                           |
