@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import quotePosix from 'shell-quote/quote.js';
 import { describe, expect, it } from 'vitest';
 import {
   createGlobalQueryCommandContext,
@@ -45,6 +46,24 @@ async function readPosixCommandTokens(command: string): Promise<string[]> {
 
   return JSON.parse(stdout) as string[];
 }
+
+describe('POSIX quoting dependency security', () => {
+  it.each([
+    { name: 'LF', lineTerminator: '\n' },
+    { name: 'CR', lineTerminator: '\r' },
+    { name: 'line separator', lineTerminator: '\u{2028}' },
+    { name: 'paragraph separator', lineTerminator: '\u{2029}' },
+  ])('rejects $name after comment tokens', ({ lineTerminator }) => {
+    expect(() =>
+      quotePosix([
+        'echo',
+        'safe',
+        { comment: 'ignored' },
+        `value${lineTerminator}printf unintended-command;#`,
+      ]),
+    ).toThrow(TypeError);
+  });
+});
 
 describe('standalone invocation generated commands', () => {
   it('keeps the bounded command context and token order immutable', () => {

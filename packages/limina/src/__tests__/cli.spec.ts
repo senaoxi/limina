@@ -1527,9 +1527,27 @@ export default {
           stdout?: string;
         };
       }
+      let completionStatus = '';
+      if (stableTaskQuery.code !== 0) {
+        const latestAttempt = JSON.parse(
+          await readFile(
+            path.join(rootDirectory, '.limina/check/latest-attempt.json'),
+            'utf8',
+          ),
+        );
+        completionStatus = await readFile(
+          path.join(
+            rootDirectory,
+            '.limina/check/attempts',
+            latestAttempt.attemptId,
+            'status.json',
+          ),
+          'utf8',
+        );
+      }
       expect(
         stableTaskQuery.code,
-        `${stableTaskQuery.stdout ?? ''}\n${stableTaskQuery.stderr ?? ''}`,
+        `${stableTaskQuery.stdout ?? ''}\n${stableTaskQuery.stderr ?? ''}\n${completionStatus}`,
       ).toBe(0);
       expect(JSON.parse(stableTaskQuery.stdout ?? '')).toMatchObject({
         issueCount: 1,
