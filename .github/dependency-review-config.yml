@@ -1,4 +1,3 @@
-# Keep the allowed licenses aligned with packages/build-tools/src/license-policy.ts.
 fail-on-severity: high
 fail-on-scopes:
   - runtime

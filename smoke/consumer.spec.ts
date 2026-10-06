@@ -139,6 +139,7 @@ describe('limina published package smoke', () => {
         ).toBe(true);
         for (const workspacePackageName of [
           '@limina/eslint-config',
+          '@limina/gates',
           '@limina/build-tools',
           '@docs-islands/eslint-config',
           '@docs-islands/plugin-license',

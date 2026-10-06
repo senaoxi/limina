@@ -1,12 +1,12 @@
+import {
+  type BundledDependency,
+  collectBundledDependencies,
+} from '@limina/gates/license-policy';
 import { createElapsedTimer } from 'logaria/helper';
 import fs from 'node:fs';
 import type { Plugin } from 'rolldown';
 import type { Dependency } from 'rollup-plugin-license';
 import license from 'rollup-plugin-license';
-import {
-  type BundledDependency,
-  collectBundledDependencies,
-} from './license-policy.js';
 import { createLogger } from './logger.js';
 
 type LoadPlugin = Plugin['load'];

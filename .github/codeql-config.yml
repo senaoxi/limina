@@ -5,7 +5,7 @@ paths:
   - packages/migrate/src
   - packages/migrate/bin
   - packages/build-tools/src
-  - packages/eslint-config/src
+  - packages/gates/src
   - scripts
 paths-ignore:
   - "**/node_modules/**"

@@ -14,21 +14,21 @@
   "scripts": {
     "prepare": "husky",
     "hooks:install": "husky",
-    "commit:check": "node scripts/git/commit-message.ts",
+    "commit:check": "node packages/gates/src/commit/message.ts",
     "check": "limina check",
     "typecheck": "limina check typecheck",
     "build": "pnpm run build:tools && pnpm --filter limina run build && pnpm --filter limina-migrate run build",
-    "build:tools": "pnpm --filter @limina/build-tools run build && pnpm --filter @limina/eslint-config run build",
+    "build:tools": "pnpm --filter @limina/gates run build && pnpm --filter @limina/build-tools run build",
     "build:watch": "pnpm run build:tools && pnpm --parallel --filter limina --filter limina-migrate run dev",
     "test": "pnpm run build && pnpm run test:unit && pnpm run test:tooling && pnpm run test:integration",
     "test:unit": "pnpm --filter limina run test:unit && pnpm --filter limina-migrate run test:unit",
     "test:integration": "pnpm --filter limina run test:integration && pnpm --filter limina-migrate run test:integration",
-    "test:tooling": "pnpm --filter @limina/eslint-config test && node --import tsx --test scripts/release/*.spec.ts scripts/docs/*.spec.ts scripts/git/*.spec.ts",
+    "test:tooling": "pnpm --filter @limina/gates test && node --import tsx --test scripts/release/*.spec.ts scripts/docs/*.spec.ts scripts/git/*.spec.ts",
     "test:smoke": "pnpm --dir smoke test",
     "smoke": "pnpm run build && pnpm run test:smoke",
     "docs:dev": "pnpm --dir docs run docs:dev",
     "docs:build": "pnpm --dir docs run docs:build",
-    "docs:privacy": "tsx scripts/docs/check-privacy.ts",
+    "docs:privacy": "node packages/gates/src/privacy/check.ts",
     "docs:preview": "pnpm --dir docs run docs:preview",
     "format": "prettier --write --cache .",
     "format:check": "limina check format",
@@ -42,19 +42,15 @@
     "changelog": "tsx scripts/changelog.ts",
     "changelog:preview": "tsx scripts/changelog.ts --dry-run",
     "migration": "limina-migrate",
-    "clean": "pnpm -r run clean && del-cli .tsbuild .limina .smoke .eslintcache"
+    "clean": "pnpm -r run clean && del-cli .tsbuild .limina .smoke .eslintcache",
+    "gates:check": "node packages/gates/src/commit/staged.ts",
+    "gates:staged": "node packages/gates/src/commit/staged.ts --staged"
   },
   "devDependencies": {
     "@commitlint/cli": "catalog:lint",
     "@commitlint/config-conventional": "catalog:lint",
-    "@limina/build-tools": "workspace:*",
-    "@limina/eslint-config": "workspace:*",
     "@types/node": "catalog:dev",
-    "@types/semver": "catalog:dev",
-    "@types/prompts": "catalog:dev",
     "@xterm/headless": "catalog:dev",
-    "prompts": "catalog:dev",
-    "semver": "catalog:dev",
     "yaml": "catalog:dev",
     "logaria": "catalog:dev",
     "eslint": "catalog:lint",
@@ -67,7 +63,7 @@
     "prettier-plugin-organize-imports": "catalog:format",
     "del-cli": "catalog:dev",
     "limina": "workspace:*",
-    "cac": "catalog:dev",
-    "limina-migrate": "workspace:*"
+    "limina-migrate": "workspace:*",
+    "@limina/gates": "workspace:*"
   }
 }

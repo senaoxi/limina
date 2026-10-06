@@ -1,13 +1,13 @@
-import eslintGeneralConfig from '@limina/eslint-config';
+import eslintGeneralConfig from '@limina/gates/eslint';
 import {
   baseTestFileRules,
   testFilePatterns,
-} from '@limina/eslint-config/config';
+} from '@limina/gates/eslint/config';
 import {
   createLoggerPlugin,
   portablePathPlugin,
-} from '@limina/eslint-config/plugins';
-import { rootFileConfigs } from '@limina/eslint-config/presets';
+} from '@limina/gates/eslint/plugins';
+import { rootFileConfigs } from '@limina/gates/eslint/presets';
 import { defineConfig } from 'eslint/config';
 
 const liminaTestFilePatterns = [
@@ -92,7 +92,10 @@ export default defineConfig([
     },
   },
   {
-    files: ['scripts/**/*.ts'],
+    files: [
+      'scripts/**/*.ts',
+      'packages/gates/src/{release,commit,privacy}/**/*.{ts,mjs}',
+    ],
     rules: {
       complexity: ['warn', { max: 40 }],
       'max-lines': [

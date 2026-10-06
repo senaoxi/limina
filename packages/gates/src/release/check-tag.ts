@@ -1,4 +1,4 @@
-import { isValidVersion } from './shared';
+import { isValidVersion } from './shared.ts';
 
 // Tags imported from the fixed docs-islands extraction baseline. Keep rejecting
 // their names even if a local tag is moved to a newer commit.

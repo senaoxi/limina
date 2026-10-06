@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanDocumentation } from './privacy';
+import { scanDocumentation } from './index.ts';
 
-const repo = fileURLToPath(new URL('../../', import.meta.url));
+const repo = fileURLToPath(new URL('../../../../', import.meta.url));
 const arguments_ = process.argv.slice(2);
 const isBuilt = arguments_.includes('--built');
 const shouldCheckContextRecords = arguments_.includes('--context-records');

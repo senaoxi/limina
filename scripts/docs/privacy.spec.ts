@@ -1,3 +1,4 @@
+import { privacyIssues } from '@limina/gates/privacy';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +9,6 @@ import path from 'node:path';
 import { it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
-import { privacyIssues } from './privacy';
 import { publicTerminalChunks } from './public-terminal';
 import { terminalFrames } from './terminal-frames';
 
@@ -140,7 +140,9 @@ it('fails the real scan command for nested public output and compressed PNG meta
       [
         '--import',
         import.meta.resolve('tsx'),
-        fileURLToPath(new URL('check-privacy.ts', import.meta.url)),
+        fileURLToPath(
+          new URL('../../packages/gates/src/privacy/check.ts', import.meta.url),
+        ),
         root,
       ],
       { encoding: 'utf8' },
@@ -195,7 +197,9 @@ it('fails the real scan command for nested public output and compressed PNG meta
 
 it('scans context records without leaking attribution or rejecting product users, evidence dates and repository-relative paths', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'limina-context-privacy-'));
-  const script = fileURLToPath(new URL('check-privacy.ts', import.meta.url));
+  const script = fileURLToPath(
+    new URL('../../packages/gates/src/privacy/check.ts', import.meta.url),
+  );
   const scan = (shouldCheckContextRecords: boolean) =>
     spawnSync(
       process.execPath,

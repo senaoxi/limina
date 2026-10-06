@@ -1,3 +1,4 @@
+import { privacyIssues } from '@limina/gates/privacy';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -11,7 +12,6 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format } from 'prettier';
-import { privacyIssues } from './privacy';
 import { publicTerminalChunks } from './public-terminal';
 import { terminalFrames, type TerminalChunk } from './terminal-frames';
 

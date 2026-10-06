@@ -1,4 +1,4 @@
-import { createLogger } from '@limina/build-tools/logger';
+import { createLogger } from 'logaria';
 import { createElapsedTimer, formatErrorMessage } from 'logaria/helper';
 import type { LoggerLogOptions } from 'logaria/types';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -7,7 +7,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
 import semver from 'semver';
-import { execReleaseCommand } from './command';
+import { execReleaseCommand } from './command.ts';
 
 const loggerInstance = createLogger({
   main: 'limina',
@@ -71,7 +71,9 @@ export const ChangelogLogger = createScriptLogger(
   loggerInstance.getLoggerByGroup('task.changelog.workspace'),
 );
 
-export const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+export const REPO_ROOT = fileURLToPath(
+  new URL('../../../../', import.meta.url),
+);
 export const WORKSPACE_CONFIG_PATH = path.join(
   REPO_ROOT,
   'pnpm-workspace.yaml',

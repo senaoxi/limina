@@ -1,3 +1,4 @@
+import { runPublishCommand } from '@limina/gates/release/release';
 import assert from 'node:assert/strict';
 import childProcess, { execFileSync, spawnSync } from 'node:child_process';
 import {
@@ -6,7 +7,6 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { it, mock } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { runPublishCommand } from './release';
+import { installGatesFixture } from '../gates-fixture';
 
 it('starts releases without an activation switch and retains ordinary preflight checks', () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'limina-release-cli-'));
@@ -75,42 +75,12 @@ it('starts releases without an activation switch and retains ordinary preflight 
           publishConfig: { access: 'public' },
         }),
       );
-    const scripts = path.join(root, 'scripts/release');
-    mkdirSync(scripts, { recursive: true });
+    installGatesFixture(root);
+    mkdirSync(path.join(root, 'scripts'), { recursive: true });
     copyFileSync(
       fileURLToPath(new URL('../release.ts', import.meta.url)),
       path.join(root, 'scripts/release.ts'),
     );
-    for (const file of [
-      'cli.ts',
-      'changelog.ts',
-      'command.ts',
-      'publication.ts',
-      'release.ts',
-      'shared.ts',
-    ])
-      copyFileSync(
-        fileURLToPath(new URL(file, import.meta.url)),
-        path.join(scripts, file),
-      );
-    const dependencies = fileURLToPath(
-      new URL('../../node_modules/', import.meta.url),
-    );
-    for (const name of [
-      '@limina/build-tools',
-      'cac',
-      'logaria',
-      'prompts',
-      'semver',
-    ]) {
-      const target = path.join(root, 'node_modules', name);
-      mkdirSync(path.dirname(target), { recursive: true });
-      symlinkSync(
-        realpathSync(path.join(dependencies, name)),
-        target,
-        process.platform === 'win32' ? 'junction' : 'dir',
-      );
-    }
     git('init', '--quiet');
     git('add', '.');
     git(
