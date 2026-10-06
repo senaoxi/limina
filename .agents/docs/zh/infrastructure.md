@@ -24,6 +24,10 @@
 
 docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开始，该基线在此前 18 项之外已经排除这两项 advisory。它的 Security workflow 和采用相同政策的本地审计通过。仅移除这两项排除的独立 manifest／lockfile 控制审计再次返回两项 high advisory；截至 2026-10-03，上游公告仍未列出修复版本。继承的排除是现有门禁的限制，不证明有漏洞的依赖已得到修复。隐私守卫独立于安全排除项和依赖版本；通过该守卫不授权 npm 发布或手动部署。
 
+2026-10-06 的审计返回了一项高危 [sharp advisory](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) 和一项严重 [shell-quote advisory](https://github.com/advisories/GHSA-pqg4-j6r4-53mv)。Workspace 现在在 dev catalog 固定 shell-quote 1.11.0，并从 `security-patches` 将 sharp 0.35.5 限定用于 Astro 7 宿主。最低／当前 Astro 版本与独立夹具工作区保留各自版本和边界。Sharp 补丁将平台包更新到 0.35.5、libvips 包更新到 1.3.4，提供 librsvg 2.63.2。当两个 Astro 宿主无需 override 即可选择安全的 sharp 版本时，移除此限定 override。未增加 audit、release-age、trust、peer 或脚本审批例外。
+
+所选发布包和对应 tag 源码保留 shell-quote 的 MIT 与 sharp 的 Apache-2.0 许可证、兼容的 Node 下限，且没有安装脚本；所选版本均未被 deprecated。Tarball integrity 与 registry 签名校验通过；sharp 的 npm／SLSA attestation 与其 tarball 及 `lovell/sharp` 在 `v0.35.5` 的发布 workflow 匹配。[Quote 入口回归](../../../packages/limina/src/__tests__/standalone-invocation-command.spec.ts)拒绝 comment token 后的 LF、CR 和两种 Unicode 换行符：四项在 1.10.0 上均失败，在 1.11.0 上均通过。Limina 传入字符串 token，既有真实 shell 的 argv 回放仍通过。两个 Astro 宿主在 Linux 上均加载 sharp 0.35.5 与 librsvg 2.63.2，并将小型 SVG 转为 PNG。仅应用依赖补丁时，可比的构建 `dist` 总体积中，Limina 从 3,310,673 增至 3,310,974 字节（+301 字节，0.0091%），migrate 保持 2,065,819 字节；两个 bundle inventory 均不包含 sharp。冻结安装和本地全类别审计通过，在相同 20 个排除项下返回零项 advisory。本地证据不证明原生 Windows／macOS 或远程 CI 验收。
+
 [CodeQL](../../../.github/workflows/codeql.yml)显式加载[范围](../../../.github/codeql-config.yml)，无需产品构建即可分析 JavaScript／TypeScript，覆盖两个产品／私有工具／脚本，排除生成产物／fixtures／测试。静态扫描不代表穷尽运行时／文件系统证明。
 
 ## CI 与制品
