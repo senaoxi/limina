@@ -26,6 +26,8 @@ Read the relevant paired records before edits. For architecture work, use the Li
 | Change CI, security, reports or external workflow integration       | [Infrastructure](./infrastructure.md)               |
 | Check local migration scope and remote/publication/deployment gates | [Migration](./migration.md)                         |
 
+Persistent importer validity and the provider support boundary are owned by [semantics](./semantics.md#persistent-importer-validity); mtime checkpoints, cold analysis, epochs and snapshot publication are owned by [lifecycle](./lifecycle.md#persistent-native-analysis-cache).
+
 ## Bilingual publishing and maintenance
 
 English topics live at `.agents/docs/<name>.md`; complete Chinese counterparts live at `.agents/docs/zh/<name>.md`. Both files must have the same filename and be tracked by Git. They are two language editions of one prose owner.

@@ -42,10 +42,23 @@ function mergeConfigClosure(
 
 export class CheckerProjectConfigCache {
   readonly #entries = new Map<string, ParsedCheckerProjectConfig>();
+  readonly #observe:
+    | ((
+        config: ParsedCheckerProjectConfig,
+        virtualFiles?: ReadonlyMap<string, string>,
+      ) => void)
+    | undefined;
   readonly generation: number;
 
-  constructor(generation = 0) {
+  constructor(
+    generation = 0,
+    observe?: (
+      config: ParsedCheckerProjectConfig,
+      virtualFiles?: ReadonlyMap<string, string>,
+    ) => void,
+  ) {
     this.generation = generation;
+    this.#observe = observe;
   }
 
   get(cacheKey: string): ParsedCheckerProjectConfig | undefined {
@@ -58,7 +71,9 @@ export class CheckerProjectConfigCache {
   set(
     cacheKey: string,
     config: ParsedCheckerProjectConfig,
+    virtualFiles?: ReadonlyMap<string, string>,
   ): ParsedCheckerProjectConfig {
+    this.#observe?.(config, virtualFiles);
     this.#entries.set(cacheKey, cloneParsedCheckerProjectConfig(config));
     return cloneParsedCheckerProjectConfig(config);
   }
@@ -148,14 +163,6 @@ function getCachedConfig(
   return cache.get(cacheKey);
 }
 
-function cacheParsedConfig(
-  cache: CheckerProjectConfigCache,
-  cacheKey: string,
-  config: ParsedCheckerProjectConfig,
-): ParsedCheckerProjectConfig {
-  return cache.set(cacheKey, config);
-}
-
 function createParsedProjectConfig(options: {
   allowNoInputDiagnostics?: boolean;
   checkerPresets: CheckerPreset[];
@@ -184,7 +191,11 @@ function resolveCacheMiss(options: {
   virtualFiles?: ReadonlyMap<string, string>;
 }): ParsedCheckerProjectConfig {
   const parsedConfig = createParsedProjectConfig(options);
-  return cacheParsedConfig(options.cache, options.cacheKey, parsedConfig);
+  return options.cache.set(
+    options.cacheKey,
+    parsedConfig,
+    options.virtualFiles,
+  );
 }
 
 function resolveCachedProjectConfig(options: {

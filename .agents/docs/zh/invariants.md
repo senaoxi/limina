@@ -112,6 +112,8 @@
 - **Evidence / Strength / Confidence**：[preflight tests](../../../packages/limina/src/__tests__/preflight.spec.ts)、[context tests](../../../packages/limina/src/__tests__/typescript-semantic-context.spec.ts)；**Partially executable / Confirmed**。
 - **Boundaries**：外部复用 caches 必须尊重 lifecycle；key 没有普遍 file-content digest；manager ensure-after-dispose 没有统一 guard；Vue active slot 的共享模式另见生命周期页。
 
+**持久化分析有效性**：原生 importer 复用绑定每份事实的输入版本、query coverage 及当前 Program 环境，不建立 ownership 或写入权限。只覆盖分析的 epoch 重试不得重放已完成 command。见[持久化缓存生命周期](./lifecycle.md#原生持久化分析缓存)及其回归测试。
+
 **规划输入 identity**：Migration 配置 overlay 纳入 semantic/provider cache identity，并贯穿 parser、ownership 与 TypeScript host。原生 reference 清单与规范化 source 输入上的推导相分离。Outputs 试加入只在封闭 reader 内复用单次发现快照，重新验证候选输出与物理 authority；末次规划和磁盘消费重新发现。已读取的 manifest 与 workspace descriptor 也纳入写入前漂移检查。Migration bundle 将 provider、namespace、错误类和 writer 的生产消费作为整体内联；新进程 worker 使用同一内嵌源码版本重新读取磁盘，不借用规划 context。包版本元数据观察不成为 semantic evidence。构建源码来源守卫、配对发布守卫与打包消费者测试挑战旧 dist、self metadata 不一致及 worker 资源缺失。这是 generation 内的输入边界，不是持久 read-view runtime；见[迁移生命周期](./lifecycle.md#migration-是另一种事务)。
 
 ## I10 — mutation 权限不能从路径字符串推导
@@ -168,7 +170,7 @@
 | I11       | writer lease、revision、marker、verify、recovery tests                  | 中途写失败、并行 revision drift、stale ownership ledger                          | 无：现有 semantic recovery guard 更稳                                                                                              |
 | I12       | sequence/digest/freshness、query/invocation guards                      | torn pair、newer running、corrupt latest、old completion                         | 无：现有 end-to-end CLI tests                                                                                                      |
 
-12 条均有机械连接；11 条在明确作用域内 Strongly executable，I09 依赖额外生命周期契约，列 Partially executable。没有把 Prose-only 的未来愿望伪装成已建立 core invariant。值得机器化但本次不直接实施的部分：若 human 决定统一 disposed API 或长期 cache contract，再增加对应状态拒绝/版本回归；如果扩大架构静态 guard 的语法范围，先增加动态/alias 路径的负例，不要求整个目录保持当前形状。
+12 条均有机械连接；11 条在明确作用域内 Strongly executable，I09 依赖额外生命周期契约，列 Partially executable。没有把 Prose-only 的未来愿望伪装成已建立 core invariant。值得机器化但本次不直接实施的部分：若 human 决定统一 disposed API 或将持久化缓存扩展到其他 provider，再增加对应状态拒绝/版本回归；如果扩大架构静态 guard 的语法范围，先增加动态/alias 路径的负例，不要求整个目录保持当前形状。
 
 ## Supporting invariants 与 implementation details
 

@@ -1,6 +1,7 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ImportRecord } from '../import-analysis/records';
 import type {
   TypeScriptSemanticChannel,
@@ -61,6 +62,8 @@ export function createMissingSemanticResolution(options: {
 }
 
 export function resolveModuleSemanticRecord(options: {
+  analysisCache?: NativeAnalysisCache;
+  analysisContextId?: string;
   channel?: 'jsx-runtime' | 'module';
   compilerOptions: ts.CompilerOptions;
   containingFile: string;
@@ -81,15 +84,19 @@ export function resolveModuleSemanticRecord(options: {
     options.literal,
     options.compilerOptions,
   );
-  const raw = options.tsModule.resolveModuleName(
-    options.literal.text,
-    options.containingFile,
-    options.compilerOptions,
-    options.host,
-    options.moduleResolutionCache,
-    options.redirectedReference,
-    resolutionMode,
-  );
+  const resolve = (host: ts.ModuleResolutionHost) =>
+    options.tsModule.resolveModuleName(
+      options.literal.text,
+      options.containingFile,
+      options.compilerOptions,
+      host,
+      options.analysisCache === undefined
+        ? options.moduleResolutionCache
+        : undefined,
+      options.redirectedReference,
+      resolutionMode,
+    );
+  const raw = cachedResolution({ options, resolutionMode, resolve });
   return {
     raw,
     semantic: createResolution({
@@ -104,6 +111,8 @@ export function resolveModuleSemanticRecord(options: {
 }
 
 export function resolveTripleSlashPathSemanticRecord(options: {
+  analysisCache?: NativeAnalysisCache;
+  analysisContextId?: string;
   contextIdentity: string;
   importRecord: ImportRecord;
   tsModule: typeof ts;
@@ -112,13 +121,28 @@ export function resolveTripleSlashPathSemanticRecord(options: {
     options.importRecord.specifier,
     options.importRecord.filePath,
   );
-  const target = options.tsModule.sys.fileExists(resolvedFileName)
-    ? toCheckerResolution({
-        extension: options.tsModule.Extension.Dts,
-        isExternalLibraryImport: false,
-        resolvedFileName,
-      })
-    : null;
+  const resolve = (host: ts.ModuleResolutionHost) => ({
+    resolvedModule: host.fileExists(resolvedFileName)
+      ? {
+          extension: options.tsModule.Extension.Dts,
+          isExternalLibraryImport: false,
+          resolvedFileName,
+        }
+      : undefined,
+    failedLookupLocations: [resolvedFileName],
+    affectingLocations: undefined,
+  });
+  const raw = cachedResolution({
+    options: {
+      ...options,
+      containingFile: options.importRecord.filePath,
+      host: options.tsModule.sys,
+      redirectedReference: undefined,
+    },
+    resolutionMode: undefined,
+    resolve,
+  });
+  const target = toCheckerResolution(raw.resolvedModule);
   return createResolution({
     channel: 'triple-slash-path',
     contextIdentity: options.contextIdentity,
@@ -130,6 +154,8 @@ export function resolveTripleSlashPathSemanticRecord(options: {
 }
 
 export function resolveTypeReferenceSemanticRecord(options: {
+  analysisCache?: NativeAnalysisCache;
+  analysisContextId?: string;
   compilerOptions: ts.CompilerOptions;
   containingFile: string;
   contextIdentity: string;
@@ -143,15 +169,23 @@ export function resolveTypeReferenceSemanticRecord(options: {
   raw: ts.ResolvedTypeReferenceDirectiveWithFailedLookupLocations;
   semantic: TypeScriptSemanticResolution;
 } {
-  const raw = options.tsModule.resolveTypeReferenceDirective(
-    options.importRecord.specifier,
-    options.containingFile,
-    options.compilerOptions,
-    options.host,
-    options.redirectedReference,
-    options.typeReferenceDirectiveResolutionCache,
-    options.resolutionMode,
-  );
+  const resolve = (host: ts.ModuleResolutionHost) =>
+    options.tsModule.resolveTypeReferenceDirective(
+      options.importRecord.specifier,
+      options.containingFile,
+      options.compilerOptions,
+      host,
+      options.redirectedReference,
+      options.analysisCache === undefined
+        ? options.typeReferenceDirectiveResolutionCache
+        : undefined,
+      options.resolutionMode,
+    );
+  const raw = cachedResolution({
+    options,
+    resolutionMode: options.resolutionMode,
+    resolve,
+  });
   const resolved = raw.resolvedTypeReferenceDirective;
   const target =
     resolved?.resolvedFileName === undefined
@@ -172,4 +206,35 @@ export function resolveTypeReferenceSemanticRecord(options: {
       target,
     }),
   };
+}
+
+function cachedResolution<T>(input: {
+  options: {
+    analysisCache?: NativeAnalysisCache;
+    analysisContextId?: string;
+    containingFile: string;
+    compilerOptions?: ts.CompilerOptions;
+    importRecord: ImportRecord;
+    host: ts.ModuleResolutionHost;
+    redirectedReference: ts.ResolvedProjectReference | undefined;
+  };
+  resolutionMode: ts.ResolutionMode | undefined;
+  resolve(host: ts.ModuleResolutionHost): T;
+}): T {
+  const { options } = input;
+  if (options.analysisCache === undefined) return input.resolve(options.host);
+  return options.analysisCache.query({
+    contextId: options.analysisContextId!,
+    file: options.containingFile,
+    identity: [
+      options.compilerOptions,
+      options.importRecord.kind,
+      options.importRecord.specifier,
+      input.resolutionMode,
+      createRedirectedReferenceIdentity(options.redirectedReference),
+      options.redirectedReference?.commandLine.options,
+    ],
+    host: options.host,
+    resolve: input.resolve,
+  });
 }

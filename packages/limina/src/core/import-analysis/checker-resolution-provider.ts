@@ -269,9 +269,28 @@ export function createCheckerSemanticResolver(
     );
     const cacheKey = createCacheKey({ importRecord, request });
     const cached = dependencies.caches.checkerResolutionIndex.get(cacheKey);
-    if (cached !== undefined) return cloneCheckerResolutionEvidence(cached);
+    if (cached !== undefined)
+      return refreshRuntimeEvidence(cached, request, importRecord);
     const evidence = createEvidence({ dependencies, importRecord, request });
     dependencies.caches.checkerResolutionIndex.set(cacheKey, evidence);
     return cloneCheckerResolutionEvidence(evidence);
+  };
+}
+
+function refreshRuntimeEvidence(
+  evidence: CanonicalImportResolutionEvidence,
+  request: NormalizedModuleResolutionRequest,
+  importRecord: ImportRecord,
+): CanonicalImportResolutionEvidence {
+  return {
+    ...cloneCheckerResolutionEvidence(evidence),
+    runtimeEvidence: classifyImportRuntimeEvidence({
+      compilerOptions: request.compilerOptions,
+      containingFile: request.containingFile,
+      extensions: request.context.extensions,
+      specifier: importRecord.specifier,
+      oxcResolvedFilePath: null,
+      typeScriptResolution: evidence.typeScriptResolution,
+    }),
   };
 }

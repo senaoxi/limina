@@ -105,7 +105,11 @@ export async function collectCheckerDependencyFacts(options: {
   const workspaceSourceBoundary = createWorkspaceSourceBoundaryFromProjects(
     options.discovery.projectByConfigPath.values(),
   );
+  const caches =
+    options.projectDependencyCaches ?? createProjectDependencyCaches();
   const core = new TypeEvidenceCore({
+    analysisCache: caches.analysisCache,
+    syntaxFacts: caches.syntaxFacts,
     generation: getGeneration(options.projectConfigCache),
     importAnalysis: options.importAnalysis,
     workspaceSourceBoundaryProvider: () => workspaceSourceBoundary,
@@ -117,8 +121,7 @@ export async function collectCheckerDependencyFacts(options: {
       membership: createActualMembershipIndex(
         options.discovery.projectByConfigPath,
       ),
-      projectDependencyCaches:
-        options.projectDependencyCaches ?? createProjectDependencyCaches(),
+      projectDependencyCaches: caches,
       workspaceSourceBoundary,
     });
     options.discovery.plan.dependencyFacts = collected.facts;

@@ -5,6 +5,7 @@ import {
   createLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
 } from '../domain/artifacts/namespace';
+import type { NativeAnalysisCache } from './analysis-cache/native-cache';
 import { AstroSemanticContextManager } from './astro-semantic/context';
 import { BuildGraphCore } from './build-graph';
 import type { ImportAnalysisMetricsRecorder } from './import-analysis/runner';
@@ -55,6 +56,7 @@ export type {
 export { WorkspaceCore } from './workspace';
 
 export interface AnalysisProviderSetDependencies {
+  readonly analysisCache?: NativeAnalysisCache;
   readonly workspace?: WorkspaceCoreDependencies;
 }
 
@@ -115,14 +117,24 @@ export class AnalysisProviderSet {
     this.config = options.config;
     this.projectConfigs = new CheckerProjectConfigCache(
       options.artifactNamespace.generation,
+      (config, virtualFiles) =>
+        options.dependencies.analysisCache?.inputs.observeConfig(
+          config.configClosure,
+          virtualFiles,
+        ),
     );
     this.syntaxFacts = new SourceSyntaxFactsCache({ metrics: options.metrics });
-    this.projectDependencies = createProjectDependencyCaches(this.syntaxFacts);
-    this.workspace = new WorkspaceCore(
-      options.config,
-      options.metrics,
-      options.dependencies.workspace,
+    this.projectDependencies = createProjectDependencyCaches(
+      this.syntaxFacts,
+      options.dependencies.analysisCache,
     );
+    this.workspace = new WorkspaceCore(options.config, options.metrics, {
+      ...options.dependencies.workspace,
+      runWithInputs: (operation) => {
+        const cache = options.dependencies.analysisCache;
+        return cache === undefined ? operation() : cache.epoch.run(operation);
+      },
+    });
     this.vueSemanticContexts = new VueSemanticContextManager(options.metrics);
     this.astroSemanticContexts = new AstroSemanticContextManager({
       governanceRoot: options.config.governanceRoot,
@@ -143,6 +155,7 @@ export class AnalysisProviderSet {
       workspace: this.workspace,
     });
     this.typeEvidence = new TypeEvidenceCore({
+      analysisCache: options.dependencies.analysisCache,
       generation: options.artifactNamespace.generation,
       importAnalysis: this.imports.context,
       syntaxFacts: this.syntaxFacts,

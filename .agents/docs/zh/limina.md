@@ -39,4 +39,4 @@ Limina 把配置选定的 package 治理范围、checker 的语义事实、声�
 - **DESIGN JUDGMENT / Candidate**：建议、取舍或未决产品边界；必须明确谁需要作决定。
 - **NOT VERIFIED**：没有执行相应实测，或环境不能保留关键条件。测试代码存在不等于本次运行通过。
 
-这些记录定义检索与 review 规范，未设立 decision ledger，也没有人类认可标记。源代码不能回答的方向问题保留为 Open：公开 issue/schema/path 的兼容承诺范围；固定 checker 集之外的扩展契约；`build --raw` 的长期地位；domain/application 分层是否将统一驱动全部生产验证；跨 provider generation 的外部缓存是否需要受支持。关闭 Open 问题需要明确的项目决策或相关实证；仅有实现不能建立产品意图。
+这些记录定义检索与 review 规范，未设立 decision ledger，也没有人类认可标记。源代码不能回答的方向问题保留为 Open：公开 issue/schema/path 的兼容承诺范围；固定 checker 集之外的扩展契约；`build --raw` 的长期地位；domain/application 分层是否将统一驱动全部生产验证；是否将持久化缓存扩展到原生适配器之外。关闭 Open 问题需要明确的项目决策或相关实证；仅有实现不能建立产品意图。

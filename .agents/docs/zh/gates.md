@@ -31,3 +31,5 @@
 ## 回归归属
 
 [暂存区门禁测试](../../../packages/gates/src/commit/staged.spec.ts)执行真实的 Git 拒绝／接受提交，覆盖 index authority、损坏输入以及 HEAD／index／工作区保持不变。既有 [Git 钩子](../../../scripts/git/hooks.spec.ts)、[发布](../../../scripts/release/publication.spec.ts)、[Tag CLI](../../../scripts/release/check-tag-cli.spec.ts)、[Workflow](../../../scripts/release/workflow.spec.ts)和[隐私](../../../scripts/docs/privacy.spec.ts)测试保留进程与集成边界，并消费该包。包内 ESLint 测试保留已有 parser／规则回归。根 `test:tooling` 执行这两组测试。
+
+Fixture 仓库在暂存基线前忽略已安装的 `node_modules`。Git 可能将 Windows 目录 junction 遍历为依赖文件，而 POSIX 目录符号链接本身也可能进入 index。暂存区门禁回归检查 Git 的实际 index 中不存在运行依赖，使提交只测试 fixture 自己持有的输入。真实钩子和暂存空白检查保持启用。

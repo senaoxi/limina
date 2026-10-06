@@ -1,4 +1,5 @@
 import { resolveGovernanceRoot } from '#utils/workspace-root';
+import { bindConfigInputs, observeConfigLoad } from './input-observation';
 import { loadConfigModule } from './loader-import';
 import { resolveExecutionConfigLocation } from './loader-paths';
 import type {
@@ -35,14 +36,19 @@ export async function loadConfig(
 ): Promise<ResolvedLiminaConfig> {
   const location = resolveExecutionConfigLocation(options);
   const governanceRoot = resolveGovernanceRoot(location.configPath);
-  const config = await resolveConfigExport(
-    await loadConfigModule(location.configPath, options.configLoader),
-    configEnvironment(options),
+  const loaded = await observeConfigLoad(location.configPath, async () =>
+    resolveConfigExport(
+      await loadConfigModule(location.configPath, options.configLoader),
+      configEnvironment(options),
+    ),
   );
-  return {
-    ...config,
-    configPath: location.configPath,
-    governanceRoot,
-    rootDir: governanceRoot.rootDir,
-  };
+  return bindConfigInputs(
+    {
+      ...loaded.value,
+      configPath: location.configPath,
+      governanceRoot,
+      rootDir: governanceRoot.rootDir,
+    },
+    loaded.inputs,
+  );
 }

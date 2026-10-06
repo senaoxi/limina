@@ -46,7 +46,17 @@ function addProjectDependencyFailures(options: {
     importAnalysis: options.context.importAnalysis,
   });
   addDependencyCollectionFailures(options.context, collection.failures);
-  processReferenceDependencies(options, collection.dependencies);
+  const collect = () =>
+    processReferenceDependencies(options, collection.dependencies);
+  const cache = options.context.projectDependencyCaches.analysisCache;
+  if (cache === undefined) collect();
+  else
+    cache.contributions.replaceProject({
+      config: options.project.configPath,
+      checker: options.project.checkerName,
+      collect,
+      complete: collection.failures.length === 0,
+    });
   processMissingReferenceObservations(options, collection.observations);
 }
 

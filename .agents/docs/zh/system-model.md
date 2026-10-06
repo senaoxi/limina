@@ -155,6 +155,8 @@ flowchart TB
 
 声明目标 `.d.ts/.d.mts/.d.cts` 是 artifact 终点；存在 source 文件也不够，必须有合法 requirement。执行依赖计划同时看到声明边与调度边；dependency plan 先过滤相同 target 的自依赖；两个及以上 target 的 SCC 中含 declaration relation 被拒绝，纯 framework SCC 可以执行。准确 guard 见 [graph-validation](../../../packages/limina/src/core/build-graph/graph-validation.ts) 与 [declaration-cycle](../../../packages/limina/src/typecheck/build/declaration-cycle.ts)。
 
+Occurrence 贡献在当前 reference 规则接受后记录。[ReferenceContributions](../../../packages/limina/src/core/analysis-cache/contributions.ts) 按 contextual importer 分组，原子替换已完成投影，去重重复阶段观察并保留不同 occurrence。计数解释 import 产生的边；原始 references、implicitRefs、solution membership 与 framework scheduling 保留各自生产者。持久化计数不能建立 ownership，也不能删除由独立来源支持的边。
+
 ## Failure semantics 与投影边界
 
 配置/namespace/authority 不合法通常直接 throw；语义 preparation 不支持、source-map 不可信等成为 stage-specific failure；module missing、resource、unmapped generated 可成为 observation。`resource` 不是 TypeEvidence，missing 不等于异常。graph/source/proof 在自己的领域决定这些事实是否构成 issue。

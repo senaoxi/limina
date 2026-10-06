@@ -104,6 +104,8 @@ export class TypeScriptTypeReferenceResolver {
       resolutionMode,
       tsModule: this.options.tsModule,
       typeReferenceDirectiveResolutionCache: this.#cache,
+      analysisCache: this.options.analysisCache,
+      analysisContextId: this.options.analysisContextId,
     });
   }
 

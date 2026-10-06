@@ -39,7 +39,7 @@ function captureSourceFile(options: {
   for (const record of records) {
     options.facts.set(
       createImportRecordIdentity(record),
-      structuredClone(options.context.getDependencyFact(record)),
+      capturedFact(options.context, record),
     );
     options.resolutionsByImportRecord.set(
       createImportRecordIdentity(record),
@@ -101,4 +101,21 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
       return cloneResolution(resolution);
     },
   };
+}
+
+function capturedFact(
+  context: TypeScriptSemanticContext,
+  record: ImportRecord,
+): NativeDependencyFact {
+  const facts = collectedFacts(context);
+  const fact =
+    facts?.get(createImportRecordIdentity(record)) ??
+    context.getDependencyFact(record);
+  return structuredClone(fact);
+}
+
+function collectedFacts(
+  context: TypeScriptSemanticContext,
+): ReadonlyMap<string, NativeDependencyFact> | undefined {
+  return context.getCollectedDependencyFacts?.();
 }

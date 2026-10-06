@@ -1,12 +1,17 @@
 import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
 import {
   type AnalysisMetricsRecorder,
+  type AnalysisRun,
+  createAnalysisRun,
   createNoopMetricsRecorder,
 } from '../application/analysis/analysis-run';
+import type { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import {
   createLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
 } from '../domain/artifacts/namespace';
+import { identifier } from '../domain/shared/identifiers';
+import { AnalysisCacheController } from './analysis-cache';
 import type { LiminaPreflightManagerOptions } from './types';
 
 export function resolveMetrics(
@@ -37,6 +42,7 @@ export function resolveArtifactNamespace(
 }
 
 export function resolveProviders(options: {
+  analysisCache?: NativeAnalysisCache;
   artifactNamespace: LiminaArtifactNamespace;
   managerOptions: LiminaPreflightManagerOptions;
 }): AnalysisProviderSet {
@@ -45,6 +51,34 @@ export function resolveProviders(options: {
         options.managerOptions.config,
         options.artifactNamespace,
         options.managerOptions.metrics,
+        { analysisCache: options.analysisCache },
       )
     : options.managerOptions.providers;
+}
+
+export function createAnalysisCache(
+  options: LiminaPreflightManagerOptions,
+  namespace: LiminaArtifactNamespace,
+): AnalysisCacheController | undefined {
+  if (options.providers !== undefined) return undefined;
+  return options.analysisCache
+    ? new AnalysisCacheController(options.config, namespace, options.metrics)
+    : undefined;
+}
+
+export function createPreflightRun(options: {
+  generation: number;
+  providerGeneration: number;
+  rootDir: string;
+  metrics: AnalysisMetricsRecorder;
+  signal: AbortSignal;
+}): AnalysisRun {
+  return createAnalysisRun({
+    generation: identifier<'AnalysisGeneration'>(String(options.generation)),
+    metrics: options.metrics,
+    signal: options.signal,
+    snapshotToken: identifier<'RepositorySnapshotToken'>(
+      `${options.rootDir}:${options.generation}:${options.providerGeneration}`,
+    ),
+  });
 }

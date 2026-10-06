@@ -23,9 +23,18 @@ function getCachedCollection(options: {
   cacheKey: string;
   request: ProjectDependencyRequest;
 }): ProjectDependencyCollection | undefined {
-  const cached = options.request.caches?.projectDependencyCache.get(
-    options.cacheKey,
-  );
+  const caches = options.request.caches;
+  return caches === undefined
+    ? undefined
+    : readCachedCollection(caches, options.cacheKey);
+}
+
+function readCachedCollection(
+  caches: NonNullable<ProjectDependencyRequest['caches']>,
+  key: string,
+): ProjectDependencyCollection | undefined {
+  if (caches.analysisCache !== undefined) return undefined;
+  const cached = caches.projectDependencyCache.get(key);
   return cached === undefined
     ? undefined
     : cloneProjectDependencyCollection(cached);
@@ -53,6 +62,10 @@ function deduplicateFailures(collection: ProjectDependencyCollection): void {
 function createCollectionContext(request: ProjectDependencyRequest) {
   return createBoundedTypeScriptSemanticContext(
     {
+      analysisBinding: {
+        phase: 'locked',
+        checker: request.context.analysisChecker ?? 'tsc',
+      },
       configPath: request.context.configPath,
       fileNames: request.context.fileNames,
       options: request.context.compilerOptions,
@@ -60,7 +73,9 @@ function createCollectionContext(request: ProjectDependencyRequest) {
       virtualFiles: request.context.virtualFiles,
       workspaceSourceBoundary: request.context.workspaceSourceBoundary,
     },
-    { syntaxFacts: request.caches?.syntaxFacts },
+    {
+      ...collectionServices(request),
+    },
   );
 }
 
@@ -172,4 +187,31 @@ export function isProjectDependencyCreatesSourceEdge(
     | Extract<ProjectDependencyObservation, { kind: 'unmapped-generated' }>,
 ): dependency is ProjectDependency {
   return 'provenance' in dependency;
+}
+
+function collectionServices(request: ProjectDependencyRequest) {
+  const caches = request.caches;
+  if (caches === undefined) return {};
+  return {
+    syntaxFacts: caches.syntaxFacts,
+    analysisCache: nativeCache(
+      caches,
+      request.context.semanticAuthority.family,
+    ),
+  };
+}
+
+function nativeCache(
+  caches: NonNullable<ProjectDependencyRequest['caches']>,
+  family: string,
+) {
+  if (family !== 'typescript') recordColdProvider(caches, family);
+  return family === 'typescript' ? caches.analysisCache : undefined;
+}
+
+function recordColdProvider(
+  caches: NonNullable<ProjectDependencyRequest['caches']>,
+  family: string,
+): void {
+  caches.analysisCache?.fallback(family);
 }

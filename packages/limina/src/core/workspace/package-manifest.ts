@@ -1,9 +1,13 @@
+import { readAnalysisInput } from '#utils/analysis-input';
 import { readFileSync } from 'node:fs';
 import type { PackageManifest } from './package-types';
 
 export function readJsonFile<T>(filePath: string): T {
   return JSON.parse(
-    readFileSync(filePath, 'utf8').replace(/^\u{FEFF}/u, ''),
+    readAnalysisInput(filePath, () => readFileSync(filePath, 'utf8')).replace(
+      /^\u{FEFF}/u,
+      '',
+    ),
   ) as T;
 }
 

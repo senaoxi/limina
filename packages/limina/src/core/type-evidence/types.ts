@@ -1,4 +1,5 @@
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ImportRuntimeResolutionEvidence } from '../import-analysis/evidence';
 import type {
   TypeScriptSemanticProject,
@@ -18,6 +19,7 @@ export type WorkspaceBoundedImportEvidenceOptions = Omit<
 };
 
 export interface TypeEvidenceCoreOptions {
+  analysisCache?: NativeAnalysisCache;
   syntaxFacts?: SourceSyntaxFactsCache;
   generation: number;
   importAnalysis: ImportAnalysisContext;

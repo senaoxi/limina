@@ -155,6 +155,8 @@ Package dependency and deny-dependency checks resolve both ends of a generated r
 
 Declaration targets `.d.ts/.d.mts/.d.cts` are artifact endpoints. Even a source file's existence is insufficient without a valid requirement. The execution dependency plan sees both declaration and scheduling edges; it first filters dependencies on the same target. An SCC of two or more targets containing a declaration relation is rejected, while a pure framework SCC can execute. See [graph-validation](../../packages/limina/src/core/build-graph/graph-validation.ts) and [declaration-cycle](../../packages/limina/src/typecheck/build/declaration-cycle.ts) for the exact guards.
 
+Occurrence contributions are recorded after current reference rules accept them. [ReferenceContributions](../../packages/limina/src/core/analysis-cache/contributions.ts) groups them by contextual importer and atomically replaces a completed projection, deduplicating repeated phase observations while preserving separate occurrences. Counts explain import-derived edges; raw references, implicitRefs, solution membership and framework scheduling retain their own producers. Persisted counts never establish ownership or remove an independently supported edge.
+
 ## Failure semantics and projection boundaries
 
 Invalid config/namespace/authority generally throws directly. Unsupported semantic preparation or untrustworthy source mapping becomes a stage-specific failure; missing modules, resources, and unmapped generated dependencies can become observations. `resource` is not TypeEvidence, and missing does not mean an exception. graph/source/proof decide within their own domains whether these facts constitute an issue.
