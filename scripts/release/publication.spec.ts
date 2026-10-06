@@ -1,4 +1,4 @@
-import { collectBundledDependencies } from '@limina/build-tools/license-policy';
+import { collectBundledDependencies } from '@limina/gates/license-policy';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
@@ -19,17 +19,18 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { installGatesFixture } from '../gates-fixture';
 
-import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
-import { assertNewReleaseTag } from './check-tag';
-import { assertReleaseGroup } from './publication';
+import { assertNewReleaseTag } from '@limina/gates/release/check-tag';
+import { assertReleaseGroup } from '@limina/gates/release/publication';
 import {
   discoverReleasePackages,
   resolvePackageSelections,
   sortReleasePackageConfigs,
   type ReleasePlan,
-} from './shared';
+} from '@limina/gates/release/shared';
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 
 function plans(): ReleasePlan[] {
   return discoverReleasePackages().map((config) => ({
@@ -61,6 +62,122 @@ it('rejects missing, conflicting and prohibited bundled license evidence', () =>
       ]),
     /Conflicting/,
   );
+});
+
+async function createLicensePolicyFixture() {
+  const root = await mkdtemp(path.join(tmpdir(), 'limina-license-policy-'));
+  const modulePath = path.join(root, 'packages/gates/dist/license-policy.js');
+  const policyPath = path.join(root, '.agents/docs/license-policy.md');
+  await mkdir(path.dirname(modulePath), { recursive: true });
+  await mkdir(path.dirname(policyPath), { recursive: true });
+  await writeFile(path.join(root, 'package.json'), '{"type":"module"}\n');
+  for (const file of ['license-policy.js', 'licenses.js']) {
+    await copyFile(
+      fileURLToPath(
+        new URL(`../../packages/gates/dist/${file}`, import.meta.url),
+      ),
+      path.join(path.dirname(modulePath), file),
+    );
+  }
+  const markedPath = path.join(root, 'node_modules/marked');
+  const markedSource = fileURLToPath(
+    new URL('../../packages/gates/node_modules/marked', import.meta.url),
+  );
+  await mkdir(path.dirname(markedPath), { recursive: true });
+  await symlink(
+    await realpath(markedSource),
+    markedPath,
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  return {
+    writePolicy(markdown: string) {
+      return writeFile(policyPath, markdown);
+    },
+    async run(licenses: string[]): Promise<unknown> {
+      const { stdout } = await promisify(execFile)(
+        process.execPath,
+        [
+          '--input-type=module',
+          '--eval',
+          `
+            import { collectBundledDependencies } from ${JSON.stringify(pathToFileURL(modulePath).href)};
+            const dependencies = JSON.parse(process.argv[1]).map((license, index) => ({
+              name: 'fixture-' + index, version: '1.0.0', license,
+            }));
+            process.stdout.write(JSON.stringify(collectBundledDependencies(dependencies)));
+          `,
+          JSON.stringify(licenses),
+        ],
+        { cwd: tmpdir() },
+      );
+      return JSON.parse(stdout);
+    },
+    close() {
+      return rm(root, { recursive: true, force: true });
+    },
+  };
+}
+
+describe('Markdown license policy', () => {
+  it('uses edited policy data from another working directory across Markdown fence forms', async () => {
+    const fixture = await createLicensePolicyFixture();
+    const policy =
+      '# Policy\n\n```text\nGPL-3.0\n```\n\n```json\n["Zlib", "ISC"]\n```\n';
+    try {
+      for (const markdown of [
+        policy,
+        policy.replaceAll('\n', '\r\n'),
+        '~~~json\n["Zlib", "ISC"]\n~~~\n',
+        '````text\n```json\n["GPL-3.0"]\n```\n````\n\n```json\n["Zlib", "ISC"]\n```\n',
+      ]) {
+        await fixture.writePolicy(markdown);
+        assert.deepEqual(await fixture.run(['Zlib', 'ISC']), [
+          { name: 'fixture-0', version: '1.0.0', license: 'Zlib' },
+          { name: 'fixture-1', version: '1.0.0', license: 'ISC' },
+        ]);
+        await assert.rejects(fixture.run(['MIT']), /Prohibited.*MIT/u);
+      }
+      await fixture.writePolicy('```json\n["MIT"]\n```\n');
+      await assert.rejects(fixture.run(['Zlib']), /Prohibited.*Zlib/u);
+      assert.deepEqual(await fixture.run(['MIT']), [
+        { name: 'fixture-0', version: '1.0.0', license: 'MIT' },
+      ]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it('stops on missing, ambiguous or invalid policy data without a fallback list', async () => {
+    const fixture = await createLicensePolicyFixture();
+    try {
+      await assert.rejects(fixture.run(['MIT']), /ENOENT/u);
+      for (const markdown of [
+        '# No license data\n',
+        '> ```json\n> ["MIT"]\n> ```\n',
+        '```text\n["MIT"]\n```\n',
+        '```json\n["MIT"]\n```\n```json\n["ISC"]\n```\n',
+      ]) {
+        await fixture.writePolicy(markdown);
+        await assert.rejects(
+          fixture.run(['MIT']),
+          /exactly one JSON code block/u,
+        );
+      }
+      await fixture.writePolicy('```json\n["MIT",]\n```\n');
+      await assert.rejects(fixture.run(['MIT']), /SyntaxError/u);
+      for (const value of [[], {}, [''], [' MIT'], ['MIT', 'MIT'], [1]]) {
+        await fixture.writePolicy(
+          `\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`,
+        );
+        await assert.rejects(
+          fixture.run(['MIT']),
+          /non-empty array of unique/u,
+        );
+      }
+    } finally {
+      await fixture.close();
+    }
+  });
 });
 
 it('rejects imported tags and malformed selectors before release or deployment', () => {
@@ -124,34 +241,8 @@ it('rejects leaked product dependencies, mismatched embedded sources and missing
   };
   try {
     await put('package.json', { private: true, type: 'module' });
-    const scripts = path.join(root, 'scripts/release');
-    await mkdir(scripts, { recursive: true });
-    for (const file of ['publication.ts', 'shared.ts', 'command.ts'])
-      await copyFile(
-        fileURLToPath(new URL(file, import.meta.url)),
-        path.join(scripts, file),
-      );
-    // Only the fixture's release tooling uses these development dependencies.
-    // Product source/dist inputs and their mutations are separate fixture data.
-    // Resolve each package before linking so workspace-relative links keep
-    // their physical roots when the fixture and repository use different drives.
-    const repoNodeModules = fileURLToPath(
-      new URL('../../node_modules/', import.meta.url),
-    );
-    for (const name of [
-      '@limina/build-tools',
-      'logaria',
-      'prompts',
-      'semver',
-    ]) {
-      const dependencyPath = path.join(root, 'node_modules', name);
-      await mkdir(path.dirname(dependencyPath), { recursive: true });
-      await symlink(
-        await realpath(path.join(repoNodeModules, name)),
-        dependencyPath,
-        process.platform === 'win32' ? 'junction' : 'dir',
-      );
-    }
+    installGatesFixture(root);
+    const scripts = path.join(root, 'packages/gates/src/release');
     const version = '1.2.0';
     for (const [directory, name] of [
       ['limina', 'limina'],
@@ -179,10 +270,10 @@ it('rejects leaked product dependencies, mismatched embedded sources and missing
       await put(`packages/migrate/dist/${resource}`, 'fixture');
     const publication = (await import(
       pathToFileURL(path.join(scripts, 'publication.ts')).href
-    )) as typeof import('./publication');
+    )) as typeof import('@limina/gates/release/publication');
     const shared = (await import(
       pathToFileURL(path.join(scripts, 'shared.ts')).href
-    )) as typeof import('./shared');
+    )) as typeof import('@limina/gates/release/shared');
     const configs = shared.discoverReleasePackages();
     const core = configs.find((config) => config.packageName === 'limina')!;
     const migrate = configs.find(
@@ -357,8 +448,8 @@ async function createPublicationFixture(npmTag = 'beta') {
     `//127.0.0.1:${address.port}/:_authToken=fixture-token\n`,
   );
   const source = `
-    import { publishReleaseGroup } from ${JSON.stringify(new URL('publication.ts', import.meta.url).href)};
-    import { discoverReleasePackages } from ${JSON.stringify(new URL('shared.ts', import.meta.url).href)};
+    import { publishReleaseGroup } from ${JSON.stringify(new URL('../../packages/gates/src/release/publication.ts', import.meta.url).href)};
+    import { discoverReleasePackages } from ${JSON.stringify(new URL('../../packages/gates/src/release/shared.ts', import.meta.url).href)};
     const plans = discoverReleasePackages().map(config => ({ config, currentVersion: config.manifest.version, newVersion: config.manifest.version, gitTag: 'limina/v' + config.manifest.version, npmTag: ${JSON.stringify(npmTag)} }));
     publishReleaseGroup(plans, { registry: ${JSON.stringify(registry)}, provenance: false, evidenceDirectory: ${JSON.stringify(path.join(directory, 'evidence'))} });
   `;

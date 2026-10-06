@@ -1,1 +1,1 @@
-node scripts/git/commit-message.ts "$1"
+node packages/gates/src/commit/message.ts "$1"

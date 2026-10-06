@@ -1,0 +1,87 @@
+{
+  "name": "@limina/gates",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.bootstrap.json",
+    "test": "vitest run && node --import tsx --test src/commit/*.spec.ts",
+    "clean": "del-cli dist .tsbuild coverage .eslintcache"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:lint",
+    "eslint": "catalog:lint",
+    "eslint-config-prettier": "catalog:lint",
+    "eslint-config-flat-gitignore": "catalog:lint",
+    "eslint-plugin-regexp": "catalog:lint",
+    "eslint-plugin-prettier": "catalog:lint",
+    "eslint-plugin-n": "catalog:lint",
+    "eslint-plugin-unicorn": "catalog:lint",
+    "eslint-plugin-pnpm": "catalog:lint",
+    "@html-eslint/eslint-plugin": "catalog:lint",
+    "@html-eslint/parser": "catalog:lint",
+    "jsonc-eslint-parser": "catalog:lint",
+    "yaml-eslint-parser": "catalog:lint",
+    "prettier": "catalog:format",
+    "@typescript-eslint/parser": "catalog:lint",
+    "typescript-eslint": "catalog:lint",
+    "typescript": "catalog:dev",
+    "globals": "catalog:test",
+    "del-cli": "catalog:dev",
+    "vitest": "catalog:test",
+    "@types/node": "catalog:dev",
+    "@commitlint/cli": "catalog:lint",
+    "@commitlint/config-conventional": "catalog:lint",
+    "@types/prompts": "catalog:dev",
+    "@types/semver": "catalog:dev",
+    "cac": "catalog:dev",
+    "logaria": "catalog:dev",
+    "marked": "catalog:dev",
+    "prompts": "catalog:dev",
+    "semver": "catalog:dev",
+    "tsx": "catalog:dev",
+    "yaml": "catalog:dev"
+  },
+  "exports": {
+    "./eslint": {
+      "source": "./src/eslint/general.ts",
+      "types": "./dist/eslint/general.d.ts",
+      "default": "./dist/eslint/general.js"
+    },
+    "./eslint/config": {
+      "source": "./src/eslint/config/index.ts",
+      "types": "./dist/eslint/config/index.d.ts",
+      "default": "./dist/eslint/config/index.js"
+    },
+    "./eslint/plugins": {
+      "source": "./src/eslint/plugins/index.ts",
+      "types": "./dist/eslint/plugins/index.d.ts",
+      "default": "./dist/eslint/plugins/index.js"
+    },
+    "./eslint/presets": {
+      "source": "./src/eslint/presets/index.ts",
+      "types": "./dist/eslint/presets/index.d.ts",
+      "default": "./dist/eslint/presets/index.js"
+    },
+    "./license-policy": {
+      "source": "./src/license-policy.ts",
+      "types": "./dist/license-policy.d.ts",
+      "default": "./dist/license-policy.js"
+    },
+    "./privacy": {
+      "source": "./src/privacy/index.ts",
+      "types": "./dist/privacy/index.d.ts",
+      "default": "./dist/privacy/index.js"
+    },
+    "./release/*": {
+      "source": "./src/release/*.ts",
+      "types": "./dist/release/*.d.ts",
+      "default": "./dist/release/*.js"
+    },
+    "./commit-config": {
+      "source": "./src/commit/config.mjs",
+      "types": "./dist/commit/config.d.mts",
+      "default": "./src/commit/config.mjs"
+    },
+    "./package.json": "./package.json"
+  }
+}

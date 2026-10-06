@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowJs": true,
+    "allowImportingTsExtensions": true,
+    "isolatedDeclarations": false,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.mjs", "package.json"],
+  "exclude": ["src/**/*.spec.ts", "src/**/__tests__/**"]
+}

@@ -1,3 +1,3 @@
-import { mainReleaseCli } from './release/cli';
+import { mainReleaseCli } from '@limina/gates/release/cli';
 
 await mainReleaseCli();

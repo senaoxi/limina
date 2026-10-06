@@ -19,6 +19,6 @@
     "limina": "workspace:*",
     "typescript": "catalog:dev",
     "vitest": "catalog:test",
-    "@limina/eslint-config": "workspace:*"
+    "@limina/gates": "workspace:*"
   }
 }

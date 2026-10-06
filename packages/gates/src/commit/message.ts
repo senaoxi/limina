@@ -71,7 +71,9 @@ function checkMessage(lines: string[]): void {
     [
       fileURLToPath(import.meta.resolve('@commitlint/cli/cli.js')),
       '--config',
-      fileURLToPath(new URL('../../commitlint.config.mjs', import.meta.url)),
+      fileURLToPath(
+        new URL('../../../../commitlint.config.mjs', import.meta.url),
+      ),
       '--strict',
       '--color=false',
     ],
@@ -85,7 +87,7 @@ function checkMessage(lines: string[]): void {
 try {
   const messageFile = process.argv[2];
   if (!messageFile || process.argv.length !== 3)
-    fail('usage: node scripts/git/commit-message.ts <message-file>');
+    fail('usage: node packages/gates/src/commit/message.ts <message-file>');
   checkMessage(getLines(readFileSync(messageFile, 'utf8')));
 } catch (error) {
   const detail =

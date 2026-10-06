@@ -4,8 +4,11 @@ import {
   applyPackageVersion,
   createReleasePlanFromVersionSelection,
   writeChangelogForPlan,
-} from './changelog';
-import { publishReleaseGroup, validatePublicationTarget } from './publication';
+} from './changelog.ts';
+import {
+  publishReleaseGroup,
+  validatePublicationTarget,
+} from './publication.ts';
 import {
   REPO_ROOT,
   ReleaseLogger,
@@ -29,7 +32,7 @@ import {
   type ReleaseCliOptions,
   type ReleasePlan,
   type ResolvedReleasePackageConfig,
-} from './shared';
+} from './shared.ts';
 
 interface ReleaseRunContext {
   options: ReleaseCliOptions;

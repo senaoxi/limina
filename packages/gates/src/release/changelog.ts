@@ -26,7 +26,7 @@ import {
   selectPreviousGitTag,
   sortReleasePackageConfigs,
   writeJsonFile,
-} from './shared';
+} from './shared.ts';
 
 interface ChangelogSectionBuckets {
   features: string[];

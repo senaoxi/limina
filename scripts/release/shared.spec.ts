@@ -1,3 +1,20 @@
+import {
+  buildChangelogSection,
+  createReleasePlanFromVersionSelection,
+  insertChangelogSection,
+} from '@limina/gates/release/changelog';
+import {
+  execReleaseCommand,
+  resolveReleaseCommand,
+} from '@limina/gates/release/command';
+import {
+  compareVersions,
+  getReleasePackageConfigs,
+  isValidVersion,
+  type ResolvedReleasePackageConfig,
+  selectPreviousGitTag,
+  sortTagsByVersion,
+} from '@limina/gates/release/shared';
 import assert from 'node:assert/strict';
 import {
   existsSync,
@@ -12,20 +29,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import repoConfig from '../../limina.config.mjs';
-import {
-  buildChangelogSection,
-  createReleasePlanFromVersionSelection,
-  insertChangelogSection,
-} from './changelog';
-import { execReleaseCommand, resolveReleaseCommand } from './command';
-import {
-  compareVersions,
-  getReleasePackageConfigs,
-  isValidVersion,
-  type ResolvedReleasePackageConfig,
-  selectPreviousGitTag,
-  sortTagsByVersion,
-} from './shared';
 
 function releaseConfig(version: string): ResolvedReleasePackageConfig {
   return {

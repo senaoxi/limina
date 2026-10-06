@@ -1,5 +1,4 @@
 {
-  // Package-local IDE/typecheck solution. Build graph leaf: tsconfig.build.json.
   "files": [],
   "references": [
     {
