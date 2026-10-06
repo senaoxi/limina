@@ -13,6 +13,7 @@ import type {
 } from './cache';
 
 export interface TypeScriptTypeEvidenceProject {
+  analysisBinding?: { phase: 'pending' | 'locked'; checker: string };
   virtualFiles?: ReadonlyMap<string, string>;
   configPath: string;
   fileNames: readonly string[];
@@ -27,6 +28,7 @@ function createProgramHandle(
 ): TypeEvidenceProgramHandle {
   const context = createBoundedTypeScriptSemanticContext(project, {
     syntaxFacts: cache.syntaxFacts,
+    analysisCache: cache.analysisCache,
     getAmbientEvidence: (symbol, tsModule) =>
       cache.getOrCreateAmbientSymbolEvidence(symbol, () =>
         createAmbientTypeEvidence(symbol, tsModule),

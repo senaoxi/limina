@@ -67,6 +67,7 @@ export class TypeEvidenceCore {
     this.cache = new TypeEvidenceGenerationCache(
       options.metrics,
       options.syntaxFacts,
+      options.analysisCache,
     );
     this.#affectedSourceConfigs =
       options.metrics === undefined ? undefined : new Set();
@@ -287,9 +288,7 @@ export class TypeEvidenceCore {
   completeProject(configPath: string): void {
     const configIdentity = normalizeAbsolutePathIdentity(configPath);
 
-    if (this.#completedConfigIdentities.has(configIdentity)) {
-      return;
-    }
+    if (this.#completedConfigIdentities.has(configIdentity)) return;
 
     this.#completedConfigIdentities.add(configIdentity);
     for (const key of this.#getProviderKeys(configIdentity)) {

@@ -1,3 +1,4 @@
+import { observeAnalysisRead } from '#utils/analysis-input';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
@@ -14,13 +15,21 @@ async function expandGroup(
   group: WorkspacePackageGlobGroup,
   options: ExpansionOptions,
 ): Promise<string[]> {
-  const directories = await glob([...group.packageGlobs], {
-    fs: createLexicalDirectoryFs(),
-    absolute: true,
-    cwd: options.rootDir,
-    onlyDirectories: true,
-    expandDirectories: false,
-    ignore: [...options.hardIgnores],
+  const read = () =>
+    glob([...group.packageGlobs], {
+      fs: createLexicalDirectoryFs(),
+      absolute: true,
+      cwd: options.rootDir,
+      onlyDirectories: true,
+      expandDirectories: false,
+      ignore: [...options.hardIgnores],
+    });
+  const directories = await read();
+  observeAnalysisRead({
+    path: options.rootDir,
+    key: JSON.stringify(['packages', options.rootDir, group.packageGlobs]),
+    value: directories,
+    read,
   });
   if (group.acceptsDirectory === undefined) return directories;
   const acceptsDirectory = group.acceptsDirectory;

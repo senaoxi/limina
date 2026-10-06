@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'pathe';
 import type ts from 'typescript';
+import { readAnalysisInput } from './analysis-input';
 
 import { isRelativeSpecifier } from './module-specifier';
 import { normalizeAbsolutePath } from './path';
@@ -36,9 +37,12 @@ export function candidatePathsForBasePath(
 }
 
 export function resolveExistingFilePath(candidatePath: string): string | null {
-  return !existsSync(candidatePath) || !statSync(candidatePath).isFile()
-    ? null
-    : normalizeAbsolutePath(candidatePath);
+  const isFile = readAnalysisInput(
+    candidatePath,
+    () => existsSync(candidatePath) && statSync(candidatePath).isFile(),
+    'file',
+  );
+  return isFile ? normalizeAbsolutePath(candidatePath) : null;
 }
 
 function matchExactPathPattern(

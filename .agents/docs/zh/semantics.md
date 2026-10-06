@@ -22,6 +22,22 @@ Locked [ProjectSemanticContext](../../../packages/limina/src/core/project-depend
 
 raw references 来自用户 source/resolver config。生成 graph 推导出的 refs 不回流到这个输入，否则新增关系会改变生成它的证据，形成自证。`resolveJsonModule`、显式 roots、reference inputs、external library inputs 各自仍受 TypeScript 与 ledger 条件限制；不能概括成“所有非 roots 文件都被拒绝”。
 
+## 持久化 importer 有效性
+
+[analysis-cache](../../../packages/limina/src/core/analysis-cache/native-cache.ts) 中的原生适配器支持自有 TypeScript **6.0.3** 实例和物理输入。`tsc` 与 `tsgo` 在该语义 family 内绑定不同 checker identity；这不缓存其完整诊断或 emit。Vue、Astro、Svelte、虚拟源码、其他 compiler 实例/版本及自定义 provider，在输入与语义合同得到证明前显式冷回退。框架内的 `.ts` 文件不会仅因扩展名而变成原生语境。
+
+| 事实生产者                                                 | 有效性输入与传播                                                                                                                                                                                               |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 原生解析适配器                                             | Containing file、config/mode/purpose/redirect，以及受控 host 的文件、failed lookup、目录、manifest、realpath 观测。命中回放订阅，重解析替换观测。Unknown raw metadata 阻止依赖它的 native consumers 命中。     |
+| `collectNativeDependencyFact` admission                    | 当前 roots、实际 bounded Program membership、原始 reference inputs、外部库身份，以及受影响目标闭包的 workspace admission boundary。                                                                            |
+| `collectNativeDependencyFact` type evidence 与 requirement | Import/re-export 和 declaration-provider 闭包，实际重定向声明输出及缺失输出，加上按实际 Program 顺序加载的 ambient/global/module augmentation、namespace export 共享环境贡献者。内容变化沿旧反向依赖保守传播。 |
+| `createDirectDependencyEvidence` 与 collection 投影        | 有效 native facts 加本轮 runtime/resource evidence 及当前 provider/authority 绑定。刷新 runtime 后不能返回旧完整 collection。独立 runtime unknown 不废弃 native 有效性；真实依赖该输入时仍失效。               |
+| Reference recording                                        | 当前 requirement/provider/checker 规则生成 occurrence 贡献；references 仍由当前 graph authority 决定。                                                                                                         |
+
+[SemanticState](../../../packages/limina/src/core/analysis-cache/semantic-state.ts) 在接受 importer 命中前，比较完整当前 Program 闭包及共享环境。非 root 声明退出该闭包，即使磁盘内容未变，也撤销其贡献。替代引入路径与循环按实际 Program 可达性处理。环境变化可以使其全部 semantic consumers 失效，同时保留有效解析查询。仅新增普通 root 不机械失效无关 importer。readFile 日志不能代替语义依赖图。
+
+仍需创建完整项目 Program；按 importer 省略的是 native fact 查询。[快照捕获](../../../packages/limina/src/core/typescript-semantic/snapshot.ts) 复制已收集事实，不再无条件做第二轮语义查询。Pending 与 locked 缓存分开。[缓存测试](../../../packages/limina/src/__tests__/analysis-cache.spec.ts) 在连续编辑、资源变化、ambient 撤销、条件 manifest 和声明输出缺失时，对比冷分析与增量的事实、metadata、Program 成员和诊断。时间戳、事务和发布边界见[生命周期](./lifecycle.md#原生持久化分析缓存)。
+
 ## Occurrence、证据与建图需求
 
 ```mermaid
