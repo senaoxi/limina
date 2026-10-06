@@ -5,7 +5,9 @@ export function toPosixPath(value: string): string {
 }
 
 export function normalizeAbsolutePath(value: string): string {
-  return resolve(value);
+  return /^[A-Za-z]:[/\\]/u.test(value)
+    ? normalizeAbsolutePathIdentity(value)
+    : resolve(value);
 }
 
 export function toRelativePath(

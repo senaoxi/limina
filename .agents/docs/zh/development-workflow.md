@@ -31,6 +31,10 @@
 
 Limina 绝对路径值是 canonical portable path，在所有平台使用 `/` 分隔符。文件系统和进程输入需要平台原生行为时保留 `node:path`。
 
+规范化物理输入时保留 `C:/` 等 Windows 绝对盘符根目录。Resolver 的祖先查询可能到达另一卷的盘符根目录；将其重写为 `/C:` 会检查另一条路径，并错误报告 analysis input drift。[路径回归](../../../packages/limina/src/__tests__/path.spec.ts)覆盖直接和经父目录遍历到达的盘符根目录，同时保留 POSIX 路径。
+
+fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `realpathSync.native()` 规范化临时根目录，再创建 fixture path resolver。Windows 短文件名别名可能保留在 `realpathSync()` 的结果中，而 resolver 使用原生长路径。[Analysis-cache 回归](../../../packages/limina/src/__tests__/analysis-cache.spec.ts)在 exports 条件顺序变化前后保留目标路径精确相等断言。
+
 - 不得将 Limina 路径值与原始 `node:path` 的 `join`、`resolve`、`relative`、`normalize`、`dirname` 或 `format` 结果直接比较。
 - fixture 所属的绝对路径使用 `fixture.path(...)`；其他比较通过[路径 helper](../../../packages/limina/src/__tests__/helpers/path.ts)规范化。
 - 相对路径断言使用 `toPortableRelativePath()` 或 `toPortableRelativePaths()`。

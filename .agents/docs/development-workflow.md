@@ -31,6 +31,10 @@ When changing tests, use [test-audit](../skills/test-audit/SKILL.md). Preserve f
 
 Limina absolute path values are canonical portable paths and use `/` separators on every platform. Keep `node:path` for filesystem and process inputs when platform-native behavior is relevant.
 
+Preserve absolute Windows drive roots such as `C:/` when normalizing physical inputs. Resolver ancestor queries can reach a drive root on another volume; rewriting it to `/C:` inspects a different path and incorrectly reports analysis input drift. The [path regressions](../../packages/limina/src/__tests__/path.spec.ts) cover direct and parent-traversed drive roots while preserving POSIX paths.
+
+For fixtures that compare expected paths with resolver realpaths, canonicalize the temporary root with `realpathSync.native()` before creating the fixture path resolver. Windows short-name aliases can survive `realpathSync()` while the resolver uses native long paths. The [analysis-cache regression](../../packages/limina/src/__tests__/analysis-cache.spec.ts) keeps exact target-path assertions before and after export-condition reordering.
+
 - Never compare a Limina path value with a raw `node:path` `join`, `resolve`, `relative`, `normalize`, `dirname`, or `format` result.
 - Use `fixture.path(...)` for fixture-owned absolute paths. Otherwise normalize comparisons with the [path helpers](../../packages/limina/src/__tests__/helpers/path.ts).
 - Use `toPortableRelativePath()` or `toPortableRelativePaths()` for relative-path assertions.

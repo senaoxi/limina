@@ -1,8 +1,23 @@
 import {
   isPathInsideDirectory,
+  normalizeAbsolutePath,
   normalizeAbsolutePathIdentity,
 } from '#utils/path';
 import { describe, expect, it } from 'vitest';
+
+describe('normalizeAbsolutePath', () => {
+  it.each([
+    ['C:/', 'C:/'],
+    ['c:\\', 'C:/'],
+    ['D:/nested/..', 'D:/'],
+    ['D:\\nested\\..\\', 'D:/'],
+    ['C:/nested/../file.ts', 'C:/file.ts'],
+    ['/', '/'],
+    ['/C:', '/C:'],
+  ])('preserves the physical absolute path of %s', (input, expected) => {
+    expect(normalizeAbsolutePath(input)).toBe(expected);
+  });
+});
 
 describe('normalizeAbsolutePathIdentity', () => {
   it('normalizes Windows separators and trailing separators', () => {

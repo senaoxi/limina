@@ -31,7 +31,7 @@ afterEach(() => {
 
 function fixture() {
   const temporary = mkdtempSync(path.join(tmpdir(), 'limina-analysis-cache-'));
-  const root = realpathSync(temporary);
+  const root = realpathSync.native(temporary);
   fixtures.push(root);
   const file = createFixturePathResolver(root);
   let revision = Date.now();
@@ -361,6 +361,9 @@ describe('manifest and Program environment transitions', () => {
       '{"exports":{"import":"./one.d.ts","default":"./two.d.ts"}}',
     );
     let result = analyze(input);
+    expect(result.facts[0]!.fact.resolution.target?.resolvedFileName).toBe(
+      file('node_modules/pkg/one.d.ts'),
+    );
     write(
       'node_modules/pkg/package.json',
       '{ "exports": { "import": "./one.d.ts", "default": "./two.d.ts" } }',
