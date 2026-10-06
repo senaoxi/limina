@@ -41,13 +41,29 @@ manager 保留 generated artifact application 的所有权。它的 `ensureGraph
 
 native scope-evidence 缓存契约为 semantic context v4、native dependency facts v3、project dependency adapter v6、pending dependency adapter v4；pending clone 同时复制 referenceRequirement。native Core 路径复用既有 provider/query cache、以 Symbol 为键的 ambient cache 与 bounded Program；每次未缓存 project collection 创建一个 context，而非每个 occurrence 创建一个。`completeProject()` 释放 live handle，同时保留已复制 facts；dispose 后拒绝 live-context 操作。[Provider evidence tests](../../../packages/limina/src/__tests__/native-provider-evidence.spec.ts) 断言 Program 创建数、查询复用、snapshot 一致性与释放行为，不预设性能提升。
 
-Project dependency identity 包含 compiler options/conditions、源码文件、authority、extensions、package roots、workspace boundary 与 generation。Native fact cache 也以该 project identity 为键。证据快照在收集与缓存边界复制并冻结，不保留 live framework profile。只有已经观察到的 runtime evidence 才会被复制，克隆不会解析模块。[Project dependency 回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)覆盖上下文变化、修改尝试、原生 resource 及框架生成 observation。
+运行期 project dependency identity 包含 compiler options/conditions、源码文件、authority、extensions、package roots、workspace boundary 与 generation。Native fact cache 也以该 project identity 为键。证据快照在收集与缓存边界复制并冻结，不保留 live framework profile。只有已经观察到的 runtime evidence 才会被复制，克隆不会解析模块。[Project dependency 回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)覆盖上下文变化、修改尝试、原生 resource 及框架生成 observation。
 
 Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以不可变 boundary 对象为键在 WeakMap 中记忆。原始 identity 包含完整路径清单；每个 occurrence/cache clone 都深拷贝该清单，会使内存随 workspace 大小与 import 数量的乘积增长，并曾在仓库验证中耗尽默认 4 GiB 堆。有界快照回归使用 10,000 个 workspace 路径；成员集合不同仍会同时改变 boundary 摘要和 project identity。WeakMap 不会延长已释放 boundary 的生命周期。
 
 [FileOwnerLookup](../../../packages/limina/src/core/build-graph/file-owner-lookup.ts) 的 lexical/canonical 索引与 realpath cache 限于当前 analysis/provider 生命周期。新 provider generation 与 replan 从各自 membership 输入新建索引，缺失或已重绑路径不借用旧 generation 的 owner。它不是 filesystem watcher，也不保证跨任意原地文件编辑的缓存有效性。
 
-**Derived**：当前缓存适合受控 run/provider 生命周期。若外部调用者跨文件编辑复用同一 cache/request generation，source content 不在 key 中就可能复用旧结果；这不是现有 CLI 必然 stale 的证据。要支持长期 daemon，必须先定义 mutation/version contract，不能简单扩大缓存寿命。
+**Derived**：仅限运行期的缓存适合受控 run/provider 生命周期。若外部调用者跨文件编辑复用同一 cache/request generation，source content 不在 key 中就可能复用旧结果；这不是现有 CLI 必然 stale 的证据。要支持长期 daemon，必须先定义 mutation/version contract，不能简单扩大缓存寿命。
+
+## 原生持久化分析缓存
+
+`check` 通过 [AnalysisCacheController](../../../packages/limina/src/preflight/analysis-cache.ts) 启用本地分析快照。`check [pipeline] --no-analysis-cache` 关闭本次快照读写，不改变 checker 构建缓存。`check --issues` 仍查询既有检查结果。独立只读入口不获得缓存发布权限。
+
+[缓存身份](../../../packages/limina/src/preflight/analysis-cache-identity.ts) 绑定适配器、实际工具链、host 语义、配置入口和治理根；[上下文身份](../../../packages/limina/src/core/analysis-cache/identity.ts) 另绑定有效编译选项、原始 references、admission mode 及 pending/locked checker identity。运行期 generation、完整 workspace 清单和全部 roots 的 hash 不作为 importer 版本。命中仍重新建立本次 authority 与 ownership。
+
+[输入记录](../../../packages/limina/src/core/analysis-cache/inputs.ts) 将事实自己的 expectedVersion 与当前输入表分开。每个内容输入保存独立的 observed mtime 和有效检查点。mtime 更新时读取并计算 hash；文本相同不传播内容变化。发布其他快照不会推进未验证输入的检查点。已有文件保留或回退 mtime 的内容修改可能逃过时间戳快速路径；实际 compiler/config 读取会覆盖此前假设，冷分析参数则禁用持久化复用。存在性、目录条目和 realpath 独立验证，包括以旧时间戳创建的缺失候选。
+
+Manifest 精确处理仅限保留顺序的 `imports`、`exports` 值。原生 resolver 无法区分字段用途时，查询保守订阅两组；直接导入 JSON 则依赖完整内容。已有字段值改变且覆盖完整时，失效其消费者。字段存在性改变、其他解析内容变化、manifest 新增/删除及消费者覆盖不完整，使用整域回退。纯格式变化不改变解析字段版本。用户 JSON 无效仍是输入错误。整域失效只影响当前配置的解析及语义事实，不涉及其他项目或 checker 的 `.tsbuildinfo`。
+
+[存储层](../../../packages/limina/src/preflight/analysis-cache-store.ts) 在获授权的 `cache/analysis-v1` namespace 中发布经验证的普通数据快照，复用跨进程 lease、revision 比较和原子 writer，在临时文件序列化后、替换前再次检查输入。缓存损坏或版本不兼容视为 miss；旧 revision 不得覆盖新快照。存储 I/O 失败可以省略缓存更新，漂移与权限错误继续传播。快照裁剪只保留当前记录及其依赖，不保存运行期 compiler 对象或授权对象。
+
+分析漂移最多重试一次，并刷新 provider、有效配置解析和 membership 发现。事务只包含分析及候选规划。Executor 在调度工作完成后发布；重试不包裹 command、checker 执行或产物写入。有效 tsconfig/extends 漂移可以重读；Limina 配置、已观察的配置模块依赖或治理绑定变化则终止执行，要求新的显式调用。产物状态变化继续遵守既有 materialization/replan slot 与 receipt 协议。迟到的旧 epoch 结果不能提交。
+
+[生命周期回归](../../../packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts) 覆盖配置重读、有界重试、command 副作用不重放、迟到结果、revision 冲突及替换前漂移。[语义缓存回归](../../../packages/limina/src/__tests__/analysis-cache.spec.ts) 覆盖 importer 隔离、失败候选、混合证据、环境贡献撤销、manifest 变化和重定向声明输出删除/恢复。这些守卫不证明 Windows 行为或真实仓库提速。`LIMINA_PROFILE=1` 记录探测、读取/hash、resolver 调用、importer 查询/命中、原因计数、投影及存储成本，并保留既有 Program/首次 checker 测量。原生机制验收须与完整仓库耗时、峰值内存分别报告。
 
 ## Provider 拥有的原始语法复用
 

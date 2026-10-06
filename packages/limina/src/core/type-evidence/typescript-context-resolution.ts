@@ -29,6 +29,12 @@ export function getCoreTypeScriptSemanticContext(options: {
   return getOrCreateTypeScriptSemanticContext({
     cache: options.cache,
     programKey: providerKey,
-    project: options.project,
+    project: {
+      ...options.project,
+      analysisBinding: options.project.analysisBinding ?? {
+        phase: 'locked',
+        checker: options.checkerName,
+      },
+    },
   });
 }

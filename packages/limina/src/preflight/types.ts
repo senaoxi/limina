@@ -8,6 +8,7 @@ import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-r
 import type { LiminaPreflightManager } from './manager';
 
 export interface LiminaPreflightManagerOptions {
+  analysisCache?: boolean;
   config: ResolvedLiminaConfig;
   generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
   metrics?: AnalysisMetricsRecorder;
