@@ -15,6 +15,7 @@ export type TypeScriptSemanticChannel =
 export type TypeScriptSemanticAdmissionMode = 'full-program' | 'root-facts';
 
 export interface TypeScriptSemanticProject {
+  analysisBinding?: { phase: 'pending' | 'locked'; checker: string };
   virtualFiles?: ReadonlyMap<string, string>;
   admissionMode?: TypeScriptSemanticAdmissionMode;
   configPath: string;
@@ -47,6 +48,7 @@ export interface TypeScriptSemanticDependencyContext
 export interface TypeScriptSemanticContext
   extends TypeScriptSemanticDependencyContext {
   readonly program: ts.Program;
+  getCollectedDependencyFacts?(): ReadonlyMap<string, NativeDependencyFact>;
   dispose(): void;
   getSourceFile(fileName: string): ts.SourceFile | undefined;
   getSymbolAtImportRecord(importRecord: ImportRecord): ts.Symbol | undefined;

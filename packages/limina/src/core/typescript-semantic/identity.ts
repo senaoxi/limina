@@ -26,6 +26,7 @@ export function createTypeScriptSemanticContextIdentity(
 ): string {
   return createIdentity('bounded-typescript-semantic', {
     adapterVersion: 'bounded-typescript-semantic-v4-scope-evidence',
+    analysisBinding: project.analysisBinding,
     admissionMode: project.admissionMode ?? 'full-program',
     configPath: normalizeAbsolutePath(project.configPath),
     virtualFiles: configInputIdentity(project.virtualFiles),

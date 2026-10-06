@@ -59,12 +59,14 @@ export interface WorkspaceCoreMetricsRecorder {
 }
 
 export interface WorkspaceCoreDependencies {
+  readonly runWithInputs?: <T>(operation: () => T) => T;
   readonly collectRawWorkspacePackages?: (
     config: ResolvedLiminaConfig,
   ) => Promise<WorkspacePackage[]>;
 }
 
 export class WorkspaceCore {
+  readonly #runWithInputs: <T>(operation: () => T) => T;
   readonly #collectRawWorkspacePackages: (
     config: ResolvedLiminaConfig,
   ) => Promise<WorkspacePackage[]>;
@@ -96,6 +98,7 @@ export class WorkspaceCore {
   ) {
     this.#collectRawWorkspacePackages =
       dependencies.collectRawWorkspacePackages ?? collectRawWorkspacePackages;
+    this.#runWithInputs = inputRunner(dependencies);
     this.#config = config;
     this.#metrics = metrics;
   }
@@ -113,8 +116,8 @@ export class WorkspaceCore {
   }
 
   getRawPackages(): Promise<WorkspacePackage[]> {
-    this.#rawPackagesPromise ??= this.#collectRawWorkspacePackages(
-      this.#config,
+    this.#rawPackagesPromise ??= this.#runWithInputs(() =>
+      this.#collectRawWorkspacePackages(this.#config),
     );
     return mapPromise(this.#rawPackagesPromise, cloneWorkspacePackages);
   }
@@ -138,10 +141,12 @@ export class WorkspaceCore {
   getValidatedContext(): Promise<ValidatedWorkspaceContext> {
     this.#topologyPromise ??= mapPromise(
       mapPromise(this.getRawPackages(), (rawPackages) =>
-        collectWorkspaceRegionTopology(this.#config, {
-          provider: collectRawWorkspacePackages,
-          rawPackages,
-        }),
+        this.#runWithInputs(() =>
+          collectWorkspaceRegionTopology(this.#config, {
+            provider: collectRawWorkspacePackages,
+            rawPackages,
+          }),
+        ),
       ),
       (topology) =>
         cloneValidatedWorkspaceContext(topology as ValidatedWorkspaceContext),
@@ -246,4 +251,10 @@ export class WorkspaceCore {
     );
     return this.#lookupIndexPromise;
   }
+}
+
+function inputRunner(
+  dependencies: WorkspaceCoreDependencies,
+): <T>(operation: () => T) => T {
+  return dependencies.runWithInputs ?? ((operation) => operation());
 }
