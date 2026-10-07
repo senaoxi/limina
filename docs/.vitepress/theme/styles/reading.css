@@ -43,15 +43,17 @@
 
 .limina-reading .vp-doc h1 {
   margin-bottom: 24px;
-  font-size: 34px;
-  line-height: 44px;
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 40px;
 }
 
 .limina-reading .vp-doc h2 {
   margin: 48px 0 18px;
   padding-top: 20px;
-  font-size: 25px;
-  line-height: 34px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
 }
 
 .limina-reading .vp-doc h2 .header-anchor {
@@ -61,13 +63,15 @@
 .limina-reading .vp-doc h3 {
   margin: 32px 0 12px;
   font-size: 20px;
-  line-height: 28px;
+  font-weight: 600;
+  line-height: 32px;
 }
 
 .limina-reading .vp-doc h4 {
   margin: 28px 0 10px;
-  font-size: 17px;
-  line-height: 26px;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .limina-reading .vp-doc :is(h1, h2, h3, h4) {
@@ -83,42 +87,131 @@
 
 .limina-reading .vp-doc :not(pre) > code {
   overflow-wrap: anywhere;
-  font-size: 0.86em;
+  font-size: 0.9em;
+  font-weight: 500;
 }
 
-.limina-reading .vp-doc div[class*='language-'] {
+/* Keep window chrome outside pre so controls stay put when code scrolls. */
+.limina-reading .vp-doc div[class*='language-'],
+.limina-reading .vp-code-group {
   margin: 24px 0;
-  border: 1px solid var(--limina-doc-line);
-  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--limina-doc-code-border);
+  border-radius: 12px;
+  box-shadow: var(--limina-doc-code-shadow);
+}
+
+.limina-reading .vp-doc div[class*='language-']::before {
+  display: block;
+  height: 36px;
+  border-bottom: 1px solid var(--limina-doc-code-border);
+  background: var(--limina-doc-code-header);
+  content: '';
+}
+
+.limina-reading .vp-doc div[class*='language-']::after {
+  position: absolute;
+  top: 13px;
+  left: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow:
+    18px 0 #febc2e,
+    36px 0 #28c840;
+  pointer-events: none;
+  content: '';
 }
 
 .limina-reading .vp-doc [class*='language-'] pre {
-  padding-top: 48px;
+  padding: 20px 0;
+  scrollbar-width: thin;
+}
+
+.limina-reading .vp-doc [class*='language-'] code {
+  font-weight: 400;
+}
+
+.limina-reading .vp-doc [class*='language-'].line-numbers-mode::before {
+  margin-left: -32px;
+}
+
+.limina-reading .vp-doc .line-numbers-wrapper {
+  top: 36px;
 }
 
 .limina-reading .vp-doc [class*='language-'] > span.lang {
-  top: 12px;
-  right: auto;
-  left: 20px;
+  top: 0;
+  right: 52px;
+  left: 84px;
+  overflow: hidden;
+  line-height: 36px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.limina-reading .vp-doc [class*='language-']:hover > button.copy + span.lang,
+.limina-reading .vp-doc [class*='language-'] > button.copy:focus + span.lang {
+  opacity: 1;
+}
+
+.limina-reading .vp-doc [class*='language-'] > button.copy.copied + span.lang {
+  opacity: 0;
 }
 
 .limina-reading .vp-doc [class*='language-'] > button.copy {
   top: 4px;
-  right: 4px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  background-size: 16px;
   opacity: 1;
 }
 
-.limina-reading .vp-code-group .tabs {
-  margin: 0;
-  border: 1px solid var(--limina-doc-line);
-  border-bottom: 0;
-  border-radius: 4px 4px 0 0;
-  padding: 0 12px;
+.limina-reading .vp-doc [class*='language-'] > button.copy.copied::before {
+  top: -1px;
+  height: 28px;
 }
 
-.limina-reading .vp-code-group div[class*='language-'] {
-  margin-top: 0;
-  border-radius: 0 0 4px 4px;
+.limina-reading .vp-code-group {
+  background: var(--limina-doc-code-header);
+}
+
+.limina-reading .vp-code-group .tabs {
+  /* Reserve the right edge for the active block's copy control. */
+  margin: 0 44px 0 0;
+  border-radius: 0;
+  padding: 0 12px;
+  box-shadow: none;
+  scrollbar-width: thin;
+}
+
+.limina-reading .vp-code-group .tabs label {
+  font-size: 13px;
+  line-height: 40px;
+}
+
+.limina-reading .vp-doc .vp-code-group .blocks > div[class*='language-'] {
+  margin: 0;
+  overflow: visible;
+  border-width: 1px 0 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.limina-reading .vp-code-group div[class*='language-']::before,
+.limina-reading .vp-code-group div[class*='language-']::after,
+.limina-reading .vp-code-group [class*='language-'] > span.lang {
+  display: none;
+}
+
+.limina-reading .vp-code-group [class*='language-'] > button.copy {
+  top: -36px;
+}
+
+.limina-reading .vp-code-group .line-numbers-wrapper {
+  top: 0;
 }
 
 .limina-reading .vp-code-group input:focus-visible + label {

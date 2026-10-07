@@ -1,3 +1,23 @@
+/*
+ * DM Mono 1.000: google/fonts commit 5e8a3ba899557829a76cfdac30fa512bda91d7ca.
+ * The original font files and OFL-1.1 notice ship together in public/fonts/dm-mono.
+ */
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/dm-mono/DMMono-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/dm-mono/DMMono-Medium.ttf') format('truetype');
+}
+
 .limina-reading,
 .limina-reading-portal {
   --limina-doc-canvas: #fafaf7;
@@ -6,13 +26,20 @@
   --limina-doc-muted: var(--limina-c-terminal-text);
   --limina-doc-link: var(--vp-c-brand-1);
   --limina-doc-line: var(--limina-c-line);
-  --limina-doc-code: var(--limina-c-terminal);
+  --limina-doc-code: #fafafa;
+  --limina-doc-code-header: #f1f1f1;
+  --limina-doc-code-border: rgb(136 136 136 / 0.2);
+  --limina-doc-code-shadow: 0 10px 30px rgb(0 0 0 / 0.05);
   --limina-doc-soft: rgb(15 118 110 / 0.06);
   --limina-doc-body-size: 16px;
   --limina-doc-body-leading: 28px;
+  /* Article code has its own font stack; recorded terminals keep their column metrics. */
+  --vp-font-family-mono:
+    'DM Mono', 'Input Mono', 'Fira Code', ui-monospace, 'Menlo', 'Monaco',
+    'Consolas', 'Liberation Mono', 'Courier New', monospace;
   --vp-c-bg: var(--limina-doc-canvas);
   --vp-c-bg-alt: var(--limina-doc-canvas);
-  --vp-c-bg-soft: var(--limina-doc-code);
+  --vp-c-bg-soft: var(--limina-c-terminal);
   --vp-c-bg-elv: var(--limina-doc-surface);
   --vp-c-text-1: var(--limina-doc-ink);
   --vp-c-text-2: var(--limina-doc-muted);
@@ -24,12 +51,13 @@
   --vp-sidebar-bg-color: var(--limina-doc-canvas);
   --vp-local-nav-bg-color: var(--limina-doc-canvas);
   --vp-code-block-bg: var(--limina-doc-code);
-  --vp-code-font-size: 14px;
-  --vp-code-line-height: 23.8px;
+  --vp-code-font-size: 0.9em;
+  --vp-code-line-height: 1.4;
   --vp-code-bg: var(--limina-doc-soft);
   --vp-code-color: var(--limina-doc-link);
-  --vp-code-tab-bg: var(--limina-doc-code);
-  --vp-code-copy-code-bg: var(--limina-doc-code);
+  --vp-code-tab-bg: var(--limina-doc-code-header);
+  --vp-code-copy-code-bg: transparent;
+  --vp-code-copy-code-border-color: transparent;
   --vp-code-copy-code-hover-bg: var(--limina-doc-soft);
   --vp-code-lang-color: var(--limina-doc-muted);
   --vp-custom-block-tip-bg: var(--limina-doc-soft);
@@ -46,6 +74,10 @@
 .dark .limina-reading-portal {
   --limina-doc-canvas: #141a1e;
   --limina-doc-surface: #171d22;
+  --limina-doc-code: #0e0e0e;
+  --limina-doc-code-header: #181818;
+  --limina-doc-code-border: rgb(255 255 255 / 0.09);
+  --limina-doc-code-shadow: 0 10px 30px rgb(0 0 0 / 0.27);
   --limina-doc-soft: rgb(130 216 201 / 0.07);
 }
 
