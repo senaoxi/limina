@@ -10,6 +10,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { expect, it } from 'vitest';
 import {
   packLiminaDistribution,
@@ -20,6 +21,24 @@ import {
 
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function corruptEmbeddedCoreVersion(text: string): string | undefined {
+  const source = ts.createSourceFile('chunk.js', text, ts.ScriptTarget.Latest);
+  let initializer: ts.Expression | undefined;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'coreVersion'
+    )
+      initializer ??= node.initializer;
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return initializer === undefined
+    ? undefined
+    : `${text.slice(0, initializer.getStart(source))}"99.0.0"${text.slice(initializer.end)}`;
 }
 
 it('runs packed migration, preserves legacy argv and isolates verifier and version failures', async () => {
@@ -219,17 +238,14 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     // Corrupt a consumer artifact's actual embedded core version while the
     // installed self manifest and build metadata stay unchanged.
     const chunks = await readdir(path.join(migrateRoot, 'chunks'));
-    const coreVersionPattern = /coreVersion: ["'][^"']+["']/u;
     let hasExercisedEmbeddedVersion = false;
     for (const chunk of chunks) {
       const chunkPath = path.join(migrateRoot, 'chunks', chunk);
       const text = await readFile(chunkPath, 'utf8');
-      if (!coreVersionPattern.test(text)) continue;
+      const corrupted = corruptEmbeddedCoreVersion(text);
+      if (corrupted === undefined) continue;
       hasExercisedEmbeddedVersion = true;
-      await writeFile(
-        chunkPath,
-        text.replace(coreVersionPattern, 'coreVersion: "99.0.0"'),
-      );
+      await writeFile(chunkPath, corrupted);
       try {
         const invalidCore = await node([migrateBin, ...arguments_]);
         expect(invalidCore.exitCode).not.toBe(0);
