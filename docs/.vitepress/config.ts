@@ -19,6 +19,10 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   markdown: {
+    theme: {
+      light: 'vitesse-light',
+      dark: 'vitesse-dark',
+    },
     config: configureReadingMarkdown,
   },
   head: [
