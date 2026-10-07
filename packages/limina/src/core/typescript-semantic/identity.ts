@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
 import { configInputIdentity } from '../tsconfig/input-identity';
+import { effectiveCompilerOptions } from './compiler-options';
 import type { TypeScriptSemanticProject } from './contracts';
 import { createImportRecordIdentity } from './import-record';
 
@@ -31,7 +32,7 @@ export function createTypeScriptSemanticContextIdentity(
     configPath: normalizeAbsolutePath(project.configPath),
     virtualFiles: configInputIdentity(project.virtualFiles),
     fileNames: project.fileNames.map(normalizeAbsolutePath),
-    options: project.options,
+    options: effectiveCompilerOptions(project.options),
     projectReferences: (project.projectReferences ?? []).map(
       normalizeReference,
     ),
@@ -49,7 +50,7 @@ export function createTypeScriptProjectDependencyFactsIdentity(
     configPath: normalizeAbsolutePath(project.configPath),
     virtualFiles: configInputIdentity(project.virtualFiles),
     fileNames: project.fileNames.map(normalizeAbsolutePath),
-    options: project.options,
+    options: effectiveCompilerOptions(project.options),
     projectReferences: (project.projectReferences ?? []).map(
       normalizeReference,
     ),

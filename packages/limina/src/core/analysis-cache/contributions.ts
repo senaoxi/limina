@@ -3,6 +3,7 @@ import type { ImportRecord } from '../import-analysis/records';
 import type { AnalysisCacheMetrics, ReferenceContribution } from './contracts';
 import { analysisHash } from './identity';
 import type { AnalysisInputs } from './inputs';
+import { isSameData } from './snapshot-records';
 
 type ContributionInput = Omit<ReferenceContribution, 'sourceVersion'>;
 
@@ -12,12 +13,17 @@ Current authority produces each transaction; persisted contributions grant no au
 export class ReferenceContributions {
   readonly #inputs: AnalysisInputs;
   readonly #metrics: AnalysisCacheMetrics;
+  readonly #previous: Record<string, ReferenceContribution[]>;
   #pending: ContributionInput[] | undefined;
   readonly records: Record<string, ReferenceContribution[]> = {};
 
-  constructor(inputs: AnalysisInputs) {
+  constructor(
+    inputs: AnalysisInputs,
+    previous: Record<string, ReferenceContribution[]> = {},
+  ) {
     this.#inputs = inputs;
     this.#metrics = inputs.metrics;
+    this.#previous = previous;
   }
 
   #version(occurrence: ImportRecord): string {
@@ -32,6 +38,13 @@ export class ReferenceContributions {
     const replacements: Record<string, ReferenceContribution[]> = {};
     for (const contribution of contributions)
       this.#add(replacements, contribution);
+    this.#removeProject(config, checker);
+    for (const [id, values] of Object.entries(replacements)) {
+      this.records[id] = this.#retained(id, values);
+    }
+  }
+
+  #removeProject(config: string, checker: string): void {
     const prior = Object.entries(this.records).filter(([, values]) =>
       values.some(
         (value) =>
@@ -39,7 +52,14 @@ export class ReferenceContributions {
       ),
     );
     for (const [id] of prior) delete this.records[id];
-    Object.assign(this.records, replacements);
+  }
+
+  #retained(
+    id: string,
+    values: ReferenceContribution[],
+  ): ReferenceContribution[] {
+    const previous = this.#previous[id];
+    return isSameData(previous, values) ? previous! : values;
   }
 
   #add(
@@ -64,6 +84,10 @@ export class ReferenceContributions {
 
   record(contribution: ContributionInput): void {
     this.#pending?.push(contribution);
+  }
+
+  restoreValidatedGraph(): void {
+    Object.assign(this.records, this.#previous);
   }
 
   replaceProject(options: {

@@ -67,7 +67,10 @@ async function isExecuteGraphValidation(options: {
     options.flags,
     'graph',
   );
-  const preflight = new LiminaPreflightManager({ config });
+  const preflight = new LiminaPreflightManager({
+    config,
+    analysisCache: 'read-only',
+  });
   const command = `limina graph ${options.action}`;
   const issues: LiminaCheckIssue[] = [];
   options.registerSession({

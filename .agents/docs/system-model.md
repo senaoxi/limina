@@ -136,6 +136,8 @@ Arrows express dependencies, not universal serial execution. [Steps](../../packa
 | Materialize / checker     | Authenticated plan/authority → files/receipt → external checker outcome                                                     | An in-memory graph does not establish disk completion; artifact publication and checker process exit are reported separately                                                                            |
 | Complete / query          | Settled outcomes → authenticated terminal attempt state                                                                     | Query reads existing state without rerunning; the latest failure must not disguise an older completed inventory as a new result                                                                         |
 
+For an eligible native clean invocation, the [persistent analysis contract](./lifecycle.md#persistent-native-analysis-cache) first validates the namespace-wide effective `configVersion`, then qualifies ordinary context/graph DTOs before creating analysis Programs. It rebuilds current artifact authority and continues domain judgments, result publication and checker execution. A native hit alone does not validate changed governance rules or disk materialization; cold/dirty paths still run the phases above.
+
 ## Relation taxonomy
 
 | Relation                     | Producer / meaning                                                                                           | Downstream permissions and boundaries                                                                                         |

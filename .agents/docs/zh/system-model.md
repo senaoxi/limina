@@ -136,6 +136,8 @@ flowchart TB
 | Materialize / checker     | authenticated plan/authority → files/receipt → external checker outcome                                                   | 内存 graph 不代表磁盘已完成；产物发布与 checker 程序退出分别报告                                                                                                              |
 | Complete / query          | settled outcomes → authenticated attempt terminal state                                                                   | query 读取已有状态，不重新运行；最新失败状态禁止伪装旧 completed inventory 为新结果                                                                                           |
 
+符合条件的原生 clean 调用按[持久化分析合同](./lifecycle.md#原生持久化分析缓存)，先验证 namespace 级有效 `configVersion`，再在创建分析 Program 前验证普通 context/graph DTO，重新建立当前 artifact authority，并继续领域判定、结果发布与 checker 执行。native 命中本身不验证已变化的治理规则或磁盘物化；cold/dirty 路径仍执行上述阶段。
+
 ## Relation taxonomy
 
 | Relation                     | Producer / 意义                                                                                                 | 下游权限与边界                                                                               |

@@ -92,6 +92,23 @@ async function collectPackageCandidates(
   const value = await read();
   observeAnalysisRead({
     path: packageDirectory,
+    descriptor: {
+      kind: 'glob',
+      patterns: ['**/*'],
+      options: {
+        absolute: true,
+        cwd: packageDirectory,
+        dot: true,
+        followSymbolicLinks: false,
+        onlyFiles: true,
+        ignore: [
+          '**/.git/**',
+          '**/.limina/**',
+          '**/node_modules/**',
+          ...new Set(collectStructuralIgnores(context, packageDirectory)),
+        ],
+      },
+    },
     key: `candidates:${packageDirectory}`,
     value,
     read,

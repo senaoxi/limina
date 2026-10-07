@@ -1,5 +1,6 @@
 import { resolveGovernanceRoot } from '#utils/workspace-root';
 import { bindConfigInputs, observeConfigLoad } from './input-observation';
+import { captureInvocationData } from './invocation-data';
 import { loadConfigModule } from './loader-import';
 import { resolveExecutionConfigLocation } from './loader-paths';
 import type {
@@ -15,10 +16,12 @@ async function resolveConfigExport(
   configExport: unknown,
   configEnvironment_: LiminaConfigEnvironment,
 ): Promise<LiminaConfig> {
-  return normalizeConfig(
-    typeof configExport === 'function'
-      ? await (configExport as LiminaConfigFunction)(configEnvironment_)
-      : await configExport,
+  return captureInvocationData(
+    normalizeConfig(
+      typeof configExport === 'function'
+        ? await (configExport as LiminaConfigFunction)(configEnvironment_)
+        : await configExport,
+    ),
   );
 }
 
@@ -36,19 +39,22 @@ export async function loadConfig(
 ): Promise<ResolvedLiminaConfig> {
   const location = resolveExecutionConfigLocation(options);
   const governanceRoot = resolveGovernanceRoot(location.configPath);
-  const loaded = await observeConfigLoad(location.configPath, async () =>
-    resolveConfigExport(
-      await loadConfigModule(location.configPath, options.configLoader),
-      configEnvironment(options),
-    ),
+  const loaded = await observeConfigLoad(
+    location.configPath,
+    async () =>
+      resolveConfigExport(
+        await loadConfigModule(location.configPath, options.configLoader),
+        configEnvironment(options),
+      ),
+    [governanceRoot.manifestPath],
   );
   return bindConfigInputs(
-    {
+    captureInvocationData({
       ...loaded.value,
       configPath: location.configPath,
       governanceRoot,
       rootDir: governanceRoot.rootDir,
-    },
+    }),
     loaded.inputs,
   );
 }

@@ -1,7 +1,11 @@
+import type { AnalysisReadDescriptor } from '#utils/analysis-input';
 import type { ImportRecord } from '../import-analysis/records';
+import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
+import type { DataNode } from './data-codec';
+import type { TypeEnvironmentRecord } from './installation-environment';
 
-export const ANALYSIS_ADAPTER = 'native-typescript-6.0.3-v1';
+export const ANALYSIS_ADAPTER = 'native-typescript-6.0.3-v4';
 
 export interface InputDependency {
   inputId: string;
@@ -12,8 +16,12 @@ export type InputKind =
   | 'content'
   | 'file'
   | 'directory'
+  | 'directories'
   | 'entries'
   | 'realpath'
+  | 'binding'
+  | 'tree'
+  | 'bytes'
   | 'imports'
   | 'exports';
 
@@ -24,10 +32,13 @@ export interface AnalysisInput {
   observedMtime?: number;
   verifiedThrough?: number;
   text?: string;
+  installedTargets?: string[];
 }
 
 export interface ResolutionRecord {
   contextId: string;
+  file: string;
+  request: unknown;
   result: unknown;
   dependencies: InputDependency[];
   coverage: 'complete' | 'unknown';
@@ -63,11 +74,51 @@ export interface ReferenceContribution {
   kind: string;
 }
 
+export interface NativeContextRecord {
+  queryIds: string[];
+  sharedEnvironment: {
+    dependencies: InputDependency[];
+    queryIds: string[];
+    version: string;
+  };
+  project: Pick<
+    TypeScriptSemanticProject,
+    | 'configPath'
+    | 'fileNames'
+    | 'options'
+    | 'projectReferences'
+    | 'admissionMode'
+    | 'analysisBinding'
+  >;
+  environment: TypeEnvironmentRecord;
+  dependencies: InputDependency[];
+  boundary: [string, boolean][];
+  sources: Record<string, string | null>;
+  complete: boolean;
+}
+
+export interface DiscoveryRecord {
+  key: string;
+  path: string;
+  descriptor: AnalysisReadDescriptor;
+  version: string;
+  binding: string;
+}
+
+export interface GraphRecord {
+  workspaceVersion: string;
+  contextIds: string[];
+  dependencies: InputDependency[];
+  discovery: DiscoveryRecord[];
+  data: DataNode;
+}
+
 export interface AnalysisSnapshot {
   header: {
-    schema: 1;
+    schema: 3;
     implementation: string;
     identity: string;
+    configVersion: string | null;
     revision: string;
   };
   inputs: Record<string, AnalysisInput>;
@@ -75,6 +126,8 @@ export interface AnalysisSnapshot {
   importers: Record<string, ImporterRecord>;
   projects: Record<string, ProjectRecord>;
   contributions: Record<string, ReferenceContribution[]>;
+  contexts: Record<string, NativeContextRecord>;
+  graphs: Record<string, GraphRecord>;
 }
 
 export interface AnalysisCacheMetrics extends Record<string, number> {

@@ -1,5 +1,6 @@
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { createHash } from 'node:crypto';
 import {
   type Dirent,
   readdirSync,
@@ -9,12 +10,14 @@ import {
   statSync,
 } from 'node:fs';
 import { performance } from 'node:perf_hooks';
+import ts from 'typescript';
 import {
   type AnalysisCacheMetrics,
   type AnalysisInput,
   AnalysisInputDriftError,
   type InputKind,
 } from './contracts';
+import { directoryObservation, pathBinding } from './directory-fingerprint';
 import { analysisHash } from './identity';
 
 function isMissing(error: unknown): boolean {
@@ -33,10 +36,17 @@ export function inputStat(filePath: string): Stats | undefined {
 }
 
 function readStructural(filePath: string, kind: InputKind): unknown {
+  if (kind === 'binding') return pathBinding(filePath);
   const stat = inputStat(filePath);
   return stat === undefined
-    ? !['file', 'directory'].includes(kind) && null
+    ? missingStructural(kind)
     : structuralReaders[kind]!(filePath, stat);
+}
+
+function missingStructural(kind: InputKind): unknown {
+  return kind === 'directories'
+    ? []
+    : !['file', 'directory'].includes(kind) && null;
 }
 
 const structuralReaders: Partial<
@@ -44,26 +54,37 @@ const structuralReaders: Partial<
 > = {
   file: (_file, stat) => stat.isFile(),
   directory: (_file, stat) => stat.isDirectory(),
+  directories: (file, stat) =>
+    stat.isDirectory() ? ts.sys.getDirectories(file) : [],
   entries: (file, stat) => (stat.isDirectory() ? readEntries(file) : null),
   realpath: (file) => normalizeAbsolutePath(realpathSync.native(file)),
 };
 
-export function readInput(options: {
+interface InputReadOptions {
   kind: InputKind;
   path: string;
   previous?: AnalysisInput;
   metrics: AnalysisCacheMetrics;
-}): AnalysisInput {
+}
+function readTree(options: InputReadOptions): AnalysisInput {
+  const scan = directoryObservation(options.path);
+  options.metrics.localRootScans = (options.metrics.localRootScans ?? 0) + 1;
+  return { path: options.path, kind: options.kind, ...scan };
+}
+function readVersioned(options: InputReadOptions): AnalysisInput {
+  return {
+    path: options.path,
+    kind: options.kind,
+    version: analysisHash(readStructural(options.path, options.kind)),
+  };
+}
+export function readInput(options: InputReadOptions): AnalysisInput {
   const start = performance.now();
   options.metrics.probes += 1;
-  const result =
-    options.kind === 'content'
-      ? readContent(options)
-      : {
-          path: options.path,
-          kind: options.kind,
-          version: analysisHash(readStructural(options.path, options.kind)),
-        };
+  const readers: Partial<
+    Record<InputKind, (options: InputReadOptions) => AnalysisInput>
+  > = { tree: readTree, content: readContent, bytes: readContent };
+  const result = (readers[options.kind] ?? readVersioned)(options);
   options.metrics.probeMs += performance.now() - start;
   return result;
 }
@@ -71,7 +92,11 @@ export function readInput(options: {
 function readContent(options: Parameters<typeof readInput>[0]): AnalysisInput {
   const stat = inputStat(options.path);
   if (!isRegularFile(stat))
-    return { path: options.path, kind: 'content', version: analysisHash(null) };
+    return {
+      path: options.path,
+      kind: options.kind,
+      version: analysisHash(null),
+    };
   return canTrustTimestamp(options.previous, stat.mtimeMs)
     ? { ...options.previous!, observedMtime: stat.mtimeMs }
     : readText(options, stat.mtimeMs);
@@ -85,6 +110,7 @@ function readText(
   options: Parameters<typeof readInput>[0],
   mtime: number,
 ): AnalysisInput {
+  if (options.kind === 'bytes') return readBytes(options, mtime);
   const checkedAt = Date.now();
   const start = performance.now();
   const text = readFileSync(options.path, 'utf8');
@@ -100,6 +126,27 @@ function readText(
   if (result.verifiedThrough === undefined)
     throw new AnalysisInputDriftError(options.path);
   return result;
+}
+
+function readBytes(
+  options: Parameters<typeof readInput>[0],
+  mtime: number,
+): AnalysisInput {
+  const start = performance.now();
+  const bytes = readFileSync(options.path);
+  options.metrics.reads += 1;
+  options.metrics.readMs += performance.now() - start;
+  const version = createHash('sha256').update(bytes).digest('hex');
+  options.metrics.hashes += 1;
+  if (inputStat(options.path)?.mtimeMs !== mtime)
+    throw new AnalysisInputDriftError(options.path);
+  return {
+    path: options.path,
+    kind: 'bytes',
+    version,
+    observedMtime: mtime,
+    verifiedThrough: Math.min(Date.now(), mtime),
+  };
 }
 
 function canTrustTimestamp(

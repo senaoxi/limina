@@ -1,45 +1,55 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
+import { effectiveConfigVersion } from '../config/analysis-version';
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
-import {
-  analysisCacheIdentity,
-  assertGovernanceBinding,
-  configInputs,
-  readConfigInput,
-} from './analysis-cache-identity';
+import { analysisCacheIdentity } from './analysis-cache-identity';
 import { AnalysisCacheStore } from './analysis-cache-store';
+import { AnalysisToolObservation } from './analysis-cache-tools';
+import { ConfigObservation } from './config-observation';
 
 export class AnalysisCacheController {
   readonly #store: AnalysisCacheStore;
-  readonly #config: ResolvedLiminaConfig;
-  readonly #configInputs: Map<string, string | null>;
+  readonly #tools: AnalysisToolObservation;
+  readonly #configuration: ConfigObservation;
   readonly #metrics: AnalysisMetricsRecorder | undefined;
   #analyzed = false;
+  readonly #canPublish: boolean;
+  readonly #configVersion: string | undefined;
   readonly #completedMetrics: Record<string, number> = {};
   cache: NativeAnalysisCache;
 
   constructor(
     config: ResolvedLiminaConfig,
     namespace: LiminaArtifactNamespace,
-    metrics?: AnalysisMetricsRecorder,
+    options: { metrics?: AnalysisMetricsRecorder; canPublish?: boolean } = {},
   ) {
-    this.#config = config;
-    assertGovernanceBinding(config);
-    this.#configInputs = configInputs(config);
+    this.#tools = new AnalysisToolObservation(config.configPath);
+    this.#canPublish = options.canPublish !== false;
+    const metrics = options.metrics;
+    this.#configuration = new ConfigObservation(config);
     this.#metrics = metrics;
+    this.#configVersion = effectiveConfigVersion(config);
     this.#store = new AnalysisCacheStore({
       namespace,
-      identity: analysisCacheIdentity(config),
+      identity: analysisCacheIdentity(config, this.#tools.identity),
       configPath: config.configPath,
+      configVersion: this.#configVersion,
       metrics,
     });
     this.cache = this.#createCache();
   }
 
   #createCache(): NativeAnalysisCache {
-    return new NativeAnalysisCache(this.#store.identity, this.#store.read());
+    const cache = new NativeAnalysisCache(
+      this.#store.identity,
+      this.#store.read(),
+      this.#configVersion,
+    );
+    if (this.#configVersion === undefined)
+      cache.fallback('configuration-version-unknown');
+    return cache;
   }
 
   async #attempt<T>(analyze: () => Promise<T>): Promise<T> {
@@ -64,6 +74,8 @@ export class AnalysisCacheController {
   }
 
   #reportMetrics(): void {
+    const metrics = this.#metrics;
+    if (metrics === undefined) return;
     this.cache.metrics.uniquePaths = new Set(
       Object.values(this.cache.inputs.records).map((input) => input.path),
     ).size;
@@ -71,8 +83,6 @@ export class AnalysisCacheController {
     this.cache.metrics.referenceOccurrences = Object.values(
       this.cache.contributions.records,
     ).flat().length;
-    const metrics = this.#metrics;
-    if (metrics === undefined) return;
     for (const [kind, value] of Object.entries(this.cache.metrics)) {
       recordCacheMetric(metrics, kind, this.#totalMetric(kind, value));
     }
@@ -82,23 +92,32 @@ export class AnalysisCacheController {
     return value + (this.#completedMetrics[kind] ?? 0);
   }
 
+  #completeMetrics(): void {
+    for (const [kind, value] of Object.entries(this.cache.metrics))
+      this.#completedMetrics[kind] = this.#totalMetric(kind, value);
+  }
+  #refreshedCache(): NativeAnalysisCache {
+    // A provider refresh may reuse validated in-memory data, but cannot renew
+    // the physical publication baseline of a writer that already analyzed.
+    const candidate = this.#analyzed
+      ? this.cache.snapshot()
+      : this.#store.read();
+    return new NativeAnalysisCache(
+      this.#store.identity,
+      candidate,
+      this.#configVersion,
+    );
+  }
   refresh(): void {
     this.assertConfigurationStable();
-    for (const [kind, value] of Object.entries(this.cache.metrics))
-      this.#completedMetrics[kind] =
-        (this.#completedMetrics[kind] ?? 0) + value;
-    this.cache = this.#createCache();
+    this.#completeMetrics();
+    this.cache = this.#refreshedCache();
     this.#analyzed = false;
   }
 
   assertConfigurationStable(): void {
-    assertGovernanceBinding(this.#config);
-    for (const [file, text] of this.#configInputs) {
-      if (readConfigInput(file) === text) continue;
-      throw new Error(
-        `Limina configuration or governance root changed during execution: ${file}. Run the command again to load the new configuration.`,
-      );
-    }
+    this.#configuration.assertStable();
+    this.#tools.assertStable();
   }
 
   async analyze<T>(operations: {
@@ -124,6 +143,10 @@ export class AnalysisCacheController {
     if (!this.#analyzed) return;
     await this.cache.epoch.assertStable();
     this.cache.inputs.assertStable();
+    if (!this.#canPublish) {
+      this.#reportMetrics();
+      return;
+    }
     await this.#store.publish(this.cache, async () => {
       this.assertConfigurationStable();
       await this.cache.epoch.assertStable();

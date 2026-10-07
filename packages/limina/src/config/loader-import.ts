@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import type * as tsxEsmApi from 'tsx/esm/api';
 import type { LiminaConfigLoader } from './root-types';
@@ -107,7 +108,7 @@ function createNativeLoaderError(error: unknown): Error {
 
 async function nativeImportConfig(configPath: string): Promise<unknown> {
   const url = pathToFileURL(configPath);
-  url.searchParams.set('t', String(Date.now()));
+  url.searchParams.set('t', randomUUID());
   try {
     return unwrapModuleDefault(await import(url.href));
   } catch (error) {
@@ -132,10 +133,9 @@ async function importTsxApi(): Promise<typeof tsxEsmApi> {
 
 async function tsxImportConfig(configPath: string): Promise<unknown> {
   const tsxApi = await importTsxApi();
-  const module = await tsxApi.tsImport(
-    pathToFileURL(configPath).href,
-    import.meta.url,
-  );
+  const url = pathToFileURL(configPath);
+  url.searchParams.set('t', randomUUID());
+  const module = await tsxApi.tsImport(url.href, import.meta.url);
   return unwrapTsxConfigExport(module);
 }
 

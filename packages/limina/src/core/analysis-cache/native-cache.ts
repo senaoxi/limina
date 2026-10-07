@@ -1,49 +1,51 @@
-import { randomUUID } from 'node:crypto';
 import ts from 'typescript';
-import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
+import type {
+  TypeScriptSemanticDependencyContext,
+  TypeScriptSemanticProject,
+} from '../typescript-semantic/contracts';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
+import { emptyMetrics } from './cache-metrics';
+import { NativeContextRecords } from './context-records';
 import type {
   AnalysisCacheMetrics,
   AnalysisSnapshot,
+  GraphRecord,
   ImporterRecord,
+  InputDependency,
+  NativeContextRecord,
+  ProjectRecord,
   ResolutionRecord,
 } from './contracts';
-import { ANALYSIS_ADAPTER } from './contracts';
 import { ReferenceContributions } from './contributions';
 import { EpochInputs } from './epoch-inputs';
+import { CachedGraphRecords } from './graph-records';
 import { nativeContextId } from './identity';
 import { type FactRequest, ImporterFacts } from './importer-facts';
 import { AnalysisInputs } from './inputs';
 import { AnalysisInvalidation } from './invalidation';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
 import { SemanticState } from './semantic-state';
-
-function emptyMetrics(): AnalysisCacheMetrics {
-  return {
-    probes: 0,
-    probeMs: 0,
-    reads: 0,
-    readMs: 0,
-    hashes: 0,
-    hashMs: 0,
-    resolverCalls: 0,
-    queryHits: 0,
-    factQueries: 0,
-    factHits: 0,
-    fallbacks: 0,
-    importerHits: 0,
-    importerQueries: 0,
-    compilerReads: 0,
-    compilerReadMs: 0,
-    projectionMs: 0,
-    semanticQueryMs: 0,
-    firstSemanticQueryMs: 0,
-  };
-}
+import {
+  areSameRecords,
+  currentSnapshotRecords,
+  emptySnapshot,
+  matchingConfigSnapshot,
+  newSnapshot,
+  retainData,
+} from './snapshot-records';
 
 export class NativeAnalysisCache {
   readonly #resolutions: ResolutionQueries;
   readonly #facts: ImporterFacts;
+  readonly #contexts: NativeContextRecords;
+  readonly #graphs: CachedGraphRecords;
+  #resolving = 0;
+  readonly #executableContexts = new Set<string>();
+  #hasUnsupportedContext = false;
+  readonly #captures = new Map<
+    string,
+    { program: ts.Program; capture(): void }
+  >();
   readonly #states = new Map<string, SemanticState>();
   readonly epoch: EpochInputs = new EpochInputs();
   readonly metrics: AnalysisCacheMetrics = emptyMetrics();
@@ -53,17 +55,29 @@ export class NativeAnalysisCache {
   readonly importers: Record<string, ImporterRecord>;
   readonly projects: AnalysisSnapshot['projects'] = {};
   readonly contributions: ReferenceContributions;
+  readonly contexts: Record<string, NativeContextRecord> = {};
+  readonly graphs: Record<string, GraphRecord> = {};
 
   readonly identity: string;
+  readonly configVersion: string | undefined;
   readonly previous: AnalysisSnapshot | undefined;
-  constructor(identity: string, previous?: AnalysisSnapshot) {
+  constructor(
+    identity: string,
+    previous?: AnalysisSnapshot,
+    configVersion?: string,
+  ) {
     this.identity = identity;
-    this.previous = previous;
-    const state = previous ?? emptySnapshot(identity);
+    this.configVersion = configVersion;
+    this.previous = matchingConfigSnapshot(previous, identity, configVersion);
+    const state = this.previous ?? emptySnapshot(identity, configVersion);
     this.inputs = new AnalysisInputs(state.inputs, this.metrics);
-    this.contributions = new ReferenceContributions(this.inputs);
+    this.contributions = new ReferenceContributions(
+      this.inputs,
+      state.contributions,
+    );
     this.inputs.validatePrevious();
-    this.invalidation = new AnalysisInvalidation(previous, this.inputs);
+    this.#validateDomains(state);
+    this.invalidation = new AnalysisInvalidation(this.previous, this.inputs);
     this.#checkConsumerCoverage();
     this.#resolutions = new ResolutionQueries({
       inputs: this.inputs,
@@ -79,8 +93,17 @@ export class NativeAnalysisCache {
     });
     this.queries = this.#resolutions.records;
     this.importers = this.#facts.records;
+    this.#contexts = new NativeContextRecords(this);
+    this.#graphs = new CachedGraphRecords(this);
   }
 
+  #validateDomains(state: AnalysisSnapshot): void {
+    const dependencies = Object.values(state.contexts)
+      .flatMap((context) => context.environment.domains)
+      .flatMap((domain) => domain.dependencies);
+    if (dependencies.some((dependency) => !this.inputs.valid(dependency)))
+      this.inputs.domainDirty = true;
+  }
   #checkConsumerCoverage(): void {
     if (this.previous === undefined) return;
     this.#checkCoverage(this.previous);
@@ -102,27 +125,12 @@ export class NativeAnalysisCache {
     this.inputs.domainDirty ||= hasChanges;
   }
 
+  #recordProject(id: string, record: ProjectRecord): void {
+    this.projects[id] = retainData(this.previous?.projects[id], record);
+  }
+
   #physicalProject(project: TypeScriptSemanticProject): boolean {
     return (project.virtualFiles?.size ?? 0) === 0;
-  }
-
-  #currentImporters(): Record<string, ImporterRecord> {
-    return Object.fromEntries(
-      Object.entries(this.importers).filter(([, importer]) =>
-        this.projects[importer.contextId]?.roots.includes(importer.filePath),
-      ),
-    );
-  }
-
-  #currentQueries(
-    importers: Record<string, ImporterRecord>,
-  ): Record<string, ResolutionRecord> {
-    const used = new Set(
-      Object.values(importers).flatMap((importer) => importer.queryIds),
-    );
-    return Object.fromEntries(
-      Object.entries(this.queries).filter(([id]) => used.has(id)),
-    );
   }
 
   supports(project: TypeScriptSemanticProject, tsModule: typeof ts): boolean {
@@ -132,25 +140,91 @@ export class NativeAnalysisCache {
       this.#physicalProject(project),
       project.analysisBinding !== undefined,
     ].every(Boolean);
-    if (!isSupported) this.fallback('unsupported-native-context');
+    if (!isSupported) {
+      this.#hasUnsupportedContext = true;
+      this.fallback('unsupported-native-context');
+    }
     return isSupported;
   }
 
+  hasCompleteGraphContextCoverage(): boolean {
+    return !this.#hasUnsupportedContext && this.#executableContexts.size === 0;
+  }
+
+  increment(metric: string): void {
+    this.metrics[metric] = (this.metrics[metric] ?? 0) + 1;
+  }
   fallback(reason: string): void {
     this.metrics.fallbacks += 1;
     const key = `fallback-${reason}`;
     this.metrics[key] = (this.metrics[key] ?? 0) + 1;
   }
 
+  qualifyFacts(project: TypeScriptSemanticProject, isReusable: boolean): void {
+    if (isReusable) return;
+    const id = nativeContextId(project);
+    this.#executableContexts.add(id);
+    this.fallback('semantic-provider-executable');
+  }
+  hasReusableFacts(project: TypeScriptSemanticProject): boolean {
+    return !this.#executableContexts.has(nativeContextId(project));
+  }
+  registerContextCapture(
+    project: TypeScriptSemanticProject,
+    program: ts.Program,
+    capture: () => void,
+  ): void {
+    this.#captures.set(nativeContextId(project), { program, capture });
+  }
+  captureLiveContexts(): void {
+    for (const record of this.#captures.values()) record.capture();
+  }
+  recordProgram(): void {
+    this.metrics.semanticPrograms += 1;
+  }
+  beginContext(project: TypeScriptSemanticProject): void {
+    this.#contexts.begin(project);
+  }
+  observeCompilerInput(
+    project: TypeScriptSemanticProject,
+    dependency: InputDependency,
+  ): void {
+    if (this.#resolving === 0) this.#contexts.observe(project, dependency);
+  }
+  captureContext(
+    project: TypeScriptSemanticProject,
+    program: ts.Program,
+    collect: () => void,
+  ): void {
+    const state = this.#states.get(nativeContextId(project));
+    if (state?.options.program !== program) return;
+    collect();
+    this.#facts.finish(state.contextId);
+    this.#contexts.capture(project, state);
+  }
+  restoreContext(
+    project: TypeScriptSemanticProject,
+  ): TypeScriptSemanticDependencyContext | undefined {
+    return this.#contexts.restore(project);
+  }
+  restoreQuery(id: string, record: ResolutionRecord): void {
+    this.#resolutions.restore(id, record);
+  }
+
   query<T>(query: ResolutionQuery<T>): T {
-    return this.#resolutions.query(query);
+    this.#resolving += 1;
+    try {
+      return this.#resolutions.query(query);
+    } finally {
+      this.#resolving -= 1;
+    }
   }
 
   prepare(
     project: TypeScriptSemanticProject,
     program: ts.Program,
     tsModule: typeof ts,
-  ): void {
+  ): () => void {
     const id = nativeContextId(project);
     const state = new SemanticState({
       project,
@@ -159,77 +233,63 @@ export class NativeAnalysisCache {
       inputs: this.inputs,
       queries: this.queries,
       queriesByFile: this.#resolutions.byFile(id),
+      environmentDependencies:
+        this.#contexts.environment(id)?.dependencies ?? [],
     });
     this.#states.set(id, state);
     this.#facts.prepare(id);
-    this.projects[id] = state.projectRecord;
+    this.#recordProject(id, state.projectRecord);
+    return () => {
+      if (this.#states.get(id) !== state) {
+        return;
+      }
+
+      this.#states.delete(id);
+      this.#captures.delete(id);
+    };
   }
 
   fact(request: FactRequest): NativeDependencyFact {
+    if (!this.hasReusableFacts(request.project)) {
+      this.metrics.factQueries += 1;
+      return request.collect();
+    }
     return this.#facts.fact(
       request,
       this.#states.get(nativeContextId(request.project))!,
     );
   }
 
-  snapshot(): AnalysisSnapshot {
-    const importers = this.#currentImporters();
-    const queries = this.#currentQueries(importers);
-    const referenced = new Set([
-      ...this.inputs.configInputs,
-      ...Object.values(queries).flatMap((query) =>
-        query.dependencies.map((dependency) => dependency.inputId),
-      ),
-    ]);
-    for (const importer of Object.values(importers))
-      for (const dependency of importer.dependencies)
-        referenced.add(dependency.inputId);
-    // Keep current member contents and manifest old contents for next epoch's
-    // environment and two-field comparisons, without retaining historical inputs.
-    const members = new Set(
-      Object.values(this.projects).flatMap((project) => project.members),
-    );
-    const manifestPaths = new Set(
-      [...referenced]
-        .map((id) => this.inputs.records[id].path)
-        .filter((file) => file.endsWith('/package.json')),
-    );
-    const inputs = Object.fromEntries(
-      Object.entries(this.inputs.records).filter(
-        ([id, input]) =>
-          referenced.has(id) ||
-          members.has(input.path) ||
-          manifestPaths.has(input.path),
-      ),
-    );
-    return structuredClone({
-      header: {
-        schema: 1,
-        implementation: ANALYSIS_ADAPTER,
-        identity: this.identity,
-        revision: randomUUID(),
-      },
-      inputs,
-      queries,
-      importers,
-      projects: this.projects,
-      contributions: this.contributions.records,
-    });
+  restoreGraphRecord(
+    key: string,
+    workspaceVersion: string,
+  ): Promise<GraphRecord | undefined> {
+    return this.#graphs.restore(key, workspaceVersion);
   }
-}
-
-function emptySnapshot(identity: string): AnalysisSnapshot {
-  return {
-    header: {
-      schema: 1,
-      implementation: ANALYSIS_ADAPTER,
-      identity,
-      revision: randomUUID(),
+  captureGraphRecord(
+    key: string,
+    options: {
+      workspaceVersion: string;
+      value: unknown;
     },
-    inputs: {},
-    projects: {},
-    queries: {},
-    importers: {},
-    contributions: {},
-  };
+  ): void {
+    this.#graphs.capture(key, options);
+  }
+  snapshotRecords(): Omit<AnalysisSnapshot, 'header'> {
+    return currentSnapshotRecords(this);
+  }
+
+  isUnchanged(): boolean {
+    if (this.previous === undefined) return false;
+    const records = this.snapshotRecords();
+    return Object.entries(records).every(([key, value]) =>
+      areSameRecords(this.previous![key as keyof typeof records], value),
+    );
+  }
+
+  snapshot(): AnalysisSnapshot {
+    if (this.isUnchanged()) return this.previous!;
+    this.metrics.snapshotClones = (this.metrics.snapshotClones ?? 0) + 1;
+    return newSnapshot(this);
+  }
 }

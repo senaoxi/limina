@@ -27,6 +27,18 @@ async function expandGroup(
   const directories = await read();
   observeAnalysisRead({
     path: options.rootDir,
+    descriptor: {
+      kind: 'glob',
+      patterns: [...group.packageGlobs],
+      lexicalDirectories: true,
+      options: {
+        absolute: true,
+        cwd: options.rootDir,
+        onlyDirectories: true,
+        expandDirectories: false,
+        ignore: [...options.hardIgnores],
+      },
+    },
     key: JSON.stringify(['packages', options.rootDir, group.packageGlobs]),
     value: directories,
     read,

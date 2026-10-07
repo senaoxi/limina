@@ -47,7 +47,18 @@ export async function writeGeneratedJson(options: {
   filePath: string;
   value: unknown;
 }): Promise<void> {
-  const content = stringifyJson(options.value);
+  return writeGeneratedContent({
+    ...options,
+    content: stringifyJson(options.value),
+  });
+}
+
+export async function writeGeneratedContent(options: {
+  context: GeneratedGraphWriteContext;
+  filePath: string;
+  content: string;
+}): Promise<void> {
+  const content = options.content;
   const artifact = createGeneratedArtifact(options.filePath, content);
   options.context.expectedFiles.add(options.filePath);
   options.context.files.set(options.filePath, content);

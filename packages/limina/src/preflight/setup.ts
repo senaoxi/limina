@@ -5,6 +5,7 @@ import {
   createAnalysisRun,
   createNoopMetricsRecorder,
 } from '../application/analysis/analysis-run';
+import { getConfigInputs } from '../config/input-observation';
 import type { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import {
   createLiminaArtifactNamespace,
@@ -12,6 +13,7 @@ import {
 } from '../domain/artifacts/namespace';
 import { identifier } from '../domain/shared/identifiers';
 import { AnalysisCacheController } from './analysis-cache';
+import { ConfigObservation } from './config-observation';
 import type { LiminaPreflightManagerOptions } from './types';
 
 export function resolveMetrics(
@@ -62,8 +64,21 @@ export function createAnalysisCache(
 ): AnalysisCacheController | undefined {
   if (options.providers !== undefined) return undefined;
   return options.analysisCache
-    ? new AnalysisCacheController(options.config, namespace, options.metrics)
+    ? new AnalysisCacheController(options.config, namespace, {
+        metrics: options.metrics,
+        canPublish: options.analysisCache !== 'read-only',
+      })
     : undefined;
+}
+
+export function observeUncachedConfig(
+  options: LiminaPreflightManagerOptions,
+  cache: AnalysisCacheController | undefined,
+): ConfigObservation | undefined {
+  if (cache !== undefined) return undefined;
+  return getConfigInputs(options.config) === undefined
+    ? undefined
+    : new ConfigObservation(options.config);
 }
 
 export function createPreflightRun(options: {

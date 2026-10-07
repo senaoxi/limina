@@ -7,6 +7,7 @@ import ts from 'typescript';
 import { getConfigInputs } from '../config/input-observation';
 import { ANALYSIS_ADAPTER } from '../core/analysis-cache/contracts';
 import { analysisHash } from '../core/analysis-cache/identity';
+import { analysisToolIdentity } from './analysis-cache-tools';
 
 export function readConfigInput(file: string): string | null {
   try {
@@ -39,10 +40,13 @@ function toolVersion(configPath: string, name: string): string | null {
   }
 }
 
-export function analysisCacheIdentity(config: ResolvedLiminaConfig): string {
+export function analysisCacheIdentity(
+  config: ResolvedLiminaConfig,
+  tools: unknown = analysisToolIdentity(),
+): string {
   return analysisHash({
     implementation: ANALYSIS_ADAPTER,
-    limina: createRequire(import.meta.url)('limina/package.json').version,
+    executables: tools,
     typescript: ts.version,
     tsgo: toolVersion(config.configPath, '@typescript/native-preview'),
     resolver: toolVersion(config.configPath, 'oxc-resolver'),

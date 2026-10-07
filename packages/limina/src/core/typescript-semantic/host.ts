@@ -1,7 +1,7 @@
-import { performance } from 'node:perf_hooks';
 import type ts from 'typescript';
-import { inputStat } from '../analysis-cache/input-state';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import type { TypeScriptSemanticProject } from './contracts';
+import { observeCompilerReads } from './host-observation';
 import { parseTypeScriptProjectConfig } from './project-references';
 import type { OwnedSyntaxInput, OwnedSyntaxScope } from './syntax-input';
 
@@ -79,6 +79,7 @@ function notifySourceFile(
 
 export function createTypeScriptSemanticHost(options: {
   analysisCache?: NativeAnalysisCache;
+  project?: TypeScriptSemanticProject;
   callbacks: TypeScriptSemanticHostCallbacks;
   compilerOptions: ts.CompilerOptions;
   tsModule: typeof ts;
@@ -86,7 +87,7 @@ export function createTypeScriptSemanticHost(options: {
   syntaxScope?: OwnedSyntaxScope;
 }): ts.CompilerHost {
   const base = options.tsModule.createCompilerHost(options.compilerOptions);
-  observeCompilerReads(base, options.analysisCache);
+  observeCompilerReads(base, options.analysisCache, options.project);
   const host: ts.CompilerHost = {
     ...base,
     getDefaultLibFileName(compilerOptions): string {
@@ -148,28 +149,4 @@ export function createTypeScriptSemanticHost(options: {
     });
 
   return host;
-}
-
-function observeCompilerReads(
-  base: ts.CompilerHost,
-  cache: NativeAnalysisCache | undefined,
-): void {
-  if (cache === undefined) return;
-  const readFile = base.readFile.bind(base);
-  base.readFile = (path) => {
-    const before = inputStat(path);
-    const checkedAt = Date.now();
-    const startedAt = performance.now();
-    const text = readFile(path);
-    cache.metrics.compilerReads += 1;
-    cache.metrics.compilerReadMs += performance.now() - startedAt;
-    if (text !== undefined)
-      cache.inputs.observeText({
-        path,
-        text,
-        checkedAt,
-        beforeMtime: before!.mtimeMs,
-      });
-    return text;
-  };
 }

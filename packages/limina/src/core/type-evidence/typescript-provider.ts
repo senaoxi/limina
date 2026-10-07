@@ -4,7 +4,7 @@ import {
   type TypeScriptSemanticContext,
   type WorkspaceSourceBoundary,
 } from '../typescript-semantic';
-import { createAmbientTypeEvidence } from './ambient-symbol';
+import { memoizedNativeAmbientEvidence } from '../typescript-semantic/ambient-provider';
 import type {
   TypeEvidence,
   TypeEvidenceGenerationCache,
@@ -29,10 +29,7 @@ function createProgramHandle(
   const context = createBoundedTypeScriptSemanticContext(project, {
     syntaxFacts: cache.syntaxFacts,
     analysisCache: cache.analysisCache,
-    getAmbientEvidence: (symbol, tsModule) =>
-      cache.getOrCreateAmbientSymbolEvidence(symbol, () =>
-        createAmbientTypeEvidence(symbol, tsModule),
-      ),
+    getAmbientEvidence: memoizedNativeAmbientEvidence(cache),
   });
   let isDisposed = false;
 
@@ -86,7 +83,11 @@ export function createTypeScriptTypeEvidenceProvider(options: {
     },
     query({ importRecord }): TypeEvidence {
       assertProviderActive(isDisposed);
-      const context = getOrCreateTypeScriptSemanticContext(options);
+      const context =
+        options.cache.analysisCache?.restoreContext({
+          ...options.project,
+          admissionMode: 'full-program',
+        }) ?? getOrCreateTypeScriptSemanticContext(options);
       return context.getDependencyFact(importRecord).typeEvidence;
     },
   };

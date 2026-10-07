@@ -44,11 +44,34 @@ export class AnalysisInvalidation {
   #index(snapshot: AnalysisSnapshot): void {
     for (const [id, query] of Object.entries(snapshot.queries))
       this.#subscribeInputs(this.inputQueries, query.dependencies, id);
+    this.#indexEnvironments(snapshot);
     for (const [id, importer] of Object.entries(snapshot.importers)) {
       this.#indexImporter(id, importer);
     }
   }
 
+  #indexEnvironments(snapshot: AnalysisSnapshot): void {
+    for (const [contextId, context] of Object.entries(snapshot.contexts))
+      this.#indexEnvironment(snapshot, contextId, context.sharedEnvironment);
+  }
+  #indexEnvironment(
+    snapshot: AnalysisSnapshot,
+    contextId: string,
+    environment: AnalysisSnapshot['contexts'][string]['sharedEnvironment'],
+  ): void {
+    const consumers = Object.entries(snapshot.importers).filter(
+      ([, importer]) => importer.contextId === contextId,
+    );
+    for (const [id] of consumers) this.#subscribeEnvironment(id, environment);
+  }
+  #subscribeEnvironment(
+    id: string,
+    environment: AnalysisSnapshot['contexts'][string]['sharedEnvironment'],
+  ): void {
+    this.#subscribeInputs(this.semanticConsumers, environment.dependencies, id);
+    for (const queryId of environment.queryIds)
+      subscribe(this.queryImporters, queryId, id);
+  }
   #indexImporter(id: string, importer: ImporterRecord): void {
     this.#subscribeInputs(this.semanticConsumers, importer.dependencies, id);
     for (const query of importer.queryIds)

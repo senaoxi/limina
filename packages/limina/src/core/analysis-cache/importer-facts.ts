@@ -10,6 +10,7 @@ import { analysisHash, nativeContextId } from './identity';
 import type { AnalysisInputs } from './inputs';
 import type { SemanticState } from './semantic-state';
 import { occurrenceKey } from './semantic-state';
+import { retainData } from './snapshot-records';
 
 export interface FactRequest {
   project: TypeScriptSemanticProject;
@@ -143,7 +144,10 @@ export class ImporterFacts {
       request.record.filePath,
     ]);
     const existing = this.#contexts.get(id);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      this.records[id] = existing.importer;
+      return existing;
+    }
     const importer = this.#create(request, state);
     const old = this.records[id] ?? this.#options.previous[id];
     const previous = this.#selectPrevious(old, importer);
@@ -204,6 +208,14 @@ export class ImporterFacts {
     this.#firstQuery.delete(contextId);
     for (const [id, context] of this.#contexts) {
       if (context.importer.contextId === contextId) this.#contexts.delete(id);
+    }
+  }
+
+  finish(contextId: string): void {
+    for (const [id, context] of this.#contexts) {
+      if (context.importer.contextId !== contextId) continue;
+      const previous = this.#options.previous[id];
+      this.records[id] = retainData(previous, context.importer);
     }
   }
 

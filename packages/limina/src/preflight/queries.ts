@@ -18,6 +18,7 @@ import {
 } from '../package-check/entry/selection';
 import { collectExpectedSourceFiles } from '../proof/source-files';
 import type { AnalysisCacheController } from './analysis-cache';
+import type { ConfigObservation } from './config-observation';
 import type { LiminaPreflightManager } from './manager';
 import type { PackageEntryPlanOptions } from './types';
 
@@ -97,8 +98,19 @@ export async function loadPackageEntrySelectionPlan(
   });
 }
 
+async function analyzeWithoutCache<T>(
+  observation: ConfigObservation | undefined,
+  analyze: () => Promise<T>,
+): Promise<T> {
+  observation?.assertStable();
+  const result = await analyze();
+  observation?.assertStable();
+  return result;
+}
+
 export function loadAnalyzedGraph(options: {
   cache: AnalysisCacheController | undefined;
+  configObservation?: ConfigObservation;
   source: Pick<
     LiminaPreflightManager,
     'ensureWorkspaceValidated' | 'providers'
@@ -113,6 +125,6 @@ export function loadAnalyzedGraph(options: {
         options.getGraph?.() ?? options.source.providers.buildGraph.getGraph(),
     );
   return options.cache === undefined
-    ? analyze()
+    ? analyzeWithoutCache(options.configObservation, analyze)
     : options.cache.analyze({ analyze, refresh: options.refresh });
 }
