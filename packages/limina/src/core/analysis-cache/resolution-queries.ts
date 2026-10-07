@@ -57,8 +57,7 @@ export class ResolutionQueries {
   }
 
   #restore<T>(id: string, record: ResolutionRecord): T {
-    this.#options.inputs.consume(record.dependencies);
-    this.records[id] = structuredClone(record);
+    this.restore(id, record);
     return structuredClone(record.result) as T;
   }
 
@@ -70,6 +69,8 @@ export class ResolutionQueries {
     const plain = plainResolution(raw);
     this.records[id] = {
       contextId: query.contextId,
+      file: query.file,
+      request: query.identity,
       result: plain.value,
       dependencies: trace.dependencies.values().toArray(),
       coverage: trace.complete && plain.complete ? 'complete' : 'unknown',
@@ -92,6 +93,12 @@ export class ResolutionQueries {
 
   byFile(contextId: string): Map<string, Set<string>> {
     return this.#byContext.get(contextId) ?? new Map();
+  }
+
+  restore(id: string, record: ResolutionRecord): void {
+    this.#subscribe(record.contextId, record.file, id);
+    this.#options.inputs.consume(record.dependencies);
+    this.records[id] = record;
   }
 
   query<T>(query: ResolutionQuery<T>): T {

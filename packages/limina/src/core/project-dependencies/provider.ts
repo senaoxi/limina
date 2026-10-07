@@ -79,6 +79,36 @@ function createCollectionContext(request: ProjectDependencyRequest) {
   );
 }
 
+function restoreCollectionContext(
+  request: ProjectDependencyRequest,
+): ProjectDependencyRequest['typeScriptSemanticContext'] {
+  return request.context.semanticAuthority.family === 'typescript'
+    ? restoreNativeCollection(request)
+    : undefined;
+}
+function restoreNativeCollection(request: ProjectDependencyRequest) {
+  const cache = request.caches?.analysisCache;
+  return cache?.restoreContext(collectionProject(request));
+}
+function collectionBinding(request: ProjectDependencyRequest) {
+  return {
+    phase: 'locked' as const,
+    checker: request.context.analysisChecker ?? 'tsc',
+  };
+}
+function collectionProject(request: ProjectDependencyRequest) {
+  return {
+    admissionMode: 'full-program' as const,
+    analysisBinding: collectionBinding(request),
+    configPath: request.context.configPath,
+    fileNames: request.context.fileNames,
+    options: request.context.compilerOptions,
+    projectReferences: request.context.references,
+    virtualFiles: request.context.virtualFiles,
+    workspaceSourceBoundary: request.context.workspaceSourceBoundary,
+  };
+}
+
 function collectProjectDependenciesWithNewContext(options: {
   factsCacheKey: string;
   request: ProjectDependencyRequest;
@@ -130,17 +160,34 @@ function collectProjectDependenciesWithContext(options: {
   return collection;
 }
 
+function cachedCollectionContext(options: {
+  factsCacheKey: string;
+  request: ProjectDependencyRequest;
+}) {
+  return (
+    options.request.caches?.typeScriptSemanticFactsCache.get(
+      options.factsCacheKey,
+    ) ?? restoreCollectionContext(options.request)
+  );
+}
+function rememberCollectionContext(
+  options: { factsCacheKey: string; request: ProjectDependencyRequest },
+  context: NonNullable<ProjectDependencyRequest['typeScriptSemanticContext']>,
+): void {
+  options.request.caches?.typeScriptSemanticFactsCache.set(
+    options.factsCacheKey,
+    context,
+  );
+}
 function collectUncachedProjectDependencies(options: {
   factsCacheKey: string;
   request: ProjectDependencyRequest;
 }): ProjectDependencyCollection {
-  const cachedContext =
-    options.request.caches?.typeScriptSemanticFactsCache.get(
-      options.factsCacheKey,
-    );
+  const cachedContext = cachedCollectionContext(options);
   if (cachedContext === undefined) {
     return collectProjectDependenciesWithNewContext(options);
   }
+  rememberCollectionContext(options, cachedContext);
   return collectProjectDependenciesWithContext({
     request: options.request,
     typeScriptSemanticContext: cachedContext,

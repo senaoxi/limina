@@ -9,6 +9,7 @@ import type {
 } from './contracts';
 import { AnalysisInputDriftError } from './contracts';
 import { analysisHash } from './identity';
+import { hasChangedBytes, hasMtime, retainedInput } from './input-equality';
 import {
   inputStat,
   isRegularFile,
@@ -20,11 +21,12 @@ import { manifestField, requiresManifestInvalidation } from './manifest-input';
 export class AnalysisInputs {
   #nativeConsumed = false;
   #drift: string | undefined;
+  readonly #observations = new Map<string, unknown>();
+  readonly #dependencies = new Map<string, InputDependency>();
   readonly #consumed = new Map<string, string>();
   readonly records: Record<string, AnalysisInput> = {};
   domainDirty = false;
   readonly configInputs: Set<string> = new Set<string>();
-
   readonly previous: Record<string, AnalysisInput>;
   readonly metrics: AnalysisCacheMetrics;
   constructor(
@@ -40,11 +42,12 @@ export class AnalysisInputs {
     kind: InputKind,
     previous?: AnalysisInput,
   ): AnalysisInput {
-    if (kind === 'imports' || kind === 'exports')
-      return this.#field(path, kind);
-    const input = this.#readInput(path, kind, previous);
+    const input = ['imports', 'exports'].includes(kind)
+      ? this.#field(path, kind as 'imports' | 'exports')
+      : this.#readInput(path, kind, previous);
     this.#checkManifest(previous, input);
-    return input;
+    this.#checkBytes(previous, input);
+    return retainedInput(previous, input);
   }
 
   #readInput(
@@ -71,7 +74,7 @@ export class AnalysisInputs {
   ): void {
     const isManifest =
       next.path.endsWith('/package.json') &&
-      ['content', 'file'].includes(next.kind);
+      ['content', 'file', 'binding'].includes(next.kind);
     if (isManifest) this.#invalidateManifest(previous, next);
   }
 
@@ -104,7 +107,7 @@ export class AnalysisInputs {
       if (this.records[id] === undefined) continue;
       const next = this.#field(path, field);
       this.#assertConsumed(path, id, next.version);
-      this.records[id] = next;
+      this.records[id] = retainedInput(this.records[id], next);
     }
   }
 
@@ -145,7 +148,7 @@ export class AnalysisInputs {
   }
 
   #assertStoredInput(input: AnalysisInput): void {
-    if (input.kind === 'content') {
+    if (['content', 'bytes'].includes(input.kind)) {
       this.#assertContentStable(input);
       return;
     }
@@ -165,11 +168,23 @@ export class AnalysisInputs {
       throw new AnalysisInputDriftError(input.path);
   }
 
+  #checkBytes(previous: AnalysisInput | undefined, input: AnalysisInput): void {
+    if (hasChangedBytes(previous, input)) this.invalidateDomain(input.path);
+  }
+
+  #dependency(inputId: string, expectedVersion: string): InputDependency {
+    const key = `${inputId}:${expectedVersion}`;
+    const prior = this.#dependencies.get(key);
+    if (prior !== undefined) return prior;
+    const value = Object.freeze({ inputId, expectedVersion });
+    this.#dependencies.set(key, value);
+    return value;
+  }
   observe(filePath: string, kind: InputKind): InputDependency {
     const path = normalizeAbsolutePath(filePath);
     const inputId = JSON.stringify(['physical', kind, path]);
     this.records[inputId] ??= this.#read(path, kind, this.previous[inputId]);
-    return { inputId, expectedVersion: this.records[inputId].version };
+    return this.#dependency(inputId, this.records[inputId].version);
   }
 
   observeText(options: {
@@ -188,13 +203,47 @@ export class AnalysisInputs {
     if (next.verifiedThrough === undefined) this.#rejectDrift(path);
     this.#assertConsumed(path, inputId, next.version);
     this.#checkManifest(this.previous[inputId], next);
-    this.records[inputId] = next;
+    const prior = this.records[inputId] ?? this.previous[inputId];
+    this.records[inputId] = retainedInput(prior, next);
     this.#refreshFields(path);
-    return { inputId, expectedVersion: next.version };
+    return this.#dependency(inputId, next.version);
   }
 
+  observeBytes(options: {
+    path: string;
+    bytes: Buffer;
+    beforeMtime: number;
+  }): InputDependency {
+    const path = normalizeAbsolutePath(options.path);
+    if (!hasMtime(path, options.beforeMtime)) this.#rejectDrift(path);
+    const version = createHash('sha256').update(options.bytes).digest('hex');
+    const inputId = JSON.stringify(['physical', 'bytes', path]);
+    this.#assertConsumed(path, inputId, version);
+    const next: AnalysisInput = {
+      path,
+      kind: 'bytes',
+      version,
+      observedMtime: options.beforeMtime,
+      verifiedThrough: Math.min(Date.now(), options.beforeMtime),
+    };
+    this.#checkBytes(this.previous[inputId], next);
+    const prior = this.records[inputId] ?? this.previous[inputId];
+    this.records[inputId] = retainedInput(prior, next);
+    return this.#dependency(inputId, version);
+  }
+  memoizeObservation<T>(key: string, observe: () => T): T {
+    if (this.#observations.has(key)) return this.#observations.get(key) as T;
+    const value = observe();
+    this.#observations.set(key, value);
+    return value;
+  }
   consumeNative(): void {
     this.#nativeConsumed = true;
+  }
+
+  invalidateDomain(path: string): void {
+    this.#assertDomainUnused(path);
+    this.domainDirty = true;
   }
 
   consume(dependencies: readonly InputDependency[]): void {
@@ -214,8 +263,10 @@ export class AnalysisInputs {
   }
 
   valid(dependency: InputDependency): boolean {
-    const input =
-      this.previous[dependency.inputId] ?? this.records[dependency.inputId];
+    const current = this.records[dependency.inputId];
+    if (current !== undefined)
+      return current.version === dependency.expectedVersion;
+    const input = this.previous[dependency.inputId];
     return (
       input !== undefined &&
       this.observe(input.path, input.kind).expectedVersion ===

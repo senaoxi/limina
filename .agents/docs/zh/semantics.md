@@ -16,7 +16,7 @@ Locked [ProjectSemanticContext](../../../packages/limina/src/core/project-depend
 
 [effective-roots](../../../packages/limina/src/core/typescript-semantic/effective-roots.ts) 采用 checker parsed roots，并解析 effective `compilerOptions.types` 中相对入口，得到去重的 importer roots。声明文件可属于 roots。`ownedFileNames` 服务归属与 coverage；Program transitive files 为类型解释服务，均不能替代 importer 枚举。
 
-[context](../../../packages/limina/src/core/typescript-semantic/context.ts) 默认构建 full bounded Program；[project-dependencies provider](../../../packages/limina/src/core/project-dependencies/provider.ts) 每次未缓存 collection 创建一个 context，处理所有 roots 后捕获 snapshot，在 `finally` dispose。它没有选择 `root-facts`，也没有为每个 occurrence 创建 Program。root-facts 是另一个更窄 admission mode，不能据此概括生产 locked provider。
+[context](../../../packages/limina/src/core/typescript-semantic/context.ts) 默认构建 full bounded Program；[project-dependencies provider](../../../packages/limina/src/core/project-dependencies/provider.ts) 先请求已验证 dependency DTO；冷／dirty collection 才创建一个 full context，处理所有 roots 后捕获普通数据，在 `finally` dispose。它没有选择 `root-facts`，也没有为每个 occurrence 创建 Program。root-facts 是另一个更窄 admission mode，不能据此概括生产 locked provider。
 
 [admission ledger](../../../packages/limina/src/core/typescript-semantic/admission.ts) 按原因纳入 effective roots、raw project references、显式 path/type references、libs、允许的 external module target 与 declaration closure。普通 workspace module target 可以被 resolver 找到而未进入 Program。外部 declaration importer 的相对声明闭包仍逐步经过 workspace source boundary；边界同时匹配 lexical 和 realpath identity，仅提供 Boolean membership，不携带 owner/provenance/policy。
 
@@ -24,7 +24,7 @@ raw references 来自用户 source/resolver config。生成 graph 推导出的 r
 
 ## 持久化 importer 有效性
 
-[analysis-cache](../../../packages/limina/src/core/analysis-cache/native-cache.ts) 中的原生适配器支持自有 TypeScript **6.0.3** 实例和物理输入。`tsc` 与 `tsgo` 在该语义 family 内绑定不同 checker identity；这不缓存其完整诊断或 emit。Vue、Astro、Svelte、虚拟源码、其他 compiler 实例/版本及自定义 provider，在输入与语义合同得到证明前显式冷回退。框架内的 `.ts` 文件不会仅因扩展名而变成原生语境。
+[analysis-cache](../../../packages/limina/src/core/analysis-cache/native-cache.ts) 中的原生适配器支持自有 TypeScript **6.0.3** 实例和物理输入。`tsc` 与 `tsgo` 在该语义 family 内绑定不同 checker identity；这不缓存其完整诊断或 emit。Vue、Astro、Svelte、虚拟源码及其他 compiler 实例／版本，在输入与语义合同得到证明前显式冷回退。全局配置门通过后，内部 provider 仍需要独立的 native 有效性依据。effective Limina config 中的持续 callback 则使 `configVersion` 为 unknown，整个持久化分析模型保持冷路径。正常 NodeNext、Node16 在 scope／mode 证据完整时可进入 clean 路径。框架内的 `.ts` 文件不会仅因扩展名而变成原生语境。
 
 | 事实生产者                                                 | 有效性输入与传播                                                                                                                                                                                               |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -34,9 +34,9 @@ raw references 来自用户 source/resolver config。生成 graph 推导出的 r
 | `createDirectDependencyEvidence` 与 collection 投影        | 有效 native facts 加本轮 runtime/resource evidence 及当前 provider/authority 绑定。刷新 runtime 后不能返回旧完整 collection。独立 runtime unknown 不废弃 native 有效性；真实依赖该输入时仍失效。               |
 | Reference recording                                        | 当前 requirement/provider/checker 规则生成 occurrence 贡献；references 仍由当前 graph authority 决定。                                                                                                         |
 
-[SemanticState](../../../packages/limina/src/core/analysis-cache/semantic-state.ts) 在接受 importer 命中前，比较完整当前 Program 闭包及共享环境。非 root 声明退出该闭包，即使磁盘内容未变，也撤销其贡献。替代引入路径与循环按实际 Program 可达性处理。环境变化可以使其全部 semantic consumers 失效，同时保留有效解析查询。仅新增普通 root 不机械失效无关 importer。readFile 日志不能代替语义依赖图。
+[SemanticState](../../../packages/limina/src/core/analysis-cache/semantic-state.ts) 在冷／dirty Program 路径接受 importer 命中前，比较完整当前 Program 闭包及共享环境。非 root 声明退出该闭包，即使磁盘内容未变，也撤销其贡献。替代引入路径与循环按实际 Program 可达性处理。环境变化可以使其全部 semantic consumers 失效，同时保留有效解析查询。仅新增普通 root 不机械失效无关 importer。readFile 日志不能代替语义依赖图。
 
-仍需创建完整项目 Program；按 importer 省略的是 native fact 查询。[快照捕获](../../../packages/limina/src/core/typescript-semantic/snapshot.ts) 复制已收集事实，不再无条件做第二轮语义查询。Pending 与 locked 缓存分开。[缓存测试](../../../packages/limina/src/__tests__/analysis-cache.spec.ts) 在连续编辑、资源变化、ambient 撤销、条件 manifest 和声明输出缺失时，对比冷分析与增量的事实、metadata、Program 成员和诊断。时间戳、事务和发布边界见[生命周期](./lifecycle.md#原生持久化分析缓存)。
+namespace 级有效 `configVersion` 门通过后，完整 clean [context record](../../../packages/limina/src/core/analysis-cache/context-records.ts) 可在创建 Program 前恢复 dependency facts，校验 TS-effective roots／options／原始 references、已观测 membership／admission boundary、事实与共享环境版本、全部查询及[生命周期](./lifecycle.md#原生持久化分析缓存)所述 lock／本地 typeRoots 合同。只恢复普通 dependency 方法，DTO 不暴露 compiler Program 或 Symbol。缺失 metadata 或证据不完整时仍走 full Program 路径。[快照捕获](../../../packages/limina/src/core/typescript-semantic/snapshot.ts) 复制已收集事实，不再无条件做第二轮语义查询。Pending 与 locked 缓存分开。[缓存测试](../../../packages/limina/src/__tests__/analysis-cache.spec.ts) 在连续编辑、资源变化、ambient 撤销、条件 manifest 和声明输出缺失时，对比冷分析与增量的事实、metadata、Program 成员和诊断。时间戳、事务和发布边界见[生命周期](./lifecycle.md#原生持久化分析缓存)。
 
 ## Occurrence、证据与建图需求
 

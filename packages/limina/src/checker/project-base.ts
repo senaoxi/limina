@@ -1,4 +1,8 @@
-import { observeAnalysisRead } from '#utils/analysis-input';
+import {
+  observeAnalysisRead,
+  readAnalysisInput,
+  typeScriptDirectoryDescriptor,
+} from '#utils/analysis-input';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
@@ -49,11 +53,14 @@ export function createProjectParseHost(
   if (recorder === undefined) return base;
   return {
     ...base,
+    fileExists: (fileName) =>
+      readAnalysisInput(fileName, () => base.fileExists(fileName), 'file'),
     readDirectory: (...arguments_) => {
       const read = () => base.readDirectory(...arguments_);
       const value = read();
       observeAnalysisRead({
         path: arguments_[0],
+        descriptor: typeScriptDirectoryDescriptor(arguments_),
         key: JSON.stringify(['config-files', arguments_]),
         value,
         read,
@@ -61,7 +68,11 @@ export function createProjectParseHost(
       return value;
     },
     readFile(fileName, encoding): string | undefined {
-      const content = base.readFile(fileName, encoding);
+      const content = readAnalysisInput(
+        fileName,
+        () => base.readFile(fileName, encoding),
+        'typescript-content',
+      );
       if (content !== undefined) {
         recorder.contentByPath.set(normalizeAbsolutePath(fileName), content);
       }

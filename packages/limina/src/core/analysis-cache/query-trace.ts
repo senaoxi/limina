@@ -18,6 +18,7 @@ export class QueryTrace {
 
   #fileExists(base: ts.ModuleResolutionHost, path: string): boolean {
     const isValue = base.fileExists(path);
+    this.add(path, 'binding');
     const dependency = this.inputs.structural(path, 'file', isValue);
     this.dependencies.set(dependency.inputId, dependency);
     return isValue;
@@ -29,6 +30,7 @@ export class QueryTrace {
       return true;
     }
     const isValue = base.directoryExists(path);
+    if (isValue) this.add(path, 'binding');
     const dependency = this.inputs.structural(path, 'directory', isValue);
     this.dependencies.set(dependency.inputId, dependency);
     return isValue;
@@ -40,7 +42,9 @@ export class QueryTrace {
       return [];
     }
     const value = base.getDirectories(path);
-    this.add(path, 'entries');
+    const dependency = this.inputs.structural(path, 'directories', value);
+    this.dependencies.set(dependency.inputId, dependency);
+    this.add(path, 'binding');
     return value;
   }
 
@@ -60,6 +64,7 @@ export class QueryTrace {
   }
 
   #readFile(base: ts.ModuleResolutionHost, path: string): string | undefined {
+    this.add(path, 'binding');
     const before = inputStat(path);
     const checkedAt = Date.now();
     const start = performance.now();

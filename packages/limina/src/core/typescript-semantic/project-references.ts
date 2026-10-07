@@ -1,4 +1,8 @@
-import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
+import {
+  observeAnalysisRead,
+  readAnalysisInput,
+  typeScriptDirectoryDescriptor,
+} from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 
@@ -7,7 +11,12 @@ function createParseConfigHost(
   virtualFiles?: ReadonlyMap<string, string>,
 ): ts.ParseConfigFileHost {
   return {
-    fileExists: tsModule.sys.fileExists,
+    fileExists: (fileName) =>
+      readAnalysisInput(
+        fileName,
+        () => tsModule.sys.fileExists(fileName),
+        'file',
+      ),
     getCurrentDirectory: tsModule.sys.getCurrentDirectory,
     onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
       String(diagnostic.messageText);
@@ -17,6 +26,7 @@ function createParseConfigHost(
       const value = read();
       observeAnalysisRead({
         path: arguments_[0],
+        descriptor: typeScriptDirectoryDescriptor(arguments_),
         key: JSON.stringify(['reference-files', arguments_]),
         value,
         read,
@@ -25,7 +35,11 @@ function createParseConfigHost(
     },
     readFile: (fileName) =>
       virtualFiles?.get(normalizeAbsolutePath(fileName)) ??
-      readAnalysisInput(fileName, () => tsModule.sys.readFile(fileName)),
+      readAnalysisInput(
+        fileName,
+        () => tsModule.sys.readFile(fileName),
+        'typescript-content',
+      ),
     useCaseSensitiveFileNames: tsModule.sys.useCaseSensitiveFileNames,
   };
 }

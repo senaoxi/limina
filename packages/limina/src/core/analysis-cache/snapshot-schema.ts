@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { ANALYSIS_ADAPTER, type AnalysisSnapshot } from './contracts';
+import { discoveryRecordSchema } from './discovery-schema';
+import { nativeContextSchema } from './environment-schema';
+import { validatedSnapshot } from './snapshot-validation';
 
 const text = z.string();
 const texts = z.array(text);
@@ -98,8 +101,12 @@ const inputsRecord = z.object({
     'content',
     'file',
     'directory',
+    'directories',
     'entries',
     'realpath',
+    'binding',
+    'tree',
+    'bytes',
     'imports',
     'exports',
   ]),
@@ -107,9 +114,12 @@ const inputsRecord = z.object({
   observedMtime: optionalNumber,
   verifiedThrough: optionalNumber,
   text: text.optional(),
+  installedTargets: z.array(text).optional(),
 });
 const queriesRecord = z.object({
   contextId: text,
+  file: text,
+  request: z.json(),
   result: rawResult,
   dependencies: z.array(dependency),
   coverage,
@@ -141,53 +151,53 @@ const contributionsRecord = z.object({
   toConfigPath: text,
   kind: text,
 });
+const graphRecord = z.object({
+  workspaceVersion: text,
+  contextIds: texts,
+  dependencies: z.array(dependency),
+  data: z.json(),
+  discovery: z.array(discoveryRecordSchema),
+});
+const header = z.object({
+  schema: z.literal(3),
+  implementation: z.literal(ANALYSIS_ADAPTER),
+  identity: text,
+  configVersion: text,
+  revision: z.uuid(),
+});
 const snapshot = z.object({
-  header: z.object({
-    schema: z.literal(1),
-    implementation: z.literal(ANALYSIS_ADAPTER),
-    identity: text,
-    revision: z.uuid(),
-  }),
+  header,
   inputs: z.record(text, inputsRecord),
   queries: z.record(text, queriesRecord),
   importers: z.record(text, importersRecord),
   projects: z.record(text, projectsRecord),
   contributions: z.record(text, z.array(contributionsRecord)),
+  graphs: z.record(text, graphRecord),
+  contexts: z.record(text, nativeContextSchema),
 });
 
 export function parseAnalysisSnapshot(
   value: unknown,
   identity: string,
+  configVersion?: string,
 ): AnalysisSnapshot | undefined {
+  if (!isMatchingHeader(value, identity, configVersion)) return undefined;
   const parsed = snapshot.safeParse(value);
-  if (!parsed.success) return undefined;
-  if (parsed.data.header.identity !== identity) return undefined;
-  const result = parsed.data as AnalysisSnapshot;
-  const records = [
-    ...Object.values(result.queries),
-    ...Object.values(result.importers),
-  ];
-  return validatedSnapshot(result, records);
+  return parsed.success
+    ? validatedSnapshot(parsed.data as unknown as AnalysisSnapshot)
+    : undefined;
 }
 
-function hasBrokenReferences(
-  result: AnalysisSnapshot,
-  records: { dependencies: { inputId: string }[] }[],
+function isMatchingHeader(
+  value: unknown,
+  identity: string,
+  configVersion: string | undefined,
 ): boolean {
-  const isMissingInput = records.some((record) =>
-    record.dependencies.some(
-      (input) => result.inputs[input.inputId] === undefined,
-    ),
-  );
-  const isMissingQuery = Object.values(result.importers).some((importer) =>
-    importer.queryIds.some((id) => result.queries[id] === undefined),
-  );
-  return isMissingInput || isMissingQuery;
-}
-
-function validatedSnapshot(
-  result: AnalysisSnapshot,
-  records: { dependencies: { inputId: string }[] }[],
-): AnalysisSnapshot | undefined {
-  return hasBrokenReferences(result, records) ? undefined : result;
+  const parsed = z.object({ header }).safeParse(value);
+  if (!parsed.success) return false;
+  return [
+    parsed.data.header.identity === identity,
+    configVersion === undefined ||
+      parsed.data.header.configVersion === configVersion,
+  ].every(Boolean);
 }
