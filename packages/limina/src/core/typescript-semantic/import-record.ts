@@ -23,7 +23,11 @@ export function createImportRecordIdentity(importRecord: ImportRecord): string {
   return JSON.stringify({
     containingFile: importRecord.filePath,
     kind: importRecord.kind,
-    locator: importRecord.locator,
+    locator: [
+      importRecord.locator.occurrence,
+      importRecord.locator.sourceStart,
+      importRecord.locator.sourceEnd,
+    ],
     specifier: importRecord.specifier,
   });
 }

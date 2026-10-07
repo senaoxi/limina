@@ -10,7 +10,7 @@ import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph
 import { configInputIdentity } from '../tsconfig/input-identity';
 import type { TypeEvidenceCore } from '../type-evidence';
 import type {
-  TypeScriptSemanticContext,
+  TypeScriptSemanticDependencyContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
 import {
@@ -45,7 +45,7 @@ interface FactCollectionContext {
   semantic: EvidenceProject;
   state: TypeConfigOwnershipState;
   workspaceSourceBoundary: WorkspaceSourceBoundary;
-  typeScriptSemanticContext: TypeScriptSemanticContext;
+  typeScriptSemanticContext: TypeScriptSemanticDependencyContext;
 }
 
 interface CollectPendingOptions {
@@ -196,12 +196,11 @@ function collectImportFact(options: {
 }
 
 function getProgramSourceFile(
-  context: TypeScriptSemanticContext,
+  context: TypeScriptSemanticDependencyContext,
   fileName: string,
   configPath: string,
 ) {
-  const sourceFile = context.getSourceFile(normalizeAbsolutePath(fileName));
-  if (sourceFile !== undefined) return sourceFile;
+  if (context.hasSourceFile(normalizeAbsolutePath(fileName))) return;
   throw new TypeScriptConfigInputError(
     `Pending TypeScript Program did not contain an effective source file: ${fileName}\n  config: ${configPath}\n  stage: pending-ownership-evidence`,
   );
@@ -246,10 +245,11 @@ function collectProjectFacts(
     state: options.state,
     workspaceSourceBoundary: options.workspaceSourceBoundary,
   });
-  const typeScriptSemanticContext = options.core.getTypeScriptSemanticContext({
-    checkerName: semantic.checkerName,
-    project: semantic.project,
-  });
+  const typeScriptSemanticContext =
+    options.core.getTypeScriptSemanticDependencyContext({
+      checkerName: semantic.checkerName,
+      project: semantic.project,
+    });
   const context: FactCollectionContext = {
     ...options,
     semantic,

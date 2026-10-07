@@ -7,7 +7,7 @@ import type {
   ProjectRecord,
   ResolutionRecord,
 } from './contracts';
-import { analysisHash } from './identity';
+import { analysisHash, nativeContextId } from './identity';
 import type { AnalysisInputs } from './inputs';
 import { projectReferenceInputs } from './reference-inputs';
 
@@ -41,20 +41,24 @@ interface SemanticStateOptions {
   inputs: AnalysisInputs;
   queries: Record<string, ResolutionRecord>;
   queriesByFile: Map<string, Set<string>>;
+  environmentDependencies: InputDependency[];
 }
 
 export class SemanticState {
   readonly #referenceInputs: Map<string, string[]>;
+  readonly contextId: string;
   readonly environmentDependencies: InputDependency[];
   readonly projectRecord: ProjectRecord;
   readonly environmentVersion: string;
   readonly edges: Map<string, Set<string>> = new Map<string, Set<string>>();
   readonly queriesByFile: Map<string, Set<string>>;
   readonly implicitQueryIds: string[];
+  readonly environmentQueryIds: string[];
 
   readonly options: SemanticStateOptions;
   constructor(options: SemanticStateOptions) {
     this.options = options;
+    this.contextId = nativeContextId(options.project);
     this.#referenceInputs = projectReferenceInputs(
       options.program,
       options.tsModule,
@@ -69,15 +73,33 @@ export class SemanticState {
         .map((file) => file.fileName),
       references: options.project.projectReferences ?? [],
     };
-    this.environmentDependencies = [
-      ...new Set(
-        this.projectRecord.environment.flatMap((file) => this.#closure(file)),
-      ),
-    ].map((file) => options.inputs.observe(file, 'content'));
-    this.environmentVersion = analysisHash(this.environmentDependencies);
     this.implicitQueryIds = [...this.queriesByFile]
       .filter(([file]) => !this.projectRecord.members.includes(file))
       .flatMap(([, ids]) => [...ids]);
+    const environmentPaths = new Set(
+      this.projectRecord.environment.flatMap((file) => this.#closure(file)),
+    );
+    this.environmentQueryIds = [
+      ...new Set([
+        ...this.implicitQueryIds,
+        ...[...environmentPaths].flatMap((file) => this.#queries(file)),
+      ]),
+    ];
+    const dependencies = [
+      ...options.environmentDependencies,
+      ...[...environmentPaths].map((file) =>
+        options.inputs.observe(file, 'content'),
+      ),
+      ...this.environmentQueryIds.flatMap(
+        (id) => options.queries[id].dependencies,
+      ),
+    ];
+    this.environmentDependencies = new Map(
+      dependencies.map((dependency) => [dependency.inputId, dependency]),
+    )
+      .values()
+      .toArray();
+    this.environmentVersion = analysisHash(this.environmentDependencies);
     for (const [file, ids] of this.queriesByFile) this.#addEdges(file, ids);
   }
 
@@ -148,23 +170,12 @@ export class SemanticState {
     complete: boolean;
   } {
     const paths = this.#closure(filePath);
-    const queryIds = [
-      ...new Set([
-        ...this.implicitQueryIds,
-        ...this.projectRecord.environment
-          .flatMap((file) => this.#closure(file))
-          .flatMap((file) => this.#queries(file)),
-        ...paths.flatMap((file) => this.#queries(file)),
-      ]),
-    ];
+    const queryIds = [...new Set(paths.flatMap((file) => this.#queries(file)))];
     const queries = queryIds.map((id) => this.options.queries[id]);
     const dependencies = paths.map((file) =>
       this.options.inputs.observe(file, 'content'),
     );
-    dependencies.push(
-      ...this.environmentDependencies,
-      ...queries.flatMap((query) => query.dependencies),
-    );
+    dependencies.push(...queries.flatMap((query) => query.dependencies));
     return {
       dependencies: new Map(
         dependencies.map((dependency) => [dependency.inputId, dependency]),
@@ -175,7 +186,10 @@ export class SemanticState {
       membershipVersion: analysisHash(
         paths.map((file) => this.#membership(file)),
       ),
-      complete: queries.every((query) => query.coverage === 'complete'),
+      complete: [
+        ...queries,
+        ...this.environmentQueryIds.map((id) => this.options.queries[id]),
+      ].every((query) => query.coverage === 'complete'),
     };
   }
 }
@@ -185,8 +199,18 @@ export function occurrenceKey(record: ImportRecord): string {
     record.domain,
     record.kind,
     record.specifier,
-    record.locator,
-    record.configurationSource,
+    [
+      record.locator.occurrence,
+      record.locator.sourceStart,
+      record.locator.sourceEnd,
+    ],
+    record.configurationSource === undefined
+      ? null
+      : [
+          record.configurationSource.configPath,
+          record.configurationSource.option,
+          record.configurationSource.resolutionMode,
+        ],
   ]);
 }
 

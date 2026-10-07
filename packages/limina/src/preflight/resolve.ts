@@ -10,6 +10,7 @@ export function resolvePreflight(
     options.preflight ??
     new LiminaPreflightManager({
       config,
+      analysisCache: 'read-only',
       generatedGraphProvider: options.generatedGraphProvider,
       providers: options.providers,
     })

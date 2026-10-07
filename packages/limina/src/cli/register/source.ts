@@ -34,7 +34,10 @@ async function isExecuteSourceCheck(options: {
     options.flags,
     'source',
   );
-  const preflight = new LiminaPreflightManager({ config });
+  const preflight = new LiminaPreflightManager({
+    config,
+    analysisCache: 'read-only',
+  });
   const issues: LiminaCheckIssue[] = [];
   let completedSourceIssues: readonly SourceCheckIssue[] | undefined;
   options.registerSession({

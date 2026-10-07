@@ -7,6 +7,12 @@ import type { ImportRecord } from '../import-analysis/records';
 import type { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
 import { TypeScriptInclusionLedger } from './admission';
 import {
+  beginNativeAnalysis,
+  collectContextFact,
+  prepareNativeAnalysis,
+  recordNativeProgram,
+} from './cache-lifecycle';
+import {
   activeSyntaxScope,
   type ContextServices,
   resolveAnalysisCache,
@@ -17,10 +23,7 @@ import type {
   TypeScriptSemanticProject,
   TypeScriptSemanticResolution,
 } from './contracts';
-import {
-  collectNativeDependencyFact,
-  type NativeDependencyFact,
-} from './dependency-fact';
+import type { NativeDependencyFact } from './dependency-fact';
 import { getEffectiveImporterRoots } from './effective-roots';
 import { createTypeScriptSemanticHost } from './host';
 import { createTypeScriptSemanticContextIdentity } from './identity';
@@ -67,6 +70,7 @@ export class BoundedTypeScriptSemanticContext
   readonly #analysisCache: NativeAnalysisCache | undefined;
 
   #disposed = false;
+  readonly #releaseAnalysisState: (() => void) | undefined;
 
   readonly identity: string;
 
@@ -93,6 +97,7 @@ export class BoundedTypeScriptSemanticContext
       cache: options.analysisCache,
     });
     this.tsModule = tsModule;
+    beginNativeAnalysis(this.#analysisCache, this.project, options);
     this.identity = createTypeScriptSemanticContextIdentity(this.project);
     this.#admission = new TypeScriptInclusionLedger(this.project, tsModule);
     this.#resolver = new TypeScriptImportResolver({
@@ -109,6 +114,7 @@ export class BoundedTypeScriptSemanticContext
       analysisContextId: nativeContextId(this.project),
     });
     this.#host = createTypeScriptSemanticHost({
+      project: this.project,
       callbacks: {
         allowSourceFile: (fileName) => this.#allowSourceFile(fileName),
         onDefaultLib: (fileName) => this.#admission.addDefaultLib(fileName),
@@ -126,6 +132,7 @@ export class BoundedTypeScriptSemanticContext
       tsModule,
       analysisCache: this.#analysisCache,
     });
+    recordNativeProgram(options.analysisCache);
     this.program = measureBoundedProgram(
       () =>
         syntaxScope.createProgram({
@@ -136,11 +143,13 @@ export class BoundedTypeScriptSemanticContext
         }),
       services.metrics,
     );
-    this.#prepareAnalysis();
-  }
-
-  #prepareAnalysis(): void {
-    this.#analysisCache?.prepare(this.project, this.program, this.tsModule);
+    this.#releaseAnalysisState = prepareNativeAnalysis({
+      cache: this.#analysisCache,
+      project: this.project,
+      program: this.program,
+      tsModule: this.tsModule,
+      capture: () => this.#captureAnalysis(),
+    });
   }
 
   #allowSourceFile(fileName: string): boolean {
@@ -192,30 +201,25 @@ export class BoundedTypeScriptSemanticContext
     }
   }
 
-  #collectFact(record: ImportRecord): NativeDependencyFact {
-    const collect = () =>
-      collectNativeDependencyFact({
-        getAmbientEvidence: this.#getAmbientEvidence,
-        context: this,
-        record,
-        tsModule: this.tsModule,
-      });
-    if (this.#analysisCache === undefined) return collect();
-    return this.#analysisCache.fact({
-      project: this.project,
-      record,
-      occurrences: this.#getRecords(record.filePath),
-      resolution: this.resolveImportRecord(record),
-      collect,
+  #captureAnalysis(): void {
+    this.#analysisCache?.captureContext(this.project, this.program, () => {
+      for (const file of this.project.fileNames)
+        for (const record of this.#getRecords(file))
+          this.getDependencyFact(record);
     });
   }
-
   dispose(): void {
-    this.#disposed = true;
-    this.#recordsByFile.clear();
-    this.#facts.clear();
-    this.#resolver.dispose();
-    this.#sourceFiles.clear();
+    if (this.#disposed) return;
+    try {
+      this.#captureAnalysis();
+    } finally {
+      this.#disposed = true;
+      this.#releaseAnalysisState?.();
+      this.#recordsByFile.clear();
+      this.#facts.clear();
+      this.#resolver.dispose();
+      this.#sourceFiles.clear();
+    }
   }
 
   getDependencyFact(record: ImportRecord): NativeDependencyFact {
@@ -223,7 +227,14 @@ export class BoundedTypeScriptSemanticContext
     const key = createImportRecordIdentity(record);
     let fact = this.#facts.get(key);
     if (fact === undefined) {
-      fact = this.#collectFact(record);
+      fact = collectContextFact({
+        cache: this.#analysisCache,
+        project: this.project,
+        context: this,
+        record,
+        getAmbientEvidence: this.#getAmbientEvidence,
+        tsModule: this.tsModule,
+      });
       this.#facts.set(key, fact);
     }
     return structuredClone(fact);

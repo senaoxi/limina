@@ -19,6 +19,7 @@ import {
 import type { PackageEntrySelectionPlan } from '../package-check/entry/selection';
 import type { AnalysisCacheController } from './analysis-cache';
 import { PreflightGenerationCache } from './cache';
+import type { ConfigObservation } from './config-observation';
 import { registerPreflightGenerationAdvancer } from './generation';
 import { ensurePreflightGraphMaterialized } from './materialization';
 import * as queries from './queries';
@@ -34,30 +35,19 @@ export class LiminaPreflightManager {
     | undefined;
 
   readonly #metrics: AnalysisMetricsRecorder;
-
   readonly #profilingMetrics: AnalysisMetricsRecorder | undefined;
-
   readonly #signal: AbortSignal;
-
   #cache = new PreflightGenerationCache(0);
-
   #generation = 0;
-
   #providerGeneration = 0;
-
   readonly #usesCustomProviders: boolean;
   readonly #analysisCache: AnalysisCacheController | undefined;
-
+  readonly #configuration: ConfigObservation | undefined;
   #disposed = false;
-
   artifactNamespace: LiminaArtifactNamespace;
-
   readonly config: ResolvedLiminaConfig;
-
   providers: AnalysisProviderSet;
-
   run: AnalysisRun;
-
   constructor(options: LiminaPreflightManagerOptions) {
     this.config = options.config;
     this.#generatedGraphProvider = options.generatedGraphProvider;
@@ -69,6 +59,10 @@ export class LiminaPreflightManager {
     this.#analysisCache = setup.createAnalysisCache(
       options,
       this.artifactNamespace,
+    );
+    this.#configuration = setup.observeUncachedConfig(
+      options,
+      this.#analysisCache,
     );
     this.providers = setup.resolveProviders({
       analysisCache: this.#analysisCache?.cache,
@@ -106,6 +100,7 @@ export class LiminaPreflightManager {
     slot?: PreflightGenerationCache['materializationSlot'],
   ): void {
     this.#assertActive();
+    this.#configuration?.assertStable();
     this.#assertDefaultProvidersCanAdvance();
     this.#disposeProviders();
     const analysisCache = this.#refreshAnalysis();
@@ -148,15 +143,6 @@ export class LiminaPreflightManager {
     });
   }
 
-  #loadAnalyzedGraph(): Promise<GeneratedTsconfigGraphResult> {
-    return queries.loadAnalyzedGraph({
-      cache: this.#analysisCache,
-      source: this,
-      getGraph: this.#generatedGraphProvider,
-      refresh: () => this.#retryAnalysis(),
-    });
-  }
-
   #retryAnalysis(): void {
     const pending = this.#cache.generatedGraph;
     this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
@@ -169,6 +155,7 @@ export class LiminaPreflightManager {
 
   async publishAnalysisCache(): Promise<void> {
     this.#signal.throwIfAborted();
+    this.#configuration?.assertStable();
     await this.#analysisCache?.publish();
   }
 
@@ -182,7 +169,13 @@ export class LiminaPreflightManager {
   }
 
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
-    this.#cache.generatedGraph ??= this.#loadAnalyzedGraph();
+    this.#cache.generatedGraph ??= queries.loadAnalyzedGraph({
+      cache: this.#analysisCache,
+      configObservation: this.#configuration,
+      source: this,
+      getGraph: this.#generatedGraphProvider,
+      refresh: () => this.#retryAnalysis(),
+    });
     return this.#cache.generatedGraph;
   }
 

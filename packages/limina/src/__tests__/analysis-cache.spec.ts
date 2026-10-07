@@ -54,7 +54,7 @@ function analyze(
       ? undefined
       : parseAnalysisSnapshot(diskSnapshot(previous), 'fixture');
   if (previous !== undefined) expect(snapshot).toBeDefined();
-  const cache = new NativeAnalysisCache('fixture', snapshot);
+  const cache = new NativeAnalysisCache('fixture', snapshot, 'fixture-config');
   const context = createBoundedTypeScriptSemanticContext(project, {
     analysisCache: cache,
   });
@@ -135,7 +135,7 @@ describe('persistent native analysis facts', () => {
         caches: createProjectDependencyCaches(undefined, cache),
         importAnalysis: createImportAnalysisContext(),
       });
-    let cache = new NativeAnalysisCache('fixture');
+    let cache = new NativeAnalysisCache('fixture', undefined, 'fixture-config');
     let result = collect(cache);
     expect(result.observations[0]?.evidence.runtime?.runtime.kind).toBe(
       'missing',
@@ -146,9 +146,14 @@ describe('persistent native analysis facts', () => {
       cache = new NativeAnalysisCache(
         'fixture',
         parseAnalysisSnapshot(diskSnapshot(cache), 'fixture'),
+        'fixture-config',
       );
       result = collect(cache);
-      expect(result).toEqual(collect(new NativeAnalysisCache('fixture')));
+      expect(result).toEqual(
+        collect(
+          new NativeAnalysisCache('fixture', undefined, 'fixture-config'),
+        ),
+      );
       expect(result.observations[0]?.evidence.runtime?.runtime.kind).toBe(
         isPresent ? 'file' : 'missing',
       );
@@ -211,7 +216,11 @@ describe('persistent native analysis facts', () => {
   it('rejects a late observed version after a consumer used the old input', () => {
     const { file, write } = fixture();
     write('a.ts', 'export {};');
-    const cache = new NativeAnalysisCache('fixture');
+    const cache = new NativeAnalysisCache(
+      'fixture',
+      undefined,
+      'fixture-config',
+    );
     const dependency = cache.inputs.observe(file('a.ts'), 'content');
     cache.inputs.consume([dependency]);
     write('a.ts', 'export const next = 1;');
@@ -650,6 +659,7 @@ it('keeps per-input timestamp checkpoints and reconciles text actually read by t
   const trusted = new NativeAnalysisCache(
     'fixture',
     parseAnalysisSnapshot(diskSnapshot(first.cache), 'fixture'),
+    'fixture-config',
   );
   expect(trusted.inputs.observe(file('a.ts'), 'content').expectedVersion).toBe(
     checkpoint.version,
@@ -743,7 +753,7 @@ it('uses domain invalidation when a previously missing package manifest appears 
 
 it('validates structural transitions even at a zero content timestamp', () => {
   const { file, write } = fixture();
-  const cache = new NativeAnalysisCache('fixture');
+  const cache = new NativeAnalysisCache('fixture', undefined, 'fixture-config');
   const missing = cache.inputs.observe(file('candidate'), 'content');
   mkdirSync(file('directory'));
   const directory = cache.inputs.observe(file('directory'), 'entries');
@@ -753,7 +763,7 @@ it('validates structural transitions even at a zero content timestamp', () => {
   write('directory', 'replacement file');
   const next = new AnalysisInputs(
     cache.inputs.records,
-    new NativeAnalysisCache('fixture').metrics,
+    new NativeAnalysisCache('fixture', undefined, 'fixture-config').metrics,
   );
   expect(next.observe(file('candidate'), 'content').expectedVersion).not.toBe(
     missing.expectedVersion,
