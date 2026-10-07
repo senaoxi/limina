@@ -6,6 +6,8 @@ const config: ViteUserConfig = defineConfig({
     globals: true,
     include: ['src/**/__tests__/**/*.spec.ts'],
     setupFiles: ['src/__tests__/helpers/checker-host-cleanup.ts'],
+    // Suites also launch CLI/compiler processes; bound their combined fan-out.
+    maxWorkers: 2,
     testTimeout: 30_000,
     clearMocks: true,
     restoreMocks: true,
