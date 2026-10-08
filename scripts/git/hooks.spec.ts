@@ -151,8 +151,6 @@ it('accepts convention examples, boundary lengths and generated release pairs th
       `fix: a${'x'.repeat(48)}😀`,
       'fix: a',
       'fix: preserve TypeScript behavior\r\n\r\n- retain @astrojs/check support\r\n',
-      `fix: preserve unbounded body lines\n\n- retain ${'identifiers'.repeat(20)}`,
-      `feat!: preserve unbounded footer lines\n\nBREAKING CHANGE: replace ${'identifiers'.repeat(20)}.`,
       'fix: preserve issue references\n\n- retain behavior\n- close #123 when the guard succeeds',
       'release: limina@1.2.3, migrate@1.2.3\n',
       'release: limina@1.2.3-alpha.0, migrate@1.2.3-alpha.0\n',
@@ -161,6 +159,53 @@ it('accepts convention examples, boundary lengths and generated release pairs th
     ]) {
       const result = fixture.check(message);
       assert.equal(result.status, 0, `${message}\n${result.stderr}`);
+    }
+  } finally {
+    rmSync(fixture.directory, { recursive: true, force: true });
+  }
+});
+
+it('limits every body and breaking footer line to 100 characters', () => {
+  const fixture = createFixture();
+  try {
+    for (const [message, status] of [
+      [`fix: keep body lines readable\n\n- ${'a'.repeat(98)}`, 0],
+      [`fix: keep body lines readable\n\n- ${'a'.repeat(99)}`, 1],
+      [
+        `feat!: keep footer lines readable\n\nBREAKING CHANGE: ${'a'.repeat(83)}`,
+        0,
+      ],
+      [
+        `feat!: keep footer lines readable\n\nBREAKING CHANGE: ${'a'.repeat(84)}`,
+        1,
+      ],
+      [
+        `feat!: keep footer lines readable\n\nBREAKING CHANGE: aliases are removed.\n${'M'.repeat(100)}`,
+        0,
+      ],
+      [
+        `feat!: keep footer lines readable\n\nBREAKING CHANGE: aliases are removed.\n${'M'.repeat(101)}`,
+        1,
+      ],
+      [`fix: count Unicode characters\r\n\r\n- a${'😀'.repeat(97)}\r\n`, 0],
+      [`fix: count Unicode characters\r\n\r\n- a${'😀'.repeat(98)}\r\n`, 1],
+      [
+        `fix: keep reference lines readable\n\n- close #123 ${'a'.repeat(88)}`,
+        1,
+      ],
+      [
+        `fix: keep URL lines readable\n\n- document https://example.invalid/${'a'.repeat(100)}`,
+        1,
+      ],
+      [
+        `feat!: keep URL lines readable\n\nBREAKING CHANGE: replace aliases at https://example.invalid/${'a'.repeat(100)}`,
+        1,
+      ],
+    ] as const) {
+      const result = fixture.check(message);
+      assert.equal(result.status, status, `${message}\n${result.stderr}`);
+      if (status === 1)
+        assert.match(result.stderr, /\[body-footer-character-limit\]/u);
     }
   } finally {
     rmSync(fixture.directory, { recursive: true, force: true });
@@ -416,16 +461,19 @@ it('installs idempotently and blocks an invalid real Git commit while retaining 
     );
     fixture.git('add', 'change.txt');
     const index = fixture.git('write-tree');
-    const rejected = fixture.runGit(
-      'commit',
-      '--quiet',
-      '-m',
-      'fix: Add a guard',
-    );
-    assert.equal(rejected.status, 1, rejected.stderr);
-    assert.match(rejected.stderr, /subjects must start/u);
-    assert.equal(fixture.git('rev-parse', 'HEAD'), head);
-    assert.equal(fixture.git('write-tree'), index);
+    for (const [message, diagnostic] of [
+      ['fix: Add a guard', /subjects must start/u],
+      [
+        `feat!: keep footer lines readable\n\nBREAKING CHANGE: ${'a'.repeat(84)}`,
+        /\[body-footer-character-limit\]/u,
+      ],
+    ] as const) {
+      const rejected = fixture.runGit('commit', '--quiet', '-m', message);
+      assert.equal(rejected.status, 1, rejected.stderr);
+      assert.match(rejected.stderr, diagnostic);
+      assert.equal(fixture.git('rev-parse', 'HEAD'), head);
+      assert.equal(fixture.git('write-tree'), index);
+    }
     fixture.git(
       'commit',
       '--quiet',
