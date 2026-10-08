@@ -24,7 +24,7 @@ export interface SourceIssueSelectionFlags extends PackageSelectionFlags {
 }
 
 export interface CheckFlags extends GlobalFlags, SourceIssueSelectionFlags {
-  analysisCache?: boolean;
+  force?: boolean;
   checker?: string | string[];
   format?: string;
   invocation?: string;

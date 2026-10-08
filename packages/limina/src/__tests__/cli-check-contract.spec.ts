@@ -137,6 +137,24 @@ describe('check CLI workflow contract', () => {
     }
   });
 
+  it('rejects --issues with --force before configuration evaluation', async () => {
+    const fixture = await createFixture();
+    try {
+      await expect(
+        fixture.run(['check', '--issues', '--force']),
+      ).rejects.toMatchObject({
+        code: 1,
+        stderr: expect.stringContaining(
+          '--force cannot be combined with --issues.',
+        ),
+      });
+      expect(existsSync(fixture.path('evaluated.txt'))).toBe(false);
+      expect(existsSync(fixture.path('command.jsonl'))).toBe(false);
+    } finally {
+      await rm(fixture.rootDir, { recursive: true, force: true });
+    }
+  });
+
   it('keeps CLI options out of every external command in an ordered workflow', async () => {
     const fixture = await createFixture();
     try {
@@ -146,6 +164,7 @@ describe('check CLI workflow contract', () => {
         '--package',
         'cli-only',
         '--verbose',
+        '--force',
       ]);
       const records = (await readFile(fixture.path('command.jsonl'), 'utf8'))
         .trim()

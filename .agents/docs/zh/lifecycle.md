@@ -51,7 +51,7 @@ Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以�
 
 ## 原生持久化分析缓存
 
-`check` 通过 [AnalysisCacheController](../../../packages/limina/src/preflight/analysis-cache.ts)启用本地分析快照。`check [pipeline] --no-analysis-cache` 仅禁用本次快照读写，不会重置、替换或更新磁盘旧快照。checker build cache 和 check-result query 保留各自合同。独立 graph/source 入口可读取有效分析数据，但不获得发布权限。
+`check` 通过 [AnalysisCacheController](../../../packages/limina/src/preflight/analysis-cache.ts)启用本地分析快照。`check [pipeline] --force` 跳过既有持久化模型，执行冷分析，并通过正常发布路径发布本次具备资格的结果。它只阻止跨调用语义恢复；provider 刷新仍可复用本次调用内已验证的内存数据。由于 issue query 不执行分析，[CLI 入口](../../../packages/limina/src/cli/register/check.ts)在配置求值或创建 preflight 前拒绝 `--issues --force`。内部 `analysisCache: false` 与 `read-only` 控制仍保留。checker 的 `.tsbuildinfo` 等构建缓存和 check-result query 保留各自合同。独立 graph/source 入口可读取有效分析数据，但不获得发布权限，其 CLI 参数保持不变。
 
 [Cache identity](../../../packages/limina/src/preflight/analysis-cache-identity.ts)绑定 adapter、实际 compiler/checker/resolver 文件、host 语义、配置入口和治理根。实际模块所属包的 manifest 是工具观测输入，包括字节与绑定；内嵌 migration 不会仅为缓存身份要求安装 Limina 包。[工具观测](../../../packages/limina/src/preflight/analysis-cache-tools.ts)每次调用捕获一次文件字节及绑定，再在消费和发布边界复查绑定、package-scope 选择与元信息。[Context identity](../../../packages/limina/src/core/analysis-cache/identity.ts)绑定 effective compiler options、原始 references、admission 及 pending/locked checker identity。运行时 generation 和完整 workspace 清单不充当 importer version。
 
@@ -67,9 +67,11 @@ Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以�
 
 [Context records](../../../packages/limina/src/core/analysis-cache/context-records.ts) 与 [graph records](../../../packages/limina/src/core/analysis-cache/graph-records.ts) 在创建 Program 前校验普通 DTO。完整 clean 原生路径恢复 facts、成员、共享环境、ownership、occurrence 贡献及图投影，不创建分析 Program，不重复关系推导，也不额外完整枚举受信安装类型环境。runtime/resource evidence 和当前判定保留自己的有效性与刷新路径。恢复的生成内容取得新的认证 [artifact plan](../../../packages/limina/src/core/build-graph/analysis-cache.ts)，缺失／变化产物走正常物化。Program、AST、Symbol、host 及写权限不持久化。
 
-[Store](../../../packages/limina/src/preflight/analysis-cache-store.ts)使用授权的 `cache/analysis-v1` namespace、跨进程 lease、精确物理字节基线和原子替换。即使旧数据损坏或不兼容，也保留基线；旧 writer 不能覆盖较新物理快照。provider 刷新可复用内存数据，但不更新发布基线。严格 clean 发布执行输入检查，快照字节、revision、mtime 不变，不 clone／序列化完整模型。即使冷回退 Program 复用了 native facts，相同的逐条 DTO 也保留旧身份；缺省可选字段在落盘前后采用一致表示。恢复 query 观测不复制无人使用的结果，实际 query 返回仍保留隔离。只保留当前记录及依赖。schema 3 的 root header 必须包含 `configVersion`，版本门先于旧记录校验或输入恢复。缺失、不兼容或变化的 metadata 均冷重建。V1 使用单个 JSON 快照，需要读取／解码该文件，但 root 不匹配后跳过旧模型校验和恢复。未来分片 store 必须先检查小型 root，不匹配时跳过全部旧 scope 块，仅由独立 GC 回收不可达块。存储 I/O 失败可省略更新；观测、漂移和权限失败继续传播，包括携带 filesystem code 的错误。
+[Store](../../../packages/limina/src/preflight/analysis-cache-store.ts)使用授权的 `cache/analysis-v1` namespace、跨进程 lease、精确物理字节基线和原子替换。即使旧数据损坏或不兼容，也保留基线；旧 writer 不能覆盖较新物理快照。provider 刷新可复用内存数据，但不更新发布基线。严格 clean 发布执行输入检查，快照字节、revision、mtime 不变，不 clone／序列化完整模型。即使冷回退 Program 复用了 native facts，相同的逐条 DTO 也保留旧身份；缺省可选字段在落盘前后采用一致表示。恢复 query 观测不复制无人使用的结果，实际 query 返回仍保留隔离。只保留当前记录及依赖。schema 3 的 root header 必须包含 `configVersion`，版本门先于旧记录校验或输入恢复。缺失、不兼容或变化的 metadata 均冷重建。V1 的普通恢复路径使用单个 JSON 快照，需要读取／解码该文件，但 root 不匹配后跳过旧模型校验和恢复。未来分片 store 必须先检查小型 root，不匹配时跳过全部旧 scope 块，仅由独立 GC 回收不可达块。存储 I/O 失败可省略更新；观测、漂移和权限失败继续传播，包括携带 filesystem code 的错误。
 
-修复信任边界之外的安装变化时，停止受影响治理域的 writer，仅删除其既有 `cache/analysis-v1/<config-key>/snapshot.json`，再正常启用缓存运行 check 建立新快照。store 根据解析后的绝对配置路径计算 key。这与单次 `--no-analysis-cache` 分开；不新增公共 reset 接口。
+Force 读取保留精确物理基线，不解码、校验或恢复旧模型。旧模型 revision 不可用于 unchanged 发布快捷路径，因此具备资格的冷分析结果继续经过与普通发布相同的 lease、输入／配置稳定性检查、基线比较及原子替换。Force 不绕过 `configuration-version-unknown`，也不为可执行配置授予持久化资格。
+
+修复信任边界之外的安装变化时，运行 `limina check --force`；指定配置时加上 `--config <path>`。它按当前项目状态刷新分析快照，后续普通 check 可恢复新模型。不删除快照、缓存目录、issue 结果或 checker `.tsbuildinfo`，也不要求强制 TypeScript checker 构建。store 仍根据解析后的绝对配置路径计算 key。
 
 分析漂移最多以新 provider、TypeScript 项目配置解析和成员发现重试一次，继续使用本次冻结的 Limina 配置；事务仅包含分析／候选规划，不重放 checker、命令或产物写入。输出变化保留物化／replan receipt 协议。迟到 epoch 结果不能提交，旧的同 context 实例 dispose 不能释放替代实例。
 
