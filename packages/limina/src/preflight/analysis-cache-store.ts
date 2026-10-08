@@ -149,7 +149,11 @@ export class AnalysisCacheStore {
       cache.isUnchanged(),
     ].every(Boolean);
   }
-  #decodeSnapshot(bytes: Buffer | undefined): AnalysisSnapshot | undefined {
+  #decodeSnapshot(
+    bytes: Buffer | undefined,
+    shouldRestore: boolean,
+  ): AnalysisSnapshot | undefined {
+    if (!shouldRestore) return undefined;
     const version = this.#options.configVersion;
     return version === undefined
       ? undefined
@@ -173,12 +177,13 @@ export class AnalysisCacheStore {
     }
     await this.#publishChanged(cache, assertCurrent);
   }
-  read(): AnalysisSnapshot | undefined {
+  read(options: { restore?: boolean } = {}): AnalysisSnapshot | undefined {
     const start = performance.now();
     this.#hasBaseline = true;
     const bytes = this.#readBytes();
     this.#baseline = physicalRevision(bytes);
-    const snapshot = this.#decodeSnapshot(bytes);
+    // A forced cold start still needs the physical publication baseline.
+    const snapshot = this.#decodeSnapshot(bytes, options.restore !== false);
     this.#storedRevision = snapshot?.header.revision;
     this.#record({
       name: 'analysis-cache',

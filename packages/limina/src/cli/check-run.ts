@@ -240,7 +240,8 @@ async function createExecutionContext(options: {
   const preflight = new LiminaPreflightManager({
     config,
     metrics,
-    analysisCache: options.flags.analysisCache !== false,
+    analysisCache: true,
+    forceAnalysisCache: options.flags.force === true,
   });
   const profileSession = await createProfileSessionIfEnabled({
     command,

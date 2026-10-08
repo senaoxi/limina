@@ -16,6 +16,7 @@ export class AnalysisCacheController {
   readonly #metrics: AnalysisMetricsRecorder | undefined;
   #analyzed = false;
   readonly #canPublish: boolean;
+  readonly #force: boolean;
   readonly #configVersion: string | undefined;
   readonly #completedMetrics: Record<string, number> = {};
   cache: NativeAnalysisCache;
@@ -23,10 +24,15 @@ export class AnalysisCacheController {
   constructor(
     config: ResolvedLiminaConfig,
     namespace: LiminaArtifactNamespace,
-    options: { metrics?: AnalysisMetricsRecorder; canPublish?: boolean } = {},
+    options: {
+      metrics?: AnalysisMetricsRecorder;
+      canPublish?: boolean;
+      force?: boolean;
+    } = {},
   ) {
     this.#tools = new AnalysisToolObservation(config.configPath);
     this.#canPublish = options.canPublish !== false;
+    this.#force = options.force === true;
     const metrics = options.metrics;
     this.#configuration = new ConfigObservation(config);
     this.#metrics = metrics;
@@ -44,7 +50,7 @@ export class AnalysisCacheController {
   #createCache(): NativeAnalysisCache {
     const cache = new NativeAnalysisCache(
       this.#store.identity,
-      this.#store.read(),
+      this.#store.read({ restore: !this.#force }),
       this.#configVersion,
     );
     if (this.#configVersion === undefined)
@@ -101,7 +107,7 @@ export class AnalysisCacheController {
     // the physical publication baseline of a writer that already analyzed.
     const candidate = this.#analyzed
       ? this.cache.snapshot()
-      : this.#store.read();
+      : this.#store.read({ restore: !this.#force });
     return new NativeAnalysisCache(
       this.#store.identity,
       candidate,

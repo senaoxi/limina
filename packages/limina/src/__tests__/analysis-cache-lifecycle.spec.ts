@@ -12,7 +12,7 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseProjectConfigWithExtensions } from '../checker/project-base';
 import { loadConfig } from '../config/loader';
@@ -66,12 +66,9 @@ describe('analysis transaction and publication', () => {
         f.path('limina.config.mjs'),
         'export { default } from "./policy.mjs";',
       );
-      const loader = fileURLToPath(
-        new URL('../config/loader.ts', import.meta.url),
-      );
-      const preflight = fileURLToPath(
-        new URL('../preflight/manager.ts', import.meta.url),
-      );
+      const loader = new URL('../config/loader.ts', import.meta.url).href;
+      const preflight = new URL('../preflight/manager.ts', import.meta.url)
+        .href;
       writeFileSync(
         f.path('runner.mjs'),
         `
@@ -93,7 +90,7 @@ try {
         process.execPath,
         [
           '--import',
-          createRequire(import.meta.url).resolve('tsx'),
+          pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href,
           f.path('runner.mjs'),
         ],
         { encoding: 'utf8' },
@@ -222,6 +219,30 @@ try {
       new NativeAnalysisCache('fixture', undefined, 'fixture-config'),
     );
     expect(first.read()).toBeDefined();
+  });
+
+  it('refreshes a snapshot after reading its physical baseline without restoring the model', async () => {
+    const f = fixture();
+    const options = {
+      namespace: f.namespace,
+      identity: 'fixture',
+      configPath: f.config.configPath,
+      configVersion: 'fixture-config',
+    };
+    const store = new AnalysisCacheStore(options);
+    store.read();
+    await store.publish(
+      new NativeAnalysisCache('fixture', undefined, 'fixture-config'),
+    );
+    const previous = readFileSync(store.path);
+    const refreshing = new AnalysisCacheStore(options);
+    expect(refreshing.read({ restore: false })).toBeUndefined();
+    expect(readFileSync(store.path)).toEqual(previous);
+    await refreshing.publish(
+      new NativeAnalysisCache('fixture', undefined, 'fixture-config'),
+    );
+    expect(readFileSync(store.path)).not.toEqual(previous);
+    expect(refreshing.read()).toBeDefined();
   });
 
   it('does not publish after an observed runtime or discovery input changes', async () => {
@@ -393,7 +414,7 @@ export default {};`,
   ).rejects.toThrow('Run the command again');
 });
 
-it.each(['incompatible', 'corrupt'] as const)(
+it.each(['incompatible', 'corrupt', 'forced'] as const)(
   'keeps a physical CAS baseline for %s snapshots',
   async (baseline) => {
     const f = fixture();
@@ -409,8 +430,12 @@ it.each(['incompatible', 'corrupt'] as const)(
       new NativeAnalysisCache('old-tools', undefined, 'fixture-config'),
     );
     if (baseline === 'corrupt') writeFileSync(seed.path, '{broken');
-    const stale = new AnalysisCacheStore({ ...options, identity: 'new-tools' });
-    expect(stale.read()).toBeUndefined();
+    const staleIdentity = baseline === 'forced' ? 'old-tools' : 'new-tools';
+    const stale = new AnalysisCacheStore({
+      ...options,
+      identity: staleIdentity,
+    });
+    expect(stale.read({ restore: baseline !== 'forced' })).toBeUndefined();
     const current = new AnalysisCacheStore({
       ...options,
       identity: 'other-tools',
@@ -421,7 +446,7 @@ it.each(['incompatible', 'corrupt'] as const)(
     );
     const published = readFileSync(seed.path, 'utf8');
     await stale.publish(
-      new NativeAnalysisCache('new-tools', undefined, 'fixture-config'),
+      new NativeAnalysisCache(staleIdentity, undefined, 'fixture-config'),
     );
     expect(readFileSync(seed.path, 'utf8')).toBe(published);
   },
