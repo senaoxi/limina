@@ -89,8 +89,8 @@ export function registerCheckCommand(cli: LiminaCli): void {
     .option('--checker <name>', 'Filter issue inventory by checker')
     .option('--issues', 'Show issues from the last completed check')
     .option(
-      '--no-analysis-cache',
-      'Disable persistent Limina analysis cache reads and writes',
+      '--force',
+      'Force a cold analysis and refresh the persistent analysis cache',
     )
     .option(
       '--limit <limit>',
@@ -111,6 +111,6 @@ export function registerCheckCommand(cli: LiminaCli): void {
 }
 
 function assertAnalysisCacheFlags(flags: CheckFlags): void {
-  if (flags.issues === true && flags.analysisCache === false)
-    throw new Error('--no-analysis-cache cannot be combined with --issues.');
+  if (flags.issues === true && flags.force === true)
+    throw new Error('--force cannot be combined with --issues.');
 }

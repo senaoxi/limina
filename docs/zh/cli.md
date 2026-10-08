@@ -128,11 +128,13 @@ JSONC 编辑保留无关文本、注释和换行符。受管字段存在重复�
 
 `check` 是日常入口。它检查结构并运行类型检查器；其中 `checker:build` 写出内部声明，不负责生产打包。
 
-`limina check [pipeline] --no-analysis-cache` 禁用本次 Limina 持久化分析缓存读写。进行可能保留或回退文件时间戳的操作后，可以用它执行冷分析；checker 构建缓存仍遵守自身行为。持久化原生事实复用目前面向 TypeScript 6.0.3，尚未证明的框架或自定义 provider 语境重新分析。该参数不能与仅查询既有结果的 `--issues` 合用。
+`limina check [pipeline] --force` 忽略已有的 Limina 持久化分析缓存，执行冷分析，并以本次具备持久化资格的结果刷新缓存。修复安装状态，或进行可能保留或回退文件时间戳的操作后，可以使用它。checker 的 `.tsbuildinfo` 等独立构建缓存仍遵守自身行为。持久化原生事实复用目前面向 TypeScript 6.0.3，尚未证明的框架或自定义 provider 语境重新分析。该参数不能与仅查询既有结果的 `--issues` 合用。
 
 ```sh
 pnpm exec limina check
 pnpm exec limina check ci
+pnpm exec limina check --force
+pnpm exec limina check ci --force
 pnpm exec limina check --package @scope/pkg
 ```
 

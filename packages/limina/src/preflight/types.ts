@@ -9,6 +9,7 @@ import type { LiminaPreflightManager } from './manager';
 
 export interface LiminaPreflightManagerOptions {
   analysisCache?: boolean | 'read-only';
+  forceAnalysisCache?: boolean;
   config: ResolvedLiminaConfig;
   generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
   metrics?: AnalysisMetricsRecorder;

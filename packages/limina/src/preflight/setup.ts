@@ -67,6 +67,7 @@ export function createAnalysisCache(
     ? new AnalysisCacheController(options.config, namespace, {
         metrics: options.metrics,
         canPublish: options.analysisCache !== 'read-only',
+        force: options.forceAnalysisCache,
       })
     : undefined;
 }
