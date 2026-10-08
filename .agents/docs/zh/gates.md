@@ -26,6 +26,8 @@
 
 未暂存的修复不能使无效的暂存策略通过；顺序不同但集合相同的列表可以通过。检查不暂存文件、不修改 HEAD、不修复配置，也不要求已经存在首次 commit。关联 worktree 与 `GIT_INDEX_FILE` 使用 Git 自身的 index 选择机制。Husky 安装、显式 `HUSKY=0` 与 Git 钩子绕过行为保持原生；CI 独立于本地钩子执行工作区门禁。
 
+提交文案的可读性属于[提交约定](../../../.github/commit-convention.md#subject-and-body)。共享 commitlint 规则限制正文与 footer 的每行长度，计入 bullet 前缀、`BREAKING CHANGE: ` 首行和 footer 续行。直接检查原始行，防止 URL 豁免或 issue reference 的 parser 分类绕过上限。作者应精简正文条目或拆分其要点，并在词间换行 footer 文案；校验器拒绝超长行，不自动改写消息。[Git 钩子测试](../../../scripts/git/hooks.spec.ts)覆盖边界内接受／超限拒绝、Unicode 与 CRLF 输入、URL／reference 场景，以及拒绝真实提交时保留 HEAD 和 index。
+
 这些属于机械检查。[依赖准入](./dependency-admission.md)、许可证义务、语义审查和[最终验收](./development-workflow.md#验证与交付)仍适用于交付或获授权提交前。
 
 ## 回归归属

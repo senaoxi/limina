@@ -26,6 +26,8 @@ The gates TypeScript scopes use the same build checker as their typed consumers 
 
 Unstaged fixes cannot make an invalid staged policy pass; reordered equal lists can pass. The checks do not stage files, change HEAD, repair configuration or require an initial commit. Linked worktrees and `GIT_INDEX_FILE` use Git's own index selection. Husky installation and explicit `HUSKY=0`/Git hook bypass behavior remain native; CI runs the working-tree gate independently of local hooks.
 
+Commit readability is part of the [commit convention](../../.github/commit-convention.md#subject-and-body). The shared commitlint rules bound every body and footer line, including bullet prefixes, the first `BREAKING CHANGE: ` line and footer continuations. Raw-line checks prevent URL exemptions or parser classification of issue references from bypassing the limit. Authors shorten or split body details and wrap footer prose at word boundaries; the validator rejects overlong lines without rewriting them. The [Git hook tests](../../scripts/git/hooks.spec.ts) cover accepted/rejected boundaries, Unicode and CRLF input, URL/reference cases and a real rejected commit that preserves HEAD and the index.
+
 These are mechanical checks. [Dependency admission](./dependency-admission.md), license obligations, semantic review and [final acceptance](./development-workflow.md#validation-and-handoff) still apply before handoff or an authorized commit.
 
 ## Regression owners

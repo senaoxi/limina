@@ -117,12 +117,21 @@ export default {
           type === 'release' || !subject || [...subject].length <= maximum,
           `subjects must contain 1-${maximum} characters, excluding type, scope and !`,
         ],
+        'body-footer-character-limit': ({ raw }, _when, maximum) => [
+          raw
+            .replaceAll('\r\n', '\n')
+            .split('\n')
+            .slice(1)
+            .every((line) => [...line].length <= maximum),
+          `body and footer lines must not exceed ${maximum} characters, including prefixes`,
+        ],
       },
     },
   ],
   rules: {
-    // The convention limits the subject alone and leaves body/footer lines unbounded.
+    // Header length is governed by the subject limit, excluding type, scope and !.
     'header-max-length': [0],
+    // Count raw body/footer characters without upstream URL exemptions or parser omissions.
     'body-max-line-length': [0],
     'footer-max-line-length': [0],
     'subject-case': [0],
@@ -150,5 +159,6 @@ export default {
     'limina-layout': [2, 'always'],
     'subject-lowercase-start': [2, 'always'],
     'subject-character-limit': [2, 'always', 50],
+    'body-footer-character-limit': [2, 'always', 100],
   },
 };
