@@ -257,6 +257,7 @@ export function addDtsConfigFindings(options: {
       configPath,
       findings: options.findings,
       projectContext: options.projectContextsByPath.get(configPath),
+      projectConfigCache: options.projectConfigCache,
       virtualFiles: options.virtualFiles,
       workspaceLookup: options.workspaceLookup,
     });

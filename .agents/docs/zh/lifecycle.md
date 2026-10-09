@@ -24,6 +24,8 @@ manager 保留 generated artifact application 的所有权。它的 `ensureGraph
 
 注入 custom providers 的 manager 只支持 generation zero；advance/replan 的检查发生在 dispose 和 replacement 之前，失败不会静默换成默认 providers。`dispose()` 幂等；但 manager 多数 `ensure*` 方法没有统一 disposed guard，不能宣称所有事后 API 调用都会被拒绝。生产调用方负责在 run 生命周期结束后不继续使用它；是否将该限制机械化是[审计风险](./architecture-audit.md#findings)。
 
+Proof 声明验证必须经由[声明验证入口](../../../packages/limina/src/proof/declaration-config-findings.ts)继续传递当前 provider 的 project-config cache。漏传会让解析默认使用 generation zero，而生成图可能已持有后续 generation 的 Vue semantic identity，导致 provider 替换后的有效检查失败。[Proof 回归](../../../packages/limina/src/__tests__/proof.spec.ts)覆盖初始与下一 provider generation 的真实 Vue coverage；不兼容的 identity 仍会被拒绝。
+
 释放责任必须沿调用链定位：[CLI check-run](../../../packages/limina/src/cli/check-run.ts) 与 [standalone](../../../packages/limina/src/cli/standalone.ts) 在 `finally` dispose session；[graph export](../../../packages/limina/src/graph-check/runner.ts) 只 dispose 自建 preflight，borrowed preflight/custom providers 的生命周期归 caller。较低层 [pipeline execution](../../../packages/limina/src/pipeline/execution.ts) 可自建 preflight，但没有统一 finally dispose；直接重复调用该内部 API 的生命周期不应借用 CLI 的保证。domain aggregate 的 immutable 视图也不改变这些实际所有权。
 
 ## Cache identity 与能力范围
