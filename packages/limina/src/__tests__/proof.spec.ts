@@ -20,6 +20,7 @@ import { collectValidatedWorkspaceContext } from '../core/workspace/validated-co
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
 import { ProofLogger } from '../logger';
+import { LiminaPreflightManager } from '../preflight';
 import {
   type ProofFinding,
   type ProofFindingForCode,
@@ -34,6 +35,7 @@ import {
 import { prepareAndMaterializeGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath } from './helpers/path';
+import { createPreflightGenerationController } from './helpers/preflight-generation';
 
 const requireFromTest = createRequire(import.meta.url);
 
@@ -3063,49 +3065,58 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
-  it('accepts Vue source files when source include expands defaults and Vue glob', async () => {
-    const fixture = await createFixture(
-      createPassingFiles({
-        'tools/covered.vue':
-          '<script setup lang="ts">const value = 1;</script>\n',
-        'tools/tsconfig.json': JSON.stringify({
-          compilerOptions: {
-            module: 'ESNext',
-            moduleResolution: 'bundler',
-            strict: true,
-            target: 'ES2023',
-            types: [],
-          },
-          include: ['covered.vue'],
+  it.each([0, 1])(
+    'accepts governed Vue coverage with the provider generation %s',
+    async (generation) => {
+      const fixture = await createFixture(
+        createPassingFiles({
+          'tools/covered.vue':
+            '<script setup lang="ts">const value = 1;</script>\n',
+          'tools/tsconfig.json': JSON.stringify({
+            compilerOptions: {
+              module: 'ESNext',
+              moduleResolution: 'bundler',
+              strict: true,
+              target: 'ES2023',
+              types: [],
+            },
+            include: ['covered.vue'],
+          }),
         }),
-      }),
-    );
+      );
 
-    try {
-      await expect(
-        isRunProofCheck({
-          ...fixture.config,
-          config: {
-            ...fixture.config.config,
-            checkers: {
-              tsc: {
-                exclude: ['**/tsconfig*.dts.json', '**/tsconfig*.build.json'],
-                include: ['packages/pkg/tsconfig.json'],
-              },
-              'vue-tsc': {
-                include: ['tools/tsconfig.json'],
-              },
+      const config: ResolvedLiminaConfig = {
+        ...fixture.config,
+        config: {
+          ...fixture.config.config,
+          checkers: {
+            tsc: {
+              exclude: ['**/tsconfig*.dts.json', '**/tsconfig*.build.json'],
+              include: ['packages/pkg/tsconfig.json'],
             },
-            source: {
-              include: ['...', '**/*.vue'],
+            'vue-tsc': {
+              include: ['tools/tsconfig.json'],
             },
           },
-        }),
-      ).resolves.toBe(true);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+          source: {
+            include: ['...', '**/*.vue'],
+          },
+        },
+      };
+      const preflight = new LiminaPreflightManager({ config });
+      try {
+        if (generation > 0)
+          createPreflightGenerationController(preflight).startNextGeneration();
+        expect(preflight.providers.projectConfigs.generation).toBe(generation);
+        await expect(isRunProofCheck(config, { preflight })).resolves.toBe(
+          true,
+        );
+      } finally {
+        preflight.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('reports checker-covered Svelte source files outside the default source boundary', async () => {
     const errorSpy = vi
