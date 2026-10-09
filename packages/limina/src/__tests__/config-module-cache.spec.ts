@@ -13,7 +13,7 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, expect, it } from 'vitest';
 import type { AnalysisMetricMeasurement } from '../application/analysis/analysis-run';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
@@ -404,12 +404,11 @@ it.each(['json', 'ndjson'])(
       'limina.config.mjs',
       "await import('data:text/javascript,export default {}'); export default {pipelines:{probe:['graph:check']}};",
     );
-    const cli = new URL('../../bin/limina.js', import.meta.url);
-    const result = spawnSync(
-      process.execPath,
-      [cli.pathname, 'check', 'probe'],
-      { cwd: f.root, encoding: 'utf8' },
-    );
+    const cli = fileURLToPath(new URL('../../bin/limina.js', import.meta.url));
+    const result = spawnSync(process.execPath, [cli, 'check', 'probe'], {
+      cwd: f.root,
+      encoding: 'utf8',
+    });
     expect(result.status, result.stderr).toBe(0);
     expect(result.stderr).toContain('module-scheme-unknown');
     const store = new AnalysisCacheStore({
@@ -431,7 +430,7 @@ it.each(['json', 'ndjson'])(
     const query = spawnSync(
       process.execPath,
       [
-        cli.pathname,
+        cli,
         'check',
         '--issues',
         '--config',
@@ -510,98 +509,107 @@ it('keeps the public defineConfig entry eligible without loading the configurati
   expect(f.run().restored).toBe(true);
 });
 
-it('rejects each corrupted snapshot gate after a positive store restoration control', () => {
-  const f = fixture();
-  f.write('helper.mjs', 'export default {};');
-  f.write('limina.config.mjs', 'export {default} from "./helper.mjs";');
-  const cold = f.run();
-  const warm = f.run();
-  expect(warm.restored).toBe(true);
-  expect(warm.adoptedInputs).toHaveLength(1);
-  const baseline = readFileSync(cold.cachePath, 'utf8');
-  const cases: { reason: string; corrupt(snapshot: AnalysisSnapshot): void }[] =
-    [
-      {
-        reason: 'missing',
-        corrupt: (s) => {
-          Object.assign(s.header, { schema: 4 });
-        },
-      },
-      {
-        reason: 'match',
-        corrupt: (s) => {
-          s.header.configVersion = 'changed';
-        },
-      },
-      {
-        reason: 'missing',
-        corrupt: (s) => {
-          Reflect.deleteProperty(s, 'configModules');
-        },
-      },
-      {
-        reason: 'old-incomplete',
-        corrupt: (s) => {
-          s.configModules.complete = false;
-          s.configModules.otherUnknownReasons = ['unobserved'];
-        },
-      },
-      {
-        reason: 'missing',
-        corrupt: (s) => {
-          s.configModules.otherUnknownReasons = ['unobserved'];
-        },
-      },
-      {
-        reason: 'missing',
-        corrupt: (s) => {
-          delete s.configModules.files.find((file) => file.role === 'module')!
-            .sourceKind;
-        },
-      },
-      {
-        reason: 'content',
-        corrupt: (s) => {
-          s.configModules.files.find(
-            (file) => file.path === f.path('helper.mjs'),
-          )!.contentHash = '0'.repeat(64);
-          s.configModules.files.find(
-            (file) => file.path === f.path('helper.mjs'),
-          )!.metadata.mtimeMs! -= 1000;
-        },
-      },
-      {
-        reason: 'binding-or-kind',
-        corrupt: (s) => {
-          s.configModules.files.find(
-            (file) => file.path === f.path('helper.mjs'),
-          )!.binding = 'changed';
-        },
-      },
-      {
-        reason: 'resolutions',
-        corrupt: (s) => {
-          s.configModules.resolutions[0].specifier = './other.mjs';
-        },
-      },
-    ];
-  for (const test of cases) {
+it.each<{
+  gate: string;
+  reason: string;
+  corrupt(snapshot: AnalysisSnapshot, helperPath: string): void;
+}>([
+  {
+    gate: 'schema',
+    reason: 'missing',
+    corrupt: (s) => {
+      Object.assign(s.header, { schema: 4 });
+    },
+  },
+  {
+    gate: 'config version',
+    reason: 'match',
+    corrupt: (s) => {
+      s.header.configVersion = 'changed';
+    },
+  },
+  {
+    gate: 'module evidence',
+    reason: 'missing',
+    corrupt: (s) => {
+      Reflect.deleteProperty(s, 'configModules');
+    },
+  },
+  {
+    gate: 'incomplete coverage',
+    reason: 'old-incomplete',
+    corrupt: (s) => {
+      s.configModules.complete = false;
+      s.configModules.otherUnknownReasons = ['unobserved'];
+    },
+  },
+  {
+    gate: 'inconsistent coverage',
+    reason: 'missing',
+    corrupt: (s) => {
+      s.configModules.otherUnknownReasons = ['unobserved'];
+    },
+  },
+  {
+    gate: 'source provenance',
+    reason: 'missing',
+    corrupt: (s) => {
+      delete s.configModules.files.find((file) => file.role === 'module')!
+        .sourceKind;
+    },
+  },
+  {
+    gate: 'content',
+    reason: 'content',
+    corrupt: (s, helperPath) => {
+      s.configModules.files.find(
+        (file) => file.path === helperPath,
+      )!.contentHash = '0'.repeat(64);
+      s.configModules.files.find(
+        (file) => file.path === helperPath,
+      )!.metadata.mtimeMs! -= 1000;
+    },
+  },
+  {
+    gate: 'binding',
+    reason: 'binding-or-kind',
+    corrupt: (s, helperPath) => {
+      s.configModules.files.find((file) => file.path === helperPath)!.binding =
+        'changed';
+    },
+  },
+  {
+    gate: 'resolution edges',
+    reason: 'resolutions',
+    corrupt: (s) => {
+      s.configModules.resolutions[0].specifier = './other.mjs';
+    },
+  },
+])(
+  'rejects a corrupted snapshot after a positive store restoration control ($gate)',
+  ({ reason, corrupt }) => {
+    const f = fixture();
+    f.write('helper.mjs', 'export default {};');
+    f.write('limina.config.mjs', 'export {default} from "./helper.mjs";');
+    const cold = f.run();
+    const warm = f.run();
+    expect(warm.restored).toBe(true);
+    expect(warm.adoptedInputs).toHaveLength(1);
+    const baseline = readFileSync(cold.cachePath, 'utf8');
     const snapshot = JSON.parse(baseline) as AnalysisSnapshot;
-    test.corrupt(snapshot);
+    corrupt(snapshot, f.path('helper.mjs'));
     writeFileSync(cold.cachePath, JSON.stringify(snapshot));
     const rejected = f.run();
-    expect(rejected.restored, test.reason).toBe(false);
-    expect(rejected.adoptedInputs, test.reason).toEqual([]);
-    expect(count(rejected.events, `config-modules-result-${test.reason}`)).toBe(
-      1,
-    );
-    if (test.reason !== 'match')
+    expect(rejected.restored, reason).toBe(false);
+    expect(rejected.adoptedInputs, reason).toEqual([]);
+    expect(count(rejected.events, `config-modules-result-${reason}`)).toBe(1);
+    if (reason !== 'match')
       expect(rejected.events.some((event) => event.kind === 'validation')).toBe(
         false,
       );
     expect(f.run().restored).toBe(true);
-  }
-});
+  },
+);
 
 it.each(['native', 'tsx'])(
   'versions observed %s loader output without classifying its unexecuted syntax',

@@ -194,12 +194,17 @@ it.each([
     );
     f.write('node_modules/tsx/index.cjs', 'globalThis.preloaded=true;');
     f.write(f.entry, "throw new Error('configuration must not execute');");
+    const preload = request === 'tsx' ? request : f.path(request);
+    const startupRequest =
+      flag === '--import' && request !== 'tsx'
+        ? pathToFileURL(preload).href
+        : preload;
     const result = await runLimina({
       fixtureName: 'preloaded-cache',
       cwd: f.root,
       entry: {
         executable: process.execPath,
-        args: [flag, request === 'tsx' ? request : f.path(request), cli],
+        args: [flag, startupRequest, cli],
       },
       args: ['check', 'probe', '--config', f.path(f.entry)],
       env: { NODE_OPTIONS: '' },

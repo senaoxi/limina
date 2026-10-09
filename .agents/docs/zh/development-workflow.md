@@ -35,6 +35,10 @@ Limina 绝对路径值是 canonical portable path，在所有平台使用 `/` �
 
 fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `realpathSync.native()` 规范化临时根目录，再创建 fixture path resolver。Windows 短文件名别名可能保留在 `realpathSync()` 的结果中，而 resolver 使用原生长路径。[Analysis-cache 回归](../../../packages/limina/src/__tests__/analysis-cache.spec.ts)在 exports 条件顺序变化前后保留目标路径精确相等断言。
 
+将本地 CLI 入口传给子进程前，用 Node 的 `fileURLToPath()` 转换 file URL。URL 的 `pathname` 会保留 Windows 盘符 URL 的前导斜杠及百分号编码字符，因此不是原生文件系统路径。[配置模块缓存测试](../../../packages/limina/src/__tests__/config-module-cache.spec.ts)在发布 incomplete 快照后，保留真实 JSON／NDJSON 查询子进程。
+
+将本地 ESM preload 传给 `--import` 时，使用 `pathToFileURL(path).href`。否则 Windows 盘符路径会在 CLI 执行前触发 Node 不支持 URL scheme 的错误。[进程缓存 integration 回归](../../../packages/limina/integration/tests/config-process-cache.spec.ts)保留 `--require` 的原生路径与裸包 import，并断言配置求值或快照替换前的启动准入拒绝。
+
 - 不得将 Limina 路径值与原始 `node:path` 的 `join`、`resolve`、`relative`、`normalize`、`dirname` 或 `format` 结果直接比较。
 - fixture 所属的绝对路径使用 `fixture.path(...)`；其他比较通过[路径 helper](../../../packages/limina/src/__tests__/helpers/path.ts)规范化。
 - 相对路径断言使用 `toPortableRelativePath()` 或 `toPortableRelativePaths()`。
@@ -53,5 +57,7 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 - 涉及测试或 executable guard 时，运行必需的 unit、typecheck 与 lint 检查。
 - `lint:check` 和 `format:check` 是只读检查，修改须显式使用 `lint:fix` 与 `format:write`。
 - 仅修改 PCR 时，检查格式、完整中英文内容一致性、本地链接、标题与源码锚点、相关语义证据及 Git 边界，不自动要求完整 build、package 或 release。遵循[双语维护](./README.md#双语发布与维护)及[写入与隐私复核](./README.md#写入与隐私复核)，包括 `pnpm run docs:privacy --context-records .agents/docs`。
+
+将相互独立的跨进程损坏 gate 分成使用新 fixture 和正向恢复控制的独立用例。[配置模块缓存回归](../../../packages/limina/src/__tests__/config-module-cache.spec.ts)此前把九个 gate 与二十次 runner 启动放入同一个用例，在 Linux、macOS 和 Windows CI 超过未调整的单例时限。每个 gate 仍断言拒绝原因、不采用旧输入、适用时跳过旧模型 validation，以及冷发布后的再次恢复。
 
 交付或获授权提交前复核预期 diff。PCR 与保存的审计结果按 [project-context-writing](../../skills/project-context-writing/SKILL.md) 复核两种语言的隐私与技术含义；凭据只报告位置／类别。最后运行 `git diff --check`、检查 Git 状态，并明确列出已执行和未执行的验证，包括失败与剩余不确定性。本地成功不代表满足[迁移与外部门禁](./migration.md)。
