@@ -44,6 +44,41 @@ pnpm exec limina --config ./limina.config.mts check
 
 `native` 加载器会通过当前运行时直接导入配置，并遵循运行时的模块规则。因此，当 Node 把已有的 `limina.config.js` 视为 CommonJS 时，该文件可以使用 CommonJS；`.mts` 和 `.mjs` 使用 ESM。当配置使用了当前运行时无法原生导入的 TypeScript 语法时，使用 `tsx`。`tsx` 加载器使用 `tsx/esm/api`，因此使用前需要在接入工作区安装 `tsx`。
 
+## `configDependencies`
+
+- **类型：** `string[]`
+- **默认值：** 不声明额外文件
+
+warm 表示复用通过有效性检查的持久化分析模型，cold 表示重新建立当前分析；两者都会在新的 CLI 进程中求值配置。用它声明绕过 Node 模块系统读取、但会影响配置或检查结果的明确本地文件。例如，通过 `fs.readFileSync()` 读取的 JSON 文件需要显式声明：
+
+```ts
+import { defineConfig } from 'limina';
+import { readFileSync } from 'node:fs';
+
+const rules = JSON.parse(readFileSync(new URL('./rules.json', import.meta.url), 'utf8'));
+
+export default defineConfig({
+  configDependencies: ['./rules.json'],
+  graph: { rules },
+});
+```
+
+相对路径以选定的配置文件所在目录为基准，即使该目录不同于治理根。支持绝对路径和 `../`；路径会归一化、合并重复声明，并保留符号链接绑定。已作为模块观测的文件保留模块角色。声明允许文件暂时不存在，但不会让直接调用的 `readFileSync()` 自动容忍缺失。缺失状态同样被记录：创建、删除、符号链接改指及声明集合变化都会参与缓存失效判定。目录、glob、URL、空路径和非字符串元素会报错；暂不支持递归监视或回调。
+
+声明文件与模块共用配置输入快照。文件 mtime 相同时复用旧 content hash；mtime 变化时重新计算该文件的 hash。因此，只 touch 而字节相同可继续 warm；字节不同则使整个配置的旧 analysis model 失效，即使最终配置值没有变化。恢复旧 mtime 和绑定可能掩盖内容变化；不满足这一信任条件时，使用 `--force` 重建分析快照。
+
+Limina 在配置求值后注册声明，并在分析使用及分析快照发布前重新读取已观测文件，并检查绑定。这些调用内检查直接比较捕获的字节，独立于跨进程的 mtime／hash 快捷判断。发生漂移会中止命令，不重放已完成的 checker 或写操作。这无法证明用户此前直接调用 `fs` 时读到的字节与注册依赖时相同。应协调外部文件生产者，让文件在配置求值和检查期间保持稳定。
+
+### 自动模块观测及其边界
+
+每个独立 CLI 进程都会求值当前配置。同步 Node Runtime Hook 在这一加载阶段观测实际 ESM import、执行到的 `import(variable)`、CJS 与 `createRequire()` 请求，包括原始 specifier、解析目标、conditions、attributes、文件绑定及可观测的 Loader 输出。实际加载的模块或解析关系变化会使旧分析失效。未执行的动态 import 不产生依赖，也不会仅因表达式存在而禁止 warm。
+
+这套机制只覆盖能够可靠观测的模块加载事实，不自动发现所有 JavaScript 副作用。通过模块系统之外的方式读取 JSON、YAML、文本等本地文件时，需要显式声明；普通配置无需接受完整的 JavaScript I/O 审计才能使用缓存。源码未观测、不透明模块 scheme 或其他 Loader 证据不足仍使分析 cold。保留 native 和 tsx 执行能力；tsx CommonJS 的 extension hook 绕过源码观测时仍 cold。无法识别的自定义 Node 启动 `--require`、`--import`、`--loader` 及对应 `NODE_OPTIONS` 覆盖会在求值前被拒绝，因为它们可能留下过期的模块解析状态。移除这些覆盖；需要受支持的转换加载时，运行 `pnpm exec limina --config-loader tsx check`。
+
+配置工厂可以在返回数据前执行 import；返回的配置中保留的可执行回调和不透明值无法取得稳定的有效配置版本，因此不恢复或发布持久化 analysis model。观测结束后的模块加载没有自动依赖保证。支持的模型是每条命令使用新的 CLI 进程，不承诺嵌入进程内的配置热更新。
+
+`configDependencies` 只描述文件，不能覆盖环境变量、网络请求、时间、随机值或外部服务。有效配置版本只保护它实际表示的结果，无法代表隐藏行为。能够表达时，应把这些输入的影响体现在求值后的数据中；无法建立有效性时，沿用 cold／unknown 策略或使用 `--force`。只查询记录的 `check --issues` 仍不执行配置。
+
 ## `mode`
 
 - **类型：** `string`
