@@ -17,6 +17,7 @@ import { validateSourceKnipConfig } from './source-knip';
 
 const liminaConfigKeys = new Set([
   'config',
+  'configDependencies',
   'execution',
   'graph',
   'package',
@@ -52,6 +53,19 @@ function validateSourceConfig(
 export const liminaConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
   .looseObject({
     config: sharedLiminaConfigShapeSchema.optional(),
+    configDependencies: z
+      .array(
+        z
+          .string()
+          .refine(
+            (value) =>
+              value.trim().length > 0 &&
+              !/[\0*?[\]{}]/u.test(value) &&
+              !/^[a-z][a-z\d+.-]+:/iu.test(value),
+            'configDependencies must contain exact file paths, without globs or URLs.',
+          ),
+      )
+      .optional(),
     execution: executionConfigShapeSchema.optional(),
     regions: z.unknown().optional(),
     release: releaseConfigShapeSchema.optional(),

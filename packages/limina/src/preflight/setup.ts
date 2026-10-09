@@ -77,9 +77,10 @@ export function observeUncachedConfig(
   cache: AnalysisCacheController | undefined,
 ): ConfigObservation | undefined {
   if (cache !== undefined) return undefined;
-  return getConfigInputs(options.config) === undefined
-    ? undefined
-    : new ConfigObservation(options.config);
+  if (getConfigInputs(options.config) === undefined) return undefined;
+  const observation = new ConfigObservation(options.config);
+  observation.snapshot();
+  return observation;
 }
 
 export function createPreflightRun(options: {

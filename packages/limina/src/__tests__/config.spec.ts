@@ -3,6 +3,7 @@ import {
   getActiveCheckers,
   isAutoCheckerConfigMode,
   isSourceKnipEnabled,
+  type LiminaConfig,
   loadConfig,
   type SourceKnipCheckConfig,
   validateLiminaConfig,
@@ -3312,6 +3313,38 @@ describe('exact tsconfig region exclusions', () => {
           },
         }),
       ).toThrow('exact tsconfig');
+    },
+  );
+});
+
+describe('explicit configuration file dependencies', () => {
+  it('accepts exact file paths including parents and normalized duplicates', () => {
+    expect(() =>
+      validateLiminaConfig({
+        configDependencies: [
+          './rules.json',
+          '../shared/rules.json',
+          './a/../rules.json',
+        ],
+      }),
+    ).not.toThrow();
+  });
+  it.each([
+    'rules.json',
+    [42],
+    [null],
+    [''],
+    ['  '],
+    ['*.json'],
+    ['file:///rules.json'],
+    ['rules\0.json'],
+    () => [],
+  ])(
+    'rejects invalid declarations with a field diagnostic: %s',
+    (configDependencies) => {
+      expect(() =>
+        validateLiminaConfig({ configDependencies } as LiminaConfig),
+      ).toThrow('configDependencies');
     },
   );
 });

@@ -1,4 +1,4 @@
-export { defineConfig } from '#config/runner';
+export { defineConfig } from '#config/define';
 export {
   CancelledFailure,
   ConfigError as ConfigurationError,

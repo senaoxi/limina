@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import type { AnalysisSnapshot } from './contracts';
+import type { AnalysisSnapshot, ConfigModuleSnapshot } from './contracts';
 import { ANALYSIS_ADAPTER } from './contracts';
 import type { NativeAnalysisCache } from './native-cache';
 
@@ -61,6 +61,7 @@ export function currentSnapshotRecords(
     ),
   );
   return {
+    configModules: cache.configModules,
     inputs,
     queries,
     importers,
@@ -76,12 +77,13 @@ export function emptySnapshot(
 ): AnalysisSnapshot {
   return {
     header: {
-      schema: 3,
+      schema: 5,
       implementation: ANALYSIS_ADAPTER,
       identity,
       configVersion: configVersion ?? null,
       revision: randomUUID(),
     },
+    configModules: emptyConfigModules(),
     inputs: {},
     projects: {},
     queries: {},
@@ -113,7 +115,8 @@ export function matchingConfigSnapshot(
     configVersion !== undefined,
     previous.header.configVersion === configVersion,
     previous.header.identity === identity,
-    previous.header.schema === 3,
+    previous.header.schema === 5,
+    hasCompleteConfigModules(previous),
     previous.header.implementation === ANALYSIS_ADAPTER,
   ];
   return matches.every(Boolean) ? previous : undefined;
@@ -122,7 +125,7 @@ export function matchingConfigSnapshot(
 export function newSnapshot(cache: NativeAnalysisCache): AnalysisSnapshot {
   return structuredClone({
     header: {
-      schema: 3,
+      schema: 5,
       implementation: ANALYSIS_ADAPTER,
       identity: cache.identity,
       configVersion: cache.configVersion ?? null,
@@ -136,4 +139,104 @@ export function isSameData(previous: unknown, current: unknown): boolean {
 }
 export function retainData<T>(previous: T | undefined, current: T): T {
   return isSameData(previous, current) ? previous! : current;
+}
+
+// Core-only in-memory caches own no configuration loader. Production preflight
+// always supplies the invocation's evidence before the store can restore data.
+export function emptyConfigModules(): ConfigModuleSnapshot {
+  return {
+    loader: 'in-memory',
+    files: [],
+    resolutions: [],
+    complete: true,
+    dependencies: [],
+    otherUnknownReasons: [],
+  };
+}
+
+export function areSameConfigModuleRecords(
+  previous: ConfigModuleSnapshot,
+  current: ConfigModuleSnapshot,
+): boolean {
+  const records = (snapshot: ConfigModuleSnapshot): unknown => ({
+    ...snapshot,
+    files: snapshot.files.map(({ metadata, ...file }) => ({
+      ...file,
+      kind: metadata.kind,
+    })),
+  });
+  return isDeepStrictEqual(records(previous), records(current));
+}
+function hasCompleteConfigModules(snapshot: AnalysisSnapshot): boolean {
+  return snapshot.configModules?.complete ?? false;
+}
+export interface ConfigCacheOptions {
+  configVersion?: string;
+  configModules?: ConfigModuleSnapshot;
+}
+function configOptions(
+  options: string | ConfigCacheOptions | undefined,
+): ConfigCacheOptions {
+  return typeof options === 'string'
+    ? { configVersion: options }
+    : (options ?? {});
+}
+function cacheConfigModules(
+  previous: AnalysisSnapshot | undefined,
+  options: ConfigCacheOptions,
+): ConfigModuleSnapshot {
+  return options.configModules ?? previousConfigModules(previous);
+}
+export function configCacheState(
+  identity: string,
+  previous: AnalysisSnapshot | undefined,
+  options: string | ConfigCacheOptions | undefined,
+): ConfigCacheOptions & {
+  configModules: ConfigModuleSnapshot;
+  previous?: AnalysisSnapshot;
+} {
+  const config = configOptions(options);
+  const configModules = cacheConfigModules(previous, config);
+  const candidate = matchingConfigSnapshot(
+    previous,
+    identity,
+    config.configVersion,
+  );
+  return {
+    ...config,
+    configModules,
+    previous: matchingModuleRecords(candidate, configModules),
+  };
+}
+function matchingModuleRecords(
+  candidate: AnalysisSnapshot | undefined,
+  configModules: ConfigModuleSnapshot,
+): AnalysisSnapshot | undefined {
+  if (candidate === undefined) return undefined;
+  return areSameConfigModuleRecords(candidate.configModules, configModules)
+    ? candidate
+    : undefined;
+}
+export function isUnchangedCache(cache: NativeAnalysisCache): boolean {
+  if (cache.previous === undefined) return false;
+  const records = cache.snapshotRecords();
+  return Object.entries(records).every(([key, value]) =>
+    key === 'configModules'
+      ? areSameConfigModuleRecords(
+          cache.previous!.configModules,
+          cache.configModules,
+        )
+      : areSameRecords(
+          cache.previous![
+            key as Exclude<keyof typeof records, 'configModules'>
+          ],
+          value as Record<string, unknown>,
+        ),
+  );
+}
+
+function previousConfigModules(
+  previous: AnalysisSnapshot | undefined,
+): ConfigModuleSnapshot {
+  return previous?.configModules ?? emptyConfigModules();
 }

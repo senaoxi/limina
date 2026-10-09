@@ -7,13 +7,7 @@ import type {
   CheckerScope,
   ResolvedCheckerConfig,
 } from './pipeline-checker-types';
-import type {
-  LiminaConfig,
-  LiminaConfigExport,
-  LiminaConfigFunction,
-  LiminaConfigFunctionObject,
-  LiminaConfigFunctionPromise,
-} from './root-types';
+import type { LiminaConfig } from './root-types';
 
 function isSourceKnipConfig(value: unknown): boolean {
   return typeof value === 'object' && value !== null;
@@ -51,22 +45,7 @@ export function getNamedCheckerConfigs(
   return named;
 }
 
-export function defineConfig(config: LiminaConfig): LiminaConfig;
-export function defineConfig(
-  config: Promise<LiminaConfig>,
-): Promise<LiminaConfig>;
-export function defineConfig(
-  config: LiminaConfigFunctionObject,
-): LiminaConfigFunctionObject;
-export function defineConfig(
-  config: LiminaConfigFunctionPromise,
-): LiminaConfigFunctionPromise;
-export function defineConfig(
-  config: LiminaConfigFunction,
-): LiminaConfigFunction;
-export function defineConfig(config: LiminaConfigExport): LiminaConfigExport {
-  return config;
-}
+export { defineConfig } from './define';
 
 function isResolvedConfig(config: LiminaConfig): boolean {
   return 'configPath' in config && 'rootDir' in config;
