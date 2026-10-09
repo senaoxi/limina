@@ -228,6 +228,7 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
         path.join(root, 'limina.config.mjs'),
         'native',
         'mode with ! & quotes',
+        'check',
       ]);
       expect(invalidWorker.exitCode).not.toBe(0);
       expect(invalidWorker.stderr).toContain('Invalid limina-migrate build');

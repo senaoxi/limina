@@ -146,23 +146,26 @@ it('consumes neutral inputs with only the packed migrate product, preserves sche
     expect(report.result.inputConsumable).toBe(true);
     expect(report.verification.diagnostics).toEqual([]);
     const worker = path.join(migrateRoot, 'migration-verify-process.js');
-    const fresh = await node([
-      worker,
-      path.join(root, 'limina.config.mjs'),
-      'native',
-      'default',
-    ]);
-    expect(fresh.exitCode, fresh.stdout + fresh.stderr).toBe(0);
-    const topology = JSON.parse(
-      fresh.stdout.split('LIMINA_MIGRATION_INPUT=').at(-1)!,
-    );
-    expect(topology.map((entry: { command: string }) => entry.command)).toEqual(
-      ['check', 'graph'],
-    );
-    for (const entry of topology) {
-      expect(entry.complete).toBe(true);
-      expect(entry.sources).toHaveLength(1);
-      expect(entry.entries).toHaveLength(1);
+    for (const command of ['check', 'graph']) {
+      const fresh = await node([
+        worker,
+        path.join(root, 'limina.config.mjs'),
+        'native',
+        'default',
+        command,
+      ]);
+      expect(fresh.exitCode, fresh.stdout + fresh.stderr).toBe(0);
+      const topology = JSON.parse(
+        fresh.stdout.split('LIMINA_MIGRATION_INPUT=').at(-1)!,
+      );
+      expect(
+        topology.map((entry: { command: string }) => entry.command),
+      ).toEqual([command]);
+      for (const entry of topology) {
+        expect(entry.complete).toBe(true);
+        expect(entry.sources).toHaveLength(1);
+        expect(entry.entries).toHaveLength(1);
+      }
     }
     await commit();
     const noTsx = await node([cli, '--config-loader', 'tsx']);
@@ -274,8 +277,10 @@ it('consumes neutral inputs with only the packed migrate product, preserves sche
         path.join(root, 'limina.config.mjs'),
         'native',
         'default',
+        'check',
       ]);
       expect(unavailable.exitCode).not.toBe(0);
+      expect(unavailable.stderr).toContain('ERR_MODULE_NOT_FOUND');
       expect(unavailable.stdout).not.toContain('LIMINA_MIGRATION_INPUT=');
     } finally {
       await rename(`${chunk}.disabled`, chunk);

@@ -29,7 +29,10 @@ const solution = (...references: string[]): string =>
     references: references.map((reference) => ({ path: reference })),
   });
 
-async function fixture(extra: Record<string, string>) {
+async function fixture(
+  extra: Record<string, string>,
+  configFile = 'limina.config.mjs',
+) {
   const temporaryDirectory = await mkdtemp(
     path.join(tmpdir(), 'limina-adoption-'),
   );
@@ -95,7 +98,8 @@ async function fixture(extra: Record<string, string>) {
     run: async (options: RunMigrationOptions = {}) =>
       runMigration(
         await loadConfig({
-          configPath: locate('limina.config.mjs'),
+          configPath: locate(configFile),
+          configLoader: options.configLoader,
           command: 'migration',
         }),
         { confirmDirtyWorkspace: async () => true, ...options },
@@ -114,6 +118,7 @@ async function fixture(extra: Record<string, string>) {
         }[];
         verification: {
           topologies: {
+            command: string;
             sources: string[];
             reachableSources: Record<string, string[]>;
           }[];
@@ -124,6 +129,44 @@ async function fixture(extra: Record<string, string>) {
 }
 
 describe('migration input topology', () => {
+  it.each(['native', 'tsx'] as const)(
+    'verifies CommonJS configuration in separate check and graph processes with %s',
+    async (configLoader) => {
+      const f = await fixture(
+        {
+          'limina.config.cjs': `module.exports=(environment)=>{
+require('node:fs').appendFileSync(require('node:path').join(__dirname,'evaluations.jsonl'),JSON.stringify({command:environment.command,pid:process.pid})+'\\n');
+return {};};`,
+        },
+        'limina.config.cjs',
+      );
+      try {
+        const result = await f.run({ configLoader });
+        expect(result.inputConsumable).toBe(true);
+        const report = await f.report();
+        expect(
+          report.verification.topologies.map((value) => value.command),
+        ).toEqual(['check', 'graph']);
+        const evaluations = (
+          await readFile(f.path('evaluations.jsonl'), 'utf8')
+        )
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line) as { command: string; pid: number });
+        const verification = evaluations.filter((value) =>
+          ['check', 'graph'].includes(value.command),
+        );
+        expect(
+          verification
+            .map((value) => value.command)
+            .sort((left, right) => Number(left > right) - Number(left < right)),
+        ).toEqual(['check', 'graph']);
+        expect(new Set(verification.map((value) => value.pid)).size).toBe(2);
+      } finally {
+        await f.cleanup();
+      }
+    },
+  );
   it('isolates empty default and named inputs while preserving healthy membership and fresh consumption', async () => {
     const f = await fixture({
       'packages/app/tsconfig.json': solution(
