@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
+import { createRequire, registerHooks } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type * as tsxEsmApi from 'tsx/esm/api';
 import type { LiminaConfigLoader } from './root-types';
 
@@ -106,14 +107,50 @@ function createNativeLoaderError(error: unknown): Error {
   );
 }
 
-async function nativeImportConfig(configPath: string): Promise<unknown> {
-  const url = pathToFileURL(configPath);
-  url.searchParams.set('t', randomUUID());
+async function nativeImportConfig(entryURL: string): Promise<unknown> {
   try {
-    return unwrapModuleDefault(await import(url.href));
+    return await nativeLoadConfig(entryURL);
   } catch (error) {
     if (shouldSuggestTsxLoader(error)) throw createNativeLoaderError(error);
     throw error;
+  }
+}
+async function nativeLoadConfig(entryURL: string): Promise<unknown> {
+  return shouldRequireEntry(entryURL)
+    ? nativeRequireConfig(entryURL)
+    : unwrapModuleDefault(await import(entryURL));
+}
+async function nativeRequireConfig(entryURL: string): Promise<unknown> {
+  try {
+    return unwrapModuleDefault(
+      createRequire(import.meta.url)(fileURLToPath(entryURL)),
+    );
+  } catch (error) {
+    if (getErrorCode(error) === 'ERR_REQUIRE_ASYNC_MODULE')
+      return unwrapModuleDefault(await import(entryURL));
+    throw error;
+  }
+}
+function shouldRequireEntry(entryURL: string): boolean {
+  const format = nativeModuleFormat(entryURL);
+  return format === undefined
+    ? ['.js', '.ts'].includes(path.extname(fileURLToPath(entryURL)))
+    : ['commonjs', 'commonjs-typescript'].includes(format);
+}
+function nativeModuleFormat(entryURL: string): string | undefined {
+  let format: string | undefined;
+  const hook = registerHooks({
+    resolve(specifier, context, next) {
+      const result = next(specifier, context);
+      if (specifier === entryURL) format = result.format ?? undefined;
+      return result;
+    },
+  });
+  try {
+    import.meta.resolve(entryURL);
+    return format;
+  } finally {
+    hook.deregister();
   }
 }
 
@@ -131,20 +168,47 @@ async function importTsxApi(): Promise<typeof tsxEsmApi> {
   }
 }
 
-async function tsxImportConfig(configPath: string): Promise<unknown> {
-  const tsxApi = await importTsxApi();
-  const url = pathToFileURL(configPath);
-  url.searchParams.set('t', randomUUID());
-  const module = await tsxApi.tsImport(url.href, import.meta.url);
-  return unwrapTsxConfigExport(module);
+interface LoadModuleOptions<T> {
+  entryURL: string;
+  namespace?: string;
+  evaluate(module: unknown): Promise<T>;
 }
-
-export async function loadConfigModule(
-  configPath: string,
-  configLoader: unknown,
+async function tsxImportConfig<T>(options: LoadModuleOptions<T>): Promise<T> {
+  const tsxApi = await importTsxApi();
+  const module = await tsxLoadModule(
+    tsxApi,
+    options.entryURL,
+    options.namespace!,
+  );
+  return options.evaluate(unwrapTsxConfigExport(module));
+}
+async function tsxLoadModule(
+  api: typeof tsxEsmApi,
+  entryURL: string,
+  namespace: string,
 ): Promise<unknown> {
+  return shouldRequireEntry(entryURL)
+    ? tsxRequireModule(entryURL, namespace)
+    : api.register({ namespace }).import(entryURL, import.meta.url);
+}
+async function tsxRequireModule(
+  entryURL: string,
+  namespace: string,
+): Promise<unknown> {
+  const api = await import('tsx/cjs/api');
+  const scope = api.register({ namespace });
+  // Keep the scope alive, as tsImport does, for continuing config callbacks.
+  return scope.require(
+    fileURLToPath(entryURL) + new URL(entryURL).search,
+    import.meta.url,
+  );
+}
+export async function loadConfigModule<T>(
+  configLoader: unknown,
+  options: LoadModuleOptions<T>,
+): Promise<T> {
   const loader = resolveConfigLoader(configLoader);
   return loader === 'native'
-    ? nativeImportConfig(configPath)
-    : tsxImportConfig(configPath);
+    ? options.evaluate(await nativeImportConfig(options.entryURL))
+    : tsxImportConfig(options);
 }

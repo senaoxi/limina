@@ -9,6 +9,7 @@ import { NativeContextRecords } from './context-records';
 import type {
   AnalysisCacheMetrics,
   AnalysisSnapshot,
+  ConfigModuleSnapshot,
   GraphRecord,
   ImporterRecord,
   InputDependency,
@@ -26,10 +27,11 @@ import { AnalysisInvalidation } from './invalidation';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
 import { SemanticState } from './semantic-state';
 import {
-  areSameRecords,
+  type ConfigCacheOptions,
+  configCacheState,
   currentSnapshotRecords,
   emptySnapshot,
-  matchingConfigSnapshot,
+  isUnchangedCache,
   newSnapshot,
   retainData,
 } from './snapshot-records';
@@ -60,16 +62,19 @@ export class NativeAnalysisCache {
 
   readonly identity: string;
   readonly configVersion: string | undefined;
+  readonly configModules: ConfigModuleSnapshot;
   readonly previous: AnalysisSnapshot | undefined;
   constructor(
     identity: string,
     previous?: AnalysisSnapshot,
-    configVersion?: string,
+    options?: string | ConfigCacheOptions,
   ) {
     this.identity = identity;
-    this.configVersion = configVersion;
-    this.previous = matchingConfigSnapshot(previous, identity, configVersion);
-    const state = this.previous ?? emptySnapshot(identity, configVersion);
+    const config = configCacheState(identity, previous, options);
+    this.configVersion = config.configVersion;
+    this.configModules = config.configModules;
+    this.previous = config.previous;
+    const state = this.previous ?? emptySnapshot(identity, this.configVersion);
     this.inputs = new AnalysisInputs(state.inputs, this.metrics);
     this.contributions = new ReferenceContributions(
       this.inputs,
@@ -280,11 +285,7 @@ export class NativeAnalysisCache {
   }
 
   isUnchanged(): boolean {
-    if (this.previous === undefined) return false;
-    const records = this.snapshotRecords();
-    return Object.entries(records).every(([key, value]) =>
-      areSameRecords(this.previous![key as keyof typeof records], value),
-    );
+    return isUnchangedCache(this);
   }
 
   snapshot(): AnalysisSnapshot {

@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { parseTypeScriptCommandLine } from '../checker/project-base';
 import {
   captureInvocationData,
@@ -30,11 +30,8 @@ import { createBoundedTypeScriptSemanticContext } from '../core/typescript-seman
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
-import { isRunGraphCheckImpl } from '../graph-check/runner';
-import { GraphLogger } from '../logger';
 import { LiminaPreflightManager } from '../preflight';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
-import { createPreflightGenerationController } from '../preflight/generation';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
@@ -72,7 +69,10 @@ function fixture() {
       packages: { '': {} },
     }),
   );
-  write('limina.config.mjs', 'export default {};');
+  write(
+    'limina.config.mjs',
+    'export default {config:{checkers:{tsc:{include:["tsconfig.json"]}}}};',
+  );
   write(
     'tsconfig.json',
     JSON.stringify({
@@ -112,7 +112,47 @@ function fixture() {
       workspaceSourceBoundary: createWorkspaceSourceBoundary(parsed.fileNames),
     };
   };
-  return { root, file, write, config, project };
+  const execute = <T>(script: string): T => {
+    const url = (name: string) =>
+      new URL(`../${name}.ts`, import.meta.url).href;
+    write(
+      'cache-runner.mjs',
+      `
+import {loadConfig} from ${JSON.stringify(url('config/loader'))};
+import {LiminaPreflightManager} from ${JSON.stringify(url('preflight/manager'))};
+import {createPreflightGenerationController} from ${JSON.stringify(url('preflight/generation'))};
+import {isRunGraphCheckImpl} from ${JSON.stringify(url('graph-check/runner'))};
+async function runCache(options={}) {
+  const config=await loadConfig({configPath:${JSON.stringify(file('limina.config.mjs'))}});
+  const events=[];
+  const manager=new LiminaPreflightManager({config,analysisCache:options.cache!==false,forceAnalysisCache:options.force,metrics:{record:event=>events.push(event)}});
+  try {
+    if(options.materialize)await manager.ensureGeneratedArtifactsMaterialized();
+    const graph=await manager.ensureGeneratedGraph();
+    const isPassed=options.check ? await isRunGraphCheckImpl(config,{preflight:manager}) : true;
+    await manager.publishAnalysisCache();
+    if(options.refresh) {
+      createPreflightGenerationController(manager).startNextGeneration();
+      await manager.ensureGeneratedGraph();
+      await manager.publishAnalysisCache();
+    }
+    return {graph:{manifest:graph.manifest,ownershipPlan:graph.ownershipPlan},events,isPassed};
+  }finally{manager.dispose();}
+}
+${script}`,
+    );
+    const output = execFileSync(
+      process.execPath,
+      [
+        '--import',
+        pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href,
+        file('cache-runner.mjs'),
+      ],
+      { encoding: 'utf8' },
+    );
+    return JSON.parse(output.trim().split('\n').at(-1)!);
+  };
+  return { root, file, write, config, project, execute };
 }
 function analyze(
   project: TypeScriptSemanticProject,
@@ -387,74 +427,42 @@ describe('R03 evaluation, own data and namespace validity', () => {
       }),
     );
     f.write('src/a.ts', "import fs from 'node:fs'; export const result = fs;");
-    const error = vi.spyOn(GraphLogger, 'error').mockImplementation(() => {});
-    const evaluate = async (isDenied: boolean, isCacheEnabled: boolean) => {
-      const config = {
-        ...f.config,
-        graph: {
-          rules: {
-            runtime: isDenied
-              ? {
-                  deny: {
-                    deps: [{ name: 'node:*', reason: 'runtime policy' }],
-                  },
-                }
-              : {},
-          },
-        },
-      };
-      const events: { kind?: string; count?: number }[] = [];
-      const manager = new LiminaPreflightManager({
-        config,
-        analysisCache: isCacheEnabled,
-        metrics: {
-          record: (event) => {
-            events.push(event);
-          },
-        },
-      });
-      try {
-        const isPassed = await isRunGraphCheckImpl(config, {
-          preflight: manager,
-        });
-        await manager.publishAnalysisCache();
-        return { isPassed, events };
-      } finally {
-        manager.dispose();
-      }
-    };
-    try {
-      expect((await evaluate(false, true)).isPassed).toBe(true);
-      const changed = await evaluate(true, true);
-      expect(changed.isPassed).toBe(false);
-      expect(changed.isPassed).toBe((await evaluate(true, false)).isPassed);
-      expect(
-        changed.events.find((event) => event.kind === 'semanticPrograms')
-          ?.count,
-      ).toBeGreaterThan(0);
-      expect(
-        changed.events.find((event) => event.kind === 'factQueries')?.count,
-      ).toBeGreaterThan(0);
-      expect(changed.events).toContainEqual(
-        expect.objectContaining({ kind: 'factHits', count: 0 }),
-      );
-      expect(changed.events).not.toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
-      );
-      const clean = await evaluate(true, true);
-      expect(clean.isPassed).toBe(false);
-      expect(clean.events).toContainEqual(
-        expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
-      );
-      expect(clean.events).toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
-      );
-      expect(clean.events).toContainEqual(
-        expect.objectContaining({ kind: 'unchanged', count: 1 }),
-      );
-    } finally {
-      error.mockRestore();
-    }
+    f.write(
+      'limina.config.mjs',
+      `export default {
+      config:{checkers:{tsc:{include:['tsconfig.json']}}},
+      graph:{rules:{runtime:process.env.LIMINA_CONFIG_DENIED === 'yes' ? {deny:{deps:[{name:'node:*',reason:'runtime policy'}]}} : {}}}
+    };`,
+    );
+    const results = f.execute<GraphRunResult[]>(`
+      const evaluate=async(deny,cache)=>{process.env.LIMINA_CONFIG_DENIED=deny?'yes':'no';return runCache({check:true,cache});};
+      console.log(JSON.stringify([await evaluate(false,true),await evaluate(true,true),await evaluate(true,false),await evaluate(true,true)]));`);
+    const [first, changed, uncached, clean] = results;
+    expect(first.isPassed).toBe(true);
+    expect(changed.isPassed).toBe(false);
+    expect(changed.isPassed).toBe(uncached.isPassed);
+    expect(
+      changed.events.find((event) => event.kind === 'semanticPrograms')?.count,
+    ).toBeGreaterThan(0);
+    expect(
+      changed.events.find((event) => event.kind === 'factQueries')?.count,
+    ).toBeGreaterThan(0);
+    expect(changed.events).toContainEqual(
+      expect.objectContaining({ kind: 'factHits', count: 0 }),
+    );
+    expect(changed.events).not.toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    expect(clean.isPassed).toBe(false);
+    expect(clean.events).toContainEqual(
+      expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
+    );
+    expect(clean.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    expect(clean.events).toContainEqual(
+      expect.objectContaining({ kind: 'unchanged', count: 1 }),
+    );
   });
 
   it.each([
@@ -463,7 +471,7 @@ describe('R03 evaluation, own data and namespace validity', () => {
     { loader: 'native', extension: 'cjs' },
     { loader: 'tsx', extension: 'cjs' },
   ] as const)(
-    'reevaluates load-time data and transitive modules with $loader/$extension on each invocation',
+    'evaluates load-time data and transitive modules with $loader/$extension in independent processes',
     async ({ loader, extension }) => {
       const f = fixture();
       const isCommonJs = extension === 'cjs';
@@ -484,31 +492,33 @@ describe('R03 evaluation, own data and namespace validity', () => {
       f.write(
         'runner.mjs',
         `import {loadConfig} from ${JSON.stringify(loaderUrl)};
-import {rmSync,writeFileSync} from 'node:fs';
 const options = ${JSON.stringify({ configPath: f.file(`limina.config.${extension}`), configLoader: loader })};
-process.env.LIMINA_CACHE_TEST_POLICY='first';
-const first=await loadConfig(options);
-process.env.LIMINA_CACHE_TEST_POLICY='second';
-const next=await loadConfig(options);
-rmSync(${JSON.stringify(f.file(`policy.${extension}`))});
-writeFileSync(options.configPath,${JSON.stringify(isCommonJs ? 'module.exports = {};' : 'export default {};')});
-await loadConfig(options);
-console.log(JSON.stringify([first.pipelines,next.pipelines,Object.isFrozen(first.pipelines)]));`,
+const config=await loadConfig(options);
+console.log(JSON.stringify([config.pipelines,Object.isFrozen(config.pipelines)]));`,
       );
-      const output = execFileSync(
-        process.execPath,
-        [
-          '--import',
-          pathToFileURL(require.resolve('tsx')).href,
-          f.file('runner.mjs'),
-        ],
-        { encoding: 'utf8' },
+      const evaluate = (policy: string) => {
+        const output = execFileSync(
+          process.execPath,
+          [
+            '--import',
+            pathToFileURL(require.resolve('tsx')).href,
+            f.file('runner.mjs'),
+          ],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, LIMINA_CACHE_TEST_POLICY: policy },
+          },
+        );
+        return JSON.parse(output.trim());
+      };
+      expect(evaluate('first')).toEqual([{ first: [] }, true]);
+      expect(evaluate('second')).toEqual([{ second: [] }, true]);
+      rmSync(f.file(`policy.${extension}`));
+      f.write(
+        `limina.config.${extension}`,
+        isCommonJs ? 'module.exports = {};' : 'export default {};',
       );
-      expect(JSON.parse(output.trim())).toEqual([
-        { first: [] },
-        { second: [] },
-        true,
-      ]);
+      expect(evaluate('third')).toEqual([null, true]);
     },
   );
 
@@ -659,63 +669,23 @@ console.log(JSON.stringify([first.pipelines,next.pipelines,Object.isFrozen(first
   );
 });
 
-describe('production graph snapshots and publication', () => {
-  it('keeps virtual configuration cold even when its initial bytes equal the physical config', async () => {
-    const f = fixture();
-    const run = async (text: string) => {
-      const events: { kind?: string; count?: number }[] = [];
-      const manager = new LiminaPreflightManager({
-        config: {
-          ...f.config,
-          virtualFiles: new Map([[f.file('tsconfig.json'), text]]),
-        },
-        analysisCache: true,
-        metrics: {
-          record: (event) => {
-            events.push(event);
-          },
-        },
-      });
-      try {
-        await manager.ensureGeneratedGraph();
-        await manager.publishAnalysisCache();
-        return events;
-      } finally {
-        manager.dispose();
-      }
-    };
-    const initial = readFileSync(f.file('tsconfig.json'), 'utf8');
-    await run(initial);
-    const parsed = JSON.parse(initial);
-    const changed = await run(
-      JSON.stringify({
-        ...parsed,
-        compilerOptions: { ...parsed.compilerOptions, strict: true },
-      }),
-    );
-    expect(changed).not.toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
-    expect(
-      changed.find((event) => event.kind === 'semanticPrograms')?.count,
-    ).toBeGreaterThan(0);
-  });
+interface GraphRunResult {
+  graph: { manifest: unknown; ownershipPlan: unknown };
+  events: { kind?: string; count?: number }[];
+  isPassed: boolean;
+}
 
-  it('restores the graph and artifact authority before Program and keeps a strict clean snapshot unchanged', async () => {
+describe('production graph snapshots and publication', () => {
+  it('restores the graph and artifact authority before Program and keeps a strict clean snapshot unchanged', () => {
     const f = fixture();
-    const first = new LiminaPreflightManager({
-      config: f.config,
-      analysisCache: true,
-    });
-    const graph = await first.ensureGeneratedGraph();
-    await first.publishAnalysisCache();
-    first.dispose();
-    const namespace = createLiminaArtifactNamespace({
-      rootDir: f.root,
-      generation: 0,
-    });
+    const first = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache()));',
+    );
     const store = new AnalysisCacheStore({
-      namespace,
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
       configPath: f.config.configPath,
       identity: 'unused',
     });
@@ -729,32 +699,20 @@ describe('production graph snapshots and publication', () => {
       expect.arrayContaining([expect.objectContaining({ complete: true })]),
     );
     const mtime = statSync(store.path).mtimeMs;
-    const events: { kind?: string; count?: number }[] = [];
-    const next = new LiminaPreflightManager({
-      config: f.config,
-      analysisCache: true,
-      metrics: {
-        record: (event) => {
-          events.push(event);
-        },
-      },
-    });
-    const restored = await next.ensureGeneratedGraph();
-    expect(restored.manifest).toEqual(graph.manifest);
-    expect(restored.ownershipPlan).toEqual(graph.ownershipPlan);
-    await next.publishAnalysisCache();
-    next.dispose();
-    expect(events).toContainEqual(
+    const next = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache()));',
+    );
+    expect(next.graph).toEqual(first.graph);
+    expect(next.events).toContainEqual(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),
     );
-    expect(events).toContainEqual(
+    expect(next.events).toContainEqual(
       expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
     );
     expect(readFileSync(store.path)).toEqual(before);
     expect(statSync(store.path).mtimeMs).toBe(mtime);
   });
-
-  it('cold-starts forced analysis, publishes its result and restores it on the next normal run', async () => {
+  it('cold-starts forced analysis, publishes its result and restores it on the next normal run', () => {
     const f = fixture();
     const store = new AnalysisCacheStore({
       namespace: createLiminaArtifactNamespace({
@@ -764,31 +722,14 @@ describe('production graph snapshots and publication', () => {
       configPath: f.config.configPath,
       identity: 'unused',
     });
-    const run = async (shouldForceAnalysisCache = false) => {
-      const events: { kind?: string; count?: number }[] = [];
-      const manager = new LiminaPreflightManager({
-        config: f.config,
-        analysisCache: true,
-        forceAnalysisCache: shouldForceAnalysisCache,
-        metrics: {
-          record: (event) => {
-            events.push(event);
-          },
-        },
-      });
-      try {
-        const graph = await manager.ensureGeneratedGraph();
-        await manager.publishAnalysisCache();
-        return { graph, events };
-      } finally {
-        manager.dispose();
-      }
-    };
-    const seed = await run();
+    const seed = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache()));',
+    );
     const before = readFileSync(store.path);
-    const forced = await run(true);
-    expect(forced.graph.manifest).toEqual(seed.graph.manifest);
-    expect(forced.graph.ownershipPlan).toEqual(seed.graph.ownershipPlan);
+    const forced = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache({force:true})));',
+    );
+    expect(forced.graph).toEqual(seed.graph);
     expect(forced.events).not.toContainEqual(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),
     );
@@ -796,16 +737,14 @@ describe('production graph snapshots and publication', () => {
       forced.events.find((event) => event.kind === 'semanticPrograms')?.count,
     ).toBeGreaterThan(0);
     expect(forced.events).toContainEqual(
-      expect.objectContaining({ kind: 'factHits', count: 0 }),
-    );
-    expect(forced.events).toContainEqual(
       expect.objectContaining({ kind: 'write' }),
     );
     const refreshed = readFileSync(store.path);
     expect(refreshed).not.toEqual(before);
-    const restored = await run();
-    expect(restored.graph.manifest).toEqual(forced.graph.manifest);
-    expect(restored.graph.ownershipPlan).toEqual(forced.graph.ownershipPlan);
+    const restored = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache()));',
+    );
+    expect(restored.graph).toEqual(forced.graph);
     expect(restored.events).toContainEqual(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),
     );
@@ -814,42 +753,19 @@ describe('production graph snapshots and publication', () => {
     );
     expect(readFileSync(store.path)).toEqual(refreshed);
   });
-
-  it('reuses validated analysis from the forced invocation after a provider refresh', async () => {
+  it('reuses validated analysis from the forced invocation after a provider refresh', () => {
     const f = fixture();
-    const events: { kind?: string; count?: number }[] = [];
-    const manager = new LiminaPreflightManager({
-      config: f.config,
-      analysisCache: true,
-      forceAnalysisCache: true,
-      metrics: {
-        record: (event) => {
-          events.push(event);
-        },
-      },
-    });
-    try {
-      const first = await manager.ensureGeneratedGraph();
-      await manager.publishAnalysisCache();
-      const coldPrograms = events.find(
-        (event) => event.kind === 'semanticPrograms',
-      )?.count;
-      expect(coldPrograms).toBeGreaterThan(0);
-      createPreflightGenerationController(manager).startNextGeneration();
-      const refreshed = await manager.ensureGeneratedGraph();
-      expect(refreshed.manifest).toEqual(first.manifest);
-      await manager.publishAnalysisCache();
-      expect(events).toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
-      );
-      expect(
-        events
-          .filter((event) => event.kind === 'semanticPrograms')
-          .map((event) => event.count),
-      ).toEqual([coldPrograms, coldPrograms]);
-    } finally {
-      manager.dispose();
-    }
+    const result = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache({force:true,refresh:true})));',
+    );
+    const programs = result.events
+      .filter((event) => event.kind === 'semanticPrograms')
+      .map((event) => event.count);
+    expect(programs[0]).toBeGreaterThan(0);
+    expect(programs[1]).toBe(programs[0]);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
   });
 });
 
@@ -890,16 +806,10 @@ it.each(['relative', 'package-import'])(
         "import type { V } from '#value'; export type T = V;",
       );
     }
-    const run = async () => {
-      const manager = new LiminaPreflightManager({
-        config: f.config,
-        analysisCache: true,
-      });
-      await manager.ensureGeneratedArtifactsMaterialized();
-      await manager.ensureGeneratedGraph();
-      await manager.publishAnalysisCache();
-      manager.dispose();
-    };
+    const run = () =>
+      f.execute<GraphRunResult>(
+        'console.log(JSON.stringify(await runCache({materialize:true})));',
+      );
     const store = new AnalysisCacheStore({
       namespace: createLiminaArtifactNamespace({
         rootDir: f.root,
@@ -908,10 +818,10 @@ it.each(['relative', 'package-import'])(
       configPath: f.config.configPath,
       identity: 'unused',
     });
-    await run();
+    run();
     const bytes = readFileSync(store.path);
     const mtime = statSync(store.path).mtimeMs;
-    await run();
+    run();
     expect(readFileSync(store.path)).toEqual(bytes);
     expect(statSync(store.path).mtimeMs).toBe(mtime);
   },

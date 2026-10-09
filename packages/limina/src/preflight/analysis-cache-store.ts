@@ -8,7 +8,6 @@ import { writeJsonAtomically } from '../check-reporting/atomic-writer';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
 import { analysisHash } from '../core/analysis-cache/identity';
 import type { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
-import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import {
   assertArtifactPathLexicallyContained,
   assertArtifactPathOperationSafe,
@@ -20,6 +19,8 @@ import {
   getRelativeSegments,
 } from '../domain/artifacts/namespace-safety-shared';
 import { acquireCrossProcessWriteLease } from '../utils/mutation/cross-process-lease';
+import { AnalysisSnapshotDecoder } from './analysis-cache-decode';
+import type { ConfigObservation } from './config-observation';
 
 interface CacheStoreOptions {
   namespace: LiminaArtifactNamespace;
@@ -27,6 +28,7 @@ interface CacheStoreOptions {
   configPath: string;
   configVersion?: string;
   metrics?: AnalysisMetricsRecorder;
+  configuration?: ConfigObservation;
 }
 
 export class AnalysisCacheStore {
@@ -149,16 +151,30 @@ export class AnalysisCacheStore {
       cache.isUnchanged(),
     ].every(Boolean);
   }
+  #readMeasuredBytes(): Buffer | undefined {
+    const start = performance.now();
+    const bytes = this.#readBytes();
+    this.#recordReadBytes(bytes, start);
+    return bytes;
+  }
+  #recordReadBytes(bytes: Buffer | undefined, start: number): void {
+    this.#record({
+      name: 'analysis-cache',
+      kind: 'read-bytes',
+      durationMs: performance.now() - start,
+      estimatedBytes: bytes?.length ?? 0,
+    });
+  }
   #decodeSnapshot(
     bytes: Buffer | undefined,
     shouldRestore: boolean,
   ): AnalysisSnapshot | undefined {
-    if (!shouldRestore) return undefined;
-    const version = this.#options.configVersion;
-    return version === undefined
-      ? undefined
-      : decodeSnapshot(bytes, this.identity, version);
+    return new AnalysisSnapshotDecoder(this.#options).decode(
+      bytes,
+      shouldRestore,
+    );
   }
+
   #canPublish(cache: NativeAnalysisCache): boolean {
     return [
       this.#options.configVersion !== undefined,
@@ -180,7 +196,7 @@ export class AnalysisCacheStore {
   read(options: { restore?: boolean } = {}): AnalysisSnapshot | undefined {
     const start = performance.now();
     this.#hasBaseline = true;
-    const bytes = this.#readBytes();
+    const bytes = this.#readMeasuredBytes();
     this.#baseline = physicalRevision(bytes);
     // A forced cold start still needs the physical publication baseline.
     const snapshot = this.#decodeSnapshot(bytes, options.restore !== false);
@@ -222,23 +238,6 @@ function physicalRevision(bytes: Buffer | undefined): string | undefined {
     ? undefined
     : createHash('sha256').update(bytes).digest('hex');
 }
-function decodeSnapshot(
-  bytes: Buffer | undefined,
-  identity: string,
-  configVersion: string,
-): AnalysisSnapshot | undefined {
-  if (bytes === undefined) return undefined;
-  try {
-    return parseAnalysisSnapshot(
-      JSON.parse(bytes.toString('utf8')),
-      identity,
-      configVersion,
-    );
-  } catch {
-    return undefined;
-  }
-}
-
 function isStorageError(error: unknown): boolean {
   return error instanceof Error && 'code' in error;
 }

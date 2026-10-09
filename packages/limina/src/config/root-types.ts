@@ -24,6 +24,10 @@ export interface RegionsConfig {
 
 export interface LiminaConfig {
   config?: SharedLiminaConfig;
+  /**
+  Exact file inputs outside module loading, relative to the config file.
+  */
+  configDependencies?: string[];
   execution?: ExecutionConfig;
   graph?: GraphConfig;
   package?: PackageConfig;

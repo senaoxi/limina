@@ -54,9 +54,13 @@ function fixture() {
 }
 
 describe('analysis transaction and publication', () => {
-  it.each([true, false, 'read-only'] as const)(
-    'rejects observed configuration drift after analysis with cache mode %s',
-    async (analysisCache) => {
+  it.each(
+    ([true, false, 'read-only'] as const).flatMap((analysisCache) =>
+      ['module', 'declared'].map((inputKind) => ({ analysisCache, inputKind })),
+    ),
+  )(
+    'rejects $inputKind configuration drift after analysis with cache mode $analysisCache',
+    async ({ analysisCache, inputKind }) => {
       const f = fixture();
       writeFileSync(
         f.path('policy.mjs'),
@@ -64,7 +68,13 @@ describe('analysis transaction and publication', () => {
       );
       writeFileSync(
         f.path('limina.config.mjs'),
-        'export { default } from "./policy.mjs";',
+        inputKind === 'module'
+          ? 'export { default } from "./policy.mjs";'
+          : "import config from './policy.mjs'; export default {...config,configDependencies:['./rules.json']};",
+      );
+      writeFileSync(f.path('rules.json'), '{}');
+      const driftPath = f.path(
+        inputKind === 'module' ? 'policy.mjs' : 'rules.json',
       );
       const loader = new URL('../config/loader.ts', import.meta.url).href;
       const preflight = new URL('../preflight/manager.ts', import.meta.url)
@@ -79,7 +89,7 @@ const config = await loadConfig(${JSON.stringify({ configPath: f.config.configPa
 const manager = new LiminaPreflightManager({config, analysisCache: ${JSON.stringify(analysisCache)}});
 try {
   await manager.ensureGeneratedGraph();
-  writeFileSync(${JSON.stringify(f.path('policy.mjs'))}, 'export default { pipelines: { second: [] } };');
+  writeFileSync(${JSON.stringify(driftPath)}, 'export default { pipelines: { second: [] } };');
   let error;
   try { await manager.publishAnalysisCache(); } catch (caught) { error = caught.message; }
   console.log(JSON.stringify({error, pipelines: config.pipelines}));
@@ -218,7 +228,8 @@ try {
     await first.publish(
       new NativeAnalysisCache('fixture', undefined, 'fixture-config'),
     );
-    expect(first.read()).toBeDefined();
+    expect(storedSnapshot(first)).toBeDefined();
+    expect(first.read()).toBeUndefined();
   });
 
   it('refreshes a snapshot after reading its physical baseline without restoring the model', async () => {
@@ -242,7 +253,7 @@ try {
       new NativeAnalysisCache('fixture', undefined, 'fixture-config'),
     );
     expect(readFileSync(store.path)).not.toEqual(previous);
-    expect(refreshing.read()).toBeDefined();
+    expect(storedSnapshot(refreshing)).toBeDefined();
   });
 
   it('does not publish after an observed runtime or discovery input changes', async () => {
@@ -502,44 +513,13 @@ it('does not equate physically different corrupt snapshot bytes after UTF-8 repl
   expect(readFileSync(store.path)).toEqual(after);
 });
 
-it('checks root configuration metadata before adopting any previous model records', async () => {
-  const f = fixture();
-  const options = {
-    namespace: f.namespace,
-    configPath: f.config.configPath,
-    identity: 'fixture',
-    configVersion: 'first',
-  };
-  const seed = new AnalysisCacheStore(options);
-  seed.read();
-  await seed.publish(new NativeAnalysisCache('fixture', undefined, 'first'));
-  const previous = seed.read()!;
-  const skipped = new NativeAnalysisCache('fixture', previous, 'second');
-  expect(skipped.previous).toBeUndefined();
-  expect(skipped.inputs.records).toEqual({});
-  expect(skipped.contributions.records).toEqual({});
-  const unknown = new NativeAnalysisCache('fixture', previous);
-  expect(unknown.previous).toBeUndefined();
-  const changed = new AnalysisCacheStore({
-    ...options,
-    configVersion: 'second',
-  });
-  expect(changed.read()).toBeUndefined();
-  await changed.publish(skipped);
-  expect(changed.read()?.header.configVersion).toBe('second');
-  const snapshot = changed.read()!;
-  for (const header of [
-    { ...snapshot.header, schema: 2 },
-    { ...snapshot.header, configVersion: undefined },
-    { ...snapshot.header, configVersion: null },
-  ]) {
-    writeFileSync(changed.path, JSON.stringify({ ...snapshot, header }));
-    expect(changed.read()).toBeUndefined();
-    await changed.publish(
-      new NativeAnalysisCache('fixture', undefined, 'second'),
-    );
-    expect(changed.read()?.header.schema).toBe(3);
-  }
+it('rejects incompatible root metadata before reading ordinary model fields', () => {
+  const snapshot = new NativeAnalysisCache(
+    'fixture',
+    undefined,
+    'second',
+  ).snapshot();
+  expect(parseAnalysisSnapshot(snapshot, 'fixture', 'second')).toBeDefined();
   const unconsumed = Object.defineProperty(
     { header: snapshot.header },
     'inputs',
@@ -552,4 +532,37 @@ it('checks root configuration metadata before adopting any previous model record
   expect(
     parseAnalysisSnapshot(unconsumed, 'fixture', 'different'),
   ).toBeUndefined();
+  for (const configModules of [
+    undefined,
+    {
+      ...snapshot.configModules,
+      complete: false,
+      otherUnknownReasons: ['custom-loader-unobserved'],
+    },
+    {
+      ...snapshot.configModules,
+      complete: true,
+      otherUnknownReasons: ['custom-loader-unobserved'],
+    },
+  ]) {
+    const blocked = Object.defineProperty(
+      { header: snapshot.header, configModules },
+      'inputs',
+      {
+        get: () => {
+          throw new Error(
+            'Incomplete config must reject before adopting ordinary inputs.',
+          );
+        },
+      },
+    );
+    expect(parseAnalysisSnapshot(blocked, 'fixture', 'second')).toBeUndefined();
+  }
 });
+
+function storedSnapshot(store: AnalysisCacheStore) {
+  return parseAnalysisSnapshot(
+    JSON.parse(readFileSync(store.path, 'utf8')),
+    store.identity,
+  );
+}
