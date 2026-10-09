@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { configModuleSnapshotSchema } from './config-module-schema';
 import { ANALYSIS_ADAPTER, type AnalysisSnapshot } from './contracts';
 import { discoveryRecordSchema } from './discovery-schema';
 import { nativeContextSchema } from './environment-schema';
@@ -159,7 +160,7 @@ const graphRecord = z.object({
   discovery: z.array(discoveryRecordSchema),
 });
 const header = z.object({
-  schema: z.literal(3),
+  schema: z.literal(5),
   implementation: z.literal(ANALYSIS_ADAPTER),
   identity: text,
   configVersion: text,
@@ -167,6 +168,7 @@ const header = z.object({
 });
 const snapshot = z.object({
   header,
+  configModules: configModuleSnapshotSchema,
   inputs: z.record(text, inputsRecord),
   queries: z.record(text, queriesRecord),
   importers: z.record(text, importersRecord),
@@ -181,23 +183,38 @@ export function parseAnalysisSnapshot(
   identity: string,
   configVersion?: string,
 ): AnalysisSnapshot | undefined {
-  if (!isMatchingHeader(value, identity, configVersion)) return undefined;
+  const root = parseAnalysisSnapshotRoot(value, identity);
+  if (!isRestorableRoot(root, configVersion)) return undefined;
   const parsed = snapshot.safeParse(value);
   return parsed.success
     ? validatedSnapshot(parsed.data as unknown as AnalysisSnapshot)
     : undefined;
 }
+function isRestorableRoot(
+  root: Pick<AnalysisSnapshot, 'header' | 'configModules'> | undefined,
+  version: string | undefined,
+): boolean {
+  if (root === undefined) return false;
+  return [
+    root.configModules.complete,
+    isMatchingConfigVersion(root.header.configVersion, version),
+  ].every(Boolean);
+}
+function isMatchingConfigVersion(
+  actual: string | null,
+  expected: string | undefined,
+): boolean {
+  return expected === undefined || actual === expected;
+}
 
-function isMatchingHeader(
+export function parseAnalysisSnapshotRoot(
   value: unknown,
   identity: string,
-  configVersion: string | undefined,
-): boolean {
-  const parsed = z.object({ header }).safeParse(value);
-  if (!parsed.success) return false;
-  return [
-    parsed.data.header.identity === identity,
-    configVersion === undefined ||
-      parsed.data.header.configVersion === configVersion,
-  ].every(Boolean);
+): Pick<AnalysisSnapshot, 'header' | 'configModules'> | undefined {
+  const parsed = z
+    .object({ header, configModules: configModuleSnapshotSchema })
+    .safeParse(value);
+  return parsed.success && parsed.data.header.identity === identity
+    ? parsed.data
+    : undefined;
 }

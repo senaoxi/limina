@@ -43,6 +43,7 @@ export class AnalysisCacheController {
       configPath: config.configPath,
       configVersion: this.#configVersion,
       metrics,
+      configuration: this.#configuration,
     });
     this.cache = this.#createCache();
   }
@@ -51,7 +52,10 @@ export class AnalysisCacheController {
     const cache = new NativeAnalysisCache(
       this.#store.identity,
       this.#store.read({ restore: !this.#force }),
-      this.#configVersion,
+      {
+        configVersion: this.#configVersion,
+        configModules: this.#configuration.snapshot(),
+      },
     );
     if (this.#configVersion === undefined)
       cache.fallback('configuration-version-unknown');
@@ -82,6 +86,7 @@ export class AnalysisCacheController {
   #reportMetrics(): void {
     const metrics = this.#metrics;
     if (metrics === undefined) return;
+    this.#reportConfigMetrics(metrics);
     this.cache.metrics.uniquePaths = new Set(
       Object.values(this.cache.inputs.records).map((input) => input.path),
     ).size;
@@ -108,12 +113,16 @@ export class AnalysisCacheController {
     const candidate = this.#analyzed
       ? this.cache.snapshot()
       : this.#store.read({ restore: !this.#force });
-    return new NativeAnalysisCache(
-      this.#store.identity,
-      candidate,
-      this.#configVersion,
-    );
+    return new NativeAnalysisCache(this.#store.identity, candidate, {
+      configVersion: this.#configVersion,
+      configModules: this.#configuration.snapshot(),
+    });
   }
+  #reportConfigMetrics(metrics: AnalysisMetricsRecorder): void {
+    for (const [kind, value] of Object.entries(this.#configuration.metrics))
+      recordCacheMetric(metrics, `config-modules-${kind}`, value);
+  }
+
   refresh(): void {
     this.assertConfigurationStable();
     this.#completeMetrics();

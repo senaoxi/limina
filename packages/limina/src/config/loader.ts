@@ -1,7 +1,10 @@
 import { resolveGovernanceRoot } from '#utils/workspace-root';
+import { randomUUID } from 'node:crypto';
+import path from 'pathe';
 import { bindConfigInputs, observeConfigLoad } from './input-observation';
 import { captureInvocationData } from './invocation-data';
-import { loadConfigModule } from './loader-import';
+import { configLoaderIdentity } from './loader-identity';
+import { loadConfigModule, resolveConfigLoader } from './loader-import';
 import { resolveExecutionConfigLocation } from './loader-paths';
 import type {
   LiminaConfig,
@@ -39,14 +42,28 @@ export async function loadConfig(
 ): Promise<ResolvedLiminaConfig> {
   const location = resolveExecutionConfigLocation(options);
   const governanceRoot = resolveGovernanceRoot(location.configPath);
+  const loader = resolveConfigLoader(options.configLoader);
+  const loaderIdentity = configLoaderIdentity(loader);
+  const namespace = loader === 'tsx' ? randomUUID() : undefined;
   const loaded = await observeConfigLoad(
     location.configPath,
-    async () =>
-      resolveConfigExport(
-        await loadConfigModule(location.configPath, options.configLoader),
-        configEnvironment(options),
-      ),
-    [governanceRoot.manifestPath],
+    async (entryURL) =>
+      loadConfigModule(loader, {
+        entryURL,
+        namespace,
+        evaluate: (module) =>
+          resolveConfigExport(module, configEnvironment(options)),
+      }),
+    {
+      initialInputs: [
+        governanceRoot.manifestPath,
+        path.join(governanceRoot.rootDir, 'pnpm-workspace.yaml'),
+      ],
+      loader: loaderIdentity.identity,
+      namespace,
+      hasTransforms: loaderIdentity.hasTransforms,
+      unknownReasons: loaderIdentity.unknownReasons,
+    },
   );
   return bindConfigInputs(
     captureInvocationData({

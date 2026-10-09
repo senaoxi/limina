@@ -113,14 +113,62 @@ export interface GraphRecord {
   data: DataNode;
 }
 
+export interface ConfigModuleFile {
+  path: string;
+  logicalPath?: string;
+  logicalBinding?: string;
+  role: 'module' | 'anchor' | 'dependency';
+  binding: string;
+  metadata: {
+    kind: 'file' | 'missing';
+    mtimeMs?: number;
+    ctimeMs?: number;
+    size?: number;
+    dev?: number;
+    ino?: number;
+    mode?: number;
+  };
+  contentHash: string | null;
+  format: string | null;
+  sourceKind?: 'disk' | 'loader';
+  loadedSource?: {
+    contentHash: string;
+  };
+}
+
+export interface ConfigResolution {
+  parentURL: string;
+  specifier: string;
+  resolvedURL: string;
+  conditions: string[];
+  importAttributes: Record<string, string>;
+  requestBinding?: { path: string; binding: string };
+}
+
+export interface ConfigFileDependency {
+  path: string;
+  resolvedPath: string;
+  binding: string;
+}
+
+export interface ConfigModuleSnapshot {
+  loader: string;
+  files: ConfigModuleFile[];
+  resolutions: ConfigResolution[];
+  complete: boolean;
+  dependencies: ConfigFileDependency[];
+  otherUnknownReasons: string[];
+}
+
 export interface AnalysisSnapshot {
   header: {
-    schema: 3;
+    schema: 5;
     implementation: string;
     identity: string;
     configVersion: string | null;
     revision: string;
   };
+  configModules: ConfigModuleSnapshot;
   inputs: Record<string, AnalysisInput>;
   queries: Record<string, ResolutionRecord>;
   importers: Record<string, ImporterRecord>;

@@ -58,7 +58,20 @@ function physicalBinding(file: string): [string, string | null] {
   const stat = optionalLstat(file);
   return stat === undefined
     ? ['missing', null]
-    : [entryKind(stat), normalizeAbsolutePath(realpathSync.native(file))];
+    : [entryKind(stat), realBinding(file)];
+}
+function realBinding(file: string): string | null {
+  try {
+    return normalizeAbsolutePath(realpathSync.native(file));
+  } catch (error) {
+    if (
+      ['ENOENT', 'ENOTDIR'].includes(
+        String((error as NodeJS.ErrnoException).code),
+      )
+    )
+      return null;
+    throw error;
+  }
 }
 export function pathBinding(file: string): unknown {
   return [file, ...physicalBinding(file), linkBindings(file)];
