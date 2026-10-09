@@ -786,6 +786,121 @@ describe('Vue semantic architecture', () => {
     }
   });
 
+  it('reuses successful input text while retaining Vue projection and empty scripts', async () => {
+    const fixture = await createFixture({
+      'src/App.vue':
+        '<script setup lang="ts">import { value } from "./dep"</script><template>{{ value }}</template>',
+      'src/dep.ts': 'export const value = "ready";',
+      'src/globals.d.ts': 'declare const ambient: string;',
+      'src/empty.ts': '',
+      'tsconfig.json': config(),
+    });
+    const manager = new VueSemanticContextManager();
+    try {
+      const context = manager.acquire(
+        parseIdentity({ rootDir: fixture.rootDir }),
+      );
+      const reader = vi.spyOn(context.sys, 'readFile');
+      for (const name of ['App.vue', 'dep.ts', 'globals.d.ts', 'empty.ts']) {
+        const file = fixture.path('src', name);
+        const first = context.language.scripts.get(file);
+        expect(first).toBeDefined();
+        expect(context.language.scripts.get(file)?.snapshot).toBe(
+          first?.snapshot,
+        );
+        expect(reader.mock.calls.filter(([id]) => id === file)).toHaveLength(1);
+      }
+      const projected = context.languageServiceHost.getScriptSnapshot(
+        fixture.path('src/App.vue'),
+      );
+      expect(projected?.getText(0, projected.getLength())).toContain('./dep');
+      expect(
+        context.language.scripts.get(fixture.path('src/App.vue'))?.generated,
+      ).toBeDefined();
+      expect(
+        context.language.scripts
+          .get(fixture.path('src/empty.ts'))
+          ?.snapshot?.getLength(),
+      ).toBe(0);
+    } finally {
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('retries missing and throwing reads without converting them into cached text', async () => {
+    const fixture = await createFixture({
+      'src/App.vue': '<script setup lang="ts">export {}</script>',
+      'src/dep.ts': 'export const value = 1;',
+      'tsconfig.json': config(),
+    });
+    const manager = new VueSemanticContextManager();
+    try {
+      const context = manager.acquire(
+        parseIdentity({ rootDir: fixture.rootDir }),
+      );
+      const reader = vi.spyOn(context.sys, 'readFile');
+      const missing = fixture.path('src/missing.ts');
+      expect(context.language.scripts.get(missing)).toBeUndefined();
+      expect(context.language.scripts.get(missing)).toBeUndefined();
+      expect(reader.mock.calls.filter(([id]) => id === missing)).toHaveLength(
+        2,
+      );
+      const error = new Error('read failed');
+      reader.mockImplementationOnce(() => {
+        throw error;
+      });
+      expect(() =>
+        context.language.scripts.get(fixture.path('src/dep.ts')),
+      ).toThrow(error);
+      expect(
+        context.language.scripts
+          .get(fixture.path('src/dep.ts'))
+          ?.snapshot?.getText(0, 6),
+      ).toBe('export');
+    } finally {
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('retains shared text until the last owner releases and then rereads an equal identity', async () => {
+    const fixture = await createFixture({
+      'src/App.vue': '<script setup lang="ts">const value = "before"</script>',
+      'tsconfig.json': config(),
+    });
+    const firstManager = new VueSemanticContextManager();
+    const secondManager = new VueSemanticContextManager();
+    const nextManager = new VueSemanticContextManager();
+    try {
+      const identity = parseIdentity({ rootDir: fixture.rootDir });
+      const first = firstManager.acquire(identity);
+      const file = fixture.path('src/App.vue');
+      const snapshot = first.language.scripts.get(file)?.snapshot;
+      expect(snapshot).toBeDefined();
+      expect(secondManager.acquire(identity)).toBe(first);
+      firstManager.dispose();
+      expect(first.language.scripts.get(file)?.snapshot).toBe(snapshot);
+      secondManager.dispose();
+      expect(() => first.assertActive()).toThrow('disposed');
+      await writeText(
+        file,
+        '<script setup lang="ts">const value = "after"</script>',
+      );
+      const nextIdentity = parseIdentity({ rootDir: fixture.rootDir });
+      expect(nextIdentity.id).toBe(identity.id);
+      const next = nextManager.acquire(nextIdentity);
+      expect(next).not.toBe(first);
+      const updated = next.language.scripts.get(file)?.snapshot;
+      expect(updated?.getText(0, updated.getLength())).toContain('"after"');
+    } finally {
+      firstManager.dispose();
+      secondManager.dispose();
+      nextManager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   it('reuses one identity and disposes on project switches', async () => {
     const fixture = await createFixture({
       'src/App.vue': '<script setup lang="ts">import \'./dep\'</script>\n',

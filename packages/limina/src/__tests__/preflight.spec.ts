@@ -1,3 +1,4 @@
+import { parseCheckerProjectConfigForContext } from '#checkers';
 import type {
   ResolvedCheckerConfig,
   ResolvedLiminaConfig,
@@ -247,6 +248,83 @@ describe('LiminaPreflightManager', () => {
       expect(receipts[0]?.generation).toBe(0);
       expect(await readFile(generatedPath, 'utf8')).toBe('{}\n');
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('replaces Vue input text on provider-only replan and reads materialized inputs', async () => {
+    const fixture = await createFixture();
+    const configPath = fixture.path('packages/pkg/tsconfig.json');
+    const sourcePath = fixture.path('packages/pkg/App.vue');
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          types: [],
+        },
+        include: ['*.vue'],
+      }),
+    );
+    await writeFile(
+      sourcePath,
+      '<script setup lang="ts">const value = "before"</script>',
+    );
+    const manager = new LiminaPreflightManager({ config: fixture.config });
+    const competingNamespace = createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: fixture.rootDir,
+    });
+    const competingProviders = createAnalysisProviders(
+      fixture.config,
+      competingNamespace,
+    );
+    const acquire = (providers: AnalysisProviderSet) => {
+      const parsed = parseCheckerProjectConfigForContext({
+        cache: providers.projectConfigs,
+        configPath,
+        context: { checkerPresets: ['vue-tsc'], extensions: [] },
+        projectRootDir: fixture.rootDir,
+      });
+      if (parsed.vueSemanticIdentity === undefined)
+        throw new Error('Missing Vue identity');
+      return providers.vueSemanticContexts.acquire(parsed.vueSemanticIdentity);
+    };
+    try {
+      const graph = await manager.ensureGeneratedGraph();
+      const initialProviders = manager.providers;
+      const first = acquire(initialProviders);
+      const source = first.language.scripts.get(sourcePath)?.snapshot;
+      expect(source?.getText(0, source.getLength())).toContain('"before"');
+      const generatedPath = graph.generatedFiles.keys().next().value!;
+      expect(first.language.scripts.get(generatedPath)).toBeUndefined();
+      await competingProviders.workspace.getValidatedContext();
+      const competingGraph = await competingProviders.buildGraph.getGraph();
+      await materializeGeneratedArtifactPlan(
+        competingNamespace,
+        competingGraph.artifactPlan,
+      );
+      await writeFile(
+        sourcePath,
+        '<script setup lang="ts">const value = "after"</script>',
+      );
+      const receipt = await manager.ensureGeneratedArtifactsMaterialized();
+      expect(receipt.generation).toBe(0);
+      expect(manager.run.generation).toBe('0');
+      expect(manager.providers).not.toBe(initialProviders);
+      const next = acquire(manager.providers);
+      expect(next).not.toBe(first);
+      expect(() => first.assertActive()).toThrow('disposed');
+      const updated = next.language.scripts.get(sourcePath)?.snapshot;
+      expect(updated?.getText(0, updated.getLength())).toContain('"after"');
+      const materialized = next.language.scripts.get(generatedPath)?.snapshot;
+      expect(materialized?.getText(0, materialized.getLength())).toBe(
+        await readFile(generatedPath, 'utf8'),
+      );
+    } finally {
+      manager.dispose();
+      competingProviders.dispose?.();
       await fixture.cleanup();
     }
   });

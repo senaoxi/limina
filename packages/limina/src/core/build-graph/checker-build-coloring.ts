@@ -100,17 +100,32 @@ function isDeclarationRelationFact(fact: CheckerDependencyFact): boolean {
   return fact.referenceRequirement != null;
 }
 
+function getPassGraphRules(options: {
+  config: ResolvedLiminaConfig;
+  consumer: TypeConfigOwnershipState;
+  graphRulesByConfigPath: Map<string, readonly string[]>;
+}): readonly string[] {
+  const key = options.consumer.configPath;
+  let rules = options.graphRulesByConfigPath.get(key);
+  if (rules === undefined) {
+    rules = readGraphRules(options.config, key);
+    options.graphRulesByConfigPath.set(key, rules);
+  }
+  return rules;
+}
+
 function createBuildDependencyEdge(options: {
   config: ResolvedLiminaConfig;
   consumer: TypeConfigOwnershipState;
   fact: CheckerDependencyFact;
+  graphRulesByConfigPath: Map<string, readonly string[]>;
   provider: TypeConfigOwnershipState;
 }): ColoringEdge | null {
   if (
     ![options.consumer, options.provider].every(isBuildCandidate) ||
     isDeniedGeneratedReferenceForConfig({
       config: options.config,
-      graphRules: readGraphRules(options.config, options.consumer.configPath),
+      graphRules: getPassGraphRules(options),
       targetSourceConfigPath: options.provider.configPath,
     })
   )
@@ -126,6 +141,7 @@ function createManagedDependencyEdge(options: {
   config: ResolvedLiminaConfig;
   discovery: CheckerOwnershipDiscovery;
   fact: CheckerDependencyFact;
+  graphRulesByConfigPath: Map<string, readonly string[]>;
   target: string;
 }): ColoringEdge | null {
   const consumer = options.discovery.plan.typeConfigs.get(
@@ -141,6 +157,7 @@ function createDependencyEdge(options: {
   config: ResolvedLiminaConfig;
   discovery: CheckerOwnershipDiscovery;
   fact: CheckerDependencyFact;
+  graphRulesByConfigPath: Map<string, readonly string[]>;
   membership: FileOwnerLookup;
 }): ColoringEdge | null {
   if (!isDeclarationRelationFact(options.fact)) return null;
@@ -158,8 +175,14 @@ function addDependencyEdges(options: {
   const membership = createActualMembershipIndex(
     options.discovery.projectByConfigPath,
   );
+  const graphRulesByConfigPath = new Map<string, readonly string[]>();
   for (const fact of options.discovery.plan.dependencyFacts) {
-    const edge = createDependencyEdge({ ...options, fact, membership });
+    const edge = createDependencyEdge({
+      ...options,
+      fact,
+      graphRulesByConfigPath,
+      membership,
+    });
     if (edge !== null) addEdge({ edge, graph: options.graph });
   }
 }

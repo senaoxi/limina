@@ -25,6 +25,7 @@ import { promisify } from 'node:util';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import * as configReaders from '../core/build-graph/generated/config-readers';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
@@ -6004,6 +6005,106 @@ describe('prepareGeneratedTsconfigGraph', () => {
         },
       ]);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reads consumer rules once per coloring pass and refreshes after a failed pass', async () => {
+    const projectConfig = (labels: string[]) =>
+      json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          strict: true,
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+        liminaOptions: { graphRules: labels },
+      });
+    const imports = Array.from(
+      { length: 8 },
+      (_, index) =>
+        `import type { Value as V${index} } from '../../theme/src/index';\nexport type T${index} = V${index};`,
+    ).join('\n');
+    const fixture = await createFixture({
+      'packages/app/src/index.ts': imports,
+      'packages/app/tsconfig.json': projectConfig([]),
+      'packages/other/src/index.ts': imports,
+      'packages/other/tsconfig.json': projectConfig([]),
+      'packages/theme/src/index.ts': 'export interface Value { x: string }',
+      'packages/theme/tsconfig.json': projectConfig([]),
+    });
+    const reader = vi.spyOn(configReaders, 'readGraphRules');
+    const selectedConfig: ResolvedLiminaConfig = {
+      ...fixture.config,
+      config: {
+        checkers: {
+          tsc: { include: ['packages/app/tsconfig.json'] },
+          tsgo: {
+            include: [
+              'packages/other/tsconfig.json',
+              'packages/theme/tsconfig.json',
+            ],
+          },
+        },
+      },
+      graph: {
+        rules: {
+          separate: {
+            deny: {
+              refs: [
+                {
+                  path: 'packages/theme/tsconfig.json',
+                  reason: 'separate component',
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    try {
+      await expect(
+        resolveGeneratedGraphCheckers(selectedConfig),
+      ).rejects.toThrow('Build checker ownership conflict');
+      expect(
+        reader.mock.calls
+          .map(([, file]) => file)
+          .sort((left, right) => left.localeCompare(right)),
+      ).toEqual([
+        fixture.path('packages/app/tsconfig.json'),
+        fixture.path('packages/other/tsconfig.json'),
+      ]);
+      await writeText(
+        fixture.path('packages/app/tsconfig.json'),
+        projectConfig([' separate ', 'separate']),
+      );
+      reader.mockClear();
+      await expect(
+        resolveGeneratedGraphCheckers(selectedConfig),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'tsc' }),
+          expect.objectContaining({ name: 'tsgo' }),
+        ]),
+      );
+      expect(
+        reader.mock.calls
+          .map(([, file]) => file)
+          .sort((left, right) => left.localeCompare(right)),
+      ).toEqual([
+        fixture.path('packages/app/tsconfig.json'),
+        fixture.path('packages/other/tsconfig.json'),
+      ]);
+      await writeText(
+        fixture.path('packages/app/tsconfig.json'),
+        projectConfig([]),
+      );
+      await expect(
+        resolveGeneratedGraphCheckers(selectedConfig),
+      ).rejects.toThrow('Build checker ownership conflict');
+    } finally {
+      reader.mockRestore();
       await fixture.cleanup();
     }
   });

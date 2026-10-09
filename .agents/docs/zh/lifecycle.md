@@ -51,6 +51,19 @@ Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以�
 
 **Derived**：仅限运行期的缓存适合受控 run/provider 生命周期。若外部调用者跨文件编辑复用同一 cache/request generation，source content 不在 key 中就可能复用旧结果；这不是现有 CLI 必然 stale 的证据。要支持长期 daemon，必须先定义 mutation/version contract，不能简单扩大缓存寿命。
 
+## 单次分析内的读取
+
+`limina check` 是一次性命令，不承诺观察执行期间由编辑器、用户或外部进程造成的文件修改、删除、创建或修改后恢复。有界分析可以复用首次读取结果；这既不是冻结文件系统，也不是整次命令的原子快照。既有输入／配置漂移检查、发布前校验与错误传播在检测到变化时仍然生效。Memo 命中不会额外读取、stat 或 hash，以恢复对外部编辑的偶然可见性。
+
+| 复用输入                              | Owner 与首次读取                                                                                                                                                                                                                                               | 有效期终点                                                                                                                                                                    |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Consumer 的图规则标签，包括空数组     | [依赖着色](../../../packages/limina/src/core/build-graph/checker-build-coloring.ts) 为每次依赖边 pass 创建 lazy map，键为 consumer 配置的既有路径。原 reader 继续处理 overlay、错误及标签过滤／去重／trim 顺序。每条 fact 仍执行 deny、ownership 与建边判断。  | Pass 返回或失败即结束；后续 pass 重新读取规则，readonly 标签不与其他阶段共享。                                                                                                |
+| 成功读取的 Vue 脚本文本，包括空字符串 | [VueSemanticContext](../../../packages/limina/src/core/vue-semantic/context-handle.ts) 在 ScriptSnapshot 旁持有按路径索引的文本 map。首次读取使用原 overlay system；同步过程仍更新／注册脚本并生成虚拟代码。**不缓存缺失结果**，读取抛错直接传播，不添加条目。 | 实际 context dispose 时清空 map。进程级 slot 可以有多个 manager owner；释放一个 owner 不会清空仍由其他 owner 持有的 context。Identity 替换或最后一个 owner 释放时才 dispose。 |
+
+内部变化仍属于支持范围。生成配置经过既有 artifact／overlay 路径准备；checker 声明构建保留独立 host。Materialization replan 和分析重试即使不推进 analysis generation，也会替换 providers 及其 project-config cache。Provider generation 参与 Vue identity，因此新输入视图不能沿用旧 active context 的 memo。最后一个 owner 释放后，即使 identity 相同，也从新文本开始。Virtual overlay、config/options 和工具链身份继续保持既有隔离；不新增进程全局文本表、持久 memo 或 schema 字段。漂移检查与持久输入观测仍使用原 reader。
+
+[Graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖 consumer 隔离、空标签与失败后的新 pass；[Vue 回归](../../../packages/limina/src/__tests__/vue-semantic.spec.ts)覆盖成功／空文本读取、缺失／错误重试与最后一个 owner 释放；[preflight 回归](../../../packages/limina/src/__tests__/preflight.spec.ts)覆盖真实 provider-only replan 和物化输入。后续独立命令按既有持久缓存失效规则读取当前输入；这些局部 memo 不新增跨命令新鲜度或速度保证。
+
 ## 原生持久化分析缓存
 
 `check` 通过 [AnalysisCacheController](../../../packages/limina/src/preflight/analysis-cache.ts)启用本地分析快照。`check [pipeline] --force` 跳过既有持久化模型，执行冷分析，并通过正常发布路径发布本次具备资格的结果。它只阻止跨调用语义恢复；provider 刷新仍可复用本次调用内已验证的内存数据。由于 issue query 不执行分析，[CLI 入口](../../../packages/limina/src/cli/register/check.ts)在配置求值或创建 preflight 前拒绝 `--issues --force`。内部 `analysisCache: false` 与 `read-only` 控制仍保留。checker 的 `.tsbuildinfo` 等构建缓存和 check-result query 保留各自合同。独立 graph/source 入口可读取有效分析数据，但不获得发布权限，其 CLI 参数保持不变。
