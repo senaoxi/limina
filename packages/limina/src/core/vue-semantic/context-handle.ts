@@ -23,6 +23,7 @@ interface SnapshotEntry {
 interface VueScriptStore {
   language: VolarLanguage | undefined;
   snapshots: Map<string, SnapshotEntry>;
+  texts: Map<string, string>;
 }
 
 const languageIdPatterns: readonly [RegExp, string][] = [
@@ -94,11 +95,14 @@ function syncScript(options: {
   sys: typeof ts.sys;
   tsModule: typeof ts;
 }): void {
-  const text = options.sys.readFile(options.id);
+  const text =
+    options.store.texts.get(options.id) ?? options.sys.readFile(options.id);
   if (text === undefined) {
     removeMissingScript(options.store, options.id);
     return;
   }
+  // Missing inputs can appear during toolchain preparation; only retain text.
+  options.store.texts.set(options.id, text);
   updateScript({ ...options, text });
 }
 
@@ -136,6 +140,8 @@ export class VueSemanticContext {
   readonly #scriptRegistry: Map<string, VolarSourceScript>;
 
   readonly #snapshots: Map<string, SnapshotEntry>;
+
+  readonly #texts = new Map<string, string>();
 
   #disposed = false;
 
@@ -178,6 +184,7 @@ export class VueSemanticContext {
     const store: VueScriptStore = {
       language: undefined,
       snapshots: new Map(),
+      texts: this.#texts,
     };
     this.language = identity.toolchain.languageCore.createLanguage(
       [plugin],
@@ -245,6 +252,7 @@ export class VueSemanticContext {
     this.#disposed = true;
     this.#program = undefined;
     this.#semanticSourceFiles.clear();
+    this.#texts.clear();
     disposeLanguage({
       language: this.language,
       languageService: this.languageService,
