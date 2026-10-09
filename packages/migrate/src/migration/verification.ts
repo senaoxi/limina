@@ -49,6 +49,7 @@ function verificationMode(options: RunMigrationOptions): string {
 async function readFromFreshProcess(
   config: ResolvedLiminaConfig,
   options: RunMigrationOptions,
+  command: 'check' | 'graph',
 ): Promise<MigrationDiskVerification['topologies']> {
   const entry = resolveMigrationProcessEntry({
     moduleUrl: import.meta.url,
@@ -63,6 +64,7 @@ async function readFromFreshProcess(
       config.configPath,
       options.configLoader ?? 'native',
       verificationMode(options),
+      command,
     ],
     { cwd: config.rootDir, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
   );
@@ -80,7 +82,10 @@ export async function verifyMigrationFromDisk(
     topologies: [],
   };
   try {
-    result.topologies = await readFromFreshProcess(config, options);
+    result.topologies = [
+      ...(await readFromFreshProcess(config, options, 'check')),
+      ...(await readFromFreshProcess(config, options, 'graph')),
+    ];
     result.diagnostics = result.topologies.flatMap((topology) =>
       topologyDiagnostics(expected, topology),
     );
