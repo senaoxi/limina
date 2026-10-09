@@ -35,6 +35,10 @@ Preserve absolute Windows drive roots such as `C:/` when normalizing physical in
 
 For fixtures that compare expected paths with resolver realpaths, canonicalize the temporary root with `realpathSync.native()` before creating the fixture path resolver. Windows short-name aliases can survive `realpathSync()` while the resolver uses native long paths. The [analysis-cache regression](../../packages/limina/src/__tests__/analysis-cache.spec.ts) keeps exact target-path assertions before and after export-condition reordering.
 
+Convert file URLs with Node's `fileURLToPath()` before passing local CLI entries to subprocesses. A URL's `pathname` retains the leading slash of a Windows drive URL and percent-encoded characters, so it is not a native filesystem path. The [configuration-module cache tests](../../packages/limina/src/__tests__/config-module-cache.spec.ts) retain real JSON/NDJSON query subprocesses after incomplete snapshot publication.
+
+Pass local ESM preloads to `--import` as `pathToFileURL(path).href`. A Windows drive path otherwise triggers Node's unsupported URL-scheme error before the CLI runs. The [process-cache integration regression](../../packages/limina/integration/tests/config-process-cache.spec.ts) preserves native paths for `--require` and bare package imports, and asserts startup admission before configuration evaluation or snapshot replacement.
+
 - Never compare a Limina path value with a raw `node:path` `join`, `resolve`, `relative`, `normalize`, `dirname`, or `format` result.
 - Use `fixture.path(...)` for fixture-owned absolute paths. Otherwise normalize comparisons with the [path helpers](../../packages/limina/src/__tests__/helpers/path.ts).
 - Use `toPortableRelativePath()` or `toPortableRelativePaths()` for relative-path assertions.
@@ -53,5 +57,7 @@ Discover available scripts from the [root manifest](../../package.json) and the 
 - For tests or executable guards, run the required unit, typecheck and lint checks.
 - `lint:check` and `format:check` are read-only checks. Mutation is explicit through `lint:fix` and `format:write`.
 - PCR-only changes require formatting, complete English/Chinese content parity, local links, heading and source anchors, relevant semantic evidence and Git boundary checks. They do not automatically require a full build, package or release run. Follow [bilingual maintenance](./README.md#bilingual-publishing-and-maintenance) and [writing/privacy review](./README.md#writing-and-privacy-review), including `pnpm run docs:privacy --context-records .agents/docs`.
+
+Keep independent cross-process corruption gates in separate cases with fresh fixtures and positive restoration controls. The [configuration-module cache regression](../../packages/limina/src/__tests__/config-module-cache.spec.ts) previously grouped nine gates and twenty runner starts into one case, exceeding the unchanged per-case deadline on Linux, macOS and Windows CI. Each gate still asserts its rejection reason, no old-input adoption, validation short-circuit where applicable, and subsequent restoration after cold publication.
 
 Before handoff or an authorized commit, review the intended diff. For PCR and saved audit results, review both language editions for privacy and technical meaning using [project-context-writing](../skills/project-context-writing/SKILL.md); report credentials only by location/category. Finish with `git diff --check`, Git status and an explicit list of executed and unexecuted validation, including failures and remaining uncertainty. Local success does not satisfy the [migration and external gates](./migration.md).
