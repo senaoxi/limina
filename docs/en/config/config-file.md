@@ -44,6 +44,41 @@ Read-only `check --issues` does not import the config, resolve package-manager m
 
 The `native` loader imports the config directly through the current runtime and follows its module rules. An existing `limina.config.js` can therefore use CommonJS when Node treats it as CommonJS; `.mts` and `.mjs` use ESM. Use `tsx` when the config contains TypeScript syntax that the current runtime cannot import natively. The `tsx` loader uses `tsx/esm/api`, so install `tsx` in the adopting workspace first.
 
+## `configDependencies`
+
+- **Type:** `string[]`
+- **Default:** no additional files
+
+A warm run reuses a validated persistent analysis model; a cold run builds current analysis again. Both evaluate the configuration in a fresh CLI process. Declare exact local files that affect configuration or checking but are read outside Node's module system. For example, a JSON file read with `fs.readFileSync()` needs a declaration:
+
+```ts
+import { defineConfig } from 'limina';
+import { readFileSync } from 'node:fs';
+
+const rules = JSON.parse(readFileSync(new URL('./rules.json', import.meta.url), 'utf8'));
+
+export default defineConfig({
+  configDependencies: ['./rules.json'],
+  graph: { rules },
+});
+```
+
+Paths are relative to the selected configuration file's directory, including when that directory differs from the governance root. Absolute paths and `../` are supported. Paths are normalized, duplicate declarations are merged, and symbolic link bindings are retained. A file already observed as a module keeps its module role. Declarations may name missing files; this does not make a direct `readFileSync()` call tolerate their absence. Missing inputs are tracked: creation, deletion, link retargeting, and changes to the declared set participate in cache invalidation. Directories, glob patterns, URLs, empty paths, and non-string entries are rejected; recursive watching and callbacks are unsupported.
+
+Declared files share the configuration input snapshot. Equal file mtimes reuse the previous content hash; changed mtimes hash that file again. A touch with identical bytes can remain warm. Different bytes invalidate the entire configuration's previous analysis model even when the evaluated configuration values are unchanged. Restoring a file's old mtime and binding can conceal changes under this trust policy; use `--force` to rebuild the analysis snapshot when that trust does not hold.
+
+Limina captures declarations after configuration evaluation and rereads observed bytes and checks bindings before analysis use and analysis-snapshot publication. These within-command checks compare captured bytes directly, independently of the cross-process mtime/hash shortcut. Drift aborts the command without replaying completed checker or write operations. This cannot prove that an earlier direct `fs` read saw the same bytes as dependency registration. Arrange external producers so files remain stable throughout configuration evaluation and checking.
+
+### Automatic module observation and its limits
+
+Each independent CLI process evaluates the current configuration. Synchronous Node runtime hooks observe actual ESM imports, executed `import(variable)`, CJS requests and `createRequire()` requests during that loading phase, including their original specifiers, resolved targets, conditions, attributes, file bindings and observable loader output. Changing the actual loaded modules or resolution relations invalidates prior analysis. An unexecuted dynamic import does not add a dependency or by itself prevent a warm run.
+
+This mechanism covers reliably observable module-loading facts; it does not discover every JavaScript side effect. Declare JSON, YAML, text and other local files read outside the module system. Ordinary configurations can still use caching without an exhaustive JavaScript I/O audit. Unobserved source, opaque module schemes or otherwise incomplete loader evidence keep analysis cold. Native and tsx execution remain supported; tsx CommonJS paths whose extension hooks bypass source observation remain cold. Unrecognized custom Node startup `--require`, `--import`, `--loader` and corresponding `NODE_OPTIONS` overrides are rejected before evaluation because they can leave stale module-resolution state. Start without those overrides; for supported transformation use `pnpm exec limina --config-loader tsx check`.
+
+A configuration factory may execute imports before returning data. Executable callbacks retained in the returned configuration and opaque values cannot obtain a stable effective configuration version, so they do not restore or publish a persistent analysis model. Loading after observation ends has no automatic dependency guarantee. The supported model is a fresh CLI process per command, not configuration hot updates in an embedding process.
+
+`configDependencies` only describes files. Environment variables, network requests, clocks, random values and external services are outside its scope. The effective configuration version protects the values it actually represents, not hidden behavior. Keep such inputs explicit in the evaluated data when possible; use the existing cold/unknown behavior or `--force` when their validity cannot be established. Issue-only `check --issues` continues to query records without evaluating configuration.
+
 ## `mode`
 
 - **Type:** `string`
