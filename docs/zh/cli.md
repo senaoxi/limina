@@ -130,6 +130,8 @@ JSONC 编辑保留无关文本、注释和换行符。受管字段存在重复�
 
 `limina check [pipeline] --force` 忽略已有的 Limina 持久化分析缓存，执行冷分析，并以本次具备持久化资格的结果刷新缓存。修复安装状态，或进行可能保留或回退文件时间戳的操作后，可以使用它。checker 的 `.tsbuildinfo` 等独立构建缓存仍遵守自身行为。持久化原生事实复用目前面向 TypeScript 6.0.3，尚未证明的框架或自定义 provider 语境重新分析。该参数不能与仅查询既有结果的 `--issues` 合用。
 
+持久化分析缓存默认启用。[`cache: false`](./config/config-file.md#cache) 同时关闭恢复和发布，`--force` 也不能重新开启；已有 snapshot、配置漂移保护、issues 记录及 checker 缓存保持正常行为。`--force` 可以读取旧 snapshot 字节以安全地进行并发发布，但不恢复旧分析模型，也不删除本配置、其他配置或其他 worktree 的 snapshot。
+
 ```sh
 pnpm exec limina check
 pnpm exec limina check ci

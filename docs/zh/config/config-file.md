@@ -44,12 +44,23 @@ pnpm exec limina --config ./limina.config.mts check
 
 `native` 加载器会通过当前运行时直接导入配置，并遵循运行时的模块规则。因此，当 Node 把已有的 `limina.config.js` 视为 CommonJS 时，该文件可以使用 CommonJS；`.mts` 和 `.mjs` 使用 ESM。当配置使用了当前运行时无法原生导入的 TypeScript 语法时，使用 `tsx`。`tsx` 加载器使用 `tsx/esm/api`，因此使用前需要在接入工作区安装 `tsx`。
 
-## `configDependencies`
+## `cache` {#cache}
 
-- **类型：** `string[]`
-- **默认值：** 不声明额外文件
+- **类型：** `boolean | CacheOptions`
+- **默认值：** `true`
 
-warm 表示复用通过有效性检查的持久化分析模型，cold 表示重新建立当前分析；两者都会在新的 CLI 进程中求值配置。用它声明绕过 Node 模块系统读取、但会影响配置或检查结果的明确本地文件。例如，通过 `fs.readFileSync()` 读取的 JSON 文件需要显式声明：
+`cache` 控制 Limina 的持久化分析缓存。省略或设为 `true` 都启用缓存及自动模块依赖观测。设为 `false` 则不恢复、不发布持久化分析模型，保留已有 snapshot，继续执行配置加载、普通输入观测和执行期漂移检查。执行期内存缓存、TypeScript／Vue `.tsbuildinfo` 等 checker 构建缓存、issues 记录及其他独立产物仍遵守各自的正常行为。
+
+对象形式启用缓存，并要求显式包含 `dependencies: string[]`。空数组合法，`{}` 非法；`enabled`、`force` 等未知字段会报错。`limina` 公开导出 `CacheOptions`。旧顶层 `configDependencies` 已移除，继续使用会产生配置错误；应将其数组移到 `cache.dependencies`。
+
+`check` 可以读取并发布具备资格的模型；独立 graph／source 消费者保留原有只读权限。启用 `cache` 不会让所有命令获得发布权限。`limina check [pipeline] --force` 跳过本次恢复，通常仍发布本次具备资格的新结果。配置为 `cache: false` 时，force 在持久化分析缓存层面没有额外效果，也不会开启写入。Force 不删除本配置、其他配置或其他 worktree 的 snapshot，不强制重建 checker，仍不能与 `--issues` 合用。
+
+### `cache.dependencies` {#cache-dependencies}
+
+- **类型：** `string[]`（对象形式必填）
+- **默认值：** 省略 `cache` 或 `cache: true` 时不声明额外文件
+
+启用缓存时，warm 表示复用通过有效性检查的持久化分析模型，cold 表示重新建立当前分析；两者都会在新的 CLI 进程中求值配置。用它声明绕过 Node 模块系统读取、但会影响配置或检查结果的明确本地文件。例如，通过 `fs.readFileSync()` 读取的 JSON 文件需要显式声明：
 
 ```ts
 import { defineConfig } from 'limina';
@@ -58,10 +69,12 @@ import { readFileSync } from 'node:fs';
 const rules = JSON.parse(readFileSync(new URL('./rules.json', import.meta.url), 'utf8'));
 
 export default defineConfig({
-  configDependencies: ['./rules.json'],
+  cache: { dependencies: ['./rules.json'] },
   graph: { rules },
 });
 ```
+
+声明的文件不要求被配置代码实际读取；策略文件、人工维护的失效标记文件也会参与有效性判断。`cache: { dependencies: [] }` 启用缓存但不声明额外文件。
 
 相对路径以选定的配置文件所在目录为基准，即使该目录不同于治理根。支持绝对路径和 `../`；路径会归一化、合并重复声明，并保留符号链接绑定。已作为模块观测的文件保留模块角色。声明允许文件暂时不存在，但不会让直接调用的 `readFileSync()` 自动容忍缺失。缺失状态同样被记录：创建、删除、符号链接改指及声明集合变化都会参与缓存失效判定。目录、glob、URL、空路径和非字符串元素会报错；暂不支持递归监视或回调。
 
@@ -77,7 +90,7 @@ Limina 在配置求值后注册声明，并在分析使用及分析快照发布�
 
 配置工厂可以在返回数据前执行 import；返回的配置中保留的可执行回调和不透明值无法取得稳定的有效配置版本，因此不恢复或发布持久化 analysis model。观测结束后的模块加载没有自动依赖保证。支持的模型是每条命令使用新的 CLI 进程，不承诺嵌入进程内的配置热更新。
 
-`configDependencies` 只描述文件，不能覆盖环境变量、网络请求、时间、随机值或外部服务。有效配置版本只保护它实际表示的结果，无法代表隐藏行为。能够表达时，应把这些输入的影响体现在求值后的数据中；无法建立有效性时，沿用 cold／unknown 策略或使用 `--force`。只查询记录的 `check --issues` 仍不执行配置。
+`cache.dependencies` 只描述文件，不能覆盖环境变量、网络请求、时间、随机值或外部服务。有效配置版本只保护它实际表示的结果，无法代表隐藏行为。能够表达时，应把这些输入的影响体现在求值后的数据中；无法建立有效性时，沿用 cold／unknown 策略或使用 `--force`。只查询记录的 `check --issues` 仍不执行配置。
 
 ## `mode`
 

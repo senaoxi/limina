@@ -66,7 +66,14 @@ import {AnalysisCacheStore} from ${JSON.stringify(url('preflight/analysis-cache-
 import {createLiminaArtifactNamespace} from ${JSON.stringify(url('domain/artifacts/namespace'))};
 import {readFileSync,writeFileSync} from 'node:fs';
 import {registerHooks} from 'node:module';
-if(process.argv.includes('--transform'))registerHooks({load(url,context,next){const result=next(url,context);return url.startsWith(${JSON.stringify(entryURL)})?{...result,source:String(result.source)+'\\nif(false){const target="./never.mjs"; await import(target);}'}:result;}});
+if(process.argv.includes('--transform'))registerHooks({
+  load(url,context,next){
+    const result=next(url,context);
+    if(!url.startsWith(${JSON.stringify(entryURL)}))return result;
+    const source=typeof result.source==='string'?result.source:new TextDecoder().decode(result.source);
+    return {...result,source:source+'\\nif(false){const target="./never.mjs"; await import(target);}'};
+  }
+});
 const config = await loadConfig({cwd:${JSON.stringify(root)},configLoader:process.argv[2]});
 const namespace = createLiminaArtifactNamespace({rootDir:config.rootDir,generation:0});
 const events=[];
@@ -80,7 +87,7 @@ try {
     analyses++;
     controller.cache.inputs.observeConfig(parseProjectConfigWithExtensions({configPath:${JSON.stringify(file('tsconfig.json'))},projectRootDir:${JSON.stringify(root)}},[]).configClosure);
     if(process.argv.includes('--drift'))writeFileSync(config.configPath,'export default {}; // changed during invocation');
-    if(process.argv.includes('--dependency-drift'))writeFileSync(config.configDependencies[0],'changed while analyzing');
+    if(process.argv.includes('--dependency-drift'))writeFileSync(config.cache.dependencies[0],'changed while analyzing');
   },refresh:()=>controller.refresh()});
   await controller.publish();
 }catch(caught){error=caught.message;}
@@ -611,23 +618,37 @@ it.each<{
   },
 );
 
-it.each(['native', 'tsx'])(
-  'versions observed %s loader output without classifying its unexecuted syntax',
-  (loader) => {
+it.each([
+  ['native', false],
+  ['native', true],
+  ['tsx', false],
+  ['tsx', true],
+])(
+  'versions observed %s loader output without classifying syntax (initially transformed: %s)',
+  (loader, initiallyTransformed) => {
     const f = fixture();
-    expect(f.run(loader).snapshot.configModules.complete).toBe(true);
-    expect(f.run(loader).restored).toBe(true);
-    const transformed = f.run(loader, ['--transform']);
-    expect(transformed.restored).toBe(false);
-    expect(transformed.adoptedInputs).toEqual([]);
-    expect(transformed.snapshot.configModules.complete).toBe(true);
-    expect(count(transformed.events, 'config-modules-result-content')).toBe(1);
-    expect(count(transformed.events, 'config-modules-loaderSourceHashes')).toBe(
-      1,
+    const before = initiallyTransformed ? ['--transform'] : [];
+    const after = initiallyTransformed ? [] : ['--transform'];
+    const initial = f.run(loader, before);
+    expect(initial.restored).toBe(false);
+    expect(initial.snapshot.configModules.complete).toBe(true);
+    expect(f.run(loader, before).restored).toBe(true);
+    const changed = f.run(loader, after);
+    expect(changed.restored).toBe(false);
+    expect(changed.adoptedInputs).toEqual([]);
+    expect(changed.snapshot.configModules.complete).toBe(true);
+    const entry = changed.snapshot.configModules.files.find(
+      (file) => file.path === f.path('limina.config.mjs'),
     );
-    expect(f.run(loader, ['--transform']).restored).toBe(true);
-    expect(f.run(loader).restored).toBe(false);
-    expect(f.run(loader).restored).toBe(true);
+    expect(entry?.sourceKind).toBe(initiallyTransformed ? 'disk' : 'loader');
+    expect(entry?.loadedSource).toEqual(
+      initiallyTransformed ? undefined : { contentHash: expect.any(String) },
+    );
+    expect(count(changed.events, 'config-modules-result-content')).toBe(1);
+    expect(count(changed.events, 'config-modules-loaderSourceHashes')).toBe(
+      initiallyTransformed ? 0 : 1,
+    );
+    expect(f.run(loader, after).restored).toBe(true);
   },
 );
 
@@ -639,7 +660,7 @@ it.each([false, true])(
     if (!missing) f.write('rules.json', '{}');
     f.write(
       'limina.config.mjs',
-      `export default {configDependencies:[${JSON.stringify(dependency)}]};`,
+      `export default {cache:{dependencies:[${JSON.stringify(dependency)}]}};`,
     );
     const seed = f.run();
     expect(f.run().restored).toBe(true);

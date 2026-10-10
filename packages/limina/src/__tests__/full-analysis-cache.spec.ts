@@ -125,7 +125,7 @@ import {isRunGraphCheckImpl} from ${JSON.stringify(url('graph-check/runner'))};
 async function runCache(options={}) {
   const config=await loadConfig({configPath:${JSON.stringify(file('limina.config.mjs'))}});
   const events=[];
-  const manager=new LiminaPreflightManager({config,analysisCache:options.cache!==false,forceAnalysisCache:options.force,metrics:{record:event=>events.push(event)}});
+  const manager=new LiminaPreflightManager({config,analysisCache:options.cache==='read-only'?'read-only':options.cache!==false,forceAnalysisCache:options.force,metrics:{record:event=>events.push(event)}});
   try {
     if(options.materialize)await manager.ensureGeneratedArtifactsMaterialized();
     const graph=await manager.ensureGeneratedGraph();
@@ -671,11 +671,90 @@ console.log(JSON.stringify([config.pipelines,Object.isFrozen(config.pipelines)])
 
 interface GraphRunResult {
   graph: { manifest: unknown; ownershipPlan: unknown };
-  events: { kind?: string; count?: number }[];
+  events: { name?: string; kind?: string; count?: number }[];
   isPassed: boolean;
 }
 
 describe('production graph snapshots and publication', () => {
+  it('restores read-only models but cannot publish newly analyzed source inputs', () => {
+    const f = fixture();
+    const store = new AnalysisCacheStore({
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
+      configPath: f.config.configPath,
+      identity: 'unused',
+    });
+    f.execute('console.log(JSON.stringify(await runCache()));');
+    const bytes = readFileSync(store.path);
+    const modified = statSync(store.path).mtimeMs;
+    const warm = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache({cache:"read-only"})));',
+    );
+    expect(warm.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    f.write('src/a.ts', 'export const changed = true;');
+    const changed = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache({cache:"read-only"})));',
+    );
+    expect(
+      changed.events.find((event) => event.kind === 'semanticPrograms')?.count,
+    ).toBeGreaterThan(0);
+    expect(changed.events.some((event) => event.kind === 'write')).toBe(false);
+    expect(readFileSync(store.path)).toEqual(bytes);
+    expect(statSync(store.path).mtimeMs).toBe(modified);
+  });
+
+  it.each(
+    ([true, 'read-only'] as const).flatMap((mode) =>
+      [true, false].map((enumerable) => ({ mode, enumerable })),
+    ),
+  )(
+    'honors cache: false (enumerable: $enumerable) over caller $mode and force without reading or changing a snapshot',
+    ({ mode, enumerable }) => {
+      const f = fixture();
+      const store = new AnalysisCacheStore({
+        namespace: createLiminaArtifactNamespace({
+          rootDir: f.root,
+          generation: 0,
+        }),
+        configPath: f.config.configPath,
+        identity: 'unused',
+      });
+      const seed = f.execute<GraphRunResult>(
+        'console.log(JSON.stringify(await runCache()));',
+      );
+      const warm = f.execute<GraphRunResult>(
+        'console.log(JSON.stringify(await runCache()));',
+      );
+      expect(warm.events).toContainEqual(
+        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      );
+      const bytes = readFileSync(store.path);
+      const modified = statSync(store.path).mtimeMs;
+      f.write(
+        'limina.config.mjs',
+        `export default Object.defineProperty({config:{checkers:{tsc:{include:["tsconfig.json"]}}}}, 'cache', {value:false,enumerable:${enumerable}});`,
+      );
+      for (const isForced of [false, true]) {
+        const result = f.execute<GraphRunResult>(
+          `console.log(JSON.stringify(await runCache({cache:${JSON.stringify(mode)},force:${isForced}})));`,
+        );
+        expect(result.graph).toEqual(seed.graph);
+        expect(
+          result.events.some((event) => event.name === 'analysis-cache'),
+        ).toBe(false);
+        expect(result.events).toContainEqual(
+          expect.objectContaining({ name: 'bounded-program-create' }),
+        );
+        expect(readFileSync(store.path)).toEqual(bytes);
+        expect(statSync(store.path).mtimeMs).toBe(modified);
+      }
+    },
+  );
+
   it('restores the graph and artifact authority before Program and keeps a strict clean snapshot unchanged', () => {
     const f = fixture();
     const first = f.execute<GraphRunResult>(
