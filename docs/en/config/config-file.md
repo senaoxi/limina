@@ -44,12 +44,23 @@ Read-only `check --issues` does not import the config, resolve package-manager m
 
 The `native` loader imports the config directly through the current runtime and follows its module rules. An existing `limina.config.js` can therefore use CommonJS when Node treats it as CommonJS; `.mts` and `.mjs` use ESM. Use `tsx` when the config contains TypeScript syntax that the current runtime cannot import natively. The `tsx` loader uses `tsx/esm/api`, so install `tsx` in the adopting workspace first.
 
-## `configDependencies`
+## `cache` {#cache}
 
-- **Type:** `string[]`
-- **Default:** no additional files
+- **Type:** `boolean | CacheOptions`
+- **Default:** `true`
 
-A warm run reuses a validated persistent analysis model; a cold run builds current analysis again. Both evaluate the configuration in a fresh CLI process. Declare exact local files that affect configuration or checking but are read outside Node's module system. For example, a JSON file read with `fs.readFileSync()` needs a declaration:
+`cache` controls Limina's persistent analysis cache. Omission and `true` enable it, including automatic module dependency observation. `false` prevents restoring and publishing persistent analysis models, leaves existing snapshots in place, and keeps configuration loading, ordinary input observation and execution-time drift checks active. In-memory caches, checker build caches such as TypeScript/Vue `.tsbuildinfo`, issue records and other independent outputs retain their normal behavior.
+
+Object form enables caching and requires `dependencies: string[]`. An empty array is valid; `{}` is invalid. Fields such as `enabled` and `force` are rejected. `CacheOptions` is exported from `limina`. The former top-level `configDependencies` field has been removed and is a configuration error; move its array to `cache.dependencies`.
+
+`check` can read and publish eligible models. Standalone graph/source consumers keep their existing read-only permission; enabling `cache` does not grant every command publication authority. `limina check [pipeline] --force` skips restoration for this invocation and normally publishes the new eligible result. With `cache: false`, force has no additional effect on persistent analysis caching and does not enable writing. Force does not delete snapshots in this configuration, other configurations or other worktrees, and does not force checker rebuilds. It remains incompatible with `--issues`.
+
+### `cache.dependencies` {#cache-dependencies}
+
+- **Type:** `string[]` (required in object form)
+- **Default:** no additional files with omitted `cache` or `cache: true`
+
+With caching enabled, a warm run reuses a validated persistent analysis model; a cold run builds current analysis again. Both evaluate the configuration in a fresh CLI process. Declare exact local files that affect configuration or checking but are read outside Node's module system. For example, a JSON file read with `fs.readFileSync()` needs a declaration:
 
 ```ts
 import { defineConfig } from 'limina';
@@ -58,10 +69,12 @@ import { readFileSync } from 'node:fs';
 const rules = JSON.parse(readFileSync(new URL('./rules.json', import.meta.url), 'utf8'));
 
 export default defineConfig({
-  configDependencies: ['./rules.json'],
+  cache: { dependencies: ['./rules.json'] },
   graph: { rules },
 });
 ```
+
+A declared file need not be read by configuration code: policy files and manually maintained invalidation markers also participate in validity. `cache: { dependencies: [] }` enables caching without declaring extra files.
 
 Paths are relative to the selected configuration file's directory, including when that directory differs from the governance root. Absolute paths and `../` are supported. Paths are normalized, duplicate declarations are merged, and symbolic link bindings are retained. A file already observed as a module keeps its module role. Declarations may name missing files; this does not make a direct `readFileSync()` call tolerate their absence. Missing inputs are tracked: creation, deletion, link retargeting, and changes to the declared set participate in cache invalidation. Directories, glob patterns, URLs, empty paths, and non-string entries are rejected; recursive watching and callbacks are unsupported.
 
@@ -77,7 +90,7 @@ This mechanism covers reliably observable module-loading facts; it does not disc
 
 A configuration factory may execute imports before returning data. Executable callbacks retained in the returned configuration and opaque values cannot obtain a stable effective configuration version, so they do not restore or publish a persistent analysis model. Loading after observation ends has no automatic dependency guarantee. The supported model is a fresh CLI process per command, not configuration hot updates in an embedding process.
 
-`configDependencies` only describes files. Environment variables, network requests, clocks, random values and external services are outside its scope. The effective configuration version protects the values it actually represents, not hidden behavior. Keep such inputs explicit in the evaluated data when possible; use the existing cold/unknown behavior or `--force` when their validity cannot be established. Issue-only `check --issues` continues to query records without evaluating configuration.
+`cache.dependencies` only describes files. Environment variables, network requests, clocks, random values and external services are outside its scope. The effective configuration version protects the values it actually represents, not hidden behavior. Keep such inputs explicit in the evaluated data when possible; use the existing cold/unknown behavior or `--force` when their validity cannot be established. Issue-only `check --issues` continues to query records without evaluating configuration.
 
 ## `mode`
 

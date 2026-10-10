@@ -18,6 +18,7 @@ export type {
   AutoCheckerConfig,
   BuildCheckerName,
   BuiltinTaskName,
+  CacheOptions,
   CheckerConfig,
   CheckerConfigMode,
   CheckerExecutionKind,

@@ -54,13 +54,26 @@ function fixture() {
 }
 
 describe('analysis transaction and publication', () => {
-  it.each(
-    ([true, false, 'read-only'] as const).flatMap((analysisCache) =>
-      ['module', 'declared'].map((inputKind) => ({ analysisCache, inputKind })),
+  it.each([
+    ...([true, false, 'read-only'] as const).flatMap((analysisCache) =>
+      ['module', 'declared', 'governance'].map((inputKind) => ({
+        analysisCache,
+        inputKind,
+        cache: undefined,
+        force: false,
+      })),
     ),
-  )(
-    'rejects $inputKind configuration drift after analysis with cache mode $analysisCache',
-    async ({ analysisCache, inputKind }) => {
+    ...([true, 'read-only'] as const).flatMap((analysisCache) =>
+      ['module', 'governance'].map((inputKind) => ({
+        analysisCache,
+        inputKind,
+        cache: false,
+        force: true,
+      })),
+    ),
+  ])(
+    'rejects $inputKind drift with caller $analysisCache, cache $cache and force $force',
+    async ({ analysisCache, inputKind, cache, force }) => {
       const f = fixture();
       writeFileSync(
         f.path('policy.mjs'),
@@ -68,14 +81,24 @@ describe('analysis transaction and publication', () => {
       );
       writeFileSync(
         f.path('limina.config.mjs'),
-        inputKind === 'module'
-          ? 'export { default } from "./policy.mjs";'
-          : "import config from './policy.mjs'; export default {...config,configDependencies:['./rules.json']};",
+        `import config from './policy.mjs'; export default {...config,${
+          inputKind === 'declared'
+            ? "cache:{dependencies:['./rules.json']}"
+            : `cache:${String(cache)}`
+        }};`,
       );
       writeFileSync(f.path('rules.json'), '{}');
       const driftPath = f.path(
-        inputKind === 'module' ? 'policy.mjs' : 'rules.json',
+        inputKind === 'module'
+          ? 'policy.mjs'
+          : inputKind === 'declared'
+            ? 'rules.json'
+            : 'package.json',
       );
+      const driftContent =
+        inputKind === 'governance'
+          ? '{"name":"changed","private":true}'
+          : 'export default { pipelines: { second: [] } };';
       const loader = new URL('../config/loader.ts', import.meta.url).href;
       const preflight = new URL('../preflight/manager.ts', import.meta.url)
         .href;
@@ -86,10 +109,10 @@ import {loadConfig} from ${JSON.stringify(loader)};
 import {LiminaPreflightManager} from ${JSON.stringify(preflight)};
 import {writeFileSync} from 'node:fs';
 const config = await loadConfig(${JSON.stringify({ configPath: f.config.configPath, cwd: f.rootDir })});
-const manager = new LiminaPreflightManager({config, analysisCache: ${JSON.stringify(analysisCache)}});
+const manager = new LiminaPreflightManager({config, analysisCache: ${JSON.stringify(analysisCache)}, forceAnalysisCache:${force}});
 try {
   await manager.ensureGeneratedGraph();
-  writeFileSync(${JSON.stringify(driftPath)}, 'export default { pipelines: { second: [] } };');
+  writeFileSync(${JSON.stringify(driftPath)}, ${JSON.stringify(driftContent)});
   let error;
   try { await manager.publishAnalysisCache(); } catch (caught) { error = caught.message; }
   console.log(JSON.stringify({error, pipelines: config.pipelines}));

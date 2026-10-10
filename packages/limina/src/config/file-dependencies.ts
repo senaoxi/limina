@@ -55,7 +55,7 @@ function captureFile(
     evidence.capture(entry.resolvedPath, 'dependency');
   } catch (error) {
     throw new Error(
-      `Cannot observe configDependencies file ${entry.file}: ${errorMessage(error)}`,
+      `Cannot observe cache.dependencies file ${entry.file}: ${errorMessage(error)}`,
       { cause: error },
     );
   }

@@ -3317,15 +3317,26 @@ describe('exact tsconfig region exclusions', () => {
   );
 });
 
-describe('explicit configuration file dependencies', () => {
+describe('persistent analysis cache configuration', () => {
+  it.each([undefined, true, false, { dependencies: [] }])(
+    'accepts cache %j',
+    (cache) => {
+      expect(() => validateLiminaConfig({ cache })).not.toThrow();
+    },
+  );
+
   it('accepts exact file paths including parents and normalized duplicates', () => {
     expect(() =>
       validateLiminaConfig({
-        configDependencies: [
-          './rules.json',
-          '../shared/rules.json',
-          './a/../rules.json',
-        ],
+        cache: {
+          dependencies: [
+            './rules.json',
+            '../shared/rules.json',
+            './a/../rules.json',
+            '/shared/rules.json',
+            'C:/shared/rules.json',
+          ],
+        },
       }),
     ).not.toThrow();
   });
@@ -3336,15 +3347,63 @@ describe('explicit configuration file dependencies', () => {
     [''],
     ['  '],
     ['*.json'],
+    ['https://example.invalid/rules.json'],
     ['file:///rules.json'],
     ['rules\0.json'],
     () => [],
   ])(
     'rejects invalid declarations with a field diagnostic: %s',
-    (configDependencies) => {
+    (dependencies) => {
       expect(() =>
-        validateLiminaConfig({ configDependencies } as LiminaConfig),
-      ).toThrow('configDependencies');
+        validateLiminaConfig({ cache: { dependencies } } as LiminaConfig),
+      ).toThrow('cache.dependencies');
+    },
+  );
+
+  it.each([
+    [{}, 'cache.dependencies'],
+    [{ dependencies: undefined }, 'cache.dependencies'],
+    [{ dependencies: [], force: true }, 'cache.force'],
+    [{ dependencies: [], enabled: false }, 'cache.enabled'],
+    [{ dependencies: [], extra: [] }, 'cache.extra'],
+    [[], 'cache'],
+    [null, 'cache'],
+    ['true', 'cache'],
+  ])('rejects an invalid cache option %j at %s', (cache, field) => {
+    expect(() => validateLiminaConfig({ cache } as LiminaConfig)).toThrow(
+      field as string,
+    );
+  });
+
+  it('rejects the removed top-level field with a migration diagnostic', () => {
+    expect(() =>
+      validateLiminaConfig({
+        configDependencies: [],
+      } as unknown as LiminaConfig),
+    ).toThrow(
+      'configDependencies has been removed. Use cache.dependencies instead.',
+    );
+  });
+
+  it.each([[], undefined])(
+    'rejects non-enumerable legacy declarations even with value %j',
+    (value) => {
+      const config = Object.defineProperty({}, 'configDependencies', { value });
+      expect(() => validateLiminaConfig(config)).toThrow(
+        'configDependencies has been removed. Use cache.dependencies instead.',
+      );
+    },
+  );
+
+  it.each(['force', Symbol('force')])(
+    'rejects a hidden or symbol cache field %s',
+    (key) => {
+      const cache = Object.defineProperty({ dependencies: [] }, key, {
+        value: true,
+      });
+      expect(() => validateLiminaConfig({ cache })).toThrow(
+        'unknown cache config field',
+      );
     },
   );
 });

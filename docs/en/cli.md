@@ -130,6 +130,8 @@ Migration does not install framework dependencies, run `astro sync`, or rewrite 
 
 `limina check [pipeline] --force` ignores the existing persistent analysis cache, performs a cold Limina analysis, and refreshes the cache with the new eligible result. Use it after installation repairs or operations that may preserve or roll back file timestamps. Checker build caches such as `.tsbuildinfo` retain their own behavior. Persistent native fact reuse currently targets TypeScript 6.0.3; unproven framework or custom-provider contexts are analyzed afresh. This option cannot be combined with `--issues`, which only queries an existing result.
 
+Persistent analysis caching defaults to enabled. Set [`cache: false`](./config/config-file.md#cache) to prevent both restoration and publication, including with `--force`; this leaves existing snapshots, configuration drift protection, issue records and checker caches intact. `--force` can read old snapshot bytes for safe concurrent publication, but does not restore the old analysis model or delete this configuration's, other configurations' or other worktrees' snapshots.
+
 ```sh
 pnpm exec limina check
 pnpm exec limina check ci

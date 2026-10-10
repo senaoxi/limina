@@ -27,6 +27,13 @@ function isConfigDescendant(
   const parent = urls.physicalPath(parentURL);
   return parent !== undefined && evidence.inputs.has(parent);
 }
+
+function declaredFileDependencies(
+  cache: LiminaConfig['cache'],
+): readonly string[] | undefined {
+  return typeof cache === 'object' ? cache.dependencies : undefined;
+}
+
 /**
 Observe the actual loader, including imports executed by a config factory.
 */
@@ -109,7 +116,11 @@ export async function observeConfigLoad<T extends LiminaConfig>(
     const start = performance.now();
     const value = await load(pathToFileURL(path).href);
     evidence.metrics.evaluationMs = performance.now() - start;
-    captureFileDependencies(evidence, path, value.configDependencies);
+    captureFileDependencies(
+      evidence,
+      path,
+      declaredFileDependencies(value.cache),
+    );
     evidence.assertStable();
     evidence.metrics.observationMs =
       performance.now() - observationStart - evidence.metrics.evaluationMs;

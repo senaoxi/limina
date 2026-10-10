@@ -22,12 +22,19 @@ export interface RegionsConfig {
   extendNestedPackageScopes?: boolean;
 }
 
-export interface LiminaConfig {
-  config?: SharedLiminaConfig;
+export interface CacheOptions {
   /**
   Exact file inputs outside module loading, relative to the config file.
   */
-  configDependencies?: string[];
+  dependencies: string[];
+}
+
+export interface LiminaConfig {
+  config?: SharedLiminaConfig;
+  /**
+  Persistent analysis caching defaults to enabled; checker caches are separate.
+  */
+  cache?: boolean | CacheOptions;
   execution?: ExecutionConfig;
   graph?: GraphConfig;
   package?: PackageConfig;
