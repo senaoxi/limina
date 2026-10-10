@@ -62,7 +62,12 @@ export function createAnalysisCache(
   options: LiminaPreflightManagerOptions,
   namespace: LiminaArtifactNamespace,
 ): AnalysisCacheController | undefined {
-  if (options.providers !== undefined) return undefined;
+  if (
+    [options.providers !== undefined, options.config.cache === false].some(
+      Boolean,
+    )
+  )
+    return undefined;
   return options.analysisCache
     ? new AnalysisCacheController(options.config, namespace, {
         metrics: options.metrics,

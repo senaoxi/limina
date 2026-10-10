@@ -65,13 +65,15 @@ export async function loadConfig(
       unknownReasons: loaderIdentity.unknownReasons,
     },
   );
-  return bindConfigInputs(
-    captureInvocationData({
-      ...loaded.value,
-      configPath: location.configPath,
-      governanceRoot,
-      rootDir: governanceRoot.rootDir,
-    }),
-    loaded.inputs,
-  );
+  const metadata = {
+    configPath: location.configPath,
+    governanceRoot,
+    rootDir: governanceRoot.rootDir,
+  };
+  // Non-enumerable user fields still control execution and cache policy.
+  const config = Object.defineProperties(metadata, {
+    ...Object.getOwnPropertyDescriptors(loaded.value),
+    ...Object.getOwnPropertyDescriptors(metadata),
+  });
+  return bindConfigInputs(captureInvocationData(config), loaded.inputs);
 }

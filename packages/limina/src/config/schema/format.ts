@@ -150,6 +150,12 @@ function isReleaseIgnorePattern(context: IssueFormatContext): boolean {
 
 const issueFormatters: readonly IssueFormatter[] = [
   createExactFormatter({
+    field: 'configDependencies',
+    reason:
+      'configDependencies has been removed. Use cache.dependencies instead.',
+    title: 'Invalid Limina cache config:',
+  }),
+  createExactFormatter({
     field: 'config',
     reason: 'config must be an object.',
     title: 'Invalid Limina config:',

@@ -60,4 +60,6 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 将相互独立的跨进程损坏 gate 分成使用新 fixture 和正向恢复控制的独立用例。[配置模块缓存回归](../../../packages/limina/src/__tests__/config-module-cache.spec.ts)此前把九个 gate 与二十次 runner 启动放入同一个用例，在 Linux、macOS 和 Windows CI 超过未调整的单例时限。每个 gate 仍断言拒绝原因、不采用旧输入、适用时跳过旧模型 validation，以及冷发布后的再次恢复。
 
+fixture 转换 `load` Hook 返回的二进制源码前，先按 UTF-8 解码。Node 22.18.0 和 24.11.0 可能返回 `Uint8Array`；`String(source)` 会生成逗号分隔的字节值，而非 JavaScript 文本，导致配置导出丢失。配置模块缓存回归保留字符串源码，通过 `TextDecoder` 解码二进制源码，并在断言 warm 恢复前确认新发布的源码来源及摘要。旧快照的 complete 状态本身不能证明转换后的配置已发布。将转换开关的两个方向放入使用新 fixture 的独立用例，各自保留变更前后的正向恢复控制，使四次 runner 启动能在未调整的单例时限内完成。
+
 交付或获授权提交前复核预期 diff。PCR 与保存的审计结果按 [project-context-writing](../../skills/project-context-writing/SKILL.md) 复核两种语言的隐私与技术含义；凭据只报告位置／类别。最后运行 `git diff --check`、检查 Git 状态，并明确列出已执行和未执行的验证，包括失败与剩余不确定性。本地成功不代表满足[迁移与外部门禁](./migration.md)。
