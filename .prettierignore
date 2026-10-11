@@ -4,3 +4,6 @@ LICENSE
 LICENSE.md
 migration/commit-map
 migration/ref-map
+
+# pnpm owns the generated multi-document lockfile serialization.
+pnpm-lock.yaml

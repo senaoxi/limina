@@ -4,13 +4,13 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "node": "^22.18.0 || >=24.11.0"
+    "node": "^22.22.3 || ^24.15.0 || >=26.0"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/senaoxi/limina.git"
   },
-  "packageManager": "pnpm@11.28.3",
+  "packageManager": "pnpm@12.10.1",
   "scripts": {
     "prepare": "husky",
     "hooks:install": "husky",

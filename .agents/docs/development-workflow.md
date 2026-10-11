@@ -50,6 +50,8 @@ The [repository gates](./gates.md) package owns executable repository checks. Be
 
 ## Validation and handoff
 
+Real HTTP timeout fixtures need a client budget that admits initial client and process scheduling, with a server delay longer than that budget. The [metadata](../../packages/limina/fixtures/detectors/release/registry-metadata-timeout/case.mts) and [tarball](../../packages/limina/fixtures/detectors/release/registry-tarball-timeout/case.mts) timeout fixtures retain exact request counts and identities plus typed timeout evidence, including the configured budget. Scale both timing inputs together while retaining the deliberate timeout; production limits and test-runner deadlines remain independent.
+
 Discover available scripts from the [root manifest](../../package.json) and the owning package's `package.json`. Run the relevant `test:unit`, `test:tooling`, `test:integration`, `test:smoke`, `docs:build`, `typecheck`, `check` and `lint:packages` scripts for the change. Follow any applicable package instructions as well. Run a relevant narrow check as soon as the affected boundary becomes testable when failure could invalidate the chosen implementation; do not defer that feedback until commit or handoff. Final acceptance still reruns every required gate for the completed change.
 
 - After changing Limina tests or path behavior, run `pnpm run test:unit`, `pnpm run typecheck`, `pnpm run lint:check` and `git diff --check` for the touched files.

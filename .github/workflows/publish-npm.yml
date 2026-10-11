@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup-env
         with:
-          node-version: 24.11.0
+          node-version: 24.15.0
       - name: Install npm with trusted publication and dist-tag support
         run: npm install --global npm@11.21.0
       - name: Build private release tools

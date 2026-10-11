@@ -95,7 +95,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22.18.0
+          node-version: 22.22.3
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec limina check

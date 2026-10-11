@@ -1,6 +1,6 @@
 # Contributing to Limina
 
-Use pnpm 11.28.3 and Node `^22.18.0 || >=24.11.0`. Logaria is installed from the registry through the dev catalog; see [migration status](.agents/docs/migration.md).
+Use pnpm 12.10.1 and Node `^22.22.3 || ^24.15.0 || >=26.0`. Logaria is installed from the registry through the dev catalog; see [migration status](.agents/docs/migration.md).
 
 ```sh
 pnpm install --frozen-lockfile
