@@ -25,7 +25,6 @@ export type {
   CheckerName,
   CheckerScope,
   FrameworkCheckerName,
-  GraphConditionDomain,
   GraphConfig,
   GraphRule,
   GraphRuleAllowConfig,

@@ -165,7 +165,7 @@ Occurrence 贡献在当前 reference 规则接受后记录。[ReferenceContribut
 
 Knip JSON 解析失败和声明目录消失的错误包装保留原错误作为 `cause`；既有面向用户的消息与失败传播保持不变。[Knip parser guard](../../../packages/limina/src/__tests__/knip.spec.ts)使用畸形输出检查其 `SyntaxError` cause。这不意味着系统中的所有错误都采用统一包装。
 
-graph runner 验证关系、rules、condition/export 约束；source runner 验证 ownership、package import/dependency/ambient 规则并可结合 Knip；proof runner 比较 expected source 与 checker coverage；package runner检查配置 outputs；release runner检查发布一致性。可选工具与配置决定覆盖面，单个域通过不证明其他域通过。入口证据：[graph](../../../packages/limina/src/graph-check/runner.ts)、[source](../../../packages/limina/src/source-check/runner.ts)、[proof](../../../packages/limina/src/proof/runner.ts)、[package](../../../packages/limina/src/package-check/runner.ts)。
+graph runner 验证关系、rules、export 约束；source runner 验证 ownership、package import/dependency/ambient 规则并可结合 Knip；proof runner 比较 expected source 与 checker coverage；package runner检查配置 outputs；release runner检查发布一致性。可选工具与配置决定覆盖面，单个域通过不证明其他域通过。入口证据：[graph](../../../packages/limina/src/graph-check/runner.ts)、[source](../../../packages/limina/src/source-check/runner.ts)、[proof](../../../packages/limina/src/proof/runner.ts)、[package](../../../packages/limina/src/package-check/runner.ts)。
 
 graph 的 deny 规则、source import authority 与发布包边界检查都以当前 Node 版本的 `module.isBuiltin` 结果判定 Node 内置模块身份。specifier 的写法不能忽略：`node:test` 是内置模块，裸名 `test` 是包名；只支持 `node:` 前缀的内置模块不能凭空获得无前缀别名。历史 Node 22.18 baseline 中，`module.builtinModules` 不包含 `node:test`，因此不能靠规范化后的名单决定导入授权。见 [graph 规则](../../../packages/limina/src/graph-check/dependency-rules.ts)、[发布包边界](../../../packages/limina/src/package-check/published-boundary-specifier.ts)和[回归测试](../../../packages/limina/src/__tests__/node-builtin-specifiers.spec.ts)。
 

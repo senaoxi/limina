@@ -362,41 +362,50 @@ describe('check issue snapshots', () => {
     }
   });
 
-  it('keeps the explicitly retired command wire code readable', async () => {
-    const rootDirectory = await mkdtemp(
-      path.join(tmpdir(), 'limina-snapshot-'),
-    );
-    const issue = createLiminaCheckIssue({
-      code: LIMINA_CHECK_ISSUE_CODES.commandFailed,
-      rootDir: rootDirectory,
+  it.each([
+    {
+      activeCode: LIMINA_CHECK_ISSUE_CODES.commandFailed,
+      retiredCode: LIMINA_CHECK_ISSUE_CODES.pipelineCommandFailed,
       task: 'command',
-    });
-
-    try {
-      await writeRawCheckSnapshot(
-        rootDirectory,
-        createCheckSnapshot([
-          {
-            ...issue,
-            code: LIMINA_CHECK_ISSUE_CODES.pipelineCommandFailed,
-          },
-        ]),
+    },
+  ] as const)(
+    'keeps the retired $retiredCode readable',
+    async ({ activeCode, retiredCode, task }) => {
+      const rootDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-snapshot-'),
       );
-
-      await expect(
-        readCheckIssueSnapshot(rootDirectory),
-      ).resolves.toMatchObject({
-        issues: [
-          {
-            code: LIMINA_CHECK_ISSUE_CODES.pipelineCommandFailed,
-            task: 'command',
-          },
-        ],
+      const issue = createLiminaCheckIssue({
+        code: activeCode,
+        rootDir: rootDirectory,
+        task,
       });
-    } finally {
-      await rm(rootDirectory, { force: true, recursive: true });
-    }
-  });
+
+      try {
+        await writeRawCheckSnapshot(
+          rootDirectory,
+          createCheckSnapshot([
+            {
+              ...issue,
+              code: retiredCode,
+            },
+          ]),
+        );
+
+        await expect(
+          readCheckIssueSnapshot(rootDirectory),
+        ).resolves.toMatchObject({
+          issues: [
+            {
+              code: retiredCode,
+              task,
+            },
+          ],
+        });
+      } finally {
+        await rm(rootDirectory, { force: true, recursive: true });
+      }
+    },
+  );
 
   it.each([
     ['unknown', 'LIMINA_HISTORICAL_EXTENSION_CODE', 'source:check'],

@@ -24,7 +24,6 @@
 | 每份源码配置由哪个检查器负责                       | [检查器配置](./checkers.md)：`scope.checkers`                           |
 | 源码导入由谁授权，如何检查未使用代码               | [源码检查](./source-checks.md)：`source`                                |
 | 哪些项目引用、包或内置模块依赖不允许出现           | [图规则](./graph-rules.md)：`graph.rules` 与源码配置中的标签            |
-| 声明引用树是否使用一致的解析条件                   | [条件域](./condition-domains.md)：`graph.conditionDomains`              |
 | 哪些具体文件暂时不要求普通检查覆盖                 | [覆盖证明允许清单](./proof-allowlist.md)：`proof.allowlist`             |
 | 哪些已构建输出需要检查                             | [包检查](./package-checks.md)：`package.entries`                        |
 | 如何检查打包文件与工作区发布依赖                   | [发布检查](./release-checks.md)：`release`                              |

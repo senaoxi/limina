@@ -9,7 +9,6 @@ import {
 } from '../dependency-graph/runner';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import { runReferenceCompletenessPhase } from './completeness-phase';
-import { runConditionDomainPhase } from './condition-phase';
 import { runProjectReferencePhase } from './reference-phase';
 import { isFinishGraphCheck } from './result-reporting';
 import { runGraphRoutePhase } from './route-phase';
@@ -34,7 +33,6 @@ export async function isRunGraphCheckImpl(
 
   runGraphRoutePhase(state);
   runProjectReferencePhase(state);
-  runConditionDomainPhase(state);
   runReferenceCompletenessPhase(state);
   return isFinishGraphCheck(state);
 }

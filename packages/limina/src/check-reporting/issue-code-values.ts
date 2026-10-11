@@ -6,7 +6,6 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   commandFailed: 'LIMINA_COMMAND_FAILED',
   graphAccessDenied: 'LIMINA_GRAPH_ACCESS_DENIED',
   graphCheckFailed: 'LIMINA_GRAPH_CHECK_FAILED',
-  graphConditionDomainMismatch: 'LIMINA_GRAPH_CONDITION_DOMAIN_MISMATCH',
   graphConfigInvalid: 'LIMINA_GRAPH_CONFIG_INVALID',
   graphImportTargetUnmapped: 'LIMINA_GRAPH_IMPORT_TARGET_UNMAPPED',
   graphMaterializeFailed: 'LIMINA_GRAPH_MATERIALIZE_FAILED',

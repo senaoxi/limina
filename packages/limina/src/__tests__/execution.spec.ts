@@ -1359,7 +1359,7 @@ describe('runExecutionTasks', () => {
             id: 'b',
             issues: [
               createIssue({
-                code: LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch,
+                code: LIMINA_CHECK_ISSUE_CODES.graphReferenceMissing,
               }),
             ],
             order: 1,
@@ -1371,7 +1371,7 @@ describe('runExecutionTasks', () => {
 
       expect(snapshot?.issues.map((issue) => issue.code)).toEqual([
         LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
-        LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch,
+        LIMINA_CHECK_ISSUE_CODES.graphReferenceMissing,
       ]);
     });
   });

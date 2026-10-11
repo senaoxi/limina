@@ -27,14 +27,7 @@ export interface GraphRule {
   deny?: GraphRuleDenyConfig;
 }
 
-export interface GraphConditionDomain {
-  customConditions: string[];
-  entry: string;
-  name: string;
-}
-
 export interface GraphConfig {
-  conditionDomains?: GraphConditionDomain[];
   rules?: Record<string, GraphRule>;
 }
 
