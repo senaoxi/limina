@@ -7,12 +7,12 @@ import path from 'node:path';
 // without loading the resource or recreating conditional exports rules.
 const exactImportProbe = `
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 const { filePath, mode, specifier } = JSON.parse(process.argv[1]);
 let resolved = null;
 try {
   resolved = mode === 'require'
-    ? createRequire(filePath).resolve(specifier)
+    ? createRequire(pathToFileURL(filePath)).resolve(specifier)
     : fileURLToPath(import.meta.resolve(specifier));
 } catch {}
 process.stdout.write(JSON.stringify(resolved));
