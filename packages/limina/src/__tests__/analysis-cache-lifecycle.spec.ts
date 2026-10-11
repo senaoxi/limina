@@ -77,7 +77,7 @@ describe('analysis transaction and publication', () => {
       const f = fixture();
       writeFileSync(
         f.path('policy.mjs'),
-        'export default { pipelines: { first: [] } };',
+        'export default {pipelines: { first: [] }};',
       );
       writeFileSync(
         f.path('limina.config.mjs'),
@@ -98,7 +98,7 @@ describe('analysis transaction and publication', () => {
       const driftContent =
         inputKind === 'governance'
           ? '{"name":"changed","private":true}'
-          : 'export default { pipelines: { second: [] } };';
+          : 'export default {pipelines: { second: [] }};';
       const loader = new URL('../config/loader.ts', import.meta.url).href;
       const preflight = new URL('../preflight/manager.ts', import.meta.url)
         .href;

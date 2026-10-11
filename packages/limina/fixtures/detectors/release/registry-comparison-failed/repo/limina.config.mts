@@ -1,5 +1,5 @@
 export default {
-  config: {},
+  scope: {},
   package: {
     entries: [
       {

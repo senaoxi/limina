@@ -1,5 +1,5 @@
 export default {
-  config: {
+  scope: {
     checkers: {
       tsc: {
         include: ['tsconfig.json', '**/tsconfig.json'],
@@ -9,9 +9,6 @@ export default {
       include: ['packages/**/*.ts'],
     },
   },
-  pipelines: {
-    detector: ['proof:check'],
-  },
   proof: {
     allowlist: [
       {
@@ -19,5 +16,8 @@ export default {
         reason: 'empty paths must never silently bypass proof coverage',
       },
     ],
+  },
+  pipelines: {
+    detector: ['proof:check'],
   },
 };

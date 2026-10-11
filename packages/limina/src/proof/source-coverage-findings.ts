@@ -17,7 +17,7 @@ import type { ProofFinding } from './findings';
 import type { CheckerCoverageTarget } from './runner-types';
 
 function getSourceConfig(config: ResolvedLiminaConfig) {
-  return config.config?.source;
+  return config.scope?.source;
 }
 
 function getConfiguredSourceIncludes(config: ResolvedLiminaConfig): string[] {
@@ -45,9 +45,9 @@ function addUncoveredFileFinding(
   filePath: string,
 ): void {
   const reason =
-    'Every file in config.source must be covered by a checker entry or an explicit allowlist entry.';
+    'Every file in scope.source must be covered by a checker entry or an explicit allowlist entry.';
   const hint =
-    'Add the file to a checker entry, exclude it from config.source, or add an explicit proof.allowlist entry with a reason.';
+    'Add the file to a checker entry, exclude it from scope.source, or add an explicit proof.allowlist entry with a reason.';
 
   context.findings.push(
     createProofDiagnosticFinding({
@@ -200,9 +200,9 @@ export function addSourceBoundaryMismatchFindings(options: {
   }
 
   const reason =
-    'config.source and tsconfig*.json coverage describe different module sets.';
+    'scope.source and tsconfig*.json coverage describe different module sets.';
   const hint =
-    'Include these files in config.source, exclude them from the related tsconfig*.json, or move intentionally unmanaged files out of checker coverage.';
+    'Include these files in scope.source, exclude them from the related tsconfig*.json, or move intentionally unmanaged files out of checker coverage.';
   const overflow = outsideSourceFiles.length - 20;
   const detailLines = [
     'Typecheck proof source boundary does not match tsconfig coverage:',

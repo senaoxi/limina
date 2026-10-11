@@ -596,7 +596,7 @@ async function writeConsumerFiles(
     `import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       ${options.astroSemanticFixture ? 'astro' : 'tsc'}: {
         include: ['app/tsconfig.json'],

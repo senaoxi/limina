@@ -6,6 +6,8 @@ Source, tests and configuration establish current behavior; records preserve dur
 
 ## Read by task
 
+For public option placement, grouping, defaults, and compatibility trade-offs, see [Configuration design](./configuration-design.md).
+
 Read the relevant paired records before edits. For architecture work, use the Limina map to locate the sole owner; the entries below route other tasks and direct questions without duplicating that owner's definitions.
 
 | Task or question                                                    | Context owner                                       |

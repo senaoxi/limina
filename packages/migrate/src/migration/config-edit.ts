@@ -13,6 +13,21 @@ function editRegions(
     : syntax.insert(regions, `exclude: [${entries}]`);
 }
 
+function editScope(
+  syntax: StaticConfigSyntax,
+  scope: ts.ObjectLiteralExpression,
+  entries: string,
+): string {
+  const property = syntax.property(scope, 'regions');
+  return property
+    ? editRegions(
+        syntax,
+        syntax.object(syntax.resolve(property.initializer)),
+        entries,
+      )
+    : syntax.insert(scope, `regions: { exclude: [${entries}] }`);
+}
+
 function editExclusions(
   syntax: StaticConfigSyntax,
   expression: ts.Expression,
@@ -38,12 +53,12 @@ export function addStaticConfigExclusions(
   const entries = additions
     .map((entry) => JSON.stringify(entry, null, 2))
     .join(',\n');
-  const property = syntax.property(root, 'regions');
+  const property = syntax.property(root, 'scope');
   return property
-    ? editRegions(
+    ? editScope(
         syntax,
         syntax.object(syntax.resolve(property.initializer)),
         entries,
       )
-    : syntax.insert(root, `regions: { exclude: [${entries}] }`);
+    : syntax.insert(root, `scope: { regions: { exclude: [${entries}] } }`);
 }

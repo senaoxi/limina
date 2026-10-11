@@ -1,12 +1,12 @@
 # Source Boundary
 
-`config.source` selects governed source files. `proof check` compares this set with checker entries, generated graph projects, and the allowlist to find missing files or inconsistent coverage. Top-level `source` instead configures import authorization, ambient declarations, and optional Knip checks; see [Source Checks](./source-checks.md).
+`scope.source` selects governed source files. `proof check` compares this set with checker entries, generated graph projects, and the allowlist to find missing files or inconsistent coverage. `source` instead configures import authorization, ambient declarations, and optional Knip checks; see [Source Checks](./source-checks.md).
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     source: {
       include: ['...', 'packages/**/src/**/*.vue'],
       exclude: ['...', 'packages/**/src/generated/**'],
@@ -47,11 +47,11 @@ Declaring `liminaOptions.outputs: {}` makes `./dist`, relative to that source co
 
 ## Review the tsconfig When Excluding Files
 
-`config.source.exclude` changes only Limina's governed source set. It does not rewrite a checker's `files`, `include`, or files admitted through imports. If a checker or generated graph still covers those files, `proof check` can report `LIMINA_PROOF_SOURCE_BOUNDARY_MISMATCH`: the two sides describe different file sets.
+`scope.source.exclude` changes only Limina's governed source set. It does not rewrite a checker's `files`, `include`, or files admitted through imports. If a checker or generated graph still covers those files, `proof check` can report `LIMINA_PROOF_SOURCE_BOUNDARY_MISMATCH`: the two sides describe different file sets.
 
 For example, if `packages/core/src/generated/runtime.ts` is excluded from the source boundary but remains in the effective file set of `tsconfig.lib.json`, adding the exclusion alone does not resolve coverage. Choose according to the file's actual purpose:
 
-- It is project source: keep it in `config.source` and assign it to one source leaf config.
+- It is project source: keep it in `scope.source` and assign it to one source leaf config.
 - It is outside this run's governance: also adjust the relevant tsconfig coverage, and watch for imports that can bring it back into the checker.
 - It remains governed but intentionally has no ordinary coverage: use a [proof allowlist](./proof-allowlist.md) entry with a reason.
 

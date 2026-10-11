@@ -41,7 +41,8 @@ async function fixture(
   const files = {
     'package.json': json({ name: 'root', private: true, type: 'module' }),
     'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
-    'limina.config.mjs': 'export default {};\n',
+    'limina.config.mjs': `export default {};
+`,
     'packages/app/package.json': json({ name: '@fixture/app', private: true }),
     'packages/app/good/tsconfig.json': source({ noEmit: true }),
     'packages/app/good/src/index.ts': 'export const good = 1;\n',
@@ -642,7 +643,8 @@ return {};};`,
 
   it('reports dynamic configuration isolation as incomplete while processing independent sources', async () => {
     const f = await fixture({
-      'limina.config.mjs': 'export default async () => ({});\n',
+      'limina.config.mjs': `export default async () => ({});
+`,
       'packages/app/bad/tsconfig.json': '{ invalid',
     });
     try {
@@ -653,7 +655,8 @@ return {};};`,
         f.path('packages/app/good/tsconfig.json'),
       );
       expect(await readFile(f.path('limina.config.mjs'), 'utf8')).toBe(
-        'export default async () => ({});\n',
+        `export default async () => ({});
+`,
       );
       expect(
         (await f.report()).records.some(
@@ -752,7 +755,7 @@ return {};};`,
   it('reports incomplete comparison for illegal named checker entries without fabricating an empty graph', async () => {
     const f = await fixture({
       'limina.config.mjs':
-        'export default {config:{checkers:{tsc:{include:["packages/app/named/tsconfig.lib.json"]}}}};',
+        'export default {scope: {checkers:{tsc:{include:["packages/app/named/tsconfig.lib.json"]}}}};',
       'packages/app/named/tsconfig.lib.json': json({ files: ['index.ts'] }),
       'packages/app/named/index.ts': 'export {};',
       'packages/app/a/tsconfig.json': json({
@@ -899,7 +902,8 @@ return {};};`,
 
   it('does not read or adopt an outside native reference', async () => {
     const f = await fixture({
-      'limina.config.mjs': `export default { regions: { exclude: [{ kind: 'package-scope', include: ['outside'], reason: 'Independent external fixture' }] } };`,
+      'limina.config.mjs':
+        "export default {scope: {regions: { exclude: [{ kind: 'package-scope', include: ['outside'], reason: 'Independent external fixture' }] }}};",
       'outside/package.json': json({ name: 'outside', private: true }),
       'outside/tsconfig.json': '{ invalid external target',
       'packages/app/a/tsconfig.json': json({
@@ -962,7 +966,8 @@ return {};};`,
         f.path('packages/app/good/tsconfig.json'),
       );
       expect(await readFile(f.path('limina.config.mjs'), 'utf8')).toBe(
-        'export default {};\n',
+        `export default {};
+`,
       );
       expect(await readFile(f.path('packages/app/tsconfig.json'), 'utf8')).toBe(
         '{ invalid',

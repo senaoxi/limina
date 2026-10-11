@@ -82,13 +82,13 @@ When the source scope imports several JSON files, a JSON glob can be used:
 
 ## Region exclusions
 
-### `regions.exclude[...].kind is required`
+### `scope.regions.exclude[...].kind is required`
 
 Every exclusion must declare one kind: `workspace-package`, `package-scope`, or `tsconfig`. Limina does not infer the kind from the path. The first two select candidate root directories; `tsconfig` selects exact config-root-relative `tsconfig.json` or `tsconfig.*.json` file paths, without globs, and keeps the package activated.
 
-### `regions.exclude[...] does not match an exact governance candidate.` {#regions-exclude-rule-does-not-match-a-recognized-governance-root}
+### `scope.regions.exclude[...] does not match an exact governance candidate.` {#regions-exclude-rule-does-not-match-a-recognized-governance-root}
 
-The diagnostic is `regions.exclude[index] does not match an exact governance candidate.`, where `index` identifies the unmatched rule. Check all three facts:
+The diagnostic is `scope.regions.exclude[index] does not match an exact governance candidate.`, where `index` identifies the unmatched rule. Check all three facts:
 
 1. `kind` matches the candidate type.
 2. For `workspace-package` or `package-scope`, `include` selects the candidate's config-root-relative lexical directory, including `../` when needed, not its package name or descriptor path.
@@ -96,8 +96,8 @@ The diagnostic is `regions.exclude[index] does not match an exact governance can
 
 For example, select an activated package rooted at `packages/legacy-app` with `kind: 'workspace-package'` and `include: ['packages/legacy-app']`.
 
-### `Multiple regions.exclude rules match` {#multiple-regions-exclude-rules-match-the-same-governance-root}
+### `Multiple scope.regions.exclude rules match` {#multiple-regions-exclude-rules-match-the-same-governance-root}
 
-The diagnostic lists the candidate kind and path after `Multiple regions.exclude rules match`. Make the patterns for that `kind` non-overlapping. Rule order does not choose a winning reason.
+The diagnostic lists the candidate kind and path after `Multiple scope.regions.exclude rules match`. Make the patterns for that `kind` non-overlapping. Rule order does not choose a winning reason.
 
 Nested workspace roots do not need exclusion rules. They automatically stop the current owner's traversal, and activated packages below them start independent package-island jobs.

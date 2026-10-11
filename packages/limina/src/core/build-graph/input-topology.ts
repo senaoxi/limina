@@ -80,7 +80,7 @@ async function isReadWorkspace(
 }
 
 function checkerSelections(config: ResolvedLiminaConfig) {
-  const auto = getAutoCheckerConfig(config.config?.checkers);
+  const auto = getAutoCheckerConfig(config.scope?.checkers);
   return [
     {
       checkerName: '__auto__',

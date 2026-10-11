@@ -1,5 +1,3 @@
-import type { CheckerConfigMode } from './pipeline-checker-types';
-
 export interface SourceKnipIgnoredDependencyConfig {
   dep: string;
   reason: string;
@@ -56,9 +54,4 @@ export interface SourceCheckConfig {
 export interface SourceBoundaryConfig {
   exclude?: string[];
   include?: string[];
-}
-
-export interface SharedLiminaConfig {
-  checkers?: CheckerConfigMode;
-  source?: SourceBoundaryConfig;
 }

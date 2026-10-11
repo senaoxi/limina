@@ -71,8 +71,7 @@ function getConfiguredConcurrency(
   config: ResolvedLiminaConfig,
   kind: ExecutionConcurrencyKind,
 ): ExecutionConcurrency {
-  const configuredValue =
-    config.execution === undefined ? undefined : config.execution[kind];
+  const configuredValue = config.concurrency?.[kind];
 
   return configuredConcurrency(configuredValue, defaultExecutionConfig[kind]);
 }

@@ -64,7 +64,7 @@ function createIssue(overrides: Partial<LiminaCheckIssue>): LiminaCheckIssue {
 }
 
 function createConfig(
-  execution: ResolvedLiminaConfig['execution'] = {},
+  execution: ResolvedLiminaConfig['concurrency'] = {},
   rootDirectory = '/workspace',
 ): ResolvedLiminaConfig {
   return {
@@ -75,8 +75,8 @@ function createConfig(
       manifest: {},
     },
     configPath: path.join(rootDirectory, 'limina.config.mjs'),
-    execution,
     rootDir: rootDirectory,
+    concurrency: execution,
   };
 }
 
@@ -1721,7 +1721,8 @@ describe('runExecutionTasks', () => {
 
       await writeFile(
         path.join(rootDirectory, 'limina.config.mjs'),
-        'export default {};\n',
+        `export default {};
+`,
       );
       await writeFile(
         path.join(rootDirectory, 'pnpm-workspace.yaml'),

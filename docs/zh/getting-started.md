@@ -145,7 +145,7 @@ pnpm exec limina --config ../../limina.config.mts check
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       auto: {},
     },
@@ -173,7 +173,7 @@ export default defineConfig({
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       'vue-tsc': {
         include: ['packages/web/tsconfig.json'],

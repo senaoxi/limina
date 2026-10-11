@@ -1,6 +1,6 @@
 # 源码检查
 
-顶层 `source` 配置源码导入授权、环境声明角色和可选的源码使用分析。`source check` 默认按源码所属包及其依赖声明检查导入；不必先填写空的 `allow` 或 `knip` 对象。
+`source` 配置源码导入授权、环境声明角色和可选的源码使用分析。`source check` 默认按源码所属包及其依赖声明检查导入；不必先填写空的 `allow` 或 `knip` 对象。
 
 | 字段                          | 用途                                   | 未配置时                   |
 | ----------------------------- | -------------------------------------- | -------------------------- |
@@ -8,13 +8,13 @@
 | `source.declarations.ambient` | 标记需要显式管理的环境声明角色         | 不增加显式环境声明授权     |
 | `source.knip`                 | 检查未使用工作区依赖和未使用源码模块   | 关闭；启用后须安装 `knip`  |
 
-这些字段不选择全局源码集合。文件范围由 [`config.source`](./source-boundary.md) 决定。
+这些字段不选择全局源码集合。文件范围由 [`scope.source`](./source-boundary.md) 决定。
 
 ## 包归属与发现范围
 
 Limina 从每个已验证、已激活包的独立治理范围发现源码，包括外部包和无名称包。包根的清单决定源码归属和依赖授权。相对 `config.rootDir` 的源码选择器可以包含 `../`，但只能过滤已发现的候选，不能把未激活目录加入治理。
 
-默认情况下，嵌套 `package.json` 会停止外层包的遍历。启用 [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，符合条件的无名嵌套作用域可以继续留在外层区域；其中源码使用外层包的依赖声明，嵌套清单仍负责相对导入和 `#imports` 的包作用域。嵌套工作区边界与区域排除的完整规则见[治理区域](./regions.md)。
+默认情况下，嵌套 `package.json` 会停止外层包的遍历。启用 [`scope.regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，符合条件的无名嵌套作用域可以继续留在外层区域；其中源码使用外层包的依赖声明，嵌套清单仍负责相对导入和 `#imports` 的包作用域。嵌套工作区边界与区域排除的完整规则见[治理区域](./regions.md)。
 
 ## 资源模块导入
 
@@ -82,7 +82,7 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 }
 ```
 
-`allow` 的键名必须匹配应用 `regions` 后仍留在当前治理区域内的源码归属方身份。具名工作区包使用包名；没有 `name` 的源码归属方使用相对于 `config.rootDir` 的词法包目录，必要时包含 `../`。`include` 可选并相对于 `config.rootDir`；它可以包含 `../`，但只能过滤键名对应的源码归属方已受治理的源码。省略时，授权适用于这个源码归属方下所有被 Limina 管辖的源码模块。
+`allow` 的键名必须匹配应用 `scope.regions` 后仍留在当前治理区域内的源码归属方身份。具名工作区包使用包名；没有 `name` 的源码归属方使用相对于 `config.rootDir` 的词法包目录，必要时包含 `../`。`include` 可选并相对于 `config.rootDir`；它可以包含 `../`，但只能过滤键名对应的源码归属方已受治理的源码。省略时，授权适用于这个源码归属方下所有被 Limina 管辖的源码模块。
 
 `workspaceRootDependencies` 不是直接导入允许清单。它只说明当源码归属方和 `include` 范围都匹配时，哪些包名可以读取工作区根目录清单中的依赖声明。Limina 仍然要求根清单实际声明这个包；如果源码归属方和根目录之间存在中间工作区包清单声明了同一个包，根目录授权不会绕过这个中间清单。
 

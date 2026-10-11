@@ -81,7 +81,7 @@ function formatDuplicateOwnershipProblem(options: {
     `  source config: ${toRelativePath(options.rootDir, options.ownership.sourceConfigPath)}`,
     `  primary owners: ${owners.join(', ')}`,
     '  reason: each source tsconfig must have exactly one checker owner after solution references are expanded.',
-    '  fix: narrow config.checkers.<checker>.include or config.checkers.<checker>.exclude so only one checker owns this tsconfig.',
+    '  fix: narrow scope.checkers.<checker>.include or scope.checkers.<checker>.exclude so only one checker owns this tsconfig.',
   ].join('\n');
 }
 
@@ -172,7 +172,7 @@ function addOverlappingEntryProblem(options: {
         `  entry config: ${toRelativePath(options.rootDir, options.entryConfigPath)}`,
         `  checkers: ${names.join(', ')}`,
         '  reason: checker.include/checker.exclude entry sets must not overlap; capability overlap is allowed only after tsconfig.json references are expanded.',
-        '  fix: narrow config.checkers.<checker>.include or config.checkers.<checker>.exclude so each tsconfig.json entry belongs to one checker.',
+        '  fix: narrow scope.checkers.<checker>.include or scope.checkers.<checker>.exclude so each tsconfig.json entry belongs to one checker.',
       ].join('\n'),
     );
   }

@@ -6,7 +6,7 @@ import {
   unsupportedCheckerNameReason,
 } from './checker-schema-constants';
 import { checkerConfigShapeSchema } from './checker-scope-schema';
-import { validateImports } from './imports';
+import { validateRegionsConfig } from './regions';
 import {
   addConfigIssue,
   addUnknownFieldIssues,
@@ -24,7 +24,7 @@ export {
 export { checkerConfigShapeSchema } from './checker-scope-schema';
 
 const checkerConfigReason =
-  'config.checkers must be an object keyed by auto or checker name.';
+  'scope.checkers must be an object keyed by auto or checker name.';
 
 function addCheckerIssue(
   context: ConfigValidationContext,
@@ -152,7 +152,7 @@ function validateAutoCheckerValue(
   addCheckerIssue(
     context,
     ['checkers', 'auto'],
-    'config.checkers.auto must be an object when configured.',
+    'scope.checkers.auto must be an object when configured.',
   );
 }
 
@@ -204,9 +204,21 @@ function validateCheckers(
   validateCheckerRecord(value, context);
 }
 
-export const sharedLiminaConfigShapeSchema: z.ZodType<Record<string, unknown>> =
-  z.looseObject({}).superRefine((config, context) => {
+export const scopeConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
+  .looseObject({
+    checkers: z.unknown().optional(),
+    source: z.unknown().optional(),
+    regions: z.unknown().optional(),
+  })
+  .superRefine((config, context) => {
+    addUnknownFieldIssues({
+      allowed: new Set(['regions', 'source', 'checkers']),
+      ctx: context,
+      message: 'unknown scope config field.',
+      path: [],
+      value: config,
+    });
+    validateRegionsConfig(config.regions, context);
     validateCheckers(config.checkers, context);
-    validateImports(config.imports, context);
     validateSourceBoundary(config.source, context);
   });

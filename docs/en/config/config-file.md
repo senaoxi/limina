@@ -5,9 +5,7 @@ Limina normally reads `limina.config.mts` beside the project's `package.json`. S
 ```ts
 import { defineConfig } from 'limina';
 
-export default defineConfig({
-  config: {},
-});
+export default defineConfig({});
 ```
 
 A config module can export an object, a `Promise`, or a function that receives `{ command, mode }`. `defineConfig` provides type hints and preserves its input; Limina handles loading and validation. See the [configuration overview](./index.md) for each field's responsibility.
@@ -136,3 +134,33 @@ A named pipeline loads the config once with `command: 'check'`. Its `package:che
 ## Public API
 
 The public `limina` entry exports `defineConfig`, config and issue types, and validation error classes. `limina/internal/*` is for repository-internal use; its source exports are removed from published packages and are not consumer APIs.
+
+## Configuration Migration {#config-domains-migration}
+
+This is a breaking change to the previously published beta configuration API. Old fields and mixed old/new configurations are rejected with migration paths; old fields are neither ignored nor translated. Move each complete value, including options not shown in introductory examples.
+
+| Previous path                | New path                       |
+| ---------------------------- | ------------------------------ |
+| `config.source`              | `scope.source`                 |
+| `config.checkers`            | `scope.checkers`               |
+| `regions`                    | `scope.regions`                |
+| `graph`                      | `graph`                        |
+| `source`                     | `source`                       |
+| `proof`                      | `proof`                        |
+| `package`                    | `package`                      |
+| `release`                    | `release`                      |
+| `pipelines`                  | `pipelines`                    |
+| `execution.tasks`            | `concurrency.tasks`            |
+| `execution.checkerBuild`     | `concurrency.checkerBuild`     |
+| `execution.checkerTypecheck` | `concurrency.checkerTypecheck` |
+| `execution.packageEntries`   | `concurrency.packageEntries`   |
+| `execution.releaseEntries`   | `concurrency.releaseEntries`   |
+| `cache`                      | `cache`                        |
+
+`scope`, `pipelines`, `concurrency`, `cache`, and each check field can be omitted. Only governance boundaries are grouped under `scope`. `graph`, `source`, `proof`, `package`, `release`, and `pipelines` retain their top-level paths; `concurrency` replaces the former `execution` field. Neither `checks` nor `execution` wrappers are accepted. `scope.source.exclude: []` remains invalid: omit it for the defaults, or use `...` to include the defaults within an explicit array.
+
+Every existing child option remains available, including `graph.conditionDomains`, `source.declarations`, package entry tool options, and `release.npmPackageJsonLint`. `package.entries[].outDir` still participates in workspace output discovery, boundary validation, and source filtering even without a `package:check` step.
+
+Modules still export objects, promises, or factories receiving `{ command, mode }`. File selectors remain relative to the resolved governance root, `config.rootDir`; `cache.dependencies` remains relative to the selected config file. CLI commands, pipeline steps, and concurrency defaults are unchanged. Snapshots from the previous analysis implementation start cold and are rebuilt; other configuration namespaces, worktrees, and checker caches are not cleared.
+
+Replace the former `SharedLiminaConfig` type with `ScopeConfig`. `ExecutionConfig` continues to describe the five concurrency settings, now under `concurrency`.

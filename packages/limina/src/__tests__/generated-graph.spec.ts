@@ -214,15 +214,15 @@ async function createFixture(
       await rm(rootDirectory, { force: true, recursive: true });
     },
     config: withFixtureGovernanceRoot({
-      config: {
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
+      rootDir: rootDirectory,
+      scope: {
         checkers: {
           tsc: {
             include: ['packages/**/tsconfig.json'],
           },
         },
       },
-      configPath: path.join(rootDirectory, 'limina.config.mjs'),
-      rootDir: rootDirectory,
       source: options.source,
     }),
     rootDir: rootDirectory,
@@ -348,7 +348,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         resolveGeneratedGraphCheckers({
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         }),
       ).rejects.toThrow('Ambiguous canonical governed source ownership');
     } finally {
@@ -380,7 +383,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
         }),
       });
       const analysis = createSpiedImportAnalysis();
-      const config = { ...fixture.config, config: { checkers: { auto: {} } } };
+      const config = {
+        ...fixture.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
+      };
       try {
         if (family === 'vue') {
           const result = await prepareGeneratedTsconfigGraph(config, {
@@ -443,7 +452,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       try {
         const result = await prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         });
         expect(
           result.ownershipPlan.dependencyFacts.find(
@@ -489,7 +501,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
     const analysis = createSpiedImportAnalysis();
     try {
       const result = await prepareGeneratedTsconfigGraph(
-        { ...fixture.config, config: { checkers: { auto: {} } } },
+        {
+          ...fixture.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
+        },
         { importAnalysisContext: analysis.context },
       );
       expect(
@@ -541,7 +559,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       const sourceConfigPath = normalizeAbsolutePath(
         path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
@@ -597,7 +618,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       const configPath = normalizeAbsolutePath(
         path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
@@ -639,7 +663,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       const sourceConfigPath = normalizeAbsolutePath(
         path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
@@ -700,7 +727,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       const sourceConfigPath = normalizeAbsolutePath(
         path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
@@ -751,7 +781,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       const sourceConfigPath = normalizeAbsolutePath(
         path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
@@ -985,7 +1018,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     });
 
     try {
-      fixture.config.regions = {
+      (fixture.config.scope ??= {}).regions = {
         exclude: [
           {
             include: ['packages/app/**'],
@@ -1004,7 +1037,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('uses auto checkers when config.checkers is omitted', async () => {
+  it('uses auto checkers when scope.checkers is omitted', async () => {
     const fixture = await createFixture({
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
       'packages/pkg/tsconfig.json': json({
@@ -1022,7 +1055,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {},
+        scope: {},
       });
 
       expect(result.checkers).toMatchObject([
@@ -1069,7 +1102,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: { useTsgo: true } } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: { useTsgo: true } },
+        },
       });
 
       expect(result.checkers).toMatchObject([
@@ -1215,7 +1251,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: ['**/tsconfig.json'],
@@ -1261,7 +1298,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {},
+        scope: {},
       });
 
       expect(result.checkers).toMatchObject([
@@ -1294,7 +1331,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const checkers = await resolveGeneratedGraphCheckers({
         ...fixture.config,
-        config: {},
+        scope: {},
       });
       expect(checkers).toMatchObject([
         {
@@ -1398,7 +1435,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {},
+          scope: {},
         }),
       ).rejects.toThrow('Generated graph import crosses governance boundary');
     } finally {
@@ -1428,7 +1465,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const result = await prepareGeneratedTsconfigGraph(
         {
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: { auto: {} },
           },
         },
@@ -1485,7 +1523,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
         '@example/custom',
       );
       const result = await prepareGeneratedTsconfigGraph(
-        { ...fixture.config, config: { checkers: { auto: {} } } },
+        {
+          ...fixture.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
+        },
         { importAnalysisContext: analysis.context },
       );
       expect(
@@ -1543,7 +1587,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const result = await prepareGeneratedTsconfigGraph(
         {
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         },
         { importAnalysisContext: analysis.context },
       );
@@ -1594,7 +1641,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
         }),
         'packages/app/src/Page.astro':
           '---\nimport value from "./value";\nvoid value;\n---\n',
-        'packages/app/src/value.ts': 'export default 1;\n',
+        'packages/app/src/value.ts': `export default 1;
+`,
         'tsconfig.json': json({
           compilerOptions: {
             module: 'ESNext',
@@ -1613,7 +1661,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await linkAstroToolchain(path.join(fixture.rootDir, 'packages/app'));
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
 
       expect(result.checkers).toMatchObject([
@@ -1659,7 +1710,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: { auto: {} },
         },
       });
@@ -1755,7 +1807,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: { auto: {} },
         },
       });
@@ -1831,7 +1884,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             'svelte-check': {
               include: ['packages/domain/tsconfig.json'],
@@ -1877,7 +1931,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const result = await prepareGeneratedTsconfigGraph(
         {
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               astro: {
                 include: ['packages/app/tsconfig.json'],
@@ -1923,7 +1978,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         resolveGeneratedGraphCheckers({
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         }),
       ).rejects.toThrow(
         /multiple framework checker requirements[\s\S]*astro[\s\S]*svelte-check/u,
@@ -1957,7 +2015,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
         resolveGeneratedGraphCheckers(
           {
             ...fixture.config,
-            config: { checkers: { auto: {} } },
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
           },
           { importAnalysisContext: analysis.context },
         ),
@@ -1999,7 +2060,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       expect(result.manifest.ownership.configs).toEqual(
         expect.arrayContaining([
@@ -2038,7 +2102,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       expect(result.checkers).toMatchObject([
         {
@@ -2082,8 +2149,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
   it('respects an ambient module contract as a framework domain boundary', async () => {
     const fixture = await createFixture({
-      'packages/consumer/src/framework.d.ts':
-        "declare module '*.svelte' { const component: unknown; export default component; }\n",
+      'packages/consumer/src/framework.d.ts': `declare module '*.svelte' { const component: unknown; export default component; }
+`,
       'packages/consumer/src/index.ts':
         "import Component from '../../svelte/src/App.svelte';\nexport const value = Component;\n",
       'packages/consumer/tsconfig.json': json({ include: ['src/**/*'] }),
@@ -2096,7 +2163,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const checkers = await resolveGeneratedGraphCheckers(
         {
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         },
         { importAnalysisContext: analysis.context },
       );
@@ -2124,8 +2194,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
         },
         include: ['src/**/*.ts'],
       }),
-      'packages/svelte/src/App.d.svelte.ts':
-        'declare const component: unknown;\nexport default component;\n',
+      'packages/svelte/src/App.d.svelte.ts': `declare const component: unknown;
+export default component;
+`,
       'packages/svelte/src/App.svelte': '<h1>Svelte</h1>\n',
       'packages/svelte/tsconfig.json': json({ include: ['src/**/*'] }),
     });
@@ -2135,7 +2206,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const result = await prepareGeneratedTsconfigGraph(
         {
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         },
         { importAnalysisContext: analysis.context },
       );
@@ -2192,7 +2266,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       try {
         const result = await prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               [checker]: {
                 include: ['packages/consumer/tsconfig.json'],
@@ -2244,7 +2319,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       try {
         const checkers = await resolveGeneratedGraphCheckers({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               [checker]: {
                 include: ['packages/consumer/tsconfig.json'],
@@ -2282,7 +2358,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const checkers = await resolveGeneratedGraphCheckers({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       expect(checkers).toEqual(
         expect.arrayContaining([
@@ -2327,7 +2406,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         resolveGeneratedGraphCheckers({
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         }),
       ).rejects.toThrow(
         'Pending framework target has ambiguous effective membership',
@@ -2369,7 +2451,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const result = await prepareGeneratedTsconfigGraph(
         {
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: { auto: {} },
           },
         },
@@ -2414,7 +2497,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
         resolveGeneratedGraphCheckers(
           {
             ...fixture.config,
-            config: { checkers: { auto: {} } },
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
           },
           { importAnalysisContext: analysis.context },
         ),
@@ -2437,8 +2523,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const fixture = await createFixture({
         'packages/a/src/index.ts': `import raw from '${specifier}';\nexport const value = raw;\n`,
         ...(ambient && {
-          'packages/a/src/env.d.ts':
-            "declare module '*?raw' { const value: string; export default value; }\n",
+          'packages/a/src/env.d.ts': `declare module '*?raw' { const value: string; export default value; }
+`,
         }),
         'packages/a/tsconfig.json': json({
           compilerOptions: managedOutputCompilerOptions(),
@@ -2454,7 +2540,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const analysis = createSpiedImportAnalysis();
       try {
         const result = await prepareGeneratedTsconfigGraph(
-          { ...fixture.config, config: { checkers: { auto: {} } } },
+          {
+            ...fixture.config,
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
+          },
           { importAnalysisContext: analysis.context },
         );
         expect(
@@ -2505,7 +2597,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const analysis = createSpiedImportAnalysis();
       try {
         const result = await prepareGeneratedTsconfigGraph(
-          { ...fixture.config, config: { checkers: { auto: {} } } },
+          {
+            ...fixture.config,
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
+          },
           { importAnalysisContext: analysis.context },
         );
         expect(
@@ -2556,7 +2654,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const analysis = createSpiedImportAnalysis();
       try {
         const result = await prepareGeneratedTsconfigGraph(
-          { ...fixture.config, config: { checkers: { auto: {} } } },
+          {
+            ...fixture.config,
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
+          },
           { importAnalysisContext: analysis.context },
         );
         expect(
@@ -2607,7 +2711,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
         resolveGeneratedGraphCheckers(
           {
             ...fixture.config,
-            config: { checkers: { auto: {} } },
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
           },
           {
             importAnalysisContext: { ...base, resolveOxcImport },
@@ -2658,7 +2765,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: { auto: {} },
         },
       });
@@ -2704,7 +2812,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: { auto: {} },
         },
       });
@@ -2752,7 +2861,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: { auto: {} },
           },
         }),
@@ -2791,7 +2901,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             auto: { exclude: ['packages/playground/tsconfig.json'] },
           },
@@ -2854,7 +2965,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             auto: { exclude: ['packages/pkg/tsconfig.test.json'] },
           },
@@ -2902,7 +3014,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             auto: { exclude: ['packages/pkg/tsconfig.test.json'] },
           },
@@ -2963,7 +3076,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {},
+        scope: {},
       });
 
       expect(result.manifest.checkers.tsc?.roots).toEqual([
@@ -2998,7 +3111,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
         const result = await prepareGeneratedTsconfigGraph(
           {
             ...fixture.config,
-            config: {
+            scope: {
+              regions: fixture.config.scope?.regions,
               checkers: { auto: {} },
             },
           },
@@ -3048,7 +3162,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: { auto: {} },
         },
       });
@@ -3088,7 +3203,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: { auto: {} },
         },
       });
@@ -3116,7 +3232,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       try {
         await prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: { auto: {} },
           },
         });
@@ -3160,7 +3277,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: { auto: {} },
         },
       });
@@ -3215,7 +3333,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
         await expect(
           prepareGeneratedTsconfigGraph({
             ...fixture.config,
-            config: { checkers: { auto: {} } },
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
           }),
         ).rejects.toThrow(
           /Semantic authority conflict|generated graph preparation problems/u,
@@ -3247,7 +3368,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       try {
         const result = await prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         });
         const sourceConfigPath = normalizeAbsolutePath(
           path.join(fixture.rootDir, 'packages/app/tsconfig.json'),
@@ -3325,7 +3449,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           include: ['src/**/*'],
         }),
       });
-      fixture.config.config = {
+      fixture.config.scope = {
         checkers: {
           [checkerName]: {
             include: ['packages/**/tsconfig.json'],
@@ -3361,7 +3485,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         }),
       ).rejects.toThrow('Semantic authority conflict');
     } finally {
@@ -3384,7 +3511,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         }),
       ).rejects.toThrow('Limina only projects TypeScript declaration builds');
     } finally {
@@ -3432,7 +3562,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       const sourceConfigPath = normalizeAbsolutePath(
         path.join(fixture.rootDir, 'packages/a/tsconfig.json'),
@@ -3536,7 +3669,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       const configPath = (packageName: string) =>
         normalizeAbsolutePath(
@@ -3611,7 +3747,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
       let thrown: unknown;
       try {
         await prepareGeneratedTsconfigGraph(
-          { ...fixture.config, config: { checkers: { auto: {} } } },
+          {
+            ...fixture.config,
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
+          },
           { importAnalysisContext: importAnalysis },
         );
       } catch (error) {
@@ -3672,7 +3814,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       const aConfigPath = normalizeAbsolutePath(
         path.join(fixture.rootDir, 'packages/a/tsconfig.json'),
@@ -3734,7 +3879,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         }),
       ).rejects.toThrow(
         /Unable to resolve framework source import:[\s\S]*\.\/missing\.ts[\s\S]*\$lib\/missing/u,
@@ -3782,7 +3930,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
         try {
           await prepareGeneratedTsconfigGraph({
             ...fixture.config,
-            config: { checkers: { auto: {} } },
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
           });
         } catch (error) {
           thrown = error;
@@ -3818,7 +3969,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const result = await prepareGeneratedTsconfigGraph(
         {
           ...fixture.config,
-          config: { checkers: { auto: {} } },
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
         },
         { importAnalysisContext: analysis.context },
       );
@@ -5050,7 +5204,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       try {
         await prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsgo: {
                 include: ['packages/one/tsconfig.json'],
@@ -5112,7 +5267,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/one/tsconfig.json'],
@@ -5205,7 +5361,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: [
@@ -5259,7 +5416,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: [
@@ -5303,7 +5461,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/**/tsconfig*.json'],
@@ -5368,7 +5527,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: ['packages/pkg/tsconfig.json'],
@@ -5443,7 +5603,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: ['tsconfig.json'],
@@ -5581,7 +5742,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: ['packages/pkg/tsconfig.json'],
@@ -5640,7 +5802,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/pkg/tsconfig.json'],
@@ -5682,7 +5845,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               'vue-tsc': {
                 include: ['packages/pkg/tsconfig.json'],
@@ -5715,7 +5879,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/pkg/tsconfig.json'],
@@ -5767,7 +5932,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/one/tsconfig.json'],
@@ -5819,7 +5985,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/two/tsconfig.json'],
@@ -5855,7 +6022,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: { checkers: { auto: {} } },
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
       });
       expect(result.manifest.ownership.configs).toEqual(
         expect.arrayContaining([
@@ -5906,7 +6076,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/ts/tsconfig.json'],
@@ -5973,7 +6144,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             'vue-tsc': { include: ['packages/app/tsconfig.json'] },
           },
@@ -6037,7 +6209,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     const reader = vi.spyOn(configReaders, 'readGraphRules');
     const selectedConfig: ResolvedLiminaConfig = {
       ...fixture.config,
-      config: {
+      scope: {
+        regions: fixture.config.scope?.regions,
         checkers: {
           tsc: { include: ['packages/app/tsconfig.json'] },
           tsgo: {
@@ -6140,7 +6313,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/app/tsconfig.json'],
@@ -6204,7 +6378,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/app/tsconfig.json'],
@@ -6255,7 +6430,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/app/tsconfig.json'],
@@ -6321,7 +6497,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       try {
         await prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: ['packages/app/tsconfig.json'],
@@ -6394,7 +6571,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: ['packages/app/tsconfig.json'],
@@ -6451,7 +6629,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       try {
         await prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: [
@@ -6517,7 +6696,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: [
@@ -6608,7 +6788,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
         );
         const result = await prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: [
@@ -6703,7 +6884,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: [
@@ -6735,9 +6917,11 @@ describe('prepareGeneratedTsconfigGraph', () => {
         compilerOptions: managedOutputCompilerOptions(),
         include: ['src/**/*.vue'],
       }),
-      'packages/theme/dist/Button.js': 'export default {};\n',
-      'packages/theme/dist/Button.vue.d.ts':
-        'declare const Button: unknown;\nexport default Button;\n',
+      'packages/theme/dist/Button.js': `export default {};
+`,
+      'packages/theme/dist/Button.vue.d.ts': `declare const Button: unknown;
+export default Button;
+`,
       'packages/theme/package.json': json({
         exports: {
           '.': {
@@ -6772,7 +6956,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             'vue-tsc': {
               include: [
@@ -6847,7 +7032,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: [
@@ -6922,7 +7108,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: [
@@ -6980,7 +7167,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: [
@@ -7069,7 +7257,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: [
@@ -7139,6 +7328,17 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: {
+            tsc: {
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/provider/tsconfig.json',
+              ],
+            },
+          },
+        },
         graph: {
           rules: {
             app: {
@@ -7150,16 +7350,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
                   },
                 ],
               },
-            },
-          },
-        },
-        config: {
-          checkers: {
-            tsc: {
-              include: [
-                'packages/app/tsconfig.json',
-                'packages/provider/tsconfig.json',
-              ],
             },
           },
         },
@@ -7221,7 +7411,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             tsc: {
               include: ['packages/app/tsconfig.json'],
@@ -7310,7 +7501,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          config: {
+          scope: {
+            regions: fixture.config.scope?.regions,
             checkers: {
               tsc: {
                 include: [
@@ -7361,7 +7553,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             'vue-tsc': {
               include: [
@@ -7449,7 +7642,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
     try {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             'vue-tsc': {
               include: [
@@ -7501,8 +7695,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
         include: ['src/**/*.ts'],
       }),
       'packages/theme/src/button.css': '.button {}\n',
-      'packages/theme/src/button.d.css.ts':
-        'declare const className: string;\nexport default className;\n',
+      'packages/theme/src/button.d.css.ts': `declare const className: string;
+export default className;
+`,
       'packages/theme/tsconfig.json': json({
         compilerOptions: {
           allowArbitraryExtensions: true,
@@ -7567,7 +7762,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
         const result = await prepareGeneratedTsconfigGraph(
           {
             ...fixture.config,
-            config: {
+            scope: {
+              regions: fixture.config.scope?.regions,
               checkers: {
                 [checkerName]: {
                   include: ['packages/app/tsconfig.json'],
@@ -7953,7 +8149,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
           caseValue.name === 'unselected target'
             ? {
                 ...fixture.config,
-                config: {
+                scope: {
+                  regions: fixture.config.scope?.regions,
                   checkers: {
                     auto: { exclude: ['external/tsconfig.json'] },
                     tsc: { include: ['packages/**/tsconfig.json'] },
@@ -8109,7 +8306,7 @@ describe('reference graph repair compiler differentials', () => {
       const fixture = await createFixture(files);
       const fixturePath = createFixturePathResolver(fixture.rootDir);
       const checker = isVue ? 'vue-tsc' : 'tsc';
-      fixture.config.config!.checkers = {
+      fixture.config.scope!.checkers = {
         [checker]: { include: ['packages/**/tsconfig.json'] },
       };
       try {
@@ -8222,7 +8419,7 @@ describe('reference graph repair compiler differentials', () => {
         files['packages/a/tsconfig.json'] = json(config);
       }
       const fixture = await createFixture(files);
-      fixture.config.config!.checkers = {
+      fixture.config.scope!.checkers = {
         [framework === 'svelte' ? 'svelte-check' : 'astro']: {
           include: ['packages/a/tsconfig.json'],
         },
