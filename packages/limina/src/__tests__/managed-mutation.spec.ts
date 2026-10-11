@@ -90,17 +90,17 @@ async function createFixture(): Promise<{
   return {
     cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
     config: withFixtureGovernanceRoot({
-      config: {
+      configPath: normalizeAbsolutePath(
+        path.join(rootDirectory, 'limina.config.mjs'),
+      ),
+      rootDir: rootDirectory,
+      scope: {
         checkers: {
           tsc: {
             include: ['packages/app/tsconfig.json'],
           },
         },
       },
-      configPath: normalizeAbsolutePath(
-        path.join(rootDirectory, 'limina.config.mjs'),
-      ),
-      rootDir: rootDirectory,
     }),
     rootDir: rootDirectory,
     sourceConfigPath,

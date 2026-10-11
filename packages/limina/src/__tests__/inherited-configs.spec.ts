@@ -94,7 +94,7 @@ describe('TypeScript inherited config identity', () => {
           config: withFixtureGovernanceRoot({
             rootDir: fixture.rootDir,
             configPath: fixture.path('limina.config.mts'),
-            config: {},
+            scope: {},
           }),
         };
         const parsed = ts.getParsedCommandLineOfConfigFile(
@@ -155,7 +155,7 @@ describe('TypeScript inherited config identity', () => {
         config: withFixtureGovernanceRoot({
           rootDir: fixture.rootDir,
           configPath: fixture.path('limina.config.mts'),
-          config: {},
+          scope: {},
         }),
       };
       expect(() => readExplicitSourceCompilerTarget(options)).toThrow();

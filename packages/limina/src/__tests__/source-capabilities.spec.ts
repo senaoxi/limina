@@ -26,9 +26,9 @@ async function createFixture(files: Record<string, unknown>): Promise<{
   return {
     cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
     config: withFixtureGovernanceRoot({
-      config: {},
       configPath: path.join(rootDirectory, 'limina.config.mjs'),
       rootDir: rootDirectory,
+      scope: {},
     }),
     rootDir: rootDirectory,
   };

@@ -45,7 +45,7 @@ export function createLiminaConfigContent(): string {
   return `import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       auto: {
         exclude: [],

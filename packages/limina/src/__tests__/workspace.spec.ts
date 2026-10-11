@@ -286,7 +286,7 @@ describe('collectWorkspacePackages', () => {
     });
 
     try {
-      fixture.config.regions = {
+      (fixture.config.scope ??= {}).regions = {
         exclude: [
           {
             include: ['app/**'],
@@ -584,8 +584,11 @@ describe('collectWorkspaceRegionTopology', () => {
     try {
       const config = {
         ...fixture.config,
-        regions: {
-          extendNestedPackageScopes: true,
+        scope: {
+          ...fixture.config.scope,
+          regions: {
+            extendNestedPackageScopes: true,
+          },
         },
       };
       const topology = await collectWorkspaceRegionTopology(config, {
@@ -647,8 +650,11 @@ describe('collectWorkspaceRegionTopology', () => {
       const topology = await collectWorkspaceRegionTopology(
         {
           ...fixture.config,
-          regions: {
-            extendNestedPackageScopes: true,
+          scope: {
+            ...fixture.config.scope,
+            regions: {
+              extendNestedPackageScopes: true,
+            },
           },
         },
         {
@@ -692,8 +698,11 @@ describe('collectWorkspaceRegionTopology', () => {
       const topology = await collectWorkspaceRegionTopology(
         {
           ...fixture.config,
-          regions: {
-            extendNestedPackageScopes: true,
+          scope: {
+            ...fixture.config.scope,
+            regions: {
+              extendNestedPackageScopes: true,
+            },
           },
         },
         {
@@ -735,14 +744,17 @@ describe('collectWorkspaceRegionTopology', () => {
         collectWorkspaceRegionTopology(
           {
             ...fixture.config,
-            regions: {
-              exclude: [
-                {
-                  include: ['packages/a/src/**'],
-                  kind: 'workspace-package',
-                  reason: 'Ordinary directories are not governance roots.',
-                },
-              ],
+            scope: {
+              ...fixture.config.scope,
+              regions: {
+                exclude: [
+                  {
+                    include: ['packages/a/src/**'],
+                    kind: 'workspace-package',
+                    reason: 'Ordinary directories are not governance roots.',
+                  },
+                ],
+              },
             },
           },
           {
@@ -791,7 +803,10 @@ describe('collectWorkspaceRegionTopology', () => {
       ]) {
         await expect(
           collectWorkspaceRegionTopology(
-            { ...fixture.config, regions: { exclude: [rule] } },
+            {
+              ...fixture.config,
+              scope: { ...fixture.config.scope, regions: { exclude: [rule] } },
+            },
             { provider: async () => [], rawPackages: [workspacePackage] },
           ),
         ).rejects.toThrow(/does not match an exact governance candidate/u);
@@ -817,19 +832,22 @@ describe('collectWorkspaceRegionTopology', () => {
         collectWorkspaceRegionTopology(
           {
             ...fixture.config,
-            regions: {
-              exclude: [
-                {
-                  include: ['packages/a/src/**'],
-                  kind: 'package-scope',
-                  reason: 'All nested scopes.',
-                },
-                {
-                  include: ['packages/a/src/nested'],
-                  kind: 'package-scope',
-                  reason: 'The nested scope.',
-                },
-              ],
+            scope: {
+              ...fixture.config.scope,
+              regions: {
+                exclude: [
+                  {
+                    include: ['packages/a/src/**'],
+                    kind: 'package-scope',
+                    reason: 'All nested scopes.',
+                  },
+                  {
+                    include: ['packages/a/src/nested'],
+                    kind: 'package-scope',
+                    reason: 'The nested scope.',
+                  },
+                ],
+              },
             },
           },
           {
@@ -843,7 +861,7 @@ describe('collectWorkspaceRegionTopology', () => {
           },
         ),
       ).rejects.toThrow(
-        /Multiple regions\.exclude rules match package-scope packages\/a\/src\/nested/u,
+        /Multiple scope\.regions\.exclude rules match package-scope packages\/a\/src\/nested/u,
       );
     } finally {
       await fixture.cleanup();
@@ -873,14 +891,17 @@ describe('collectWorkspaceRegionTopology', () => {
       const topology = await collectWorkspaceRegionTopology(
         {
           ...fixture.config,
-          regions: {
-            exclude: [
-              {
-                include: ['.'],
-                kind: 'workspace-package',
-                reason: 'Only the root package is excluded.',
-              },
-            ],
+          scope: {
+            ...fixture.config.scope,
+            regions: {
+              exclude: [
+                {
+                  include: ['.'],
+                  kind: 'workspace-package',
+                  reason: 'Only the root package is excluded.',
+                },
+              ],
+            },
           },
         },
         { provider: async () => [], rawPackages: [rootPackage, appPackage] },
@@ -947,14 +968,17 @@ describe('collectWorkspaceRegionTopology', () => {
         collectWorkspaceRegionTopology(
           {
             ...fixture.config,
-            regions: {
-              exclude: [
-                {
-                  include: ['packages/app'],
-                  kind: 'package-scope',
-                  reason: 'Package scopes do not remove package identity.',
-                },
-              ],
+            scope: {
+              ...fixture.config.scope,
+              regions: {
+                exclude: [
+                  {
+                    include: ['packages/app'],
+                    kind: 'package-scope',
+                    reason: 'Package scopes do not remove package identity.',
+                  },
+                ],
+              },
             },
           },
           {
@@ -1006,14 +1030,17 @@ describe('collectWorkspaceRegionTopology', () => {
       const topology = await collectWorkspaceRegionTopology(
         {
           ...fixture.config,
-          regions: {
-            exclude: [
-              {
-                include: ['packages/parent/fixture'],
-                kind: 'workspace-package',
-                reason: 'The nested workspace is checked separately.',
-              },
-            ],
+          scope: {
+            ...fixture.config.scope,
+            regions: {
+              exclude: [
+                {
+                  include: ['packages/parent/fixture'],
+                  kind: 'workspace-package',
+                  reason: 'The nested workspace is checked separately.',
+                },
+              ],
+            },
           },
         },
         {
@@ -1096,14 +1123,17 @@ describe('collectWorkspaceRegionTopology', () => {
         collectWorkspaceRegionTopology(
           {
             ...fixture.config,
-            regions: {
-              exclude: [
-                {
-                  include: ['packages/missing'],
-                  kind: 'workspace-package',
-                  reason: 'This rule is invalid.',
-                },
-              ],
+            scope: {
+              ...fixture.config.scope,
+              regions: {
+                exclude: [
+                  {
+                    include: ['packages/missing'],
+                    kind: 'workspace-package',
+                    reason: 'This rule is invalid.',
+                  },
+                ],
+              },
             },
           },
           {
@@ -1117,7 +1147,7 @@ describe('collectWorkspaceRegionTopology', () => {
           },
         ),
       ).rejects.toThrow(
-        'regions.exclude[0] does not match an exact governance candidate.',
+        'scope.regions.exclude[0] does not match an exact governance candidate.',
       );
     } finally {
       await fixture.cleanup();
@@ -1140,19 +1170,22 @@ describe('collectWorkspaceRegionTopology', () => {
         collectWorkspaceRegionTopology(
           {
             ...fixture.config,
-            regions: {
-              exclude: [
-                {
-                  include: ['packages/app'],
-                  kind: 'workspace-package',
-                  reason: 'First matching rule.',
-                },
-                {
-                  include: ['packages/**'],
-                  kind: 'workspace-package',
-                  reason: 'Second matching rule.',
-                },
-              ],
+            scope: {
+              ...fixture.config.scope,
+              regions: {
+                exclude: [
+                  {
+                    include: ['packages/app'],
+                    kind: 'workspace-package',
+                    reason: 'First matching rule.',
+                  },
+                  {
+                    include: ['packages/**'],
+                    kind: 'workspace-package',
+                    reason: 'Second matching rule.',
+                  },
+                ],
+              },
             },
           },
           {
@@ -1166,7 +1199,7 @@ describe('collectWorkspaceRegionTopology', () => {
           },
         ),
       ).rejects.toThrow(
-        'Multiple regions.exclude rules match workspace-package packages/app.',
+        'Multiple scope.regions.exclude rules match workspace-package packages/app.',
       );
     } finally {
       await fixture.cleanup();
@@ -1194,14 +1227,17 @@ describe('collectWorkspaceRegionTopology', () => {
         collectWorkspaceRegionTopology(
           {
             ...fixture.config,
-            regions: {
-              exclude: [
-                {
-                  include: ['packages/excluded'],
-                  kind: 'workspace-package',
-                  reason: 'This workspace is checked separately.',
-                },
-              ],
+            scope: {
+              ...fixture.config.scope,
+              regions: {
+                exclude: [
+                  {
+                    include: ['packages/excluded'],
+                    kind: 'workspace-package',
+                    reason: 'This workspace is checked separately.',
+                  },
+                ],
+              },
             },
           },
           {
@@ -1248,15 +1284,18 @@ describe('collectWorkspaceRegionTopology', () => {
       const topology = await collectWorkspaceRegionTopology(
         {
           ...fixture.config,
-          regions: {
-            exclude: [
-              {
-                include: ['packages/a/src/nested/**'],
-                kind: 'package-scope',
-                reason: 'Nested fixture scope is not part of this run.',
-              },
-            ],
-            extendNestedPackageScopes: true,
+          scope: {
+            ...fixture.config.scope,
+            regions: {
+              exclude: [
+                {
+                  include: ['packages/a/src/nested/**'],
+                  kind: 'package-scope',
+                  reason: 'Nested fixture scope is not part of this run.',
+                },
+              ],
+              extendNestedPackageScopes: true,
+            },
           },
         },
         {
@@ -1300,14 +1339,17 @@ describe('collectWorkspaceRegionTopology', () => {
       const topology = await collectWorkspaceRegionTopology(
         {
           ...fixture.config,
-          regions: {
-            exclude: [
-              {
-                include: ['packages/a/src/nested'],
-                kind: 'package-scope',
-                reason: 'Nested fixtures are checked separately.',
-              },
-            ],
+          scope: {
+            ...fixture.config.scope,
+            regions: {
+              exclude: [
+                {
+                  include: ['packages/a/src/nested'],
+                  kind: 'package-scope',
+                  reason: 'Nested fixtures are checked separately.',
+                },
+              ],
+            },
           },
         },
         {
@@ -1368,14 +1410,17 @@ describe('collectWorkspaceRegionTopology', () => {
       const topology = await collectWorkspaceRegionTopology(
         {
           ...fixture.config,
-          regions: {
-            exclude: [
-              {
-                include: ['packages/a/fixtures'],
-                kind: 'package-scope',
-                reason: 'Fixture container is an accepted package boundary.',
-              },
-            ],
+          scope: {
+            ...fixture.config.scope,
+            regions: {
+              exclude: [
+                {
+                  include: ['packages/a/fixtures'],
+                  kind: 'package-scope',
+                  reason: 'Fixture container is an accepted package boundary.',
+                },
+              ],
+            },
           },
         },
         {
@@ -1435,14 +1480,17 @@ describe('collectWorkspaceRegionTopology', () => {
       const topology = await collectWorkspaceRegionTopology(
         {
           ...fixture.config,
-          regions: {
-            exclude: [
-              {
-                include: ['.'],
-                kind: 'workspace-package',
-                reason: 'Root tooling is checked separately.',
-              },
-            ],
+          scope: {
+            ...fixture.config.scope,
+            regions: {
+              exclude: [
+                {
+                  include: ['.'],
+                  kind: 'workspace-package',
+                  reason: 'Root tooling is checked separately.',
+                },
+              ],
+            },
           },
         },
         {

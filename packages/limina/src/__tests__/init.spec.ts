@@ -843,7 +843,7 @@ describe('runInit', () => {
     const liminaConfig = `import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       auto: {
         exclude: [],
@@ -890,7 +890,7 @@ export default defineConfig({
     const liminaConfig = `import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       auto: {
         exclude: [],

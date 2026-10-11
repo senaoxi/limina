@@ -34,7 +34,7 @@ function validateRegionKind(options: {
     addConfigIssue(
       options.ctx,
       [...options.path, 'kind'],
-      `regions.exclude[${options.index}].kind is required.`,
+      `scope.regions.exclude[${options.index}].kind is required.`,
     );
     return;
   }
@@ -43,7 +43,7 @@ function validateRegionKind(options: {
     options.ctx,
     [...options.path, 'kind'],
     [
-      `regions.exclude[${options.index}].kind must be one of:`,
+      `scope.regions.exclude[${options.index}].kind must be one of:`,
       ...regionExcludeKinds.map((kind) => `  ${kind}`),
     ].join('\n'),
   );
@@ -60,12 +60,12 @@ function validateRegionIncludes(options: {
     path: includePath,
     required: true,
     value: options.value.include,
-    valueName: 'regions.exclude.include',
+    valueName: 'scope.regions.exclude.include',
   });
   validateRelativeSelectors({
     ctx: options.ctx,
     message:
-      'regions.exclude.include entries must be config.rootDir-relative paths; ../ is allowed.',
+      'scope.regions.exclude.include entries must be config.rootDir-relative paths; ../ is allowed.',
     path: includePath,
     values: options.value.include,
   });
@@ -94,14 +94,14 @@ function validateRegionEntry(options: {
     addConfigIssue(
       options.ctx,
       path,
-      'regions.exclude entries must be objects with kind, include, and reason fields.',
+      'scope.regions.exclude entries must be objects with kind, include, and reason fields.',
     );
     return;
   }
   addUnknownFieldIssues({
     allowed: regionEntryKeys,
     ctx: options.ctx,
-    message: 'unknown regions.exclude entry field.',
+    message: 'unknown scope.regions.exclude entry field.',
     path,
     value: options.value,
   });
@@ -126,7 +126,7 @@ function getRegionExclusions(
   addConfigIssue(
     context,
     ['regions', 'exclude'],
-    'regions.exclude must be an array.',
+    'scope.regions.exclude must be an array.',
   );
   return null;
 }
@@ -150,7 +150,7 @@ function validateNestedPackageScopeFlag(
   addConfigIssue(
     context,
     ['regions', 'extendNestedPackageScopes'],
-    'regions.extendNestedPackageScopes must be a boolean.',
+    'scope.regions.extendNestedPackageScopes must be a boolean.',
   );
 }
 

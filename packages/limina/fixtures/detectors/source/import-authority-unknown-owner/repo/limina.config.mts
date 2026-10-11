@@ -1,13 +1,10 @@
 export default {
-  config: {
+  scope: {
     checkers: {
       tsc: {
         include: ['tsconfig.json', '**/tsconfig.json'],
       },
     },
-  },
-  pipelines: {
-    detector: ['source:check'],
   },
   source: {
     importAuthority: {
@@ -21,5 +18,8 @@ export default {
       },
     },
     knip: false,
+  },
+  pipelines: {
+    detector: ['source:check'],
   },
 };

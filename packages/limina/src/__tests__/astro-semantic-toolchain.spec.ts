@@ -247,9 +247,9 @@ describe('Astro semantic toolchain', () => {
     });
     const fixturePath = createFixturePathResolver(fixture.rootDir);
     const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
-      config: { checkers: { astro: { include: ['tsconfig.json'] } } },
       configPath: fixturePath('limina.config.mjs'),
       rootDir: fixture.rootDir,
+      scope: { checkers: { astro: { include: ['tsconfig.json'] } } },
       source: { knip: false },
     });
     let preflight: LiminaPreflightManager | undefined;

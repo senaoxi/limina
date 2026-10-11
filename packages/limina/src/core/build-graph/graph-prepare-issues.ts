@@ -131,7 +131,7 @@ export function createAmbiguousCrossCheckerProviderIssue(options: {
       createImportExampleEvidence(options.lines),
     ],
     filePath,
-    fix: 'Make checker ownership unambiguous with config.checkers.<checker>.include/exclude.',
+    fix: 'Make checker ownership unambiguous with scope.checkers.<checker>.include/exclude.',
     locations: [
       { filePath: consumerConfig, label: 'consumer config' },
       { filePath: targetConfig, label: 'target config' },

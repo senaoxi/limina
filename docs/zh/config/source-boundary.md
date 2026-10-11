@@ -1,12 +1,12 @@
 # 源码边界
 
-`config.source` 选择被治理的源码文件。`proof check` 将这个集合与检查器入口、生成图项目和允许清单比较，找出遗漏文件或不一致的覆盖范围。顶层 `source` 则配置导入授权、环境声明和可选 Knip 检查，见[源码检查](./source-checks.md)。
+`scope.source` 选择被治理的源码文件。`proof check` 将这个集合与检查器入口、生成图项目和允许清单比较，找出遗漏文件或不一致的覆盖范围。`source` 则配置导入授权、环境声明和可选 Knip 检查，见[源码检查](./source-checks.md)。
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     source: {
       include: ['...', 'packages/**/src/**/*.vue'],
       exclude: ['...', 'packages/**/src/generated/**'],
@@ -47,11 +47,11 @@ export default defineConfig({
 
 ## 排除文件时要同步检查 `tsconfig`
 
-`config.source.exclude` 只改变 Limina 的源码治理集合，不会改写检查器的 `files`、`include` 或导入后纳入的文件。若检查器或生成图仍覆盖这些文件，`proof check` 可以报告 `LIMINA_PROOF_SOURCE_BOUNDARY_MISMATCH`：两边描述的文件集合不同。
+`scope.source.exclude` 只改变 Limina 的源码治理集合，不会改写检查器的 `files`、`include` 或导入后纳入的文件。若检查器或生成图仍覆盖这些文件，`proof check` 可以报告 `LIMINA_PROOF_SOURCE_BOUNDARY_MISMATCH`：两边描述的文件集合不同。
 
 例如，`packages/core/src/generated/runtime.ts` 被源码边界排除，但仍在 `tsconfig.lib.json` 的有效文件集合中，单独添加排除项并不能解决覆盖问题。应按文件的实际用途选择：
 
-- 它属于项目源码：保留在 `config.source` 中，并让一个源码叶子配置拥有它。
+- 它属于项目源码：保留在 `scope.source` 中，并让一个源码叶子配置拥有它。
 - 它不属于本次治理：同时调整相关 `tsconfig` 的覆盖范围；还需留意导入是否会把它重新带入检查器。
 - 它留在治理范围内，却有意没有普通覆盖：使用带原因的[覆盖证明允许清单](./proof-allowlist.md)。
 

@@ -85,10 +85,12 @@ async function createLookups(options: {
   const context = await collectValidatedWorkspaceContext({
     config: withFixtureGovernanceRoot({
       configPath: `${options.rootDir}/limina.config.mjs`,
-      regions: {
-        extendNestedPackageScopes: options.extendNestedPackageScopes ?? false,
-      },
       rootDir: options.rootDir,
+      scope: {
+        regions: {
+          extendNestedPackageScopes: options.extendNestedPackageScopes ?? false,
+        },
+      },
     }),
     rawPackages: [workspacePackage],
   });

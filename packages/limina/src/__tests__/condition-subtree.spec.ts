@@ -152,7 +152,10 @@ it('deduplicates overlapping defaults and named condition domains globally', () 
   }));
   addConditionDomainProblems({
     checks,
-    config: { ...config, graph: { conditionDomains: domains } },
+    config: {
+      ...config,
+      graph: { conditionDomains: domains },
+    },
     consistencyContext: context,
     findings,
     projectsByPath: byPath,

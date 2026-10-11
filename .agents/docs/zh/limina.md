@@ -8,6 +8,8 @@ Limina 把配置选定的 package 治理范围、checker 的语义事实、声�
 
 ## 从问题进入记录
 
+[配置项设计心智模型](./configuration-design.md)维护公共配置项的位置、分组、默认值与兼容性取舍的理由。
+
 | 要回答的问题                                                                 | 唯一 prose owner                                                         |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | 实体如何识别、authority 从哪里来、实际运行顺序是什么、哪些关系可以建边？     | [系统模型](./system-model.md)                                            |
@@ -30,7 +32,11 @@ Limina 把配置选定的 package 治理范围、checker 的语义事实、声�
 
 [构建配置](../../../packages/limina/rolldown.config.ts) externalize 声明的 runtime/peer/optional dependencies，其余 build inputs 可被打包；[manifest generator](../../../packages/build-tools/src/package-plugin.ts) 保留并解析 development metadata，移除 private workspace development dependencies。devDependencies 中出现工具不意味着它变成生产依赖，也不能从名称推断一定 bundled。发布产物的具体内容仍需相应 build/package checks。
 
-[配置 loader](../../../packages/limina/src/config/loader.ts) 接受 object、promise 或接收 command/mode 的 function，再规范化、验证。顶层配置、默认值和兼容范围的定义归 [config](../../../packages/limina/src/config) 与 [schema](../../../packages/limina/schemas/tsconfig-schema.json)；根仓库的选择归 [limina.config.mts](../../../limina.config.mts)。当前 flat `config.checkers` 同时容纳 `auto` policy 与 named scopes，自动发现持续启用。named scopes 选择默认 source `tsconfig.json`；named configs 通过受管理 references closure 进入，`auto.exclude` 不截断既有 closure。不要重新引入 legacy `mode: auto` 模型。
+[配置 loader](../../../packages/limina/src/config/loader.ts) 接受 object、promise 或接收 command/mode 的 function，再规范化、验证。顶层配置、默认值和兼容范围的定义归 [config](../../../packages/limina/src/config) 与 [schema](../../../packages/limina/src/config/schema/root.ts)；根仓库的选择归 [limina.config.mts](../../../limina.config.mts)。当前 flat `scope.checkers` 同时容纳 `auto` policy 与 named scopes，自动发现持续启用。named scopes 选择默认 source `tsconfig.json`；named configs 通过受管理 references closure 进入，`auto.exclude` 不截断既有 closure。不要重新引入 legacy `mode: auto` 模型。
+
+公共配置只将治理边界归入 `scope`。`graph`、`source`、`proof`、`package`、`release`、`pipelines`、`concurrency` 和 `cache` 放在顶层；`concurrency` 替代原来的 `execution` 字段。全部字段均可省略。拒绝 `checks` 和 `execution` 包装层，让各入口直接可见，降低发现和认知成本。[公共类型](../../../packages/limina/src/config/root-types.ts)与 Zod Schema 共同定义入口；旧顶层字段及旧并发路径会被拒绝并给出迁移提示。内部 `ResolvedLiminaConfig` 直接携带同一结构，另加 `configPath`、`rootDir`、`governanceRoot` 等解析事实，不建立第二份旧格式投影。源码选择、checker 归属和区域 authority 仍由原 consumer 决定；`package.entries` 继续为 workspace 提供输出根，不能延迟到 package task 才消费。pipeline 顺序与并发默认值由原执行模块决定。
+
+此次分组复用已有 TypeScript 类型、Zod 和字段验证器；没有新的加载器、合并库或 pipeline DSL。分域的公开选项及对象／函数配置可以参考 [Vite 配置](https://vite.dev/config/)和 [Vitest 配置](https://vitest.dev/config/)，但不移植其 root、默认值或加载语义。用户迁移映射由[配置文档](../../../docs/zh/config/config-file.md#config-domains-migration)维护。
 
 ## 事实、推导与人类判断
 

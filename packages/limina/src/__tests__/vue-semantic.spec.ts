@@ -344,13 +344,14 @@ describe('Vue semantic architecture', () => {
       'package.json': '{"name":"fixture","private":true,"type":"module"}\n',
       'src/App.vue':
         '<script setup lang="ts">import value from "./value";</script><template>{{ value }}</template>\n',
-      'src/value.ts': 'export default 1;\n',
+      'src/value.ts': `export default 1;
+`,
       'tsconfig.json': config(),
     });
     const liminaConfig: ResolvedLiminaConfig = withFixtureGovernanceRoot({
-      config: { checkers: { 'vue-tsc': { include: ['tsconfig.json'] } } },
       configPath: fixture.path('limina.config.mjs'),
       rootDir: fixture.rootDir,
+      scope: { checkers: { 'vue-tsc': { include: ['tsconfig.json'] } } },
     });
     return { ...fixture, config: liminaConfig };
   }
@@ -645,7 +646,8 @@ describe('Vue semantic architecture', () => {
         '</script>',
         '',
       ].join('\n'),
-      'src/entry.ts': 'export default {}\n',
+      'src/entry.ts': `export default {}
+`,
       'src/types.ts': 'export interface Thing { value: string }\n',
       'tsconfig.json': config(),
     });
@@ -714,8 +716,10 @@ describe('Vue semantic architecture', () => {
     ].join('');
     const fixture = await createFixture({
       'src/App.vue': sourceText,
-      'src/first.ts': 'export default {}\n',
-      'src/second.ts': 'export default {}\n',
+      'src/first.ts': `export default {}
+`,
+      'src/second.ts': `export default {}
+`,
       'tsconfig.json': config(),
     });
     const manager = new VueSemanticContextManager();
@@ -757,7 +761,8 @@ describe('Vue semantic architecture', () => {
         '</script>',
         '',
       ].join('\n'),
-      'src/Component.vue': '<script lang="ts">export default {}</script>\n',
+      'src/Component.vue': `<script lang="ts">export default {}</script>
+`,
       'tsconfig.json': config(),
     });
     const manager = new VueSemanticContextManager();

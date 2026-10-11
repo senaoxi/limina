@@ -2,9 +2,9 @@ import type { ResolvedGovernanceRoot } from '#utils/workspace-root';
 import type { ExecutionConfig } from '../execution/config';
 import type { GraphConfig, ProofConfig } from './graph-proof-types';
 import type { PackageConfig } from './package-types';
-import type { PipelineStep } from './pipeline-checker-types';
+import type { CheckerConfigMode, PipelineStep } from './pipeline-checker-types';
 import type { ReleaseConfig } from './release-types';
-import type { SharedLiminaConfig, SourceCheckConfig } from './source-types';
+import type { SourceBoundaryConfig, SourceCheckConfig } from './source-types';
 
 export type RegionExcludeKind =
   | 'package-scope'
@@ -29,20 +29,25 @@ export interface CacheOptions {
   dependencies: string[];
 }
 
+export interface ScopeConfig {
+  regions?: RegionsConfig;
+  source?: SourceBoundaryConfig;
+  checkers?: CheckerConfigMode;
+}
+
 export interface LiminaConfig {
-  config?: SharedLiminaConfig;
+  scope?: ScopeConfig;
+  graph?: GraphConfig;
+  source?: SourceCheckConfig;
+  proof?: ProofConfig;
+  package?: PackageConfig;
+  release?: ReleaseConfig;
+  pipelines?: Record<string, PipelineStep[]>;
+  concurrency?: ExecutionConfig;
   /**
   Persistent analysis caching defaults to enabled; checker caches are separate.
   */
   cache?: boolean | CacheOptions;
-  execution?: ExecutionConfig;
-  graph?: GraphConfig;
-  package?: PackageConfig;
-  pipelines?: Record<string, PipelineStep[]>;
-  proof?: ProofConfig;
-  regions?: RegionsConfig;
-  release?: ReleaseConfig;
-  source?: SourceCheckConfig;
 }
 
 export type LiminaCommand =

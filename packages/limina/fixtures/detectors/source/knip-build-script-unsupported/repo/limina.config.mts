@@ -1,15 +1,15 @@
 export default {
-  config: {
+  scope: {
     checkers: {
       tsc: {
         include: ['tsconfig.json', '**/tsconfig.json'],
       },
     },
   },
-  pipelines: {
-    detector: ['source:check'],
-  },
   source: {
     knip: true,
+  },
+  pipelines: {
+    detector: ['source:check'],
   },
 };

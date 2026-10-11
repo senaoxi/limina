@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { sharedLiminaConfigShapeSchema } from './checkers';
-import { validateRegionsConfig } from './regions';
+import { scopeConfigShapeSchema } from './checkers';
 import {
   executionConfigShapeSchema,
   releaseConfigShapeSchema,
@@ -16,16 +15,15 @@ import { validateSourceDeclarationsConfig } from './source-declarations';
 import { validateSourceKnipConfig } from './source-knip';
 
 const liminaConfigKeys = new Set([
-  'config',
-  'cache',
-  'execution',
+  'scope',
   'graph',
-  'package',
-  'pipelines',
-  'proof',
-  'release',
-  'regions',
   'source',
+  'proof',
+  'package',
+  'release',
+  'pipelines',
+  'concurrency',
+  'cache',
 ]);
 const sourceConfigKeys = new Set(['declarations', 'importAuthority', 'knip']);
 const cacheConfigKeys = new Set<PropertyKey>(['dependencies']);
@@ -98,11 +96,11 @@ export const liminaConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
   .looseObject({
     // A rejecting field catches non-enumerable legacy declarations too.
     configDependencies: z.never().optional(),
-    config: sharedLiminaConfigShapeSchema.optional(),
-    cache: cacheConfigShapeSchema.optional(),
-    execution: executionConfigShapeSchema.optional(),
-    regions: z.unknown().optional(),
+    scope: scopeConfigShapeSchema.optional(),
+    source: z.unknown().optional(),
     release: releaseConfigShapeSchema.optional(),
+    cache: cacheConfigShapeSchema.optional(),
+    concurrency: executionConfigShapeSchema.optional(),
   })
   .superRefine((config, context) => {
     addUnknownFieldIssues({
@@ -112,6 +110,5 @@ export const liminaConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
       path: [],
       value: config,
     });
-    validateRegionsConfig(config.regions, context);
     validateSourceConfig(config.source, context);
   });

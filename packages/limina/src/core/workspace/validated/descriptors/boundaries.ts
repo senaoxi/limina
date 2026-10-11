@@ -74,7 +74,7 @@ export async function isAddWorkspaceDescriptor(options: {
 }
 
 function isNestedScopeExtensionEnabled(config: ResolvedLiminaConfig): boolean {
-  return config.regions?.extendNestedPackageScopes === true;
+  return config.scope?.regions?.extendNestedPackageScopes === true;
 }
 
 function shouldExtendPackageScope(options: {

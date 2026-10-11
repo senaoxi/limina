@@ -1,5 +1,5 @@
 export default {
-  config: {},
+  scope: {},
   package: {
     entries: [
       {
@@ -9,8 +9,8 @@ export default {
       },
     ],
   },
+  release: { contentHash: { builtinIgnore: true } },
   pipelines: {
     detector: ['release:check'],
   },
-  release: { contentHash: { builtinIgnore: true } },
 };

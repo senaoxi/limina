@@ -120,12 +120,10 @@ await write('tsconfig.json', {
 });
 await write(
   'limina.config.mjs',
-  `export default {
-  config: { checkers: { tsc: { include: ['tsconfig.json'] } } },
-  source: { knip: false },
-  package: { entries: [{ name: '@repo/core', outDir: 'packages/core/dist' }] },
-  pipelines: { release: [{ type: 'command', command: 'pnpm', args: ['build'] }, 'package:check', 'release:check'] },
-};
+  `export default {scope: {checkers: { tsc: { include: ['tsconfig.json'] } }},
+source: { knip: false },
+package: { entries: [{ name: '@repo/core', outDir: 'packages/core/dist' }] },
+pipelines: { release: [{ type: 'command', command: 'pnpm', args: ['build'] }, 'package:check', 'release:check'] }};
 `,
 );
 for (const name of ['core', 'app']) {

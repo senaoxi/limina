@@ -64,7 +64,11 @@ async function createFixture(): Promise<{
     fixturePath('pnpm-workspace.yaml'),
     'packages:\n  - packages/*\n',
   );
-  await writeText(fixturePath('limina.config.mjs'), 'export default {};\n');
+  await writeText(
+    fixturePath('limina.config.mjs'),
+    `export default {};
+`,
+  );
   for (const leaf of ['a', 'b']) {
     await writeText(
       fixturePath('packages', leaf, 'package.json'),
@@ -317,7 +321,8 @@ describe('framework checker targets', () => {
       });
       const config: ResolvedLiminaConfig = {
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             astro: { include: ['packages/a/tsconfig.json'] },
             'svelte-check': {
