@@ -695,7 +695,7 @@ function conditionCompilerOptions(
       };
 }
 
-function createConditionDomainFiles(
+function createNativeConditionFiles(
   projects: ConditionProjectFixture[],
 ): Record<string, string> {
   const files: Record<string, string> = {
@@ -1132,7 +1132,7 @@ describe('runGraphCheck checker entry', () => {
 
   it('accepts empty custom conditions across declaration references', async () => {
     const fixture = await createFixture(
-      createConditionDomainFiles([
+      createNativeConditionFiles([
         {
           name: 'dep',
           source: 'export const dep = 1;\n',
@@ -1156,7 +1156,7 @@ describe('runGraphCheck checker entry', () => {
   it('accepts matching custom conditions across transitive declaration references', async () => {
     const customConditions = ['browser', 'source'];
     const fixture = await createFixture(
-      createConditionDomainFiles([
+      createNativeConditionFiles([
         {
           name: 'leaf',
           source: 'export const leaf = 1;\n',
@@ -1186,9 +1186,9 @@ describe('runGraphCheck checker entry', () => {
     }
   });
 
-  it('treats custom conditions as sets across references and domains', async () => {
+  it('preserves reordered native condition sets across references', async () => {
     const fixture = await createFixture(
-      createConditionDomainFiles([
+      createNativeConditionFiles([
         {
           name: 'dep',
           source: 'export const dep = 1;\n',
@@ -1201,15 +1201,6 @@ describe('runGraphCheck checker entry', () => {
           customConditions: ['browser', 'source'],
         },
       ]),
-      {
-        conditionDomains: [
-          {
-            customConditions: ['source', 'browser', 'source'],
-            entry: 'app/tsconfig.web.json',
-            name: 'web',
-          },
-        ],
-      },
     );
 
     try {
@@ -1219,9 +1210,9 @@ describe('runGraphCheck checker entry', () => {
     }
   });
 
-  it('reports direct custom condition mismatches across declaration references', async () => {
+  it('allows distinct native conditions across direct declaration references', async () => {
     const fixture = await createFixture(
-      createConditionDomainFiles([
+      createNativeConditionFiles([
         {
           name: 'dep',
           source: 'export const dep = 1;\n',
@@ -1237,15 +1228,17 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
+      const result = await runGraphCheckWithIssues(fixture.config);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toEqual([]);
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('reports transitive custom condition mismatches across declaration references', async () => {
+  it('allows distinct native conditions across transitive declaration references', async () => {
     const fixture = await createFixture(
-      createConditionDomainFiles([
+      createNativeConditionFiles([
         {
           name: 'leaf',
           source: 'export const leaf = 1;\n',
@@ -1269,18 +1262,17 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
+      const result = await runGraphCheckWithIssues(fixture.config);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toEqual([]);
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('reuses custom condition summaries for shared declaration subtrees', async () => {
-    const errorSpy = vi
-      .spyOn(GraphLogger, 'error')
-      .mockImplementation(() => {});
+  it('allows distinct native conditions in shared declaration subtrees', async () => {
     const fixture = await createFixture(
-      createConditionDomainFiles([
+      createNativeConditionFiles([
         {
           name: 'leaf',
           source: 'export const leaf = 1;\n',
@@ -1311,161 +1303,9 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(
-        isRunGraphCheck(fixture.config, {
-          clearScreen: false,
-        }),
-      ).resolves.toBe(false);
-
-      const errorText = errorSpy.mock.calls.map((call) => call[0]).join('\n');
-      const mismatchCount = (
-        errorText.match(
-          /Custom conditions mismatch in declaration reference tree:/gu,
-        ) ?? []
-      ).length;
-
-      expect(mismatchCount).toBe(1);
-    } finally {
-      errorSpy.mockRestore();
-      await fixture.cleanup();
-    }
-  });
-
-  it('accepts matching graph condition domains', async () => {
-    const fixture = await createFixture(
-      createConditionDomainFiles([
-        {
-          name: 'dep',
-          source: 'export const dep = 1;\n',
-          customConditions: ['browser', 'source'],
-        },
-        {
-          name: 'web',
-          references: ['dep'],
-          source: "import { dep } from './dep';\nexport const value = dep;\n",
-          customConditions: ['browser', 'source'],
-        },
-      ]),
-      {
-        conditionDomains: [
-          {
-            customConditions: ['browser', 'source'],
-            entry: 'app/tsconfig.web.json',
-            name: 'web',
-          },
-        ],
-      },
-    );
-
-    try {
-      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('reports graph condition domain custom condition mismatches', async () => {
-    const fixture = await createFixture(
-      createConditionDomainFiles([
-        {
-          name: 'web',
-          source: 'export const value = 1;\n',
-          customConditions: ['browser', 'source'],
-        },
-      ]),
-      {
-        conditionDomains: [
-          {
-            customConditions: ['node', 'source'],
-            entry: 'app/tsconfig.web.dts.json',
-            name: 'node',
-          },
-        ],
-      },
-    );
-
-    try {
-      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('reports invalid graph condition domain shapes', async () => {
-    const fixture = await createFixture(
-      createConditionDomainFiles([
-        {
-          name: 'app',
-          source: 'export const value = 1;\n',
-        },
-      ]),
-      {
-        conditionDomains: [
-          {
-            customConditions: [],
-            entry: 'app/tsconfig.app.dts.json',
-            name: '',
-          },
-          {
-            customConditions: [],
-            entry: '',
-            name: 'missing-entry',
-          },
-          {
-            customConditions: [1],
-            entry: 'app/tsconfig.app.dts.json',
-            name: 'invalid-conditions',
-          },
-        ],
-      } as unknown as GraphConfig,
-    );
-
-    try {
-      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('reports invalid graph condition domain entries', async () => {
-    const fixture = await createFixture(
-      {
-        ...createConditionDomainFiles([
-          {
-            name: 'app',
-            source: 'export const value = 1;\n',
-          },
-        ]),
-        'app/unreachable.ts': 'export const unreachable = 1;\n',
-        'app/tsconfig.unreachable.dts.json': buildConfig({
-          include: ['unreachable.ts'],
-          tsBuildInfoFile: './.tsbuild/unreachable.tsbuildinfo',
-        }),
-        'app/tsconfig.unreachable.json': typecheckConfig(['unreachable.ts']),
-      },
-      {
-        conditionDomains: [
-          {
-            customConditions: [],
-            entry: 'app/tsconfig.missing.dts.json',
-            name: 'missing',
-          },
-          {
-            customConditions: [],
-            entry: 'app/tsconfig.app.json',
-            name: 'typecheck',
-          },
-          {
-            customConditions: [],
-            entry: 'app/tsconfig.unreachable.dts.json',
-            name: 'unreachable',
-          },
-        ],
-      },
-    );
-
-    try {
-      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
+      const result = await runGraphCheckWithIssues(fixture.config);
+      expect(result.passed).toBe(true);
+      expect(result.issues).toEqual([]);
     } finally {
       await fixture.cleanup();
     }

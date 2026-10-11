@@ -122,13 +122,11 @@ describe('defineConfig', () => {
         ],
       },
       graph: {
-        conditionDomains: [
-          {
-            customConditions: ['browser', 'source'],
-            entry: 'apps/web/tsconfig.dts.json',
-            name: 'web',
+        rules: {
+          web: {
+            deny: { deps: [{ name: 'node:fs', reason: 'Browser entry.' }] },
           },
-        ],
+        },
       },
       release: {
         contentHash: {
@@ -204,9 +202,8 @@ describe('defineConfig', () => {
       level: 'warning',
       strict: true,
     });
-    expect(config.graph?.conditionDomains?.[0]?.customConditions).toEqual([
-      'browser',
-      'source',
+    expect(config.graph?.rules?.web?.deny?.deps).toEqual([
+      { name: 'node:fs', reason: 'Browser entry.' },
     ]);
     expect(config.release?.contentHash?.baselineTag).toBe('next');
     expect(config.release?.contentHash?.builtinIgnore).toBe(false);

@@ -56,6 +56,5 @@ export interface RunGraphExportOptions {
 export const GRAPH_CHECK_ITEM_NAMES = [
   'source graph routes',
   'project references',
-  'condition domains',
   'reference completeness',
 ] as const;

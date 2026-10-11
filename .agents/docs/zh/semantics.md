@@ -14,6 +14,8 @@ Locked [ProjectSemanticContext](../../../packages/limina/src/core/project-depend
 
 ## 一个项目的原生语义输入
 
+`compilerOptions.customConditions` 是每个项目的有效 TypeScript 输入。原生模块解析、资源查找、生成配置的选项一致性校验和语义缓存身份使用该选项。[Graph 回归测试](../../../packages/limina/src/__tests__/graph.spec.ts)覆盖源码／companion 配置选项一致性及具有不同原生条件的项目引用；[完整缓存回归测试](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)验证条件变化后的解析和失效行为。
+
 [effective-roots](../../../packages/limina/src/core/typescript-semantic/effective-roots.ts) 采用 checker parsed roots，并解析 effective `compilerOptions.types` 中相对入口，得到去重的 importer roots。声明文件可属于 roots。`ownedFileNames` 服务归属与 coverage；Program transitive files 为类型解释服务，均不能替代 importer 枚举。
 
 [context](../../../packages/limina/src/core/typescript-semantic/context.ts) 默认构建 full bounded Program；[project-dependencies provider](../../../packages/limina/src/core/project-dependencies/provider.ts) 先请求已验证 dependency DTO；冷／dirty collection 才创建一个 full context，处理所有 roots 后捕获普通数据，在 `finally` dispose。它没有选择 `root-facts`，也没有为每个 occurrence 创建 Program。root-facts 是另一个更窄 admission mode，不能据此概括生产 locked provider。

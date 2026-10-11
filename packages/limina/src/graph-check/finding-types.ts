@@ -9,7 +9,6 @@ import type {
 
 export type GraphSemanticIssueCode =
   | typeof LIMINA_CHECK_ISSUE_CODES.graphAccessDenied
-  | typeof LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch
   | typeof LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid
   | typeof LIMINA_CHECK_ISSUE_CODES.graphImportTargetUnmapped
   | typeof LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle
@@ -23,7 +22,6 @@ export type GraphSemanticIssueCode =
 
 export const GRAPH_SEMANTIC_ISSUE_CODES: readonly GraphSemanticIssueCode[] = [
   LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
-  LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch,
   LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
   LIMINA_CHECK_ISSUE_CODES.graphImportTargetUnmapped,
   LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
@@ -97,33 +95,7 @@ export interface GraphAccessDeniedFinding
   readonly packageName?: string;
 }
 
-export type GraphConditionDomainMismatchFacts =
-  | {
-      readonly actualConditions: readonly string[];
-      readonly expectedConditions: readonly string[];
-      readonly kind: 'domain-entry';
-      readonly domainName: string;
-      readonly entryProjectPath: string;
-    }
-  | {
-      readonly actualConditions: readonly string[];
-      readonly expectedConditions: readonly string[];
-      readonly kind: 'reference-tree';
-      readonly referencedProjectPath: string;
-      readonly rootProjectPath: string;
-    };
-
-export type GraphConditionDomainMismatchFinding = GraphFindingBase<
-  typeof LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch,
-  GraphConditionDomainMismatchFacts
->;
-
 export type GraphConfigInvalidFacts =
-  | {
-      readonly configPath: string;
-      readonly field?: string;
-      readonly kind: 'condition-domain';
-    }
   | {
       readonly actual: unknown;
       readonly expected: unknown;
@@ -280,7 +252,6 @@ export interface GraphWorkspacePackageNameMissingFinding
 
 export type GraphFinding =
   | GraphAccessDeniedFinding
-  | GraphConditionDomainMismatchFinding
   | GraphConfigInvalidFinding
   | GraphImportTargetUnmappedFinding
   | GraphReferenceCycleFinding

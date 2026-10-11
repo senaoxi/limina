@@ -76,17 +76,6 @@ const findingByCode = {
     },
     packageName: '@example/lib',
   },
-  [LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch]: {
-    ...commonFindingFields('Graph condition domain customConditions mismatch'),
-    code: LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch,
-    facts: {
-      actualConditions: ['source'],
-      domainName: 'browser',
-      entryProjectPath: '/repo/packages/app/tsconfig.lib.dts.json',
-      expectedConditions: ['browser', 'source'],
-      kind: 'domain-entry',
-    },
-  },
   [LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid]: {
     ...commonFindingFields('Invalid graph rule config'),
     code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
@@ -229,6 +218,7 @@ describe('typed Graph findings', () => {
       .filter(
         (code) =>
           getLiminaCheckIssueRuleMetadata(code).task === 'graph:check' &&
+          getLiminaCheckIssueRuleMetadata(code).status === 'active' &&
           code !== LIMINA_CHECK_ISSUE_CODES.graphCheckFailed,
       )
       .sort((left, right) => Number(left > right) - Number(left < right));

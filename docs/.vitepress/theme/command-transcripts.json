@@ -1,11 +1,11 @@
 {
   "capture": {
     "paths": "workspace-relative",
-    "node": "v24.19.0",
-    "pnpm": "11.28.3",
+    "node": "v24.21.0",
+    "pnpm": "12.10.1",
     "typescript": "6.0.3",
     "limina": "0.5.0-beta.1",
-    "platform": "linux-x64",
+    "platform": "darwin-arm64",
     "mode": "interactive",
     "terminal": { "columns": 100, "rows": 80 },
     "environment": {
@@ -16,8 +16,8 @@
       "TERM": "xterm-256color",
       "verifyDepsBeforeRun": "default"
     },
-    "sourceSha256": "41466780b5b296697430846197c9f0437f7eb41d8505ae875d69f8e5765d69d4",
-    "cliSha256": "a9c47f5ef5034a8b4ac7ded82c2f2fc7f4671957ef7dce7697b6478967a8baa7"
+    "sourceSha256": "40ef42003bd3d0825404efc39175bc153a9e6f7a12139016bae8b9337cee5224",
+    "cliSha256": "6d65ba6d5523c2b18acaf29b9ea5c25c7749fab94e890cc8165d7e3b70d7ff7c"
   },
   "commands": {
     "prepare": {
@@ -26,10 +26,11 @@
       "argv": ["pnpm", "exec", "limina", "graph", "prepare"],
       "workspace": "limina-workspace",
       "exitCode": 0,
-      "outputSha256": "f1c3d407dfbbb77fc18449a4aa614722f8224ab4c374c9602de2b92f5929c422",
+      "outputSha256": "3567c9398a1bec4891315e448182e0fbc9e87126cb95d4c8dec8be42150beaae",
       "frames": [
+        { "atMs": 781, "lines": ["┌  limina graph prepare"] },
         {
-          "atMs": 1553,
+          "atMs": 873,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -37,7 +38,7 @@
           ]
         },
         {
-          "atMs": 1638,
+          "atMs": 956,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -45,7 +46,7 @@
           ]
         },
         {
-          "atMs": 1721,
+          "atMs": 1036,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -53,7 +54,7 @@
           ]
         },
         {
-          "atMs": 1803,
+          "atMs": 1118,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -61,7 +62,7 @@
           ]
         },
         {
-          "atMs": 1882,
+          "atMs": 1200,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -69,7 +70,7 @@
           ]
         },
         {
-          "atMs": 1963,
+          "atMs": 1282,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -77,7 +78,7 @@
           ]
         },
         {
-          "atMs": 2043,
+          "atMs": 1364,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -85,7 +86,7 @@
           ]
         },
         {
-          "atMs": 2124,
+          "atMs": 1446,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -93,7 +94,7 @@
           ]
         },
         {
-          "atMs": 2204,
+          "atMs": 1528,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -101,7 +102,7 @@
           ]
         },
         {
-          "atMs": 2285,
+          "atMs": 1610,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -109,7 +110,7 @@
           ]
         },
         {
-          "atMs": 2367,
+          "atMs": 1692,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -117,7 +118,7 @@
           ]
         },
         {
-          "atMs": 2445,
+          "atMs": 1774,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -125,7 +126,7 @@
           ]
         },
         {
-          "atMs": 2531,
+          "atMs": 1857,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -133,7 +134,7 @@
           ]
         },
         {
-          "atMs": 2611,
+          "atMs": 1939,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -141,7 +142,7 @@
           ]
         },
         {
-          "atMs": 2701,
+          "atMs": 2020,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -149,7 +150,7 @@
           ]
         },
         {
-          "atMs": 2781,
+          "atMs": 2103,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -157,7 +158,7 @@
           ]
         },
         {
-          "atMs": 2868,
+          "atMs": 2184,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
@@ -165,59 +166,11 @@
           ]
         },
         {
-          "atMs": 2942,
+          "atMs": 2238,
           "lines": [
             "limina[task.graph]: graph prepare started",
             "┌  limina graph prepare",
-            "⠧    graph prepare"
-          ]
-        },
-        {
-          "atMs": 3026,
-          "lines": [
-            "limina[task.graph]: graph prepare started",
-            "┌  limina graph prepare",
-            "⠇    graph prepare"
-          ]
-        },
-        {
-          "atMs": 3107,
-          "lines": [
-            "limina[task.graph]: graph prepare started",
-            "┌  limina graph prepare",
-            "⠏    graph prepare"
-          ]
-        },
-        {
-          "atMs": 3188,
-          "lines": [
-            "limina[task.graph]: graph prepare started",
-            "┌  limina graph prepare",
-            "⠋    graph prepare"
-          ]
-        },
-        {
-          "atMs": 3268,
-          "lines": [
-            "limina[task.graph]: graph prepare started",
-            "┌  limina graph prepare",
-            "⠙    graph prepare"
-          ]
-        },
-        {
-          "atMs": 3348,
-          "lines": [
-            "limina[task.graph]: graph prepare started",
-            "┌  limina graph prepare",
-            "⠹    graph prepare"
-          ]
-        },
-        {
-          "atMs": 3429,
-          "lines": [
-            "limina[task.graph]: graph prepare started",
-            "┌  limina graph prepare",
-            "◆    graph prepare (1.97s)",
+            "◆    graph prepare (1.36s)",
             "└  limina graph passed"
           ]
         }
@@ -225,7 +178,7 @@
       "lines": [
         "limina[task.graph]: graph prepare started",
         "┌  limina graph prepare",
-        "◆    graph prepare (1.97s)",
+        "◆    graph prepare (1.36s)",
         "└  limina graph passed"
       ]
     },
@@ -235,92 +188,38 @@
       "argv": ["pnpm", "exec", "limina", "checker", "build"],
       "workspace": "limina-workspace",
       "exitCode": 0,
-      "outputSha256": "6bd0c98eb97bf760a450e20e8d77936f2af7c8b534fed21e6f189b76845b9bdc",
+      "outputSha256": "1aaad4db5ecf8f4c64a9adcc9c9edf902c2e19db9cd50945008dab006897d71a",
       "frames": [
         {
-          "atMs": 1310,
+          "atMs": 404,
           "lines": ["┌  limina checker build", "⠋    checker build"]
         },
         {
-          "atMs": 1393,
+          "atMs": 485,
           "lines": ["┌  limina checker build", "⠙    checker build"]
         },
         {
-          "atMs": 1473,
+          "atMs": 568,
           "lines": ["┌  limina checker build", "⠹    checker build"]
         },
         {
-          "atMs": 1551,
+          "atMs": 649,
           "lines": ["┌  limina checker build", "⠸    checker build"]
         },
         {
-          "atMs": 1631,
+          "atMs": 732,
           "lines": ["┌  limina checker build", "⠼    checker build"]
         },
         {
-          "atMs": 1712,
+          "atMs": 815,
           "lines": ["┌  limina checker build", "⠴    checker build"]
         },
         {
-          "atMs": 1793,
+          "atMs": 895,
           "lines": ["┌  limina checker build", "⠦    checker build"]
         },
         {
-          "atMs": 1874,
-          "lines": ["┌  limina checker build", "⠧    checker build"]
-        },
-        {
-          "atMs": 1954,
-          "lines": ["┌  limina checker build", "⠇    checker build"]
-        },
-        {
-          "atMs": 2035,
-          "lines": ["┌  limina checker build", "⠏    checker build"]
-        },
-        {
-          "atMs": 2113,
-          "lines": ["┌  limina checker build", "⠋    checker build"]
-        },
-        {
-          "atMs": 2193,
-          "lines": ["┌  limina checker build", "⠙    checker build"]
-        },
-        {
-          "atMs": 2279,
-          "lines": ["┌  limina checker build", "⠹    checker build"]
-        },
-        {
-          "atMs": 2357,
-          "lines": ["┌  limina checker build", "⠸    checker build"]
-        },
-        {
-          "atMs": 2437,
-          "lines": ["┌  limina checker build", "⠼    checker build"]
-        },
-        {
-          "atMs": 2534,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠴    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 2598,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠦    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 2678,
+          "atMs": 988,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -331,7 +230,7 @@
           ]
         },
         {
-          "atMs": 2759,
+          "atMs": 1059,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -342,7 +241,7 @@
           ]
         },
         {
-          "atMs": 2839,
+          "atMs": 1140,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -353,7 +252,7 @@
           ]
         },
         {
-          "atMs": 2919,
+          "atMs": 1222,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -364,121 +263,7 @@
           ]
         },
         {
-          "atMs": 3000,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠙    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 3080,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠹    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 3160,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠸    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 3244,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠼    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 3323,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠴    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 3402,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠦    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 3486,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠧    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠧      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 3563,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠇    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠇      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 3643,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠏    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠏      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 3732,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠋    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠋      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 3810,
+          "atMs": 1303,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -490,7 +275,7 @@
           ]
         },
         {
-          "atMs": 3892,
+          "atMs": 1385,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -502,7 +287,7 @@
           ]
         },
         {
-          "atMs": 3980,
+          "atMs": 1468,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -514,7 +299,7 @@
           ]
         },
         {
-          "atMs": 4061,
+          "atMs": 1549,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -526,7 +311,7 @@
           ]
         },
         {
-          "atMs": 4155,
+          "atMs": 1632,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -538,7 +323,7 @@
           ]
         },
         {
-          "atMs": 4224,
+          "atMs": 1714,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -550,7 +335,7 @@
           ]
         },
         {
-          "atMs": 4305,
+          "atMs": 1794,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -562,7 +347,7 @@
           ]
         },
         {
-          "atMs": 4386,
+          "atMs": 1877,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -574,7 +359,7 @@
           ]
         },
         {
-          "atMs": 4469,
+          "atMs": 1958,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -586,7 +371,7 @@
           ]
         },
         {
-          "atMs": 4546,
+          "atMs": 2040,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -598,7 +383,7 @@
           ]
         },
         {
-          "atMs": 4625,
+          "atMs": 2120,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -610,7 +395,7 @@
           ]
         },
         {
-          "atMs": 4705,
+          "atMs": 2207,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -622,7 +407,7 @@
           ]
         },
         {
-          "atMs": 4787,
+          "atMs": 2288,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -634,7 +419,7 @@
           ]
         },
         {
-          "atMs": 4866,
+          "atMs": 2369,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -646,7 +431,7 @@
           ]
         },
         {
-          "atMs": 4946,
+          "atMs": 2452,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -658,147 +443,15 @@
           ]
         },
         {
-          "atMs": 5026,
+          "atMs": 2538,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
             "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
             "┌  limina checker build",
-            "⠦    checker build",
+            "◆    checker build (2.20s)",
             "│      found 1 checker build entry(s)",
-            "⠦      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5110,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠧    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠧      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5191,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠇    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠇      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5270,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠏    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠏      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5353,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠋    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠋      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5436,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠙    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠙      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5513,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠹    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠹      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5598,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠸    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠸      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5678,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠼    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠼      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5762,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠴    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠴      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5843,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠦    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠦      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 5924,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "◆    checker build (4.73s)",
-            "│      found 1 checker build entry(s)",
-            "◆      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (2.37s)",
+            "◆      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (1.21s)",
             "└  limina checker passed"
           ]
         }
@@ -808,9 +461,9 @@
         "CWD: .",
         "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
         "┌  limina checker build",
-        "◆    checker build (4.73s)",
+        "◆    checker build (2.20s)",
         "│      found 1 checker build entry(s)",
-        "◆      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (2.37s)",
+        "◆      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (1.21s)",
         "└  limina checker passed"
       ]
     },
@@ -820,110 +473,42 @@
       "argv": ["pnpm", "exec", "limina", "checker", "build"],
       "workspace": "limina-workspace",
       "exitCode": 0,
-      "outputSha256": "7e26c69736318b3007a727cf90b2dd5277d9774fef3319ce4ef16728e8c68af3",
+      "outputSha256": "0a40515bfac295beb9139a328ab548baf845591713034f88e7cec70b9ea322a5",
       "frames": [
         {
-          "atMs": 1178,
+          "atMs": 468,
           "lines": ["┌  limina checker build", "⠋    checker build"]
         },
         {
-          "atMs": 1259,
+          "atMs": 551,
           "lines": ["┌  limina checker build", "⠙    checker build"]
         },
         {
-          "atMs": 1342,
+          "atMs": 637,
           "lines": ["┌  limina checker build", "⠹    checker build"]
         },
         {
-          "atMs": 1419,
+          "atMs": 718,
           "lines": ["┌  limina checker build", "⠸    checker build"]
         },
         {
-          "atMs": 1500,
+          "atMs": 800,
           "lines": ["┌  limina checker build", "⠼    checker build"]
         },
         {
-          "atMs": 1582,
+          "atMs": 883,
           "lines": ["┌  limina checker build", "⠴    checker build"]
         },
         {
-          "atMs": 1661,
+          "atMs": 965,
           "lines": ["┌  limina checker build", "⠦    checker build"]
         },
         {
-          "atMs": 1740,
+          "atMs": 1045,
           "lines": ["┌  limina checker build", "⠧    checker build"]
         },
         {
-          "atMs": 1820,
-          "lines": ["┌  limina checker build", "⠇    checker build"]
-        },
-        {
-          "atMs": 1900,
-          "lines": ["┌  limina checker build", "⠏    checker build"]
-        },
-        {
-          "atMs": 1981,
-          "lines": ["┌  limina checker build", "⠋    checker build"]
-        },
-        {
-          "atMs": 2062,
-          "lines": ["┌  limina checker build", "⠙    checker build"]
-        },
-        {
-          "atMs": 2143,
-          "lines": ["┌  limina checker build", "⠹    checker build"]
-        },
-        {
-          "atMs": 2224,
-          "lines": ["┌  limina checker build", "⠸    checker build"]
-        },
-        {
-          "atMs": 2320,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠼    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 2384,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠴    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 2464,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠦    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 2544,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠧    checker build",
-            "│      found 1 checker build entry(s)"
-          ]
-        },
-        {
-          "atMs": 2625,
+          "atMs": 1126,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -934,7 +519,7 @@
           ]
         },
         {
-          "atMs": 2705,
+          "atMs": 1209,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -945,7 +530,7 @@
           ]
         },
         {
-          "atMs": 2785,
+          "atMs": 1290,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -956,7 +541,7 @@
           ]
         },
         {
-          "atMs": 2865,
+          "atMs": 1371,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
@@ -967,50 +552,39 @@
           ]
         },
         {
-          "atMs": 2946,
+          "atMs": 1429,
+          "lines": [
+            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
+            "CWD: .",
+            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
+            "┌  limina checker build",
+            "⠙    checker build",
+            "│      found 1 checker build entry(s)",
+            "⠙      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
+          ]
+        },
+        {
+          "atMs": 1453,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
             "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
             "┌  limina checker build",
             "⠹    checker build",
-            "│      found 1 checker build entry(s)"
+            "│      found 1 checker build entry(s)",
+            "⠹      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
           ]
         },
         {
-          "atMs": 3026,
+          "atMs": 1536,
           "lines": [
             "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
             "CWD: .",
             "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
             "┌  limina checker build",
-            "⠸    checker build",
+            "◆    checker build (1.14s)",
             "│      found 1 checker build entry(s)",
-            "⠸      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 3106,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "⠼    checker build",
-            "│      found 1 checker build entry(s)",
-            "⠼      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json"
-          ]
-        },
-        {
-          "atMs": 3180,
-          "lines": [
-            "limina[task.typecheck]: Running build checks for 1 checker entry(s).",
-            "CWD: .",
-            "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "┌  limina checker build",
-            "◆    checker build (2.11s)",
-            "│      found 1 checker build entry(s)",
-            "◆      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (119ms)",
+            "◆      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (65ms)",
             "└  limina checker passed"
           ]
         }
@@ -1020,9 +594,9 @@
         "CWD: .",
         "Entries: .limina/tsconfig/checkers/tsc/tsconfig.build.json",
         "┌  limina checker build",
-        "◆    checker build (2.11s)",
+        "◆    checker build (1.14s)",
         "│      found 1 checker build entry(s)",
-        "◆      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (119ms)",
+        "◆      tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (65ms)",
         "└  limina checker passed"
       ]
     },
@@ -1032,104 +606,124 @@
       "argv": ["pnpm", "exec", "limina", "graph", "check"],
       "workspace": "limina-workspace",
       "exitCode": 0,
-      "outputSha256": "f3d0f3761f419bc039981cbc6fdd47f5894f81b7d9a9106154930853597ae422",
+      "outputSha256": "4bd2907c82dda92902c20a9a87a3aae8567adca20aa5ff95cb4f6556af84d89f",
       "frames": [
+        { "atMs": 416, "lines": ["┌  limina graph check"] },
+        { "atMs": 458, "lines": ["┌  limina graph check", "⠋    graph check"] },
+        { "atMs": 540, "lines": ["┌  limina graph check", "⠙    graph check"] },
+        { "atMs": 623, "lines": ["┌  limina graph check", "⠹    graph check"] },
+        { "atMs": 704, "lines": ["┌  limina graph check", "⠸    graph check"] },
+        { "atMs": 786, "lines": ["┌  limina graph check", "⠼    graph check"] },
+        { "atMs": 866, "lines": ["┌  limina graph check", "⠴    graph check"] },
+        { "atMs": 949, "lines": ["┌  limina graph check", "⠦    graph check"] },
         {
-          "atMs": 1190,
-          "lines": ["┌  limina graph check", "⠋    graph check"]
-        },
-        {
-          "atMs": 1271,
-          "lines": ["┌  limina graph check", "⠙    graph check"]
-        },
-        {
-          "atMs": 1350,
-          "lines": ["┌  limina graph check", "⠹    graph check"]
-        },
-        {
-          "atMs": 1431,
-          "lines": ["┌  limina graph check", "⠸    graph check"]
-        },
-        {
-          "atMs": 1511,
-          "lines": ["┌  limina graph check", "⠼    graph check"]
-        },
-        {
-          "atMs": 1595,
-          "lines": ["┌  limina graph check", "⠴    graph check"]
-        },
-        {
-          "atMs": 1671,
-          "lines": ["┌  limina graph check", "⠦    graph check"]
-        },
-        {
-          "atMs": 1752,
+          "atMs": 1031,
           "lines": ["┌  limina graph check", "⠧    graph check"]
         },
         {
-          "atMs": 1833,
+          "atMs": 1111,
           "lines": ["┌  limina graph check", "⠇    graph check"]
         },
         {
-          "atMs": 1914,
+          "atMs": 1194,
           "lines": ["┌  limina graph check", "⠏    graph check"]
         },
         {
-          "atMs": 1993,
+          "atMs": 1275,
           "lines": ["┌  limina graph check", "⠋    graph check"]
         },
         {
-          "atMs": 2073,
+          "atMs": 1356,
           "lines": ["┌  limina graph check", "⠙    graph check"]
         },
         {
-          "atMs": 2154,
+          "atMs": 1438,
           "lines": ["┌  limina graph check", "⠹    graph check"]
         },
         {
-          "atMs": 2235,
+          "atMs": 1520,
           "lines": ["┌  limina graph check", "⠸    graph check"]
         },
         {
-          "atMs": 2319,
+          "atMs": 1601,
           "lines": ["┌  limina graph check", "⠼    graph check"]
         },
         {
-          "atMs": 2395,
+          "atMs": 1683,
           "lines": ["┌  limina graph check", "⠴    graph check"]
         },
         {
-          "atMs": 2478,
+          "atMs": 1765,
           "lines": ["┌  limina graph check", "⠦    graph check"]
         },
         {
-          "atMs": 2556,
+          "atMs": 1846,
           "lines": ["┌  limina graph check", "⠧    graph check"]
         },
         {
-          "atMs": 2637,
+          "atMs": 1928,
           "lines": ["┌  limina graph check", "⠇    graph check"]
         },
         {
-          "atMs": 2717,
+          "atMs": 2010,
           "lines": ["┌  limina graph check", "⠏    graph check"]
         },
         {
-          "atMs": 2799,
+          "atMs": 2092,
           "lines": ["┌  limina graph check", "⠋    graph check"]
         },
         {
-          "atMs": 2855,
+          "atMs": 2174,
+          "lines": ["┌  limina graph check", "⠙    graph check"]
+        },
+        {
+          "atMs": 2258,
+          "lines": ["┌  limina graph check", "⠹    graph check"]
+        },
+        {
+          "atMs": 2339,
+          "lines": ["┌  limina graph check", "⠸    graph check"]
+        },
+        {
+          "atMs": 2421,
+          "lines": ["┌  limina graph check", "⠼    graph check"]
+        },
+        {
+          "atMs": 2503,
+          "lines": ["┌  limina graph check", "⠴    graph check"]
+        },
+        {
+          "atMs": 2585,
+          "lines": ["┌  limina graph check", "⠦    graph check"]
+        },
+        {
+          "atMs": 2667,
+          "lines": ["┌  limina graph check", "⠧    graph check"]
+        },
+        {
+          "atMs": 2750,
+          "lines": ["┌  limina graph check", "⠇    graph check"]
+        },
+        {
+          "atMs": 2831,
+          "lines": ["┌  limina graph check", "⠏    graph check"]
+        },
+        {
+          "atMs": 2913,
+          "lines": ["┌  limina graph check", "⠋    graph check"]
+        },
+        {
+          "atMs": 2979,
           "lines": [
             "┌  limina graph check",
-            "◆    graph check (1.75s)",
+            "◆    graph check (2.52s)",
             "└  limina graph passed"
           ]
         }
       ],
       "lines": [
         "┌  limina graph check",
-        "◆    graph check (1.75s)",
+        "◆    graph check (2.52s)",
         "└  limina graph passed"
       ]
     },
@@ -1139,96 +733,141 @@
       "argv": ["pnpm", "exec", "limina", "source", "check"],
       "workspace": "limina-workspace",
       "exitCode": 0,
-      "outputSha256": "0ad5024584a45a77a5b2ff892b5f2ce37a24f729841c131ba69d0a1f66fbbd72",
+      "outputSha256": "8a34302fc058713797e550d3d03f30ed2e1692cdab6f74ab7346a016e45b9252",
       "frames": [
+        { "atMs": 454, "lines": ["┌  limina source check"] },
         {
-          "atMs": 1210,
+          "atMs": 518,
           "lines": ["┌  limina source check", "⠋    source check"]
         },
         {
-          "atMs": 1290,
+          "atMs": 600,
           "lines": ["┌  limina source check", "⠙    source check"]
         },
         {
-          "atMs": 1370,
+          "atMs": 682,
           "lines": ["┌  limina source check", "⠹    source check"]
         },
         {
-          "atMs": 1450,
+          "atMs": 763,
           "lines": ["┌  limina source check", "⠸    source check"]
         },
         {
-          "atMs": 1534,
+          "atMs": 845,
           "lines": ["┌  limina source check", "⠼    source check"]
         },
         {
-          "atMs": 1611,
+          "atMs": 927,
           "lines": ["┌  limina source check", "⠴    source check"]
         },
         {
-          "atMs": 1690,
+          "atMs": 1009,
           "lines": ["┌  limina source check", "⠦    source check"]
         },
         {
-          "atMs": 1770,
+          "atMs": 1089,
           "lines": ["┌  limina source check", "⠧    source check"]
         },
         {
-          "atMs": 1850,
+          "atMs": 1172,
           "lines": ["┌  limina source check", "⠇    source check"]
         },
         {
-          "atMs": 1933,
+          "atMs": 1254,
           "lines": ["┌  limina source check", "⠏    source check"]
         },
         {
-          "atMs": 2011,
+          "atMs": 1334,
           "lines": ["┌  limina source check", "⠋    source check"]
         },
         {
-          "atMs": 2092,
+          "atMs": 1416,
           "lines": ["┌  limina source check", "⠙    source check"]
         },
         {
-          "atMs": 2177,
+          "atMs": 1499,
           "lines": ["┌  limina source check", "⠹    source check"]
         },
         {
-          "atMs": 2256,
+          "atMs": 1580,
           "lines": ["┌  limina source check", "⠸    source check"]
         },
         {
-          "atMs": 2335,
+          "atMs": 1663,
           "lines": ["┌  limina source check", "⠼    source check"]
         },
         {
-          "atMs": 2416,
+          "atMs": 1744,
           "lines": ["┌  limina source check", "⠴    source check"]
         },
         {
-          "atMs": 2496,
+          "atMs": 1827,
           "lines": ["┌  limina source check", "⠦    source check"]
         },
         {
-          "atMs": 2576,
+          "atMs": 1908,
           "lines": ["┌  limina source check", "⠧    source check"]
         },
         {
-          "atMs": 2656,
+          "atMs": 1991,
           "lines": ["┌  limina source check", "⠇    source check"]
         },
         {
-          "atMs": 2755,
+          "atMs": 2072,
+          "lines": ["┌  limina source check", "⠏    source check"]
+        },
+        {
+          "atMs": 2156,
+          "lines": ["┌  limina source check", "⠋    source check"]
+        },
+        {
+          "atMs": 2238,
+          "lines": ["┌  limina source check", "⠙    source check"]
+        },
+        {
+          "atMs": 2319,
+          "lines": ["┌  limina source check", "⠹    source check"]
+        },
+        {
+          "atMs": 2401,
+          "lines": ["┌  limina source check", "⠸    source check"]
+        },
+        {
+          "atMs": 2483,
+          "lines": ["┌  limina source check", "⠼    source check"]
+        },
+        {
+          "atMs": 2566,
+          "lines": ["┌  limina source check", "⠴    source check"]
+        },
+        {
+          "atMs": 2647,
+          "lines": ["┌  limina source check", "⠦    source check"]
+        },
+        {
+          "atMs": 2729,
+          "lines": ["┌  limina source check", "⠧    source check"]
+        },
+        {
+          "atMs": 2811,
+          "lines": ["┌  limina source check", "⠇    source check"]
+        },
+        {
+          "atMs": 2894,
+          "lines": ["┌  limina source check", "⠏    source check"]
+        },
+        {
+          "atMs": 2930,
           "lines": [
             "┌  limina source check",
-            "◆    source check (1.61s)",
+            "◆    source check (2.40s)",
             "└  limina source passed"
           ]
         }
       ],
       "lines": [
         "┌  limina source check",
-        "◆    source check (1.61s)",
+        "◆    source check (2.40s)",
         "└  limina source passed"
       ]
     },
@@ -1238,76 +877,27 @@
       "argv": ["pnpm", "exec", "limina", "proof", "check"],
       "workspace": "limina-workspace",
       "exitCode": 0,
-      "outputSha256": "2f597f6342e9852a1299edf17e6f2257f5840fc0896563050d93d5c37a587306",
+      "outputSha256": "3240fbdbcb4e7f5e7451e5a0b3f83960286290190eaf2b7b1715c90267093927",
       "frames": [
+        { "atMs": 421, "lines": ["┌  limina proof check", "⠋    proof check"] },
+        { "atMs": 504, "lines": ["┌  limina proof check", "⠙    proof check"] },
+        { "atMs": 586, "lines": ["┌  limina proof check", "⠹    proof check"] },
+        { "atMs": 669, "lines": ["┌  limina proof check", "⠸    proof check"] },
+        { "atMs": 751, "lines": ["┌  limina proof check", "⠼    proof check"] },
+        { "atMs": 831, "lines": ["┌  limina proof check", "⠴    proof check"] },
+        { "atMs": 914, "lines": ["┌  limina proof check", "⠦    proof check"] },
         {
-          "atMs": 1189,
-          "lines": ["┌  limina proof check", "⠋    proof check"]
-        },
-        {
-          "atMs": 1270,
-          "lines": ["┌  limina proof check", "⠙    proof check"]
-        },
-        {
-          "atMs": 1351,
-          "lines": ["┌  limina proof check", "⠹    proof check"]
-        },
-        {
-          "atMs": 1431,
-          "lines": ["┌  limina proof check", "⠸    proof check"]
-        },
-        {
-          "atMs": 1510,
-          "lines": ["┌  limina proof check", "⠼    proof check"]
-        },
-        {
-          "atMs": 1591,
-          "lines": ["┌  limina proof check", "⠴    proof check"]
-        },
-        {
-          "atMs": 1671,
-          "lines": ["┌  limina proof check", "⠦    proof check"]
-        },
-        {
-          "atMs": 1751,
-          "lines": ["┌  limina proof check", "⠧    proof check"]
-        },
-        {
-          "atMs": 1831,
-          "lines": ["┌  limina proof check", "⠇    proof check"]
-        },
-        {
-          "atMs": 1912,
-          "lines": ["┌  limina proof check", "⠏    proof check"]
-        },
-        {
-          "atMs": 1991,
-          "lines": ["┌  limina proof check", "⠋    proof check"]
-        },
-        {
-          "atMs": 2071,
-          "lines": ["┌  limina proof check", "⠙    proof check"]
-        },
-        {
-          "atMs": 2152,
-          "lines": ["┌  limina proof check", "⠹    proof check"]
-        },
-        {
-          "atMs": 2233,
-          "lines": ["┌  limina proof check", "⠸    proof check"]
-        },
-        {
-          "atMs": 2330,
+          "atMs": 1004,
           "lines": [
             "┌  limina proof check",
-            "◆    proof check (1.23s)",
+            "◆    proof check (653ms)",
             "└  limina proof passed"
           ]
         }
       ],
       "lines": [
         "┌  limina proof check",
-        "◆    proof check (1.23s)",
+        "◆    proof check (653ms)",
         "└  limina proof passed"
       ]
     },
@@ -1317,14 +907,14 @@
       "argv": ["pnpm", "exec", "limina", "check"],
       "workspace": "limina-workspace",
       "exitCode": 0,
-      "outputSha256": "4462c9f3197d6797b8c0427e04c6c2825d9705ead573b5a101424ebc7d8f18ef",
+      "outputSha256": "b23e2252ac5a317e8e816fc999a0635d8c899d5d920413bf5029e5e02f26d1ba",
       "frames": [
         {
-          "atMs": 1241,
+          "atMs": 580,
           "lines": [
             "┌  limina check",
             "⠋    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠋      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1334,11 +924,11 @@
           ]
         },
         {
-          "atMs": 1309,
+          "atMs": 658,
           "lines": [
             "┌  limina check",
             "⠙    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠙      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1348,11 +938,11 @@
           ]
         },
         {
-          "atMs": 1388,
+          "atMs": 739,
           "lines": [
             "┌  limina check",
             "⠹    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠹      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1362,11 +952,11 @@
           ]
         },
         {
-          "atMs": 1468,
+          "atMs": 820,
           "lines": [
             "┌  limina check",
             "⠸    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠸      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1376,11 +966,11 @@
           ]
         },
         {
-          "atMs": 1548,
+          "atMs": 903,
           "lines": [
             "┌  limina check",
             "⠼    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠼      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1390,11 +980,11 @@
           ]
         },
         {
-          "atMs": 1629,
+          "atMs": 985,
           "lines": [
             "┌  limina check",
             "⠴    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠴      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1404,11 +994,11 @@
           ]
         },
         {
-          "atMs": 1710,
+          "atMs": 1064,
           "lines": [
             "┌  limina check",
             "⠦    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠦      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1418,11 +1008,11 @@
           ]
         },
         {
-          "atMs": 1791,
+          "atMs": 1146,
           "lines": [
             "┌  limina check",
             "⠧    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠧      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1432,11 +1022,11 @@
           ]
         },
         {
-          "atMs": 1874,
+          "atMs": 1227,
           "lines": [
             "┌  limina check",
             "⠇    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠇      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1446,11 +1036,11 @@
           ]
         },
         {
-          "atMs": 1954,
+          "atMs": 1310,
           "lines": [
             "┌  limina check",
             "⠏    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠏      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1460,11 +1050,11 @@
           ]
         },
         {
-          "atMs": 2038,
+          "atMs": 1392,
           "lines": [
             "┌  limina check",
             "⠋    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠋      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1474,11 +1064,11 @@
           ]
         },
         {
-          "atMs": 2115,
+          "atMs": 1473,
           "lines": [
             "┌  limina check",
             "⠙    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠙      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1488,11 +1078,11 @@
           ]
         },
         {
-          "atMs": 2196,
+          "atMs": 1556,
           "lines": [
             "┌  limina check",
             "⠹    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠹      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1502,11 +1092,11 @@
           ]
         },
         {
-          "atMs": 2277,
+          "atMs": 1638,
           "lines": [
             "┌  limina check",
             "⠸    default check",
-            "◆      workspace validate (42ms)",
+            "◆      workspace validate (16ms)",
             "⠸      graph materialize",
             "◇      graph check",
             "◇      source check",
@@ -1516,104 +1106,71 @@
           ]
         },
         {
-          "atMs": 2357,
+          "atMs": 1721,
           "lines": [
             "┌  limina check",
             "⠼    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "⠼      graph check",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "⠼        reference completeness",
+            "◆      workspace validate (16ms)",
+            "⠼      graph materialize",
+            "◇      graph check",
             "◇      source check",
-            "⠼      proof check",
-            "◇        project routes and configs",
-            "◇        checker coverage targets",
-            "◇        proof allowlist",
-            "◇        source coverage",
+            "◇      proof check",
             "◇      checker build",
             "◇      checker typecheck"
           ]
         },
         {
-          "atMs": 2440,
+          "atMs": 1802,
           "lines": [
             "┌  limina check",
             "⠴    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "⠴      graph check",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "⠴        reference completeness",
+            "◆      workspace validate (16ms)",
+            "⠴      graph materialize",
+            "◇      graph check",
             "◇      source check",
-            "⠴      proof check",
-            "◇        project routes and configs",
-            "◇        checker coverage targets",
-            "◇        proof allowlist",
-            "◇        source coverage",
+            "◇      proof check",
             "◇      checker build",
             "◇      checker typecheck"
           ]
         },
         {
-          "atMs": 2520,
+          "atMs": 1885,
           "lines": [
             "┌  limina check",
             "⠦    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "⠦      graph check",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "⠦        reference completeness",
+            "◆      workspace validate (16ms)",
+            "⠦      graph materialize",
+            "◇      graph check",
             "◇      source check",
-            "⠦      proof check",
-            "◇        project routes and configs",
-            "◇        checker coverage targets",
-            "◇        proof allowlist",
-            "◇        source coverage",
+            "◇      proof check",
             "◇      checker build",
             "◇      checker typecheck"
           ]
         },
         {
-          "atMs": 2599,
+          "atMs": 1966,
           "lines": [
             "┌  limina check",
             "⠧    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "⠧      graph check",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "⠧        reference completeness",
+            "◆      workspace validate (16ms)",
+            "⠧      graph materialize",
+            "◇      graph check",
             "◇      source check",
-            "⠧      proof check",
-            "◇        project routes and configs",
-            "◇        checker coverage targets",
-            "◇        proof allowlist",
-            "◇        source coverage",
+            "◇      proof check",
             "◇      checker build",
             "◇      checker typecheck"
           ]
         },
         {
-          "atMs": 2680,
+          "atMs": 2046,
           "lines": [
             "┌  limina check",
             "⠇    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
             "⠇      graph check",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
+            "◆        project references (3ms)",
             "⠇        reference completeness",
             "◇      source check",
             "⠇      proof check",
@@ -1621,21 +1178,20 @@
             "◇        checker coverage targets",
             "◇        proof allowlist",
             "◇        source coverage",
-            "◇      checker build",
-            "◇      checker typecheck"
+            "⠇      checker build",
+            "⠇      checker typecheck"
           ]
         },
         {
-          "atMs": 2759,
+          "atMs": 2129,
           "lines": [
             "┌  limina check",
             "⠏    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
             "⠏      graph check",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
+            "◆        project references (3ms)",
             "⠏        reference completeness",
             "◇      source check",
             "⠏      proof check",
@@ -1643,448 +1199,562 @@
             "◇        checker coverage targets",
             "◇        proof allowlist",
             "◇        source coverage",
-            "◇      checker build",
-            "◇      checker typecheck"
+            "⠏      checker build",
+            "⠏      checker typecheck"
           ]
         },
         {
-          "atMs": 2922,
+          "atMs": 2210,
+          "lines": [
+            "┌  limina check",
+            "⠋    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠋      graph check",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "⠋        reference completeness",
+            "◇      source check",
+            "⠋      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠋      checker build",
+            "⠋      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 2292,
           "lines": [
             "┌  limina check",
             "⠙    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠙      graph check",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
+            "◆        project references (3ms)",
+            "⠙        reference completeness",
             "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
+            "⠙      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠙      checker build",
+            "⠙      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 2375,
+          "lines": [
+            "┌  limina check",
+            "⠹    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠹      graph check",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "⠹        reference completeness",
+            "◇      source check",
+            "⠹      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠹      checker build",
+            "⠹      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 2456,
+          "lines": [
+            "┌  limina check",
+            "⠸    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠸      graph check",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "⠸        reference completeness",
+            "◇      source check",
+            "⠸      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠸      checker build",
+            "⠸      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 2537,
+          "lines": [
+            "┌  limina check",
+            "⠼    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠼      graph check",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "⠼        reference completeness",
+            "◇      source check",
+            "⠼      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠼      checker build",
+            "⠼      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 2619,
+          "lines": [
+            "┌  limina check",
+            "⠴    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠴      graph check",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "⠴        reference completeness",
+            "◇      source check",
+            "⠴      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠴      checker build",
+            "⠴      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 2700,
+          "lines": [
+            "┌  limina check",
+            "⠦    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠦      graph check",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "⠦        reference completeness",
+            "◇      source check",
+            "⠦      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠦      checker build",
+            "⠦      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 2783,
+          "lines": [
+            "┌  limina check",
+            "⠧    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠧      graph check",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "⠧        reference completeness",
+            "◇      source check",
+            "⠧      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠧      checker build",
+            "⠧      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 2865,
+          "lines": [
+            "┌  limina check",
+            "⠇    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠇      graph check",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "⠇        reference completeness",
+            "◇      source check",
+            "⠇      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠇      checker build",
+            "⠇      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 2947,
+          "lines": [
+            "┌  limina check",
+            "⠏    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "⠏      graph check",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "⠏        reference completeness",
+            "◇      source check",
+            "⠏      proof check",
+            "◇        project routes and configs",
+            "◇        checker coverage targets",
+            "◇        proof allowlist",
+            "◇        source coverage",
+            "⠏      checker build",
+            "⠏      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 3059,
+          "lines": [
+            "┌  limina check",
+            "⠋    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
+            "◇      source check",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
             "◆        checker coverage targets (0ms)",
             "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
+            "◆        source coverage (2ms)",
+            "⠋      checker build",
+            "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
+            "⠋      checker typecheck"
+          ]
+        },
+        {
+          "atMs": 3110,
+          "lines": [
+            "┌  limina check",
+            "⠙    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
+            "◇      source check",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
+            "◆        checker coverage targets (0ms)",
+            "◆        proof allowlist (0ms)",
+            "◆        source coverage (2ms)",
             "⠙      checker build",
             "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
             "⠙      checker typecheck"
           ]
         },
         {
-          "atMs": 3004,
+          "atMs": 3190,
           "lines": [
             "┌  limina check",
             "⠹    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
             "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
             "◆        checker coverage targets (0ms)",
             "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
+            "◆        source coverage (2ms)",
             "⠹      checker build",
             "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "⠹      checker typecheck"
+            "◇      checker typecheck (disabled) (1.14s)"
           ]
         },
         {
-          "atMs": 3085,
+          "atMs": 3272,
           "lines": [
             "┌  limina check",
             "⠸    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
             "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
             "◆        checker coverage targets (0ms)",
             "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
+            "◆        source coverage (2ms)",
             "⠸      checker build",
             "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "⠸      checker typecheck"
+            "◇      checker typecheck (disabled) (1.14s)"
           ]
         },
         {
-          "atMs": 3122,
-          "lines": [
-            "┌  limina check",
-            "⠸    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
-            "◆        checker coverage targets (0ms)",
-            "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "⠸      checker build",
-            "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
-          ]
-        },
-        {
-          "atMs": 3164,
+          "atMs": 3352,
           "lines": [
             "┌  limina check",
             "⠼    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
             "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
             "◆        checker coverage targets (0ms)",
             "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
+            "◆        source coverage (2ms)",
             "⠼      checker build",
             "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
+            "◇      checker typecheck (disabled) (1.14s)"
           ]
         },
         {
-          "atMs": 3247,
+          "atMs": 3403,
+          "lines": [
+            "┌  limina check",
+            "⠼    default check",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
+            "◇      source check",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
+            "◆        checker coverage targets (0ms)",
+            "◆        proof allowlist (0ms)",
+            "◆        source coverage (2ms)",
+            "⠼      checker build",
+            "⠼        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
+            "◇      checker typecheck (disabled) (1.14s)"
+          ]
+        },
+        {
+          "atMs": 3437,
           "lines": [
             "┌  limina check",
             "⠴    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
             "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
             "◆        checker coverage targets (0ms)",
             "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
+            "◆        source coverage (2ms)",
             "⠴      checker build",
-            "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
+            "⠴        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
+            "◇      checker typecheck (disabled) (1.14s)"
           ]
         },
         {
-          "atMs": 3327,
+          "atMs": 3532,
           "lines": [
             "┌  limina check",
             "⠦    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
+            "◆      source check (16ms)",
+            "◆        source graph routes (0ms)",
+            "◆        tsconfig governance (4ms)",
+            "◇        source.knip is disabled (0ms)",
+            "◆        source project ownership (0ms)",
+            "◆        source import authority (4ms)",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
             "◆        checker coverage targets (0ms)",
             "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "⠦      checker build",
-            "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
+            "◆        source coverage (2ms)",
+            "◆      checker build (1.48s)",
+            "◆        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (66ms)",
+            "◇      checker typecheck (disabled) (1.14s)"
           ]
         },
         {
-          "atMs": 3407,
+          "atMs": 3598,
           "lines": [
             "┌  limina check",
             "⠧    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
-            "◆        checker coverage targets (0ms)",
-            "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "⠧      checker build",
-            "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
-          ]
-        },
-        {
-          "atMs": 3487,
-          "lines": [
-            "┌  limina check",
-            "⠇    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
+            "◆      source check (16ms)",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
-            "◆        checker coverage targets (0ms)",
-            "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "⠇      checker build",
-            "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
-          ]
-        },
-        {
-          "atMs": 3569,
-          "lines": [
-            "┌  limina check",
-            "⠏    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
-            "◆        checker coverage targets (0ms)",
-            "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "⠏      checker build",
-            "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
-          ]
-        },
-        {
-          "atMs": 3649,
-          "lines": [
-            "┌  limina check",
-            "⠋    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
-            "◆        checker coverage targets (0ms)",
-            "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "⠋      checker build",
-            "◇        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
-          ]
-        },
-        {
-          "atMs": 3728,
-          "lines": [
-            "┌  limina check",
-            "⠙    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
-            "◆        checker coverage targets (0ms)",
-            "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "⠙      checker build",
-            "⠙        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
-          ]
-        },
-        {
-          "atMs": 3809,
-          "lines": [
-            "┌  limina check",
-            "⠹    default check",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◇      source check",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
-            "◆        checker coverage targets (0ms)",
-            "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "⠹      checker build",
-            "⠹        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json",
-            "◇      checker typecheck (disabled) (218ms)"
-          ]
-        },
-        {
-          "atMs": 3945,
-          "lines": [
-            "┌  limina check",
-            "◆    default check (2.85s)",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
-            "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◆      source check (33ms)",
-            "◆        source graph routes (0ms)",
-            "◆        tsconfig governance (6ms)",
+            "◆        tsconfig governance (4ms)",
             "◇        source.knip is disabled (0ms)",
-            "◆        source project ownership (1ms)",
-            "◆        source import authority (10ms)",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
+            "◆        source project ownership (0ms)",
+            "◆        source import authority (4ms)",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
             "◆        checker coverage targets (0ms)",
             "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "◆      checker build (996ms)",
-            "◆        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (105ms)",
-            "◇      checker typecheck (disabled) (218ms)",
+            "◆        source coverage (2ms)",
+            "◆      checker build (1.48s)",
+            "◆        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (66ms)",
+            "◇      checker typecheck (disabled) (1.14s)"
+          ]
+        },
+        {
+          "atMs": 3631,
+          "lines": [
+            "┌  limina check",
+            "◆    default check (3.13s)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
+            "◆        source graph routes (0ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
+            "◆      source check (16ms)",
+            "◆        source graph routes (0ms)",
+            "◆        tsconfig governance (4ms)",
+            "◇        source.knip is disabled (0ms)",
+            "◆        source project ownership (0ms)",
+            "◆        source import authority (4ms)",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
+            "◆        checker coverage targets (0ms)",
+            "◆        proof allowlist (0ms)",
+            "◆        source coverage (2ms)",
+            "◆      checker build (1.48s)",
+            "◆        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (66ms)",
+            "◇      checker typecheck (disabled) (1.14s)",
             "└  limina check passed"
           ]
         },
         {
-          "atMs": 3986,
+          "atMs": 3657,
           "lines": [
             "┌  limina check",
-            "◆    default check (2.85s)",
-            "◆      workspace validate (42ms)",
-            "◆      graph materialize (1.16s)",
-            "◆      graph check (551ms)",
+            "◆    default check (3.13s)",
+            "◆      workspace validate (16ms)",
+            "◆      graph materialize (1.49s)",
+            "◆      graph check (1.01s)",
             "◆        source graph routes (0ms)",
-            "◆        project references (5ms)",
-            "◆        condition domains (1ms)",
-            "◆        reference completeness (514ms)",
-            "◆      source check (33ms)",
+            "◆        project references (3ms)",
+            "◆        reference completeness (983ms)",
+            "◆      source check (16ms)",
             "◆        source graph routes (0ms)",
-            "◆        tsconfig governance (6ms)",
+            "◆        tsconfig governance (4ms)",
             "◇        source.knip is disabled (0ms)",
-            "◆        source project ownership (1ms)",
-            "◆        source import authority (10ms)",
-            "◆      proof check (573ms)",
-            "◆        project routes and configs (11ms)",
+            "◆        source project ownership (0ms)",
+            "◆        source import authority (4ms)",
+            "◆      proof check (1.01s)",
+            "◆        project routes and configs (8ms)",
             "◆        checker coverage targets (0ms)",
             "◆        proof allowlist (0ms)",
-            "◆        source coverage (4ms)",
-            "◆      checker build (996ms)",
-            "◆        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (105ms)",
-            "◇      checker typecheck (disabled) (218ms)",
+            "◆        source coverage (2ms)",
+            "◆      checker build (1.48s)",
+            "◆        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (66ms)",
+            "◇      checker typecheck (disabled) (1.14s)",
             "└  limina check passed",
             "",
             "╭ Limina check summary ────────────────────────────────────────────────────────────────╮",
             "│ Command: limina check                                                                │",
             "│ Config: limina.config.mjs                                                            │",
-            "│ Duration: 2.8s                                                                       │",
+            "│ Duration: 3.1s                                                                       │",
             "│ Executed tasks: 5 / 5                                                                │",
             "│ Passed tasks: 4 / 5                                                                  │",
             "│ Open issues: 0                                                                       │",
             "│ Validation units:                                                                    │",
-            "│ ✓ graph:check                   units 99  issues  0  551ms                           │",
+            "│ ✓ graph:check                   units 97  issues  0  1.0s                            │",
             "│   ✓ source graph routes         units  2  issues  0  0ms                             │",
-            "│   ✓ project references          units 93  issues  0  5ms                             │",
-            "│   ✓ condition domains           units  2  issues  0  1ms                             │",
-            "│   ✓ reference completeness      units  2  issues  0  514ms                           │",
-            "│ ✓ source:check                  units 13  issues  0  33ms                            │",
+            "│   ✓ project references          units 93  issues  0  3ms                             │",
+            "│   ✓ reference completeness      units  2  issues  0  983ms                           │",
+            "│ ✓ source:check                  units 13  issues  0  16ms                            │",
             "│   ✓ source graph routes         units  2  issues  0  0ms                             │",
-            "│   ✓ tsconfig governance         units  6  issues  0  6ms                             │",
+            "│   ✓ tsconfig governance         units  6  issues  0  4ms                             │",
             "│   ◇ knip source usage           units  0  issues  0  0ms                             │",
-            "│   ✓ source project ownership    units  4  issues  0  1ms                             │",
-            "│   ✓ source import authority     units  1  issues  0  10ms                            │",
-            "│ ✓ proof:check                   units 10  issues  0  573ms                           │",
-            "│   ✓ project routes and configs  units  7  issues  0  11ms                            │",
+            "│   ✓ source project ownership    units  4  issues  0  0ms                             │",
+            "│   ✓ source import authority     units  1  issues  0  4ms                             │",
+            "│ ✓ proof:check                   units 10  issues  0  1.0s                            │",
+            "│   ✓ project routes and configs  units  7  issues  0  8ms                             │",
             "│   ✓ checker coverage targets    units  1  issues  0  0ms                             │",
             "│   ✓ proof allowlist             units  0  issues  0  0ms                             │",
-            "│   ✓ source coverage             units  2  issues  0  4ms                             │",
-            "│ ✓ checker:build                 units  1  issues  0  996ms                           │",
-            "│   ✓ tsc checker entry           units  1  issues  0  105ms                           │",
+            "│   ✓ source coverage             units  2  issues  0  2ms                             │",
+            "│ ✓ checker:build                 units  1  issues  0  1.5s                            │",
+            "│   ✓ tsc checker entry           units  1  issues  0  66ms                            │",
             "╰──────────────────────────────────────────────────────────────────────────────────────╯"
           ]
         }
       ],
       "lines": [
         "┌  limina check",
-        "◆    default check (2.85s)",
-        "◆      workspace validate (42ms)",
-        "◆      graph materialize (1.16s)",
-        "◆      graph check (551ms)",
+        "◆    default check (3.13s)",
+        "◆      workspace validate (16ms)",
+        "◆      graph materialize (1.49s)",
+        "◆      graph check (1.01s)",
         "◆        source graph routes (0ms)",
-        "◆        project references (5ms)",
-        "◆        condition domains (1ms)",
-        "◆        reference completeness (514ms)",
-        "◆      source check (33ms)",
+        "◆        project references (3ms)",
+        "◆        reference completeness (983ms)",
+        "◆      source check (16ms)",
         "◆        source graph routes (0ms)",
-        "◆        tsconfig governance (6ms)",
+        "◆        tsconfig governance (4ms)",
         "◇        source.knip is disabled (0ms)",
-        "◆        source project ownership (1ms)",
-        "◆        source import authority (10ms)",
-        "◆      proof check (573ms)",
-        "◆        project routes and configs (11ms)",
+        "◆        source project ownership (0ms)",
+        "◆        source import authority (4ms)",
+        "◆      proof check (1.01s)",
+        "◆        project routes and configs (8ms)",
         "◆        checker coverage targets (0ms)",
         "◆        proof allowlist (0ms)",
-        "◆        source coverage (4ms)",
-        "◆      checker build (996ms)",
-        "◆        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (105ms)",
-        "◇      checker typecheck (disabled) (218ms)",
+        "◆        source coverage (2ms)",
+        "◆      checker build (1.48s)",
+        "◆        tsc -b .limina/tsconfig/checkers/tsc/tsconfig.build.json (66ms)",
+        "◇      checker typecheck (disabled) (1.14s)",
         "└  limina check passed",
         "",
         "╭ Limina check summary ────────────────────────────────────────────────────────────────╮",
         "│ Command: limina check                                                                │",
         "│ Config: limina.config.mjs                                                            │",
-        "│ Duration: 2.8s                                                                       │",
+        "│ Duration: 3.1s                                                                       │",
         "│ Executed tasks: 5 / 5                                                                │",
         "│ Passed tasks: 4 / 5                                                                  │",
         "│ Open issues: 0                                                                       │",
         "│ Validation units:                                                                    │",
-        "│ ✓ graph:check                   units 99  issues  0  551ms                           │",
+        "│ ✓ graph:check                   units 97  issues  0  1.0s                            │",
         "│   ✓ source graph routes         units  2  issues  0  0ms                             │",
-        "│   ✓ project references          units 93  issues  0  5ms                             │",
-        "│   ✓ condition domains           units  2  issues  0  1ms                             │",
-        "│   ✓ reference completeness      units  2  issues  0  514ms                           │",
-        "│ ✓ source:check                  units 13  issues  0  33ms                            │",
+        "│   ✓ project references          units 93  issues  0  3ms                             │",
+        "│   ✓ reference completeness      units  2  issues  0  983ms                           │",
+        "│ ✓ source:check                  units 13  issues  0  16ms                            │",
         "│   ✓ source graph routes         units  2  issues  0  0ms                             │",
-        "│   ✓ tsconfig governance         units  6  issues  0  6ms                             │",
+        "│   ✓ tsconfig governance         units  6  issues  0  4ms                             │",
         "│   ◇ knip source usage           units  0  issues  0  0ms                             │",
-        "│   ✓ source project ownership    units  4  issues  0  1ms                             │",
-        "│   ✓ source import authority     units  1  issues  0  10ms                            │",
-        "│ ✓ proof:check                   units 10  issues  0  573ms                           │",
-        "│   ✓ project routes and configs  units  7  issues  0  11ms                            │",
+        "│   ✓ source project ownership    units  4  issues  0  0ms                             │",
+        "│   ✓ source import authority     units  1  issues  0  4ms                             │",
+        "│ ✓ proof:check                   units 10  issues  0  1.0s                            │",
+        "│   ✓ project routes and configs  units  7  issues  0  8ms                             │",
         "│   ✓ checker coverage targets    units  1  issues  0  0ms                             │",
         "│   ✓ proof allowlist             units  0  issues  0  0ms                             │",
-        "│   ✓ source coverage             units  2  issues  0  4ms                             │",
-        "│ ✓ checker:build                 units  1  issues  0  996ms                           │",
-        "│   ✓ tsc checker entry           units  1  issues  0  105ms                           │",
+        "│   ✓ source coverage             units  2  issues  0  2ms                             │",
+        "│ ✓ checker:build                 units  1  issues  0  1.5s                            │",
+        "│   ✓ tsc checker entry           units  1  issues  0  66ms                            │",
         "╰──────────────────────────────────────────────────────────────────────────────────────╯"
       ]
     },
@@ -2094,10 +1764,10 @@
       "argv": ["pnpm", "exec", "limina", "check", "release"],
       "workspace": "limina-workspace/packages/core",
       "exitCode": 0,
-      "outputSha256": "f17b28e0c68752323228e193f292248c2dc04727882867b0e9f2f2fa3b3c78b6",
+      "outputSha256": "7a53e6337ce1985c1dd146ec899141cc8524cf7db2e2c18ed552fbc6ea28059b",
       "frames": [
         {
-          "atMs": 1383,
+          "atMs": 586,
           "lines": [
             "┌  limina check",
             "⠋    pipeline: release",
@@ -2109,7 +1779,7 @@
           ]
         },
         {
-          "atMs": 1458,
+          "atMs": 664,
           "lines": [
             "┌  limina check",
             "⠙    pipeline: release",
@@ -2121,7 +1791,7 @@
           ]
         },
         {
-          "atMs": 1538,
+          "atMs": 747,
           "lines": [
             "┌  limina check",
             "⠹    pipeline: release",
@@ -2133,7 +1803,7 @@
           ]
         },
         {
-          "atMs": 1621,
+          "atMs": 829,
           "lines": [
             "┌  limina check",
             "⠸    pipeline: release",
@@ -2145,7 +1815,7 @@
           ]
         },
         {
-          "atMs": 1701,
+          "atMs": 911,
           "lines": [
             "┌  limina check",
             "⠼    pipeline: release",
@@ -2157,7 +1827,7 @@
           ]
         },
         {
-          "atMs": 1783,
+          "atMs": 993,
           "lines": [
             "┌  limina check",
             "⠴    pipeline: release",
@@ -2169,7 +1839,7 @@
           ]
         },
         {
-          "atMs": 1862,
+          "atMs": 1075,
           "lines": [
             "┌  limina check",
             "⠦    pipeline: release",
@@ -2181,7 +1851,7 @@
           ]
         },
         {
-          "atMs": 1946,
+          "atMs": 1156,
           "lines": [
             "┌  limina check",
             "⠧    pipeline: release",
@@ -2193,7 +1863,7 @@
           ]
         },
         {
-          "atMs": 2030,
+          "atMs": 1237,
           "lines": [
             "┌  limina check",
             "⠇    pipeline: release",
@@ -2205,7 +1875,7 @@
           ]
         },
         {
-          "atMs": 2107,
+          "atMs": 1320,
           "lines": [
             "┌  limina check",
             "⠏    pipeline: release",
@@ -2217,7 +1887,7 @@
           ]
         },
         {
-          "atMs": 2187,
+          "atMs": 1401,
           "lines": [
             "┌  limina check",
             "⠋    pipeline: release",
@@ -2229,7 +1899,7 @@
           ]
         },
         {
-          "atMs": 2271,
+          "atMs": 1483,
           "lines": [
             "┌  limina check",
             "⠙    pipeline: release",
@@ -2241,7 +1911,7 @@
           ]
         },
         {
-          "atMs": 2352,
+          "atMs": 1563,
           "lines": [
             "┌  limina check",
             "⠹    pipeline: release",
@@ -2253,7 +1923,7 @@
           ]
         },
         {
-          "atMs": 2432,
+          "atMs": 1644,
           "lines": [
             "┌  limina check",
             "⠸    pipeline: release",
@@ -2265,303 +1935,7 @@
           ]
         },
         {
-          "atMs": 2512,
-          "lines": [
-            "┌  limina check",
-            "⠼    pipeline: release",
-            "⠼      command: pnpm build",
-            "⠼        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 2592,
-          "lines": [
-            "┌  limina check",
-            "⠴    pipeline: release",
-            "⠴      command: pnpm build",
-            "⠴        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 2672,
-          "lines": [
-            "┌  limina check",
-            "⠦    pipeline: release",
-            "⠦      command: pnpm build",
-            "⠦        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 2753,
-          "lines": [
-            "┌  limina check",
-            "⠧    pipeline: release",
-            "⠧      command: pnpm build",
-            "⠧        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 2832,
-          "lines": [
-            "┌  limina check",
-            "⠇    pipeline: release",
-            "⠇      command: pnpm build",
-            "⠇        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 2918,
-          "lines": [
-            "┌  limina check",
-            "⠏    pipeline: release",
-            "⠏      command: pnpm build",
-            "⠏        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 2996,
-          "lines": [
-            "┌  limina check",
-            "⠋    pipeline: release",
-            "⠋      command: pnpm build",
-            "⠋        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3075,
-          "lines": [
-            "┌  limina check",
-            "⠙    pipeline: release",
-            "⠙      command: pnpm build",
-            "⠙        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3158,
-          "lines": [
-            "┌  limina check",
-            "⠹    pipeline: release",
-            "⠹      command: pnpm build",
-            "⠹        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3236,
-          "lines": [
-            "┌  limina check",
-            "⠸    pipeline: release",
-            "⠸      command: pnpm build",
-            "⠸        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3316,
-          "lines": [
-            "┌  limina check",
-            "⠼    pipeline: release",
-            "⠼      command: pnpm build",
-            "⠼        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3397,
-          "lines": [
-            "┌  limina check",
-            "⠴    pipeline: release",
-            "⠴      command: pnpm build",
-            "⠴        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3478,
-          "lines": [
-            "┌  limina check",
-            "⠦    pipeline: release",
-            "⠦      command: pnpm build",
-            "⠦        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3557,
-          "lines": [
-            "┌  limina check",
-            "⠧    pipeline: release",
-            "⠧      command: pnpm build",
-            "⠧        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3639,
-          "lines": [
-            "┌  limina check",
-            "⠇    pipeline: release",
-            "⠇      command: pnpm build",
-            "⠇        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3717,
-          "lines": [
-            "┌  limina check",
-            "⠏    pipeline: release",
-            "⠏      command: pnpm build",
-            "⠏        command execution",
-            "◇      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3796,
-          "lines": [
-            "┌  limina check",
-            "⠋    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "⠋      workspace validate",
-            "◇      package check",
-            "◇      release check"
-          ]
-        },
-        {
-          "atMs": 3838,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠋    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "⠋      package check",
-            "⠋        @repo/core (publint, attw, boundary)",
-            "◇      release check",
-            "⠋          package tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 3875,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠙    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "⠙      package check",
-            "⠙        @repo/core (publint, attw, boundary)",
-            "◇      release check",
-            "⠙          package tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 3956,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠹    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "⠹      package check",
-            "⠹        @repo/core (publint, attw, boundary)",
-            "◇      release check",
-            "⠹          package tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4037,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠸    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "⠸      package check",
-            "⠸        @repo/core (publint, attw, boundary)",
-            "◇      release check",
-            "⠸          package tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4117,
+          "atMs": 1733,
           "lines": [
             "limina[task.package]: Package check plan:",
             "  config: limina.config.mjs",
@@ -2574,9 +1948,9 @@
             "limina[task.package]: package tarball packing started: @repo/core",
             "┌  limina check",
             "⠼    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
+            "◆      command: pnpm build (1.18s)",
+            "◆        command execution (1.18s)",
+            "◆      workspace validate (17ms)",
             "⠼      package check",
             "⠼        @repo/core (publint, attw, boundary)",
             "◇      release check",
@@ -2584,7 +1958,7 @@
           ]
         },
         {
-          "atMs": 4197,
+          "atMs": 1808,
           "lines": [
             "limina[task.package]: Package check plan:",
             "  config: limina.config.mjs",
@@ -2595,352 +1969,22 @@
             "      outDir: packages/core/dist",
             "      checks: publint, attw, boundary",
             "limina[task.package]: package tarball packing started: @repo/core",
+            "limina[task.package]: publint started: @repo/core",
             "┌  limina check",
             "⠴    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
+            "◆      command: pnpm build (1.18s)",
+            "◆        command execution (1.18s)",
+            "◆      workspace validate (17ms)",
             "⠴      package check",
             "⠴        @repo/core (publint, attw, boundary)",
             "◇      release check",
-            "⠴          package tarball: @repo/core"
+            "◆          package tarball: @repo/core (57ms)",
+            "◆          publint: @repo/core (16ms)",
+            "⠴          attw: @repo/core"
           ]
         },
         {
-          "atMs": 4277,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠦    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "⠦      package check",
-            "⠦        @repo/core (publint, attw, boundary)",
-            "◇      release check",
-            "⠦          package tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4357,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠧    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "⠧      package check",
-            "⠧        @repo/core (publint, attw, boundary)",
-            "◇      release check",
-            "⠧          package tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4470,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "limina[task.package]: publint started: @repo/core",
-            "┌  limina check",
-            "⠇    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "⠇      package check",
-            "⠇        @repo/core (publint, attw, boundary)",
-            "◇      release check",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "⠇          attw: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4517,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "limina[task.package]: publint started: @repo/core",
-            "limina[task.package]: attw started: @repo/core (profile: esm-only)",
-            "┌  limina check",
-            "⠏    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "⠏      package check",
-            "⠏        @repo/core (publint, attw, boundary)",
-            "◇      release check",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "⠏          attw: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4609,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "limina[task.package]: publint started: @repo/core",
-            "limina[task.package]: attw started: @repo/core (profile: esm-only)",
-            "limina[task.package]: package boundary started: @repo/core",
-            "limina[task.release]: Release check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "limina[task.release]: release tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠋    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "⠋      release check",
-            "⠋        @repo/core",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "◆          attw: @repo/core (94ms)",
-            "◆          package boundary: @repo/core (6ms)",
-            "⠋        release tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4679,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "limina[task.package]: publint started: @repo/core",
-            "limina[task.package]: attw started: @repo/core (profile: esm-only)",
-            "limina[task.package]: package boundary started: @repo/core",
-            "limina[task.release]: Release check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "limina[task.release]: release tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠙    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "⠙      release check",
-            "⠙        @repo/core",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "◆          attw: @repo/core (94ms)",
-            "◆          package boundary: @repo/core (6ms)",
-            "⠙        release tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4760,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "limina[task.package]: publint started: @repo/core",
-            "limina[task.package]: attw started: @repo/core (profile: esm-only)",
-            "limina[task.package]: package boundary started: @repo/core",
-            "limina[task.release]: Release check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "limina[task.release]: release tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠹    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "⠹      release check",
-            "⠹        @repo/core",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "◆          attw: @repo/core (94ms)",
-            "◆          package boundary: @repo/core (6ms)",
-            "⠹        release tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4854,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "limina[task.package]: publint started: @repo/core",
-            "limina[task.package]: attw started: @repo/core (profile: esm-only)",
-            "limina[task.package]: package boundary started: @repo/core",
-            "limina[task.release]: Release check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "limina[task.release]: release tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠸    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "⠸      release check",
-            "⠸        @repo/core",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "◆          attw: @repo/core (94ms)",
-            "◆          package boundary: @repo/core (6ms)",
-            "⠸        release tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 4921,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "limina[task.package]: publint started: @repo/core",
-            "limina[task.package]: attw started: @repo/core (profile: esm-only)",
-            "limina[task.package]: package boundary started: @repo/core",
-            "limina[task.release]: Release check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "limina[task.release]: release tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠼    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "⠼      release check",
-            "⠼        @repo/core",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "◆          attw: @repo/core (94ms)",
-            "◆          package boundary: @repo/core (6ms)",
-            "⠼        release tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 5001,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "limina[task.package]: publint started: @repo/core",
-            "limina[task.package]: attw started: @repo/core (profile: esm-only)",
-            "limina[task.package]: package boundary started: @repo/core",
-            "limina[task.release]: Release check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "limina[task.release]: release tarball packing started: @repo/core",
-            "┌  limina check",
-            "⠴    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "⠴      release check",
-            "⠴        @repo/core",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "◆          attw: @repo/core (94ms)",
-            "◆          package boundary: @repo/core (6ms)",
-            "⠴        release tarball: @repo/core"
-          ]
-        },
-        {
-          "atMs": 5080,
+          "atMs": 1905,
           "lines": [
             "limina[task.package]: Package check plan:",
             "  config: limina.config.mjs",
@@ -2964,22 +2008,22 @@
             "limina[task.release]: release tarball packing started: @repo/core",
             "┌  limina check",
             "⠦    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
+            "◆      command: pnpm build (1.18s)",
+            "◆        command execution (1.18s)",
+            "◆      workspace validate (17ms)",
+            "◆      package check (167ms)",
+            "◆        @repo/core (publint, attw, boundary) (165ms)",
             "⠦      release check",
             "⠦        @repo/core",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "◆          attw: @repo/core (94ms)",
-            "◆          package boundary: @repo/core (6ms)",
+            "◆          package tarball: @repo/core (57ms)",
+            "◆          publint: @repo/core (16ms)",
+            "◆          attw: @repo/core (86ms)",
+            "◆          package boundary: @repo/core (2ms)",
             "⠦        release tarball: @repo/core"
           ]
         },
         {
-          "atMs": 5160,
+          "atMs": 1970,
           "lines": [
             "limina[task.package]: Package check plan:",
             "  config: limina.config.mjs",
@@ -3003,22 +2047,22 @@
             "limina[task.release]: release tarball packing started: @repo/core",
             "┌  limina check",
             "⠧    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "⠧      release check",
-            "⠧        @repo/core",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "◆          attw: @repo/core (94ms)",
-            "◆          package boundary: @repo/core (6ms)",
-            "⠧        release tarball: @repo/core"
+            "◆      command: pnpm build (1.18s)",
+            "◆        command execution (1.18s)",
+            "◆      workspace validate (17ms)",
+            "◆      package check (167ms)",
+            "◆        @repo/core (publint, attw, boundary) (165ms)",
+            "◆      release check (69ms)",
+            "◆        @repo/core (64ms)",
+            "◆          package tarball: @repo/core (57ms)",
+            "◆          publint: @repo/core (16ms)",
+            "◆          attw: @repo/core (86ms)",
+            "◆          package boundary: @repo/core (2ms)",
+            "◆        release tarball: @repo/core (58ms)"
           ]
         },
         {
-          "atMs": 5197,
+          "atMs": 2009,
           "lines": [
             "limina[task.package]: Package check plan:",
             "  config: limina.config.mjs",
@@ -3041,59 +2085,20 @@
             "      outDir: packages/core/dist",
             "limina[task.release]: release tarball packing started: @repo/core",
             "┌  limina check",
-            "⠧    pipeline: release",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "◆      release check (625ms)",
-            "◆        @repo/core (617ms)",
-            "◆          package tarball: @repo/core (611ms)",
-            "◆          publint: @repo/core (19ms)",
-            "◆          attw: @repo/core (94ms)",
-            "◆          package boundary: @repo/core (6ms)",
-            "◆        release tarball: @repo/core (607ms)"
-          ]
-        },
-        {
-          "atMs": 5226,
-          "lines": [
-            "limina[task.package]: Package check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "      checks: publint, attw, boundary",
-            "limina[task.package]: package tarball packing started: @repo/core",
-            "limina[task.package]: publint started: @repo/core",
-            "limina[task.package]: attw started: @repo/core (profile: esm-only)",
-            "limina[task.package]: package boundary started: @repo/core",
-            "limina[task.release]: Release check plan:",
-            "  config: limina.config.mjs",
-            "  cwd: packages/core",
-            "  selection: activated workspace package \"@repo/core\" matched configured package entry name.",
-            "  entries:",
-            "    - @repo/core",
-            "      outDir: packages/core/dist",
-            "limina[task.release]: release tarball packing started: @repo/core",
-            "┌  limina check",
-            "◆    pipeline: release (3.96s)",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "◆      release check (625ms)",
-            "◆        @repo/core (617ms)",
+            "◆    pipeline: release (1.51s)",
+            "◆      command: pnpm build (1.18s)",
+            "◆        command execution (1.18s)",
+            "◆      workspace validate (17ms)",
+            "◆      package check (167ms)",
+            "◆        @repo/core (publint, attw, boundary) (165ms)",
+            "◆      release check (69ms)",
+            "◆        @repo/core (64ms)",
             "│  ...",
             "└  limina check passed"
           ]
         },
         {
-          "atMs": 5262,
+          "atMs": 2035,
           "lines": [
             "limina[task.package]: Package check plan:",
             "  config: limina.config.mjs",
@@ -3116,31 +2121,31 @@
             "      outDir: packages/core/dist",
             "limina[task.release]: release tarball packing started: @repo/core",
             "┌  limina check",
-            "◆    pipeline: release (3.96s)",
-            "◆      command: pnpm build (2.50s)",
-            "◆        command execution (2.49s)",
-            "◆      workspace validate (46ms)",
-            "◆      package check (740ms)",
-            "◆        @repo/core (publint, attw, boundary) (735ms)",
-            "◆      release check (625ms)",
-            "◆        @repo/core (617ms)",
+            "◆    pipeline: release (1.51s)",
+            "◆      command: pnpm build (1.18s)",
+            "◆        command execution (1.18s)",
+            "◆      workspace validate (17ms)",
+            "◆      package check (167ms)",
+            "◆        @repo/core (publint, attw, boundary) (165ms)",
+            "◆      release check (69ms)",
+            "◆        @repo/core (64ms)",
             "│  ...",
             "└  limina check passed",
             "",
             "╭ Limina check summary ────────────────────────────────────────────────────────────────╮",
             "│ Command: limina check release                                                        │",
             "│ Config: limina.config.mjs                                                            │",
-            "│ Duration: 3.9s                                                                       │",
+            "│ Duration: 1.4s                                                                       │",
             "│ Executed tasks: 3 / 3                                                                │",
             "│ Passed tasks: 3 / 3                                                                  │",
             "│ Open issues: 0                                                                       │",
             "│ Validation units:                                                                    │",
-            "│ ✓ pnpm build                              units 1  issues 0  2.5s                    │",
-            "│   ✓ command execution                     units 1  issues 0  2.5s                    │",
-            "│ ✓ package:check                           units 3  issues 0  740ms                   │",
-            "│   ✓ @repo/core (publint, attw, boundary)  units 3  issues 0  735ms                   │",
-            "│ ✓ release:check                           units 1  issues 0  625ms                   │",
-            "│   ✓ @repo/core                            units 1  issues 0  617ms                   │",
+            "│ ✓ pnpm build                              units 1  issues 0  1.2s                    │",
+            "│   ✓ command execution                     units 1  issues 0  1.2s                    │",
+            "│ ✓ package:check                           units 3  issues 0  167ms                   │",
+            "│   ✓ @repo/core (publint, attw, boundary)  units 3  issues 0  165ms                   │",
+            "│ ✓ release:check                           units 1  issues 0  69ms                    │",
+            "│   ✓ @repo/core                            units 1  issues 0  64ms                    │",
             "╰──────────────────────────────────────────────────────────────────────────────────────╯"
           ]
         }
@@ -3167,31 +2172,31 @@
         "      outDir: packages/core/dist",
         "limina[task.release]: release tarball packing started: @repo/core",
         "┌  limina check",
-        "◆    pipeline: release (3.96s)",
-        "◆      command: pnpm build (2.50s)",
-        "◆        command execution (2.49s)",
-        "◆      workspace validate (46ms)",
-        "◆      package check (740ms)",
-        "◆        @repo/core (publint, attw, boundary) (735ms)",
-        "◆      release check (625ms)",
-        "◆        @repo/core (617ms)",
+        "◆    pipeline: release (1.51s)",
+        "◆      command: pnpm build (1.18s)",
+        "◆        command execution (1.18s)",
+        "◆      workspace validate (17ms)",
+        "◆      package check (167ms)",
+        "◆        @repo/core (publint, attw, boundary) (165ms)",
+        "◆      release check (69ms)",
+        "◆        @repo/core (64ms)",
         "│  ...",
         "└  limina check passed",
         "",
         "╭ Limina check summary ────────────────────────────────────────────────────────────────╮",
         "│ Command: limina check release                                                        │",
         "│ Config: limina.config.mjs                                                            │",
-        "│ Duration: 3.9s                                                                       │",
+        "│ Duration: 1.4s                                                                       │",
         "│ Executed tasks: 3 / 3                                                                │",
         "│ Passed tasks: 3 / 3                                                                  │",
         "│ Open issues: 0                                                                       │",
         "│ Validation units:                                                                    │",
-        "│ ✓ pnpm build                              units 1  issues 0  2.5s                    │",
-        "│   ✓ command execution                     units 1  issues 0  2.5s                    │",
-        "│ ✓ package:check                           units 3  issues 0  740ms                   │",
-        "│   ✓ @repo/core (publint, attw, boundary)  units 3  issues 0  735ms                   │",
-        "│ ✓ release:check                           units 1  issues 0  625ms                   │",
-        "│   ✓ @repo/core                            units 1  issues 0  617ms                   │",
+        "│ ✓ pnpm build                              units 1  issues 0  1.2s                    │",
+        "│   ✓ command execution                     units 1  issues 0  1.2s                    │",
+        "│ ✓ package:check                           units 3  issues 0  167ms                   │",
+        "│   ✓ @repo/core (publint, attw, boundary)  units 3  issues 0  165ms                   │",
+        "│ ✓ release:check                           units 1  issues 0  69ms                    │",
+        "│   ✓ @repo/core                            units 1  issues 0  64ms                    │",
         "╰──────────────────────────────────────────────────────────────────────────────────────╯"
       ]
     },
@@ -3201,90 +2206,147 @@
       "argv": ["pnpm", "exec", "limina", "source", "check"],
       "workspace": "limina-workspace",
       "exitCode": 1,
-      "outputSha256": "b4699ba597c0276ad737d0ffd9070e73d205ac397f9c95720a45ff029e06a8de",
+      "outputSha256": "ee0db03a45343b3e81add73655425a125eb3156522a2c6951724daf53708684a",
       "frames": [
+        { "atMs": 422, "lines": ["┌  limina source check"] },
         {
-          "atMs": 1179,
+          "atMs": 492,
           "lines": ["┌  limina source check", "⠋    source check"]
         },
         {
-          "atMs": 1259,
+          "atMs": 575,
           "lines": ["┌  limina source check", "⠙    source check"]
         },
         {
-          "atMs": 1339,
+          "atMs": 656,
           "lines": ["┌  limina source check", "⠹    source check"]
         },
         {
-          "atMs": 1420,
+          "atMs": 739,
           "lines": ["┌  limina source check", "⠸    source check"]
         },
         {
-          "atMs": 1499,
+          "atMs": 821,
           "lines": ["┌  limina source check", "⠼    source check"]
         },
         {
-          "atMs": 1581,
+          "atMs": 903,
           "lines": ["┌  limina source check", "⠴    source check"]
         },
         {
-          "atMs": 1661,
+          "atMs": 987,
           "lines": ["┌  limina source check", "⠦    source check"]
         },
         {
-          "atMs": 1740,
+          "atMs": 1066,
           "lines": ["┌  limina source check", "⠧    source check"]
         },
         {
-          "atMs": 1829,
+          "atMs": 1149,
           "lines": ["┌  limina source check", "⠇    source check"]
         },
         {
-          "atMs": 1901,
+          "atMs": 1231,
           "lines": ["┌  limina source check", "⠏    source check"]
         },
         {
-          "atMs": 1985,
+          "atMs": 1314,
           "lines": ["┌  limina source check", "⠋    source check"]
         },
         {
-          "atMs": 2061,
+          "atMs": 1395,
           "lines": ["┌  limina source check", "⠙    source check"]
         },
         {
-          "atMs": 2140,
+          "atMs": 1476,
           "lines": ["┌  limina source check", "⠹    source check"]
         },
         {
-          "atMs": 2225,
+          "atMs": 1559,
           "lines": ["┌  limina source check", "⠸    source check"]
         },
         {
-          "atMs": 2300,
+          "atMs": 1641,
           "lines": ["┌  limina source check", "⠼    source check"]
         },
         {
-          "atMs": 2385,
+          "atMs": 1722,
           "lines": ["┌  limina source check", "⠴    source check"]
         },
         {
-          "atMs": 2460,
+          "atMs": 1806,
           "lines": ["┌  limina source check", "⠦    source check"]
+        },
+        {
+          "atMs": 1885,
+          "lines": ["┌  limina source check", "⠧    source check"]
+        },
+        {
+          "atMs": 1968,
+          "lines": ["┌  limina source check", "⠇    source check"]
+        },
+        {
+          "atMs": 2049,
+          "lines": ["┌  limina source check", "⠏    source check"]
+        },
+        {
+          "atMs": 2132,
+          "lines": ["┌  limina source check", "⠋    source check"]
+        },
+        {
+          "atMs": 2213,
+          "lines": ["┌  limina source check", "⠙    source check"]
+        },
+        {
+          "atMs": 2296,
+          "lines": ["┌  limina source check", "⠹    source check"]
+        },
+        {
+          "atMs": 2378,
+          "lines": ["┌  limina source check", "⠸    source check"]
+        },
+        {
+          "atMs": 2459,
+          "lines": ["┌  limina source check", "⠼    source check"]
         },
         {
           "atMs": 2541,
+          "lines": ["┌  limina source check", "⠴    source check"]
+        },
+        {
+          "atMs": 2624,
+          "lines": ["┌  limina source check", "⠦    source check"]
+        },
+        {
+          "atMs": 2706,
           "lines": ["┌  limina source check", "⠧    source check"]
         },
         {
-          "atMs": 2620,
+          "atMs": 2787,
           "lines": ["┌  limina source check", "⠇    source check"]
         },
         {
-          "atMs": 2701,
+          "atMs": 2869,
           "lines": ["┌  limina source check", "⠏    source check"]
         },
         {
-          "atMs": 2804,
+          "atMs": 2952,
+          "lines": ["┌  limina source check", "⠋    source check"]
+        },
+        {
+          "atMs": 3034,
+          "lines": ["┌  limina source check", "⠙    source check"]
+        },
+        {
+          "atMs": 3116,
+          "lines": ["┌  limina source check", "⠹    source check"]
+        },
+        {
+          "atMs": 3198,
+          "lines": ["┌  limina source check", "⠸    source check"]
+        },
+        {
+          "atMs": 3256,
           "lines": [
             "╭ Source check summary ────────────────────────────────────────────────────────────────╮",
             "│ Found 1 source check issue in 1 package.                                             │",
@@ -3324,13 +2386,13 @@
             "│   - packages/app/src/index.ts                                                        │",
             "└──────────────────────────────────────────────────────────────────────────────────────┘",
             "┌  limina source check",
-            "✕    source check failed (1.69s)",
-            "⠋    source check",
+            "✕    source check failed (2.75s)",
+            "⠸    source check",
             "└  limina source failed",
             "",
-            "Standalone issue invocation: 63f8f614-e937-4110-a8a7-17a7a60ac276",
-            "Query: node node_modules/limina/bin/limina.js --config ./limina.config.mjs --config-loader native --",
-            "mode default check --issues --invocation 63f8f614-e937-4110-a8a7-17a7a60ac276"
+            "Standalone issue invocation: 187bab71-d0d5-4d60-8725-d68ed9e1fb11",
+            "Query: node node_modules/limina/bin/limina.js --config /private./limina.config.mjs --config-loader n",
+            "ative --mode default check --issues --invocation 187bab71-d0d5-4d60-8725-d68ed9e1fb11"
           ]
         }
       ],
@@ -3373,13 +2435,13 @@
         "│   - packages/app/src/index.ts                                                        │",
         "└──────────────────────────────────────────────────────────────────────────────────────┘",
         "┌  limina source check",
-        "✕    source check failed (1.69s)",
-        "⠋    source check",
+        "✕    source check failed (2.75s)",
+        "⠸    source check",
         "└  limina source failed",
         "",
-        "Standalone issue invocation: 63f8f614-e937-4110-a8a7-17a7a60ac276",
-        "Query: node node_modules/limina/bin/limina.js --config ./limina.config.mjs --config-loader native --",
-        "mode default check --issues --invocation 63f8f614-e937-4110-a8a7-17a7a60ac276"
+        "Standalone issue invocation: 187bab71-d0d5-4d60-8725-d68ed9e1fb11",
+        "Query: node node_modules/limina/bin/limina.js --config /private./limina.config.mjs --config-loader n",
+        "ative --mode default check --issues --invocation 187bab71-d0d5-4d60-8725-d68ed9e1fb11"
       ]
     }
   }

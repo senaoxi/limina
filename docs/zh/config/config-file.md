@@ -159,7 +159,7 @@ export default defineConfig(({ command }) => ({
 
 `scope`、`pipelines`、`concurrency`、`cache` 和各检查字段均可省略。只有治理边界归入 `scope`；`graph`、`source`、`proof`、`package`、`release` 和 `pipelines` 保留顶层路径，`concurrency` 替代原来的 `execution` 字段。不接受 `checks` 或 `execution` 包装层。`scope.source.exclude: []` 仍不合法；省略字段才使用默认排除规则，`...` 仍用于把默认规则带入显式数组。
 
-所有原有子字段继续可用，包括 `graph.conditionDomains`、`source.declarations`、包 entry 的工具选项和 `release.npmPackageJsonLint`。`package.entries[].outDir` 仍参与 workspace 输出根发现、边界校验和源码过滤，即使没有运行 `package:check`。
+保留的子字段继续由原消费方处理，包括 `graph.rules`、`source.declarations`、包 entry 的工具选项和 `release.npmPackageJsonLint`。`package.entries[].outDir` 仍参与 workspace 输出根发现、边界校验和源码过滤，即使没有运行 `package:check`。
 
 配置模块仍可导出对象、Promise 或接收 `{ command, mode }` 的函数。文件选择器仍相对于解析后的治理根 `config.rootDir`；`cache.dependencies` 仍相对于所选配置文件所在目录。CLI 命令、pipeline 步骤和并发默认值不变。旧分析实现的快照会冷启动重建；不会清空其他配置、worktree 或 checker 缓存。
 

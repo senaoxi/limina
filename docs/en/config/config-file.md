@@ -159,7 +159,7 @@ This is a breaking change to the previously published beta configuration API. Ol
 
 `scope`, `pipelines`, `concurrency`, `cache`, and each check field can be omitted. Only governance boundaries are grouped under `scope`. `graph`, `source`, `proof`, `package`, `release`, and `pipelines` retain their top-level paths; `concurrency` replaces the former `execution` field. Neither `checks` nor `execution` wrappers are accepted. `scope.source.exclude: []` remains invalid: omit it for the defaults, or use `...` to include the defaults within an explicit array.
 
-Every existing child option remains available, including `graph.conditionDomains`, `source.declarations`, package entry tool options, and `release.npmPackageJsonLint`. `package.entries[].outDir` still participates in workspace output discovery, boundary validation, and source filtering even without a `package:check` step.
+The remaining child options retain their consumers, including `graph.rules`, `source.declarations`, package entry tool options, and `release.npmPackageJsonLint`. `package.entries[].outDir` still participates in workspace output discovery, boundary validation, and source filtering even without a `package:check` step.
 
 Modules still export objects, promises, or factories receiving `{ command, mode }`. File selectors remain relative to the resolved governance root, `config.rootDir`; `cache.dependencies` remains relative to the selected config file. CLI commands, pipeline steps, and concurrency defaults are unchanged. Snapshots from the previous analysis implementation start cold and are rebuilt; other configuration namespaces, worktrees, and checker caches are not cleared.
 

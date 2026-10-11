@@ -14,6 +14,8 @@ A locked [ProjectSemanticContext](../../packages/limina/src/core/project-depende
 
 ## Native semantic inputs for a project
 
+`compilerOptions.customConditions` is an effective TypeScript input for each project. Native module resolution, resource lookup, generated-config option parity and semantic cache identity consume this option. The [graph regressions](../../packages/limina/src/__tests__/graph.spec.ts) cover source/companion option consistency and project references with distinct native conditions; the [full-cache regressions](../../packages/limina/src/__tests__/full-analysis-cache.spec.ts) verify resolution and invalidation when conditions change.
+
 [effective-roots](../../packages/limina/src/core/typescript-semantic/effective-roots.ts) uses the checker's parsed roots and resolves relative entries in effective `compilerOptions.types` to produce deduplicated importer roots. Declaration files may be roots. `ownedFileNames` serves ownership and coverage; transitive Program files serve type interpretation. Neither can replace importer enumeration.
 
 [context](../../packages/limina/src/core/typescript-semantic/context.ts) builds a full bounded Program by default. The [project-dependencies provider](../../packages/limina/src/core/project-dependencies/provider.ts) first requests a validated dependency DTO. On a cold/dirty collection it creates one full context, processes all roots, captures ordinary data, and disposes it in `finally`. It neither selects `root-facts` nor creates a Program per occurrence. Root-facts is a separate, narrower admission mode and does not describe the production locked provider.

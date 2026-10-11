@@ -86,6 +86,8 @@ checker 的 `.tsbuildinfo` 等构建缓存和 check-result query 保留各自合
 
 公共配置分组迁移保留快照 schema 和存储布局，只更新[分析实现身份](../../../packages/limina/src/core/analysis-cache/contracts.ts)。旧实现快照在原有 identity gate 被拒绝后按需冷启动，避免恢复旧配置路径的诊断；即使用户配置是空对象也适用。不清理其他命名空间或 checker 缓存。全部新域仍由统一有效配置版本覆盖，`cache.dependencies` 的配置目录基准、模块观测、缺失／链接失效及调用期漂移规则不变。
 
+配置校验在恢复分析缓存前完成。无效配置不能采用或替换既有快照；恢复有效配置后，可以在普通输入检查通过时复用该快照。原生 context 和生成图的 DTO 保存 TypeScript 选项与依赖事实。有效的 TypeScript `customConditions` 变化会改变原生 context 身份。[完整缓存回归测试](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)通过正向恢复控制覆盖配置准入和原生选项失效。
+
 [Context records](../../../packages/limina/src/core/analysis-cache/context-records.ts) 与 [graph records](../../../packages/limina/src/core/analysis-cache/graph-records.ts) 在创建 Program 前校验普通 DTO。完整 clean 原生路径恢复 facts、成员、共享环境、ownership、occurrence 贡献及图投影，不创建分析 Program，不重复关系推导，也不额外完整枚举受信安装类型环境。runtime/resource evidence 和当前判定保留自己的有效性与刷新路径。恢复的生成内容取得新的认证 [artifact plan](../../../packages/limina/src/core/build-graph/analysis-cache.ts)，缺失／变化产物走正常物化。Program、AST、Symbol、host 及写权限不持久化。
 
 [Store](../../../packages/limina/src/preflight/analysis-cache-store.ts)使用授权的 `cache/analysis-v1` namespace、跨进程 lease、精确物理字节基线和原子替换。即使旧数据损坏或不兼容，也保留基线；旧 writer 不能覆盖较新物理快照。provider 刷新可复用内存数据，但不更新发布基线。严格 clean 发布执行输入检查，快照字节、revision、mtime 不变，不 clone／序列化完整模型。即使冷回退 Program 复用了 native facts，相同的逐条 DTO 也保留旧身份；缺省可选字段在落盘前后采用一致表示。恢复 query 观测不复制无人使用的结果，实际 query 返回仍保留隔离。只保留当前记录及依赖。schema 5 的 root 必须同时包含 `configVersion` 和 `configModules`。模块覆盖门及有效配置版本门先于旧模型校验或输入采用。旧 schema、缺失或不一致的模块证据、覆盖不完整及不匹配均冷分析。V1 普通恢复仍读取并 JSON 解码整个快照；root 拒绝只跳过旧模型校验和恢复，不跳过整文件 I/O。未来分片 store 必须先检查小型 root，不匹配时跳过全部旧 scope 块，仅由独立 GC 回收不可达块。存储 I/O 失败可省略更新；观测、漂移和权限失败继续传播，包括携带 filesystem code 的错误。
@@ -199,8 +201,6 @@ Finding producer 保留 typed semantic facts，issue projector 按域组成稳�
 `check --issues` 查询 persisted state，不运行新检查。它的 `QueryConfigAnchor` 与 `ExecutionConfigLocation` 不同：显式路径相对 cwd 做 lexical 解析，可以不存在。locator 从其 dirname 寻找最近 manifest，验证对象，不分类 membership、不 import 配置、不执行配置函数、不构建 preflight。未指定路径时发现当前存在的默认配置，缺少记录不重定向到祖先 workspace。生成的 invocation 命令绑定绝对配置、Node 路径和已安装 Limina binary；[回放测试](../../../packages/limina/src/__tests__/single-package-cli.spec.ts) 删除配置并检查持久化状态不变、配置没有额外执行。latest running/interrupted/aborted/persistence-failed/corrupt metadata 或不一致 completion pair 禁止 fallback 到旧 inventory；corrupt latest attempt 还阻止新 sequence 分配。显式 standalone invocation query 有自己的输入校验，不等于 latest full check。
 
 完成状态、失败状态、未运行与 inventory 不可用需要分开输出；机器 JSON/NDJSON 和人类文本可不同展示，但不能把不可用输出为本轮零问题。`LIMINA_PROFILE=1` 的性能观测也不改变 issue authority；profile/snapshot 的 atomic writer 不等于整个 check 的跨文件原子性。
-
-自定义条件 DAG 摘要保留既有诊断身份的集合，每个身份在阶段上下文中只有一个 finding 对象。共享路径合并身份，不再按每条引用路径复制诊断数组；默认域与命名域共享已发布身份集合，并在各自阶段内按稳定的身份顺序发布 finding。项目路径可达性以及预期/实际条件信息保持完整。诊断存储槽位的上界因此是项目数乘不同 mismatch 数，而不是路径数；这不代表总内存线性，因为可达性集合仍是传递集合。[对抗性 DAG 测试](../../../packages/limina/src/__tests__/condition-subtree.spec.ts) 对照直接边 oracle、逆序项目遍历、深/宽菱形、条件一致及重叠域。
 
 ## Release registry 快照生命周期
 

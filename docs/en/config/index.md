@@ -24,7 +24,6 @@ Configuration normally lives in `limina.config.mts` beside the project's `packag
 | Which checker owns each source config                                                              | [Checker Configuration](./checkers.md): `scope.checkers`                        |
 | Who authorizes source imports, and how to check unused code                                        | [Source Checks](./source-checks.md): `source`                                   |
 | Which project references, package dependencies, or built-in module dependencies are forbidden      | [Graph Rules](./graph-rules.md): `graph.rules` and labels in source configs     |
-| Whether a declaration reference tree uses consistent resolution conditions                         | [Condition Domains](./condition-domains.md): `graph.conditionDomains`           |
 | Which specific files temporarily do not require ordinary checking coverage                         | [Proof Allowlist](./proof-allowlist.md): `proof.allowlist`                      |
 | Which built outputs need checking                                                                  | [Package Checks](./package-checks.md): `package.entries`                        |
 | How to check packed files and workspace publish dependencies                                       | [Release Checks](./release-checks.md): `release`                                |
