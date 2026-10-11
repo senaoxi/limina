@@ -94,14 +94,19 @@ const pnpm = execFileSync(pnpmExecutable, ['--version'], {
   encoding: 'utf8',
   env: environment,
 }).trim();
-if (pnpm !== '11.28.3')
-  throw new Error(`Expected pnpm 11.28.3, received ${pnpm}`);
+const packageManager = (
+  JSON.parse(await readFile(path.join(repo, 'package.json'), 'utf8')) as {
+    packageManager: string;
+  }
+).packageManager;
+if (packageManager !== `pnpm@${pnpm}`)
+  throw new Error(`Expected ${packageManager}, received pnpm@${pnpm}`);
 
 await write('package.json', {
   name: 'limina-workspace',
   private: true,
   type: 'module',
-  packageManager: 'pnpm@11.28.3',
+  packageManager,
   scripts: { build: 'pnpm --dir packages/core run build' },
   devDependencies: {
     limina: `link:${path.join(repo, 'packages/limina/dist')}`,

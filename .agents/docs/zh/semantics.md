@@ -83,7 +83,7 @@ flowchart TB
 
 [依赖证据快照](../../../packages/limina/src/core/project-dependencies/evidence.ts)在 dependencies、observations、failures 与缓存克隆之间保留 occurrence、mode、checker 结果和目标、已取得的 runtime evidence、native admission/provider/requirement facts、框架映射来源以及 context/generation identity。Runtime evidence 保持独立；缺少证据表示未观察，不表示目标缺失。快照复制后递归冻结。归属使用真实 checker target 与当前 workspace snapshot；裸包名仅用于诊断查找，不用于目标归属。
 
-Package resource resolution 保留 occurrence mode 与 custom conditions。null target、精确 package-import key 和 Node 拥有的 `module-sync` / `node-addons` conditions 使用只解析不加载的 Node probe；无法解析 package metadata 时也回退到该 probe。probe 继承进程中启用或禁用这些默认 conditions 的开关，不跨 Node 版本硬编码。其结果仅为物理 runtime evidence，不能成为 TypeEvidence 或 compiler relation。[Condition 守卫](../../../packages/limina/src/__tests__/resource-resolution-conditions.spec.ts)将 imports 和 exports 与当前运行 Node 的 resolver 对照。
+Package resource resolution 保留 occurrence mode 与 custom conditions。null target、精确 package-import key 和 Node 拥有的 `module-sync` / `node-addons` conditions 使用只解析不加载的 Node probe；无法解析 package metadata 时也回退到该 probe。probe 继承进程中启用或禁用这些默认 conditions 的开关，不跨 Node 版本硬编码。require probe 通过 `createRequire(pathToFileURL(filePath))` 构造 importer，使 Node 使用 Windows 原生 parent path 查找 package scope；保存的路径仍为 portable，specifier identity 保持不变。其结果仅为物理 runtime evidence，不能成为 TypeEvidence 或 compiler relation。[Condition 守卫](../../../packages/limina/src/__tests__/resource-resolution-conditions.spec.ts)将 imports 和 exports 与当前运行 Node 的 resolver 对照。
 
 ## Locked resolution 与 framework preparation
 

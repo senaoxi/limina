@@ -2,6 +2,7 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { createImportAnalysisContext } from '../core/import-analysis/runner';
@@ -224,7 +225,7 @@ it('passes complete package-import identities to the physical Node resolver', as
       filePath: importer,
       sourceText,
     });
-    const requireFromFixture = createRequire(importer);
+    const requireFromFixture = createRequire(pathToFileURL(importer));
     // This contract starts after classification. It isolates Node's exact-key
     // semantics from checker/loader support for these unusual spellings.
     const evidence = {

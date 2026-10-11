@@ -42,7 +42,7 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 共享 build action 调用根 `format:check` 与 `lint:check` 别名，分别通过 `limina check format` 和 `limina check lint` 执行只读 Prettier 和 ESLint 校验。[CI 守卫](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)解析实际配置的命令步骤，保护只读参数。两命令覆盖整个仓库；修改仍显式通过 `format:write` 与 `lint:fix` 执行，复用当前 `format` 和 `lint` 脚本。
 
-[CI](../../../.github/workflows/ci.yml)保留原生平台 build／test／smoke 和独立 Vue tuples。Linux quality 复用同提交／平台的 package artifacts，其他环境独立构建／检查。显式 build 后使用 test:smoke，不重复构建。不引入路径过滤、Nx cache 或缓存 .limina 状态。CI Status 依赖全部验证任务，失败／取消／skipped 都失败。
+[CI](../../../.github/workflows/ci.yml)保留原生平台 build／test／smoke 和独立 Vue tuples。每条受支持的 Node 版本线都在 Linux 上执行 unit／integration／tooling 测试和独立 build／smoke 验证；Node 24 另有最新补丁的滚动测试。发布和文档部署固定使用 Node 24.15.0。Linux quality 复用同提交／平台的 package artifacts，其他环境独立构建／检查。显式 build 后使用 test:smoke，不重复构建。不引入路径过滤、Nx cache 或缓存 .limina 状态。CI Status 依赖全部验证任务，失败／取消／skipped 都失败。
 
 完整矩阵的 Unit Tests 步骤通过 `VITEST_MAX_WORKERS` 将 Vitest 限制为两个 worker，为 CLI 子进程和框架宿主留出资源。隔离 CLI 夹具实际复制运行时源码，排除 `__tests__` 目录；依赖链接、编译器 shim 和仓库边界仍由夹具自身持有。测试选择、安全断言和超时保持不变。
 

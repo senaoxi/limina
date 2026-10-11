@@ -28,7 +28,7 @@ export default defineDetectorFixture({
           },
           {
             label: 'timeout ms',
-            value: '50',
+            value: '1000',
           },
         ],
         filePath: 'packages/dependency/package.json',
@@ -43,6 +43,7 @@ export default defineDetectorFixture({
   id: 'release/registry-metadata-timeout',
   kind: 'external-tool',
   registry: {
+    // Leave room for first-fetch startup while keeping the response beyond the deadline.
     expectedRequests: [
       {
         headers: {
@@ -54,7 +55,7 @@ export default defineDetectorFixture({
     metadata: {
       body: {
         kind: 'delay',
-        milliseconds: 250,
+        milliseconds: 5000,
         next: {
           kind: 'json',
           value: {},
@@ -62,7 +63,7 @@ export default defineDetectorFixture({
       },
     },
     packageName: '@fixture/release-dependency',
-    requestTimeoutMs: 50,
+    requestTimeoutMs: 1000,
   },
   setup: [],
   tools: [],

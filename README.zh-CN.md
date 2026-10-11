@@ -37,6 +37,13 @@ Limina 不是 bundler、测试框架或发布工具，也不会替代 TypeScript
 
 [阅读文档了解更多](https://senao.me/repos/limina/zh/)
 
+## 发布包
+
+| 包                                        | 版本 (点击查看变更日志)                                                                                                      |
+| ----------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------- |
+| [limina](packages/limina)                 | [![limina version](https://img.shields.io/npm/v/limina.svg?label=%20)](packages/limina/CHANGELOG.md)                         |
+| [limina-migrate](packages/limina-migrate) | [![limina-migrate version](https://img.shields.io/npm/v/limina-migrate.svg?label=%20)](packages/limina-migrate/CHANGELOG.md) |
+
 ## 开发
 
 workspace 开发流程见[贡献说明](./CONTRIBUTING.md)；Logaria 依赖与发布门见[迁移状态](./.agents/docs/zh/migration.md)。

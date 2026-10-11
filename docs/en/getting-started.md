@@ -6,7 +6,7 @@ Adopt Limina by installing it, initializing a config, migrating when needed, and
 
 Limina supports single-package projects and pnpm, npm, Yarn, and Bun workspaces. The configuration examples below use ESM.
 
-- Node.js `^22.18.0 || >=24.11.0`.
+- Node.js `^22.22.3 || ^24.15.0 || >=26.0`.
 - A readable `package.json` whose top-level value is an object.
 - TypeScript within the installed Limina release's peer dependency range. The current source version supports `>=5.4.0 <5.10.0 || >=6.0.0 <6.1.0`.
 

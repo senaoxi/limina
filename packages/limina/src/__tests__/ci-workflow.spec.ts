@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 interface Step {
+  if?: string;
   name?: string;
   uses?: string;
   run?: string;
@@ -123,19 +124,71 @@ describe('Limina CI validation contract', () => {
     const { jobs } = await workflow();
     expect(jobs.test.strategy?.matrix?.include).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ os: 'ubuntu-latest', node: '22.18.0' }),
-        expect.objectContaining({ os: 'ubuntu-latest', node: '24.11.0' }),
+        expect.objectContaining({ os: 'ubuntu-latest', node: '22.22.3' }),
+        expect.objectContaining({ os: 'ubuntu-latest', node: '24.15.0' }),
+        expect.objectContaining({ os: 'ubuntu-latest', node: '26.0.0' }),
         expect.objectContaining({ os: 'ubuntu-latest', node: 24 }),
-        expect.objectContaining({ os: 'macos-latest', node: '22.18.0' }),
-        expect.objectContaining({ os: 'windows-latest', node: '22.18.0' }),
+        expect.objectContaining({ os: 'macos-latest', node: '22.22.3' }),
+        expect.objectContaining({ os: 'windows-latest', node: '22.22.3' }),
       ]),
     );
     expect(
       jobs['limina-platform-build-smoke'].strategy?.matrix?.include,
-    ).toHaveLength(4);
-    expect(jobs['limina-atomic-writer-windows'].strategy?.matrix?.node).toEqual(
-      ['22.18.0', '24.11.0'],
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ os: 'ubuntu-latest', node: '22.22.3' }),
+        expect.objectContaining({ os: 'ubuntu-latest', node: '24.15.0' }),
+        expect.objectContaining({ os: 'ubuntu-latest', node: '26.0.0' }),
+        expect.objectContaining({ os: 'macos-latest', node: '24.15.0' }),
+        expect.objectContaining({ os: 'windows-latest', node: '24.15.0' }),
+      ]),
     );
+    expect(jobs['limina-atomic-writer-windows'].strategy?.matrix?.node).toEqual(
+      ['22.22.3', '24.15.0'],
+    );
+    for (const job of [jobs.test, jobs['limina-platform-build-smoke']]) {
+      const setup = job.steps?.find(
+        (step) => step.uses === './.github/actions/setup-env',
+      );
+      expect(setup?.with?.['node-version']).toBe('${{ matrix.node }}');
+      expect(setup?.if).toBeUndefined();
+    }
+    const quality = jobs.test.steps?.find(
+      (step) => step.uses === './.github/actions/build-and-check',
+    );
+    expect(quality).toBeDefined();
+    expect(quality?.with?.['skip-build']).toBeUndefined();
+    expect(quality?.if).toBeUndefined();
+    for (const [name, commands] of [
+      [
+        'Unit Tests',
+        [
+          'pnpm --filter limina run test:unit',
+          'pnpm --filter limina-migrate run test:unit',
+          'pnpm run test:tooling',
+        ],
+      ],
+      [
+        'Limina Integration Tests',
+        [
+          'pnpm --filter limina run test:integration',
+          'pnpm --filter limina-migrate run test:integration',
+        ],
+      ],
+    ] as const) {
+      const step = jobs.test.steps?.find(
+        (candidate) => candidate.name === name,
+      );
+      expect(step?.if).toBeUndefined();
+      for (const command of commands) expect(step?.run).toContain(command);
+    }
+    for (const command of ['pnpm run build', 'pnpm run test:smoke']) {
+      const step = jobs['limina-platform-build-smoke'].steps?.find(
+        (candidate) => candidate.run === command,
+      );
+      expect(step).toBeDefined();
+      expect(step?.if).toBeUndefined();
+    }
   });
   it('runs the isolated Vue semantic matrix against built and installed artifacts', async () => {
     const { jobs } = await workflow();

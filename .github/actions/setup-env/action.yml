@@ -3,7 +3,7 @@ description: Setup Node.js, pnpm and dependencies with caching
 inputs:
   node-version:
     description: Supported Node.js version
-    default: 22.18.0
+    default: 22.22.3
 runs:
   using: composite
   steps:
@@ -12,17 +12,18 @@ runs:
       with:
         node-version: ${{ inputs.node-version }}
         package-manager-cache: false
-    - name: Setup pnpm via Corepack
+    - name: Setup pinned pnpm
       shell: bash
-      run: 'set -euo pipefail
-
-        corepack enable
-
-        corepack prepare "$(node -p "JSON.parse(require(''node:fs'').readFileSync(''package.json'', ''utf8'')).packageManager")" --activate
-
+      run: |
+        set -euo pipefail
+        package_manager="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).packageManager")"
+        if command -v corepack > /dev/null 2>&1; then
+          corepack enable
+          corepack prepare "$package_manager" --activate
+        else
+          npm install --global "$package_manager"
+        fi
         pnpm --version
-
-        '
     - name: Resolve pnpm store path
       shell: bash
       run: 'set -euo pipefail
