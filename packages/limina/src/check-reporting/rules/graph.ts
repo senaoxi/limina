@@ -17,13 +17,9 @@ export const graphIssueRules: readonly LiminaCheckIssueRuleDefinition[] = [
     task: 'graph:check',
   }),
   defineIssueRule({
-    code: C.graphConditionDomainMismatch,
-    description: 'Condition domain compiler options do not match their entry.',
-    task: 'graph:check',
-  }),
-  defineIssueRule({
     code: C.graphConfigInvalid,
-    description: 'Graph configuration contains invalid rule or domain entries.',
+    description:
+      'Graph configuration contains invalid rules or project options.',
     task: 'graph:check',
   }),
   defineIssueRule({

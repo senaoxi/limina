@@ -387,10 +387,10 @@ describe('LiminaFlowReporter', () => {
             'checker build',
             'checker typecheck',
           ]);
-          const [routes, references, conditions] = graph.children([
+          const [routes, references, completeness] = graph.children([
             'source graph routes',
             'project references',
-            'condition domains',
+            'reference completeness',
           ]);
           const [projectRoutes, checkerCoverage] = proof.children([
             'project routes and configs',
@@ -410,7 +410,7 @@ describe('LiminaFlowReporter', () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
           routes.fail(undefined, { elapsedTimeMs: 30 });
           references.pass(undefined, { elapsedTimeMs: 12 });
-          conditions.pass(undefined, { elapsedTimeMs: 0 });
+          completeness.pass(undefined, { elapsedTimeMs: 0 });
           graph.fail(undefined, { elapsedTimeMs: 200 });
           source.start();
           source.fail(undefined, { elapsedTimeMs: 300 });
@@ -482,10 +482,10 @@ describe('LiminaFlowReporter', () => {
             'checker build',
             'checker typecheck',
           ]);
-          const [routes, references, conditions] = graph.children([
+          const [routes, references, completeness] = graph.children([
             'source graph routes',
             'project references',
-            'condition domains',
+            'reference completeness',
           ]);
           const [projectRoutes, checkerCoverage] = proof.children([
             'project routes and configs',
@@ -505,7 +505,7 @@ describe('LiminaFlowReporter', () => {
           await new Promise((resolve) => setTimeout(resolve, 100));
           routes.fail(undefined, { elapsedTimeMs: 30 });
           references.pass(undefined, { elapsedTimeMs: 12 });
-          conditions.pass(undefined, { elapsedTimeMs: 0 });
+          completeness.pass(undefined, { elapsedTimeMs: 0 });
           graph.fail(undefined, { elapsedTimeMs: 200 });
           source.start();
           source.fail(undefined, { elapsedTimeMs: 300 });
@@ -699,11 +699,6 @@ describe('LiminaFlowReporter', () => {
       depth: 2,
       elapsedTimeMs: 21,
     });
-    const conditionDomains = flow.start('condition domains', { depth: 2 });
-    conditionDomains.pass('condition domains', {
-      depth: 2,
-      elapsedTimeMs: 0,
-    });
     const referenceCompleteness = flow.start('reference completeness', {
       depth: 2,
     });
@@ -740,7 +735,6 @@ describe('LiminaFlowReporter', () => {
     expect(lastFrame).toContain('└  limina check passed\n');
     expect(lastFrame).not.toContain('source graph routes');
     expect(lastFrame).not.toContain('project references');
-    expect(lastFrame).not.toContain('condition domains');
     expect(lastFrame).not.toContain('reference completeness');
     expect(lastFrame).not.toContain('\n│\n└  limina check passed');
   });
@@ -777,17 +771,12 @@ describe('LiminaFlowReporter', () => {
     flow.intro('limina check');
     const defaultCheck = flow.start('default check');
     const graph = flow.tree('graph check', { depth: 1 });
-    const [
-      graphRoute,
-      projectReferences,
-      conditionDomains,
-      referenceCompleteness,
-    ] = graph.children([
-      'source graph routes',
-      'project references',
-      'condition domains',
-      'reference completeness',
-    ]);
+    const [graphRoute, projectReferences, referenceCompleteness] =
+      graph.children([
+        'source graph routes',
+        'project references',
+        'reference completeness',
+      ]);
     const source = flow.tree('source check', { depth: 1 });
     const [sourceRoute, tsconfigGovernance] = source.children([
       'source graph routes',
@@ -800,7 +789,6 @@ describe('LiminaFlowReporter', () => {
     graph.start();
     graphRoute.pass(undefined, { elapsedTimeMs: 711 });
     projectReferences.pass(undefined, { elapsedTimeMs: 12 });
-    conditionDomains.pass(undefined, { elapsedTimeMs: 0 });
     referenceCompleteness.pass(undefined, { elapsedTimeMs: 760 });
     graph.pass(undefined, { elapsedTimeMs: 4580 });
     source.start();
@@ -1153,10 +1141,10 @@ describe('LiminaFlowReporter', () => {
     flow.intro('limina check');
     const root = flow.tree('default check');
     const graph = root.child('graph check');
-    const [routes, references, conditions] = graph.children([
+    const [routes, references, completeness] = graph.children([
       'source graph routes',
       'project references',
-      'condition domains',
+      'reference completeness',
     ]);
 
     root.start();
@@ -1164,7 +1152,7 @@ describe('LiminaFlowReporter', () => {
     routes.start();
     routes.fail(undefined, { elapsedTimeMs: 30 });
     references.pass(undefined, { elapsedTimeMs: 12 });
-    conditions.pass(undefined, { elapsedTimeMs: 0 });
+    completeness.pass(undefined, { elapsedTimeMs: 0 });
     graph.fail(undefined, { elapsedTimeMs: 200 });
     root.fail(undefined, { elapsedTimeMs: 220 });
 

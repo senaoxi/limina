@@ -181,6 +181,63 @@ function analyze(
 }
 
 describe('complete native restoration and R02 scope evidence', () => {
+  it('preserves native customConditions through restoration and invalidates changed conditions', () => {
+    const f = fixture();
+    f.write(
+      'package.json',
+      JSON.stringify({
+        name: 'fixture',
+        private: true,
+        type: 'module',
+        exports: {
+          '.': {
+            browser: './src/browser.d.ts',
+            default: './src/default.d.ts',
+          },
+        },
+      }),
+    );
+    f.write('src/a.ts', "import { value } from 'fixture'; export { value };");
+    f.write('src/browser.d.ts', 'export declare const value: "browser";');
+    f.write('src/default.d.ts', 'export declare const value: "default";');
+    const sourceConfig = JSON.parse(
+      readFileSync(f.file('tsconfig.json'), 'utf8'),
+    );
+    const setConditions = (conditions: string[]) => {
+      f.write(
+        'tsconfig.json',
+        JSON.stringify({
+          ...sourceConfig,
+          compilerOptions: {
+            ...sourceConfig.compilerOptions,
+            customConditions: conditions,
+          },
+        }),
+      );
+    };
+    setConditions(['browser']);
+    const first = analyze(f.project());
+    expect(first.facts[0]?.resolution.target?.resolvedFileName).toBe(
+      f.file('src/browser.d.ts'),
+    );
+    const warm = analyze(f.project(), first.cache);
+    expect(warm.restored).toBe(true);
+    expect(warm.cache.metrics.semanticPrograms).toBe(0);
+    expect(warm.facts).toEqual(first.facts);
+
+    setConditions(['server']);
+    const changed = analyze(f.project(), warm.cache);
+    expect(changed.restored).toBe(false);
+    expect(changed.cache.metrics.semanticPrograms).toBeGreaterThan(0);
+    expect(changed.facts[0]?.resolution.target?.resolvedFileName).toBe(
+      f.file('src/default.d.ts'),
+    );
+    const restored = analyze(f.project(), changed.cache);
+    expect(restored.restored).toBe(true);
+    expect(restored.cache.metrics.semanticPrograms).toBe(0);
+    expect(restored.facts).toEqual(changed.facts);
+  });
+
   it.each([ts.ModuleKind.NodeNext, ts.ModuleKind.Node16])(
     'restores normal mode %s before Program and invalidates a nearer scope even with an identical target',
     (module) => {
@@ -674,6 +731,49 @@ interface GraphRunResult {
 }
 
 describe('production graph snapshots and publication', () => {
+  it('rejects invalid configuration before adopting or replacing a warm snapshot', () => {
+    const f = fixture();
+    const run = 'console.log(JSON.stringify(await runCache()));';
+    f.execute<GraphRunResult>(run);
+    const warm = f.execute<GraphRunResult>(run);
+    expect(warm.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    const store = new AnalysisCacheStore({
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
+      configPath: f.config.configPath,
+      identity: 'unused',
+    });
+    const before = readFileSync(store.path);
+    const mtime = statSync(store.path).mtimeMs;
+    const validConfig = readFileSync(f.file('limina.config.mjs'), 'utf8');
+    f.write(
+      'limina.config.mjs',
+      'export default {scope:{checkers:{tsc:{include:["tsconfig.json"]}}},experimental:true};',
+    );
+    const rejected = f.execute<{ error?: string }>(
+      'try { console.log(JSON.stringify(await runCache())); } catch (error) { console.log(JSON.stringify({error: String(error)})); }',
+    );
+    expect(rejected.error).toContain('unknown Limina config field');
+    expect(readFileSync(store.path)).toEqual(before);
+    expect(statSync(store.path).mtimeMs).toBe(mtime);
+
+    f.write('limina.config.mjs', validConfig);
+    const recovered = f.execute<GraphRunResult>(run);
+    expect(recovered.graph).toEqual(warm.graph);
+    expect(recovered.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    expect(recovered.events).toContainEqual(
+      expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
+    );
+    expect(readFileSync(store.path)).toEqual(before);
+    expect(statSync(store.path).mtimeMs).toBe(mtime);
+  });
+
   it('restores read-only models but cannot publish newly analyzed source inputs', () => {
     const f = fixture();
     const store = new AnalysisCacheStore({

@@ -35,28 +35,11 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
       FAULT_FIXTURE_TEST,
     ],
   },
-  [LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch]: {
-    kind: 'fixture',
-    producers: [
-      'packages/limina/src/graph-check/condition-subtree.ts#collectCustomConditionSubtreeSummary',
-      'packages/limina/src/graph-check/condition-domains.ts#addConditionDomainProblems',
-    ],
-    task: 'graph:check',
-    tests: [
-      'packages/limina/fixtures/detectors/graph/condition-domain-mismatch/case.mts',
-      'packages/limina/fixtures/detectors/graph/condition-domain-reference-mismatch/case.mts',
-      'packages/limina/integration/tests/detector-fixtures.spec.ts',
-      'packages/limina/src/__tests__/graph-findings.spec.ts',
-      'packages/limina/src/__tests__/graph.spec.ts',
-    ],
-  },
   [LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid]: {
     kind: 'fixture',
     producers: [
       'packages/limina/src/graph-check/dts-declaration-options.ts#addDtsOptionProblems',
       'packages/limina/src/graph-check/dts-typecheck-parity.ts#addTypecheckParityProblems',
-      'packages/limina/src/graph-check/condition-domain-config.ts#addConditionDomainShapeProblem',
-      'packages/limina/src/graph-check/condition-domain-config.ts#addConditionDomainEntryProblem',
       'packages/limina/src/graph-check/rule-findings.ts#getRulesRecord',
       'packages/limina/src/graph-check/rule-findings.ts#addRuleEntryConfigFinding',
       'packages/limina/src/graph-check/check-context.ts#createGraphCheckManagedOutputProjectContexts',
@@ -64,8 +47,6 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     ],
     task: 'graph:check',
     tests: [
-      'packages/limina/fixtures/detectors/graph/config-invalid-condition-domain/case.mts',
-      'packages/limina/fixtures/detectors/graph/config-invalid-condition-domain-entry/case.mts',
       'packages/limina/fixtures/detectors/graph/config-invalid-rule/case.mts',
       'packages/limina/integration/tests/detector-fixtures.spec.ts',
       'packages/limina/src/__tests__/graph-findings.spec.ts',
