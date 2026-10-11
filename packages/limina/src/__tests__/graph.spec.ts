@@ -40,7 +40,7 @@ const ANSI_PATTERN = new RegExp(
   String.raw`${ANSI_ESCAPE}\[[\d:;<=>?]*[\u0020-\u002F]*[\u0040-\u007E]`,
   'gu',
 );
-const defaultCheckers: NonNullable<ResolvedLiminaConfig['config']>['checkers'] =
+const defaultCheckers: NonNullable<ResolvedLiminaConfig['scope']>['checkers'] =
   {
     tsc: {
       include: ['tsconfig.json', '**/tsconfig.json'],
@@ -112,7 +112,7 @@ async function createFixture(
   files: Record<string, string>,
   graph?: GraphConfig,
   checkers: NonNullable<
-    ResolvedLiminaConfig['config']
+    ResolvedLiminaConfig['scope']
   >['checkers'] = defaultCheckers,
 ): Promise<{
   cleanup: () => Promise<void>;
@@ -153,12 +153,10 @@ async function createFixture(
       });
     },
     config: withFixtureGovernanceRoot({
-      config: {
-        checkers,
-      },
       configPath: path.join(rootDirectory, 'limina.config.mjs'),
-      graph,
       rootDir: rootDirectory,
+      scope: { checkers },
+      graph,
     }),
     rootDir: rootDirectory,
     path: createFixturePathResolver(rootDirectory),
@@ -2762,7 +2760,7 @@ describe('runGraphCheck graph rules', () => {
                 '  extension: .svelte',
                 '  example: packages/create-vite/template-svelte-ts/src/App.svelte',
                 '  reason: auto checker mode can only route TypeScript, JavaScript, JSON, and Vue source scopes.',
-                '  fix: move this file to an explicit checker scope or configure config.checkers manually.',
+                '  fix: move this file to an explicit checker scope or configure scope.checkers manually.',
               ].join('\n'),
             );
           },

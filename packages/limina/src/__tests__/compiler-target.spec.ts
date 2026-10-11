@@ -92,7 +92,7 @@ describe('effective output compiler target', () => {
         const fixtureConfig = withFixtureGovernanceRoot({
           rootDir: rootDirectory,
           configPath: fixturePath('limina.config.mts'),
-          config: {},
+          scope: {},
         });
         expect(
           readExplicitSourceCompilerTarget({

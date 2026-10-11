@@ -17,7 +17,7 @@ function addInvalidBoundaryEntry(options: {
   addConfigIssue(
     options.ctx,
     ['source', options.field, options.index],
-    `config.source.${options.field} entries must be non-empty strings.`,
+    `scope.source.${options.field} entries must be non-empty strings.`,
   );
 }
 
@@ -29,7 +29,7 @@ function addAbsoluteBoundaryEntry(options: {
   addConfigIssue(
     options.ctx,
     ['source', options.field, options.index],
-    `config.source.${options.field} entries must be config.rootDir-relative paths; ../ is allowed.`,
+    `scope.source.${options.field} entries must be config.rootDir-relative paths; ../ is allowed.`,
   );
 }
 
@@ -65,7 +65,7 @@ function addBoundaryArrayIssue(options: {
   addConfigIssue(
     options.ctx,
     ['source', options.field],
-    `config.source.${options.field} must be a non-empty string array.`,
+    `scope.source.${options.field} must be a non-empty string array.`,
   );
 }
 
@@ -106,7 +106,7 @@ function validateDefaultTokenCount(options: {
   addConfigIssue(
     options.ctx,
     ['source', options.field],
-    `config.source.${options.field} may contain "..." at most once.`,
+    `scope.source.${options.field} may contain "..." at most once.`,
   );
 }
 

@@ -53,7 +53,7 @@ it('replays the emitted invocation query after config removal without loading co
     'local/limina.config.mjs': [
       "import { appendFileSync } from 'node:fs';",
       "appendFileSync(new URL('./config-imports.txt', import.meta.url), 'import\\n');",
-      'export default { source: { knip: { root: {} } } };',
+      'export default {source: { knip: { root: {} } }};',
     ].join('\n'),
     'local/src/index.ts': 'export const value = 1;',
     'local/src/dead.ts': 'export const dead = 1;',

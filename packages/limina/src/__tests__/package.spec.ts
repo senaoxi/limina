@@ -540,6 +540,7 @@ function createConfig(
 ): ResolvedLiminaConfig {
   return withFixtureGovernanceRoot({
     configPath: path.join(rootDirectory, 'limina.config.mjs'),
+    rootDir: rootDirectory,
     package: {
       entries: entries.map((entry) => ({
         ...entry,
@@ -549,7 +550,6 @@ function createConfig(
       })),
     },
     release: options.release,
-    rootDir: rootDirectory,
   });
 }
 
@@ -4767,7 +4767,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
           outDir: outDirectory,
         },
       ]);
-      config.regions = {
+      (config.scope ??= {}).regions = {
         exclude: [
           {
             include: ['packages/a'],

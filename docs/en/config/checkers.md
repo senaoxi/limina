@@ -1,6 +1,6 @@
 # Checker Configuration
 
-`config.checkers` selects default `tsconfig.json` entries and determines which checker owns their reachable source leaf configs. Automatic discovery is already enabled when this field is omitted; configure it only to fix checker ownership or exclude direct entries.
+`scope.checkers` selects default `tsconfig.json` entries and determines which checker owns their reachable source leaf configs. Automatic discovery is already enabled when this field is omitted; configure it only to fix checker ownership or exclude direct entries.
 
 Checkers use these fixed names:
 
@@ -22,7 +22,7 @@ Auto discovery is always enabled. Named scopes claim selected entries first; ent
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       'vue-tsc': {
         include: ['apps/web/tsconfig.json'],
@@ -54,7 +54,7 @@ Set `useTsgo: true` to route only the ordinary TypeScript fallback to `tsgo` ins
 
 ```js
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       auto: {
         useTsgo: true,
@@ -69,7 +69,7 @@ export default defineConfig({
 
 Vue capability is confirmed from the checker-resolved file set, not from `vueCompilerOptions` alone. Limina first traverses entries, solutions, referenced leaves, and effective `extends`, then asks the Vue parser for its actual extensions and files. A custom Vue extension is routed to `vue-tsc` only when a matching file exists. A configuration hint without a matching module does not change ownership.
 
-Auto `exclude` filters entry selection inside activated [regions](./regions.md). It does not prune valid project references reached from a selected entry and is separate from `config.source.exclude`.
+Auto `exclude` filters entry selection inside activated [regions](./regions.md). It does not prune valid project references reached from a selected entry and is separate from `scope.source.exclude`.
 
 The legacy `{ mode: 'auto' }` shape is rejected. Move `exclude` and `useTsgo` under `auto`.
 

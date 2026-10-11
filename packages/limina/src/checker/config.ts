@@ -100,7 +100,7 @@ export function getCheckerExtensions(
 function getConfiguredCheckerMode(
   config: LiminaConfig,
 ): CheckerConfigMode | undefined {
-  const shared = config.config;
+  const shared = config.scope;
   return shared === undefined ? undefined : shared.checkers;
 }
 

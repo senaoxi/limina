@@ -49,6 +49,7 @@ function createConfig(rootDirectory: string): ResolvedLiminaConfig {
   const fixturePath = createFixturePathResolver(rootDirectory);
   return withFixtureGovernanceRoot({
     configPath: fixturePath('limina.config.mjs'),
+    rootDir: rootDirectory,
     package: {
       entries: [
         {
@@ -58,7 +59,6 @@ function createConfig(rootDirectory: string): ResolvedLiminaConfig {
         },
       ],
     },
-    rootDir: rootDirectory,
   });
 }
 
@@ -103,7 +103,8 @@ async function createFixture(): Promise<{
 
   await writeFile(
     path.join(rootDirectory, 'limina.config.mjs'),
-    'export default {};\n',
+    `export default {};
+`,
   );
   await writeFile(
     path.join(rootDirectory, 'package.json'),

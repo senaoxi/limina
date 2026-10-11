@@ -33,8 +33,8 @@ function createSleepTarget(sleepMs: number, name: string): TypecheckTarget {
 function createPoolConfig(): ResolvedLiminaConfig {
   return withFixtureGovernanceRoot({
     configPath: '/virtual/limina.config.mjs',
-    execution: { checkerBuild: 2 },
     rootDir: '/virtual',
+    concurrency: { checkerBuild: 2 },
   });
 }
 
@@ -449,7 +449,7 @@ describe('runBuildTargets provider blocking', () => {
     const second = createBuildTarget('second');
     const calls: string[] = [];
     const config = createPoolConfig();
-    config.execution = { checkerBuild: 1 };
+    config.concurrency = { checkerBuild: 1 };
 
     await runBuildTargets(
       [first, second],

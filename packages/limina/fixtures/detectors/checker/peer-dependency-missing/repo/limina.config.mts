@@ -1,5 +1,5 @@
 export default {
-  config: {
+  scope: {
     checkers: {
       tsgo: {
         include: ['packages/app/tsconfig.json'],

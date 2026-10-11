@@ -54,9 +54,9 @@ packages/
 
 If `app/tsconfig.lib.json` also includes `ui/src/Button.ts`, it crosses the package ownership boundary. Let the `ui` config own that file and let `app` depend on it through a public package entry. A checker reading a file because of an import does not give the importer ownership of it.
 
-By default, nested `package.json` files, nested workspace roots, and activated child packages stop traversal by the outer package. Activated children govern independently from their own roots. Eligible unnamed nested package scopes can remain in the outer region through `regions.extendNestedPackageScopes`, but their nearest package scope still constrains relative imports and `#imports`.
+By default, nested `package.json` files, nested workspace roots, and activated child packages stop traversal by the outer package. Activated children govern independently from their own roots. Eligible unnamed nested package scopes can remain in the outer region through `scope.regions.extendNestedPackageScopes`, but their nearest package scope still constrains relative imports and `#imports`.
 
-`regions.exclude` excludes packages, nested package scopes, or exact tsconfigs by kind. Excluding a parent does not automatically exclude independently activated descendants; excluding only a config file does not exclude source. See [Regions](./config/regions.md) for the detailed conditions.
+`scope.regions.exclude` excludes packages, nested package scopes, or exact tsconfigs by kind. Excluding a parent does not automatically exclude independently activated descendants; excluding only a config file does not exclude source. See [Regions](./config/regions.md) for the detailed conditions.
 
 Also distinguish source ownership, effective analysis inputs, and the checker's `Program` file set. Local relative `compilerOptions.types` can add type inputs, and `extends` can reference configs, but neither alone establishes source ownership. Local effective inputs inside the governance root must still belong to activated regions.
 
@@ -106,7 +106,7 @@ import { Button } from '@acme/ui';
 
 Limina checks whether relative imports cross the nearest `package.json` package scope. For bare package imports, it also checks whether the current workspace package scope acknowledges the dependency through `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. Matching `source.importAuthority.allow` grants can make selected workspace root dependency declarations available to a specific source owner.
 
-This distinction matters for an extended nested package scope: it inherits dependency authority from the surrounding workspace owner, but relative imports still cannot escape the nearest nested `package.json` scope. If the nested scope was not extended, or was removed with `regions.exclude`, importing it from governed source crosses the region boundary before ordinary package access rules are considered.
+This distinction matters for an extended nested package scope: it inherits dependency authority from the surrounding workspace owner, but relative imports still cannot escape the nearest nested `package.json` scope. If the nested scope was not extended, or was removed with `scope.regions.exclude`, importing it from governed source crosses the region boundary before ordinary package access rules are considered.
 
 `#imports` follows a similar boundary. Its declaration source is the nearest package scope of the importing file. Relative targets should remain inside the package scope that declares them. If the target points to a third-party package or a workspace dependency, that dependency still needs to be authorized by the workspace package scope that owns the importing file, or it must be covered by a matching workspace root dependency grant.
 
@@ -258,7 +258,7 @@ These checks report problems found in tarballs, output manifests, dependency sco
 
 | Problem                                               | Inputs to inspect                                                                   |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| A file has no owner or crosses a stopped region       | Governance root, activated packages, and `regions`                                  |
+| A file has no owner or crosses a stopped region       | Governance root, activated packages, and `scope.regions`                            |
 | Multiple configs own the same implementation file     | Effective file sets of the source leaves                                            |
 | A leaf declares native references                     | The separate roles of aggregator membership and `implicitRefs`                      |
 | Cross-package imports or undeclared dependencies      | Importer manifest, public entries, and limited root-dependency grants               |

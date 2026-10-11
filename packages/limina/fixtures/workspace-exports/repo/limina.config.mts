@@ -1,3 +1,3 @@
 export default {
-  config: { checkers: { tsc: { include: ['packages/*/tsconfig.json'] } } },
+  scope: { checkers: { tsc: { include: ['packages/*/tsconfig.json'] } } },
 };

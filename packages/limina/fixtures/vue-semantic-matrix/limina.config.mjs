@@ -1,5 +1,5 @@
 export default {
-  config: {
+  scope: {
     checkers: {
       'vue-tsc': {
         include: ['cases/*/tsconfig.json'],

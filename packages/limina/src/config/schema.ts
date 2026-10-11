@@ -1,9 +1,12 @@
 import type { LiminaConfig } from '#config/runner';
 import { ConfigError } from '../domain/validation/errors';
 import { formatLiminaConfigShapeIssue } from './schema/format';
+import { legacyConfigProblems } from './schema/legacy';
 import { liminaConfigShapeSchema } from './schema/root';
 
 function collectLiminaConfigShapeProblems(value: unknown): string[] {
+  const legacy = legacyConfigProblems(value);
+  if (legacy.length > 0) return legacy;
   const result = liminaConfigShapeSchema.safeParse(value);
   return result.success
     ? []

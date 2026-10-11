@@ -1,3 +1,4 @@
+import type { RegionsConfig } from 'limina/internal/config/runner';
 import type { InputTopologyResult } from 'limina/internal/core/build-graph/input-topology';
 import { createCommitGroups } from './commit-groups';
 import { addStaticConfigExclusions } from './config-edit';
@@ -7,16 +8,14 @@ import type { MigrationPlanningState } from './planning-state';
 import type { MigrationWritePlanItem } from './transaction';
 import { createMigrationWritePlanItem } from './transform';
 
-function originalExclusions(state: MigrationPlanningState) {
-  return state.config.regions?.exclude ?? [];
+function regionExclusions(regions: RegionsConfig | undefined) {
+  return regions?.exclude ?? [];
 }
 
 function plannedExclusions(state: MigrationPlanningState) {
-  const existingCount = originalExclusions(state).length;
-  return allExclusions(state).slice(existingCount);
-}
-function allExclusions(state: MigrationPlanningState) {
-  return state.candidateConfig.regions?.exclude ?? [];
+  const existing = regionExclusions(state.config.scope?.regions);
+  const planned = regionExclusions(state.candidateConfig.scope?.regions);
+  return planned.slice(existing.length);
 }
 
 function sourcePatch(

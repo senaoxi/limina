@@ -70,7 +70,8 @@ async function createFixture(files: Record<string, string>): Promise<{
       type: 'module',
     }),
     'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
-    'limina.config.mjs': 'export default {};\n',
+    'limina.config.mjs': `export default {};
+`,
     ...files,
   };
 
@@ -139,7 +140,8 @@ async function createHardlinkMigrationFixture(count: number): Promise<{
   targets: string[];
 }> {
   const files: Record<string, string> = {
-    'limina.config.mjs': 'export default {};\n',
+    'limina.config.mjs': `export default {};
+`,
   };
   for (let index = 0; index < count; index += 1) {
     files[`packages/pkg-${index}/package.json`] = json({
@@ -192,11 +194,11 @@ async function createHardlinkMigrationFixture(count: number): Promise<{
 
 async function createResolvedConfig(
   rootDirectory: string,
-  config: NonNullable<ResolvedLiminaConfig['config']>,
+  config: NonNullable<ResolvedLiminaConfig['scope']>,
 ): Promise<ResolvedLiminaConfig> {
   return {
     ...(await loadConfig({ command: 'migration', cwd: rootDirectory })),
-    config,
+    scope: config,
   };
 }
 
@@ -237,7 +239,8 @@ async function createMultipleWorktreeFixture(
   );
   await writeText(
     path.join(rootDirectory, 'limina.config.mjs'),
-    'export default {};\n',
+    `export default {};
+`,
   );
   await writeText(path.join(rootDirectory, 'src/index.ts'), 'export {};\n');
   await writeText(rootConfigPath, tsconfig);
@@ -273,7 +276,8 @@ async function createMultipleWorktreeFixture(
 describe('runMigration', () => {
   it('fails before writing when the workspace is not a git repository', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
       'packages/pkg/tsconfig.json': json({
         compilerOptions: {
@@ -308,7 +312,8 @@ describe('runMigration', () => {
 
   it('stops without writing when a dirty git workspace is not approved', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
       'packages/pkg/tsconfig.json': json({
         compilerOptions: {
@@ -381,7 +386,8 @@ describe('runMigration', () => {
 
   it('writes the planned tsconfig changes when a dirty workspace is approved', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
       'packages/pkg/tsconfig.json': json({
         compilerOptions: {
@@ -502,7 +508,8 @@ describe('runMigration', () => {
 
   it('reports a root-cause blocker when discovery finds no entries', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
     });
     const config = await createResolvedConfig(fixture.rootDir, {
@@ -679,7 +686,8 @@ describe('runMigration', () => {
 
   it('uses canonical island visibility and keeps shared hardlink identity when skipped', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'storage/tsconfig.json': json({
         $schema: '../node_modules/limina/schemas/tsconfig-schema.json',
         include: ['src/**/*.ts'],
@@ -762,7 +770,8 @@ describe('runMigration', () => {
 }
 `;
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'src/index.ts': 'export const value = 1;\n',
       'tsconfig.json': original,
     });
@@ -840,7 +849,8 @@ describe('runMigration', () => {
       '\t"custom": {"compact": [1, 2, 3],},\r\n' +
       '}\r\n';
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'src/index.ts': 'export const value = 1;\n',
       'tsconfig.json': original,
     });
@@ -890,7 +900,8 @@ describe('runMigration', () => {
     'treats equivalent output paths as one managed root (%s, %s)',
     async (outDirectory, declarationDirectory) => {
       const fixture = await createFixture({
-        'limina.config.mjs': 'export default {};\n',
+        'limina.config.mjs': `export default {};
+`,
         'src/index.ts': 'export const value = 1;\n',
         'tsconfig.json': json({
           compilerOptions: {
@@ -940,7 +951,8 @@ describe('runMigration', () => {
 
   it('keeps multi-level inherited declarationDir and does not copy it into a leaf', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'src/index.ts': 'export const value = 1;\n',
       'tsconfig.base.json': json({
         compilerOptions: { declarationDir: './types' },
@@ -991,7 +1003,8 @@ describe('runMigration', () => {
 
   it('uses the default planned dist root when existing outputs omit outDir', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'src/index.ts': 'export const value = 1;\n',
       'tsconfig.json': json({
         compilerOptions: { declarationDir: './dist' },
@@ -1028,7 +1041,8 @@ describe('runMigration', () => {
 
   it('preserves direct declarationDir from a pure solution without creating outputs', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/app/src/index.ts': 'export const value = 1;\n',
       'packages/app/tsconfig.json': json({
         compilerOptions: { declarationDir: './types' },
@@ -1075,7 +1089,8 @@ describe('runMigration', () => {
 
   it('treats a default config with effective sources and references as a leaf', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/app/src/index.ts': 'export const value = 1;\n',
       'packages/app/tsconfig.json': json({
         files: [],
@@ -1132,7 +1147,8 @@ describe('runMigration', () => {
 
   it('treats .vue inputs as effective leaf sources', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/app/src/App.vue': '<script setup lang="ts">\n</script>\n',
       'packages/app/tsconfig.json': json({
         compilerOptions: { declarationDir: './types' },
@@ -1188,7 +1204,8 @@ describe('runMigration', () => {
 
   it('migrates a default leaf with effective sources and direct declarationDir', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/app/src/index.ts': 'export const value = 1;\n',
       'packages/app/tsconfig.json': json({
         compilerOptions: { declarationDir: './types' },
@@ -1234,7 +1251,8 @@ describe('runMigration', () => {
 
   it('writes the schema path relative to a root tsconfig.json', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'src/index.ts': 'export const value = 1;\n',
       'tsconfig.json': json({
         compilerOptions: {
@@ -1278,7 +1296,8 @@ describe('runMigration', () => {
 
   it('migrates explicit checker entries and pure aggregator references', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/app/src/index.ts': 'export const value = 1;\n',
       'packages/app/src/index.test.ts': 'export const testValue = 1;\n',
       'packages/app/tsconfig.json': json({
@@ -1425,7 +1444,8 @@ describe('runMigration', () => {
 
   it('does not diagnose reserved or unreachable named configs', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/app/src/index.ts': 'export const value = 1;\n',
       'packages/app/tsconfig.json': json({
         files: [],
@@ -1470,7 +1490,8 @@ describe('runMigration', () => {
 
   it('migrates source tsconfig.json files that still declare tsc -b references', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/app/src/index.ts': 'export const value = 1;\n',
       'packages/app/tsconfig.json': json({
         compilerOptions: {
@@ -1546,7 +1567,8 @@ describe('runMigration', () => {
 
   it('normalizes activated sources independently of checker entry exclusions', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': 'export default {};\n',
+      'limina.config.mjs': `export default {};
+`,
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
       'packages/pkg/tsconfig.json': json({
         compilerOptions: {

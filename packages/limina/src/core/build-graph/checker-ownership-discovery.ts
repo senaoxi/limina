@@ -132,7 +132,7 @@ async function collectAutoEntryPaths(options: {
   config: ResolvedLiminaConfig;
   sourceConfigPaths: readonly string[];
 }): Promise<string[]> {
-  const auto = getAutoCheckerConfig(options.config.config?.checkers);
+  const auto = getAutoCheckerConfig(options.config.scope?.checkers);
   const selection = await resolveCheckerEntrySelection(
     {
       config: options.config,
@@ -221,7 +221,7 @@ export async function discoverCheckerOwnership(options: {
   });
   return {
     activeEntryPaths: managedEntryPaths,
-    autoChecker: getAutoCheckerConfig(options.config.config?.checkers).useTsgo
+    autoChecker: getAutoCheckerConfig(options.config.scope?.checkers).useTsgo
       ? 'tsgo'
       : 'tsc',
     explicitOwnerByEntryPath,

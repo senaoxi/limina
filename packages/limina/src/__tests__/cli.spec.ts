@@ -88,7 +88,8 @@ async function createIssueCliFixture(): Promise<{
     );
     await writeText(
       path.join(rootDirectory, 'limina.config.mjs'),
-      'export default {\n',
+      `export default {
+`,
     );
     return {
       cliPath: fileURLToPath(new URL('../../bin/limina.js', import.meta.url)),
@@ -260,7 +261,7 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
     path.join(rootDirectory, 'limina.config.mjs'),
     `export default ${JSON.stringify(
       {
-        config: {
+        scope: {
           checkers: {
             tsc: {
               include: ['packages/pkg/tsconfig.json'],
@@ -533,7 +534,8 @@ describe('limina CLI', () => {
       );
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
-        'export default { pipelines: { demo: [] } };\n',
+        `export default {pipelines: { demo: [] }};
+`,
       );
       await writeText(snapshotPath, previousSnapshot);
 
@@ -624,15 +626,11 @@ describe('limina CLI', () => {
       await writeText(
         tsConfigPath,
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       tsc: {
         include: ['packages/pkg/tsconfig.json'],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -810,7 +808,7 @@ export default {
             configPath,
             `export default ${JSON.stringify(
               {
-                config: {
+                scope: {
                   checkers: {
                     tsc: {
                       include: ['packages/**/tsconfig.json'],
@@ -1255,7 +1253,7 @@ export default {
           '});',
           `export default ${JSON.stringify(
             {
-              config: {
+              scope: {
                 checkers: {
                   tsc: {
                     include: ['packages/*/tsconfig.json'],
@@ -2127,7 +2125,7 @@ export default {
         path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
-            config: {
+            scope: {
               checkers: {
                 tsc: {
                   include: ['app/tsconfig.json'],
@@ -2247,7 +2245,8 @@ export default {
       );
       await writeText(
         configPath,
-        'export default { source: { knip: true } };\n',
+        `export default {source: { knip: true }};
+`,
       );
 
       let failure:
@@ -2375,7 +2374,7 @@ export default {
         path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
-            config: {
+            scope: {
               checkers: {
                 tsc: {
                   include: ['app/tsconfig.json'],
@@ -2491,7 +2490,8 @@ export default {
 
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
-        'export default () => { throw new Error("config executed"); };\n',
+        `export default () => { throw new Error("config executed"); };
+`,
       );
       const [explicitQuery, defaultNestedQuery] = await Promise.all([
         execFileAsync(
@@ -2695,7 +2695,8 @@ export default {
     const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     await writeText(
       path.join(rootDirectory, 'limina.config.mjs'),
-      'export default {};\n',
+      `export default {};
+`,
     );
 
     try {
@@ -3559,7 +3560,7 @@ export default {
         path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
-            config: {
+            scope: {
               checkers: {
                 tsc: {
                   include: ['packages/**/tsconfig.json'],
@@ -3703,7 +3704,7 @@ export default {
         path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
-            config: {
+            scope: {
               checkers: {
                 tsc: {
                   include: ['packages/**/tsconfig.json'],
@@ -3853,7 +3854,7 @@ export default {
         path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
-            config: {
+            scope: {
               checkers: {
                 tsc: {
                   include: ['app/tsconfig.json'],
@@ -3964,7 +3965,7 @@ export default {
         path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
-            config: {
+            scope: {
               checkers: {
                 tsc: {
                   include: ['packages/**/tsconfig.json'],
@@ -4101,7 +4102,8 @@ export default {
     try {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
-        'export default {};\n',
+        `export default {};
+`,
       );
 
       await expect(
@@ -4144,7 +4146,8 @@ export default {
     try {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
-        'export default {};\n',
+        `export default {};
+`,
       );
 
       await expect(

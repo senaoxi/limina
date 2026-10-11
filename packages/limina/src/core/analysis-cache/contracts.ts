@@ -5,7 +5,8 @@ import type { NativeDependencyFact } from '../typescript-semantic/dependency-fac
 import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
 
-export const ANALYSIS_ADAPTER = 'native-typescript-6.0.3-v4';
+// Config domains change persisted diagnostic paths, including for an empty config.
+export const ANALYSIS_ADAPTER = 'native-typescript-6.0.3-v5';
 
 export interface InputDependency {
   inputId: string;

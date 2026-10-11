@@ -71,7 +71,7 @@ function fixture() {
   );
   write(
     'limina.config.mjs',
-    'export default {config:{checkers:{tsc:{include:["tsconfig.json"]}}}};',
+    'export default {scope: {checkers:{tsc:{include:["tsconfig.json"]}}}};',
   );
   write(
     'tsconfig.json',
@@ -93,7 +93,7 @@ function fixture() {
   const config = withFixtureGovernanceRoot({
     rootDir: root,
     configPath: file('limina.config.mjs'),
-    config: { checkers: { tsc: { include: ['tsconfig.json'] } } },
+    scope: { checkers: { tsc: { include: ['tsconfig.json'] } } },
   });
   const project = (name = 'tsconfig.json'): TypeScriptSemanticProject => {
     const { parsed } = parseTypeScriptCommandLine({
@@ -429,10 +429,8 @@ describe('R03 evaluation, own data and namespace validity', () => {
     f.write('src/a.ts', "import fs from 'node:fs'; export const result = fs;");
     f.write(
       'limina.config.mjs',
-      `export default {
-      config:{checkers:{tsc:{include:['tsconfig.json']}}},
-      graph:{rules:{runtime:process.env.LIMINA_CONFIG_DENIED === 'yes' ? {deny:{deps:[{name:'node:*',reason:'runtime policy'}]}} : {}}}
-    };`,
+      `export default {scope: {checkers:{tsc:{include:['tsconfig.json']}}},
+graph:{rules:{runtime:process.env.LIMINA_CONFIG_DENIED === 'yes' ? {deny:{deps:[{name:'node:*',reason:'runtime policy'}]}} : {}}}};`,
     );
     const results = f.execute<GraphRunResult[]>(`
       const evaluate=async(deny,cache)=>{process.env.LIMINA_CONFIG_DENIED=deny?'yes':'no';return runCache({check:true,cache});};
@@ -485,7 +483,7 @@ describe('R03 evaluation, own data and namespace validity', () => {
         `limina.config.${extension}`,
         isCommonJs
           ? 'const { policy } = require("./policy.cjs"); module.exports = { pipelines: { [policy]: [] } };'
-          : 'import { policy } from "./policy.mjs"; export default { pipelines: { [policy]: [] } };',
+          : 'import { policy } from "./policy.mjs"; export default {pipelines: { [policy]: [] }};',
       );
       const loaderUrl = new URL('../config/loader.ts', import.meta.url).href;
       const require = createRequire(import.meta.url);
@@ -550,7 +548,7 @@ console.log(JSON.stringify([config.pipelines,Object.isFrozen(config.pipelines)])
   it('versions pure-data enumeration changes that change active checkers', () => {
     const configs = [false, true].map((enumerable) =>
       captureInvocationData({
-        config: {
+        scope: {
           checkers: Object.defineProperty({}, 'tsc', {
             enumerable,
             value: { include: ['special/**/tsconfig.json'] },
@@ -736,7 +734,7 @@ describe('production graph snapshots and publication', () => {
       const modified = statSync(store.path).mtimeMs;
       f.write(
         'limina.config.mjs',
-        `export default Object.defineProperty({config:{checkers:{tsc:{include:["tsconfig.json"]}}}}, 'cache', {value:false,enumerable:${enumerable}});`,
+        `export default Object.defineProperty({scope: {checkers:{tsc:{include:["tsconfig.json"]}}}}, 'cache', {value:false,enumerable:${enumerable}});`,
       );
       for (const isForced of [false, true]) {
         const result = f.execute<GraphRunResult>(

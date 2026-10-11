@@ -3,7 +3,7 @@ import { MigrationInputError } from './declarations';
 
 export function unsupportedConfigEdit(): never {
   throw new MigrationInputError(
-    'Cannot persist exact tsconfig exclusions: the exported config or regions.exclude is not a uniquely editable static object/array. The original module is preserved; input adoption remains incomplete.',
+    'Cannot persist exact tsconfig exclusions: the exported config or scope.regions.exclude is not a uniquely editable static object/array. The original module is preserved; input adoption remains incomplete.',
   );
 }
 

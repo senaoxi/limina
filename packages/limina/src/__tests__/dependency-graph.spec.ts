@@ -11,7 +11,7 @@ import {
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { linkSemanticWorkspacePackages } from './helpers/semantic-repair';
 
-const defaultCheckers: NonNullable<ResolvedLiminaConfig['config']>['checkers'] =
+const defaultCheckers: NonNullable<ResolvedLiminaConfig['scope']>['checkers'] =
   {
     tsc: {
       include: ['tsconfig.json', '**/tsconfig.json'],
@@ -129,11 +129,9 @@ async function createFixture(files: Record<string, string>): Promise<{
       });
     },
     config: withFixtureGovernanceRoot({
-      config: {
-        checkers: defaultCheckers,
-      },
       configPath: path.join(rootDirectory, 'limina.config.mjs'),
       rootDir: rootDirectory,
+      scope: { checkers: defaultCheckers },
     }),
     rootDir: rootDirectory,
   };

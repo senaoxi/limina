@@ -43,9 +43,9 @@ async function createFixture(): Promise<{
 
   return {
     config: withFixtureGovernanceRoot({
-      config: {},
       configPath: path.join(rootDirectory, 'limina.config.mjs'),
       rootDir: rootDirectory,
+      scope: {},
     }),
     rootDir: rootDirectory,
   };
@@ -58,9 +58,9 @@ async function resolveSelection(options: {
   sourceConfigPaths?: string[];
 }) {
   const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
-    config: {},
     configPath: path.join(options.rootDir, 'limina.config.mjs'),
     rootDir: options.rootDir,
+    scope: {},
   });
   const sourceConfigPaths =
     options.sourceConfigPaths ??

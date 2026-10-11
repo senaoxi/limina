@@ -64,7 +64,7 @@ export type {
   ReleaseNpmPackageJsonLintRuleConfig,
   ReleaseNpmPackageJsonLintSeverity,
   RuntimeEnvironment,
-  SharedLiminaConfig,
+  ScopeConfig,
   SourceAmbientDeclarationConfig,
   SourceBoundaryConfig,
   SourceCheckConfig,

@@ -5,7 +5,7 @@ function checkCommand(command: string, arguments_: string[]): PipelineStep {
 }
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       tsgo: {
         include: ['smoke/tsconfig.json'],
@@ -40,8 +40,8 @@ export default defineConfig({
         '**/tsconfig.*.json',
       ],
     },
+    regions: { extendNestedPackageScopes: true },
   },
-  regions: { extendNestedPackageScopes: true },
   source: { knip: true },
   package: {
     entries: [

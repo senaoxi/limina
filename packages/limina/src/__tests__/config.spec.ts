@@ -51,7 +51,7 @@ function stringifyConfig(value: unknown): string {
 describe('defineConfig', () => {
   it('returns the explicit user config unchanged', () => {
     const config = defineConfig({
-      config: {
+      scope: {
         checkers: {
           tsc: {
             include: ['tsconfig.custom.json'],
@@ -100,10 +100,6 @@ describe('defineConfig', () => {
           },
         },
       },
-      pipelines: {
-        package: ['package:check'],
-        typecheck: ['graph:check'],
-      },
       package: {
         entries: [
           {
@@ -147,7 +143,11 @@ describe('defineConfig', () => {
           },
         },
       },
-      execution: {
+      pipelines: {
+        package: ['package:check'],
+        typecheck: ['graph:check'],
+      },
+      concurrency: {
         checkerBuild: 'auto',
         checkerTypecheck: 2,
         packageEntries: 'auto',
@@ -157,13 +157,12 @@ describe('defineConfig', () => {
     });
 
     expect(
-      config.config?.checkers &&
-        !isAutoCheckerConfigMode(config.config.checkers)
-        ? config.config.checkers.tsc?.include
+      config.scope?.checkers && !isAutoCheckerConfigMode(config.scope.checkers)
+        ? config.scope.checkers.tsc?.include
         : undefined,
     ).toEqual(['tsconfig.custom.json']);
-    expect(config.config?.source?.include).toEqual(['src/**/*.ts']);
-    expect(config.config?.source?.exclude).toEqual(['dist']);
+    expect(config.scope?.source?.include).toEqual(['src/**/*.ts']);
+    expect(config.scope?.source?.exclude).toEqual(['dist']);
     expect(config.pipelines?.package).toEqual(['package:check']);
     expect(config.package?.entries?.[0]?.checks).toEqual([
       'publint',
@@ -218,13 +217,13 @@ describe('defineConfig', () => {
         'require-license': 'error',
       },
     });
-    expect(config.execution?.checkerTypecheck).toBe(2);
-    expect(config.execution?.tasks).toBe('auto');
+    expect(config.concurrency?.checkerTypecheck).toBe(2);
+    expect(config.concurrency?.tasks).toBe('auto');
   });
 
   it('resolves built-in checker defaults', () => {
     const activeCheckers = getActiveCheckers({
-      config: {
+      scope: {
         checkers: {
           tsc: {
             include: ['tsconfig.json'],
@@ -296,15 +295,15 @@ describe('defineConfig', () => {
       );
 
       const config = withFixtureGovernanceRoot({
-        config: {
+        configPath: path.join(rootDirectory, 'limina.config.mjs'),
+        rootDir: rootDirectory,
+        scope: {
           checkers: {
             tsgo: {
               include: ['packages/app/tsconfig.json'],
             },
           },
         },
-        configPath: path.join(rootDirectory, 'limina.config.mjs'),
-        rootDir: rootDirectory,
       });
       const activeCheckers = getActiveCheckers(config);
       const generatedGraph = await prepareGeneratedTsconfigGraph(config, {
@@ -367,15 +366,15 @@ describe('defineConfig', () => {
       );
 
       const config = withFixtureGovernanceRoot({
-        config: {
+        configPath: path.join(rootDirectory, 'limina.config.mjs'),
+        rootDir: rootDirectory,
+        scope: {
           checkers: {
             'vue-tsc': {
               include: ['tsconfig.vue.json'],
             },
           },
         },
-        configPath: path.join(rootDirectory, 'limina.config.mjs'),
-        rootDir: rootDirectory,
       });
       const activeCheckers = getActiveCheckers(config);
 
@@ -400,7 +399,7 @@ describe('defineConfig', () => {
 
   it('returns config factories unchanged', async () => {
     const config = defineConfig(async ({ mode }) => ({
-      config: {
+      scope: {
         checkers: {
           tsc: {
             include: [`tsconfig.${mode}.json`],
@@ -410,7 +409,7 @@ describe('defineConfig', () => {
     }));
 
     await expect(config({ command: 'graph', mode: 'ci' })).resolves.toEqual({
-      config: {
+      scope: {
         checkers: {
           tsc: {
             include: ['tsconfig.ci.json'],
@@ -536,7 +535,7 @@ describe('source.knip configuration contract', () => {
 });
 
 describe('loadConfig', () => {
-  it('rejects unknown source boundary config fields under config.source', async () => {
+  it('rejects unknown source boundary config fields under scope.source', async () => {
     const rootDirectory = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -548,15 +547,7 @@ describe('loadConfig', () => {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    source: {
-      tsconfigOwnership: {
-        ignore: [],
-      },
-    },
-  },
-};
+export default { scope: { source: { tsconfigOwnership: { ignore: [] } } } };
 `,
       );
 
@@ -575,42 +566,42 @@ export default {
 
   it.each([
     {
-      error: /config\.source\.include must be a non-empty string array/u,
+      error: /scope\.source\.include must be a non-empty string array/u,
       name: 'empty include',
       source: {
         include: [],
       },
     },
     {
-      error: /config\.source\.exclude must be a non-empty string array/u,
+      error: /scope\.source\.exclude must be a non-empty string array/u,
       name: 'empty exclude',
       source: {
         exclude: [],
       },
     },
     {
-      error: /config\.source\.include entries must be non-empty strings/u,
+      error: /scope\.source\.include entries must be non-empty strings/u,
       name: 'empty include entry',
       source: {
         include: [''],
       },
     },
     {
-      error: /config\.source\.exclude entries must be non-empty strings/u,
+      error: /scope\.source\.exclude entries must be non-empty strings/u,
       name: 'empty exclude entry',
       source: {
         exclude: [''],
       },
     },
     {
-      error: /config\.source\.include may contain "\.\.\." at most once/u,
+      error: /scope\.source\.include may contain "\.\.\." at most once/u,
       name: 'duplicate include default token',
       source: {
         include: ['...', '...'],
       },
     },
     {
-      error: /config\.source\.exclude may contain "\.\.\." at most once/u,
+      error: /scope\.source\.exclude may contain "\.\.\." at most once/u,
       name: 'duplicate exclude default token',
       source: {
         exclude: ['...', '...'],
@@ -631,11 +622,7 @@ export default {
         await writeText(path.join(rootDirectory, 'package.json'), '{}');
         await writeText(
           path.join(rootDirectory, 'limina.config.mjs'),
-          `export default ${stringifyConfig({
-            config: {
-              source,
-            },
-          })}`,
+          `export default ${stringifyConfig({ scope: { source } })}`,
         );
 
         await expect(
@@ -664,7 +651,7 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${stringifyConfig({
-          config: {
+          scope: {
             source: {
               exclude: ['...', 'generated/.../**'],
               include: ['...', 'src/.../*.ts'],
@@ -677,8 +664,8 @@ export default {
         cwd: rootDirectory,
       });
 
-      expect(config.config?.source?.include).toEqual(['...', 'src/.../*.ts']);
-      expect(config.config?.source?.exclude).toEqual([
+      expect(config.scope?.source?.include).toEqual(['...', 'src/.../*.ts']);
+      expect(config.scope?.source?.exclude).toEqual([
         '...',
         'generated/.../**',
       ]);
@@ -702,13 +689,7 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  source: {
-    tsconfigOwnership: {
-      ignore: [],
-    },
-  },
-};
+export default { source: { tsconfigOwnership: { ignore: [] } } };
 `,
       );
 
@@ -859,8 +840,7 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  source: {
+export default {source: {
     importAuthority: {
       allow: {
         "@example/app": [
@@ -872,8 +852,7 @@ export default {
         ],
       },
     },
-  },
-};
+  }};
 `,
       );
 
@@ -903,8 +882,7 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  regions: {
+export default {scope: {regions: {
     extendNestedPackageScopes: true,
     exclude: [
       {
@@ -918,23 +896,25 @@ export default {
         reason: 'Parser fixture.',
       },
     ],
-  },
-};
+  }}};
 `,
       );
 
       const config = await loadConfig({ cwd: rootDirectory });
 
-      expect(config.regions?.extendNestedPackageScopes).toBe(true);
-      expect(config.regions?.exclude?.[0]?.include).toEqual([
+      expect(config.scope?.regions?.extendNestedPackageScopes).toBe(true);
+      expect(config.scope?.regions?.exclude?.[0]?.include).toEqual([
         'packages/legacy',
       ]);
-      expect(config.regions?.exclude?.[0]?.kind).toBe('workspace-package');
-      expect(config.regions?.exclude?.map((entry) => entry.kind)).toEqual([
+      expect(config.scope?.regions?.exclude?.[0]?.kind).toBe(
         'workspace-package',
-        'package-scope',
-      ]);
-      expect(config.regions?.exclude?.[0]?.reason).toBe('Legacy package.');
+      );
+      expect(
+        config.scope?.regions?.exclude?.map((entry) => entry.kind),
+      ).toEqual(['workspace-package', 'package-scope']);
+      expect(config.scope?.regions?.exclude?.[0]?.reason).toBe(
+        'Legacy package.',
+      );
     } finally {
       await rm(rootDirectory, {
         force: true,
@@ -951,16 +931,16 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  regions: {},
-};
+export default {scope: {regions: {}}};
 `,
       );
 
       const config = await loadConfig({ cwd: rootDirectory });
 
-      expect(config.regions?.extendNestedPackageScopes ?? false).toBe(false);
-      expect(config.regions?.exclude ?? []).toEqual([]);
+      expect(config.scope?.regions?.extendNestedPackageScopes ?? false).toBe(
+        false,
+      );
+      expect(config.scope?.regions?.exclude ?? []).toEqual([]);
     } finally {
       await rm(rootDirectory, {
         force: true,
@@ -977,17 +957,15 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  regions: {
+export default {scope: {regions: {
     exclude: [],
-  },
-};
+  }}};
 `,
       );
 
       const config = await loadConfig({ cwd: rootDirectory });
 
-      expect(config.regions?.exclude).toEqual([]);
+      expect(config.scope?.regions?.exclude).toEqual([]);
     } finally {
       await rm(rootDirectory, {
         force: true,
@@ -1004,16 +982,14 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  regions: {
+export default {scope: {regions: {
     extendNestedPackageScopes: 'yes',
-  },
-};
+  }}};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        'regions.extendNestedPackageScopes must be a boolean',
+        'scope.regions.extendNestedPackageScopes must be a boolean',
       );
     } finally {
       await rm(rootDirectory, {
@@ -1031,11 +1007,9 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  regions: {
+export default {scope: {regions: {
     nestedPackages: true,
-  },
-};
+  }}};
 `,
       );
 
@@ -1053,7 +1027,8 @@ export default {
   it.each([
     {
       entry: `{ kind: 'workspace-package', include: [], reason: 'Checked separately.' }`,
-      expected: 'regions.exclude.include must be a non-empty string array',
+      expected:
+        'scope.regions.exclude.include must be a non-empty string array',
       name: 'empty include',
     },
     {
@@ -1063,27 +1038,27 @@ export default {
     },
     {
       entry: `{ kind: 'workspace-package', include: ['packages/app/vendor'], reason: 'Checked separately.', unexpected: true }`,
-      expected: 'unknown regions.exclude entry field',
+      expected: 'unknown scope.regions.exclude entry field',
       name: 'unknown exclude field',
     },
     {
       entry: `{ include: ['packages/app/vendor'], reason: 'Checked separately.' }`,
-      expected: 'regions.exclude[0].kind is required',
+      expected: 'scope.regions.exclude[0].kind is required',
       name: 'missing kind',
     },
     {
       entry: `{ kind: 'unknown', include: ['packages/app/vendor'], reason: 'Checked separately.' }`,
-      expected: 'regions.exclude[0].kind must be one of',
+      expected: 'scope.regions.exclude[0].kind must be one of',
       name: 'unknown kind',
     },
     {
       entry: `{ kind: 'pnpm-workspace', include: ['packages/app/vendor'], reason: 'Checked separately.' }`,
-      expected: 'regions.exclude[0].kind must be one of',
+      expected: 'scope.regions.exclude[0].kind must be one of',
       name: 'removed pnpm workspace kind',
     },
     {
       entry: `{ kind: 1, include: ['packages/app/vendor'], reason: 'Checked separately.' }`,
-      expected: 'regions.exclude[0].kind must be one of',
+      expected: 'scope.regions.exclude[0].kind must be one of',
       name: 'non-string kind',
     },
   ])(
@@ -1098,11 +1073,9 @@ export default {
         await writeText(
           path.join(rootDirectory, 'limina.config.mjs'),
           `
-export default {
-  regions: {
+export default {scope: {regions: {
     exclude: [${entry}],
-  },
-};
+  }}};
 `,
         );
 
@@ -1138,7 +1111,8 @@ export default {
 
         await writeText(
           configPath,
-          `export default { regions: { exclude: [{ kind: 'pnpm-workspace', include: ['packages/app'], reason: 'removed' }] } };\n`,
+          `export default {scope: {regions: { exclude: [{ kind: 'pnpm-workspace', include: ['packages/app'], reason: 'removed' }] }}};
+`,
         );
 
         await expect(
@@ -1163,16 +1137,14 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  regions: {
+export default {scope: {regions: {
     exclude: [
       {
         kind: 'package-scope',
         include: ['packages/app/test/fixtures/**'],
       },
     ],
-  },
-};
+  }}};
 `,
       );
 
@@ -1313,13 +1285,9 @@ export default {
         await writeText(
           path.join(rootDirectory, 'limina.config.mjs'),
           `
-export default {
-  source: {
-    importAuthority: {
-      ${testCase.config},
-    },
-  },
-};
+export default { source: {
+    importAuthority: { ${testCase.config} },
+  } };
 `,
         );
 
@@ -1348,8 +1316,7 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  source: {
+export default {source: {
     importAuthority: {
       allow: {
         "@example/app": [
@@ -1361,8 +1328,7 @@ export default {
         ],
       },
     },
-  },
-};
+  }};
 `,
       );
 
@@ -1424,15 +1390,11 @@ export default Promise.resolve({});
         `
 import { defineConfig } from '${new URL('../config/runner.ts', import.meta.url).href}';
 
-export default defineConfig(async ({ mode }) => ({
-  config: {
-    checkers: {
+export default defineConfig(async ({ mode }) => ({scope: {checkers: {
       tsc: {
         include: [\`tsconfig.\${mode}.json\`],
       },
-    },
-  },
-}));
+    }}}));
 `,
       );
 
@@ -1449,9 +1411,9 @@ export default defineConfig(async ({ mode }) => ({
         toPortablePath(rootDirectory),
       );
       expect(
-        config.config?.checkers &&
-          !isAutoCheckerConfigMode(config.config.checkers)
-          ? config.config.checkers.tsc?.include
+        config.scope?.checkers &&
+          !isAutoCheckerConfigMode(config.scope.checkers)
+          ? config.scope.checkers.tsc?.include
           : undefined,
       ).toEqual(['tsconfig.ci.json']);
     } finally {
@@ -1512,25 +1474,21 @@ export default {};
       await writeText(
         path.join(rootDirectory, 'limina.config.ts'),
         `
-export default {
-  graph: {
+export default {graph: {
     rules: {
       tsConfig: {},
     },
-  },
-};
+  }};
 `,
       );
       await writeText(
         path.join(rootDirectory, 'limina.config.mts'),
         `
-export default {
-  graph: {
+export default {graph: {
     rules: {
       mtsConfig: {},
     },
-  },
-};
+  }};
 `,
       );
 
@@ -1562,25 +1520,21 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.ts'),
         `
-export default {
-  graph: {
+export default {graph: {
     rules: {
       tsConfig: {},
     },
-  },
-};
+  }};
 `,
       );
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  graph: {
+export default {graph: {
     rules: {
       mjsConfig: {},
     },
-  },
-};
+  }};
 `,
       );
 
@@ -1649,25 +1603,21 @@ export default {};
       await writeText(
         path.join(rootDirectory, 'limina.config.ts'),
         `
-export default {
-  graph: {
+export default {graph: {
     rules: {
       root: {},
     },
-  },
-};
+  }};
 `,
       );
       await writeText(
         path.join(rootDirectory, 'packages/core/limina.config.mjs'),
         `
-export default {
-  graph: {
+export default {graph: {
     rules: {
       child: {},
     },
-  },
-};
+  }};
 `,
       );
       await writeText(
@@ -1821,25 +1771,21 @@ export default {};
       await writeText(
         path.join(rootDirectory, 'limina.config.ts'),
         `
-export default {
-  graph: {
+export default {graph: {
     rules: {
       defaultConfig: {},
     },
-  },
-};
+  }};
 `,
       );
       await writeText(
         path.join(rootDirectory, 'tools/custom.config.mjs'),
         `
-export default {
-  graph: {
+export default {graph: {
     rules: {
       explicitConfig: {},
     },
-  },
-};
+  }};
 `,
       );
 
@@ -1874,15 +1820,11 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.ts'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       tsc: {
         include: ['tsconfig.json'],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -1892,9 +1834,9 @@ export default {
       });
 
       expect(
-        config.config?.checkers &&
-          !isAutoCheckerConfigMode(config.config.checkers)
-          ? config.config.checkers.tsc?.include
+        config.scope?.checkers &&
+          !isAutoCheckerConfigMode(config.scope.checkers)
+          ? config.scope.checkers.tsc?.include
           : undefined,
       ).toEqual(['tsconfig.json']);
     } finally {
@@ -2020,8 +1962,7 @@ export default null;
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  release: {
+export default {release: {
     contentHash: {
       baselineTag: ({ importerName, dependencyName }) =>
         importerName === '@example/app' && dependencyName === '@example/dep'
@@ -2031,8 +1972,7 @@ export default {
       ignore: ({ dependencyName }) =>
         dependencyName === '@example/dep' ? ['client/**'] : undefined,
     },
-  },
-};
+  }};
 `,
       );
 
@@ -2088,13 +2028,11 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  release: {
+export default {release: {
     contentHash: {
       baselineTag: '',
     },
-  },
-};
+  }};
 `,
       );
 
@@ -2121,13 +2059,11 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  release: {
+export default {release: {
     contentHash: {
       builtinIgnore: 'yes',
     },
-  },
-};
+  }};
 `,
       );
 
@@ -2154,13 +2090,11 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  release: {
+export default {release: {
     contentHash: {
       ignore: 'client/**',
     },
-  },
-};
+  }};
 `,
       );
 
@@ -2187,13 +2121,11 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  release: {
+export default {release: {
     contentHash: {
       ignore: ['client/**', ''],
     },
-  },
-};
+  }};
 `,
       );
 
@@ -2278,21 +2210,19 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  execution: {
+export default {concurrency: {
     tasks: 'auto',
     checkerBuild: 'auto',
     checkerTypecheck: 2,
     packageEntries: 3,
     releaseEntries: 2,
-  },
-};
+  }};
 `,
       );
 
       const config = await loadConfig({ cwd: rootDirectory });
 
-      expect(config.execution).toEqual({
+      expect(config.concurrency).toEqual({
         checkerBuild: 'auto',
         checkerTypecheck: 2,
         packageEntries: 3,
@@ -2317,7 +2247,7 @@ export default {
     for (const value of ['auto', 1, 8] as const) {
       expect(() =>
         validateLiminaConfig({
-          execution: {
+          concurrency: {
             [key]: value,
           },
         }),
@@ -2350,7 +2280,7 @@ export default {
 
         try {
           validateLiminaConfig({
-            execution: {
+            concurrency: {
               [key]: value,
             },
           } as never);
@@ -2359,9 +2289,11 @@ export default {
         }
 
         expect(error).toBeInstanceOf(Error);
-        expect((error as Error).message).toContain(`  field: execution.${key}`);
         expect((error as Error).message).toContain(
-          '  reason: execution concurrency must be a positive integer or "auto".',
+          `  field: concurrency.${key}`,
+        );
+        expect((error as Error).message).toContain(
+          '  reason: concurrency must be a positive integer or "auto".',
         );
       }
     },
@@ -2370,16 +2302,16 @@ export default {
   it('preserves the exact execution unknown-field path and message', () => {
     expect(() =>
       validateLiminaConfig({
-        execution: {
+        concurrency: {
           legacy: true,
         },
       } as never),
     ).toThrow(
       [
-        'Invalid Limina execution config:',
-        '  field: execution.legacy',
+        'Invalid Limina concurrency config:',
+        '  field: concurrency.legacy',
         '  value: true',
-        '  reason: unknown execution config field.',
+        '  reason: unknown concurrency config field.',
       ].join('\n'),
     );
   });
@@ -2389,7 +2321,7 @@ export default {
 
     try {
       validateLiminaConfig({
-        execution: {
+        concurrency: {
           legacy: true,
           tasks: 0,
         },
@@ -2400,14 +2332,14 @@ export default {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain(
-      '  reason: unknown execution config field.',
+      '  reason: unknown concurrency config field.',
     );
     expect((error as Error).message).toContain(
-      '  reason: execution concurrency must be a positive integer or "auto".',
+      '  reason: concurrency must be a positive integer or "auto".',
     );
   });
 
-  it('rejects execution.failFast through the unknown-field contract', async () => {
+  it('rejects concurrency.failFast through the unknown-field contract', async () => {
     const rootDirectory = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -2418,11 +2350,12 @@ export default {
       await writeText(path.join(rootDirectory, 'package.json'), '{}');
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
-        'export default { execution: { failFast: false } };\n',
+        `export default {concurrency: { failFast: false }};
+`,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /unknown execution config field/u,
+        /unknown concurrency config field/u,
       );
     } finally {
       await rm(rootDirectory, { force: true, recursive: true });
@@ -2441,16 +2374,14 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  execution: {
+export default {concurrency: {
     checkerTypecheck: 0,
-  },
-};
+  }};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /execution concurrency must be a positive integer or "auto"/u,
+        /concurrency must be a positive integer or "auto"/u,
       );
     } finally {
       await rm(rootDirectory, {
@@ -2472,16 +2403,14 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  execution: {
+export default {concurrency: {
     legacy: true,
-  },
-};
+  }};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /unknown execution config field/u,
+        /unknown concurrency config field/u,
       );
     } finally {
       await rm(rootDirectory, {
@@ -2494,7 +2423,7 @@ export default {
   it('accepts flat auto checker config', () => {
     expect(
       defineConfig({
-        config: {
+        scope: {
           checkers: {
             auto: {
               exclude: ['packages/playground/tsconfig.json'],
@@ -2504,7 +2433,7 @@ export default {
         },
       }),
     ).toEqual({
-      config: {
+      scope: {
         checkers: {
           auto: {
             exclude: ['packages/playground/tsconfig.json'],
@@ -2560,16 +2489,12 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: 'auto',
-  },
-};
+export default {scope: {checkers: 'auto'}};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /config\.checkers must be an object keyed by auto or checker name/u,
+        /scope\.checkers must be an object keyed by auto or checker name/u,
       );
     } finally {
       await rm(rootDirectory, {
@@ -2591,15 +2516,11 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       auto: {
         exclude: ['packages/playground/tsconfig.json', ''],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -2626,15 +2547,11 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       auto: {
         useTsgo: 'yes',
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -2658,18 +2575,14 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       mode: 'manual',
-    },
-  },
-};
+    }}};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /config\.checkers\.mode was removed/u,
+        /scope\.checkers\.mode was removed/u,
       );
     } finally {
       await rm(rootDirectory, {
@@ -2691,21 +2604,17 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       mode: 'auto',
       tsc: {
         include: ['tsconfig.json'],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /config\.checkers\.mode was removed/u,
+        /scope\.checkers\.mode was removed/u,
       );
     } finally {
       await rm(rootDirectory, {
@@ -2727,16 +2636,12 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: ['typescript'],
-  },
-};
+export default {scope: {checkers: ['typescript']}};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /config\.checkers must be an object keyed by auto or checker name/u,
+        /scope\.checkers must be an object keyed by auto or checker name/u,
       );
     } finally {
       await rm(rootDirectory, {
@@ -2758,13 +2663,9 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       tsc: 'tsconfig.build.json',
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -2791,16 +2692,12 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       tsc: {
         preset: 1,
         include: ['tsconfig.json'],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -2827,15 +2724,11 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       tsc: {
         entry: 1,
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -2862,16 +2755,12 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       tsc: {
         include: ['tsconfig.json'],
         extensions: ['ts'],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -2898,21 +2787,17 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       tsc: {
         include: ['tsconfig.json'],
         experimental: true,
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /config\.checkers\.tsc\.experimental[\s\S]*unknown checker config field/u,
+        /scope\.checkers\.tsc\.experimental[\s\S]*unknown checker config field/u,
       );
     } finally {
       await rm(rootDirectory, {
@@ -2934,9 +2819,7 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       'vue-tsc': {
         include: ['tsconfig.json'],
         routes: {
@@ -2944,9 +2827,7 @@ export default {
           build: 'tsconfig.vue.build.json',
         },
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -3033,20 +2914,16 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       custom: {
         include: ['tsconfig.custom.json'],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /config\.checkers keys must be one of/u,
+        /scope\.checkers keys must be one of/u,
       );
     } finally {
       await rm(rootDirectory, {
@@ -3068,21 +2945,17 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       custom: {
         extensions: ['.custom'],
         include: ['tsconfig.custom.json'],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).rejects.toThrow(
-        /config\.checkers keys must be one of/u,
+        /scope\.checkers keys must be one of/u,
       );
     } finally {
       await rm(rootDirectory, {
@@ -3104,14 +2977,10 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       'vue-tsc': {
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -3138,15 +3007,11 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       'vue-tsc': {
         include: [],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
@@ -3173,20 +3038,16 @@ export default {
       await writeText(
         path.join(rootDirectory, 'limina.config.mjs'),
         `
-export default {
-  config: {
-    checkers: {
+export default {scope: {checkers: {
       tsc: {
         include: ['tsconfig.json'],
       },
-    },
-  },
-};
+    }}};
 `,
       );
 
       await expect(loadConfig({ cwd: rootDirectory })).resolves.toMatchObject({
-        config: {
+        scope: {
           checkers: {
             tsc: {
               include: ['tsconfig.json'],
@@ -3282,17 +3143,19 @@ describe('exact tsconfig region exclusions', () => {
   it('accepts exact default and named config files without interpreting package selectors', () => {
     expect(() =>
       validateLiminaConfig({
-        regions: {
-          exclude: [
-            {
-              kind: 'tsconfig',
-              include: [
-                'packages/app/tsconfig.json',
-                '../external/tsconfig.lib.json',
-              ],
-              reason: 'Unreadable config input',
-            },
-          ],
+        scope: {
+          regions: {
+            exclude: [
+              {
+                kind: 'tsconfig',
+                include: [
+                  'packages/app/tsconfig.json',
+                  '../external/tsconfig.lib.json',
+                ],
+                reason: 'Unreadable config input',
+              },
+            ],
+          },
         },
       }),
     ).not.toThrow();
@@ -3302,14 +3165,16 @@ describe('exact tsconfig region exclusions', () => {
     (include) => {
       expect(() =>
         validateLiminaConfig({
-          regions: {
-            exclude: [
-              {
-                kind: 'tsconfig',
-                include: [include],
-                reason: 'invalid selector',
-              },
-            ],
+          scope: {
+            regions: {
+              exclude: [
+                {
+                  kind: 'tsconfig',
+                  include: [include],
+                  reason: 'invalid selector',
+                },
+              ],
+            },
           },
         }),
       ).toThrow('exact tsconfig');
@@ -3406,4 +3271,119 @@ describe('persistent analysis cache configuration', () => {
       );
     },
   );
+});
+
+describe('configuration structure', () => {
+  it.each(Array.from({ length: 32 }, (_, index) => index))(
+    'keeps optional scope, check settings, orchestration and cache independent (%i)',
+    (mask) => {
+      const config = {
+        ...(Boolean(mask & 1) && {
+          scope: { checkers: { tsc: { include: ['tsconfig.json'] } } },
+        }),
+        ...(Boolean(mask & 2) && {
+          graph: { rules: {} },
+          source: { knip: true },
+          proof: { allowlist: [] },
+          package: { entries: [] },
+          release: { contentHash: {} },
+        }),
+        ...(Boolean(mask & 4) && {
+          pipelines: { types: ['checker:build' as const] },
+        }),
+        ...(Boolean(mask & 8) && { concurrency: { tasks: 1 } }),
+        ...(Boolean(mask & 16) && { cache: { dependencies: [] } }),
+      } satisfies LiminaConfig;
+      expect(() => validateLiminaConfig(config)).not.toThrow();
+      expect(isSourceKnipEnabled(config)).toBe(Boolean(mask & 2));
+      if (mask & 1)
+        expect(
+          getActiveCheckers(config).map((checker) => checker.name),
+        ).toEqual(['tsc']);
+    },
+  );
+
+  it.each([
+    [
+      { config: { checkers: {} } },
+      'config.checkers has moved to scope.checkers.',
+    ],
+    [{ config: { source: {} } }, 'config.source has moved to scope.source.'],
+    [{ regions: {} }, 'regions has moved to scope.regions.'],
+    [
+      { execution: { pipelines: {} } },
+      'execution.pipelines has moved to pipelines.',
+    ],
+    [
+      { execution: { concurrency: {} } },
+      'execution.concurrency has moved to concurrency.',
+    ],
+    ...[
+      'tasks',
+      'checkerBuild',
+      'checkerTypecheck',
+      'packageEntries',
+      'releaseEntries',
+    ].map(
+      (key) =>
+        [
+          { execution: { [key]: 2 } },
+          `execution.${key} has moved to concurrency.${key}.`,
+        ] as const,
+    ),
+  ] as const)(
+    'rejects legacy and mixed configuration with migration guidance: %j',
+    (legacy, message) => {
+      for (const value of [
+        legacy,
+        { scope: {}, source: { knip: true }, ...legacy },
+      ]) {
+        expect(() => validateLiminaConfig(value as LiminaConfig)).toThrow(
+          message,
+        );
+      }
+    },
+  );
+
+  it('rejects hidden and undefined legacy fields instead of silently ignoring them', () => {
+    for (const value of [
+      { scope: {}, config: undefined },
+      Object.defineProperty({ scope: {} }, 'regions', { value: undefined }),
+      Object.defineProperty({ concurrency: {} }, 'execution', {
+        value: undefined,
+      }),
+      {
+        execution: Object.defineProperty({ concurrency: {} }, 'tasks', {
+          value: undefined,
+        }),
+      },
+    ])
+      expect(() => validateLiminaConfig(value as LiminaConfig)).toThrow(
+        'has moved to',
+      );
+  });
+
+  it.each([
+    { checks: {} },
+    { source: { knip: true }, checks: { source: { knip: false } } },
+    Object.defineProperty({}, 'checks', { value: undefined }),
+  ])(
+    'rejects a checks wrapper without selecting a second source of settings: %j',
+    (value) => {
+      expect(() => validateLiminaConfig(value as LiminaConfig)).toThrow(
+        'checks is not supported. Configure graph, source, proof, package, and release at the top level.',
+      );
+    },
+  );
+
+  it.each([
+    [{ scope: { unknown: true } }, 'field: scope.unknown'],
+    [{ scope: { imports: undefined } }, 'field: scope.imports'],
+    [{ scope: { imports: { vue: 'compiler-sfc' } } }, 'field: scope.imports'],
+    [{ concurrency: { unknown: true } }, 'field: concurrency.unknown'],
+    [{ concurrency: { tasks: 0 } }, 'field: concurrency.tasks'],
+    [{ scope: { source: { exclude: [] } } }, 'field: scope.source.exclude'],
+  ])('reports invalid settings at their public path: %j', (value, message) => {
+    expect(() => validateLiminaConfig(value as LiminaConfig)).toThrow(message);
+  });
 });

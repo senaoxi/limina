@@ -1,6 +1,6 @@
 # 检查器配置
 
-`config.checkers` 选择默认 `tsconfig.json` 入口，并确定由哪个检查器负责它们可达的源码叶子配置。未配置时自动发现已经启用；只有需要固定检查器或排除直接入口时，才需要填写这个字段。
+`scope.checkers` 选择默认 `tsconfig.json` 入口，并确定由哪个检查器负责它们可达的源码叶子配置。未配置时自动发现已经启用；只有需要固定检查器或排除直接入口时，才需要填写这个字段。
 
 检查器使用以下固定名称：
 
@@ -22,7 +22,7 @@
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       'vue-tsc': {
         include: ['apps/web/tsconfig.json'],
@@ -54,7 +54,7 @@ Svelte          -> svelte-check
 
 ```js
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       auto: {
         useTsgo: true,
@@ -69,7 +69,7 @@ export default defineConfig({
 
 Vue 能力由检查器实际解析出的文件集合确认，不能只看 `vueCompilerOptions`。Limina 会先遍历入口、聚合配置、被引用的叶子配置和有效 `extends`，再让 Vue 解析器解析真实扩展名和文件。只有确实存在匹配文件时，自定义 Vue 扩展才会切到 `vue-tsc`；只有配置提示而没有实际模块时，不会改变归属。
 
-`auto.exclude` 只过滤已激活[治理区域](./regions.md)中的入口选择，不会裁剪从已选入口到达的有效项目引用，也不同于控制源码覆盖的 `config.source.exclude`。
+`auto.exclude` 只过滤已激活[治理区域](./regions.md)中的入口选择，不会裁剪从已选入口到达的有效项目引用，也不同于控制源码覆盖的 `scope.source.exclude`。
 
 旧 `{ mode: 'auto' }` 结构会被拒绝。请把 `exclude` 与 `useTsgo` 移到 `auto` 下。
 

@@ -63,7 +63,7 @@ describe('Knip governance root contract', () => {
       const f = await fixture({
         'package.json': json(root),
         'limina.config.mjs':
-          'export default { source: { knip: { root: { entry: [{ files: ["src/runtime.ts"], reason: "Runtime entry" }], ignoreFiles: [{ file: "src/ignored.ts", reason: "Intentional fixture" }] } } } };',
+          'export default {source: { knip: { root: { entry: [{ files: ["src/runtime.ts"], reason: "Runtime entry" }], ignoreFiles: [{ file: "src/ignored.ts", reason: "Intentional fixture" }] } } }};',
         'tsconfig.json': tsconfig,
         'src/index.ts': 'export const value = 1;',
         'src/runtime.ts': 'export const runtime = 1;',
@@ -101,9 +101,7 @@ describe('Knip governance root contract', () => {
       for (const alias of ['.', 'root-name']) {
         await f.write(
           'limina.config.mjs',
-          `export default ${json({
-            source: { knip: { workspaces: { [alias]: {} } } },
-          })}`,
+          `export default ${json({ source: { knip: { workspaces: { [alias]: {} } } } })}`,
         );
         const { config, context } = await validated(f);
         const findings: SourceFinding[] = [];
@@ -122,8 +120,8 @@ describe('Knip governance root contract', () => {
 
   it('does not reactivate an excluded root', async () => {
     const f = await fixture({
-      'limina.config.mjs':
-        'export default { source: { knip: { root: {} } }, regions: { exclude: [{kind: "workspace-package", include: ["."], reason: "Root excluded"}] } };',
+      'limina.config.mjs': `export default {scope: {regions: { exclude: [{kind: "workspace-package", include: ["."], reason: "Root excluded"}] }},
+source: { knip: { root: {} } }};`,
     });
     const { config, context } = await validated(f);
     const findings: SourceFinding[] = [];
@@ -148,7 +146,7 @@ describe('Knip governance root contract', () => {
       'child/package.json': json({ name: 'child' }),
       'src/index.ts': 'export const value = 1;',
       'limina.config.mjs':
-        'export default { source: { knip: { root: { ignoreDependencies: [{ dep: "child", reason: "Runtime use" }] } } } };',
+        'export default {source: { knip: { root: { ignoreDependencies: [{ dep: "child", reason: "Runtime use" }] } } }};',
     });
     await symlink(f.path(), f.path('alias'), 'junction');
     const { config, context } = await validated(f);
@@ -282,7 +280,7 @@ describe('Knip governance root contract', () => {
       'tsconfig.one.json': buildConfig('one'),
       'tsconfig.two.json': buildConfig('two'),
       'src/index.ts': 'export const value = 1;',
-      'limina.config.mjs': 'export default { source: { knip: { root: {} } } };',
+      'limina.config.mjs': 'export default {source: { knip: { root: {} } }};',
     });
     const runs: { invocations: KnipCliInvocation[]; configs: unknown[] }[] = [];
     for (const name of [undefined, 'root-name']) {

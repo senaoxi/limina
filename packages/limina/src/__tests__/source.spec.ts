@@ -112,18 +112,18 @@ async function createFixture(
       });
     },
     config: withFixtureGovernanceRoot({
-      config: {
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
+      rootDir: rootDirectory,
+      scope: {
         checkers: {
           tsc: {
             include: ['tsconfig.json', '**/tsconfig.json'],
           },
         },
         source: sourceBoundary,
+        regions,
       },
-      configPath: path.join(rootDirectory, 'limina.config.mjs'),
       graph,
-      regions,
-      rootDir: rootDirectory,
       source,
     }),
     path: createFixturePathResolver(rootDirectory),
@@ -524,8 +524,9 @@ describe('runSourceCheck package authority', () => {
           }),
           ...(physical && { 'app/src/assets/logo.svg': '<svg />\n' }),
           ...(declaration && {
-            'app/src/assets/logo.d.svg.ts':
-              'declare const logo: string;\nexport default logo;\n',
+            'app/src/assets/logo.d.svg.ts': `declare const logo: string;
+export default logo;
+`,
           }),
         },
         { source: { knip: false } },
@@ -807,8 +808,9 @@ describe('runSourceCheck package authority', () => {
           source:
             "import kebabCase from 'lodash.kebabcase';\nexport const value = kebabCase('hello world');\n",
         }),
-        'app/node_modules/lodash.kebabcase/index.d.ts':
-          'declare function kebabCase(value: string): string;\nexport default kebabCase;\n',
+        'app/node_modules/lodash.kebabcase/index.d.ts': `declare function kebabCase(value: string): string;
+export default kebabCase;
+`,
         'app/node_modules/lodash.kebabcase/index.js':
           'module.exports = value => value.replaceAll(" ", "-");\n',
         'app/node_modules/lodash.kebabcase/package.json': stringifyConfig({
@@ -1266,7 +1268,7 @@ describe('runSourceCheck package authority', () => {
         path.join(fixture.rootDir, 'pnpm-workspace.yaml'),
         `packages:\n  - ${externalSelector}\n`,
       );
-      fixture.config.config = {
+      fixture.config.scope = {
         checkers: {
           tsc: {
             include: [`${externalSelector}/tsconfig.json`],
@@ -1927,8 +1929,9 @@ packages:
         source:
           "import etag from 'etag';\nexport const value = etag('body');\n",
       }),
-      'app/node_modules/@types/etag/index.d.ts':
-        'declare function etag(value: string): string;\nexport default etag;\n',
+      'app/node_modules/@types/etag/index.d.ts': `declare function etag(value: string): string;
+export default etag;
+`,
       'app/node_modules/@types/etag/package.json': stringifyConfig({
         name: '@types/etag',
         types: './index.d.ts',
@@ -2147,8 +2150,9 @@ catalog:
         source:
           "import etag from 'etag';\nexport const value = etag('body');\n",
       }),
-      'app/node_modules/@types/etag/index.d.ts':
-        'declare function etag(value: string): string;\nexport default etag;\n',
+      'app/node_modules/@types/etag/index.d.ts': `declare function etag(value: string): string;
+export default etag;
+`,
       'app/node_modules/@types/etag/package.json': stringifyConfig({
         name: '@types/etag',
         types: './index.d.ts',
@@ -2161,7 +2165,9 @@ catalog:
 
       expect(errors).toContain('package: etag');
       expect(errors).toContain('resolved dependency specifier: @types/etag');
-      expect(errors).toContain('"@types/etag" only supplies declarations');
+      expect(errors.replaceAll(/[│\s]+/gu, ' ')).toContain(
+        '"@types/etag" only supplies declarations',
+      );
       expect(errors).toContain('authorize "etag".');
     } finally {
       errorSpy.mockRestore();
@@ -4945,7 +4951,7 @@ packages:
         path.join(fixture.rootDir, 'pnpm-workspace.yaml'),
         `packages:\n  - ${externalSelector}\n`,
       );
-      fixture.config.config = {
+      fixture.config.scope = {
         checkers: {
           tsc: {
             include: [`${externalSelector}/tsconfig.json`],
@@ -5427,7 +5433,7 @@ describe('runSourceCheck workspace regions', () => {
     const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
 
     try {
-      fixture.config.regions = {
+      (fixture.config.scope ??= {}).regions = {
         exclude: [
           {
             include: ['app'],
@@ -5533,7 +5539,7 @@ describe('runSourceCheck workspace regions', () => {
     const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
 
     try {
-      fixture.config.regions = {
+      (fixture.config.scope ??= {}).regions = {
         exclude: [
           {
             include: ['packages/a'],

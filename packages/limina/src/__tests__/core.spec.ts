@@ -151,18 +151,22 @@ async function createCoreFixture(): Promise<{
   );
   const rootDirectory = await realpath(rootDirectoryTemporaryPath);
   const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
-    config: {
+    configPath: path.join(rootDirectory, 'limina.config.mjs'),
+    rootDir: rootDirectory,
+    scope: {
       checkers: {
         tsc: {
           include: ['packages/a/tsconfig.json'],
         },
       },
     },
-    configPath: path.join(rootDirectory, 'limina.config.mjs'),
-    rootDir: rootDirectory,
   });
 
-  await writeText(config.configPath, 'export default {};\n');
+  await writeText(
+    config.configPath,
+    `export default {};
+`,
+  );
   await writeText(
     path.join(rootDirectory, 'pnpm-workspace.yaml'),
     "packages:\n  - 'packages/*'\n",
@@ -346,8 +350,8 @@ describe('AnalysisProviderSet', () => {
       const fixturePath = createFixturePathResolver(fixture.rootDir);
       const sourceConfigPath = fixturePath('packages/a/tsconfig.lib.json');
       const sourceFilePath = fixturePath(`packages/a/src/App.${family}`);
-      fixture.config.config = {
-        ...fixture.config.config,
+      fixture.config.scope = {
+        ...fixture.config.scope,
         checkers: {
           [family === 'astro' ? 'astro' : 'svelte-check']: {
             include: ['packages/a/tsconfig.json'],

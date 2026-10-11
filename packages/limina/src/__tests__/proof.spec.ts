@@ -228,15 +228,15 @@ async function createFixture(files: Record<string, string>): Promise<{
       });
     },
     config: withFixtureGovernanceRoot({
-      config: {
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
+      rootDir: rootDirectory,
+      scope: {
         checkers: {
           tsc: {
             include: ['tsconfig.json', '**/tsconfig.json'],
           },
         },
       },
-      configPath: path.join(rootDirectory, 'limina.config.mjs'),
-      rootDir: rootDirectory,
     }),
     rootDir: rootDirectory,
   };
@@ -578,7 +578,8 @@ describe('runProofCheck dts config semantics', () => {
     });
     const config: ResolvedLiminaConfig = {
       ...fixture.config,
-      config: {
+      scope: {
+        regions: fixture.config.scope?.regions,
         checkers: { auto: {} },
         source: { include: ['...', '**/*.svelte'] },
       },
@@ -1743,8 +1744,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             checkers: {
               tsc: {
                 include: ['tsconfig.json'],
@@ -1828,8 +1830,9 @@ describe('runProofCheck dts config semantics', () => {
     try {
       const config: ResolvedLiminaConfig = {
         ...fixture.config,
-        config: {
-          ...fixture.config.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          ...fixture.config.scope,
           checkers: {
             tsc: {
               include: ['tsconfig.json'],
@@ -1857,11 +1860,12 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             checkers: {
-              ...(typeof fixture.config.config?.checkers === 'object' &&
-                fixture.config.config.checkers),
+              ...(typeof fixture.config.scope?.checkers === 'object' &&
+                fixture.config.scope.checkers),
               'vue-tsc': {
                 include: ['packages/pkg/tsconfig.missing.json'],
               },
@@ -1942,7 +1946,8 @@ describe('runProofCheck dts config semantics', () => {
       .mockImplementation(() => {});
     const fixture = await createFixture(
       createPassingFiles({
-        'packages/pkg/fixtures/config.mjs': 'export default {};\n',
+        'packages/pkg/fixtures/config.mjs': `export default {};
+`,
         'packages/pkg/fixtures/data.json': JSON.stringify({ ok: true }),
         'packages/pkg/fixtures/ignored.cjs': 'exports.value = 1;\n',
         'packages/pkg/fixtures/ignored.js': 'export const value = 1;\n',
@@ -2034,7 +2039,8 @@ describe('runProofCheck dts config semantics', () => {
       }
       const config: ResolvedLiminaConfig = {
         ...fixture.config,
-        config: {
+        scope: {
+          regions: fixture.config.scope?.regions,
           checkers: {
             astro: {
               include: ['packages/app/tsconfig.json'],
@@ -2070,7 +2076,8 @@ describe('runProofCheck dts config semantics', () => {
   it('expands source include default token exactly like omitted source include at runtime', async () => {
     const fixture = await createFixture(
       createPassingFiles({
-        'packages/pkg/fixtures/config.mjs': 'export default {};\n',
+        'packages/pkg/fixtures/config.mjs': `export default {};
+`,
         'packages/pkg/fixtures/data.json': JSON.stringify({ ok: true }),
         'packages/pkg/fixtures/ignored.svelte':
           '<script>const value = 1;</script>\n',
@@ -2088,8 +2095,9 @@ describe('runProofCheck dts config semantics', () => {
       const omitted = await collectProofIssues(fixture.config);
       const ellipsis = await collectProofIssues({
         ...fixture.config,
-        config: {
-          ...fixture.config.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          ...fixture.config.scope,
           source: {
             include: ['...'],
           },
@@ -2136,8 +2144,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               include: ['ignored-default/*.ts'],
             },
@@ -2196,8 +2205,9 @@ describe('runProofCheck dts config semantics', () => {
     try {
       const omitted = await collectProofIssues({
         ...fixture.config,
-        config: {
-          ...fixture.config.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          ...fixture.config.scope,
           source: {
             include: includedPaths,
           },
@@ -2205,8 +2215,9 @@ describe('runProofCheck dts config semantics', () => {
       });
       const ellipsis = await collectProofIssues({
         ...fixture.config,
-        config: {
-          ...fixture.config.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          ...fixture.config.scope,
           source: {
             exclude: ['...'],
             include: includedPaths,
@@ -2271,8 +2282,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               exclude: ['custom-ignore/**'],
               include: [
@@ -2318,8 +2330,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               exclude: ['...', 'custom-ignore/**'],
               include: [
@@ -2355,8 +2368,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               exclude: ['...', 'fixtures'],
               include: [
@@ -2403,8 +2417,9 @@ describe('runProofCheck dts config semantics', () => {
     try {
       const result = await collectProofIssues({
         ...fixture.config,
-        config: {
-          ...fixture.config.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          ...fixture.config.scope,
           source: {
             include: [
               'packages/pkg/src/**/*.ts',
@@ -2455,8 +2470,9 @@ describe('runProofCheck dts config semantics', () => {
     );
     const config = {
       ...fixture.config,
-      config: {
-        ...fixture.config.config,
+      scope: {
+        regions: fixture.config.scope?.regions,
+        ...fixture.config.scope,
         source: {
           include: ['packages/pkg/src/**/*.ts'],
         },
@@ -2509,7 +2525,7 @@ describe('runProofCheck dts config semantics', () => {
         'packages/pkg/fixtures/covered.ts',
       );
       expect(errorSpy.mock.calls.join('\n')).toContain(
-        'config.source and tsconfig*.json coverage describe different module sets',
+        'scope.source and tsconfig*.json coverage describe different module sets',
       );
     } finally {
       errorSpy.mockRestore();
@@ -2520,7 +2536,8 @@ describe('runProofCheck dts config semantics', () => {
   it('accepts JavaScript files included by the checker parsed project', async () => {
     const fixture = await createFixture(
       createPassingFiles({
-        'tools/eslint.config.mjs': 'export default [];\n',
+        'tools/eslint.config.mjs': `export default [];
+`,
         'tools/tsconfig.json': JSON.stringify({
           compilerOptions: {
             allowJs: true,
@@ -2539,8 +2556,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               include: ['packages/pkg/src/**/*.ts', 'tools/eslint.config.mjs'],
             },
@@ -2555,7 +2573,8 @@ describe('runProofCheck dts config semantics', () => {
   it('does not govern MJS files by default', async () => {
     const fixture = await createFixture(
       createPassingFiles({
-        'tools/eslint.config.mjs': 'export default [];\n',
+        'tools/eslint.config.mjs': `export default [];
+`,
       }),
     );
 
@@ -2572,7 +2591,8 @@ describe('runProofCheck dts config semantics', () => {
       .mockImplementation(() => {});
     const fixture = await createFixture(
       createPassingFiles({
-        'tools/eslint.config.mjs': 'export default [];\n',
+        'tools/eslint.config.mjs': `export default [];
+`,
         'tools/tsconfig.json': JSON.stringify({
           compilerOptions: {
             allowJs: true,
@@ -2607,7 +2627,8 @@ describe('runProofCheck dts config semantics', () => {
       .mockImplementation(() => {});
     const fixture = await createFixture(
       createPassingFiles({
-        'eslint.config.mjs': 'export default [];\n',
+        'eslint.config.mjs': `export default [];
+`,
       }),
     );
 
@@ -2615,8 +2636,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               include: ['packages/pkg/src/**/*.ts', 'eslint.config.mjs'],
             },
@@ -2644,8 +2666,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               include: ['docs/*.md'],
             },
@@ -2668,8 +2691,9 @@ describe('runProofCheck dts config semantics', () => {
     try {
       const result = await collectProofIssues({
         ...fixture.config,
-        config: {
-          ...fixture.config.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          ...fixture.config.scope,
           source: {
             include: [
               'packages/pkg/src/**/*.ts',
@@ -2765,8 +2789,9 @@ describe('runProofCheck dts config semantics', () => {
       .join('/')}/src/**/*.ts`;
     const config: ResolvedLiminaConfig = {
       ...fixture.config,
-      config: {
-        ...fixture.config.config,
+      scope: {
+        regions: fixture.config.scope?.regions,
+        ...fixture.config.scope,
         source: { include: [externalPattern] },
       },
     };
@@ -2807,8 +2832,9 @@ describe('runProofCheck dts config semantics', () => {
     try {
       const result = await collectProofIssues({
         ...fixture.config,
-        config: {
-          ...fixture.config.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          ...fixture.config.scope,
           source: {
             include: ['random/**/*.ts'],
           },
@@ -2838,8 +2864,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               include: ['**/*.json'],
             },
@@ -2865,7 +2892,8 @@ describe('runProofCheck dts config semantics', () => {
       .mockImplementation(() => {});
     const fixture = await createFixture(
       createPassingFiles({
-        'packages/pkg/fixtures/config.mjs': 'export default {};\n',
+        'packages/pkg/fixtures/config.mjs': `export default {};
+`,
         'packages/pkg/fixtures/data.json': JSON.stringify({ ok: true }),
         'packages/pkg/fixtures/uncovered.ts': 'export const value = 1;\n',
       }),
@@ -2875,8 +2903,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               include: ['...', '**/*.json', '**/*.mjs'],
             },
@@ -2997,8 +3026,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             checkers: {
               tsc: {
                 exclude: ['**/tsconfig*.dts.json', '**/tsconfig*.build.json'],
@@ -3046,8 +3076,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             checkers: {
               tsc: {
                 exclude: ['**/tsconfig*.dts.json', '**/tsconfig*.build.json'],
@@ -3087,8 +3118,9 @@ describe('runProofCheck dts config semantics', () => {
 
       const config: ResolvedLiminaConfig = {
         ...fixture.config,
-        config: {
-          ...fixture.config.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          ...fixture.config.scope,
           checkers: {
             tsc: {
               exclude: ['**/tsconfig*.dts.json', '**/tsconfig*.build.json'],
@@ -3144,8 +3176,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             checkers: {
               tsc: {
                 exclude: ['**/tsconfig*.dts.json', '**/tsconfig*.build.json'],
@@ -3193,8 +3226,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             checkers: {
               tsc: {
                 exclude: ['**/tsconfig*.dts.json', '**/tsconfig*.build.json'],
@@ -3228,8 +3262,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             source: {
               include: ['packages/pkg/src/**/*.ts', 'package.json'],
               exclude: ['package.json'],
@@ -3448,8 +3483,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             checkers: {
               tsc: {
                 include: ['packages/pkg/tsconfig.json'],
@@ -3470,8 +3506,9 @@ describe('runProofCheck dts config semantics', () => {
       await expect(
         isRunProofCheck({
           ...fixture.config,
-          config: {
-            ...fixture.config.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            ...fixture.config.scope,
             checkers: {
               tsc: {
                 include: ['packages/pkg/tsconfig.json'],

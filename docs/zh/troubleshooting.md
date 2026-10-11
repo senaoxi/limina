@@ -88,7 +88,7 @@ packages/example/src/cli.ts:4:17 - error TS6307: File '<workspace>/packages/exam
 
 ### 排除规则未匹配精确治理候选 {#regions-exclude-rule-does-not-match-a-recognized-governance-root}
 
-诊断格式为 `regions.exclude[索引] does not match an exact governance candidate.`，其中“索引”是未匹配规则的位置。根据诊断检查三点：
+诊断格式为 `scope.regions.exclude[索引] does not match an exact governance candidate.`，其中“索引”是未匹配规则的位置。根据诊断检查三点：
 
 1. `kind` 与候选类型一致。
 2. 对于 `workspace-package` 或 `package-scope`，`include` 选择相对于 `config.rootDir` 的候选词法目录，必要时包含 `../`，而不是包名或配置描述文件路径。
@@ -98,6 +98,6 @@ packages/example/src/cli.ts:4:17 - error TS6307: File '<workspace>/packages/exam
 
 ### 多条排除规则匹配同一治理候选 {#multiple-regions-exclude-rules-match-the-same-governance-root}
 
-诊断以 `Multiple regions.exclude rules match` 开头，并列出候选的 `kind` 和路径。让同一 `kind` 的模式互不重叠；规则顺序不会决定哪条 `reason` 生效。
+诊断以 `Multiple scope.regions.exclude rules match` 开头，并列出候选的 `kind` 和路径。让同一 `kind` 的模式互不重叠；规则顺序不会决定哪条 `reason` 生效。
 
 嵌套工作区根（`pnpm-workspace.yaml` 或具有自有 `workspaces` 字段的 `package.json`）不需要排除规则。它会自动停止当前包的遍历；边界下方被激活的包则各自启动独立的包治理任务。

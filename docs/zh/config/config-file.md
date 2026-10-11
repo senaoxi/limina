@@ -5,9 +5,7 @@ Limina 通常读取项目 `package.json` 旁的 `limina.config.mts`。初次接�
 ```ts
 import { defineConfig } from 'limina';
 
-export default defineConfig({
-  config: {},
-});
+export default defineConfig({});
 ```
 
 配置模块可以导出对象、`Promise`，或接收 `{ command, mode }` 的函数。`defineConfig` 提供类型提示并保留传入值；实际加载和格式检查由 Limina 完成。各字段的职责见[配置概览](./index.md)。
@@ -136,3 +134,33 @@ export default defineConfig(({ command }) => ({
 ## 公开 API
 
 公开 `limina` 入口导出 `defineConfig`、配置与问题类型，以及验证错误类。`limina/internal/*` 仅供仓库内部使用，其源码导出会从发布包移除，不属于消费者 API。
+
+## 配置结构迁移 {#config-domains-migration}
+
+这是对已有 beta 公共配置 API 的破坏性变更。旧字段和新旧混合配置都会被拒绝，并给出迁移路径；不会静默忽略或自动转换旧字段。整体移动各字段的原值，保留其中未在示例中列出的选项。
+
+| 旧路径                       | 新路径                         |
+| ---------------------------- | ------------------------------ |
+| `config.source`              | `scope.source`                 |
+| `config.checkers`            | `scope.checkers`               |
+| `regions`                    | `scope.regions`                |
+| `graph`                      | `graph`                        |
+| `source`                     | `source`                       |
+| `proof`                      | `proof`                        |
+| `package`                    | `package`                      |
+| `release`                    | `release`                      |
+| `pipelines`                  | `pipelines`                    |
+| `execution.tasks`            | `concurrency.tasks`            |
+| `execution.checkerBuild`     | `concurrency.checkerBuild`     |
+| `execution.checkerTypecheck` | `concurrency.checkerTypecheck` |
+| `execution.packageEntries`   | `concurrency.packageEntries`   |
+| `execution.releaseEntries`   | `concurrency.releaseEntries`   |
+| `cache`                      | `cache`                        |
+
+`scope`、`pipelines`、`concurrency`、`cache` 和各检查字段均可省略。只有治理边界归入 `scope`；`graph`、`source`、`proof`、`package`、`release` 和 `pipelines` 保留顶层路径，`concurrency` 替代原来的 `execution` 字段。不接受 `checks` 或 `execution` 包装层。`scope.source.exclude: []` 仍不合法；省略字段才使用默认排除规则，`...` 仍用于把默认规则带入显式数组。
+
+所有原有子字段继续可用，包括 `graph.conditionDomains`、`source.declarations`、包 entry 的工具选项和 `release.npmPackageJsonLint`。`package.entries[].outDir` 仍参与 workspace 输出根发现、边界校验和源码过滤，即使没有运行 `package:check`。
+
+配置模块仍可导出对象、Promise 或接收 `{ command, mode }` 的函数。文件选择器仍相对于解析后的治理根 `config.rootDir`；`cache.dependencies` 仍相对于所选配置文件所在目录。CLI 命令、pipeline 步骤和并发默认值不变。旧分析实现的快照会冷启动重建；不会清空其他配置、worktree 或 checker 缓存。
+
+旧的 `SharedLiminaConfig` 类型由 `ScopeConfig` 取代。`ExecutionConfig` 继续描述五个并发参数，现用于 `concurrency`。

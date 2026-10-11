@@ -39,6 +39,6 @@ Explain why the file is kept and why the current checking scope does not cover i
 
 ## How an Exception Affects Results
 
-If the `runtime.d.ts` above is inside `config.source` but has neither checker coverage nor generated-graph project coverage, `proof check` reports it as uncovered source. A valid allowlist entry lets coverage proof accept the exception while retaining its reason in the config.
+If the `runtime.d.ts` above is inside `scope.source` but has neither checker coverage nor generated-graph project coverage, `proof check` reports it as uncovered source. A valid allowlist entry lets coverage proof accept the exception while retaining its reason in the config.
 
 This does not mean the file has passed type checking. If a checker entry later begins covering it, the allowlist entry becomes redundant. Remove the exception and maintain the file under ordinary coverage rules.

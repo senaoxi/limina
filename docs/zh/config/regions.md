@@ -1,9 +1,9 @@
 # 治理区域
 
-`regions` 决定哪些包及嵌套包作用域属于本次治理。先用它确定包范围，再用 `config.source` 选择其中的文件，用 `config.checkers` 选择检查器入口。
+`scope.regions` 决定哪些包及嵌套包作用域属于本次治理。先用它确定包范围，再用 `scope.source` 选择其中的文件，用 `scope.checkers` 选择检查器入口。
 
 ::: warning 注意
-`regions.exclude` 不能替代 `config.source.exclude`。包类型排除会移除包治理权限，检查器的 `exclude` 只改变入口选择。精确 `tsconfig` 类型用于在读取 `outputs` 声明前隔离配置，同时保留包的激活状态。它不会隐藏源码文件，也不会让残留入边变得合法；迁移还必须修剪这些关系。
+`scope.regions.exclude` 不能替代 `scope.source.exclude`。包类型排除会移除包治理权限，检查器的 `exclude` 只改变入口选择。精确 `tsconfig` 类型用于在读取 `outputs` 声明前隔离配置，同时保留包的激活状态。它不会隐藏源码文件，也不会让残留入边变得合法；迁移还必须修剪这些关系。
 :::
 
 ```ts
@@ -23,15 +23,17 @@ interface RegionExcludeConfig {
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  regions: {
-    extendNestedPackageScopes: true,
-    exclude: [
-      {
-        kind: 'workspace-package',
-        include: ['packages/legacy-app'],
-        reason: '这个包由另一套 Limina 运行独立治理。',
-      },
-    ],
+  scope: {
+    regions: {
+      extendNestedPackageScopes: true,
+      exclude: [
+        {
+          kind: 'workspace-package',
+          include: ['packages/legacy-app'],
+          reason: '这个包由另一套 Limina 运行独立治理。',
+        },
+      ],
+    },
   },
 });
 ```
@@ -90,7 +92,7 @@ packages/app/vendor/pkg/              不属于当前区域
 - **类型：** `boolean`
 - **默认值：** `false`
 
-当嵌套 `package.json` 只是用于解析包作用域，但其中源码仍应由外层工作区包治理时，可以把 `regions.extendNestedPackageScopes` 设为 `true`。
+当嵌套 `package.json` 只是用于解析包作用域，但其中源码仍应由外层工作区包治理时，可以把 `scope.regions.extendNestedPackageScopes` 设为 `true`。
 
 只有同时满足以下条件，嵌套 `package.json` 才能被扩展：
 
@@ -127,13 +129,19 @@ packages/app/vendor/pkg/              不属于当前区域
 `kind: 'tsconfig'` 接受相对于配置根的精确 `tsconfig.json` 或 `tsconfig.*.json` 文件路径，允许 `../`，不接受目录或通配选择器。它在读取 `outputs` 声明和计算描述文件可见性的稳定性之前，按投影后的规范文件身份匹配。只移除匹配的配置描述文件，包的激活状态和源码文件治理权限保持不变。被排除的文件不存在时不会报错，因此删除隔离的坏文件不会让排除规则失效。包类型的候选命中和重叠规则不应用于该类型。
 
 ```js
-regions: {
-  exclude: [{
-    kind: 'tsconfig',
-    include: ['packages/app/tools/tsconfig.json'],
-    reason: '该配置无法解析；指向它的成员引用已被修剪。',
-  }],
-}
+export default defineConfig({
+  scope: {
+    regions: {
+      exclude: [
+        {
+          kind: 'tsconfig',
+          include: ['packages/app/tools/tsconfig.json'],
+          reason: '该配置无法解析；指向它的成员引用已被修剪。',
+        },
+      ],
+    },
+  },
+});
 ```
 
 示例不会排除 `packages/app`、兄弟配置或 `tools` 内的源码文件。保留下来的聚合配置引用若仍指向被排除文件，依然是输入问题。持久化及动态配置限制见[迁移](../cli.md#limina-migration)。
@@ -142,7 +150,7 @@ regions: {
 
 每类公共路径字段只使用一套坐标：
 
-- 源码选择器和所有 `regions` 选择器都相对于 `config.rootDir`，可以包含 `../`；
+- 源码选择器和所有 `scope.regions` 选择器都相对于 `config.rootDir`，可以包含 `../`；
 - `package.entries[].outDir` 相对于 `config.rootDir`，可以指向外部激活包的输出；
 - `liminaOptions.outputs.outDir` 相对于声明它的源码 `tsconfig`；
 - 问题记录中的路径相对于 `config.rootDir`，必要时保留 `../`；
@@ -154,4 +162,4 @@ regions: {
 
 嵌套工作区根（`pnpm-workspace.yaml` 或具有自有 `workspaces` 字段的 `package.json`）是自动生效、仅对所属包生效的边界，不是公开的排除候选。父包治理单元只记录边界，不读取或校验嵌套工作区上下文；如果原始工作区成员关系激活了边界下方的包，每个包仍会独立启动自己的包治理单元任务。
 
-当前治理源码如果导入被排除或已经停止的区域，Limina 会按跨边界访问处理。检查器入口的 `references` 也遵循同一套结构边界：检查器的 `exclude` 不会让跨区域引用变得有效，也不会隐藏有效入口触达的现有普通源码配置。诊断会指出边界根目录，并在可用时附上配置的原因；如果路径不属于任何已登记边界，诊断会明确说明当前运行没有已激活工作区包拥有它。若需过滤期望纳入治理的源码文件并保留包治理，使用 `config.source.exclude`。检查器入口排除只改变直接入口发现，不过滤源码文件，也不切断已建立的成员引用闭包。
+当前治理源码如果导入被排除或已经停止的区域，Limina 会按跨边界访问处理。检查器入口的 `references` 也遵循同一套结构边界：检查器的 `exclude` 不会让跨区域引用变得有效，也不会隐藏有效入口触达的现有普通源码配置。诊断会指出边界根目录，并在可用时附上配置的原因；如果路径不属于任何已登记边界，诊断会明确说明当前运行没有已激活工作区包拥有它。若需过滤期望纳入治理的源码文件并保留包治理，使用 `scope.source.exclude`。检查器入口排除只改变直接入口发现，不过滤源码文件，也不切断已建立的成员引用闭包。

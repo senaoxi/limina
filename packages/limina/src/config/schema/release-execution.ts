@@ -204,7 +204,7 @@ export const releaseConfigShapeSchema: z.ZodType<Record<string, unknown>> =
   });
 
 const executionConcurrencyError =
-  'execution concurrency must be a positive integer or "auto".';
+  'concurrency must be a positive integer or "auto".';
 const executionConcurrencySchema = z.union(
   [
     z.literal('auto', { error: executionConcurrencyError }),
@@ -236,7 +236,7 @@ export const executionConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
     addUnknownFieldIssues({
       allowed: executionConfigKeys,
       ctx: context,
-      message: 'unknown execution config field.',
+      message: 'unknown concurrency config field.',
       path: [],
       value: execution,
     });

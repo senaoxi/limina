@@ -45,7 +45,7 @@ function fixture(extension: string) {
   );
   write('src/a.ts', 'export const value=1;');
   const value = JSON.stringify({
-    config: { checkers: { tsc: { include: ['tsconfig.json'] } } },
+    scope: { checkers: { tsc: { include: ['tsconfig.json'] } } },
     pipelines: { probe: ['graph:check'] },
   });
   const entry = `limina.config.${extension}`;
@@ -619,7 +619,9 @@ if(process.env.PAUSE_CACHE_WRITER==='1'){
   );
   f.write(
     f.entry,
-    `import config from './helper.mjs'; export default {...config,cache:true,pipelines:{probe:[
+    `import config from './helper.mjs'; export default {...config,
+cache:true,
+pipelines:{probe:[
     'graph:check',${JSON.stringify({ type: 'command', command: process.execPath, args: [f.path('wait.mjs')] })},'graph:check'
   ]}};`,
   );
@@ -680,9 +682,8 @@ interface String {}
   f.write(
     f.entry,
     `import config from './helper.mjs'; export default {...config,
-    cache:process.env.DISABLE_CACHE==='1'?false:true,
-    pipelines:{probe:['graph:check','checker:build']}
-  };`,
+cache:process.env.DISABLE_CACHE==='1'?false:true,
+pipelines:{probe:['graph:check','checker:build']}};`,
   );
   const seed = await check(f, 'native');
   const warm = await check(f, 'native');

@@ -487,7 +487,10 @@ describe('workspace roots across consumers', () => {
       });
       const config = {
         ...f.config,
-        regions: { extendNestedPackageScopes: true },
+        scope: {
+          ...f.config.scope,
+          regions: { extendNestedPackageScopes: true },
+        },
       };
       const context = await collectValidatedWorkspaceContext({
         config,
@@ -532,14 +535,17 @@ describe('workspace roots across consumers', () => {
     await expect(
       collectWorkspacePackages({
         ...f.config,
-        regions: {
-          exclude: [
-            {
-              kind: 'package-scope',
-              include: ['packages/a/nested'],
-              reason: 'separate',
-            },
-          ],
+        scope: {
+          ...f.config.scope,
+          regions: {
+            exclude: [
+              {
+                kind: 'package-scope',
+                include: ['packages/a/nested'],
+                reason: 'separate',
+              },
+            ],
+          },
         },
       }),
     ).rejects.toThrow(/does not match an exact governance candidate/u);

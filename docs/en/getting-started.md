@@ -145,7 +145,7 @@ Create `limina.config.mts` beside the selected project's `package.json`:
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       auto: {},
     },
@@ -173,7 +173,7 @@ Start with automatic discovery in most cases. Add a named scope only when certai
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
+  scope: {
     checkers: {
       'vue-tsc': {
         include: ['packages/web/tsconfig.json'],

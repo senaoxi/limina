@@ -1,13 +1,10 @@
 export default {
-  config: {
+  scope: {
     checkers: {
       tsc: {
         include: ['tsconfig.json', '**/tsconfig.json'],
       },
     },
-  },
-  pipelines: {
-    detector: ['source:check'],
   },
   source: {
     knip: {
@@ -15,5 +12,8 @@ export default {
         '@fixture/source-knip-config': [],
       },
     },
+  },
+  pipelines: {
+    detector: ['source:check'],
   },
 };

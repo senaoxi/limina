@@ -123,7 +123,7 @@ function createResultFailureIssue(
 ): LiminaCheckIssue {
   return createProofFailureIssue({
     config,
-    fix: 'Inspect the proof check report above, then adjust checker coverage, config.source, or proof.allowlist.',
+    fix: 'Inspect the proof check report above, then adjust checker coverage, scope.source, or proof.allowlist.',
     reason:
       'Proof check found source coverage or checker graph proof violations.',
   });

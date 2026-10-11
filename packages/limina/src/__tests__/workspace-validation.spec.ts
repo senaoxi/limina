@@ -45,7 +45,8 @@ async function createFixture(files: Record<string, string> = {}): Promise<{
   const rootDirectory = await realpath(rootDirectoryTemporaryPath);
   const fixturePath = createFixturePathResolver(rootDirectory);
   const allFiles = {
-    'limina.config.mjs': 'export default {};\n',
+    'limina.config.mjs': `export default {};
+`,
     'package.json': json({ name: 'fixture-root', private: true }),
     'pnpm-workspace.yaml': 'packages: []\n',
     ...files,
@@ -118,7 +119,7 @@ describe('validated workspace context', () => {
       fixture.path('packages/real'),
       fixture.path('packages/alias'),
     );
-    fixture.config.regions = {
+    (fixture.config.scope ??= {}).regions = {
       exclude: [
         {
           include: ['packages/alias'],
@@ -159,7 +160,7 @@ describe('validated workspace context', () => {
       path.join(externalRoot, 'package.json'),
       json({ name: '@fixture/external', private: true }),
     );
-    fixture.config.regions = {
+    (fixture.config.scope ??= {}).regions = {
       exclude: [
         {
           include: [toPortableRelativePath(fixture.rootDir, externalRoot)],
@@ -381,7 +382,7 @@ describe('validated workspace context', () => {
         },
       ],
     };
-    fixture.config.regions = {
+    (fixture.config.scope ??= {}).regions = {
       exclude: [
         {
           include: ['packages/parent/fixture'],
@@ -439,7 +440,7 @@ describe('validated workspace context', () => {
         },
       ],
     };
-    fixture.config.regions = {
+    (fixture.config.scope ??= {}).regions = {
       exclude: [
         {
           include: ['packages/parent/fixture'],
@@ -703,7 +704,8 @@ describe('validated workspace context', () => {
     );
     await writeText(
       path.join(physicalRoot, 'limina.config.mjs'),
-      'export default {};\n',
+      `export default {};
+`,
     );
     await writeText(
       path.join(physicalRoot, 'tsconfig.json'),
@@ -794,7 +796,8 @@ describe('validated workspace context', () => {
     );
     await writeText(
       path.join(repoRoot, 'limina.config.mjs'),
-      'export default {};\n',
+      `export default {};
+`,
     );
     await writeText(
       path.join(packageRoot, 'package.json'),
@@ -855,7 +858,8 @@ describe('validated workspace context', () => {
     );
     await writeText(
       path.join(repoRoot, 'limina.config.mjs'),
-      'export default {};\n',
+      `export default {};
+`,
     );
     await writeText(
       path.join(packageRoot, 'package.json'),

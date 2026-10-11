@@ -172,7 +172,7 @@ function getConfiguredSourcePatterns(config: ResolvedLiminaConfig): {
   exclude?: readonly string[];
   include?: readonly string[];
 } {
-  return config.config?.source ?? {};
+  return config.scope?.source ?? {};
 }
 
 function createExcludeMatchers(

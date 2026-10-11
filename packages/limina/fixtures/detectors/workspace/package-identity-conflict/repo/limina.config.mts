@@ -1,5 +1,5 @@
 export default {
-  config: {},
+  scope: {},
   pipelines: {
     detector: ['graph:check'],
   },

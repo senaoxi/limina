@@ -52,7 +52,7 @@ export function formatAmbiguousCrossCheckerProviderProblem(options: {
     '  candidates:',
     ...formatProviderCandidateLines(options.candidates),
     '  reason: multiple build-capable provider checkers can own the resolved file, and Limina cannot choose a stable generated declaration provider.',
-    '  fix: make checker ownership unambiguous with config.checkers.<checker>.include/exclude.',
+    '  fix: make checker ownership unambiguous with scope.checkers.<checker>.include/exclude.',
   ].join('\n');
 }
 

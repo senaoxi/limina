@@ -38,7 +38,7 @@ function addInheritedOwnerConflict(options: {
       `  first checker: ${options.inheritedOwner}`,
       `  conflicting checker: ${options.context.checkerName}`,
       `  referenced from: ${toRelativePath(options.context.config.rootDir, options.fromConfigPath)}`,
-      '  fix: assign this config directly to one build checker with config.checkers.<checker>.include.',
+      '  fix: assign this config directly to one build checker with scope.checkers.<checker>.include.',
     ].join('\n'),
   );
 }

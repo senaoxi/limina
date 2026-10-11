@@ -273,7 +273,11 @@ async function createConfig(): Promise<{
   const rootDirectory = await realpath(temporaryDirectory);
   const configPath = path.join(rootDirectory, 'limina.config.mjs');
 
-  await writeFile(configPath, 'export default {};\n');
+  await writeFile(
+    configPath,
+    `export default {};
+`,
+  );
   await writeText(
     path.join(rootDirectory, 'package.json'),
     stringifyJson({ name: 'fixture', private: true }),
@@ -390,7 +394,7 @@ async function createPassingCheckPipelineConfig(): Promise<{
     }),
   );
 
-  fixture.config.config = {
+  fixture.config.scope = {
     checkers: {
       tsc: {
         include: ['tsconfig.json', '**/tsconfig.json'],
@@ -569,7 +573,7 @@ describe('runPipeline', () => {
     const fixture = await createConfig();
     const { chunks, flow } = createFlow();
 
-    fixture.config.config = {
+    fixture.config.scope = {
       checkers: {
         'svelte-check': {
           include: ['tsconfig.svelte.json'],

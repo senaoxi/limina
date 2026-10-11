@@ -1,4 +1,8 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type {
+  RegionExcludeConfig,
+  RegionsConfig,
+  ResolvedLiminaConfig,
+} from 'limina/internal/config/runner';
 import {
   type InputTopologyResult,
   readInputTopology,
@@ -28,8 +32,8 @@ export interface FrozenMigrationPlan {
   targetCount: number;
 }
 
-function existingExclusions(state: MigrationPlanningState) {
-  return state.config.regions?.exclude ?? [];
+function existingExclusions(regions: RegionsConfig | undefined) {
+  return regions?.exclude ?? [];
 }
 
 function planExclusions(state: MigrationPlanningState): void {
@@ -41,11 +45,24 @@ function planExclusions(state: MigrationPlanningState): void {
   for (const [file, message] of state.isolated)
     state.records.push({ configPath: file, kind: 'isolated', message });
   if (exclusions.length === 0) return;
+  applyPlannedExclusions(state, exclusions);
+}
+
+function applyPlannedExclusions(
+  state: MigrationPlanningState,
+  exclusions: RegionExcludeConfig[],
+): void {
   state.candidateConfig = {
     ...state.config,
-    regions: {
-      ...state.config.regions,
-      exclude: [...existingExclusions(state), ...exclusions],
+    scope: {
+      ...state.config.scope,
+      regions: {
+        ...state.config.scope?.regions,
+        exclude: [
+          ...existingExclusions(state.config.scope?.regions),
+          ...exclusions,
+        ],
+      },
     },
   };
 }

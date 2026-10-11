@@ -222,7 +222,7 @@ export function formatTypecheckOnlyBuildProblem(options: {
     '  reason: the matching checker(s) are typecheck-only and cannot run checker build.',
     '  matching checkers:',
     ...options.checkers.map(
-      (checker) => `    - config.checkers.${checker.name} (${checker.name})`,
+      (checker) => `    - scope.checkers.${checker.name} (${checker.name})`,
     ),
     '  fix: configure a build-capable checker such as tsc, tsgo, or vue-tsc for this tsconfig.',
   ].join('\n');

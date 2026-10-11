@@ -1,6 +1,6 @@
 # Source Checks
 
-Top-level `source` configures source import authorization, ambient declaration roles, and optional source-usage analysis. By default, `source check` checks imports against the source-owning package and its dependency declarations. Empty `allow` or `knip` objects are not needed to enable that check.
+`source` configures source import authorization, ambient declaration roles, and optional source-usage analysis. By default, `source check` checks imports against the source-owning package and its dependency declarations. Empty `allow` or `knip` objects are not needed to enable that check.
 
 | Field                         | Purpose                                                                      | When omitted                                                            |
 | ----------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -8,13 +8,13 @@ Top-level `source` configures source import authorization, ambient declaration r
 | `source.declarations.ambient` | Mark ambient declaration roles that need explicit management                 | No additional explicit ambient declaration authorization                |
 | `source.knip`                 | Check unused workspace dependencies and unused source modules                | Disabled; enabling it requires `knip` to be installed                   |
 
-These fields do not select the global source set. File scope is determined by [`config.source`](./source-boundary.md).
+These fields do not select the global source set. File scope is determined by [`scope.source`](./source-boundary.md).
 
 ## Package Ownership and Discovery Scope
 
 Limina discovers source within the independent governance scope of each validated, activated package, including external and unnamed packages. The package root manifest determines source ownership and dependency authorization. Source selectors relative to `config.rootDir` may contain `../`, but only filter discovered candidates; they cannot add inactive directories to governance.
 
-By default, a nested `package.json` stops traversal by the outer package. With [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes), eligible unnamed nested scopes can remain in the outer region. Their source uses the outer package's dependency declarations, while the nested manifest still defines the package scope for relative imports and `#imports`. See [Regions](./regions.md) for the full rules on nested workspace boundaries and exclusions.
+By default, a nested `package.json` stops traversal by the outer package. With [`scope.regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes), eligible unnamed nested scopes can remain in the outer region. Their source uses the outer package's dependency declarations, while the nested manifest still defines the package scope for relative imports and `#imports`. See [Regions](./regions.md) for the full rules on nested workspace boundaries and exclusions.
 
 ## Resource module imports
 
@@ -82,7 +82,7 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 }
 ```
 
-`allow` keys must match source owner identities that remain in the current governed region after `regions` is applied. Named workspace packages use their package name, and nameless source owners use their config-root-relative lexical package directory, including `../` when needed. `include` is optional and config-root-relative; it may contain `../` but can only filter governed source owned by the keyed owner. When omitted, the grant applies to all governed source modules owned by that source owner.
+`allow` keys must match source owner identities that remain in the current governed region after `scope.regions` is applied. Named workspace packages use their package name, and nameless source owners use their config-root-relative lexical package directory, including `../` when needed. `include` is optional and config-root-relative; it may contain `../` but can only filter governed source owned by the keyed owner. When omitted, the grant applies to all governed source modules owned by that source owner.
 
 `workspaceRootDependencies` is not a direct import allowlist. It names package keys whose declarations may be read from the workspace root manifest when the owner grant and `include` scope match. Limina still requires the root manifest to declare the package, if an intermediate workspace package between the source owner and the root declares that same dependency, the root grant cannot bypass that declaration.
 

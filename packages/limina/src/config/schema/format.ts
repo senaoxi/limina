@@ -107,11 +107,11 @@ function createTreeFormatter(options: {
 
 function isNamedCheckerIssue(context: IssueFormatContext): boolean {
   const [root, collection] = context.pathSegments;
-  return root === 'config' && collection === 'checkers';
+  return root === 'scope' && collection === 'checkers';
 }
 
 function getCheckerField(context: IssueFormatContext): string {
-  return `config.checkers.${String(context.pathSegments[2])}`;
+  return `scope.checkers.${String(context.pathSegments[2])}`;
 }
 
 function formatCheckerEntry(context: IssueFormatContext): string {
@@ -137,7 +137,7 @@ function formatNamedCheckerIssue(context: IssueFormatContext): string {
 function formatCheckerCollection(context: IssueFormatContext): string {
   return formatConfigProblem({
     context,
-    reason: 'config.checkers must be an object keyed by auto or checker name.',
+    reason: 'scope.checkers must be an object keyed by auto or checker name.',
     title: 'Invalid Limina checker config:',
   });
 }
@@ -156,41 +156,37 @@ const issueFormatters: readonly IssueFormatter[] = [
     title: 'Invalid Limina cache config:',
   }),
   createExactFormatter({
-    field: 'config',
-    reason: 'config must be an object.',
+    field: 'scope',
+    reason: 'scope must be an object.',
     title: 'Invalid Limina config:',
   }),
   createExactFormatter({
-    field: 'execution',
-    reason: 'execution must be an object.',
-    title: 'Invalid Limina execution config:',
+    field: 'concurrency',
+    reason: 'concurrency must be an object.',
+    title: 'Invalid Limina concurrency config:',
   }),
   createTreeFormatter({
-    field: 'execution',
-    title: 'Invalid Limina execution config:',
+    field: 'concurrency',
+    title: 'Invalid Limina concurrency config:',
   }),
   {
     format: formatCheckerCollection,
-    matches: (context) => isMatchesField(context, 'config.checkers'),
+    matches: (context) => isMatchesField(context, 'scope.checkers'),
   },
   createTreeFormatter({
-    field: 'config.checkers.mode',
+    field: 'scope.checkers.mode',
     title: 'Invalid Limina checker config:',
   }),
   createTreeFormatter({
-    field: 'config.checkers.exclude',
+    field: 'scope.checkers.exclude',
     title: 'Invalid Limina checker config:',
   }),
   createTreeFormatter({
-    field: 'config.checkers.useTsgo',
+    field: 'scope.checkers.useTsgo',
     title: 'Invalid Limina checker config:',
   }),
   createTreeFormatter({
-    field: 'config.imports',
-    title: 'Invalid Limina import analysis config:',
-  }),
-  createTreeFormatter({
-    field: 'config.source',
+    field: 'scope.source',
     title: 'Invalid Limina source boundary config:',
   }),
   createTreeFormatter({

@@ -1,9 +1,9 @@
 # Regions
 
-`regions` determines which packages and nested package scopes belong to the current run. Establish package scope here first, then use `config.source` to select files within it and `config.checkers` to select checker entries.
+`scope.regions` determines which packages and nested package scopes belong to the current run. Establish package scope here first, then use `scope.source` to select files within it and `scope.checkers` to select checker entries.
 
 ::: warning
-`regions.exclude` does not replace `config.source.exclude`. Package kinds remove package authority; checker `exclude` only changes entry selection. Use the exact `tsconfig` kind to isolate a config before output declarations are read, while leaving its package activated. It does not hide source files or make incoming references valid; migration must also prune those relations.
+`scope.regions.exclude` does not replace `scope.source.exclude`. Package kinds remove package authority; checker `exclude` only changes entry selection. Use the exact `tsconfig` kind to isolate a config before output declarations are read, while leaving its package activated. It does not hide source files or make incoming references valid; migration must also prune those relations.
 :::
 
 ```ts
@@ -23,15 +23,17 @@ interface RegionExcludeConfig {
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  regions: {
-    extendNestedPackageScopes: true,
-    exclude: [
-      {
-        kind: 'workspace-package',
-        include: ['packages/legacy-app'],
-        reason: 'This package is governed by a separate Limina run.',
-      },
-    ],
+  scope: {
+    regions: {
+      extendNestedPackageScopes: true,
+      exclude: [
+        {
+          kind: 'workspace-package',
+          include: ['packages/legacy-app'],
+          reason: 'This package is governed by a separate Limina run.',
+        },
+      ],
+    },
   },
 });
 ```
@@ -90,7 +92,7 @@ Migration uses the same package authority checks and inventories configs for nor
 - **Type:** `boolean`
 - **Default:** `false`
 
-Set `regions.extendNestedPackageScopes` to `true` when a nested `package.json` is a package scope used for resolution, but its source should remain governed by the surrounding workspace package.
+Set `scope.regions.extendNestedPackageScopes` to `true` when a nested `package.json` is a package scope used for resolution, but its source should remain governed by the surrounding workspace package.
 
 A nested `package.json` can be extended only when all of these conditions hold:
 
@@ -127,13 +129,19 @@ Every package-kind rule must match at least one candidate of its declared kind. 
 `kind: 'tsconfig'` takes exact config-root-relative `tsconfig.json` or `tsconfig.*.json` file paths. It accepts `../` but not directory/glob selectors. Matching uses the projected canonical file identity, before output declarations and descriptor stability. It removes only matching config descriptors; package activation and source-file authority remain unchanged. Missing excluded files remain harmless, so deleting an isolated broken file does not invalidate its exclusion. Package-kind candidate-match and overlap rules do not apply to this kind.
 
 ```js
-regions: {
-  exclude: [{
-    kind: 'tsconfig',
-    include: ['packages/app/tools/tsconfig.json'],
-    reason: 'This config cannot be parsed; its incoming memberships were pruned.',
-  }],
-}
+export default defineConfig({
+  scope: {
+    regions: {
+      exclude: [
+        {
+          kind: 'tsconfig',
+          include: ['packages/app/tools/tsconfig.json'],
+          reason: 'This config cannot be parsed; its incoming memberships were pruned.',
+        },
+      ],
+    },
+  },
+});
 ```
 
 The example does not exclude `packages/app`, sibling configs, or files under `tools`. A surviving solution reference to the excluded file is still an input problem. See [migration](../cli.md#limina-migration) for persistence and dynamic-config limitations.
@@ -142,7 +150,7 @@ The example does not exclude `packages/app`, sibling configs, or files under `to
 
 Public paths use one coordinate system per field:
 
-- source selectors and all `regions` selectors are relative to `config.rootDir` and may contain `../`;
+- source selectors and all `scope.regions` selectors are relative to `config.rootDir` and may contain `../`;
 - `package.entries[].outDir` is relative to `config.rootDir` and may point into an external activated package;
 - `liminaOptions.outputs.outDir` is relative to the source `tsconfig` that declares it;
 - issue paths are relative to `config.rootDir`, including `../` when needed;
@@ -154,4 +162,4 @@ Every declared output must be a dedicated directory. It may be a strict descenda
 
 Nested workspace roots are automatic owner-local boundaries, not public exclusion candidates. The parent island records the boundary but does not read or validate the nested workspace context. If packages below that boundary are activated by the raw workspace membership, each starts its own package-island job independently.
 
-Imports from governed source into an excluded or otherwise stopped region are treated as cross-boundary access. Checker entry `references` follow the same structural boundary: checker `exclude` does not make a cross-region reference valid and does not hide an existing ordinary source config reached from an effective entry. Diagnostics identify the boundary root and include the configured reason when one is available; when no registered boundary owns the path, the diagnostic states that no current-run activated workspace package owns it. Use `config.source.exclude` to filter expected source files while keeping their package governed. A checker entry exclusion changes direct entry discovery; it does not filter source files or cut an established membership closure.
+Imports from governed source into an excluded or otherwise stopped region are treated as cross-boundary access. Checker entry `references` follow the same structural boundary: checker `exclude` does not make a cross-region reference valid and does not hide an existing ordinary source config reached from an effective entry. Diagnostics identify the boundary root and include the configured reason when one is available; when no registered boundary owns the path, the diagnostic states that no current-run activated workspace package owns it. Use `scope.source.exclude` to filter expected source files while keeping their package governed. A checker entry exclusion changes direct entry discovery; it does not filter source files or cut an established membership closure.

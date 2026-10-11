@@ -1,4 +1,8 @@
-import type { RegionExcludeConfig, ResolvedLiminaConfig } from '#config/runner';
+import type {
+  RegionExcludeConfig,
+  RegionsConfig,
+  ResolvedLiminaConfig,
+} from '#config/runner';
 import { normalizeAbsolutePath, normalizeSlashes } from '#utils/path';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
@@ -27,10 +31,16 @@ function normalizeExcludePattern(pattern: string): string {
   return normalizeSlashes(pattern.trim()).replaceAll(/^\.\//gu, '');
 }
 
+function regionExclusions(
+  regions: RegionsConfig | undefined,
+): RegionExcludeConfig[] {
+  return regions?.exclude ?? [];
+}
+
 export function compileExclusionRules(
   config: ResolvedLiminaConfig,
 ): CompiledExclusionRule[] {
-  return (config.regions?.exclude ?? []).map((entry, index) => ({
+  return regionExclusions(config.scope?.regions).map((entry, index) => ({
     entry,
     index,
     matchers: entry.include.map((pattern) =>
@@ -102,7 +112,7 @@ function validateCandidateMatch(options: {
   });
   if (matches.length < 2) return;
   throw new Error(
-    `Multiple regions.exclude rules match ${options.candidate.kind} ${displayWorkspacePath(options.config.rootDir, options.candidate.rootDir)}.`,
+    `Multiple scope.regions.exclude rules match ${options.candidate.kind} ${displayWorkspacePath(options.config.rootDir, options.candidate.rootDir)}.`,
   );
 }
 
@@ -130,7 +140,7 @@ function validateExclusionRules(options: {
   const unmatched = findUnmatchedRule(options);
   if (unmatched === undefined) return;
   throw new Error(
-    `regions.exclude[${unmatched.index}] does not match an exact governance candidate.`,
+    `scope.regions.exclude[${unmatched.index}] does not match an exact governance candidate.`,
   );
 }
 
@@ -188,7 +198,7 @@ export function excludeTsconfigDescriptors(options: {
   candidates: readonly WorkspaceDescriptorCandidate[];
 }): WorkspaceDescriptorCandidate[] {
   const excluded = new Set(
-    (options.config.regions?.exclude ?? [])
+    regionExclusions(options.config.scope?.regions)
       .filter((rule) => rule.kind === 'tsconfig')
       .flatMap((rule) =>
         rule.include.map((value) =>

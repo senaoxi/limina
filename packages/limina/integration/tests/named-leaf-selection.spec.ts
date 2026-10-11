@@ -48,7 +48,8 @@ describe('named leaf configuration through public CLI', () => {
     try {
       await writeFile(
         fixture.configPath,
-        "export default {config:{checkers:{tsc:{include:['packages/app/tsconfig.lib.json']}}}};\n",
+        `export default {scope: {checkers:{tsc:{include:['packages/app/tsconfig.lib.json']}}}};
+`,
       );
       const result = await runFixtureLimina(fixture, ['graph', 'prepare']);
       expect(result.code).toBe(1);
