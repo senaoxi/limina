@@ -21,6 +21,7 @@
 | Review invariant impact 并选择维护验证                     | [架构 workflow](./architecture-workflow.md) |
 | 核对重建证据、纠正内容与验证边界                           | [架构审计](./architecture-audit.md)         |
 | 改变包分发或仓库集成边界                                   | [仓库架构](./architecture.md)               |
+| 修改文档阅读主题或侧栏                                     | [文档侧栏](./architecture.md#文档侧栏)      |
 | 评估需求的复用方案，或新增／替换第三方依赖                 | [依赖准入](./dependency-admission.md)       |
 | 维护支持的依赖许可证与 bundled-code 策略                   | [依赖许可证策略](./license-policy.md)       |
 | 维护仓库门禁与提交检查                                     | [仓库门禁](./gates.md)                      |
