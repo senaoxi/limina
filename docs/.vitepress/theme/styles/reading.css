@@ -284,10 +284,61 @@
   font-size: 13px;
 }
 
+.limina-reading .VPSidebar {
+  visibility: hidden;
+}
+
+.limina-reading .VPSidebar.open {
+  visibility: visible;
+}
+
+.limina-reading .VPSidebar .group {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.limina-reading .VPSidebar .group + .group {
+  margin-top: 20px;
+}
+
+.limina-reading .VPSidebarItem.level-0,
+.limina-reading .VPSidebarItem.level-0.collapsed {
+  padding-bottom: 0;
+}
+
+.limina-reading .VPSidebarItem > .item {
+  margin-bottom: 2px;
+}
+
+.limina-reading .VPSidebarItem .indicator {
+  display: none;
+}
+
+.limina-reading .VPSidebarItem .link {
+  min-width: 0;
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  transition: background-color 0.2s;
+}
+
+.limina-reading .VPSidebarItem .text {
+  padding: 0;
+  line-height: 24px;
+}
+
+.limina-reading .VPSidebarItem > .item > .text {
+  padding: 6px 10px;
+}
+
+.limina-reading .VPSidebarItem .link:is(:hover, :focus-visible),
 .limina-reading .VPSidebarItem.is-active > .item > .link {
-  border-left: 2px solid var(--limina-doc-link);
   background: var(--limina-doc-soft);
-  padding-left: 8px;
+}
+
+.limina-reading .VPSidebarItem.is-active > .item > .link .text {
+  font-weight: 600;
 }
 
 .limina-reading .VPLocalNavOutlineDropdown button {
@@ -317,6 +368,10 @@
 }
 
 @media (min-width: 960px) {
+  .limina-reading .VPSidebar {
+    visibility: visible;
+  }
+
   .limina-reading .VPDoc > .container > .content {
     padding-right: 0;
     padding-left: 0;
@@ -346,6 +401,23 @@
   }
 }
 
+@media (max-width: 959px) {
+  .limina-reading .VPLocalNav .menu {
+    min-height: 44px;
+  }
+
+  .limina-reading .VPSidebarItem > .item,
+  .limina-reading .VPSidebarItem .link {
+    min-height: 44px;
+  }
+
+  .limina-reading .VPSidebarItem .caret {
+    margin-right: 0;
+    width: 44px;
+    height: 44px;
+  }
+}
+
 @media (max-width: 639px) {
   .limina-reading .vp-doc h1 {
     font-size: 28px;
@@ -356,6 +428,19 @@
     margin-top: 36px;
     font-size: 23px;
     line-height: 32px;
+  }
+}
+
+@media (forced-colors: active) {
+  .limina-reading .VPSidebarItem.is-active > .item > .link {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+
+  .limina-reading .VPSidebar :focus-visible,
+  .limina-reading .VPSidebarItem > .item > .link:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 3px;
   }
 }
 
