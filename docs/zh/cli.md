@@ -63,7 +63,7 @@ pnpm exec limina init --yes
 需要单独安装初始化流程提供的可选智能体技能时，可运行同一安装命令：
 
 ```sh
-npx --yes skills add senaoxi/docs-islands --skill limina
+npx --yes skills add senaoxi/limina --skill limina
 ```
 
 此步骤安装技能，不改写源码 `tsconfig`；已有源码项目引用需按下一节判断是否迁移。
