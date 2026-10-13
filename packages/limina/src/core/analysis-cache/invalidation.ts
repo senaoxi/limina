@@ -37,8 +37,14 @@ export class AnalysisInvalidation {
 
   constructor(snapshot: AnalysisSnapshot | undefined, inputs: AnalysisInputs) {
     if (snapshot === undefined) return;
-    this.#index(snapshot);
-    this.#invalidate(snapshot, inputs);
+    const changed = Object.entries(snapshot.inputs)
+      .filter(
+        ([id, input]) =>
+          !inputs.valid({ inputId: id, expectedVersion: input.version }),
+      )
+      .map(([id]) => id);
+    this.#invalidate(snapshot, changed);
+    this.#invalidateSyntax(snapshot, inputs);
   }
 
   #index(snapshot: AnalysisSnapshot): void {
@@ -87,13 +93,12 @@ export class AnalysisInvalidation {
       subscribe(index, dependency.inputId, consumer);
   }
 
-  #invalidate(snapshot: AnalysisSnapshot, inputs: AnalysisInputs): void {
-    for (const [id, input] of Object.entries(snapshot.inputs)) {
-      if (inputs.valid({ inputId: id, expectedVersion: input.version }))
-        continue;
-      this.#invalidateInput(id);
-    }
-    this.#invalidateSyntax(snapshot, inputs);
+  #invalidate(snapshot: AnalysisSnapshot, changed: string[]): void {
+    // Forward records remain authoritative. A clean invocation needs no
+    // reverse subscriptions; changed inputs still use the complete index.
+    if (changed.length === 0) return;
+    this.#index(snapshot);
+    for (const id of changed) this.#invalidateInput(id);
   }
 
   #invalidateSyntax(snapshot: AnalysisSnapshot, inputs: AnalysisInputs): void {

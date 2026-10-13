@@ -429,6 +429,20 @@ describe('R01 effective local metadata and installation trust', () => {
     expect(warm.cache.isUnchanged()).toBe(true);
     expect(warm.cache.snapshot()).toBe(warm.cache.previous);
     expect(warm.cache.metrics.snapshotClones ?? 0).toBe(0);
+    f.write('unrelated.txt', 'not a snapshot dependency');
+    const unrelated = warm.cache.inputs.observe(
+      f.file('unrelated.txt'),
+      'content',
+    );
+    expect(warm.cache.isUnchanged()).toBe(true);
+    expect(
+      warm.cache.snapshotRecords().inputs[unrelated.inputId],
+    ).toBeUndefined();
+    warm.cache.inputs.configInputs.add(unrelated.inputId);
+    expect(warm.cache.isUnchanged()).toBe(false);
+    expect(
+      warm.cache.snapshotRecords().inputs[unrelated.inputId],
+    ).toBeDefined();
   });
 
   it('observes inherited paths, backdated additions, renames, touches and missing versus empty', () => {
@@ -899,12 +913,11 @@ describe('production graph snapshots and publication', () => {
       identity: 'unused',
     });
     const before = readFileSync(store.path);
-    const persisted = JSON.parse(before.toString());
-    expect(
-      parseAnalysisSnapshot(persisted, persisted.header.identity),
-    ).toBeDefined();
-    expect(Object.keys(persisted.graphs)).toEqual(['generated-graph-v1']);
-    expect(Object.values(persisted.contexts)).toEqual(
+    const encoded = JSON.parse(before.toString());
+    const persisted = parseAnalysisSnapshot(encoded, encoded.header.identity);
+    expect(persisted).toBeDefined();
+    expect(Object.keys(persisted!.graphs)).toEqual(['generated-graph-v1']);
+    expect(Object.values(persisted!.contexts)).toEqual(
       expect.arrayContaining([expect.objectContaining({ complete: true })]),
     );
     const mtime = statSync(store.path).mtimeMs;

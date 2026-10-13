@@ -1,11 +1,8 @@
 import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
 import { LiminaStructuredError } from '../../check-reporting/errors';
 import { TypeScriptConfigInputError } from '../../checker/project-base';
-import { AstroSemanticContextManager } from '../astro-semantic/context';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
-import { SvelteSemanticContextManager } from '../svelte-semantic/context';
 import { TsconfigInputError } from '../tsconfig/config-paths';
-import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
   type ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
@@ -23,6 +20,14 @@ import {
   validateAndCompleteGeneratedGraph,
 } from './graph-validation';
 import { resolveBuildGraphImportAnalysis } from './import-analysis-context';
+import {
+  createOwnedAstroSemanticContexts,
+  createOwnedSvelteSemanticContexts,
+  createOwnedVueSemanticContexts,
+  disposeOwnedAstroSemanticContexts,
+  disposeOwnedSvelteSemanticContexts,
+  disposeOwnedVueSemanticContexts,
+} from './owned-semantic-contexts';
 import { prepareCheckerGraphs } from './prepare-checker-graphs';
 import {
   createGeneratedGraphPreparationState,
@@ -44,53 +49,6 @@ function getWorkspacePathIndex(options: {
     options.workspacePathIndex ??
     new WorkspaceRegionPathIndex(options.workspaceContext)
   );
-}
-
-function createOwnedVueSemanticContexts(
-  options: PrepareGeneratedTsconfigGraphOptions,
-): VueSemanticContextManager | undefined {
-  return options.importAnalysisContext === undefined
-    ? new VueSemanticContextManager()
-    : undefined;
-}
-
-function createOwnedAstroSemanticContexts(
-  options: PrepareGeneratedTsconfigGraphOptions,
-  config: ResolvedLiminaConfig,
-): AstroSemanticContextManager | undefined {
-  if (options.importAnalysisContext !== undefined) return undefined;
-  return new AstroSemanticContextManager({
-    governanceRoot: config.governanceRoot,
-  });
-}
-
-function createOwnedSvelteSemanticContexts(
-  options: PrepareGeneratedTsconfigGraphOptions,
-): SvelteSemanticContextManager | undefined {
-  return options.importAnalysisContext === undefined
-    ? new SvelteSemanticContextManager()
-    : undefined;
-}
-
-function disposeOwnedVueSemanticContexts(
-  contexts: VueSemanticContextManager | undefined,
-): void {
-  if (contexts === undefined) return;
-  contexts.dispose();
-}
-
-function disposeOwnedAstroSemanticContexts(
-  contexts: AstroSemanticContextManager | undefined,
-): void {
-  if (contexts === undefined) return;
-  contexts.dispose();
-}
-
-function disposeOwnedSvelteSemanticContexts(
-  contexts: SvelteSemanticContextManager | undefined,
-): void {
-  if (contexts === undefined) return;
-  contexts.dispose();
 }
 
 function prepareGeneratedKnip(options: {
@@ -276,7 +234,10 @@ async function analyzePreparedDependencies(
   );
 }
 function dependencyCaches(options: PrepareGeneratedTsconfigGraphOptions) {
-  return options.projectDependencyCaches ?? createProjectDependencyCaches();
+  const caches =
+    options.projectDependencyCaches ?? createProjectDependencyCaches();
+  caches.analysisCache?.increment('graphBuilds');
+  return caches;
 }
 function registerCheckers(
   checkers: ReturnType<typeof prepareCheckerGraphs>,

@@ -1,5 +1,6 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
+import { occurrenceKey } from '../analysis-cache/semantic-state';
 import {
   createFrameworkSemanticEvidence,
   createFrameworkSemanticFailure,
@@ -44,6 +45,48 @@ export function resolveVueSemanticPair(options: {
       typescript: null,
     };
   }
+  let uncached: ModuleResolutionPair | undefined;
+  const evidence = options.manager.query({
+    identity: options.identity,
+    kind: 'resolution',
+    request: [
+      options.importRecord.filePath,
+      options.importRecord.line,
+      occurrenceKey(options.importRecord),
+    ],
+    collect: () => {
+      uncached = resolveUncachedVuePair({
+        ...options,
+        manager: options.manager!,
+      });
+      const semantic = uncached.semanticEvidence;
+      if (semantic === undefined) return semantic;
+      return {
+        framework: semantic.framework,
+        profile: semantic.profile,
+        provenance: semantic.provenance,
+        resolutionMode: semantic.resolutionMode,
+        semanticSpecifier: semantic.semanticSpecifier,
+        sourceRecord: semantic.sourceRecord,
+        target: semantic.target,
+      };
+    },
+  });
+  return evidence === undefined
+    ? uncached!
+    : {
+        oxc: options.oxc,
+        semanticEvidence: { ...evidence, identityId: options.identity.id },
+        typescript: evidence.target,
+      };
+}
+
+function resolveUncachedVuePair(options: {
+  identity: VueProjectSemanticIdentity;
+  importRecord: ImportRecord;
+  manager: VueSemanticContextManager;
+  oxc: string | null;
+}): ModuleResolutionPair {
   const semantic = resolveVueSemanticImport({
     identity: options.identity,
     importRecord: options.importRecord,
