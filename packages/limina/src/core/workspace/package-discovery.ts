@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
@@ -26,7 +26,7 @@ function createWorkspacePackage(
 }
 
 async function collectDeclaredWorkspacePackages(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ): Promise<WorkspacePackage[]> {
   const workspace = config.governanceRoot;
   const rootPackage = createWorkspacePackage(
@@ -104,13 +104,13 @@ function mergeWorkspacePackages(
 }
 
 export async function collectRawWorkspacePackages(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ): Promise<WorkspacePackage[]> {
   return mergeWorkspacePackages(await collectDeclaredWorkspacePackages(config));
 }
 
 export async function collectWorkspacePackages(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ): Promise<WorkspacePackage[]> {
   const rawPackages = await collectRawWorkspacePackages(config);
   const topology = await collectWorkspaceRegionTopology(config, {
@@ -134,7 +134,7 @@ function toPackageOwner(workspacePackage: WorkspacePackage): PackageOwner {
 }
 
 export async function collectPackageOwners(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ): Promise<PackageOwner[]> {
   const packages = await collectWorkspacePackages(config);
   return packages

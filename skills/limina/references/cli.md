@@ -109,6 +109,8 @@ Prefer the separately installed `limina-migrate` matching the intended release.
 The deprecated `limina migration` entry forwards to a matching local tool or can
 download that exact version. Do not use it as an implicitly offline command.
 
+Use `limina-migrate --dry-run --yes` to inspect the complete frozen file plan before applying. Explicit config wins over ancestor config discovery; only total config absence selects the nearest manifest and in-memory defaults. Scope confirmation precedes config evaluation and defaults to Yes; non-TTY use requires `--yes`, which never authorizes dirty-worktree or hardlink writes. Defaults create a minimal `limina.config.mjs` only when exact isolation exclusions must persist. Preview skips migration-controlled writes and audit publication, including failures; executable config/third-party code is not sandboxed. Preview success is not disk verification or future authorization. Applied defaults verification rebuilds the locked root inputs in fresh workers or loads the real created config; ordinary `limina check` still requires configuration.
+
 Migration normalizes source topology and output declarations and can rewrite
 multiple tsconfig files. Inspect changes in an isolated copy when evaluating an
 adoption. Do not invent `--dry-run` or assume the tool runs full governance.

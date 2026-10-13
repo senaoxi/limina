@@ -4,7 +4,7 @@ import {
   getBuildCheckerSupportedExtensions,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { getRawReferencePaths } from '../tsconfig/actions';
@@ -41,7 +41,7 @@ interface VueProjectEvidence {
   parsed: ParsedCheckerProject | undefined;
 }
 function parseNeutralProject(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   projectConfigCache?: CheckerProjectConfigCache;
 }): NeutralProjectEvidence {
@@ -78,7 +78,7 @@ function hasVueCandidate(
 }
 
 function parseVueProject(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   enabled: boolean;
   projectConfigCache?: CheckerProjectConfigCache;
@@ -187,7 +187,7 @@ function getPackageRootForFile(options: {
 
 export function createAutoScopeProject(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   intentHints: readonly FrameworkIntentHint[];
   packageRootDir: string;
@@ -235,7 +235,7 @@ export function createAutoScopeProject(options: {
 export function createExplicitScopeProject(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: CheckerName;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   packageRootDir: string;
   projectConfigCache?: CheckerProjectConfigCache;

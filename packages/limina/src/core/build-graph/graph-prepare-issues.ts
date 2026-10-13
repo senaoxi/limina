@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { LIMINA_CHECK_ISSUE_CODES } from '../../check-reporting/codes';
 import {
   createTaskFailureIssue,
@@ -26,7 +26,7 @@ function getNonEmptyLocations(
 }
 
 function createGraphPrepareIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   detailLines: readonly string[];
   evidence: readonly (LiminaCheckIssueEvidence | undefined)[];
   filePath?: string;
@@ -57,7 +57,7 @@ function createGraphPrepareIssue(options: {
 }
 
 export function createUnsafeCrossEngineProviderIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   lines: readonly string[];
 }): LiminaCheckIssue {
   const consumer = findGeneratedGraphProblemLineValue(options.lines, [
@@ -103,7 +103,7 @@ export function createUnsafeCrossEngineProviderIssue(options: {
 }
 
 export function createAmbiguousCrossCheckerProviderIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   lines: readonly string[];
 }): LiminaCheckIssue {
   const consumerConfig = findGeneratedGraphProblemLineValue(options.lines, [
@@ -145,7 +145,7 @@ export function createAmbiguousCrossCheckerProviderIssue(options: {
 }
 
 export function createOutputBuildCacheBoundaryConflictIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   lines: readonly string[];
 }): LiminaCheckIssue {
   const sourceConfig = findGeneratedGraphProblemLineValue(options.lines, [

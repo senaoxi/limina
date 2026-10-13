@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type {
   ImportAnalysisContext,
   ImportRecord,
@@ -33,7 +33,7 @@ export type ResolvedProvider =
 export interface ReferenceImportContext {
   analysis?: DependencyAnalysisResult;
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   dtsProjectsBySourcePath: Map<string, SourceProject[]>;
   fileOwnerLookup: FileOwnerLookup;
   importAnalysis: ImportAnalysisContext;

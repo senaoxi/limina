@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type { lstat } from 'node:fs/promises';
 import type {
   ExtendedPackageScope,
@@ -18,7 +18,7 @@ export interface PackageIslandCollection {
 export interface IslandWalkContext {
   canonicalChildRoots: ReadonlySet<string>;
   childRoots: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   ownerRootDir: string;
   result: PackageIslandCollection;
   rules: readonly CompiledExclusionRule[];

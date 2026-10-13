@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { readJsonConfig } from '#core/tsconfig/actions';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
@@ -159,7 +159,7 @@ function collectOwnFrameworkIntentHints(options: {
 }
 
 export function inspectFrameworkIntent(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configObject: Record<string, unknown>;
   configPath: string;
 }): FrameworkIntentInspection {

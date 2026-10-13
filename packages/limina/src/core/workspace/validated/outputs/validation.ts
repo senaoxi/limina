@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import type { Stats } from 'node:fs';
 import { lstat as lstatAsync } from 'node:fs/promises';
@@ -151,7 +151,7 @@ async function getOutputRootProblem(options: {
 
 export async function validateOutputRoot(options: {
   activatedPackageRoots: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   declaredAt: string;
   outputRoot: string;
 }): Promise<LiminaCheckIssue | null> {

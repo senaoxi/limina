@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type { collectImportsFromFile } from '#core/import-graph/context';
 import { formatImportRecordLocation } from '#core/import-graph/context';
 import { toRelativePath } from '#utils/path';
@@ -12,7 +12,7 @@ import type { SourceProject } from './types';
 type ImportRecord = ReturnType<typeof collectImportsFromFile>[number];
 
 export function formatMissingCrossCheckerProviderProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importRecord: ImportRecord;
   project: SourceProject;
   resolvedFilePath: string;
@@ -35,7 +35,7 @@ export function formatMissingCrossCheckerProviderProblem(options: {
 
 export function formatAmbiguousCrossCheckerProviderProblem(options: {
   candidates: SourceProject[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importRecord: ImportRecord;
   project: SourceProject;
   resolvedFilePath: string;
@@ -58,7 +58,7 @@ export function formatAmbiguousCrossCheckerProviderProblem(options: {
 
 export function formatUnsafeCrossEngineProviderProblem(options: {
   candidates: SourceProject[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importRecord: ImportRecord;
   project: SourceProject;
   resolvedFilePath: string;

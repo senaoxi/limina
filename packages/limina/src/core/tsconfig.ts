@@ -2,7 +2,7 @@ import type {
   CheckerProjectConfigCache,
   CheckerProjectParseContext,
 } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import {
   createFileOwnerLookup,
@@ -27,14 +27,14 @@ export interface SourceGraphProjects {
 }
 
 interface TsconfigCoreOptions {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   generatedGraphProvider: () => Promise<GeneratedTsconfigGraphResult>;
   projectConfigCache: CheckerProjectConfigCache;
   workspace?: WorkspaceCore;
 }
 
 export class TsconfigCore {
-  readonly #config: ResolvedLiminaConfig;
+  readonly #config: ResolvedLiminaInputs;
   readonly #generatedGraphProvider: () => Promise<GeneratedTsconfigGraphResult>;
   readonly #projectConfigCache: CheckerProjectConfigCache;
   readonly #workspace: WorkspaceCore | undefined;

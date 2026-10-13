@@ -2,7 +2,7 @@ import {
   type CheckerProjectConfigCache,
   isNativeTypeScriptProjectInput,
 } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { TypeScriptConfigInputError } from '../../checker/project-base';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
@@ -36,7 +36,7 @@ import type {
 import type { FileOwnerLookup } from './file-owner-lookup';
 
 interface FactCollectionContext {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   core: TypeEvidenceCore;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
@@ -50,7 +50,7 @@ interface FactCollectionContext {
 
 interface CollectPendingOptions {
   cache?: Map<string, unknown>;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   core: TypeEvidenceCore;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
@@ -67,7 +67,7 @@ interface PhysicalTarget {
 }
 
 function createUnsupportedProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   evidence: Extract<
     ReturnType<TypeEvidenceCore['resolveImportEvidence']>['type'],
     { kind: 'unsupported-checker' }

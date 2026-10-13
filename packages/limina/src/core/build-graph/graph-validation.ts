@@ -1,6 +1,6 @@
 import type {
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
@@ -57,7 +57,7 @@ function getCheckerPrimaryProjects(options: {
 
 function addCheckerOwnershipProblems(options: {
   checkers: ResolvedCheckerConfig[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
 }): void {
@@ -75,7 +75,7 @@ function addProjectValidationProblems(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   allProjects: ReturnType<typeof getAllProjects>;
   allPrimaryProjects: ReturnType<typeof getAllPrimaryProjects>;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
 }): void {
@@ -93,7 +93,7 @@ function addProjectValidationProblems(options: {
 }
 
 function addDeclarationCheckerInvariantProblems(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
 }): void {
   options.state.problems.push(
@@ -113,7 +113,7 @@ function isInvalidDeclarationCheckerEdge(
 }
 
 function formatDeclarationCheckerInvariant(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   edge: GeneratedGraphPreparationState['dependencyEdges'][number],
 ): string {
   return [
@@ -131,7 +131,7 @@ function addInferredReferences(options: {
   allProjects: ReturnType<typeof getAllProjects>;
   allGovernedSources: ReturnType<typeof getAllGovernedSources>;
   checkers: ResolvedCheckerConfig[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
   projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
@@ -180,7 +180,7 @@ function synchronizeBuildProjectionSolutions(
 function addCheckerOutputGraph(options: {
   allProjectsByDtsPath: ReturnType<typeof createSourceProjectsByDtsPath>;
   checker: ResolvedCheckerConfig;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
 }): void {
   const collection =
@@ -218,7 +218,7 @@ function addCheckerOutputGraph(options: {
 function addCheckerOutputGraphs(options: {
   allProjects: ReturnType<typeof getAllProjects>;
   checkers: ResolvedCheckerConfig[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
 }): void {
   const allProjectsByDtsPath = createSourceProjectsByDtsPath(
@@ -252,7 +252,7 @@ function compareDependencyEdges(
 export function analyzeAndCompleteGeneratedGraph(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   checkers: ResolvedCheckerConfig[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
   projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];

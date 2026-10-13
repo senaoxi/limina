@@ -2,7 +2,7 @@ import { getCheckerAdapter } from '#checkers';
 import {
   getActiveCheckers,
   type ResolvedCheckerConfig,
-  type ResolvedLiminaConfig,
+  type ResolvedLiminaInputs,
 } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { normalizeAbsolutePath } from '#utils/path';
@@ -17,7 +17,7 @@ import type {
 import { collectGraphProjectRouteFromRoot } from './graph-route-traversal';
 
 interface SnapshotBuildContext {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   generatedGraph: GeneratedTsconfigGraphResult | undefined;
   metrics: CheckerRouteMetricsRecorder | undefined;
   snapshots: CheckerRouteSnapshot[];
@@ -215,7 +215,7 @@ function recordProjectionMetrics(context: SnapshotBuildContext): void {
 }
 
 function resolveSnapshotCheckers(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   generatedGraph: GeneratedTsconfigGraphResult | undefined,
 ): readonly ResolvedCheckerConfig[] {
   return generatedGraph === undefined
@@ -232,7 +232,7 @@ function getGeneratedFiles(
 }
 
 export function collectCheckerRouteSnapshot(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   generatedGraph?: GeneratedTsconfigGraphResult,
   metrics?: CheckerRouteMetricsRecorder,
 ): CheckerRouteSnapshotCollection {

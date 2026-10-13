@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { AstroSemanticContextManager } from '../astro-semantic/context';
 import { SvelteSemanticContextManager } from '../svelte-semantic/context';
 import { VueSemanticContextManager } from '../vue-semantic/context';
@@ -17,7 +17,7 @@ export function createOwnedVueSemanticContexts(
 
 export function createOwnedAstroSemanticContexts(
   options: PrepareGeneratedTsconfigGraphOptions,
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ): AstroSemanticContextManager | undefined {
   if (options.importAnalysisContext !== undefined) return undefined;
   return new AstroSemanticContextManager({

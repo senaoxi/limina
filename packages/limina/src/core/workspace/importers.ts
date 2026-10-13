@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 import { getDependencySections } from './package-dependencies';
@@ -74,7 +74,7 @@ function readImporterManifest(packageJsonPath: string): PackageManifest | null {
     : null;
 }
 function getRootManifest(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   directory: string,
 ): PackageManifest | undefined {
   return directory === config.governanceRoot.rootDir
@@ -83,7 +83,7 @@ function getRootManifest(
 }
 
 function collectImporterDirectories(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   packages: readonly WorkspacePackage[];
 }): Set<string> {
   return new Set([
@@ -93,7 +93,7 @@ function collectImporterDirectories(options: {
 }
 
 export function collectImporters(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   packages: WorkspacePackage[],
 ): ImporterInfo[] {
   const workspacePackageNames = collectWorkspacePackageNames(packages);

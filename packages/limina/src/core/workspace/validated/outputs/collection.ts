@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import { configContextPath, type ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import { LiminaStructuredError } from '../../../../check-reporting/errors';
@@ -21,7 +21,7 @@ export interface WorkspaceOutputDeclarations {
 
 interface OutputCollectionState extends WorkspaceOutputDeclarations {
   activatedPackageRoots: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   issues: LiminaCheckIssue[];
 }
 
@@ -33,7 +33,7 @@ function throwOutputIssues(issues: readonly LiminaCheckIssue[]): void {
 }
 
 function createAbsolutePackageOutputIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   entryIndex: number;
 }): LiminaCheckIssue {
   return {
@@ -41,7 +41,7 @@ function createAbsolutePackageOutputIssue(options: {
       code: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
       config: options.config,
       evidence: [`declaration: package.entries[${options.entryIndex}].outDir`],
-      filePath: options.config.configPath,
+      filePath: configContextPath(options.config),
       fix: 'Use a config.rootDir-relative package output path.',
       reason: 'package.entries[].outDir must be relative to config.rootDir.',
       title: 'Workspace output root is structurally unsafe',
@@ -61,7 +61,7 @@ async function collectRelativePackageOutput(options: {
   const issue = await validateOutputRoot({
     activatedPackageRoots: options.state.activatedPackageRoots,
     config: options.state.config,
-    declaredAt: options.state.config.configPath,
+    declaredAt: configContextPath(options.state.config),
     outputRoot,
   });
   if (issue !== null) {
@@ -73,7 +73,7 @@ async function collectRelativePackageOutput(options: {
   }
   options.state.packageOutputs.add(outputRoot);
   options.state.declaredPackageOutputs.set(
-    `${options.state.config.configPath}#package.entries[${options.entryIndex}].outDir`,
+    `${configContextPath(options.state.config)}#package.entries[${options.entryIndex}].outDir`,
     outputRoot,
   );
 }
@@ -96,7 +96,7 @@ async function collectPackageOutput(options: {
 }
 
 async function collectPackageEntries(
-  entries: NonNullable<NonNullable<ResolvedLiminaConfig['package']>['entries']>,
+  entries: NonNullable<NonNullable<ResolvedLiminaInputs['package']>['entries']>,
   state: OutputCollectionState,
 ): Promise<void> {
   for (const [entryIndex, entry] of entries.entries()) {
@@ -114,7 +114,7 @@ async function collectPackageOutputs(
 
 function addInvalidTsconfigOutputIssue(options: {
   candidatePath: string;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   issues: LiminaCheckIssue[];
   reason: string;
 }): void {
@@ -207,7 +207,7 @@ async function collectTsconfigOutputs(
 
 export async function collectOutputDeclarations(options: {
   activatedPackageRoots: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   universe: readonly WorkspaceDescriptorCandidate[];
 }): Promise<WorkspaceOutputDeclarations> {
   const state: OutputCollectionState = {

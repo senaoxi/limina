@@ -5,10 +5,12 @@ import {
 } from 'limina/internal/utils/path';
 import { mkdtemp, open, readFile, realpath, rm } from 'node:fs/promises';
 import { assertUniquePhysicalTargets } from './cleanup';
+import { collectCreatedSnapshot } from './create-snapshot';
 import { collectModifiedSnapshot } from './file-validation';
 import type {
   MigrationTransactionExecutionResult,
   MigrationTransactionOptions,
+  MigrationUpdatePlanItem,
   MigrationWritePlanItem,
   ModifiedTargetSnapshot,
   PreparedMigrationPlan,
@@ -85,7 +87,7 @@ export async function resolveAllowedRoots(
   return { normalizedRootDirs: normalizedRootDirectories, roots };
 }
 
-function findAllowedRoot(
+export function findAllowedRoot(
   configPath: string,
   allowedRoots: readonly AllowedRoot[],
 ): AllowedRoot | undefined {
@@ -100,7 +102,7 @@ function findAllowedRoot(
 
 async function collectItemSnapshot(options: {
   allowedRoots: readonly AllowedRoot[];
-  item: MigrationWritePlanItem;
+  item: MigrationUpdatePlanItem;
   runtime: TransactionRuntimeOptions;
 }): Promise<ModifiedTargetSnapshot> {
   const allowedRoot = findAllowedRoot(
@@ -122,7 +124,7 @@ async function collectItemSnapshot(options: {
 
 export async function collectModifiedSnapshots(options: {
   allowedRoots: readonly AllowedRoot[];
-  items: readonly MigrationWritePlanItem[];
+  items: readonly MigrationUpdatePlanItem[];
   runtime: TransactionRuntimeOptions;
 }): Promise<ModifiedTargetSnapshot[]> {
   const snapshots: ModifiedTargetSnapshot[] = [];
@@ -163,6 +165,7 @@ export async function prepareMigrationWritePlan(
   const { modifiedItems, skippedFiles } = partitionMigrationPlan(plan);
   if (modifiedItems.length === 0) {
     return {
+      createSnapshots: [],
       atomicSnapshots: [],
       hardlinkSnapshots: [],
       normalizedRootDirs: [],
@@ -173,11 +176,18 @@ export async function prepareMigrationWritePlan(
   const allowedRoots = await resolveAllowedRoots(allowedRootDirectories);
   const snapshots = await collectModifiedSnapshots({
     allowedRoots: allowedRoots.roots,
-    items: modifiedItems,
+    items: modifiedItems.filter(
+      (item): item is MigrationUpdatePlanItem => item.operation !== 'create',
+    ),
     runtime,
   });
   assertUniquePhysicalTargets(snapshots);
+  const createdSnapshots = await collectCreatedSnapshots(
+    modifiedItems,
+    allowedRoots.roots,
+  );
   return {
+    createSnapshots: createdSnapshots,
     atomicSnapshots: snapshots.filter(
       (snapshot) => snapshot.writeStrategy === 'atomic-replace',
     ),
@@ -187,4 +197,21 @@ export async function prepareMigrationWritePlan(
     normalizedRootDirs: allowedRoots.normalizedRootDirs,
     skippedFiles,
   };
+}
+
+async function collectCreatedSnapshots(
+  items: readonly MigrationWritePlanItem[],
+  roots: readonly AllowedRoot[],
+) {
+  const createdSnapshots = [];
+  const creations = items.filter((item) => item.operation === 'create');
+  for (const item of creations) {
+    const root = findAllowedRoot(item.configPath, roots);
+    if (!root)
+      throw new TerminalReplacementValidationError(
+        `Migration create target is outside every allowed Git worktree root: ${item.configPath}`,
+      );
+    createdSnapshots.push(await collectCreatedSnapshot(item, root));
+  }
+  return createdSnapshots;
 }

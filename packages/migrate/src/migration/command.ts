@@ -1,6 +1,6 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
+import { createLiminaArtifactNamespace } from 'limina/internal/domain/artifacts/namespace';
 import { formatErrorMessage, MigrationLogger } from 'limina/internal/logger';
-import { resolvePreflight } from 'limina/internal/preflight';
 import { createElapsedTimer } from 'logaria/helper';
 import type { MigrationCleanupWarning } from './transaction';
 import type {
@@ -28,6 +28,10 @@ function getHardlinkSummary(result: RunMigrationResult): string[] {
   return summary;
 }
 
+function verificationDescription(result: RunMigrationResult): string {
+  return result.verificationSource?.kind ?? 'unavailable';
+}
+
 function formatMigrationSummary(
   result: RunMigrationResult,
   cleanupWarningCount = 0,
@@ -35,6 +39,9 @@ function formatMigrationSummary(
   const warnings = getCleanupWarningSummary(cleanupWarningCount);
   const hardlinkSummary = getHardlinkSummary(result);
   return [
+    'Applied',
+    `input source: ${result.inputSource.kind}`,
+    `verification source: ${verificationDescription(result)}`,
     `processing complete: ${result.processingComplete}`,
     `input topology consumable: ${result.inputConsumable}`,
     `dependency comparison complete: ${result.comparisonComplete}`,
@@ -45,7 +52,7 @@ function formatMigrationSummary(
     `incomplete files: ${result.incompleteFiles.length}`,
     `checker entries: ${result.checkerEntryCount}`,
     `recursive references: ${result.recursiveReferenceCount}`,
-    `modified files: ${result.modifiedFiles.length}`,
+    `actual modified files: ${result.modifiedFiles.length}`,
     ...hardlinkSummary,
     `skipped files: ${result.skippedFiles.length}`,
     ...warnings,
@@ -62,7 +69,7 @@ function reportCleanupWarning(
   options.flow?.warn(message, { depth: options.flowDepth ?? 0 });
 }
 
-function reportMigrationSuccess(options: {
+function reportAppliedSuccess(options: {
   elapsed: ReturnType<typeof createElapsedTimer>;
   execution: RunMigrationImplResult;
   runOptions: RunMigrationOptions;
@@ -90,6 +97,25 @@ function reportMigrationSuccess(options: {
   return options.execution.result;
 }
 
+function reportMigrationSuccess(
+  options: Parameters<typeof reportAppliedSuccess>[0],
+): RunMigrationResult {
+  return options.execution.result.outcome === 'preview'
+    ? reportPreview(options)
+    : reportAppliedSuccess(options);
+}
+function reportPreview(
+  options: Parameters<typeof reportAppliedSuccess>[0],
+): RunMigrationResult {
+  const result = options.execution.result;
+  const message = result.previewComplete
+    ? 'Migration preview complete; no migration files were written'
+    : 'Migration preview incomplete; no migration files were written';
+  completeTask(options.task, message, result.previewComplete === true);
+  MigrationLogger.info(message);
+  return result;
+}
+
 function handleMigrationError(options: {
   elapsed: ReturnType<typeof createElapsedTimer>;
   error: unknown;
@@ -114,7 +140,7 @@ function createMigrationTask(options: RunMigrationOptions): MigrationTask {
 }
 
 async function executeMigrationCommand(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   elapsed: ReturnType<typeof createElapsedTimer>;
   runOptions: RunMigrationOptions;
   task: MigrationTask;
@@ -122,7 +148,10 @@ async function executeMigrationCommand(options: {
   try {
     const execution = await runMigrationImpl(
       options.config,
-      resolvePreflight(options.config, options.runOptions),
+      createLiminaArtifactNamespace({
+        rootDir: options.config.rootDir,
+        generation: 0,
+      }),
       {
         runOptions: options.runOptions,
         task: options.task,
@@ -144,7 +173,7 @@ async function executeMigrationCommand(options: {
 }
 
 export function runMigration(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: RunMigrationOptions = {},
 ): Promise<RunMigrationResult> {
   MigrationLogger.info('migration started');

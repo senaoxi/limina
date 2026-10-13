@@ -46,6 +46,8 @@
 
 先确定[配置位置](../../../packages/limina/src/config/loader-paths.ts)，再分类治理根。[manifest resolver](../../../packages/limina/src/utils/governance-manifest.ts) 在最近的 lexical `package.json` 停止搜索，然后读取并验证它是普通文件且内容为非 null、非数组的对象。不可读、悬空链接、JSON 错误和无效顶层值都在该位置失败，不使用祖先 manifest 替代。冻结的 manifest fact 与 lexical 路径进入 `ResolvedGovernanceRoot`。同一配置解析 generation 中，分类、根 `WorkspacePackage` 构造及下游根 manifest consumer 复用该事实；这不是通用文件系统缓存。
 
+迁移另支持完全无配置输入：从原始 cwd 选择并验证最近 manifest，不追溯祖先 workspace，然后构造 defaults，不声称加载了模块。普通命令保留其配置契约；确认、预览、按需配置创建及磁盘证据由[迁移生命周期](./lifecycle.md#migration-是另一种事务)维护。
+
 [root classifier](../../../packages/limina/src/utils/workspace-root.ts) 只检查这个目录。`WorkspaceRoot` 保留真实 descriptor 和必需的明确 manager；`SinglePackageRoot` 不伪造 descriptor 或 manager，提供 `[rootPackage]`。有效 workspace 即使只有根包仍是 workspace。单包治理接受 `{}`，缺失、歧义或无效 manager 元信息延迟到真正需要它的 consumer。workspace 必须先明确 manager 再调用成员 adapter，出错不降级为 single。两分支进入同一 activated-package core。config、preflight、validated context、graph export、migration 消费已选根，生产代码中不再有 `resolveNearestWorkspaceRoot()`。
 
 从子目录选择仓库根配置仍治理该 workspace；选择子包配置则由其最近 manifest 固定根，即使祖先有 workspace。这明确改变了旧的祖先 workspace 优先契约；同根声明优先级与成员选择语义保留。默认配置发现不再停在 workspace 边界。init 尚无模块时，从 cwd 寻找并验证最近 manifest，在其旁边写入配置；只有完全没有 manifest 才在 cwd bootstrap，无效与缺失必须区分。query 的独立 anchor 契约见[生命周期](./lifecycle.md#issue-identity-与-freshness)。

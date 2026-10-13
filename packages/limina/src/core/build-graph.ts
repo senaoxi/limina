@@ -1,5 +1,5 @@
 import type { CheckerProjectConfigCache } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   type GeneratedDependencyEdge,
   type GeneratedTsconfigGraphResult,
@@ -12,7 +12,7 @@ import { mapPromise } from './promise';
 import type { WorkspaceCore } from './workspace';
 
 export class BuildGraphCore {
-  readonly #config: ResolvedLiminaConfig;
+  readonly #config: ResolvedLiminaInputs;
 
   readonly #imports: ImportCore;
 
@@ -30,7 +30,7 @@ export class BuildGraphCore {
 
   constructor(options: {
     artifactNamespace: LiminaArtifactNamespace;
-    config: ResolvedLiminaConfig;
+    config: ResolvedLiminaInputs;
     imports: ImportCore;
     projectDependencies: ProjectDependencyCaches;
     projectConfigs: CheckerProjectConfigCache;

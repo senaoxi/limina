@@ -1,4 +1,4 @@
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
@@ -52,7 +52,7 @@ function getFrameworkDomain(
 }
 
 function formatAmbiguousMembership(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fact: CheckerDependencyFact;
   owners: readonly string[];
 }): string {
@@ -72,7 +72,7 @@ function formatAmbiguousMembership(options: {
 
 function createRequirementEvidence(options: {
   checker: CheckerName;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fact: CheckerDependencyFact;
   targetConfigPath: string;
 }): CheckerEvidence {
@@ -97,7 +97,7 @@ function getMissingPhysicalTarget(fact: CheckerDependencyFact): string | null {
 }
 
 function resolveFrameworkDomain(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fact: CheckerDependencyFact;
   plan: CheckerOwnershipPlan;
   targetConfigPath: string;
@@ -113,7 +113,7 @@ function resolveFrameworkDomain(options: {
 }
 
 function resolveOwnedPhysicalTarget(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fact: CheckerDependencyFact;
   membership: FileOwnerLookup;
   plan: CheckerOwnershipPlan;
@@ -143,7 +143,7 @@ function getMembershipOwners(
 }
 
 function resolveRequirement(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fact: CheckerDependencyFact;
   membership: FileOwnerLookup;
   plan: CheckerOwnershipPlan;
@@ -181,7 +181,7 @@ function appendRequirementEvidence(
 }
 
 export function collectRequirementsForConsumer(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   facts: readonly CheckerDependencyFact[];
   membership: FileOwnerLookup;
   plan: CheckerOwnershipPlan;

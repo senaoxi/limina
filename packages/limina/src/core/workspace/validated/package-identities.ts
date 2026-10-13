@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import { findWorkspaceRootDescriptor } from '#utils/workspace-root';
 import { realpath } from 'node:fs/promises';
@@ -17,7 +17,7 @@ function groupPackageIdentities(
 
 function createIdentityConflictIssue(options: {
   canonicalDirectory: string;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   group: readonly WorkspacePackageIdentity[];
 }): LiminaCheckIssue {
   return createWorkspaceIssue({
@@ -38,7 +38,7 @@ function createIdentityConflictIssue(options: {
 }
 
 export async function collectPackageIdentities(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   packages: readonly WorkspacePackage[];
 }): Promise<WorkspacePackageIdentity[]> {
   const identities = await Promise.all(
@@ -69,7 +69,7 @@ export async function collectPackageIdentities(options: {
 }
 
 function createSameRootOverlapIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   packageRoot: string;
   descriptorPath: string;
 }): LiminaCheckIssue {
@@ -89,7 +89,7 @@ function createSameRootOverlapIssue(options: {
 }
 
 async function collectOverlapIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   workspacePackage: WorkspacePackage;
   workspaceRootDir: string;
 }): Promise<LiminaCheckIssue | null> {
@@ -105,7 +105,7 @@ async function collectOverlapIssue(options: {
 }
 
 export async function assertNoSameRootOverlap(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   packages: readonly WorkspacePackage[];
 }): Promise<void> {
   const workspaceRootDirectory = options.config.governanceRoot.rootDir;

@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type { collectImportsFromFile } from '#core/import-graph/context';
 import { formatImportRecordLocation } from '#core/import-graph/context';
 import { toRelativePath } from '#utils/path';
@@ -13,7 +13,7 @@ type WorkspaceBoundary = NonNullable<
 
 function getBoundaryAuthorityLine(options: {
   boundary: WorkspaceBoundary;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
 }): string {
   return options.boundary.kind === 'workspace-root'
     ? `  boundary config: ${toRelativePath(options.config.rootDir, options.boundary.descriptor.path)}`
@@ -27,7 +27,7 @@ function getBoundaryReasonLines(boundary: WorkspaceBoundary): string[] {
 
 function formatBoundaryProblem(options: {
   boundary: WorkspaceBoundary;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importRecord: ImportRecord;
   project: SourceProject;
   resolvedFilePath: string;
@@ -47,7 +47,7 @@ function formatBoundaryProblem(options: {
 }
 
 function formatOutsideRegionProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importRecord: ImportRecord;
   project: SourceProject;
   resolvedFilePath: string;
@@ -64,7 +64,7 @@ function formatOutsideRegionProblem(options: {
 
 export function formatReferenceBoundaryProblem(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importRecord: ImportRecord;
   project: SourceProject;
   resolvedFilePath: string;

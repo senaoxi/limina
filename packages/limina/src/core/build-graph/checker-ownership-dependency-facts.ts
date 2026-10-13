@@ -1,5 +1,5 @@
 import type { CheckerProjectConfigCache } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
@@ -22,7 +22,7 @@ import type {
 import type { FileOwnerLookup } from './file-owner-lookup';
 
 interface FactCollectionOptions {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   core: TypeEvidenceCore;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
@@ -96,7 +96,7 @@ function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
 }
 
 export async function collectCheckerDependencyFacts(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
   projectDependencyCaches?: ProjectDependencyCaches;

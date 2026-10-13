@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   createImportAnalysisContext,
   type ImportAnalysisContext,
@@ -91,7 +91,7 @@ function assertProjectDependencyCollection(
 }
 
 export class ImportCore {
-  readonly #config: ResolvedLiminaConfig;
+  readonly #config: ResolvedLiminaInputs;
 
   #context: ImportAnalysisContext;
 
@@ -99,7 +99,7 @@ export class ImportCore {
 
   readonly #workspaceSourceBoundaryProvider: ImportCoreOptions['workspaceSourceBoundaryProvider'];
 
-  constructor(config: ResolvedLiminaConfig, options: ImportCoreOptions) {
+  constructor(config: ResolvedLiminaInputs, options: ImportCoreOptions) {
     this.#config = config;
     this.#context = this.#createContext(options);
     this.#workspaceSourceBoundaryProvider =

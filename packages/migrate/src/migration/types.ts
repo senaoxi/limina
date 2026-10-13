@@ -2,9 +2,12 @@ import type { JsonObject } from 'limina/internal/core/tsconfig/actions';
 import type { LiminaFlowReporter } from 'limina/internal/flow';
 import type { PreflightCapableOptions } from 'limina/internal/preflight';
 import type ts from 'typescript';
+import type { MigrationConfigSource, MigrationScope } from './scope';
 import type { MigrationCleanupWarning } from './transaction';
 
 export interface RunMigrationOptions extends PreflightCapableOptions {
+  dryRun?: boolean;
+  scope?: MigrationScope;
   configLoader?: 'native' | 'tsx';
   mode?: string;
   confirmDirtyWorkspace?: (message: string) => Promise<boolean>;
@@ -18,6 +21,10 @@ export interface RunMigrationOptions extends PreflightCapableOptions {
 export type HardlinkMigrationDecision = 'cancel' | 'rewrite' | 'skip';
 
 export interface RunMigrationResult {
+  outcome: 'preview' | 'applied';
+  previewComplete?: boolean;
+  inputSource: MigrationConfigSource;
+  verificationSource?: MigrationConfigSource;
   processingComplete: boolean;
   inputConsumable: boolean;
   incompleteFiles: string[];

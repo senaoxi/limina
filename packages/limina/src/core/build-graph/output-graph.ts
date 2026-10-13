@@ -1,7 +1,7 @@
 import { getCheckerAdapter } from '#checkers';
 import type {
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
@@ -34,7 +34,7 @@ function isBuildChecker(checker: ResolvedCheckerConfig): boolean {
 }
 
 function formatMissingOutputDependencyProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
   targetProject: SourceProject;
 }): string {
@@ -49,7 +49,7 @@ function formatMissingOutputDependencyProblem(options: {
 
 function addOutputProjectReference(options: {
   allProjectsByDtsPath: Map<string, SourceProject>;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   problems: string[];
   project: SourceProject;
   referencePath: string;
@@ -73,7 +73,7 @@ function addOutputProjectReference(options: {
 
 function addOutputProjectReferences(options: {
   allProjectsByDtsPath: Map<string, SourceProject>;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   problems: string[];
   project: SourceProject;
 }): void {
@@ -84,7 +84,7 @@ function addOutputProjectReferences(options: {
 
 function createOutputProjectModules(options: {
   checkerName: string;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   outputProjects: SourceProject[];
 }): Map<string, GeneratedBuildModule> {
   return new Map(
@@ -124,7 +124,7 @@ interface OutputGraphState {
 
 function createOutputGraphState(options: {
   checker: ResolvedCheckerConfig;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   projects: SourceProject[];
 }): OutputGraphState {
   const outputProjects = options.projects.filter((project) =>
@@ -149,7 +149,7 @@ function createOutputGraphState(options: {
 
 function addAllOutputProjectReferences(options: {
   allProjectsByDtsPath: Map<string, SourceProject>;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   outputProjects: SourceProject[];
   problems: string[];
 }): void {
@@ -161,7 +161,7 @@ function addAllOutputProjectReferences(options: {
 function addAllOutputSolutions(options: {
   checker: ResolvedCheckerConfig;
   collection: CheckerSourceConfigCollection;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: OutputGraphState;
 }): void {
   const sourceConfigPaths = [...options.collection.solutionConfigPaths].sort(
@@ -188,7 +188,7 @@ export function createCheckerOutputGraph(options: {
   allProjectsByDtsPath: Map<string, SourceProject>;
   checker: ResolvedCheckerConfig;
   collection: CheckerSourceConfigCollection;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   problems: string[];
   projects: SourceProject[];
 }): CheckerOutputGraph {

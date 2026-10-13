@@ -70,7 +70,7 @@ npx --yes skills add senaoxi/limina --skill limina
 
 ### `limina-migrate` {#limina-migration}
 
-`limina-migrate` 是独立 CLI 包，与 `limina` 同版本配对发布。它内联所需的核心输入实现，没有主包运行时依赖。本地安装后可执行下面的命令，或使用 `pnpm dlx limina-migrate@<version>`。它支持 `--config`、`--config-loader` 和 `--mode`；配置函数仍收到 `command: 'migration'`。
+`limina-migrate` 是独立 CLI 包，与 `limina` 同版本配对发布。它内联所需的核心输入实现，没有主包运行时依赖。本地安装后可执行下面的命令，或使用 `pnpm dlx limina-migrate@<version>`。它支持 `--config`、`--config-loader`、`--mode`、`--yes` 和 `--dry-run`；配置函数仍收到 `command: 'migration'`。
 
 `export default {}` 这类中立配置只需工具及其必需的 TypeScript 对等依赖即可迁移。配置导入公开 `limina` 时，须在该配置解析依赖的位置安装 Limina；工具不提供或改写这些导入。可选加载器和检查器仍要求受支持的对等依赖。CLI 报告内嵌版本，并从配置及治理根的定位锚点观察项目包版本。项目版本不同或无法确定只是非阻断的元数据提示，不是对目标项目运行时的验收；工具构建版本与自身安装版本不一致会在写入前失败。持久化的 `$schema` 路径仍指向 `node_modules/limina/schemas/tsconfig-schema.json`，主包安装前编辑器可能无法解析它。
 
@@ -83,6 +83,24 @@ pnpm exec limina-migrate
 ```
 
 命令分别报告处理完成与输入可消费性。架构规则、包依赖、检查器归属和类型错误仍由 `limina check` 检查。迁移不承诺原生 `tsc -b` 行为等价。
+
+#### 范围与写入计划预览
+
+发现优先级固定为：相对原始 cwd 解析的显式 `--config`；按既有同目录文件名顺序，从 cwd 完整向上查找的默认命名 Limina 配置；只有完全没有配置时，才采用 cwd 的最近 `package.json`。选中配置使用其最近 manifest 与正常的单包／workspace 分类；defaults 不再追溯更高层 workspace。manifest 缺失、最近 manifest 无效／不可读都会停止；显式配置错误不回退。
+
+Flow 在执行用户配置前展示原始 cwd、最终 rootDir、根类型、manifest、配置路径（或 `none (using defaults)`）与输入来源。`Continue with this migration scope?` 默认 Yes。No 或取消会在求值、规划和迁移写入前停止。包括预览在内，非 TTY 必须传 `--yes`。它只接受这次范围，不批准 dirty-worktree 或 hardlink 写入。等待确认期间配置选择或根绑定改变时停止，不静默换用其他输入。
+
+```sh
+pnpm exec limina-migrate --dry-run --yes
+```
+
+规划后的完整 **Write Plan Summary (planned)** 从真实冻结 create/update 补丁列出稳定排序的路径、schema、原生引用删除／转换、implicitRefs 添加／复用、outputs 与精确隔离 exclusions。未变／阻止目标和保持原样的隔离配置单独列出。checker 入口及发现候选不等于写入集合：`scope.checkers.auto.exclude` 不将 activated source 排除在迁移外。域外引用删除另行说明；辅助审计位置与业务补丁分开。写入检查和专项决策只能缩小已展示计划；Applied 摘要报告实际修改。
+
+无配置时，迁移在内存中构造经过验证的默认上下文，不执行 init，不添加依赖／脚本，也不创建空配置。安全隔离需要持久化 `scope.regions.exclude` 时，计划创建 `${rootDir}/limina.config.mjs`，只包含必要静态字段且不导入 `limina`。坏 tsconfig 保持原样。创建不会替换已有目录项；其他写入者竞争、创建失败或一致性组跳过，都不能报告成功接入。配置与依赖它的改写沿用既有一致性组；回滚遇到创建目标身份或内容漂移时保留现场。
+
+`--dry-run` 展示同一冻结计划后结束，不执行迁移器控制的项目写入、事务目录／备份、graph 输出、缓存发布、成功／失败审计发布或写后磁盘验证。预览不要求 clean Git worktree 或 Git membership，也不请求 dirty-worktree/hardlink 授权。完整、可读且含受治理源码的计划返回零；规划失败、必要补丁无法形成、残留结构性不完整或无受治理源码返回非零，并展示已有诊断。单纯 dependency comparison 不完整仍保守保留引用。Preview 输出不能证明 Applied 成功或磁盘可消费性。
+
+用户配置与现有第三方入口仍是可执行代码；dry-run 不是 JavaScript 副作用沙箱。之后每次 CLI 调用都会独立重新规划，预览不构成未来写入授权。
 
 #### 配置与关系
 
@@ -118,7 +136,7 @@ JSONC 编辑保留无关文本、注释和换行符。受管字段存在重复�
 
 同一聚合配置环的修改，以及共享必要持久化排除项的修改，组成一致性组。可恢复失败会恢复该组，然后继续独立组。文件系统状态不确定时停止并保留恢复证据。迁移没有跨进程写租约，写入开始后也不会重新执行语义规划。
 
-新进程会通过同次发行 Limina 源码内嵌的正常 `check` 和 `graph` 输入读取路径加载实际配置。成功表示该内嵌实现消费了磁盘输入，不表示执行了完整类型检查、图治理或项目安装版 Limina 运行时。只有重新读取成功、必要写入完成、源码纳管关系保留且仍有可治理源码时，才允许报告接入成功。必要写入失败、残留结构性错误或无法验证会返回非零。单独拒绝可选输出不要求失败。
+Applied 验证为两种命令启动独立新 worker：加载确认后的真实配置、未创建配置时从锁定的 manifest/workspace 重建 defaults，或加载实际创建的最小配置。defaults 结果标记为默认上下文下的输入验证；普通 `limina check` 仍需要配置。worker 使用同次发行 Limina 源码内嵌的正常 `check` 和 `graph` 输入读取路径。成功表示该内嵌实现消费了磁盘输入，不表示执行了完整类型检查、图治理或项目安装版 Limina 运行时。只有重新读取成功、必要写入完成、源码纳管关系保留且仍有可治理源码时，才允许报告接入成功。必要写入失败、残留结构性错误或无法验证会返回非零。单独拒绝可选输出不要求失败。
 
 终端摘要包含隔离、域外引用删除、比较完整性、诊断及失败／跳过组数量与审计路径。规划阶段和输出候选计数显示进度。审计报告位于 `.limina/migration/latest.json`，包含目标、隔离、修剪关系、比较完整性、输出决策、写入、最终验证、阶段耗时，以及报告位置仍可写时的致命失败尝试。报告发布失败会警告，不撤销已经写入的配置。核心和后续迁移都不将报告作为输入事实来源。
 

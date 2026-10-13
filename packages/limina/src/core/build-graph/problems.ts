@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { LIMINA_CHECK_ISSUE_CODES } from '../../check-reporting/codes';
 import { LiminaStructuredError } from '../../check-reporting/errors';
 import {
@@ -32,7 +32,7 @@ function formatProblemList(
 }
 
 type SpecializedIssueFactory = (options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   lines: readonly string[];
 }) => LiminaCheckIssue;
 
@@ -55,7 +55,7 @@ const SPECIALIZED_ISSUE_FACTORIES: ReadonlyMap<
 ]);
 
 function createDefaultGeneratedGraphProblemIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fallback: string;
   lines: readonly string[];
   title: string;
@@ -82,7 +82,7 @@ function createDefaultGeneratedGraphProblemIssue(options: {
 }
 
 function createGeneratedGraphProblemIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fallback: string;
   problem: string;
 }): LiminaCheckIssue {
@@ -102,7 +102,7 @@ function createGeneratedGraphProblemIssue(options: {
 }
 
 export function createGeneratedGraphStructuredError(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fallback: string;
   problems: readonly string[];
 }): LiminaStructuredError {

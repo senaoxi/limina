@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import type { WorkspacePackage } from '../actions';
@@ -31,7 +31,7 @@ interface CollectedWorkspaceIslands {
 }
 
 async function collectWorkspaceIslands(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   identities: readonly WorkspacePackageIdentity[];
   packages: readonly WorkspacePackage[];
   rules: ReturnType<typeof compileExclusionRules>;
@@ -92,7 +92,7 @@ function collectStableSourceConfigPaths(
 }
 
 export async function collectWorkspaceInputSnapshot(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rawPackages: readonly WorkspacePackage[];
 }): Promise<{
   islands: Awaited<ReturnType<typeof collectWorkspaceIslands>>;
@@ -130,7 +130,7 @@ export async function collectWorkspaceInputSnapshot(options: {
 }
 
 export async function collectValidatedWorkspaceContext(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rawPackages: readonly WorkspacePackage[];
 }): Promise<ValidatedWorkspaceContext> {
   return collectValidatedWorkspaceContextFromSnapshot({
@@ -143,7 +143,7 @@ export async function collectValidatedWorkspaceContext(options: {
 // config/region authority; output declarations and physical write authority
 // are validated again for each projection.
 export async function collectValidatedWorkspaceContextFromSnapshot(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rawPackages: readonly WorkspacePackage[];
   inputSnapshot: Awaited<ReturnType<typeof collectWorkspaceInputSnapshot>>;
 }): Promise<ValidatedWorkspaceContext> {

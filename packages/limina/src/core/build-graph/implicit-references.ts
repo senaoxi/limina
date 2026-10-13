@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import {
   addSourceReferenceConfigProblems,
@@ -8,7 +8,7 @@ import { getDtsConfigPathForSourcePath } from './project-indexes';
 import type { SourceProject } from './types';
 
 function formatUnmappedImplicitReference(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   path: string;
   project: SourceProject;
   targetConfigPath: string;
@@ -24,7 +24,7 @@ function formatUnmappedImplicitReference(options: {
 }
 
 function addImplicitReference(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   localDtsProjectsBySourcePath: Map<string, SourceProject[]>;
   path: string;
   problems: string[];
@@ -44,7 +44,7 @@ function addImplicitReference(options: {
 }
 
 export function addImplicitProjectReferences(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   localDtsProjectsBySourcePath: Map<string, SourceProject[]>;
   problems: string[];
   project: SourceProject;
