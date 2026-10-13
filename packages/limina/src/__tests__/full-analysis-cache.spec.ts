@@ -291,23 +291,34 @@ describe('complete native restoration and R02 scope evidence', () => {
 });
 
 describe('R01 effective local metadata and installation trust', () => {
-  it.each([false, true])(
-    'restores a shared pnpm member without scanning installed roots (explicit roots: %s)',
-    (explicitRoots) => {
+  it.each([
+    { explicitRoots: false, environmentDocument: false },
+    { explicitRoots: true, environmentDocument: false },
+    { explicitRoots: false, environmentDocument: true },
+    { explicitRoots: true, environmentDocument: true },
+  ])(
+    'restores a shared pnpm member without scanning installed roots (explicit: $explicitRoots, env document: $environmentDocument)',
+    ({ explicitRoots, environmentDocument }) => {
       const f = fixture();
+      const pnpmVersion = environmentDocument ? '12.10.1' : '11.28.3';
       f.write(
         'package.json',
-        '{"private":true,"packageManager":"pnpm@11.28.3"}',
+        JSON.stringify({
+          private: true,
+          packageManager: `pnpm@${pnpmVersion}`,
+        }),
       );
       rmSync(f.file('package-lock.json'));
       f.write('pnpm-workspace.yaml', 'packages: [packages/*]\n');
-      f.write(
-        'pnpm-lock.yaml',
-        'lockfileVersion: 9\nimporters:\n  .: {}\n  packages/member: {}\n',
-      );
+      const environment = environmentDocument
+        ? `---\nlockfileVersion: 9\nimporters:\n  .:\n    configDependencies: {}\n    packageManagerDependencies:\n      pnpm: {specifier: 12.10.1, version: 12.10.1}\n---\n`
+        : '';
+      const projectLock =
+        'lockfileVersion: 9\nimporters:\n  .: {}\n  packages/member: {}\n';
+      f.write('pnpm-lock.yaml', environment + projectLock);
       f.write(
         'node_modules/.modules.yaml',
-        'packageManager: pnpm@11.28.3\nvirtualStoreDir: .pnpm\n',
+        `packageManager: pnpm@${pnpmVersion}\nvirtualStoreDir: .pnpm\n`,
       );
       f.write(
         'node_modules/.pnpm/types/node_modules/@types/pkg/index.d.ts',
@@ -353,6 +364,24 @@ describe('R01 effective local metadata and installation trust', () => {
       expect(warm.cache.metrics.semanticPrograms).toBe(0);
       expect(warm.cache.metrics.localRootScans ?? 0).toBe(0);
       expect(warm.facts).toEqual(first.facts);
+      if (environmentDocument) {
+        f.write(
+          'pnpm-lock.yaml',
+          environment.replaceAll('12.10.1', '12.10.2') + projectLock,
+        );
+        const changed = analyze(
+          f.project('packages/member/tsconfig.json'),
+          warm.cache,
+        );
+        expect(changed.restored).toBe(false);
+        expect(changed.cache.inputs.domainDirty).toBe(true);
+        expect(changed.cache.metrics.factHits).toBe(0);
+        expect(changed.facts).toEqual(first.facts);
+        expect(
+          analyze(f.project('packages/member/tsconfig.json'), changed.cache)
+            .restored,
+        ).toBe(true);
+      }
       f.write('packages/member/package-lock.json', '{"lockfileVersion":3}');
       const independent = analyze(
         f.project('packages/member/tsconfig.json'),
@@ -363,7 +392,10 @@ describe('R01 effective local metadata and installation trust', () => {
         Object.values(independent.cache.contexts)[0]?.environment.evidence,
       ).toBe('unknown');
       rmSync(f.file('packages/member/package-lock.json'));
-      f.write('pnpm-lock.yaml', 'lockfileVersion: 9\nimporters:\n  .: {}\n');
+      f.write(
+        'pnpm-lock.yaml',
+        `${environment}lockfileVersion: 9\nimporters:\n  .: {}\n`,
+      );
       const uncovered = analyze(
         f.project('packages/member/tsconfig.json'),
         warm.cache,
