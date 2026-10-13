@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
@@ -17,7 +17,7 @@ import type {
 } from './checker-ownership-types';
 
 function formatProjectDependencyFailure(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   failure: ProjectDependencyFailure;
 }): string {
   return [
@@ -61,7 +61,7 @@ function createLockedDependencyFact(
 
 export function collectLockedProjectFacts(options: {
   caches: ReturnType<typeof createProjectDependencyCaches>;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importAnalysis: ImportAnalysisContext;
   project: AutoScopeProject;
   state: TypeConfigOwnershipState & {

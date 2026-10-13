@@ -136,6 +136,7 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     await runCommand('git', ['init'], { cwd: root });
     await commit();
     const arguments_ = [
+      '--yes',
       '--mode',
       'mode with ! & quotes',
       '--config',
@@ -149,9 +150,10 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     await commit();
     const legacy = await node([
       coreBin,
-      ...arguments_.slice(0, 2),
+      ...arguments_.slice(1, 3),
       'migration',
-      ...arguments_.slice(2),
+      '--yes',
+      ...arguments_.slice(3),
     ]);
     expect(legacy.exitCode, legacy.stdout + legacy.stderr).toBe(0);
     expect(legacy.stderr).toContain('deprecated');
@@ -277,9 +279,10 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
       const fallback = await node(
         [
           coreBin,
-          ...arguments_.slice(0, 2),
+          ...arguments_.slice(1, 3),
           'migration',
-          ...arguments_.slice(2),
+          '--yes',
+          ...arguments_.slice(3),
         ],
         {
           // Vitest adds uppercase env keys on Windows; Node keeps that variant.
@@ -292,7 +295,15 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
       expect(fallback.exitCode, fallback.stdout + fallback.stderr).toBe(0);
       const observed = JSON.parse(fallback.stdout.trim().split('\n').at(-1)!);
       expect(observed).toEqual({
-        argv: ['--yes', `limina-migrate@${manifest.version}`, ...arguments_],
+        argv: [
+          '--yes',
+          `limina-migrate@${manifest.version}`,
+          '--mode',
+          'mode with ! & quotes',
+          '--yes',
+          '--config',
+          'limina.config.mjs',
+        ],
         cwd: root,
       });
     } finally {

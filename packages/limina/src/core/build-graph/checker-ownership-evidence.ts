@@ -1,4 +1,4 @@
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
@@ -11,7 +11,7 @@ import { lockSemanticAuthorityForEvidence } from './checker-semantic-authority';
 import { createGeneratedGraphStructuredError } from './problems';
 
 function formatLocalConflict(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   current: CheckerName;
   evidence: CheckerEvidence;
   state: TypeConfigOwnershipState;
@@ -49,7 +49,7 @@ function addEvidenceIfMissing(
 
 function addAuthoritativeCheckerRequirement(options: {
   checker: CheckerName;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   detail: string;
   evidenceConfigPath: string;
   state: TypeConfigOwnershipState;
@@ -79,7 +79,7 @@ function addAuthoritativeCheckerRequirement(options: {
 }
 
 export function addLocalCheckerRequirement(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   evidence: CheckerEvidence;
   state: TypeConfigOwnershipState;
 }): string | null {
@@ -91,7 +91,7 @@ export function addLocalCheckerRequirement(options: {
 }
 
 function resolveLocalCheckerRequirement(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   evidence: CheckerEvidence;
   state: TypeConfigOwnershipState;
 }): string | null {
@@ -110,7 +110,7 @@ function resolveLocalCheckerRequirement(options: {
 
 export function addSolutionRequirement(options: {
   checker: CheckerName;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   detail: string;
   solution: SolutionOwnershipState;
 }): string | null {
@@ -134,7 +134,7 @@ export function problemArray(problem: string | null): string[] {
 
 function applyExplicitRequirement(options: {
   checker: CheckerName;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   entryPath: string;
   plan: CheckerOwnershipPlan;
 }): string[] {
@@ -176,7 +176,7 @@ function applyExplicitRequirement(options: {
 }
 
 export function applyExplicitRequirements(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   explicitOwnerByEntryPath: ReadonlyMap<string, CheckerName>;
   plan: CheckerOwnershipPlan;
 }): string[] {
@@ -215,7 +215,7 @@ function collectRootRequirements(
 }
 
 function applyRootRequirement(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: AutoScopeProject;
   requirement: { checker: CheckerName; fileName: string };
   state: TypeConfigOwnershipState;
@@ -234,7 +234,7 @@ function applyRootRequirement(options: {
 }
 
 export function applyRootFileEvidence(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   plan: CheckerOwnershipPlan;
   projectByConfigPath: ReadonlyMap<string, AutoScopeProject>;
 }): string[] {
@@ -252,7 +252,7 @@ export function applyRootFileEvidence(options: {
 }
 
 export function assertOwnershipPhase(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fallback: string;
   problems: string[];
 }): void {

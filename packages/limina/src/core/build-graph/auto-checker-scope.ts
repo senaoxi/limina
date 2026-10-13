@@ -1,5 +1,5 @@
 import type { CheckerProjectConfigCache } from '#checkers';
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
@@ -49,7 +49,7 @@ function collectAutoSourceConfigModules(
 
 function createAutoScope(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   entryConfigPath: string;
   projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScope {
@@ -124,7 +124,7 @@ function createAutoScope(options: {
 
 export function collectAutoScope(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   entryConfigPath: string;
   projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScope | null {
@@ -147,7 +147,7 @@ function getExplicitParsing(checkerName: CheckerName): {
 export function collectExplicitScope(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: CheckerName;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   entryConfigPath: string;
   projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScope | null {

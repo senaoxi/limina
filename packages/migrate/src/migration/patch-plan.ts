@@ -1,5 +1,9 @@
-import type { RegionsConfig } from 'limina/internal/config/runner';
+import {
+  configContextPath,
+  type RegionsConfig,
+} from 'limina/internal/config/runner';
 import type { InputTopologyResult } from 'limina/internal/core/build-graph/input-topology';
+import path from 'pathe';
 import { createCommitGroups } from './commit-groups';
 import { addStaticConfigExclusions } from './config-edit';
 import { isExpectedInputFailure } from './discovery';
@@ -47,33 +51,69 @@ function readSourcePatch(
     return undefined;
   }
 }
+function recordExclusions(
+  state: MigrationPlanningState,
+  configPath: string,
+  exclusions: ReturnType<typeof plannedExclusions>,
+): void {
+  state.records.push({
+    configPath,
+    kind: 'exclusions-planned',
+    message:
+      'Persist exact config exclusions; package activation is unchanged.',
+    details: exclusions,
+  });
+}
+function createIsolationConfig(
+  state: MigrationPlanningState,
+  exclusions: ReturnType<typeof plannedExclusions>,
+): MigrationWritePlanItem {
+  const configPath = path.join(state.config.rootDir, 'limina.config.mjs');
+  recordExclusions(state, configPath, exclusions);
+  return {
+    operation: 'create',
+    configPath,
+    originalBytes: null,
+    originalContent: null,
+    nextContent: `export default ${JSON.stringify({ scope: { regions: { exclude: exclusions } } }, null, 2)};\n`,
+    status: 'modified',
+  };
+}
+function updateIsolationConfig(
+  state: MigrationPlanningState,
+  configPath: string,
+  exclusions: ReturnType<typeof plannedExclusions>,
+): MigrationWritePlanItem {
+  const originalContent = state.snapshot.get(configPath)!;
+  const nextContent = addStaticConfigExclusions(
+    configPath,
+    originalContent,
+    exclusions,
+  );
+  recordExclusions(state, configPath, exclusions);
+  return {
+    configPath,
+    originalBytes: Buffer.from(originalContent),
+    originalContent,
+    nextContent,
+    status: 'modified',
+  };
+}
+function isolationPatch(
+  state: MigrationPlanningState,
+  exclusions: ReturnType<typeof plannedExclusions>,
+): MigrationWritePlanItem {
+  return state.config.configPath === undefined
+    ? createIsolationConfig(state, exclusions)
+    : updateIsolationConfig(state, state.config.configPath, exclusions);
+}
 async function exclusionPatch(
   state: MigrationPlanningState,
 ): Promise<MigrationWritePlanItem | undefined> {
   const exclusions = plannedExclusions(state);
   if (exclusions.length === 0) return undefined;
   try {
-    const originalContent = state.snapshot.get(state.config.configPath)!;
-    const originalBytes = Buffer.from(originalContent);
-    const nextContent = addStaticConfigExclusions(
-      state.config.configPath,
-      originalContent,
-      exclusions,
-    );
-    state.snapshot.set(state.config.configPath, originalContent);
-    state.records.push({
-      configPath: state.config.configPath,
-      kind: 'exclusions-planned',
-      message: 'Exact config exclusions; package activation is unchanged.',
-      details: exclusions,
-    });
-    return {
-      configPath: state.config.configPath,
-      originalBytes,
-      originalContent,
-      nextContent,
-      status: 'modified',
-    };
+    return isolationPatch(state, exclusions);
   } catch (error) {
     return failedExclusionPatch(state, error);
   }
@@ -85,7 +125,7 @@ function failedExclusionPatch(
   if (!isExpectedInputFailure(error)) throw error;
   state.incomplete = true;
   state.records.push({
-    configPath: state.config.configPath,
+    configPath: configContextPath(state.config),
     kind: 'exclusions-not-persisted',
     message: error.message,
     details: plannedExclusions(state),

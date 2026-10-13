@@ -70,7 +70,7 @@ This installs the skill without rewriting source `tsconfig` files. For existing 
 
 ### limina-migrate {#limina-migration}
 
-`limina-migrate` is a separate CLI package released together with `limina` at the same version. It embeds the required core input implementation and has no runtime dependency on the main package. Install it locally to use the command below, or run `pnpm dlx limina-migrate@<version>`. It accepts `--config`, `--config-loader` and `--mode`; configuration functions still receive `command: 'migration'`.
+`limina-migrate` is a separate CLI package released together with `limina` at the same version. It embeds the required core input implementation and has no runtime dependency on the main package. Install it locally to use the command below, or run `pnpm dlx limina-migrate@<version>`. It accepts `--config`, `--config-loader`, `--mode`, `--yes` and `--dry-run`; configuration functions still receive `command: 'migration'`.
 
 A neutral config such as `export default {}` can be migrated with only this tool and its required TypeScript peer. If the config imports public `limina`, install Limina where that config resolves dependencies; the tool does not supply or rewrite those imports. Optional loaders/checkers still require their supported peers. The CLI reports the embedded version and observes project package versions from config/governance-root anchors. Different or unavailable project versions are non-blocking metadata notices, not target-runtime verification. Tool build/self version mismatches fail before writes. Persisted `$schema` paths continue to refer to `node_modules/limina/schemas/tsconfig-schema.json`; editor resolution may be unavailable until the main package is installed.
 
@@ -83,6 +83,24 @@ pnpm exec limina-migrate
 ```
 
 The command reports processing completion separately from input consumption. Architecture rules, package dependencies, checker ownership and type errors still belong to `limina check`. Migration does not promise equivalent native `tsc -b` behavior.
+
+#### Scope and write-plan preview
+
+Discovery has fixed priority: explicit `--config` resolved against the original cwd; default-named Limina configs searched from cwd through every ancestor using the existing same-directory filename order; and, only when no config exists, the nearest `package.json` from cwd. Selecting a config uses its nearest manifest and the normal single-package/workspace classifier. It does not chase a higher workspace when using defaults. Missing manifests and invalid/unreadable nearest manifests stop execution; explicit config errors never fall back.
+
+Flow shows the original cwd, final rootDir, root kind, manifest, config path (or `none (using defaults)`) and input source before loading executable configuration. `Continue with this migration scope?` defaults to Yes. No or cancellation stops before evaluation, planning and migration writes. Non-TTY execution requires `--yes`, including previews. `--yes` accepts this scope only; it does not approve dirty-worktree or hardlink writes. A change to config selection or root binding while waiting stops execution rather than silently choosing another input.
+
+```sh
+pnpm exec limina-migrate --dry-run --yes
+```
+
+After planning, the complete **Write Plan Summary (planned)** lists actual frozen create/update patches with stable paths, schema, native reference deletion/conversion, implicitRefs additions/reuse, outputs and exact isolation exclusions. It lists unchanged/blocked targets and preserved isolated configs separately. Checker entries and discovered candidates are not the write set: `scope.checkers.auto.exclude` does not exclude activated sources from migration. Outside-scope reference removal is identified separately. The auxiliary audit location is distinct from business patches. Write checks and specialized decisions can shrink the displayed plan; the Applied summary reports actual modifications.
+
+Without a config, migration constructs validated defaults in memory. It does not run init, add dependencies/scripts or create an empty config. If safe isolation requires persisted `scope.regions.exclude`, the plan creates `${rootDir}/limina.config.mjs` containing only those static fields, without importing `limina`. The bad tsconfig stays unchanged. Creation cannot replace an existing entry; a competing writer, failed create or skipped consistency group prevents successful adoption. The configuration and rewrites that depend on it share the existing consistency group. Rollback preserves a created target if its identity or content has drifted.
+
+`--dry-run` ends after showing this same frozen plan. It performs no migration-controlled project writes, transaction directories/backups, graph outputs, cache publication, audit success/failure publication or post-write disk verification. It needs no clean Git worktree or Git membership and requests no dirty-worktree/hardlink authorization. A complete readable plan with governed sources returns zero; planning failure, unavailable necessary patches, residual structural incompleteness or no governed sources returns nonzero with available diagnostics. Incomplete dependency comparison alone retains conservative reference preservation. Preview output cannot establish Applied success or disk consumption.
+
+User configuration and existing third-party entrypoints remain executable code; dry-run is not a JavaScript side-effect sandbox. Each later CLI invocation independently replans; a preview grants no future write authorization.
 
 #### Configuration and relationships
 
@@ -118,7 +136,7 @@ JSONC edits preserve unrelated text, comments and line endings. Ambiguous govern
 
 Edits of a solution cycle and edits sharing a required persisted isolation form consistency groups. A recoverable failure restores its group and independent groups continue. Uncertain filesystem state stops execution and preserves recovery evidence. There is no cross-process writer lease and no semantic replanning after writing begins.
 
-A fresh process loads the actual configuration through the normal `check` and `graph` input readers embedded from the same-release Limina source. Success means that embedded implementation consumed the disk inputs; it does not mean full typechecking, graph governance or the project’s installed Limina runtime ran. Only successful rereading, completed necessary writes, preserved source membership and a nonempty governed source set permit a successful adoption result. Necessary write failures, residual structural errors or unavailable verification return nonzero. Rejecting optional outputs alone does not require failure.
+For Applied verification, separate fresh workers use the confirmed real config, rebuild defaults from the locked manifest/workspace when no config was created, or load the actually created minimal config. Defaults results identify input validation under a default context; ordinary `limina check` still requires a config. The workers use the normal `check` and `graph` input readers embedded from the same-release Limina source. Success means that embedded implementation consumed the disk inputs; it does not mean full typechecking, graph governance or the project’s installed Limina runtime ran. Only successful rereading, completed necessary writes, preserved source membership and a nonempty governed source set permit a successful adoption result. Necessary write failures, residual structural errors or unavailable verification return nonzero. Rejecting optional outputs alone does not require failure.
 
 The terminal summary includes isolation, outside-reference removal, comparison completeness, diagnostic and failed/skipped-group counts, and the audit path. Planning phases and output-candidate counts expose progress. The audit report is `.limina/migration/latest.json`. It records targets, isolation, pruned relations, comparison completeness, output decisions, writes and final verification, phase timings and fatal attempts when the report location remains writable. Report publication failure warns without undoing committed configs. Neither core nor later migration runs use this report as input authority.
 

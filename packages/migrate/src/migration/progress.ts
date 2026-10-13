@@ -1,3 +1,4 @@
+import { configContextPath } from 'limina/internal/config/runner';
 import { MigrationLogger } from 'limina/internal/logger';
 import type { MigrationRecord } from './declarations';
 import type { MigrationPlanningState } from './planning-state';
@@ -25,7 +26,7 @@ export async function planningPhase<T>(
   } finally {
     const elapsedMilliseconds = Math.round(performance.now() - started);
     state.records.push({
-      configPath: state.config.configPath,
+      configPath: configContextPath(state.config),
       kind: 'planning-phase',
       message: `${phase}: ${isComplete ? 'complete' : 'failed'}`,
       details: { phase, complete: isComplete, elapsedMilliseconds },

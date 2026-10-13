@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import path from 'pathe';
 import ts from 'typescript';
 import { isRelativeTypeName } from '../typescript-semantic/effective-roots';
@@ -16,7 +16,7 @@ function getSourceTypeNames(project: SourceProject): string[] {
 }
 
 function createGeneratedTypeRootOverrides(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
   generatedConfigPath: string;
 }): Record<string, unknown> {
@@ -40,7 +40,7 @@ function createGeneratedTypeRootOverrides(options: {
 }
 
 export function createGeneratedCompilerOptionOverrides(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
   generatedConfigPath: string;
 }): Record<string, unknown> {

@@ -1,6 +1,6 @@
 import type {
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import type { GeneratedBuildModule } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
@@ -37,7 +37,7 @@ import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
 
 interface PrepareContext {
   checkers: ResolvedCheckerConfig[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
   diagnostics: GeneratedKnipPackageDiagnostic[];
   workspaceContext: ValidatedWorkspaceContext;
@@ -214,7 +214,7 @@ function compareDiagnostics(
 
 function createPrepareContext(options: {
   checkers: ResolvedCheckerConfig[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
   workspacePackages: WorkspacePackage[];
   workspaceContext: ValidatedWorkspaceContext;
@@ -239,7 +239,7 @@ function createPrepareContext(options: {
 export function prepareGeneratedKnipPackageConfigs(options: {
   checkers: ResolvedCheckerConfig[];
   configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   workspacePackages: WorkspacePackage[];
   workspaceContext: ValidatedWorkspaceContext;
 }): PreparedGeneratedKnipPackageConfigs {

@@ -4,7 +4,7 @@ import {
   getActiveCheckers,
   getAutoCheckerConfig,
   type ResolvedCheckerConfig,
-  type ResolvedLiminaConfig,
+  type ResolvedLiminaInputs,
 } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toPosixPath, toRelativePath } from '#utils/path';
@@ -63,7 +63,7 @@ function createResolvedChecker(options: {
 }
 
 async function collectNamedSelections(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   sourceConfigPaths: readonly string[];
 }): Promise<ResolvedCheckerEntrySelection[]> {
   return Promise.all(
@@ -82,7 +82,7 @@ async function collectNamedSelections(options: {
 
 function claimExplicitOwner(options: {
   checker: CheckerName;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   entryPath: string;
   owners: Map<string, CheckerName>;
 }): string[] {
@@ -103,7 +103,7 @@ function claimExplicitOwner(options: {
 }
 
 function createExplicitOwnerByEntryPath(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   selections: readonly ResolvedCheckerEntrySelection[];
 }): Map<string, CheckerName> {
   const owners = new Map<string, CheckerName>();
@@ -129,7 +129,7 @@ function createExplicitOwnerByEntryPath(options: {
 }
 
 async function collectAutoEntryPaths(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   sourceConfigPaths: readonly string[];
 }): Promise<string[]> {
   const auto = getAutoCheckerConfig(options.config.scope?.checkers);
@@ -162,7 +162,7 @@ function collectActiveEntryPaths(options: {
 }
 
 function throwOwnershipProblems(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fallback: string;
   problems: string[];
 }): void {
@@ -172,7 +172,7 @@ function throwOwnershipProblems(options: {
 
 export async function discoverCheckerOwnership(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceSourceConfigPaths: readonly string[];
 }): Promise<CheckerOwnershipDiscovery> {
@@ -233,7 +233,7 @@ export async function discoverCheckerOwnership(options: {
 
 export function createOwnershipSelections(options: {
   discovery: CheckerOwnershipDiscovery;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
 }): ResolvedCheckerEntrySelection[] {
   const entriesByChecker = new Map<CheckerName, string[]>();
   for (const entryPath of options.discovery.activeEntryPaths) {

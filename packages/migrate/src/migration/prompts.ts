@@ -9,6 +9,16 @@ function isAccepted(result: boolean | symbol): result is true {
   return !prompts.isCancel(result) && result;
 }
 
+export async function isConfirmMigrationScope(
+  message: string,
+): Promise<boolean> {
+  if (!isInteractiveTerminal())
+    throw new Error(
+      'Migration scope confirmation requires a TTY. Use --yes to accept this scope; --yes does not authorize dirty-worktree or hardlink writes.',
+    );
+  return isAccepted(await prompts.confirm({ initialValue: true, message }));
+}
+
 export async function isConfirmDirtyWorkspace(
   message: string,
 ): Promise<boolean> {

@@ -1,7 +1,7 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 
 export interface ImplicitReferenceContext {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   problems: string[];
   sourceConfigPath: string;
 }

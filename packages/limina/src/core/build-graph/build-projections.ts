@@ -1,10 +1,10 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import { readOutputOptions } from './generated/config-readers';
 import type { GovernedSourceUnit, SolutionProject } from './types';
 
 function formatFrameworkOutputProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   unit: GovernedSourceUnit;
 }): string {
   const families = options.unit.frameworkCapabilities
@@ -21,7 +21,7 @@ function formatFrameworkOutputProblem(options: {
 }
 
 export function addFrameworkOutputProblems(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   governedSources: readonly GovernedSourceUnit[];
   problems: string[];
 }): void {

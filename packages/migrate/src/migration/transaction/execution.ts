@@ -10,13 +10,11 @@ import {
 import { rollbackItem } from './rollback';
 import {
   createEmptyMigrationResult,
-  prepareMigrationWritePlan,
   resolveTransactionRuntimeOptions,
 } from './setup';
 import type {
   MigrationTransactionExecutionResult,
   MigrationTransactionOptions,
-  MigrationWritePlanItem,
   PreparedMigrationPlan,
   TransactionItem,
   TransactionItemState,
@@ -248,7 +246,7 @@ function selectSnapshots(
   };
 }
 
-export async function executePreparedMigrationPlan(
+export async function executePreparedUpdates(
   plan: PreparedMigrationPlan,
   transactionOptions: MigrationTransactionOptions = {},
 ): Promise<MigrationTransactionExecutionResult> {
@@ -282,17 +280,4 @@ export async function executePreparedMigrationPlan(
     skippedFiles: plan.skippedFiles,
     state,
   });
-}
-
-export async function executeMigrationWritePlan(
-  allowedRootDirectories: string | readonly string[],
-  plan: readonly MigrationWritePlanItem[],
-  transactionOptions: MigrationTransactionOptions = {},
-): Promise<MigrationTransactionExecutionResult> {
-  const preparedPlan = await prepareMigrationWritePlan(
-    allowedRootDirectories,
-    plan,
-    transactionOptions,
-  );
-  return executePreparedMigrationPlan(preparedPlan, transactionOptions);
 }

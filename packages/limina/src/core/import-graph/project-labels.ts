@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { readJsonConfig } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
@@ -16,7 +16,7 @@ function createEmptyRuleInfo(): ProjectGraphRuleInfo {
 }
 
 function createDiagnosticInfo(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   field: string;
   reason: string;
@@ -46,7 +46,7 @@ function createDiagnosticInfo(options: {
 }
 
 function readProjectConfigObject(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   virtualFiles: ReadonlyMap<string, string> | undefined;
 }): Record<string, unknown> {
@@ -60,7 +60,7 @@ function readProjectConfigObject(options: {
 }
 
 function parseGraphRuleLabel(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   index: number;
   value: unknown;
@@ -81,7 +81,7 @@ function parseGraphRuleLabel(options: {
 }
 
 function collectGraphRuleLabels(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   graphRules: readonly unknown[];
 }): ProjectGraphRuleInfo | string[] {
@@ -106,7 +106,7 @@ function collectGraphRuleLabels(options: {
 }
 
 function parseGraphRules(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   graphRules: unknown;
 }): ProjectGraphRuleInfo {
@@ -134,7 +134,7 @@ function parseGraphRules(options: {
 }
 
 function parseLiminaOptions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   value: unknown;
 }): ProjectGraphRuleInfo {
@@ -162,7 +162,7 @@ function parseLiminaOptions(options: {
 }
 
 export function readProjectGraphRules(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   virtualFiles?: ReadonlyMap<string, string>;
 }): ProjectGraphRuleInfo {

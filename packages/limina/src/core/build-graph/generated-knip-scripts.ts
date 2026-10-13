@@ -1,6 +1,6 @@
 import type {
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import type { GeneratedBuildModule } from '#core/build-graph/runner';
 import { isLiminaArtifactPath } from '#core/tsconfig/actions';
@@ -19,7 +19,7 @@ import type {
 } from './generated-knip-types';
 
 interface BuildScriptValidationContext {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   mode: GeneratedKnipPackageBuildMode;
   script: PackageBuildScript;
   workspacePackage: WorkspacePackage;
@@ -234,7 +234,7 @@ function finalizePreparedScript(options: {
 
 export function prepareKnipBuildScript(options: {
   checkers: ResolvedCheckerConfig[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
   script: PackageBuildScript;
   workspacePackage: WorkspacePackage;

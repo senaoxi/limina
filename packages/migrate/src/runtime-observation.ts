@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
 import type { LiminaFlowReporter } from 'limina/internal/flow';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -104,15 +104,34 @@ function reportCompiler(flow: LiminaFlowReporter): void {
 }
 
 function reportProjectVersions(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   flow: LiminaFlowReporter,
 ): void {
   const rootAnchor = config.governanceRoot.manifestPath;
+  if (config.configPath === undefined) {
+    reportObservation(flow, rootAnchor, 'governance root (defaults)');
+    return;
+  }
+  reportConfigProjectVersions({
+    config,
+    configPath: config.configPath,
+    flow,
+    rootAnchor,
+  });
+}
+
+function reportConfigProjectVersions(options: {
+  config: ResolvedLiminaInputs;
+  configPath: string;
+  flow: LiminaFlowReporter;
+  rootAnchor: string;
+}): void {
+  const { configPath, flow, rootAnchor } = options;
   const hasSharedDirectory =
-    path.dirname(config.configPath) === path.dirname(rootAnchor);
+    path.dirname(configPath) === path.dirname(rootAnchor);
   reportObservation(
     flow,
-    config.configPath,
+    configPath,
     hasSharedDirectory ? 'config and governance root' : 'config',
   );
   if (!hasSharedDirectory)
@@ -120,7 +139,7 @@ function reportProjectVersions(
 }
 
 function reportSchemaAvailability(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   flow: LiminaFlowReporter,
 ): void {
   if (
@@ -138,7 +157,7 @@ function reportSchemaAvailability(
 }
 
 export function reportRuntimeObservations(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   flow: LiminaFlowReporter,
 ): void {
   flow.info(

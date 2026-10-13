@@ -1,4 +1,4 @@
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import {
   addLocalCheckerRequirement,
   addSolutionRequirement,
@@ -14,7 +14,7 @@ function familyChecker(family: 'astro' | 'svelte' | 'vue'): CheckerName {
 
 function applyTypeConfigHint(options: {
   checker: CheckerName;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   detail: string;
   plan: CheckerOwnershipPlan;
@@ -37,7 +37,7 @@ function applyTypeConfigHint(options: {
 }
 
 function applyConfigHint(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   hint: AutoScope['frameworkEvidence'][number]['intentHints'][number];
   plan: CheckerOwnershipPlan;
@@ -59,7 +59,7 @@ function applyConfigHint(options: {
 }
 
 export function applyConfigEvidence(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   plan: CheckerOwnershipPlan;
   scopes: readonly AutoScope[];
 }): string[] {

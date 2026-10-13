@@ -91,7 +91,7 @@ async function fixture(
         import.meta.dirname,
         '../../bin/limina-migrate.js',
       );
-      await git(process.execPath, [cli], { cwd: rootDirectory });
+      await git(process.execPath, [cli, '--yes'], { cwd: rootDirectory });
       return JSON.parse(
         await readFile(locate('.limina/migration/latest.json'), 'utf8'),
       );

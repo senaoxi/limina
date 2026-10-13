@@ -1,4 +1,4 @@
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import type {
   CheckerEvidence,
@@ -46,7 +46,7 @@ function isSameLockedAuthority(
 }
 
 function createAuthorityConflict(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   current: LockedSemanticAuthority;
   evidence: CheckerEvidence;
   family: SemanticFamily;
@@ -64,7 +64,7 @@ function createAuthorityConflict(options: {
 }
 
 function createFrozenMutationProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   current: LockedSemanticAuthority;
   evidence: CheckerEvidence;
   family: SemanticFamily;
@@ -81,7 +81,7 @@ function createFrozenMutationProblem(options: {
 }
 
 function checkLockedAuthority(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   current: LockedSemanticAuthority;
   evidence: CheckerEvidence;
   family: SemanticFamily;
@@ -93,7 +93,7 @@ function checkLockedAuthority(options: {
 }
 
 function lockEligibleSemanticAuthority(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   evidence: CheckerEvidence;
   family: SemanticFamily;
   state: TypeConfigOwnershipState;
@@ -118,7 +118,7 @@ function lockEligibleSemanticAuthority(options: {
 }
 
 export function lockSemanticAuthorityForEvidence(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   evidence: CheckerEvidence;
   state: TypeConfigOwnershipState;
 }): string | null {
@@ -148,7 +148,7 @@ function getLockedSemanticAuthority(
 }
 
 function freezeSemanticAuthorityState(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: TypeConfigOwnershipState;
 }): string | null {
   const authority = getLockedSemanticAuthority(options.state);
@@ -166,7 +166,7 @@ function freezeSemanticAuthorityState(options: {
 }
 
 export function freezeSemanticAuthorities(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   states: Iterable<TypeConfigOwnershipState>;
 }): string[] {
   const problems: string[] = [];
@@ -199,7 +199,7 @@ function getCurrentFamily(state: TypeConfigOwnershipState): string {
 }
 
 function createFrozenInvariantProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: TypeConfigOwnershipState;
 }): string {
   return [
@@ -211,7 +211,7 @@ function createFrozenInvariantProblem(options: {
 }
 
 export function validateFrozenSemanticAuthorities(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   states: Iterable<TypeConfigOwnershipState>;
 }): string[] {
   const problems: string[] = [];

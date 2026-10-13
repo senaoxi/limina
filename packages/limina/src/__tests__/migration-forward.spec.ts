@@ -4,6 +4,16 @@ import { migrationArguments } from '../cli/migration-forward';
 describe('legacy migration argument forwarding', () => {
   it.each([
     {
+      args: [
+        'migration',
+        '--dry-run',
+        '--yes',
+        '--config',
+        'config with spaces.mjs',
+      ],
+      expected: ['--dry-run', '--yes', '--config', 'config with spaces.mjs'],
+    },
+    {
       args: ['migration', '--mode', 'value with ! & quotes'],
       expected: ['--mode', 'value with ! & quotes'],
     },

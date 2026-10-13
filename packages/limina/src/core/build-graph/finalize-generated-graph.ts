@@ -1,6 +1,6 @@
 import type {
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
@@ -23,7 +23,7 @@ type GeneratedKnipPreparation = ReturnType<
   typeof prepareGeneratedKnipPackageConfigs
 >;
 
-function getManifestPath(config: ResolvedLiminaConfig): string {
+function getManifestPath(config: ResolvedLiminaInputs): string {
   return normalizeAbsolutePath(
     path.join(config.rootDir, generatedManifestPath),
   );
@@ -32,7 +32,7 @@ function getManifestPath(config: ResolvedLiminaConfig): string {
 export async function finalizeGeneratedGraph(options: {
   artifactNamespace: LiminaArtifactNamespace;
   checkers: ResolvedCheckerConfig[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   generatedKnip: GeneratedKnipPreparation;
   state: GeneratedGraphPreparationState;
 }): Promise<GeneratedTsconfigGraphResult> {

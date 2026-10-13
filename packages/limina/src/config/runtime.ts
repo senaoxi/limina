@@ -48,7 +48,7 @@ export function getNamedCheckerConfigs(
 export { defineConfig } from './define';
 
 function isResolvedConfig(config: LiminaConfig): boolean {
-  return 'configPath' in config && 'rootDir' in config;
+  return 'governanceRoot' in config && 'rootDir' in config;
 }
 
 function toUserConfig(config: LiminaConfig): LiminaConfig {

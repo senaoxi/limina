@@ -1,18 +1,34 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
 import type { InputTopologyResult } from 'limina/internal/core/build-graph/input-topology';
 import { formatErrorMessage } from 'limina/internal/logger';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { missingTopologyMembers } from './output-adoption';
 import { resolveMigrationProcessEntry } from './process-entry';
+import {
+  governanceBinding,
+  type MigrationConfigSource,
+  migrationInputSource,
+} from './scope';
 import type { RunMigrationOptions } from './types';
 
+export interface MigrationVerificationLocator {
+  source: MigrationConfigSource;
+  rootDir: string;
+  cwd: string;
+  manifestPath: string;
+  rootKind: ResolvedLiminaInputs['governanceRoot']['kind'];
+  rootBinding: string;
+}
+interface VerificationOptions extends RunMigrationOptions {
+  verificationSource?: MigrationConfigSource;
+  rootBinding?: string;
+}
 export interface MigrationDiskVerification {
   consumable: boolean;
   diagnostics: string[];
   topologies: (Omit<InputTopologyResult, 'workspace'> & { command: string })[];
 }
-
 function readChildResult(
   stdout: string,
 ): MigrationDiskVerification['topologies'] {
@@ -25,7 +41,6 @@ function readChildResult(
     line.slice('LIMINA_MIGRATION_INPUT='.length),
   ) as MigrationDiskVerification['topologies'];
 }
-
 function topologyDiagnostics(
   expected: InputTopologyResult,
   actual: MigrationDiskVerification['topologies'][number],
@@ -41,16 +56,15 @@ function topologyDiagnostics(
   );
   return messages.map((message) => `${actual.command}: ${message}`);
 }
-
 function verificationMode(options: RunMigrationOptions): string {
   return options.mode ?? process.env.NODE_ENV ?? 'default';
 }
-
-async function readFromFreshProcess(
-  config: ResolvedLiminaConfig,
-  options: RunMigrationOptions,
-  command: 'check' | 'graph',
-): Promise<MigrationDiskVerification['topologies']> {
+async function readFromFreshProcess(input: {
+  config: ResolvedLiminaInputs;
+  options: VerificationOptions;
+  command: 'check' | 'graph';
+  locator: MigrationVerificationLocator;
+}): Promise<MigrationDiskVerification['topologies']> {
   const entry = resolveMigrationProcessEntry({
     moduleUrl: import.meta.url,
     sourceFileName: './verify-process.ts',
@@ -61,20 +75,54 @@ async function readFromFreshProcess(
     entry.command,
     [
       ...entry.args,
-      config.configPath,
-      options.configLoader ?? 'native',
-      verificationMode(options),
-      command,
+      JSON.stringify(input.locator),
+      input.options.configLoader ?? 'native',
+      verificationMode(input.options),
+      input.command,
     ],
-    { cwd: config.rootDir, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+    {
+      cwd: input.config.rootDir,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    },
   );
   return readChildResult(child.stdout);
 }
-
+function verificationCwd(
+  config: ResolvedLiminaInputs,
+  options: VerificationOptions,
+): string {
+  return options.scope?.cwd ?? config.rootDir;
+}
+function locatorSource(
+  config: ResolvedLiminaInputs,
+  options: VerificationOptions,
+): MigrationConfigSource {
+  return options.verificationSource ?? migrationInputSource(config);
+}
+function locatorBinding(
+  config: ResolvedLiminaInputs,
+  options: VerificationOptions,
+): string {
+  return options.rootBinding ?? governanceBinding(config.governanceRoot);
+}
+function verificationLocator(
+  config: ResolvedLiminaInputs,
+  options: VerificationOptions,
+): MigrationVerificationLocator {
+  return {
+    source: locatorSource(config, options),
+    rootDir: config.rootDir,
+    cwd: verificationCwd(config, options),
+    manifestPath: config.governanceRoot.manifestPath,
+    rootKind: config.governanceRoot.kind,
+    rootBinding: locatorBinding(config, options),
+  };
+}
 export async function verifyMigrationFromDisk(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   expected: InputTopologyResult,
-  options: RunMigrationOptions,
+  options: VerificationOptions,
 ): Promise<MigrationDiskVerification> {
   const result: MigrationDiskVerification = {
     consumable: false,
@@ -82,9 +130,20 @@ export async function verifyMigrationFromDisk(
     topologies: [],
   };
   try {
+    const locator = verificationLocator(config, options);
     result.topologies = [
-      ...(await readFromFreshProcess(config, options, 'check')),
-      ...(await readFromFreshProcess(config, options, 'graph')),
+      ...(await readFromFreshProcess({
+        config,
+        options,
+        command: 'check',
+        locator,
+      })),
+      ...(await readFromFreshProcess({
+        config,
+        options,
+        command: 'graph',
+        locator,
+      })),
     ];
     result.diagnostics = result.topologies.flatMap((topology) =>
       topologyDiagnostics(expected, topology),

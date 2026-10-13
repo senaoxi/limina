@@ -8,7 +8,7 @@
 
 ## I01 — 治理 authority 来自 validated workspace
 
-- **Statement / Applies when**：所选配置最近的 package.json 固定治理根及配置解析 generation 中已验证的 manifest fact，只有同根 workspace 语义决定成员分类。graph/source/proof 使用该根激活的包投影 authority；raw package discovery 仅为输入证据。对已激活 package，重复 physical identity、非法 overlap/boundary 必须先失败。
+- **Statement / Applies when**：所选配置最近的 package.json（或仅迁移 defaults 模式下原始 cwd 的最近 manifest）固定治理根及配置解析 generation 中已验证的 manifest fact，只有同根 workspace 语义决定成员分类。graph/source/proof 使用该根激活的包投影 authority；raw package discovery 仅为输入证据。对已激活 package，重复 physical identity、非法 overlap/boundary 必须先失败。
 - **Problem**：被排除或另属 nested workspace 的包若仍参与 owner 选择，就可能错误授权 import 或写输出。
 - **Root cause**：package manager 发现范围、逻辑目录和治理范围是不同集合；symlink alias 又会使一个物理包有两个名字。
 - **Enforcement / Why it works**：[validated create](../../../packages/limina/src/core/workspace/validated/create.ts) 先校验 exclusions、islands、overlap、package identities 与 output authority，后发布 context；[package-identities](../../../packages/limina/src/core/workspace/validated/package-identities.ts) 拒绝重复 canonical directory。下游运行时 package/owner/boundary 查询通过 WorkspaceRegionPathIndex / WorkspaceLookupIndex 使用 canonical Governance Trie；package/owner 数组不能通过 directory containment 重建该 authority。construction 与局部关系的边界见 [region index owner](./system-model.md#validated-region-的内部查询索引)。
@@ -128,6 +128,8 @@
 - **Boundaries**：raw external build、export 用户文件和 migration 是不同 writer contract；不能推广成所有写入经过同一个 namespace，或绝无 OS race。
 
 **Migration 写入边界**：冻结补丁使用隔离的一致性组及既有物理 identity/rollback 守卫。Report 发布失败绝不回滚已提交配置。接入成功还要求新进程消费实际磁盘拓扑；必要写入失败即使伴随其他组成功，也仍为未完成。分析不完整与可消费性分别报告；异常尝试尽可能发布失败审计，不能回退成旧成功。见[迁移生命周期](./lifecycle.md#migration-是另一种事务)。
+
+**迁移预览与创建守卫**：范围接受先于模块求值；实际业务写入必须是已展示冻结操作的子集。defaults 不伪造 configPath。必要配置创建不覆盖后来出现的目录项，真实文件加载前不能形成磁盘隔离证据。dry-run 在所有迁移器控制写入（包括失败报告）前返回，不提供磁盘成功证据。[工作流守卫](../../../packages/migrate/src/__tests__/migration-workflow.spec.ts)及创建／回滚事务反例覆盖这些边界；完整行为归[迁移生命周期](./lifecycle.md#migration-是另一种事务)。
 
 ## I11 — artifact 发布失败留下可识别的不完整状态
 

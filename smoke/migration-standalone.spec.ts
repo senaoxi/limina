@@ -22,7 +22,7 @@ function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-it('consumes neutral inputs with only the packed migrate product, preserves schema ownership, and diagnoses missing config and loader packages before writing', async () => {
+it('consumes defaults and neutral inputs with only the packed migrate product, preserves schema ownership, and diagnoses missing config and loader packages before writing', async () => {
   const migration = await packMigrationDistribution();
   const core = await packLiminaDistribution();
   const temporaryPath = await mkdtemp(
@@ -73,7 +73,6 @@ it('consumes neutral inputs with only the packed migrate product, preserves sche
       'packages: []\nhoist: false\nautoInstallPeers: false\nstrictPeerDependencies: true\npackageImportMethod: copy\n',
     );
     await put('.gitignore', 'node_modules/\n.limina/\n');
-    await put('limina.config.mjs', 'export default {};\n');
     await put(
       'tsconfig.json',
       json({
@@ -122,10 +121,10 @@ it('consumes neutral inputs with only the packed migrate product, preserves sche
     expect(help.exitCode).toBe(0);
     await runCommand('git', ['init'], { cwd: root });
     await commit();
-    const migrated = await node([cli]);
+    const migrated = await node([cli, '--yes']);
     expect(migrated.exitCode, migrated.stdout + migrated.stderr).toBe(0);
     expect(migrated.stdout).toContain(
-      'not-installed from config and governance root',
+      'not-installed from governance root (defaults)',
     );
     expect(migrated.stdout).toContain(
       'Editor schema resolution may be unavailable',
@@ -145,30 +144,24 @@ it('consumes neutral inputs with only the packed migrate product, preserves sche
     const report = await readReport();
     expect(report.result.inputConsumable).toBe(true);
     expect(report.verification.diagnostics).toEqual([]);
-    const worker = path.join(migrateRoot, 'migration-verify-process.js');
-    for (const command of ['check', 'graph']) {
-      const fresh = await node([
-        worker,
-        path.join(root, 'limina.config.mjs'),
-        'native',
-        'default',
-        command,
-      ]);
-      expect(fresh.exitCode, fresh.stdout + fresh.stderr).toBe(0);
-      const topology = JSON.parse(
-        fresh.stdout.split('LIMINA_MIGRATION_INPUT=').at(-1)!,
-      );
-      expect(
-        topology.map((entry: { command: string }) => entry.command),
-      ).toEqual([command]);
-      for (const entry of topology) {
-        expect(entry.complete).toBe(true);
-        expect(entry.sources).toHaveLength(1);
-        expect(entry.entries).toHaveLength(1);
-      }
+    expect(report.result.inputSource).toEqual({ kind: 'defaults' });
+    await expect(
+      access(path.join(root, 'limina.config.mjs')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(
+      report.verification.topologies.map(
+        (entry: { command: string }) => entry.command,
+      ),
+    ).toEqual(['check', 'graph']);
+    for (const topology of report.verification.topologies) {
+      expect(topology.complete).toBe(true);
+      expect(topology.sources).toHaveLength(1);
+      expect(topology.entries).toHaveLength(1);
     }
+    const worker = path.join(migrateRoot, 'migration-verify-process.js');
+    await put('limina.config.mjs', 'export default {};\n');
     await commit();
-    const noTsx = await node([cli, '--config-loader', 'tsx']);
+    const noTsx = await node([cli, '--yes', '--config-loader', 'tsx']);
     expect(noTsx.exitCode).not.toBe(0);
     expect(noTsx.stderr).toContain('Please install `tsx`');
     expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
@@ -179,7 +172,7 @@ it('consumes neutral inputs with only the packed migrate product, preserves sche
       'import { defineConfig } from "limina"; export default defineConfig({});\n',
     );
     await commit();
-    const missingCore = await node([cli]);
+    const missingCore = await node([cli, '--yes']);
     expect(missingCore.exitCode).not.toBe(0);
     expect(missingCore.stderr).toContain(
       'config imports the public "limina" package',
@@ -199,7 +192,7 @@ it('consumes neutral inputs with only the packed migrate product, preserves sche
       { cwd: root },
     );
     await commit();
-    const installedCore = await node([cli]);
+    const installedCore = await node([cli, '--yes']);
     expect(
       installedCore.exitCode,
       installedCore.stdout + installedCore.stderr,
@@ -254,7 +247,7 @@ it('consumes neutral inputs with only the packed migrate product, preserves sche
     try {
       const compilerlessHelp = await node([cli, '--help']);
       expect(compilerlessHelp.exitCode).toBe(0);
-      const noCompiler = await node([cli]);
+      const noCompiler = await node([cli, '--yes']);
       expect(noCompiler.exitCode).not.toBe(0);
       expect(noCompiler.stderr).toContain('typescript');
       expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(

@@ -1,4 +1,4 @@
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import type { ColoringEdge } from './checker-build-coloring';
@@ -51,7 +51,7 @@ function collectKnownColors(options: {
 
 function formatConflict(options: {
   component: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   edges: readonly ColoringEdge[];
 }): string {
@@ -105,7 +105,7 @@ function createColorEvidence(
 
 function applyComponentColor(options: {
   checker: CheckerName;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   discovery: CheckerOwnershipDiscovery;
   inherited: boolean;
@@ -127,7 +127,7 @@ function applyComponentColor(options: {
 
 function colorComponent(options: {
   component: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   edges: readonly ColoringEdge[];
   problems: string[];
@@ -150,7 +150,7 @@ function colorComponent(options: {
 
 export function colorAllBuildComponents(options: {
   adjacency: ReadonlyMap<string, Set<string>>;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   edges: readonly ColoringEdge[];
   problems: string[];

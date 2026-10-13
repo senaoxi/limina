@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
@@ -102,7 +102,7 @@ function compareScripts(
 }
 
 function sortCollection(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   collection: PackageBuildScriptCollection,
 ): PackageBuildScriptCollection {
   collection.diagnostics.sort(compareDiagnostics);
@@ -113,7 +113,7 @@ function sortCollection(
 }
 
 export function collectPackageBuildScripts(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   workspacePackages: WorkspacePackage[];
 }): PackageBuildScriptCollection {
   const collection: PackageBuildScriptCollection = {

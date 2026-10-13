@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
@@ -54,7 +54,7 @@ function getPendingConsumer(
 }
 
 function applyVuePromotion(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   consumer: TypeConfigOwnershipState;
   consumerPath: string;
   providerPath: string;
@@ -78,7 +78,7 @@ function applyVuePromotion(options: {
 }
 
 function isPromoteVueConsumer(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   consumerPath: string;
   discovery: CheckerOwnershipDiscovery;
   providerPath: string;
@@ -98,7 +98,7 @@ function isVueProvider(
 }
 
 function runVuePromotion(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
 }): void {
   promoteDirectedCheckerDependencies({
@@ -119,7 +119,7 @@ function runVuePromotion(options: {
 }
 
 function runDependencyRequirements(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
 }): void {
   let isChanged = true;
@@ -141,7 +141,7 @@ function runDependencyRequirements(options: {
 
 export async function resolveCheckerOwnership(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importAnalysisContext: NonNullable<
     PrepareGeneratedTsconfigGraphOptions['importAnalysisContext']
   >;

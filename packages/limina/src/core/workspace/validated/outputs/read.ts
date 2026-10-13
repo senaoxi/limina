@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { readJsonConfig } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
@@ -63,7 +63,7 @@ function resolveExplicitOutputRoot(options: {
 }
 
 function tryReadConfig(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   configPath: string,
 ): Record<string, unknown> | null {
   try {
@@ -84,7 +84,7 @@ function readOutputsRecord(
 
 function readCandidateOutputs(options: {
   candidate: ReadableWorkspaceTsconfigCandidate;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
 }): Record<string, unknown> | null {
   const configObject = tryReadConfig(options.config, options.candidate.path);
   return configObject === null ? null : readOutputsRecord(configObject);
@@ -107,7 +107,7 @@ function resolveOutputsRecord(
 }
 
 export function readWorkspaceTsconfigOutputRoot(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   candidate: ReadableWorkspaceTsconfigCandidate,
 ): WorkspaceTsconfigOutputRootRead {
   if (!isReadableTsconfigCandidate(candidate)) {

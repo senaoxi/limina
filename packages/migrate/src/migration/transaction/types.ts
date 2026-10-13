@@ -1,11 +1,33 @@
 import type { FileHandle } from 'node:fs/promises';
 
-export interface MigrationWritePlanItem {
+export interface MigrationUpdatePlanItem {
+  operation?: 'update';
   configPath: string;
   nextContent: string;
   originalBytes: Buffer;
   originalContent: string;
   status: 'modified' | 'skipped';
+}
+
+export interface MigrationCreatePlanItem {
+  operation: 'create';
+  configPath: string;
+  nextContent: string;
+  originalBytes: null;
+  originalContent: null;
+  status: 'modified';
+}
+
+export type MigrationWritePlanItem =
+  | MigrationUpdatePlanItem
+  | MigrationCreatePlanItem;
+
+export interface CreatedTargetSnapshot {
+  item: MigrationCreatePlanItem;
+  allowedRootDir: string;
+  allowedCanonicalRootDir: string;
+  canonicalParent: string;
+  parentStat: NormalizedFileStat;
 }
 
 export interface MigrationCleanupWarning {
@@ -59,11 +81,12 @@ export interface ModifiedTargetSnapshot extends PreparedFileIdentity {
   allowedCanonicalRootDir: string;
   allowedRootDir: string;
   canonicalPath: string;
-  item: MigrationWritePlanItem;
+  item: MigrationUpdatePlanItem;
   writeStrategy: MigrationWriteStrategy;
 }
 
 export interface PreparedMigrationPlan {
+  createSnapshots: CreatedTargetSnapshot[];
   atomicSnapshots: ModifiedTargetSnapshot[];
   hardlinkSnapshots: ModifiedTargetSnapshot[];
   normalizedRootDirs: string[];

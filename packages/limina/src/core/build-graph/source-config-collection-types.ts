@@ -1,7 +1,7 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type {
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import type { JsonObject } from '#core/tsconfig/actions';
 import type ts from 'typescript';
@@ -14,7 +14,7 @@ export interface CollectionContext {
   checkerName: ResolvedCheckerConfig['name'];
   checkerPreset: ResolvedCheckerConfig['name'];
   collection: CheckerSourceConfigCollection;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discoveryExtensions?: string[];
   explicitOwnerByConfigPath?: ReadonlyMap<
     string,
@@ -47,7 +47,7 @@ export interface CollectCheckerSourceConfigsOptions {
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: ResolvedCheckerConfig['name'];
   checkerPreset: ResolvedCheckerConfig['name'];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discoveryExtensions?: string[];
   entryConfigPaths: readonly string[];
   explicitOwnerByConfigPath?: ReadonlyMap<
@@ -61,7 +61,7 @@ export interface CollectCheckerSourceConfigsOptions {
 export interface CollectAutoSourceConfigModulesOptions {
   activatedRegions: WorkspaceRegionPathIndex;
   collection: CheckerSourceConfigCollection;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discoveryExtensions: string[];
   entryConfigPath: string;
   problems: string[];

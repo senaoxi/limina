@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import { formatUnknownValue } from '#utils/values';
 import type {
@@ -197,7 +197,7 @@ export function collectReferencePathInfosForConfig(
 }
 
 export function getRawReferencePaths(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   configPath: string,
 ): string[] {
   return collectReferencePathInfosForConfig(

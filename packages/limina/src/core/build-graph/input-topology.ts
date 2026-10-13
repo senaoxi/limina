@@ -1,7 +1,8 @@
 import {
+  configContextPath,
   getActiveCheckers,
   getAutoCheckerConfig,
-  type ResolvedLiminaConfig,
+  type ResolvedLiminaInputs,
 } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
 import { compareCodeUnits } from '#utils/collections';
@@ -58,7 +59,7 @@ function emptyTopology(): InputTopologyResult {
 }
 
 async function isReadWorkspace(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   result: InputTopologyResult,
   readWorkspace: () => Promise<ValidatedWorkspaceContext>,
 ): Promise<boolean> {
@@ -69,7 +70,7 @@ async function isReadWorkspace(
     if (!(error instanceof LiminaStructuredError)) throw error;
     result.diagnostics.push(
       ...error.issues.map((issue) => ({
-        configPath: issue.filePath ?? config.configPath,
+        configPath: issue.filePath ?? configContextPath(config),
         phase: 'workspace' as const,
         message: issue.reason ?? issue.title,
         code: issue.code,
@@ -79,7 +80,7 @@ async function isReadWorkspace(
   }
 }
 
-function checkerSelections(config: ResolvedLiminaConfig) {
+function checkerSelections(config: ResolvedLiminaInputs) {
   const auto = getAutoCheckerConfig(config.scope?.checkers);
   return [
     {
@@ -92,7 +93,7 @@ function checkerSelections(config: ResolvedLiminaConfig) {
 }
 
 async function readSelection(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   result: InputTopologyResult,
   selection: ReturnType<typeof checkerSelections>[number],
 ): Promise<string[]> {
@@ -106,7 +107,7 @@ async function readSelection(
   } catch (error) {
     if (!(error instanceof CheckerEntryInputError)) throw error;
     result.diagnostics.push({
-      configPath: config.configPath,
+      configPath: configContextPath(config),
       phase: 'entry',
       message: error.message,
     });
@@ -115,7 +116,7 @@ async function readSelection(
 }
 
 interface InputReadContext {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   result: InputTopologyResult;
   activatedRegions: WorkspaceRegionPathIndex;
 }
@@ -155,7 +156,7 @@ function readEntry(context: InputReadContext, entry: string) {
 }
 
 function readExplicitDeclarations(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   result: InputTopologyResult,
   source: string,
 ): void {
@@ -184,7 +185,7 @@ function readExplicitDeclarations(
 Collects input facts using the normal entry and config readers, without granting checker ownership.
 */
 export async function readInputTopology(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ): Promise<InputTopologyResult> {
   return readTopology(config, async () =>
     collectValidatedWorkspaceContext({
@@ -200,10 +201,10 @@ may vary; config/root/regions/package selection remain closed over this reader.
 No snapshot is reused by post-write or ordinary core consumption.
 */
 export async function createInputTopologyReader(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ): Promise<
   (
-    virtualFiles: ResolvedLiminaConfig['virtualFiles'],
+    virtualFiles: ResolvedLiminaInputs['virtualFiles'],
   ) => Promise<InputTopologyResult>
 > {
   const rawPackages = await collectRawWorkspacePackages(config);
@@ -211,7 +212,7 @@ export async function createInputTopologyReader(
     config,
     rawPackages,
   });
-  return async (virtualFiles: ResolvedLiminaConfig['virtualFiles']) => {
+  return async (virtualFiles: ResolvedLiminaInputs['virtualFiles']) => {
     const view = { ...config, virtualFiles };
     return readTopology(view, () =>
       collectValidatedWorkspaceContextFromSnapshot({
@@ -224,7 +225,7 @@ export async function createInputTopologyReader(
 }
 
 async function readTopology(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   readWorkspace: () => Promise<ValidatedWorkspaceContext>,
 ): Promise<InputTopologyResult> {
   const result = emptyTopology();

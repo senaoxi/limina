@@ -1,5 +1,5 @@
 import { isCheckerCacheReusable } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import { createGeneratedGraphStructuredError } from './problems';
 import type {
@@ -14,7 +14,7 @@ type CrossCheckerReference =
   CheckerSourceConfigCollection['crossCheckerReferences'][number];
 
 function addExplicitOwner(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   owner: BuildCheckerName;
   owners: Map<string, BuildCheckerName>;
@@ -37,7 +37,7 @@ function addExplicitOwner(options: {
 }
 
 function assertNoOwnershipProblems(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   fallback: string;
   problems: string[];
 }): void {
@@ -46,7 +46,7 @@ function assertNoOwnershipProblems(options: {
 }
 
 export function createExplicitOwnerMap(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   selections: ResolvedCheckerEntrySelection[];
 }): Map<string, BuildCheckerName> {
   const owners = new Map<string, BuildCheckerName>();
@@ -92,7 +92,7 @@ function getCacheReuse(
 }
 
 function addMissingReferenceProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   problems: string[];
   reference: CrossCheckerReference;
 }): void {
@@ -107,7 +107,7 @@ function addMissingReferenceProblem(options: {
 }
 
 function connectCrossCheckerReference(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   graph: PreparedCheckerGraph;
   graphByChecker: ReadonlyMap<string, PreparedCheckerGraph>;
   problems: string[];
@@ -146,7 +146,7 @@ function connectCrossCheckerReference(options: {
 }
 
 export function connectCrossCheckerReferences(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   graphs: PreparedCheckerGraph[];
 }): void {
   const graphByChecker = new Map(

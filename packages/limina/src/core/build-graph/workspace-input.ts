@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
 import {
   collectValidatedWorkspaceContext,
@@ -6,7 +6,7 @@ import {
 } from '../workspace/validated-context';
 
 export async function getBuildGraphWorkspace(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   workspaceContext?: ValidatedWorkspaceContext;
 }): Promise<ValidatedWorkspaceContext> {
   return (

@@ -17,7 +17,7 @@ import {
   validationIo,
 } from './file-stat';
 import type {
-  MigrationWritePlanItem,
+  MigrationUpdatePlanItem,
   ModifiedTargetSnapshot,
   OriginalTargetValidationOptions,
   PreparedFileIdentity,
@@ -125,7 +125,7 @@ async function readRegularTarget(
 
 export async function collectModifiedSnapshot(options: {
   canonicalRootDir: string;
-  item: MigrationWritePlanItem;
+  item: MigrationUpdatePlanItem;
   rootDir: string;
   validation: OriginalTargetValidationOptions;
 }): Promise<ModifiedTargetSnapshot> {

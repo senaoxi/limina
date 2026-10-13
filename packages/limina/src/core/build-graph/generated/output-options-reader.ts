@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { type JsonObject, readJsonConfig } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
@@ -17,7 +17,7 @@ import {
 } from './output-options-validation';
 
 function resolveOutputTarget(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configuredTarget: string | undefined;
   sourceConfigPath: string;
 }): string {
@@ -44,7 +44,7 @@ function resolveOutputPath(
 }
 
 function createOutputOptions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   declarationMap: boolean;
   sourceConfigPath: string;
   values: Partial<Record<OutputStringField, string>>;
@@ -99,7 +99,7 @@ function createOutputResult(options: {
 }
 
 export function readOutputOptions(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   sourceConfigPath: string,
   configObject: JsonObject = readJsonConfig(config, sourceConfigPath),
 ): {

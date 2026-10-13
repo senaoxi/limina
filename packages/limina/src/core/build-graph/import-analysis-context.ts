@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   createImportAnalysisContext,
   type ImportAnalysisContext,
@@ -10,7 +10,7 @@ import type { PrepareGeneratedTsconfigGraphOptions } from './types';
 
 export function resolveBuildGraphImportAnalysis(options: {
   astroSemanticContexts?: AstroSemanticContextManager;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
   svelteSemanticContexts?: SvelteSemanticContextManager;
   vueSemanticContexts?: VueSemanticContextManager;

@@ -1,3 +1,4 @@
+import { configContextPath } from 'limina/internal/config/runner';
 import type { DependencyAnalysisResult } from 'limina/internal/core/build-graph/types';
 import type { ReferencePathInfo } from 'limina/internal/core/tsconfig/action-types';
 import type { JsonObject } from 'limina/internal/core/tsconfig/actions';
@@ -220,7 +221,7 @@ export async function translateRelations(
 ): Promise<void> {
   const { analysis } = await collectAnalysis(state, artifactNamespace);
   state.records.push({
-    configPath: state.config.configPath,
+    configPath: configContextPath(state.config),
     kind: 'dependency-analysis',
     message: analysisStatus(analysis),
     details: analysis,

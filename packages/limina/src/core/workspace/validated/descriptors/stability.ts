@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { LiminaStructuredError } from '../../../../check-reporting/errors';
 import type { PackageScopeRegionBoundary } from '../../regions';
@@ -121,7 +121,7 @@ function collectVisibleOutputs(options: {
 }
 
 function createCycleError(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   outputs: ReadonlySet<string>,
 ): LiminaStructuredError {
   return new LiminaStructuredError('Workspace output set does not stabilize.', [
@@ -166,7 +166,7 @@ function createStabilityStep(options: {
 }
 
 function resolveTerminalStep(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   packageBoundaries: readonly PackageScopeRegionBoundary[];
   seenStates: ReadonlySet<string>;
   step: StabilityStep;
@@ -187,7 +187,7 @@ function resolveTerminalStep(options: {
 }
 
 export function resolveStableDescriptors(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   explicitOutputs: ReadonlyMap<string, string>;
   packageBoundaries: readonly PackageScopeRegionBoundary[];
   packageOutputs: ReadonlySet<string>;

@@ -1,5 +1,5 @@
 import { parseCheckerProjectConfigForContext } from 'limina/internal/checkers';
-import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
 import { capabilityDiscoveryExtensions } from 'limina/internal/core/build-graph/generated/file-extensions';
 import {
   collectReferencePathInfosFromConfigObject,
@@ -13,7 +13,7 @@ import { readFile } from 'node:fs/promises';
 import type { MigrationTarget } from './types';
 
 export async function readMigrationTarget(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   planningVirtualFiles: Map<string, string>;
 }): Promise<MigrationTarget> {

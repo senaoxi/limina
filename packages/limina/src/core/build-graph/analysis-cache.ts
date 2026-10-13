@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { invocationDataVersion } from '../../config/invocation-data';
 import { assertArtifactPathLexicallyContained } from '../../domain/artifacts/namespace';
 import { createRevisionedArtifactPlan } from '../../domain/artifacts/plan';
@@ -24,16 +24,16 @@ import { getBuildGraphWorkspace } from './workspace-input';
 
 const key = 'generated-graph-v1';
 
-function hasVirtualInputs(config: ResolvedLiminaConfig): boolean {
+function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
-function graphFallbackReason(config: ResolvedLiminaConfig): string {
+function graphFallbackReason(config: ResolvedLiminaInputs): string {
   return hasVirtualInputs(config)
     ? 'graph-virtual-inputs'
     : 'graph-workspace-executable';
 }
 function versions(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   workspace: ValidatedWorkspaceContext,
 ) {
   const workspaceVersion = invocationDataVersion({
@@ -59,7 +59,7 @@ function decodeGraph(data: unknown): StoredGraphData | undefined {
 }
 interface GraphRestoreInput {
   cache: NativeAnalysisCache;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   workspace: ValidatedWorkspaceContext;
   generation?: number;
 }
@@ -119,7 +119,7 @@ export async function restoreGeneratedGraph(
   return data === undefined ? undefined : rebindArtifacts(data, options);
 }
 export async function restoreCachedDependencyAnalysis(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<DependencyAnalysisResult | undefined> {
   const cache = options.projectDependencyCaches?.analysisCache;
@@ -129,7 +129,7 @@ export async function restoreCachedDependencyAnalysis(
 }
 async function restoredAnalysis(
   cache: NativeAnalysisCache,
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<DependencyAnalysisResult | undefined> {
   return (
@@ -180,7 +180,7 @@ async function rebindArtifacts(
 
 export function captureGeneratedGraph(options: {
   cache: NativeAnalysisCache;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   workspace: ValidatedWorkspaceContext;
   result: GeneratedTsconfigGraphResult;
   analysis: DependencyAnalysisResult;

@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   createExplicitMutationAuthority,
   createMechanicalExactMutationAuthority,
@@ -27,7 +27,7 @@ function selectExplicitOutputTrustedBase(options: {
 
 export async function createWorkspaceOutputMutationAuthority(options: {
   activatedPackageRoots: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   declaringSourceConfig: string;
   outputRoot: string;
   workspaceGeneration: string;
@@ -60,7 +60,7 @@ export async function createWorkspaceOutputMutationAuthority(options: {
 }
 
 export function createOutputAuthorityIssue(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   declaredAt: string;
   error: unknown;
   outputRoot: string;

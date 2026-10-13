@@ -1,5 +1,5 @@
 import { CheckerProjectConfigCache } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
 import {
   createLiminaArtifactNamespace,
@@ -62,7 +62,7 @@ export interface AnalysisProviderSetDependencies {
 
 interface AnalysisProviderSetOptions {
   readonly artifactNamespace: LiminaArtifactNamespace;
-  readonly config: ResolvedLiminaConfig;
+  readonly config: ResolvedLiminaInputs;
   readonly dependencies: AnalysisProviderSetDependencies;
   readonly metrics?: AnalysisCoreMetricsRecorder;
 }
@@ -71,7 +71,7 @@ export class AnalysisProviderSet {
   readonly artifactNamespace: LiminaArtifactNamespace;
   readonly astroSemanticContexts: AstroSemanticContextManager;
   readonly buildGraph: BuildGraphCore;
-  readonly config: ResolvedLiminaConfig;
+  readonly config: ResolvedLiminaInputs;
   readonly imports: ImportCore;
   readonly packages: PackageDomainCore;
   readonly syntaxFacts: SourceSyntaxFactsCache;
@@ -193,7 +193,7 @@ export class AnalysisProviderSet {
 
 export function createAnalysisProviders(
   ...arguments_: [
-    config: ResolvedLiminaConfig,
+    config: ResolvedLiminaInputs,
     artifactNamespace?: LiminaArtifactNamespace,
     metrics?: AnalysisCoreMetricsRecorder,
     dependencies?: AnalysisProviderSetDependencies,

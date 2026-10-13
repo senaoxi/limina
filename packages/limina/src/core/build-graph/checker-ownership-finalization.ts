@@ -1,4 +1,4 @@
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
@@ -13,7 +13,7 @@ import {
 } from './checker-solution-constraints';
 
 export function validateOwnershipConstraints(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   phase: string;
 }): void {
@@ -87,7 +87,7 @@ function collectSolutionOwners(
 }
 
 function finalizeSolution(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   solution: SolutionOwnershipState;
 }): string[] {
@@ -107,7 +107,7 @@ function finalizeSolution(options: {
 }
 
 function finalizeSolutions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
 }): string[] {
   return options.discovery.plan.solutions
@@ -135,7 +135,7 @@ function getStateFinalOwner(
 }
 
 function finalizeEntryOwner(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   entryPath: string;
 }): string[] {
@@ -157,7 +157,7 @@ function finalizeEntryOwner(options: {
 }
 
 function finalizeEntryOwners(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
 }): void {
   assertOwnershipPhase({
@@ -170,7 +170,7 @@ function finalizeEntryOwners(options: {
 }
 
 export function finalizeOwnership(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
 }): void {
   finalizeTypeOwners(options.discovery);

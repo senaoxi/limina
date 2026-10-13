@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   isOrdinarySourceTypecheckConfigPath,
   readJsonConfig,
@@ -256,7 +256,7 @@ function addImplicitReferenceEntry(
 }
 
 export function readImplicitReferences(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   sourceConfigPath: string,
 ): { implicitRefs: ImplicitReference[]; problems: string[] } {
   const context: ImplicitReferenceContext = {

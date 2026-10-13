@@ -1,6 +1,6 @@
 import type {
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
@@ -18,7 +18,7 @@ import type {
 } from './types';
 
 export async function resolveGeneratedGraphCheckerSelections(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
   projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
@@ -41,7 +41,7 @@ export async function resolveGeneratedGraphCheckerSelections(options: {
 }
 
 export async function resolveGeneratedGraphCheckers(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: Pick<
     PrepareGeneratedTsconfigGraphOptions,
     | 'importAnalysisContext'
@@ -73,7 +73,7 @@ export async function resolveGeneratedGraphCheckers(
 }
 
 async function resolveCheckerWorkspaceContext(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   workspaceContext: PrepareGeneratedTsconfigGraphOptions['workspaceContext'];
 }): Promise<
   NonNullable<PrepareGeneratedTsconfigGraphOptions['workspaceContext']>
@@ -88,7 +88,7 @@ async function resolveCheckerWorkspaceContext(options: {
 }
 
 function createOwnedImportAnalysis(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importAnalysisContext: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
 }): {
   context: NonNullable<

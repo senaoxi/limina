@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
@@ -47,7 +47,7 @@ function createWorkspaceEvidence(evidence: readonly string[] | undefined): {
 
 export function createWorkspaceIssue(options: {
   code: LiminaWritableCheckIssueCode;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   evidence?: readonly string[];
   filePath?: string;
   fix: string;
@@ -161,7 +161,7 @@ export function canonicalProjectedPathSync(targetPath: string): string {
 }
 
 export async function createDescriptorCandidate(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   kind: WorkspaceDescriptorKind;
   ownerDirectory: string;
   path: string;

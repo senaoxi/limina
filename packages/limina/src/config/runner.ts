@@ -1,7 +1,12 @@
 export { validateLiminaConfig } from '#config/schema';
+export { configContextPath, createDefaultInputs } from './default-inputs';
 export type * from './graph-proof-types';
 export { loadConfig } from './loader';
-export { DEFAULT_LIMINA_CONFIG_FILES } from './loader-paths';
+export {
+  DEFAULT_LIMINA_CONFIG_FILES,
+  findLiminaConfigPath,
+  resolveExecutionConfigLocation,
+} from './loader-paths';
 export type * from './package-types';
 export type * from './pipeline-checker-types';
 export type * from './release-types';

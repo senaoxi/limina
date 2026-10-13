@@ -3,7 +3,7 @@ import {
   type CheckerProjectParseContext,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   createExtensionPattern,
   getDtsCompanionConfigPath,
@@ -96,7 +96,7 @@ function resolveVirtualReferencePath(options: {
 }
 
 function getProjectReferencePaths(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   virtualFiles: ReadonlyMap<string, string> | undefined;
 }): string[] {
@@ -132,7 +132,7 @@ function normalizeProjectFileNames(options: {
 
 function resolveOwnedParsedProject(options: {
   cache?: CheckerProjectConfigCache;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   context: CheckerProjectParseContext;
   normalizedConfigPath: string;
   parsed: ReturnType<typeof parseCheckerProjectConfigForContext>;
@@ -153,7 +153,7 @@ function resolveOwnedParsedProject(options: {
 }
 
 type ParseProjectArguments = [
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   configPath: string,
   contextOrExtensions?: CheckerProjectParseContext | string[],
   virtualFiles?: ReadonlyMap<string, string>,

@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import type { WorkspacePackage } from '../../actions';
 import type { CompiledExclusionRule } from '../exclusions';
@@ -59,7 +59,7 @@ function createIslandResult(): PackageIslandCollection {
 function createWalkContext(options: {
   activatedIdentities: readonly WorkspacePackageIdentity[];
   activatedPackages: readonly WorkspacePackage[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   owner: WorkspacePackage;
   ownerIdentity: WorkspacePackageIdentity;
   ownerRootDir: string;
@@ -84,7 +84,7 @@ function createWalkContext(options: {
 export async function collectPackageIsland(options: {
   activatedIdentities: readonly WorkspacePackageIdentity[];
   activatedPackages: readonly WorkspacePackage[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   owner: WorkspacePackage;
   rules: readonly CompiledExclusionRule[];
 }): Promise<PackageIslandCollection> {

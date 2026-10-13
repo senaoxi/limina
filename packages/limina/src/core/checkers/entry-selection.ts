@@ -1,7 +1,7 @@
 import type {
   CheckerScope,
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import {
   normalizeAbsolutePath,
@@ -37,7 +37,7 @@ export interface CheckerEntrySelection {
 }
 
 export interface CheckerEntrySelectionContext {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   sourceConfigPaths: readonly string[];
 }
 
@@ -54,7 +54,7 @@ function createMatchers(
 }
 
 function isExcludedEntry(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   entryPath: string;
   negativeMatchers: readonly ((value: string) => boolean)[];
   positiveMatchers: readonly ((value: string) => boolean)[];
@@ -73,7 +73,7 @@ function isExcludedEntry(options: {
 }
 
 function filterExcludedEntries(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   includedEntryPaths: readonly string[],
   excludePatterns: readonly string[],
 ): string[] {
@@ -210,7 +210,7 @@ export function createCheckerEntrySelectionOptions(
 }
 
 export function isMatchesCheckerScope(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   scope: CheckerScope;
 }): boolean {

@@ -1,5 +1,5 @@
 import { isBuildCapablePreset } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import { colorAllBuildComponents } from './checker-build-coloring-components';
 import { isBuildColoringCandidate } from './checker-build-coloring-state';
@@ -101,7 +101,7 @@ function isDeclarationRelationFact(fact: CheckerDependencyFact): boolean {
 }
 
 function getPassGraphRules(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   consumer: TypeConfigOwnershipState;
   graphRulesByConfigPath: Map<string, readonly string[]>;
 }): readonly string[] {
@@ -115,7 +115,7 @@ function getPassGraphRules(options: {
 }
 
 function createBuildDependencyEdge(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   consumer: TypeConfigOwnershipState;
   fact: CheckerDependencyFact;
   graphRulesByConfigPath: Map<string, readonly string[]>;
@@ -138,7 +138,7 @@ function createBuildDependencyEdge(options: {
 }
 
 function createManagedDependencyEdge(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   fact: CheckerDependencyFact;
   graphRulesByConfigPath: Map<string, readonly string[]>;
@@ -154,7 +154,7 @@ function createManagedDependencyEdge(options: {
 }
 
 function createDependencyEdge(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   fact: CheckerDependencyFact;
   graphRulesByConfigPath: Map<string, readonly string[]>;
@@ -168,7 +168,7 @@ function createDependencyEdge(options: {
 }
 
 function addDependencyEdges(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   graph: ColoringGraph;
 }): void {
@@ -207,7 +207,7 @@ function createImplicitReferenceEdge(options: {
 }
 
 function addConsumerImplicitEdges(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   consumer: TypeConfigOwnershipState;
   discovery: CheckerOwnershipDiscovery;
   graph: ColoringGraph;
@@ -229,7 +229,7 @@ function addConsumerImplicitEdges(options: {
 }
 
 function addImplicitReferenceEdges(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   graph: ColoringGraph;
   problems: string[];
@@ -243,7 +243,7 @@ function addImplicitReferenceEdges(options: {
 }
 
 export function colorBuildCheckerComponents(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
 }): string[] {
   const candidates = options.discovery.plan.typeConfigs

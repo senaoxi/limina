@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
 import {
   createLiminaTsconfigSchemaPath,
   type JsonObject,
@@ -106,7 +106,7 @@ export function migrateTsconfigObject(options: {
 }
 
 export function createMigrationWritePlanItem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   target: MigrationTarget;
   migratedConfig?: JsonObject;
 }): MigrationWritePlanItem {

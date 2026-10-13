@@ -1,5 +1,5 @@
 import { isBuildCapablePreset } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { toRelativePath } from '#utils/path';
 import type {
@@ -72,7 +72,7 @@ function getMissingConfigTitle(projection: RouteProjection): string {
 
 function addMissingConfig(options: {
   checker: CheckerRouteSnapshot;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   projection: RouteProjection;
   state: RouteProjectionState;
 }): void {
@@ -127,7 +127,7 @@ function addAvailableRoute(
 
 function projectCheckerAvailability(options: {
   checker: CheckerRouteSnapshot;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   projection: RouteProjection;
   state: RouteProjectionState;
 }): void {
@@ -144,7 +144,7 @@ function projectCheckerAvailability(options: {
 
 function projectChecker(options: {
   checker: CheckerRouteSnapshot;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   projection: RouteProjection;
   state: RouteProjectionState;
 }): void {
@@ -155,7 +155,7 @@ function projectChecker(options: {
 }
 
 export function projectCheckerRoutesForProjection(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   snapshot: CheckerRouteSnapshotCollection,
   projection: RouteProjection,
 ): CollectCheckerGraphProjectRoutesResult {
@@ -182,7 +182,7 @@ function recordProjection(
 }
 
 export function projectGraphProjectRoutes(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   snapshot: CheckerRouteSnapshotCollection,
 ): CollectCheckerGraphProjectRoutesResult {
   recordProjection(snapshot, 'graph-route');
@@ -190,7 +190,7 @@ export function projectGraphProjectRoutes(
 }
 
 export function projectCheckerEntryProjectRoutes(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   snapshot: CheckerRouteSnapshotCollection,
 ): CollectCheckerGraphProjectRoutesResult {
   recordProjection(snapshot, 'entry-route');
@@ -198,7 +198,7 @@ export function projectCheckerEntryProjectRoutes(
 }
 
 export function collectGraphProjectRoutes(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   generatedGraph?: GeneratedTsconfigGraphResult,
 ): CollectCheckerGraphProjectRoutesResult {
   return projectGraphProjectRoutes(

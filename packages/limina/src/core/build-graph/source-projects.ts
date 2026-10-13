@@ -3,7 +3,7 @@ import {
   type CheckerProjectParseContext,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import {
   isPathInsideDirectory,
@@ -32,7 +32,7 @@ export function isInsideNodeModules(filePath: string): boolean {
 export function createSourceProject(options: {
   checkerName: SourceProject['checkerName'];
   checkerPreset: SourceProject['context']['checkerPresets'][number];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discoveryExtensions?: string[];
   packageRootDir: string;
   projectConfigCache?: CheckerProjectConfigCache;
@@ -101,7 +101,7 @@ export function createSourceProject(options: {
 
 export function isLocalPathOutsideActivatedRegions(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   filePath: string;
 }): boolean {
   const filePath = normalizeAbsolutePath(options.filePath);
@@ -125,7 +125,7 @@ function getOutOfRegionOwnedFiles(options: {
 }
 
 function addOwnedRegionProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   files: string[];
   problems: string[];
   project: SourceProject;
@@ -148,7 +148,7 @@ function addOwnedRegionProblem(options: {
 
 function getOutOfRegionLocalFiles(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
 }): string[] {
   const ownedFileNames = new Set(options.project.ownedFileNames);
@@ -164,7 +164,7 @@ function getOutOfRegionLocalFiles(options: {
 }
 
 function addLocalRegionProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   files: string[];
   problems: string[];
   project: SourceProject;
@@ -187,7 +187,7 @@ function addLocalRegionProblem(options: {
 
 function addProjectRegionProblems(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   problems: string[];
   project: SourceProject;
 }): void {
@@ -203,7 +203,7 @@ function addProjectRegionProblems(options: {
 
 export function addActivatedRegionSourceProjectProblems(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   problems: string[];
   projects: readonly SourceProject[];
 }): void {
@@ -215,7 +215,7 @@ export function addActivatedRegionSourceProjectProblems(options: {
 export function createSolutionProject(options: {
   checkerName: string;
   collection: CheckerSourceConfigCollection;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   packageRootDir: string;
   sourceConfigPath: string;
 }): SolutionProject {

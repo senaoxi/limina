@@ -1,6 +1,6 @@
 import { LiminaStructuredError } from 'limina/internal/check-reporting/errors';
 import { TypeScriptConfigInputError } from 'limina/internal/checker/project-base';
-import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
 import { isOrdinarySourceTypecheckConfigPath } from 'limina/internal/core/tsconfig/actions';
 import { TsconfigInputError } from 'limina/internal/core/tsconfig/config-paths';
 import { collectRawWorkspacePackages } from 'limina/internal/core/workspace/actions';
@@ -44,7 +44,7 @@ function assertRecoverableOutputFailure(error: unknown): void {
 }
 
 export async function discover(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ): Promise<string[]> {
   const rawPackages = await collectRawWorkspacePackages(config);
   try {

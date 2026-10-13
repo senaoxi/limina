@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   isOrdinarySourceTypecheckConfigPath,
   readJsonConfig,
@@ -34,7 +34,7 @@ function isGraphRuleLabel(value: unknown): value is string {
 }
 
 export function readGraphRules(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   sourceConfigPath: string,
 ): string[] {
   const graphRules = getGraphRulesValue(
@@ -48,7 +48,7 @@ export function readGraphRules(
 }
 
 export function addSourceReferenceConfigProblems(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configObject?: Record<string, unknown>;
   problems: string[];
   sourceConfigPath: string;
@@ -72,7 +72,7 @@ export function addSourceReferenceConfigProblems(options: {
 }
 
 export function readRelativeTypeFiles(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   sourceConfigPath: string,
 ): string[] {
   return readRelativeTypeRoots(sourceConfigPath, config.virtualFiles);

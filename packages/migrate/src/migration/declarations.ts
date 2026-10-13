@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
 import {
   readImplicitReferences,
   readOutputOptions,
@@ -22,7 +22,7 @@ export interface MigrationRecord {
 export class MigrationInputError extends Error {}
 
 interface DeclarationNormalization {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
   object: JsonObject;
   validTargets: ReadonlySet<string>;

@@ -1,10 +1,10 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import { getWorkspaceRegionBoundaryExclusionReason } from '../workspace/regions';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 
 function getConfigLines(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   referencedFromConfigPath?: string;
   sourceConfigPath: string;
 }): string[] {
@@ -21,7 +21,7 @@ function getConfigLines(options: {
 
 function getBoundaryLines(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   sourceConfigPath: string;
 }): string[] {
   const boundary = options.activatedRegions.findBoundaryForPath(
@@ -46,7 +46,7 @@ function getBoundaryLines(options: {
 export function getOutsideRegionProblem(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: string;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   referencedFromConfigPath?: string;
   sourceConfigPath: string;
 }): string {
@@ -62,7 +62,7 @@ export function getOutsideRegionProblem(options: {
 }
 
 export function getInvalidSolutionOutputProblem(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   sourceConfigPath: string;
 }): string {
   return [

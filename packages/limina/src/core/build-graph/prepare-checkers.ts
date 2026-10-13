@@ -2,7 +2,7 @@ import {
   type CheckerProjectConfigCache,
   isBuildCapablePreset,
 } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
@@ -44,7 +44,7 @@ function getSemanticAuthority(options: {
 function createCheckerSolutions(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   collection: PreparedCheckerGraph['collection'];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   projectConfigCache?: CheckerProjectConfigCache;
   selection: ResolvedCheckerEntrySelection;
 }): ReturnType<typeof createSolutionProject>[] {
@@ -184,7 +184,7 @@ function createGraphSolutions(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   buildCapable: boolean;
   collection: PreparedCheckerGraph['collection'];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   governedSources: GovernedSourceUnit[];
   selection: ResolvedCheckerEntrySelection;
 }): SolutionProject[] {
@@ -197,7 +197,7 @@ function createGraphSolutions(options: {
 
 export function prepareCheckerGraph(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   projectConfigCache?: CheckerProjectConfigCache;
   selection: ResolvedCheckerEntrySelection;
   explicitOwnerByConfigPath?: ReadonlyMap<

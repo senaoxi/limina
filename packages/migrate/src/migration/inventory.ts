@@ -235,13 +235,18 @@ async function inventoryDeclarations(
 }
 
 export async function inventory(state: MigrationPlanningState): Promise<void> {
-  state.snapshot.set(
-    state.config.configPath,
-    await readFile(state.config.configPath, 'utf8'),
-  );
+  await captureConfig(state);
   // Capture every candidate before interpreting any candidate.
   for (const file of state.paths) await capture(state, file);
   const readable = state.paths.filter((file) => !state.isolated.has(file));
   for (const file of readable) await parseTarget(state, file);
   await inventoryDeclarations(state);
+}
+
+async function captureConfig(state: MigrationPlanningState): Promise<void> {
+  if (state.config.configPath !== undefined)
+    state.snapshot.set(
+      state.config.configPath,
+      await readFile(state.config.configPath, 'utf8'),
+    );
 }

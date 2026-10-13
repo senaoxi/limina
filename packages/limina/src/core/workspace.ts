@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   collectImporters,
   collectRawWorkspacePackages,
@@ -61,17 +61,17 @@ export interface WorkspaceCoreMetricsRecorder {
 export interface WorkspaceCoreDependencies {
   readonly runWithInputs?: <T>(operation: () => T) => T;
   readonly collectRawWorkspacePackages?: (
-    config: ResolvedLiminaConfig,
+    config: ResolvedLiminaInputs,
   ) => Promise<WorkspacePackage[]>;
 }
 
 export class WorkspaceCore {
   readonly #runWithInputs: <T>(operation: () => T) => T;
   readonly #collectRawWorkspacePackages: (
-    config: ResolvedLiminaConfig,
+    config: ResolvedLiminaInputs,
   ) => Promise<WorkspacePackage[]>;
 
-  readonly #config: ResolvedLiminaConfig;
+  readonly #config: ResolvedLiminaInputs;
 
   readonly #metrics: WorkspaceCoreMetricsRecorder | undefined;
 
@@ -92,7 +92,7 @@ export class WorkspaceCore {
     | undefined;
 
   constructor(
-    config: ResolvedLiminaConfig,
+    config: ResolvedLiminaInputs,
     metrics?: WorkspaceCoreMetricsRecorder,
     dependencies: WorkspaceCoreDependencies = {},
   ) {

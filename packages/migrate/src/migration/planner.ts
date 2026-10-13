@@ -1,8 +1,9 @@
 import type {
   RegionExcludeConfig,
   RegionsConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from 'limina/internal/config/runner';
+import { configContextPath } from 'limina/internal/config/runner';
 import {
   type InputTopologyResult,
   readInputTopology,
@@ -79,7 +80,7 @@ function planMembership(state: MigrationPlanningState): Set<string> {
     if (!(error instanceof MigrationInputError)) throw error;
     state.incomplete = true;
     state.records.push({
-      configPath: state.config.configPath,
+      configPath: configContextPath(state.config),
       kind: 'membership-incomplete',
       message: error.message,
     });
@@ -88,7 +89,7 @@ function planMembership(state: MigrationPlanningState): Set<string> {
 }
 
 export async function createFrozenMigrationPlan(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   artifactNamespace: LiminaArtifactNamespace,
 ): Promise<FrozenMigrationPlan> {
   const state = createPlanningState(config, []);

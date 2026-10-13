@@ -1,5 +1,5 @@
 import { isBuildCapablePreset } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { createLiminaTsconfigSchemaPath } from '#core/tsconfig/actions';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
@@ -96,7 +96,7 @@ function createRelativeImportRewriteOverride(
 }
 
 export function createGeneratedDtsConfig(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
 }): Record<string, unknown> {
   const { config, project } = options;
@@ -160,7 +160,7 @@ export function createGeneratedDtsConfig(options: {
 }
 
 function requireOutputOptions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
 }): NonNullable<SourceProject['outputOptions']> {
   if (options.project.outputOptions) {
@@ -172,7 +172,7 @@ function requireOutputOptions(options: {
 }
 
 export function createGeneratedOutputProjectConfig(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
 }): Record<string, unknown> {
   const { config, project } = options;
@@ -238,7 +238,7 @@ export function createGeneratedOutputProjectConfig(options: {
 }
 
 function createGeneratedSolutionConfig(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   solution: SolutionProject | OutputSolutionProject;
 }): Record<string, unknown> {
   const liminaOptions: Record<string, unknown> = {
@@ -273,14 +273,14 @@ function createGeneratedSolutionConfig(options: {
 }
 
 export function createGeneratedSolutionBuildConfig(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   solution: SolutionProject;
 }): Record<string, unknown> {
   return createGeneratedSolutionConfig(options);
 }
 
 export function createGeneratedOutputSolutionConfig(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   solution: OutputSolutionProject;
 }): Record<string, unknown> {
   return createGeneratedSolutionConfig(options);

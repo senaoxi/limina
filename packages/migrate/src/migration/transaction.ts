@@ -1,8 +1,8 @@
-export { MigrationTransactionError } from './transaction/error';
 export {
   executeMigrationWritePlan,
   executePreparedMigrationPlan,
-} from './transaction/execution';
+} from './transaction/apply';
+export { MigrationTransactionError } from './transaction/error';
 export { prepareMigrationWritePlan } from './transaction/setup';
 export type {
   FileContentIdentity,

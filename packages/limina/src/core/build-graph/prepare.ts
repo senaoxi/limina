@@ -1,4 +1,4 @@
-import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
+import { isSourceKnipEnabled, type ResolvedLiminaInputs } from '#config/runner';
 import { LiminaStructuredError } from '../../check-reporting/errors';
 import { TypeScriptConfigInputError } from '../../checker/project-base';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
@@ -55,7 +55,7 @@ function prepareGeneratedKnip(options: {
   checkers: Parameters<
     typeof prepareGeneratedKnipPackageConfigs
   >[0]['checkers'];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: ReturnType<typeof createGeneratedGraphPreparationState>;
   workspaceContext: ValidatedWorkspaceContext;
 }): ReturnType<typeof prepareGeneratedKnipPackageConfigs> {
@@ -72,7 +72,7 @@ function prepareGeneratedKnip(options: {
 }
 
 async function prepareGraph(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
   isAnalysisOnly = false,
 ): Promise<GeneratedTsconfigGraphResult | DependencyAnalysisResult> {
@@ -168,7 +168,7 @@ async function prepareGraph(
 }
 
 function capturePreparedGraph(input: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   options: PrepareGeneratedTsconfigGraphOptions;
   workspaceContext: ValidatedWorkspaceContext;
   result: GeneratedTsconfigGraphResult;
@@ -185,7 +185,7 @@ function capturePreparedGraph(input: {
     });
 }
 async function restorePreparedGraph(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<GeneratedTsconfigGraphResult | undefined> {
   const cache = options.projectDependencyCaches?.analysisCache;
@@ -198,7 +198,7 @@ async function restorePreparedGraph(
   });
 }
 export async function prepareGeneratedTsconfigGraph(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<GeneratedTsconfigGraphResult> {
   const workspaceContext = await getBuildGraphWorkspace({
@@ -213,7 +213,7 @@ export async function prepareGeneratedTsconfigGraph(
 }
 
 export async function analyzeProjectDependencies(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<DependencyAnalysisResult> {
   try {
@@ -225,7 +225,7 @@ export async function analyzeProjectDependencies(
 }
 
 async function analyzePreparedDependencies(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<DependencyAnalysisResult> {
   return (

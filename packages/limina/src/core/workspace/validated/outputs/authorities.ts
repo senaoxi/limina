@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { randomUUID } from 'node:crypto';
 import { LiminaStructuredError } from '../../../../check-reporting/errors';
 import type { LiminaCheckIssue } from '../../../../source-check/snapshot';
@@ -23,7 +23,7 @@ function throwOutputIssues(issues: readonly LiminaCheckIssue[]): void {
 
 async function addOutputAuthority(options: {
   activatedPackageRoots: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   declaringSourceConfig: string;
   issues: LiminaCheckIssue[];
   outputMutationAuthorities: Map<string, WorkspaceOutputMutationAuthority>;
@@ -70,7 +70,7 @@ function collectAuthorityDeclarations(options: {
 
 export async function createValidatedOutputAuthorities(options: {
   activatedPackageRoots: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   declarations: WorkspaceOutputDeclarations;
   stableSourceConfigPaths: ReadonlySet<string>;
 }): Promise<WorkspaceOutputAuthorities> {

@@ -1,7 +1,7 @@
 import type {
   RegionExcludeConfig,
   RegionsConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import { normalizeAbsolutePath, normalizeSlashes } from '#utils/path';
 import path from 'pathe';
@@ -38,7 +38,7 @@ function regionExclusions(
 }
 
 export function compileExclusionRules(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ): CompiledExclusionRule[] {
   return regionExclusions(config.scope?.regions).map((entry, index) => ({
     entry,
@@ -53,7 +53,7 @@ export function compileExclusionRules(
 }
 
 export function findExactExclusions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   kind: ExclusionCandidate['kind'];
   rootDir: string;
   rules: readonly CompiledExclusionRule[];
@@ -71,7 +71,7 @@ export function findExactExclusions(options: {
 }
 
 export function applyWorkspacePackageExclusions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rawPackages: readonly WorkspacePackage[];
   rules: readonly CompiledExclusionRule[];
 }): WorkspacePackage[] {
@@ -88,7 +88,7 @@ export function applyWorkspacePackageExclusions(options: {
 
 function isCandidateMatchesRule(options: {
   candidate: ExclusionCandidate;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rule: CompiledExclusionRule;
 }): boolean {
   if (options.candidate.kind !== options.rule.entry.kind) return false;
@@ -101,7 +101,7 @@ function isCandidateMatchesRule(options: {
 
 function validateCandidateMatch(options: {
   candidate: ExclusionCandidate;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rules: readonly CompiledExclusionRule[];
 }): void {
   const matches = findExactExclusions({
@@ -118,7 +118,7 @@ function validateCandidateMatch(options: {
 
 function findUnmatchedRule(options: {
   candidates: readonly ExclusionCandidate[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rules: readonly CompiledExclusionRule[];
 }): CompiledExclusionRule | undefined {
   return options.rules.find((rule) =>
@@ -131,7 +131,7 @@ function findUnmatchedRule(options: {
 
 function validateExclusionRules(options: {
   candidates: readonly ExclusionCandidate[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rules: readonly CompiledExclusionRule[];
 }): void {
   for (const candidate of options.candidates) {
@@ -145,7 +145,7 @@ function validateExclusionRules(options: {
 }
 
 export function validateWorkspacePackageExclusions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rawPackages: readonly WorkspacePackage[];
   rules: readonly CompiledExclusionRule[];
 }): void {
@@ -162,7 +162,7 @@ export function validateWorkspacePackageExclusions(options: {
 }
 
 export function validatePackageScopeExclusions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   rules: readonly CompiledExclusionRule[];
   stableCandidates: readonly WorkspaceDescriptorCandidate[];
   workspaceBoundaries: readonly WorkspaceRootRegionBoundary[];
@@ -194,7 +194,7 @@ export function validatePackageScopeExclusions(options: {
 Exact config exclusions affect descriptors, never package activation.
 */
 export function excludeTsconfigDescriptors(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   candidates: readonly WorkspaceDescriptorCandidate[];
 }): WorkspaceDescriptorCandidate[] {
   const excluded = new Set(
