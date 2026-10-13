@@ -16,6 +16,14 @@
 
 Vercel 部署 CLI 是既有私有 `docs` workspace 的开发依赖，通过 dev catalog 与冻结 lockfile 解析，不加入双包发布组；见[基建归属记录](./infrastructure.md)。
 
+## 可分发的智能体技能
+
+[`skills/limina`](../../../skills/limina/SKILL.md) 负责可安装的消费者技能，与承载仓库维护流程的 `.agents/skills` 分开。
+
+入口保留任务选择和必要边界；五份参考资料分别覆盖配置、CLI 工作流、归属、包检查与诊断。示例以随附源码为依据，在其他项目中操作时则以该项目安装版本的帮助、公开声明、Schema 和对应源码为准。技能不要求消费者拥有 Limina checkout，不强制使用 pnpm，不将内部导入暴露为公开 API，也不授权升级或发布。
+
+命令、配置、检查器支持、根发现、缓存或包行为变化时，随源码 owner 同步维护对应技能参考。保留任务指南定位，不另建完整 Schema 或 issue code 目录。[Init 安装命令](../../../packages/limina/src/commands/init/shared.ts)以及[英文](../../../docs/en/cli.md)、[中文](../../../docs/zh/cli.md) CLI 指南均指向 `senaoxi/limina --skill limina`。既有 [init 测试](../../../packages/limina/src/__tests__/init.spec.ts)覆盖接受安装时的命令及跳过安装时的提示；拒绝提示和安装失败继续使用各自独立的用例。技能迁移改变安装目标，不改变治理身份、关系或缓存生命周期。
+
 ## 文档命令输出
 
 首页由 `HomeFeatures.vue` 负责功能导航，`CommandTerminal.vue` 负责命令输出与控件，`use-command-playback.ts` 负责回放状态。组件文件按职责命名；props、data attributes 和样式中的命令选项及索引使用命令术语。英文与中文文案共享同一份 CLI 运行记录。选择其他命令或功能组时，完整输出保持展开，方便读者对照。其阅读区在当前视口下采用固定高度：运行记录的长短不得改变粘性终端的高度并反向触发滚动驱动的功能选择。输出保留实际打印的列布局，窄屏通过横向滚动阅读。
