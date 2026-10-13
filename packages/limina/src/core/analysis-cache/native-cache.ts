@@ -23,6 +23,7 @@ import { CachedGraphRecords } from './graph-records';
 import { nativeContextId } from './identity';
 import { type FactRequest, ImporterFacts } from './importer-facts';
 import { AnalysisInputs } from './inputs';
+import { validateInstallationDomains } from './installation-environment';
 import { AnalysisInvalidation } from './invalidation';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
 import { SemanticState } from './semantic-state';
@@ -35,6 +36,8 @@ import {
   newSnapshot,
   retainData,
 } from './snapshot-records';
+import { VueAnalysisRecords } from './vue-records';
+import { observePreviousVueBytes } from './vue-toolchain-inputs';
 
 export class NativeAnalysisCache {
   readonly #resolutions: ResolutionQueries;
@@ -59,6 +62,7 @@ export class NativeAnalysisCache {
   readonly contributions: ReferenceContributions;
   readonly contexts: Record<string, NativeContextRecord> = {};
   readonly graphs: Record<string, GraphRecord> = {};
+  readonly vue: VueAnalysisRecords;
 
   readonly identity: string;
   readonly configVersion: string | undefined;
@@ -76,12 +80,13 @@ export class NativeAnalysisCache {
     this.previous = config.previous;
     const state = this.previous ?? emptySnapshot(identity, this.configVersion);
     this.inputs = new AnalysisInputs(state.inputs, this.metrics);
+    observePreviousVueBytes(state, this.inputs);
     this.contributions = new ReferenceContributions(
       this.inputs,
       state.contributions,
     );
     this.inputs.validatePrevious();
-    this.#validateDomains(state);
+    validateInstallationDomains(state, this.inputs);
     this.invalidation = new AnalysisInvalidation(this.previous, this.inputs);
     this.#checkConsumerCoverage();
     this.#resolutions = new ResolutionQueries({
@@ -100,15 +105,9 @@ export class NativeAnalysisCache {
     this.importers = this.#facts.records;
     this.#contexts = new NativeContextRecords(this);
     this.#graphs = new CachedGraphRecords(this);
+    this.vue = new VueAnalysisRecords(this);
   }
 
-  #validateDomains(state: AnalysisSnapshot): void {
-    const dependencies = Object.values(state.contexts)
-      .flatMap((context) => context.environment.domains)
-      .flatMap((domain) => domain.dependencies);
-    if (dependencies.some((dependency) => !this.inputs.valid(dependency)))
-      this.inputs.domainDirty = true;
-  }
   #checkConsumerCoverage(): void {
     if (this.previous === undefined) return;
     this.#checkCoverage(this.previous);
@@ -183,6 +182,7 @@ export class NativeAnalysisCache {
   }
   captureLiveContexts(): void {
     for (const record of this.#captures.values()) record.capture();
+    this.vue.capture();
   }
   recordProgram(): void {
     this.metrics.semanticPrograms += 1;
@@ -281,6 +281,7 @@ export class NativeAnalysisCache {
     this.#graphs.capture(key, options);
   }
   snapshotRecords(): Omit<AnalysisSnapshot, 'header'> {
+    this.vue.capture();
     return currentSnapshotRecords(this);
   }
 

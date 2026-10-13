@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { checker, stringMap, text, texts } from './cached-data-schema';
 export const authority: z.ZodType<unknown> = z.object({
   kind: z.literal('locked'),
-  family: z.literal('typescript'),
+  family: z.enum(['typescript', 'vue']),
   source: z.enum(['explicit', 'config', 'root-file', 'dependency']),
 });
 const evidence = z.object({
@@ -36,7 +36,7 @@ const requirement = z
   })
   .nullable();
 const occurrence = z.object({
-  domain: z.literal('typescript'),
+  domain: z.enum(['typescript', 'vue']),
   filePath: text,
   kind: z.enum([
     'static',

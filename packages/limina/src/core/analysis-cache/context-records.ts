@@ -51,11 +51,9 @@ function isCurrentEnvironment(
   project: TypeScriptSemanticProject,
   candidate: Candidate,
 ): boolean {
-  const current = observeTypeEnvironment(
-    project,
-    cache.inputs,
-    candidate.state.members,
-  );
+  const current = observeTypeEnvironment(project, cache.inputs, {
+    members: candidate.state.members,
+  });
   if (
     analysisHash(current.domains) !==
     analysisHash(candidate.record.environment.domains)

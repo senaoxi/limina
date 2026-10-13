@@ -1,0 +1,109 @@
+import { z } from 'zod';
+import { decodeData } from './data-codec';
+import { dependencySchema } from './dependency-schema';
+import { typeEnvironmentSchema } from './environment-schema';
+import { occurrenceSchema } from './occurrence-schema';
+import type { VueQueryKind, VueQueryResults } from './vue-contracts';
+import { VUE_ANALYSIS_ADAPTER } from './vue-identity';
+
+const text = z.string();
+const texts = z.array(text);
+const target = z.object({
+  resolvedFileName: text,
+  resolvedBy: z.enum(['typescript', 'checker-source']),
+  isExternalLibraryImport: z.boolean(),
+});
+const managedSource = z
+  .object({
+    checkerNames: texts,
+    declarationFilePath: text,
+    mappedSourceFilePath: text,
+    reason: z.literal('owned-source'),
+    sourceConfigPath: text,
+  })
+  .optional();
+const evidence = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('missing') }),
+  z.object({
+    kind: z.literal('ambient'),
+    declarationFilePaths: texts,
+    modulePattern: text,
+  }),
+  z.object({ kind: z.literal('checker-source'), filePath: text }),
+  z.object({
+    kind: z.literal('concrete-declaration'),
+    filePath: text,
+    managedSource,
+  }),
+]);
+const fact = z.object({
+  framework: z.literal('vue'),
+  importRecord: occurrenceSchema,
+  provenance: z.literal('strict-source-map'),
+  resolutionMode: text,
+  semanticSpecifier: text,
+  target: target.nullable(),
+  typeEvidence: evidence,
+});
+const schemas = {
+  evidence,
+  preparation: z.object({
+    kind: z.literal('supported'),
+    directSourceRecords: z.array(occurrenceSchema),
+    facts: z.array(fact),
+    unmapped: z.array(
+      z.object({ generatedFilePath: text, semanticSpecifier: text }),
+    ),
+  }),
+  resolution: z.object({
+    framework: z.literal('vue'),
+    profile: z
+      .enum(['vue-sfc', 'petite-vue-html', 'vitepress-markdown'])
+      .optional(),
+    provenance: z.enum(['direct-source', 'strict-source-map']),
+    resolutionMode: text,
+    semanticSpecifier: text,
+    sourceRecord: occurrenceSchema,
+    target: target.nullable(),
+  }),
+};
+
+export function parseVueQuery<K extends VueQueryKind>(
+  kind: K,
+  data: unknown,
+): VueQueryResults[K] | undefined {
+  const parsed = schemas[kind].safeParse(data);
+  return parsed.success ? (parsed.data as VueQueryResults[K]) : undefined;
+}
+
+export function decodeVueQuery<K extends VueQueryKind>(
+  kind: K,
+  data: unknown,
+): VueQueryResults[K] | undefined {
+  try {
+    return parseVueQuery(kind, decodeData(data));
+  } catch {
+    return undefined;
+  }
+}
+
+const querySchema = z.object({
+  kind: z.enum(['preparation', 'resolution', 'evidence']),
+  data: z.json(),
+});
+export const vueContextSchema: z.ZodType<unknown> = z.object({
+  adapter: z.literal(VUE_ANALYSIS_ADAPTER),
+  project: z.object({
+    configPath: text,
+    projectRootDir: text,
+    extensions: texts,
+  }),
+  identity: z.json(),
+  dependencies: z.array(dependencySchema),
+  environment: typeEnvironmentSchema,
+  members: texts,
+  generated: z.record(text, text),
+  queryIds: texts,
+  queries: z.record(text, querySchema),
+  complete: z.boolean(),
+});

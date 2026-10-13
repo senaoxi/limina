@@ -80,7 +80,7 @@ export class TypeEvidenceCore {
     this.#ownsVueSemanticContexts = options.vueSemanticContexts === undefined;
     this.#vueSemanticContexts =
       options.vueSemanticContexts ??
-      new VueSemanticContextManager(options.metrics);
+      new VueSemanticContextManager(options.metrics, options.analysisCache);
     this.#workspaceSourceBoundaryProvider =
       options.workspaceSourceBoundaryProvider;
   }
