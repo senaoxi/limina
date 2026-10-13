@@ -172,10 +172,9 @@ export class SemanticState {
     const paths = this.#closure(filePath);
     const queryIds = [...new Set(paths.flatMap((file) => this.#queries(file)))];
     const queries = queryIds.map((id) => this.options.queries[id]);
-    const dependencies = paths.map((file) =>
-      this.options.inputs.observe(file, 'content'),
-    );
-    dependencies.push(...queries.flatMap((query) => query.dependencies));
+    const dependencies = paths
+      .map((file) => this.options.inputs.observe(file, 'content'))
+      .concat(queries.flatMap((query) => query.dependencies));
     return {
       dependencies: new Map(
         dependencies.map((dependency) => [dependency.inputId, dependency]),

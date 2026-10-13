@@ -135,7 +135,10 @@ export class AnalysisProviderSet {
         return cache === undefined ? operation() : cache.epoch.run(operation);
       },
     });
-    this.vueSemanticContexts = new VueSemanticContextManager(options.metrics);
+    this.vueSemanticContexts = new VueSemanticContextManager(
+      options.metrics,
+      options.dependencies.analysisCache,
+    );
     this.astroSemanticContexts = new AstroSemanticContextManager({
       governanceRoot: options.config.governanceRoot,
       metrics: options.metrics,

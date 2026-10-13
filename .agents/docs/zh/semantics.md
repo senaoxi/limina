@@ -26,7 +26,7 @@ raw references 来自用户 source/resolver config。生成 graph 推导出的 r
 
 ## 持久化 importer 有效性
 
-[analysis-cache](../../../packages/limina/src/core/analysis-cache/native-cache.ts) 中的原生适配器支持自有 TypeScript **6.0.3** 实例和物理输入。`tsc` 与 `tsgo` 在该语义 family 内绑定不同 checker identity；这不缓存其完整诊断或 emit。Vue、Astro、Svelte、虚拟源码及其他 compiler 实例／版本，在输入与语义合同得到证明前显式冷回退。全局配置门通过后，内部 provider 仍需要独立的 native 有效性依据。effective Limina config 中的持续 callback 则使 `configVersion` 为 unknown，整个持久化分析模型保持冷路径。正常 NodeNext、Node16 在 scope／mode 证据完整时可进入 clean 路径。框架内的 `.ts` 文件不会仅因扩展名而变成原生语境。
+[analysis-cache](../../../packages/limina/src/core/analysis-cache/native-cache.ts) 中的原生适配器支持自有 TypeScript **6.0.3** 实例和物理输入。`tsc` 与 `tsgo` 在该语义 family 内绑定不同 checker identity；这不缓存其完整诊断或 emit。Astro、Svelte、虚拟源码及未支持的 compiler 实例／版本显式冷回退。下述有界 Vue 适配器使用独立的完整输入证明，不将 Vue semantic authority 改成原生 authority。全局配置门通过后，内部 provider 仍需要独立的 native 有效性依据。effective Limina config 中的持续 callback 则使 `configVersion` 为 unknown，整个持久化分析模型保持冷路径。正常 NodeNext、Node16 在 scope／mode 证据完整时可进入 clean 路径。框架内的 `.ts` 文件不会仅因扩展名而变成原生语境。
 
 | 事实生产者                                                 | 有效性输入与传播                                                                                                                                                                                               |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -39,6 +39,10 @@ raw references 来自用户 source/resolver config。生成 graph 推导出的 r
 [SemanticState](../../../packages/limina/src/core/analysis-cache/semantic-state.ts) 在冷／dirty Program 路径接受 importer 命中前，比较完整当前 Program 闭包及共享环境。非 root 声明退出该闭包，即使磁盘内容未变，也撤销其贡献。替代引入路径与循环按实际 Program 可达性处理。环境变化可以使其全部 semantic consumers 失效，同时保留有效解析查询。仅新增普通 root 不机械失效无关 importer。readFile 日志不能代替语义依赖图。
 
 namespace 级有效 `configVersion` 门通过后，完整 clean [context record](../../../packages/limina/src/core/analysis-cache/context-records.ts) 可在创建 Program 前恢复 dependency facts，校验 TS-effective roots／options／原始 references、已观测 membership／admission boundary、事实与共享环境版本、全部查询及[生命周期](./lifecycle.md#原生持久化分析缓存)所述 lock／本地 typeRoots 合同。只恢复普通 dependency 方法，DTO 不暴露 compiler Program 或 Symbol。缺失 metadata 或证据不完整时仍走 full Program 路径。[快照捕获](../../../packages/limina/src/core/typescript-semantic/snapshot.ts) 复制已收集事实，不再无条件做第二轮语义查询。Pending 与 locked 缓存分开。[缓存测试](../../../packages/limina/src/__tests__/analysis-cache.spec.ts) 在连续编辑、资源变化、ambient 撤销、条件 manifest 和声明输出缺失时，对比冷分析与增量的事实、metadata、Program 成员和诊断。时间戳、事务和发布边界见[生命周期](./lifecycle.md#原生持久化分析缓存)。
+
+[Vue analysis records](../../../packages/limina/src/core/analysis-cache/vue-records.ts) 支持没有自定义 Vue 插件的物理项目，版本范围限定为 TypeScript 6.0.3、vue-tsc 与 language-core 3.2.4、Volar TypeScript 2.4.27。稳定 identity 包含有效选项、原始 references、source profiles、config closure 和 toolchain identity；运行期 generation 在恢复时重新绑定。受支持的 preparation facts、映射解析及 resource type evidence 使用已校验 DTO，在取得 Vue live context 前查询。查询覆盖必须完整。Host 读取、完整 manifest 内容、成功与失败探测、目录／路径绑定、生成脚本／映射摘要和安装环境构成 context receipt。未观测的目录枚举及 unsupported／opaque 结果不能授予完整性。工具模块字节和绑定在每次调用重新观测。合格 Vue collection 内的普通 bounded TypeScript facts 保留锁定的 Vue checker binding。
+
+混合图要求所有贡献的 native 与 Vue context 都完整。图中的 Vue 引用恢复为当前解析的 identity；Program、AST、Symbol、可执行 host、插件对象和 artifact authority 均不进入 DTO。自定义插件、虚拟输入及 Astro／Svelte 继续冷回退。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)覆盖独立进程、失效、残缺记录、运行期 generation 和缓存访问策略。这仅复用分析；checker 诊断与 emit 仍由 checker 执行。
 
 ## Occurrence、证据与建图需求
 

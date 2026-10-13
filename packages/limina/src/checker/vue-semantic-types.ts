@@ -26,6 +26,12 @@ export type VueSemanticAdapter =
 
 export interface VolarVirtualCode {
   snapshot: ts.IScriptSnapshot;
+  mappings?: readonly {
+    sourceOffsets: readonly number[];
+    generatedOffsets: readonly number[];
+    lengths: readonly number[];
+    generatedLengths?: readonly number[];
+  }[];
 }
 
 interface VolarLanguagePlugin {

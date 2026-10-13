@@ -8,6 +8,7 @@ import path from 'node:path';
 import type ts from 'typescript';
 import { createVueOverlaySystem } from '../../checker/vue-semantic-identity';
 import { createUnsupportedVueToolchainCompatibilityError } from '../../checker/vue-semantic-toolchain';
+import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import {
   createMeasuredProgram,
   getCachedSemanticSourceFile,
@@ -107,8 +108,11 @@ function syncScript(options: {
 }
 
 function createProjectHost(identity: VueProjectSemanticIdentity) {
+  // Volar enables non-TS extensions on these options. Keep parser identity
+  // and other semantic providers isolated from that host-local mutation.
+  const options = { ...identity.options };
   return {
-    getCompilationSettings: () => identity.options,
+    getCompilationSettings: () => options,
     getCurrentDirectory: () => path.dirname(identity.configPath),
     getProjectReferences: () => identity.projectReferences,
     getProjectVersion: () => `${identity.generation}:${identity.id}`,
@@ -157,9 +161,12 @@ export class VueSemanticContext {
 
   readonly tsModule: typeof ts;
 
+  readonly analysisTrace: VueInputTrace | undefined;
+
   constructor(
     identity: VueProjectSemanticIdentity,
     onProgramCreated?: ProgramCreationObserver,
+    analysisTrace?: VueInputTrace,
   ) {
     if (identity.toolchain.adapter.kind === 'unsupported') {
       throw createUnsupportedVueToolchainCompatibilityError({
@@ -168,12 +175,14 @@ export class VueSemanticContext {
       });
     }
     this.identity = identity;
+    this.analysisTrace = analysisTrace;
     this.#onProgramCreated = onProgramCreated;
     this.tsModule = identity.toolchain.tsModule;
-    this.sys = createVueOverlaySystem({
+    const sys = createVueOverlaySystem({
       tsModule: this.tsModule,
       virtualFiles: identity.virtualFiles,
     });
+    this.sys = analysisTrace === undefined ? sys : analysisTrace.system(sys);
     const plugin = identity.toolchain.languageCore.createVueLanguagePlugin(
       this.tsModule,
       identity.options,

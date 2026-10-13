@@ -1,5 +1,12 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import type ts from 'typescript';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import type {
+  VueQuery,
+  VueQueryKind,
+  VueQueryResults,
+} from '../analysis-cache/vue-contracts';
+import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import type { TypeEvidenceMetricsRecorder } from '../type-evidence/cache';
 import { VueSemanticContext } from './context-handle';
 
@@ -20,9 +27,24 @@ function disposeProcessWideContext(): void {
 
 function getReusableContext(
   identity: VueProjectSemanticIdentity,
+  trace: VueInputTrace | undefined,
 ): VueSemanticContext | null {
   const active = processWideVueContextSlot.context;
-  if (active === undefined || active.identity.id !== identity.id) return null;
+  return active === undefined
+    ? null
+    : reuseMatchingContext(active, identity, trace);
+}
+function reuseMatchingContext(
+  active: VueSemanticContext,
+  identity: VueProjectSemanticIdentity,
+  trace: VueInputTrace | undefined,
+): VueSemanticContext | null {
+  if (
+    [active.identity.id !== identity.id, active.analysisTrace !== trace].some(
+      Boolean,
+    )
+  )
+    return null;
   active.assertActive();
   return active;
 }
@@ -63,7 +85,12 @@ export class VueSemanticContextManager {
 
   #disposed = false;
 
-  constructor(metrics?: TypeEvidenceMetricsRecorder) {
+  readonly analysisCache: NativeAnalysisCache | undefined;
+  constructor(
+    metrics?: TypeEvidenceMetricsRecorder,
+    analysisCache?: NativeAnalysisCache,
+  ) {
+    this.analysisCache = analysisCache;
     this.#metrics = metrics;
   }
 
@@ -75,7 +102,8 @@ export class VueSemanticContextManager {
 
   acquire(identity: VueProjectSemanticIdentity): VueSemanticContext {
     this.#assertActive();
-    const reusable = getReusableContext(identity);
+    const trace = this.analysisCache?.vue.trace(identity);
+    const reusable = getReusableContext(identity, trace);
     if (reusable !== null) {
       processWideVueContextSlot.owners.add(this);
       return reusable;
@@ -89,10 +117,20 @@ export class VueSemanticContextManager {
           metrics: this.#metrics,
           program,
         }),
+      trace,
     );
     processWideVueContextSlot.context = context;
     processWideVueContextSlot.owners.add(this);
     return context;
+  }
+
+  query<K extends VueQueryKind>(
+    query: VueQuery<K>,
+  ): VueQueryResults[K] | undefined {
+    this.#assertActive();
+    return this.analysisCache === undefined
+      ? query.collect()
+      : this.analysisCache.vue.query(query);
   }
 
   release(identity: VueProjectSemanticIdentity): void {

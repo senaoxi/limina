@@ -82,9 +82,9 @@ function createCollectionContext(request: ProjectDependencyRequest) {
 function restoreCollectionContext(
   request: ProjectDependencyRequest,
 ): ProjectDependencyRequest['typeScriptSemanticContext'] {
-  return request.context.semanticAuthority.family === 'typescript'
-    ? restoreNativeCollection(request)
-    : undefined;
+  return persistentCollectionCache(request) === undefined
+    ? undefined
+    : restoreNativeCollection(request);
 }
 function restoreNativeCollection(request: ProjectDependencyRequest) {
   const cache = request.caches?.analysisCache;
@@ -241,24 +241,41 @@ function collectionServices(request: ProjectDependencyRequest) {
   if (caches === undefined) return {};
   return {
     syntaxFacts: caches.syntaxFacts,
-    analysisCache: nativeCache(
-      caches,
-      request.context.semanticAuthority.family,
-    ),
+    analysisCache: persistentCollectionCache(request),
   };
 }
 
-function nativeCache(
-  caches: NonNullable<ProjectDependencyRequest['caches']>,
-  family: string,
-) {
-  if (family !== 'typescript') recordColdProvider(caches, family);
-  return family === 'typescript' ? caches.analysisCache : undefined;
+function persistentCollectionCache(request: ProjectDependencyRequest) {
+  const cache = request.caches?.analysisCache;
+  return cache === undefined ? cache : eligibleCollection(cache, request);
 }
-
-function recordColdProvider(
-  caches: NonNullable<ProjectDependencyRequest['caches']>,
+function eligibleCollection(
+  cache: NonNullable<
+    NonNullable<ProjectDependencyRequest['caches']>['analysisCache']
+  >,
+  request: ProjectDependencyRequest,
+) {
+  return canPersistCollection(cache, request)
+    ? cache
+    : coldCollection(cache, request.context.semanticAuthority.family);
+}
+function canPersistCollection(
+  cache: NonNullable<
+    NonNullable<ProjectDependencyRequest['caches']>['analysisCache']
+  >,
+  request: ProjectDependencyRequest,
+): boolean {
+  const family = request.context.semanticAuthority.family;
+  return (
+    family === 'typescript' ||
+    (family === 'vue' && cache.vue.expect(request.context.vueSemanticIdentity))
+  );
+}
+function coldCollection(
+  cache: NonNullable<
+    NonNullable<ProjectDependencyRequest['caches']>['analysisCache']
+  >,
   family: string,
-): void {
-  caches.analysisCache?.fallback(family);
+): undefined {
+  cache.fallback(family);
 }

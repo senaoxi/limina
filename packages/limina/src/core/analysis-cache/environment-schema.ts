@@ -1,7 +1,7 @@
 import { z } from 'zod';
+import { dependencySchema as dependency } from './dependency-schema';
 const text = z.string();
 const texts = z.array(text);
-const dependency = z.object({ inputId: text, expectedVersion: text });
 const dependencies = z.array(dependency);
 const domain = z.object({
   adapter: z.literal('physical-installation-v1'),
@@ -12,7 +12,7 @@ const domain = z.object({
   locks: texts,
   dependencies,
 });
-const environment = z.object({
+export const typeEnvironmentSchema: z.ZodType<unknown> = z.object({
   policy: z.literal('lockfile-and-local-roots-v1'),
   effectiveTypeRoots: texts,
   typeRootsHash: text,
@@ -44,7 +44,7 @@ const boundaryEntry = z.tuple([text, z.boolean()]);
 export const nativeContextSchema: z.ZodType<unknown> = z.object({
   project,
   sharedEnvironment: z.object({ dependencies, queryIds: texts, version: text }),
-  environment,
+  environment: typeEnvironmentSchema,
   dependencies,
   queryIds: texts,
   boundary: z.array(boundaryEntry),

@@ -52,11 +52,9 @@ export function createContextRecord(
   options: CaptureOptions,
 ): NativeContextRecord {
   const { project, state, cache } = options;
-  const environment = observeTypeEnvironment(
-    project,
-    cache.inputs,
-    state.projectRecord.members,
-  );
+  const environment = observeTypeEnvironment(project, cache.inputs, {
+    members: state.projectRecord.members,
+  });
   const importers = Object.values(cache.importers).filter(
     (importer) => importer.contextId === state.contextId,
   );

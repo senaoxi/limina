@@ -4,6 +4,7 @@ import { realpathSync } from 'node:fs';
 import path from 'pathe';
 import ts from 'typescript';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
+import type { AnalysisSnapshot } from './contracts';
 import { AnalysisInputDriftError, type InputDependency } from './contracts';
 import { analysisHash } from './identity';
 import { inputStat } from './input-state';
@@ -91,9 +92,10 @@ function addMemberInstallation(
 function addLibraryInstallation(
   project: TypeScriptSemanticProject,
   observation: EnvironmentObservation,
+  tsModule: typeof ts,
 ): void {
   if (project.options.noLib) return;
-  const library = ts.getDefaultLibFilePath(project.options);
+  const library = tsModule.getDefaultLibFilePath(project.options);
   observation.installs.add(installationRoot(library) ?? path.dirname(library));
 }
 function observeDomains(
@@ -133,9 +135,12 @@ function evidence(
   if (reason !== undefined) return 'unknown';
   return domains.length === 0 ? 'observed' : 'lockfile-trusted';
 }
-function effectiveRoots(project: TypeScriptSemanticProject): string[] {
+function effectiveRoots(
+  project: TypeScriptSemanticProject,
+  tsModule: typeof ts,
+): string[] {
   return (
-    ts.getEffectiveTypeRoots(project.options, {
+    tsModule.getEffectiveTypeRoots(project.options, {
       getCurrentDirectory: () => path.dirname(project.configPath),
     }) ?? []
   );
@@ -178,27 +183,59 @@ function observeEnvironmentMembers(options: {
   project: TypeScriptSemanticProject;
   inputs: AnalysisInputs;
   roots: string[];
-  members: readonly string[];
+  members?: readonly string[];
   observation: EnvironmentObservation;
+  tsModule: typeof ts;
 }): void {
   const { project, inputs, roots, members, observation } = options;
   for (const root of roots)
     observeRoot(normalizeAbsolutePath(root), inputs, observation);
-  for (const member of members) addMemberInstallation(member, observation);
-  addLibraryInstallation(project, observation);
+  addMemberInstallations(members, observation);
+  addLibraryInstallation(project, observation, options.tsModule);
 }
 export function observeTypeEnvironment(
   project: TypeScriptSemanticProject,
   inputs: AnalysisInputs,
-  members: readonly string[] = [],
+  options: { members?: readonly string[]; tsModule?: typeof ts } = {},
 ): TypeEnvironmentRecord {
-  const roots = effectiveRoots(project);
+  const tsModule = options.tsModule ?? ts;
+  const members = options.members;
+  const roots = effectiveRoots(project, tsModule);
   const observation: EnvironmentObservation = {
     dependencies: [],
     local: [],
     installs: new Set(),
   };
-  observeEnvironmentMembers({ project, inputs, roots, members, observation });
+  observeEnvironmentMembers({
+    project,
+    inputs,
+    roots,
+    members,
+    observation,
+    tsModule,
+  });
   const result = observeDomains(project, inputs, observation.installs);
   return environmentRecord({ project, roots, observation }, result);
+}
+
+export function validateInstallationDomains(
+  state: AnalysisSnapshot,
+  inputs: AnalysisInputs,
+): void {
+  const dependencies = [
+    ...Object.values(state.contexts),
+    ...Object.values(state.vueContexts),
+  ]
+    .flatMap((context) => context.environment.domains)
+    .flatMap((domain) => domain.dependencies);
+  if (dependencies.some((dependency) => !inputs.valid(dependency)))
+    inputs.domainDirty = true;
+}
+
+function addMemberInstallations(
+  members: readonly string[] | undefined,
+  observation: EnvironmentObservation,
+): void {
+  const files = members ?? [];
+  for (const member of files) addMemberInstallation(member, observation);
 }

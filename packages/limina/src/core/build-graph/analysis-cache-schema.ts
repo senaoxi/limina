@@ -11,11 +11,20 @@ import { authority, ownershipSchema } from './cached-ownership-schema';
 import type {
   DependencyAnalysisResult,
   GeneratedTsconfigGraphResult,
+  GovernedSourceUnit,
 } from './types';
 export type CachedGraphData = Omit<
   GeneratedTsconfigGraphResult,
   'artifactPlan' | 'changed'
 > & { dependencyAnalysis: DependencyAnalysisResult };
+export type StoredGovernedSource = Omit<GovernedSourceUnit, 'context'> & {
+  context: Omit<GovernedSourceUnit['context'], 'vueSemanticIdentity'> & {
+    vueContextId?: string;
+  };
+};
+export type StoredGraphData = Omit<CachedGraphData, 'governedSources'> & {
+  governedSources: Map<string, Map<string, StoredGovernedSource>>;
+};
 const build = z.object({ kind: z.enum(['project', 'solution']), path: text });
 const projection = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('declaration-project'), dtsConfigPath: text }),
@@ -33,6 +42,7 @@ const governed = z.object({
     checkerPresets: z.array(checker),
     extensions: texts,
     vueSemanticIdentity: z.undefined().optional(),
+    vueContextId: text.optional(),
   }),
   declarationFileNames: texts,
   declarationReferences: stringSet,
@@ -101,9 +111,9 @@ const graph = z.object({
   generatedKnipConfigs: jsonRecords,
   generatedKnipDiagnostics: jsonRecords,
 });
-export function parseCachedGraph(value: unknown): CachedGraphData | undefined {
+export function parseCachedGraph(value: unknown): StoredGraphData | undefined {
   const result = graph.safeParse(value);
   return result.success
-    ? (result.data as unknown as CachedGraphData)
+    ? (result.data as unknown as StoredGraphData)
     : undefined;
 }

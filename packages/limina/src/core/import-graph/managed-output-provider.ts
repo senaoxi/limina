@@ -1,4 +1,6 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import { encodeData } from '../analysis-cache/data-codec';
+import { analysisHash } from '../analysis-cache/identity';
 import {
   getDeclarationSuffix,
   normalizeManagedOutputContext,
@@ -17,6 +19,15 @@ export type {
   ManagedOutputDeclarationProvider,
   ManagedOutputProjectContext,
 } from './managed-output-types';
+
+const lookupIdentities = new WeakMap<ManagedOutputDeclarationLookup, string>();
+export function managedOutputLookupIdentity(
+  lookup: ManagedOutputDeclarationLookup | undefined,
+): string | undefined {
+  return lookup === undefined
+    ? 'no-managed-output-lookup'
+    : lookupIdentities.get(lookup);
+}
 
 function createSourceIdentity(match: ManagedOutputMatch): string {
   return JSON.stringify([match.sourceConfigPath, match.mappedSourceFilePath]);
@@ -128,7 +139,7 @@ export function createManagedOutputDeclarationLookup(
 ): ManagedOutputDeclarationLookup {
   const normalizedContexts = contexts.map(normalizeManagedOutputContext);
 
-  return {
+  const lookup: ManagedOutputDeclarationLookup = {
     resolve(
       declarationFilePath: string,
       preferredCheckerName?: string,
@@ -140,4 +151,6 @@ export function createManagedOutputDeclarationLookup(
       });
     },
   };
+  lookupIdentities.set(lookup, analysisHash(encodeData(normalizedContexts)));
+  return lookup;
 }

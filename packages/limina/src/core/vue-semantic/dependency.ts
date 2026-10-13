@@ -104,9 +104,32 @@ export function getVueServiceScript(options: {
   const sourceScript = options.context.language.scripts.get(
     normalizeAbsolutePath(options.fileName),
   );
-  return sourceScript === undefined
-    ? null
-    : createServiceScriptPair(sourceScript);
+  const pair =
+    sourceScript === undefined ? null : createServiceScriptPair(sourceScript);
+  if (pair !== null) observeServiceScript(options, pair);
+  return pair;
+}
+
+function observeServiceScript(
+  options: { context: VueSemanticContext; fileName: string },
+  pair: VueServiceScriptPair,
+): void {
+  const trace = options.context.analysisTrace;
+  if (trace === undefined) return;
+  const { code, extension, scriptKind } = pair.serviceScript;
+  trace.generatedScript(options.fileName, {
+    text: code.snapshot.getText(0, code.snapshot.getLength()),
+    mappings: code.mappings?.map(
+      ({ sourceOffsets, generatedOffsets, lengths, generatedLengths }) => ({
+        sourceOffsets,
+        generatedOffsets,
+        lengths,
+        generatedLengths,
+      }),
+    ),
+    extension,
+    scriptKind,
+  });
 }
 
 export function getVueMappedRangeIdentities(options: {

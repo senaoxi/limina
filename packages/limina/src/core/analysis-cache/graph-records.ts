@@ -69,6 +69,7 @@ export class CachedGraphRecords {
   ): Promise<GraphRecord | undefined> {
     const checks = [
       await this.#cache.epoch.validate(record.discovery),
+      record.vueContextIds.every((id) => this.#cache.vue.restore(id)),
       record.contextIds.every((id) => canRestoreContext(this.#cache, id)),
       !this.#cache.inputs.domainDirty,
     ];
@@ -91,6 +92,7 @@ export class CachedGraphRecords {
     const record: GraphRecord = {
       workspaceVersion: options.workspaceVersion,
       contextIds: Object.keys(this.#cache.contexts),
+      vueContextIds: Object.keys(this.#cache.vue.records),
       dependencies: Object.entries(this.#cache.snapshotRecords().inputs).map(
         ([inputId, input]) => ({ inputId, expectedVersion: input.version }),
       ),
@@ -123,6 +125,7 @@ export class CachedGraphRecords {
         discovery !== undefined,
         isComplete,
         this.#cache.hasCompleteGraphContextCoverage(),
+        this.#cache.vue.complete(),
       ].every(Boolean)
     ) {
       this.#cache.fallback('graph-proof-unknown');

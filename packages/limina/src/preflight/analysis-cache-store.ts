@@ -8,6 +8,7 @@ import { writeJsonAtomically } from '../check-reporting/atomic-writer';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
 import { analysisHash } from '../core/analysis-cache/identity';
 import type { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
+import { serializeAnalysisSnapshot } from '../core/analysis-cache/snapshot-receipts';
 import {
   assertArtifactPathLexicallyContained,
   assertArtifactPathOperationSafe,
@@ -88,8 +89,8 @@ export class AnalysisCacheStore {
     let encoded = '';
     try {
       await writeJsonAtomically(this.#options.namespace, this.path, snapshot, {
-        serialize: (value) => {
-          encoded = JSON.stringify(value);
+        serialize: () => {
+          encoded = serializeAnalysisSnapshot(snapshot);
           return encoded;
         },
         rename: async (from, to) => {

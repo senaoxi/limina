@@ -4,9 +4,10 @@ import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
 import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
+import type { VueContextRecord } from './vue-contracts';
 
 // Config domains change persisted diagnostic paths, including for an empty config.
-export const ANALYSIS_ADAPTER = 'native-typescript-6.0.3-v5';
+export const ANALYSIS_ADAPTER = 'typescript-6.0.3-vue-3.2.4-v6';
 
 export interface InputDependency {
   inputId: string;
@@ -109,6 +110,7 @@ export interface DiscoveryRecord {
 export interface GraphRecord {
   workspaceVersion: string;
   contextIds: string[];
+  vueContextIds: string[];
   dependencies: InputDependency[];
   discovery: DiscoveryRecord[];
   data: DataNode;
@@ -163,7 +165,7 @@ export interface ConfigModuleSnapshot {
 
 export interface AnalysisSnapshot {
   header: {
-    schema: 5;
+    schema: 6;
     implementation: string;
     identity: string;
     configVersion: string | null;
@@ -176,6 +178,7 @@ export interface AnalysisSnapshot {
   projects: Record<string, ProjectRecord>;
   contributions: Record<string, ReferenceContribution[]>;
   contexts: Record<string, NativeContextRecord>;
+  vueContexts: Record<string, VueContextRecord>;
   graphs: Record<string, GraphRecord>;
 }
 

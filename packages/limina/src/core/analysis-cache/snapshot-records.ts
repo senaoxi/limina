@@ -3,6 +3,11 @@ import { isDeepStrictEqual } from 'node:util';
 import type { AnalysisSnapshot, ConfigModuleSnapshot } from './contracts';
 import { ANALYSIS_ADAPTER } from './contracts';
 import type { NativeAnalysisCache } from './native-cache';
+import {
+  referencedSnapshotInputs,
+  usedSnapshotQueries,
+} from './snapshot-reachability';
+import { cloneAnalysisSnapshot } from './snapshot-receipts';
 
 export function currentSnapshotRecords(
   cache: NativeAnalysisCache,
@@ -12,37 +17,11 @@ export function currentSnapshotRecords(
       cache.projects[importer.contextId]?.roots.includes(importer.filePath),
     ),
   );
-  const used = new Set([
-    ...Object.values(importers).flatMap((importer) => importer.queryIds),
-    ...Object.values(cache.contexts).flatMap((context) => context.queryIds),
-  ]);
+  const used = usedSnapshotQueries(cache, importers);
   const queries = Object.fromEntries(
     Object.entries(cache.queries).filter(([id]) => used.has(id)),
   );
-  const referenced = new Set([
-    ...cache.inputs.configInputs,
-    ...Object.values(cache.graphs).flatMap((graph) =>
-      graph.dependencies.map((dependency) => dependency.inputId),
-    ),
-    ...Object.values(cache.contexts).flatMap((context) =>
-      context.dependencies.map((dependency) => dependency.inputId),
-    ),
-    ...Object.values(queries).flatMap((query) =>
-      query.dependencies.map((dependency) => dependency.inputId),
-    ),
-    ...Object.values(importers).flatMap((importer) =>
-      importer.dependencies.map((dependency) => dependency.inputId),
-    ),
-    ...Object.values(cache.contributions.records)
-      .flat()
-      .map((contribution) =>
-        JSON.stringify([
-          'physical',
-          'content',
-          contribution.occurrence.filePath,
-        ]),
-      ),
-  ]);
+  const referenced = referencedSnapshotInputs(cache, { importers, queries });
   const members = new Set(
     Object.values(cache.projects).flatMap((project) => project.members),
   );
@@ -67,6 +46,7 @@ export function currentSnapshotRecords(
     importers,
     projects: cache.projects,
     contexts: cache.contexts,
+    vueContexts: cache.vue.records,
     contributions: cache.contributions.records,
     graphs: cache.graphs,
   };
@@ -77,7 +57,7 @@ export function emptySnapshot(
 ): AnalysisSnapshot {
   return {
     header: {
-      schema: 5,
+      schema: 6,
       implementation: ANALYSIS_ADAPTER,
       identity,
       configVersion: configVersion ?? null,
@@ -90,6 +70,7 @@ export function emptySnapshot(
     importers: {},
     contributions: {},
     contexts: {},
+    vueContexts: {},
     graphs: {},
   };
 }
@@ -115,7 +96,7 @@ export function matchingConfigSnapshot(
     configVersion !== undefined,
     previous.header.configVersion === configVersion,
     previous.header.identity === identity,
-    previous.header.schema === 5,
+    previous.header.schema === 6,
     hasCompleteConfigModules(previous),
     previous.header.implementation === ANALYSIS_ADAPTER,
   ];
@@ -123,9 +104,9 @@ export function matchingConfigSnapshot(
 }
 
 export function newSnapshot(cache: NativeAnalysisCache): AnalysisSnapshot {
-  return structuredClone({
+  return cloneAnalysisSnapshot({
     header: {
-      schema: 5,
+      schema: 6,
       implementation: ANALYSIS_ADAPTER,
       identity: cache.identity,
       configVersion: cache.configVersion ?? null,

@@ -1,6 +1,7 @@
 import type { ImportRecord } from '#core/import-analysis/runner';
 import { compareCodeUnits } from '#utils/collections';
 import type ts from 'typescript';
+import { occurrenceKey } from '../analysis-cache/semantic-state';
 import type {
   VueSemanticContext,
   VueSemanticContextManager,
@@ -158,6 +159,27 @@ function queryActiveProvider(
       );
 }
 
+function queryPersistentProvider(
+  state: VueEvidenceProviderState,
+  importRecord: ImportRecord,
+): TypeEvidence {
+  let result: TypeEvidence | undefined;
+  const restored = state.options.contexts.query({
+    identity: state.options.capability.identity,
+    kind: 'evidence',
+    request: [
+      importRecord.filePath,
+      importRecord.line,
+      occurrenceKey(importRecord),
+    ],
+    collect: () => {
+      result = queryActiveProvider(state, importRecord);
+      return result.kind === 'unsupported-checker' ? undefined : result;
+    },
+  });
+  return restored ?? result!;
+}
+
 export function createVueTypeEvidenceProvider(
   options: VueEvidenceProviderOptions,
 ): TypeEvidenceProvider {
@@ -176,7 +198,7 @@ export function createVueTypeEvidenceProvider(
       if (state.disposed) {
         throw new Error('Vue type-evidence provider was disposed.');
       }
-      return queryActiveProvider(state, importRecord);
+      return queryPersistentProvider(state, importRecord);
     },
   };
 }

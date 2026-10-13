@@ -1,36 +1,17 @@
 import { z } from 'zod';
 import { configModuleSnapshotSchema } from './config-module-schema';
 import { ANALYSIS_ADAPTER, type AnalysisSnapshot } from './contracts';
+import { dependencySchema as dependency } from './dependency-schema';
 import { discoveryRecordSchema } from './discovery-schema';
 import { nativeContextSchema } from './environment-schema';
+import { occurrenceSchema } from './occurrence-schema';
+import { decodeAnalysisSnapshotReceipts } from './snapshot-receipts';
 import { validatedSnapshot } from './snapshot-validation';
+import { vueContextSchema } from './vue-schema';
 
 const text = z.string();
 const texts = z.array(text);
 const optionalNumber = z.number().optional();
-const dependency = z.object({
-  inputId: text,
-  expectedVersion: text,
-});
-const occurrence = z.object({
-  filePath: text,
-  domain: text,
-  kind: text,
-  line: z.number(),
-  specifier: text,
-  locator: z.object({
-    occurrence: z.number(),
-    sourceStart: z.number(),
-    sourceEnd: z.number(),
-  }),
-  configurationSource: z
-    .object({
-      configPath: text,
-      option: z.literal('jsxImportSource'),
-      resolutionMode: optionalNumber,
-    })
-    .optional(),
-});
 const target = z.object({
   resolvedFileName: text,
   resolvedBy: z.literal('typescript'),
@@ -133,7 +114,7 @@ const importersRecord = z.object({
   membershipVersion: text,
   dependencies: z.array(dependency),
   queryIds: texts,
-  occurrences: z.array(occurrence),
+  occurrences: z.array(occurrenceSchema),
   facts: z.record(text, fact),
   coverage,
 });
@@ -144,7 +125,7 @@ const projectsRecord = z.object({
   references: z.json(),
 });
 const contributionsRecord = z.object({
-  occurrence,
+  occurrence: occurrenceSchema,
   sourceVersion: text,
   fromChecker: text,
   toChecker: text,
@@ -155,12 +136,13 @@ const contributionsRecord = z.object({
 const graphRecord = z.object({
   workspaceVersion: text,
   contextIds: texts,
+  vueContextIds: texts,
   dependencies: z.array(dependency),
   data: z.json(),
   discovery: z.array(discoveryRecordSchema),
 });
 const header = z.object({
-  schema: z.literal(5),
+  schema: z.literal(6),
   implementation: z.literal(ANALYSIS_ADAPTER),
   identity: text,
   configVersion: text,
@@ -176,6 +158,7 @@ const snapshot = z.object({
   contributions: z.record(text, z.array(contributionsRecord)),
   graphs: z.record(text, graphRecord),
   contexts: z.record(text, nativeContextSchema),
+  vueContexts: z.record(text, vueContextSchema),
 });
 
 export function parseAnalysisSnapshot(
@@ -185,7 +168,9 @@ export function parseAnalysisSnapshot(
 ): AnalysisSnapshot | undefined {
   const root = parseAnalysisSnapshotRoot(value, identity);
   if (!isRestorableRoot(root, configVersion)) return undefined;
-  const parsed = snapshot.safeParse(value);
+  const parsed = snapshot.safeParse(
+    decodeAnalysisSnapshotReceipts(value, true),
+  );
   return parsed.success
     ? validatedSnapshot(parsed.data as unknown as AnalysisSnapshot)
     : undefined;

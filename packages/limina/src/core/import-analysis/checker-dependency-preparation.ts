@@ -3,6 +3,7 @@ import type {
   FrameworkSemanticDependencyPreparation,
   FrameworkSemanticFailureStage,
 } from '../framework-semantic/contracts';
+import { managedOutputLookupIdentity } from '../import-graph/managed-output-provider';
 import { prepareVueSemanticDependencies } from '../vue-semantic/preparation';
 import type { ProviderDependencies } from './resolution-provider-types';
 import type {
@@ -100,6 +101,33 @@ function runVuePreparation(
     identity: NonNullable<PreparationOptions['context']['vueSemanticIdentity']>;
     manager: NonNullable<ProviderDependencies['vueSemanticContexts']>;
   },
+): FrameworkSemanticDependencyPreparation {
+  const lookup = managedOutputLookupIdentity(options.managedOutputLookup);
+  if (lookup === undefined) {
+    options.manager.analysisCache?.vue.reject('vue-executable-output-lookup');
+    return runUncachedVuePreparation(options);
+  }
+  return queryVuePreparation(options, lookup);
+}
+function queryVuePreparation(
+  options: Parameters<typeof runVuePreparation>[0],
+  lookup: string,
+): FrameworkSemanticDependencyPreparation {
+  let result: FrameworkSemanticDependencyPreparation | undefined;
+  const restored = options.manager.query({
+    identity: options.identity,
+    kind: 'preparation',
+    request: [options.filePath, lookup],
+    collect: () => {
+      result = runUncachedVuePreparation(options);
+      return result.kind === 'supported' ? result : undefined;
+    },
+  });
+  return restored ?? result!;
+}
+
+function runUncachedVuePreparation(
+  options: Parameters<typeof runVuePreparation>[0],
 ): FrameworkSemanticDependencyPreparation {
   try {
     return prepareVueSemanticDependencies({

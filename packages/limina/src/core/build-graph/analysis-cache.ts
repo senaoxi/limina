@@ -8,7 +8,9 @@ import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
 import {
   type CachedGraphData,
   parseCachedGraph,
+  type StoredGraphData,
 } from './analysis-cache-schema';
+import { restoreGraphContexts, storeGraphContexts } from './analysis-cache-vue';
 import { removeStaleGeneratedFiles } from './artifact-ledger';
 import { writeGeneratedContent } from './artifact-writer';
 import { readMaterializationStateSnapshot } from './materialization-state';
@@ -48,7 +50,7 @@ function versions(
     ? undefined
     : { workspaceVersion: workspaceVersion! };
 }
-function decodeGraph(data: unknown): CachedGraphData | undefined {
+function decodeGraph(data: unknown): StoredGraphData | undefined {
   try {
     return parseCachedGraph(decodeData(data));
   } catch {
@@ -59,6 +61,7 @@ interface GraphRestoreInput {
   cache: NativeAnalysisCache;
   config: ResolvedLiminaConfig;
   workspace: ValidatedWorkspaceContext;
+  generation?: number;
 }
 async function readGraph(
   options: GraphRestoreInput,
@@ -79,7 +82,7 @@ async function readVersionedGraph(
     version.workspaceVersion,
   );
   if (record === undefined) return undefined;
-  const data = decodeGraph(record.data);
+  const data = decodeBoundGraph(options, record);
   if (data === undefined) {
     delete options.cache.graphs[key];
     options.cache.fallback('graph-dto-invalid');
@@ -88,12 +91,31 @@ async function readVersionedGraph(
   options.cache.increment('graphHits');
   return data;
 }
+function decodeBoundGraph(
+  options: GraphRestoreInput,
+  record: NonNullable<
+    Awaited<ReturnType<NativeAnalysisCache['restoreGraphRecord']>>
+  >,
+): CachedGraphData | undefined {
+  const stored = decodeGraph(record.data);
+  return stored === undefined
+    ? undefined
+    : restoreGraphContexts({
+        cache: options.cache,
+        data: stored,
+        contextIds: record.vueContextIds,
+        generation: options.generation ?? 0,
+      });
+}
 export async function restoreGeneratedGraph(
   options: GraphRestoreInput & {
     preparation: PrepareGeneratedTsconfigGraphOptions;
   },
 ): Promise<GeneratedTsconfigGraphResult | undefined> {
-  const data = await readGraph(options);
+  const data = await readGraph({
+    ...options,
+    generation: options.preparation.projectConfigCache?.generation,
+  });
   return data === undefined ? undefined : rebindArtifacts(data, options);
 }
 export async function restoreCachedDependencyAnalysis(
@@ -114,6 +136,7 @@ async function restoredAnalysis(
     await readGraph({
       cache,
       config,
+      generation: options.projectConfigCache?.generation,
       workspace: await getBuildGraphWorkspace({
         config,
         workspaceContext: options.workspaceContext,
@@ -167,20 +190,39 @@ export function captureGeneratedGraph(options: {
     options.cache.fallback(graphFallbackReason(options.config));
     return;
   }
+  captureSupportedGraph(options, version);
+}
+function captureSupportedGraph(
+  options: Parameters<typeof captureGeneratedGraph>[0],
+  version: { workspaceVersion: string },
+): void {
   if (
     options.result.checkers.some(
-      (checker) => !['tsc', 'tsgo'].includes(checker.name),
+      (checker) => !['tsc', 'tsgo', 'vue-tsc'].includes(checker.name),
     )
   ) {
     options.cache.fallback('graph-framework');
     return;
   }
   options.cache.captureLiveContexts();
+  if (!options.cache.vue.complete()) {
+    options.cache.fallback('graph-proof-unknown');
+    return;
+  }
+  captureGraphData(options, version);
+}
+function captureGraphData(
+  options: Parameters<typeof captureGeneratedGraph>[0],
+  version: { workspaceVersion: string },
+): void {
   const value: Partial<GeneratedTsconfigGraphResult> & {
     dependencyAnalysis: DependencyAnalysisResult;
   } = { ...options.result, dependencyAnalysis: options.analysis };
   delete value.artifactPlan;
   delete value.changed;
   // Runtime authority never crosses the persistence boundary.
-  options.cache.captureGraphRecord(key, { ...version, value });
+  options.cache.captureGraphRecord(key, {
+    ...version,
+    value: storeGraphContexts(value as CachedGraphData),
+  });
 }
