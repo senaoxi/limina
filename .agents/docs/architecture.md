@@ -16,6 +16,14 @@ The independent migration package preserves the existing migration transaction a
 
 The Vercel deployment CLI is a development dependency of the existing private `docs` workspace, resolved through the dev catalog and frozen lockfile. It does not join the two-package publication group; see the [infrastructure owner](./infrastructure.md).
 
+## Distributable agent skill
+
+[`skills/limina`](../../skills/limina/SKILL.md) owns the installable consumer skill. It is separate from `.agents/skills`, which contains repository maintenance procedures. The skill was adapted from [docs-islands at `1e79a5859ec667e86ceea83fa28c04b9f6bf9ed8`](https://github.com/senaoxi/docs-islands/tree/1e79a5859ec667e86ceea83fa28c04b9f6bf9ed8/skills/limina); its standalone license preserves the upstream MIT notice. This is a source migration, not a claim of remote installation or publication.
+
+The entrypoint keeps task selection and essential boundaries; the five references cover configuration, CLI workflows, ownership, package checks, and diagnosis. Examples follow the accompanying source, while operation in another project must use that project's installed version, help, public declarations, schema, and matching source. The skill does not require a Limina checkout, impose pnpm on consumers, expose internal imports as public API, or authorize upgrades and publishing.
+
+When commands, config, checker support, root discovery, caching, or package behavior change, update the relevant skill reference alongside its source owner. Keep it a task guide rather than another exhaustive schema or issue-code catalog. [Init's install command](../../packages/limina/src/commands/init/shared.ts) and both [English](../../docs/en/cli.md) and [Chinese](../../docs/zh/cli.md) CLI guides point to `senaoxi/limina --skill limina`. Existing [init tests](../../packages/limina/src/__tests__/init.spec.ts) cover the accepted installation command and the skipped-install message; prompt refusal and install failure remain separate cases. Skill migration changes this installation destination, not governance identity, relations, or cache lifetimes.
+
 ## Documentation command output
 
 The homepage uses `HomeFeatures.vue` for feature navigation, `CommandTerminal.vue` for command output and controls, and `use-command-playback.ts` for playback state. Component filenames name their responsibility; command options and their indices use command terminology in props, data attributes and styles. English and Chinese labels share the same recorded CLI output. The full-output disclosure stays open when selecting another command or feature group so readers can compare outputs. Its reading area has a fixed height for the current viewport: changing transcript length must not change the sticky console height and feed back into scroll-driven feature selection. Output retains its printed columns and scrolls horizontally on narrow screens.

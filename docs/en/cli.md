@@ -63,7 +63,7 @@ Configure graph rules and permitted package boundaries for your repository after
 To install the optional agent skill offered by initialization separately, use the same command:
 
 ```sh
-npx --yes skills add senaoxi/docs-islands --skill limina
+npx --yes skills add senaoxi/limina --skill limina
 ```
 
 This installs the skill without rewriting source `tsconfig` files. For existing source project references, use the next section to decide whether migration is needed.

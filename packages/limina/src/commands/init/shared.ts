@@ -14,7 +14,7 @@ export const liminaSkillInstallCommand = [
   '--yes',
   'skills',
   'add',
-  'senaoxi/docs-islands',
+  'senaoxi/limina',
   '--skill',
   'limina',
 ] as const;

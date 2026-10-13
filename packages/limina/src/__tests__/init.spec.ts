@@ -945,7 +945,7 @@ export default defineConfig({
         / {2}\[skip\] package\.json \(skipped: script and dependencies already present\) \(\d+ms\)\n/u,
       );
       expect(output).toMatch(
-        / {2}\[skip\] limina skill \(skipped: --yes; run npx --yes skills add senaoxi\/docs-islands --skill limina\) \(\d+ms\)\n/u,
+        / {2}\[skip\] limina skill \(skipped: --yes; run npx --yes skills add senaoxi\/limina --skill limina\) \(\d+ms\)\n/u,
       );
     } finally {
       await fixture.cleanup();
@@ -1197,7 +1197,7 @@ export default defineConfig({
         '--yes',
         'skills',
         'add',
-        'senaoxi/docs-islands',
+        'senaoxi/limina',
         '--skill',
         'limina',
       ]);

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Limina'
+  short_description: 'Configure and troubleshoot Limina governance'
+  default_prompt: 'Use $limina to align this project’s configuration and CLI workflow with its installed Limina implementation.'

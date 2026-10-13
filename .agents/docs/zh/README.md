@@ -10,24 +10,25 @@
 
 编辑前读取相关的双语记录。架构工作通过 Limina 地图定位唯一 owner；下列入口为其他任务和具体问题提供路由，不重复 owner 的定义。
 
-| 任务或问题                                                 | 上下文 owner                                |
-| ---------------------------------------------------------- | ------------------------------------------- |
-| 设置仓库、编辑、构建或验收改动                             | [开发工作流](./development-workflow.md)     |
-| 开始架构工作并定位语义 owner                               | [Limina 地图](./limina.md#从问题进入记录)   |
-| 识别实体、authority、执行阶段与关系                        | [系统模型](./system-model.md)               |
-| 建立 TypeScript / Vue / Astro / Svelte 的依赖事实          | [语义事实](./semantics.md)                  |
-| 追踪 generation、cache、context、mutation 与结果 freshness | [生命周期](./lifecycle.md)                  |
-| 定位受保护性质、反例与 executable guard                    | [Core invariants](./invariants.md)          |
-| Review invariant impact 并选择维护验证                     | [架构 workflow](./architecture-workflow.md) |
-| 核对重建证据、纠正内容与验证边界                           | [架构审计](./architecture-audit.md)         |
-| 改变包分发或仓库集成边界                                   | [仓库架构](./architecture.md)               |
-| 修改文档阅读主题或侧栏                                     | [文档侧栏](./architecture.md#文档侧栏)      |
-| 评估需求的复用方案，或新增／替换第三方依赖                 | [依赖准入](./dependency-admission.md)       |
-| 维护支持的依赖许可证与 bundled-code 策略                   | [依赖许可证策略](./license-policy.md)       |
-| 维护仓库门禁与提交检查                                     | [仓库门禁](./gates.md)                      |
-| 理解工具链版本与兼容策略                                   | [工具链与检查](./technology-stack.md)       |
-| 改变 CI、安全、报告或外部 workflow 集成                    | [基础设施](./infrastructure.md)             |
-| 核对本地迁移范围与远程／发布／部署门禁                     | [迁移](./migration.md)                      |
+| 任务或问题                                                 | 上下文 owner                                               |
+| ---------------------------------------------------------- | ---------------------------------------------------------- |
+| 设置仓库、编辑、构建或验收改动                             | [开发工作流](./development-workflow.md)                    |
+| 开始架构工作并定位语义 owner                               | [Limina 地图](./limina.md#从问题进入记录)                  |
+| 识别实体、authority、执行阶段与关系                        | [系统模型](./system-model.md)                              |
+| 建立 TypeScript / Vue / Astro / Svelte 的依赖事实          | [语义事实](./semantics.md)                                 |
+| 追踪 generation、cache、context、mutation 与结果 freshness | [生命周期](./lifecycle.md)                                 |
+| 定位受保护性质、反例与 executable guard                    | [Core invariants](./invariants.md)                         |
+| Review invariant impact 并选择维护验证                     | [架构 workflow](./architecture-workflow.md)                |
+| 核对重建证据、纠正内容与验证边界                           | [架构审计](./architecture-audit.md)                        |
+| 改变包分发或仓库集成边界                                   | [仓库架构](./architecture.md)                              |
+| 维护可安装的消费者技能及安装入口                           | [可分发的智能体技能](./architecture.md#可分发的智能体技能) |
+| 修改文档阅读主题或侧栏                                     | [文档侧栏](./architecture.md#文档侧栏)                     |
+| 评估需求的复用方案，或新增／替换第三方依赖                 | [依赖准入](./dependency-admission.md)                      |
+| 维护支持的依赖许可证与 bundled-code 策略                   | [依赖许可证策略](./license-policy.md)                      |
+| 维护仓库门禁与提交检查                                     | [仓库门禁](./gates.md)                                     |
+| 理解工具链版本与兼容策略                                   | [工具链与检查](./technology-stack.md)                      |
+| 改变 CI、安全、报告或外部 workflow 集成                    | [基础设施](./infrastructure.md)                            |
+| 核对本地迁移范围与远程／发布／部署门禁                     | [迁移](./migration.md)                                     |
 
 持久化 importer/context 有效性、Program 创建前恢复及 provider 支持边界由[语义记录](./semantics.md#持久化-importer-有效性)维护；lockfile 信任、本地 typeRoots 指纹、单次调用冻结、namespace 级配置版本、epoch、定向重建与快照发布由[生命周期](./lifecycle.md#原生持久化分析缓存)维护。
 

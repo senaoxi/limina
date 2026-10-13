@@ -10,24 +10,25 @@ For public option placement, grouping, defaults, and compatibility trade-offs, s
 
 Read the relevant paired records before edits. For architecture work, use the Limina map to locate the sole owner; the entries below route other tasks and direct questions without duplicating that owner's definitions.
 
-| Task or question                                                    | Context owner                                                    |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Set up, edit, build or accept a repository change                   | [Development workflow](./development-workflow.md)                |
-| Start architecture work and locate semantic owners                  | [Limina map](./limina.md#find-a-record-by-question)              |
-| Identify entities, authority, execution phases and relations        | [System model](./system-model.md)                                |
-| Establish TypeScript / Vue / Astro / Svelte dependency facts        | [Semantic facts](./semantics.md)                                 |
-| Trace generations, caches, contexts, mutation and result freshness  | [Lifecycle](./lifecycle.md)                                      |
-| Locate protected properties, counterexamples and executable guards  | [Core invariants](./invariants.md)                               |
-| Review invariant impact and select maintenance validation           | [Architecture workflow](./architecture-workflow.md)              |
-| Check reconstruction evidence, corrections and verification limits  | [Architecture audit](./architecture-audit.md)                    |
-| Change package distribution or repository integration boundaries    | [Repository architecture](./architecture.md)                     |
-| Change the documentation reading theme or sidebar                   | [Documentation sidebar](./architecture.md#documentation-sidebar) |
-| Evaluate reuse for a requirement, or add/replace a dependency       | [Dependency admission](./dependency-admission.md)                |
-| Maintain supported dependency licenses and bundled-code policy      | [Dependency license policy](./license-policy.md)                 |
-| Maintain repository gates and commit checks                         | [Repository gates](./gates.md)                                   |
-| Understand toolchain versions and compatibility policies            | [Toolchain and checks](./technology-stack.md)                    |
-| Change CI, security, reports or external workflow integration       | [Infrastructure](./infrastructure.md)                            |
-| Check local migration scope and remote/publication/deployment gates | [Migration](./migration.md)                                      |
+| Task or question                                                    | Context owner                                                            |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Set up, edit, build or accept a repository change                   | [Development workflow](./development-workflow.md)                        |
+| Start architecture work and locate semantic owners                  | [Limina map](./limina.md#find-a-record-by-question)                      |
+| Identify entities, authority, execution phases and relations        | [System model](./system-model.md)                                        |
+| Establish TypeScript / Vue / Astro / Svelte dependency facts        | [Semantic facts](./semantics.md)                                         |
+| Trace generations, caches, contexts, mutation and result freshness  | [Lifecycle](./lifecycle.md)                                              |
+| Locate protected properties, counterexamples and executable guards  | [Core invariants](./invariants.md)                                       |
+| Review invariant impact and select maintenance validation           | [Architecture workflow](./architecture-workflow.md)                      |
+| Check reconstruction evidence, corrections and verification limits  | [Architecture audit](./architecture-audit.md)                            |
+| Change package distribution or repository integration boundaries    | [Repository architecture](./architecture.md)                             |
+| Maintain the installable consumer skill and its installation entry  | [Distributable agent skill](./architecture.md#distributable-agent-skill) |
+| Change the documentation reading theme or sidebar                   | [Documentation sidebar](./architecture.md#documentation-sidebar)         |
+| Evaluate reuse for a requirement, or add/replace a dependency       | [Dependency admission](./dependency-admission.md)                        |
+| Maintain supported dependency licenses and bundled-code policy      | [Dependency license policy](./license-policy.md)                         |
+| Maintain repository gates and commit checks                         | [Repository gates](./gates.md)                                           |
+| Understand toolchain versions and compatibility policies            | [Toolchain and checks](./technology-stack.md)                            |
+| Change CI, security, reports or external workflow integration       | [Infrastructure](./infrastructure.md)                                    |
+| Check local migration scope and remote/publication/deployment gates | [Migration](./migration.md)                                              |
 
 Persistent importer/context validity, restoration before Program creation and the provider support boundary are owned by [semantics](./semantics.md#persistent-importer-validity); lockfile trust, local typeRoots fingerprints, invocation freezing, namespace-wide config versions, epochs, targeted rebuild and snapshot publication are owned by [lifecycle](./lifecycle.md#persistent-native-analysis-cache).
 
