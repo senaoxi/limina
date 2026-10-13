@@ -1,6 +1,7 @@
 import { collectReferencePathInfosFromConfigObject } from 'limina/internal/core/tsconfig/actions';
 import { collectStronglyConnectedComponents } from 'limina/internal/utils/strongly-connected-components';
 import { isPlainRecord } from 'limina/internal/utils/values';
+import path from 'pathe';
 import type { MigrationPlanningState } from './planning-state';
 import type { MigrationWritePlanItem } from './transaction';
 
@@ -99,9 +100,10 @@ function coupleIsolation(
     patches: MigrationWritePlanItem[];
   },
 ): MigrationWritePlanItem[][] {
-  if (
-    input.patches.every((item) => item.configPath !== state.config.configPath)
-  )
+  const isolationConfigPath =
+    state.config.configPath ??
+    path.join(state.config.rootDir, 'limina.config.mjs');
+  if (input.patches.every((item) => item.configPath !== isolationConfigPath))
     return input.groups;
   const parents = input.edges
     .keys()
@@ -109,9 +111,22 @@ function coupleIsolation(
   return joinGroups(
     input.groups,
     new Set([
-      state.config.configPath,
+      isolationConfigPath,
       ...parents,
       ...implicitIsolationDependents(state),
+      ...nativeIsolationDependents(state),
     ]),
   );
+}
+
+function nativeIsolationDependents(state: MigrationPlanningState): string[] {
+  return state.config.configPath === undefined
+    ? state.records
+        .filter(
+          (record) =>
+            record.kind === 'removed-native-reference' &&
+            isIsolatedTarget(state, record.details),
+        )
+        .map((record) => record.configPath)
+    : [];
 }

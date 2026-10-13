@@ -81,17 +81,24 @@ export type LiminaConfigExport =
   | LiminaConfigFunctionPromise
   | LiminaConfigFunction;
 
-export interface ResolvedLiminaConfig extends LiminaConfig {
+/**
+Input readers can also consume defaults without a loaded module.
+*/
+export interface ResolvedLiminaInputs extends LiminaConfig {
   /**
   Internal, generation-local config input. Never serialized as user configuration.
   */
   virtualFiles?: ReadonlyMap<string, string>;
-  configPath: string;
+  configPath?: string;
   governanceRoot: ResolvedGovernanceRoot;
   /**
   Compatibility projection of governanceRoot.rootDir.
   */
   rootDir: string;
+}
+
+export interface ResolvedLiminaConfig extends ResolvedLiminaInputs {
+  configPath: string;
 }
 
 export type LiminaConfigLoader = 'native' | 'tsx';

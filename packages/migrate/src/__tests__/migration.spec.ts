@@ -376,7 +376,9 @@ describe('runMigration', () => {
         /Continue and write the planned tsconfig\*\.json changes\?/u,
       );
       expect(confirmationMessages[0]).toContain(' M packages/pkg/src/index.ts');
-      expect(promptFlowLine).toBe('\r\u{1B}[1A\u{1B}[J');
+      expect(promptFlowLine?.startsWith('\r\u{1B}[')).toBe(true);
+      expect(promptFlowLine?.endsWith('A\u{1B}[J')).toBe(true);
+      expect(promptFlowLine?.slice(3, -4)).toMatch(/^\d+$/u);
       expect(flowOutput.join('')).toContain('migration failed');
       await expect(readFile(tsconfigPath, 'utf8')).resolves.toBe(before);
     } finally {
@@ -565,7 +567,9 @@ describe('runMigration', () => {
       ).rejects.toThrow(/canceled before writing/u);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toContain('packages/pkg-0/tsconfig.json');
-      expect(promptFlowLine).toBe('\r\u{1B}[1A\u{1B}[J');
+      expect(promptFlowLine?.startsWith('\r\u{1B}[')).toBe(true);
+      expect(promptFlowLine?.endsWith('A\u{1B}[J')).toBe(true);
+      expect(promptFlowLine?.slice(3, -4)).toMatch(/^\d+$/u);
       expect(await readFile(fixture.targets[0]!)).toEqual(before);
       expect((await stat(fixture.targets[0]!, { bigint: true })).ino).toBe(
         beforeStat.ino,
@@ -1616,7 +1620,7 @@ describe('runMigration', () => {
     }
   });
 
-  it('tells users to run init before migration when no Limina config exists', async () => {
+  it('requires scope authorization before a non-interactive defaults migration', async () => {
     const fixture = await createFixture({});
     const previousCwd = process.cwd();
     const previousExitCode = process.exitCode;
@@ -1631,7 +1635,7 @@ describe('runMigration', () => {
       });
 
       await expect(cli.runMatchedCommand()).rejects.toThrow(
-        'Run npx limina init first, then rerun npx limina-migrate.',
+        'Migration scope confirmation requires a TTY.',
       );
     } finally {
       process.chdir(previousCwd);

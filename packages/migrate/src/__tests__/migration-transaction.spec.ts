@@ -1324,3 +1324,67 @@ describe('migration transaction', () => {
     );
   });
 });
+
+function createPlanItem(configPath: string): MigrationWritePlanItem {
+  return {
+    operation: 'create',
+    configPath,
+    originalBytes: null,
+    originalContent: null,
+    nextContent: 'export default { scope: { regions: { exclude: [] } } };\n',
+    status: 'modified',
+  };
+}
+
+it('creates without replacing empty files and refuses a competing writer before dependent updates', async () => {
+  const rootDirectory = await createFixture();
+  const configPath = path.join(rootDirectory, 'limina.config.mjs');
+  const target = path.join(rootDirectory, 'tsconfig.json');
+  await writeText(target, 'before');
+  const plan = [
+    createPlanItem(configPath),
+    planItem(target, 'before', 'after'),
+  ];
+  await expect(
+    executeMigrationWritePlan(rootDirectory, plan, {
+      afterPrepareItem: async (item) => {
+        if (item.operation === 'create')
+          await writeText(configPath, 'competing writer');
+      },
+    }),
+  ).rejects.toBeInstanceOf(MigrationTransactionError);
+  expect(await readFile(configPath, 'utf8')).toBe('competing writer');
+  expect(await readFile(target, 'utf8')).toBe('before');
+  await writeText(configPath, '');
+  await expect(executeMigrationWritePlan(rootDirectory, plan)).rejects.toThrow(
+    'already exists',
+  );
+  expect(await readFile(configPath, 'utf8')).toBe('');
+});
+
+it.each([false, true])(
+  'rolls back only an owned created config after a dependent write failure (drift=%s)',
+  async (drift) => {
+    const rootDirectory = await createFixture();
+    const configPath = path.join(rootDirectory, 'limina.config.mjs');
+    const target = path.join(rootDirectory, 'tsconfig.json');
+    await writeText(target, 'before');
+    const failure = executeMigrationWritePlan(
+      rootDirectory,
+      [createPlanItem(configPath), planItem(target, 'before', 'after')],
+      {
+        replace: async () => {
+          if (drift) await writeText(configPath, 'later writer');
+          throw new Error('dependent write failure');
+        },
+      },
+    );
+    await expect(failure).rejects.toMatchObject({
+      rollbackFailures: drift ? [expect.any(Error)] : [],
+    });
+    expect(await readFile(target, 'utf8')).toBe('before');
+    if (drift) expect(await readFile(configPath, 'utf8')).toBe('later writer');
+    else
+      await expect(lstat(configPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  },
+);

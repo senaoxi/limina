@@ -1,5 +1,5 @@
 import type { CheckerBuildEngine } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { getGeneratedOutputTsBuildInfoPath } from './generated/paths';
@@ -163,7 +163,7 @@ function collectOutputBuildOwners(
 }
 
 function formatOutputBuildOwnerCollision(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   outputBuildOwners: SourceProject[];
   sourceConfigPath: string;
 }): string {
@@ -188,7 +188,7 @@ function formatOutputBuildOwnerCollision(options: {
 }
 
 export function addOutputBuildOwnerCollisionProblems(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   problems: string[];
   projects: SourceProject[];
 }): void {

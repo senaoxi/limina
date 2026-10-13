@@ -1,5 +1,5 @@
 import type { CheckerProjectConfigCache } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import { connectCrossCheckerReferences } from './explicit-checker-ownership';
@@ -32,7 +32,7 @@ function createExplicitOwnerIndex(
 
 export function prepareCheckerGraphs(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   ownershipPlan: CheckerOwnershipPlan;
   projectConfigCache?: CheckerProjectConfigCache;
   selections: ResolvedCheckerEntrySelection[];

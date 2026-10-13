@@ -1,9 +1,9 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import ts from 'typescript';
 import { parseTypeScriptCommandLine } from '../../../checker/project-base';
 
 export function readExplicitSourceCompilerTarget(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configPath: string;
 }): string | null {
   const { parsed } = parseTypeScriptCommandLine({

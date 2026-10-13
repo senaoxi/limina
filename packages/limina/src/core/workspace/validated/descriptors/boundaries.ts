@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import {
   hasWorkspaceDeclaration,
   type WorkspaceRootDescriptor,
@@ -73,12 +73,12 @@ export async function isAddWorkspaceDescriptor(options: {
   return true;
 }
 
-function isNestedScopeExtensionEnabled(config: ResolvedLiminaConfig): boolean {
+function isNestedScopeExtensionEnabled(config: ResolvedLiminaInputs): boolean {
   return config.scope?.regions?.extendNestedPackageScopes === true;
 }
 
 function shouldExtendPackageScope(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   manifest: PackageManifest | null;
 }): boolean {
   return (

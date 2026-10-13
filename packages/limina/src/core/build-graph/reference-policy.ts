@@ -1,17 +1,17 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type { SourceProject } from './types';
 
 type GraphRules = NonNullable<
-  NonNullable<ResolvedLiminaConfig['graph']>['rules']
+  NonNullable<ResolvedLiminaInputs['graph']>['rules']
 >;
 type DeniedReference = NonNullable<
   NonNullable<NonNullable<GraphRules[string]>['deny']>['refs']
 >[number];
 
 function normalizeDeniedSourcePath(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   reference: DeniedReference,
 ): string {
   const deniedPath = normalizeAbsolutePath(
@@ -35,7 +35,7 @@ function getDeniedReferences(
 }
 
 function isLabelDeniesReference(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   label: string;
   rules: GraphRules;
   targetSourceConfigPath: string;
@@ -52,7 +52,7 @@ function isLabelDeniesReference(options: {
 }
 
 export function isDeniedGeneratedReference(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
   targetSourceConfigPath: string;
 }): boolean {
@@ -64,7 +64,7 @@ export function isDeniedGeneratedReference(options: {
 }
 
 export function isDeniedGeneratedReferenceForConfig(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   graphRules: readonly string[];
   targetSourceConfigPath: string;
 }): boolean {

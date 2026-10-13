@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type { WorkspaceRootDescriptor } from '#utils/workspace-root';
 import type { WorkspacePackage } from './package-types';
 import { collectValidatedWorkspaceContext } from './validated-context';
@@ -70,11 +70,11 @@ export interface WorkspaceRegionTopology {
 }
 
 export type WorkspacePackagesProvider = (
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
 ) => Promise<WorkspacePackage[]>;
 
 export async function collectWorkspaceRegionTopology(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   options: {
     provider: WorkspacePackagesProvider;
     rawPackages?: readonly WorkspacePackage[];
@@ -87,7 +87,7 @@ export async function collectWorkspaceRegionTopology(
 }
 
 export async function collectWorkspaceRegionBoundaries(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   provider: WorkspacePackagesProvider,
 ): Promise<WorkspaceRegionBoundary[]> {
   return (await collectWorkspaceRegionTopology(config, { provider }))

@@ -1,6 +1,6 @@
 import type {
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import { writeGeneratedJson } from './artifact-writer';
 import {
@@ -23,7 +23,7 @@ function getArrayValue<T>(map: ReadonlyMap<string, T[]>, key: string): T[] {
 }
 
 function writeDtsProjects(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
   checkerName: string;
 }): Promise<void>[] {
@@ -40,7 +40,7 @@ function writeDtsProjects(options: {
 }
 
 function writeSolutions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
   checkerName: string;
 }): Promise<void>[] {
@@ -60,7 +60,7 @@ function writeSolutions(options: {
 }
 
 function writeOutputProjects(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
   checkerName: string;
 }): Promise<void>[] {
@@ -80,7 +80,7 @@ function writeOutputProjects(options: {
 }
 
 function writeOutputSolutions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
   checkerName: string;
 }): Promise<void>[] {
@@ -101,7 +101,7 @@ function writeOutputSolutions(options: {
 
 function writeCheckerEntry(options: {
   checker: ResolvedCheckerConfig;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   entryPath: string;
   state: GeneratedGraphPreparationState;
 }): Promise<void> {
@@ -122,7 +122,7 @@ function writeCheckerEntry(options: {
 
 async function writeCheckerArtifacts(options: {
   checker: ResolvedCheckerConfig;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
 }): Promise<void> {
   const entryPath = options.state.checkerEntries.get(options.checker.name);
@@ -145,7 +145,7 @@ async function writeCheckerArtifacts(options: {
 
 export async function writeGeneratedGraphConfigs(options: {
   checkers: ResolvedCheckerConfig[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   generatedKnip: GeneratedKnipPreparation;
   state: GeneratedGraphPreparationState;
 }): Promise<void> {

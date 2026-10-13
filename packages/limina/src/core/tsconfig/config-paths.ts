@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath, toPosixPath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import { existsSync, statSync } from 'node:fs';
@@ -117,7 +117,7 @@ export function validateUserMaintainedLiminaTsconfigMetadata(options: {
 }
 
 export function readJsonConfig(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   configPath: string,
   virtualFiles?: ReadonlyMap<string, string>,
 ): JsonObject {

@@ -4,7 +4,7 @@ import {
   isBuildCapablePreset,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { createSvelteSemanticProject } from '../svelte-semantic/project';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
@@ -18,7 +18,7 @@ import type {
 
 function createBuildProjection(options: {
   declarationFileNames: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   frameworkCapabilities: FrameworkCapabilityDescriptor[];
   project: SourceProject;
 }): GovernedSourceUnit['buildProjection'] {
@@ -36,7 +36,7 @@ function createBuildProjection(options: {
 
 function createFrameworkBuildProjection(options: {
   declarationFileNames: readonly string[];
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
 }): GovernedSourceUnit['buildProjection'] {
   const buildConfigPath = getGeneratedLeafSolutionBuildConfigPath({
@@ -188,7 +188,7 @@ function createGovernedSvelteSemanticProject(options: {
 
 export function createGovernedSourceUnit(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   project: SourceProject;
   projectConfigCache?: CheckerProjectConfigCache;
 }): GovernedSourceUnit {

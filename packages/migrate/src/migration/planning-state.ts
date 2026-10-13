@@ -1,11 +1,11 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
 import type { JsonObject } from 'limina/internal/core/tsconfig/actions';
 import type { MigrationRecord } from './declarations';
 import type { MigrationTarget } from './types';
 
 export interface MigrationPlanningState {
-  config: ResolvedLiminaConfig;
-  candidateConfig: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
+  candidateConfig: ResolvedLiminaInputs;
   paths: string[];
   snapshot: Map<string, string>;
   discoveryInputs: Map<string, string>;
@@ -18,7 +18,7 @@ export interface MigrationPlanningState {
 }
 
 export function createPlanningState(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   paths: string[],
 ): MigrationPlanningState {
   return {
@@ -38,7 +38,7 @@ export function createPlanningState(
 
 export function planningView(
   state: MigrationPlanningState,
-): ResolvedLiminaConfig {
+): ResolvedLiminaInputs {
   const virtualFiles = new Map(state.snapshot);
   for (const [file, object] of state.objects)
     virtualFiles.set(file, JSON.stringify(object));

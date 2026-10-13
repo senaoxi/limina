@@ -1,4 +1,4 @@
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
@@ -22,7 +22,7 @@ interface DependencyRequirementPass {
 }
 
 function formatMultipleDependencyRequirements(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   evidence: ReadonlyMap<CheckerName, CheckerEvidence>;
   state: TypeConfigOwnershipState;
 }): string {
@@ -49,7 +49,7 @@ function hasMultiplePendingRequirements(options: {
 }
 
 function applyRequirementEvidence(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   evidence: ReadonlyMap<CheckerName, CheckerEvidence>;
   state: TypeConfigOwnershipState;
 }): string[] {
@@ -69,7 +69,7 @@ function didResolvePending(
 }
 
 function applyConsumerRequirements(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   evidence: ReadonlyMap<CheckerName, CheckerEvidence>;
   state: TypeConfigOwnershipState;
 }): DependencyRequirementPass {
@@ -109,7 +109,7 @@ function createFactsByConsumer(
 }
 
 function applyStateRequirements(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   facts: readonly CheckerDependencyFact[];
   membership: FileOwnerLookup;
   plan: CheckerOwnershipPlan;
@@ -137,7 +137,7 @@ function getConsumerFacts(
 }
 
 export function applyDependencyRequirementPass(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
 }): DependencyRequirementPass {
   const membership = createActualMembershipIndex(

@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { hasModuleSpecifierQueryOrFragment } from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
@@ -13,7 +13,7 @@ import type {
 import type { FileOwnerLookup } from './file-owner-lookup';
 
 interface PhysicalCandidateContext {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
   membership: FileOwnerLookup;
@@ -23,7 +23,7 @@ interface PhysicalCandidateContext {
 }
 
 function formatAmbiguousPhysicalCandidate(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   importRecord: CheckerDependencyFact['importRecord'];
   owners: readonly string[];
   targetPath: string;

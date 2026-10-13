@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import {
   createProjectDependencyCaches,
@@ -91,7 +91,7 @@ function compareDependencyEdges(
 }
 
 function addImplicitReferences(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   localDtsProjectsBySourcePath: Map<string, SourceProject[]>;
   problems: string[];
   projects: SourceProject[];
@@ -131,7 +131,7 @@ function resolveProjectDependencyCaches(
 
 export function inferProjectReferences(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   governedSources: GovernedSourceUnit[];
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
   ownerGovernedSources?: GovernedSourceUnit[];

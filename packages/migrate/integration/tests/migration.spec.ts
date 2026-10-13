@@ -81,7 +81,9 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
       process.execPath,
       [
         entry,
-        ...(arguments_[0] === 'migration' ? arguments_.slice(1) : arguments_),
+        ...(arguments_[0] === 'migration'
+          ? [...arguments_.slice(1), '--yes']
+          : arguments_),
       ],
       {
         cwd: rootDirectory,

@@ -76,9 +76,11 @@ export async function prepareGroups(options: {
 }
 
 function groupPaths(group: PreparedMigrationPlan): string[] {
-  return [...group.atomicSnapshots, ...group.hardlinkSnapshots].map(
-    (snapshot) => snapshot.item.configPath,
-  );
+  return [
+    ...group.createSnapshots,
+    ...group.atomicSnapshots,
+    ...group.hardlinkSnapshots,
+  ].map((snapshot) => snapshot.item.configPath);
 }
 
 function skipGroup(

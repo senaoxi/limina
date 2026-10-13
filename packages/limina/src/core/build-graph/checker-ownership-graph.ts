@@ -1,5 +1,5 @@
 import type { CheckerProjectConfigCache } from '#checkers';
-import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { collectAutoScope, collectExplicitScope } from './auto-checker-scope';
@@ -14,7 +14,7 @@ import type { AutoScope } from './types';
 
 export function collectOwnershipScopes(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   entryConfigPaths: readonly string[];
   explicitOwnerByEntryPath: ReadonlyMap<string, CheckerName>;
   projectConfigCache?: CheckerProjectConfigCache;

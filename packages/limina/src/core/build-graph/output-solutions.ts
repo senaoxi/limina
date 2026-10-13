@@ -1,6 +1,6 @@
 import type {
   ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
+  ResolvedLiminaInputs,
 } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { createOutputSolutionBuildModule } from './build-modules';
@@ -29,7 +29,7 @@ export function createOutputDeclarationCopyContext(
 
 function createOutputSolutionProject(options: {
   checkerName: string;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   packageRootDir: string;
   references: string[];
   sourceConfigPath: string;
@@ -146,7 +146,7 @@ function createSolutionCopyContexts(options: {
 export function addOutputSolution(options: {
   checker: ResolvedCheckerConfig;
   collection: CheckerSourceConfigCollection;
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   configToOutputBuild: Map<string, GeneratedBuildModule>;
   outputDeclarationCopies: Map<string, GeneratedOutputDeclarationCopyContext[]>;
   outputProjectByOutputConfigPath: ReadonlyMap<string, SourceProject>;

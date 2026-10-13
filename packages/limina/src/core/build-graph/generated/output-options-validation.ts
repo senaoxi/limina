@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import {
   formatUnknownValue,
@@ -9,7 +9,7 @@ import path from 'pathe';
 import type { OutputOptionsProblem } from './config-reader-types';
 
 export interface OutputReaderContext {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   diagnostics: OutputOptionsProblem[];
   problems: string[];
   sourceConfigPath: string;

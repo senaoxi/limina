@@ -2,7 +2,7 @@ import {
   type CheckerProjectParseContext,
   normalizeExtensions,
 } from '#checkers';
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import type {
   GeneratedTsconfigGraphResult,
   GovernedSourceUnit,
@@ -127,7 +127,7 @@ function mergeProjectContext(options: {
 }
 
 function projectRouteExtensions(options: {
-  config: ResolvedLiminaConfig;
+  config: ResolvedLiminaInputs;
   route: CollectCheckerGraphProjectRoutesResult['routes'][number];
   snapshot: CheckerRouteSnapshotCollection;
   state: SourceExtensionState;
@@ -206,7 +206,7 @@ function projectGovernedUnits(options: {
 }
 
 export function projectSourceGraphProjectExtensions(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   snapshot: CheckerRouteSnapshotCollection,
   generatedGraph?: GeneratedTsconfigGraphResult,
 ): CollectSourceGraphProjectExtensionsResult {
@@ -239,7 +239,7 @@ export function projectSourceGraphProjectExtensions(
 }
 
 export function collectSourceGraphProjectExtensions(
-  config: ResolvedLiminaConfig,
+  config: ResolvedLiminaInputs,
   generatedGraph?: GeneratedTsconfigGraphResult,
 ): CollectSourceGraphProjectExtensionsResult {
   return projectSourceGraphProjectExtensions(
