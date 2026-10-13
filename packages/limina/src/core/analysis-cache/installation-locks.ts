@@ -1,7 +1,8 @@
+import { isPlainRecord } from '#utils/values';
 import { execFileSync } from 'node:child_process';
 import path from 'pathe';
 import ts from 'typescript';
-import { parse } from 'yaml';
+import { parse, parseAllDocuments } from 'yaml';
 interface LockRoots {
   lockRoot: string;
   resolutionRoot: string;
@@ -19,14 +20,73 @@ function requireImporter(
       `Lock does not cover resolution root: ${roots.resolutionRoot}`,
     );
 }
-function validatePnpm(text: string, roots: LockRoots): void {
-  const value = parse(text) as {
-    lockfileVersion?: string | number;
-    importers?: Record<string, unknown>;
-  };
-  if (![6, 9].includes(Number(value.lockfileVersion)))
+interface PnpmLock {
+  lockfileVersion: number;
+  importers: Record<string, Record<string, unknown>>;
+}
+function pnpmLockVersion(value: unknown): number {
+  if (
+    !['string', 'number'].includes(typeof value) ||
+    ![6, 9].includes(Number(value))
+  )
     throw new Error('Unproven pnpm lock version.');
-  requireImporter(value.importers, importerPath(roots), roots);
+  return Number(value);
+}
+function pnpmImporters(value: unknown): PnpmLock['importers'] {
+  if (!isPlainRecord(value) || !Object.values(value).every(isPlainRecord))
+    throw new Error('Unproven pnpm lock importers.');
+  return value as PnpmLock['importers'];
+}
+function pnpmDocument(value: unknown): PnpmLock {
+  if (!isPlainRecord(value)) throw new Error('Unproven pnpm lock document.');
+  return {
+    lockfileVersion: pnpmLockVersion(value.lockfileVersion),
+    importers: pnpmImporters(value.importers),
+  };
+}
+function pnpmDocuments(text: string): PnpmLock[] {
+  const documents = parseAllDocuments(text);
+  if (![1, 2].includes(documents.length))
+    throw new Error('Unproven pnpm lock document layout.');
+  return documents.map((document) => {
+    if (document.errors.length > 0) throw document.errors[0];
+    return pnpmDocument(document.toJS());
+  });
+}
+function hasEnvironmentDependencies(importer: Record<string, unknown>) {
+  return ['configDependencies', 'packageManagerDependencies'].some((key) =>
+    Object.hasOwn(importer, key),
+  );
+}
+function isEnvironmentLock(lock: PnpmLock): boolean {
+  const importers = Object.values(lock.importers);
+  return (
+    importers.length > 0 &&
+    importers.every(
+      (importer) =>
+        hasEnvironmentDependencies(importer) &&
+        ['dependencies', 'devDependencies', 'optionalDependencies'].every(
+          (key) => !Object.hasOwn(importer, key),
+        ),
+    )
+  );
+}
+function validateEnvironmentLock(environment: PnpmLock, project: PnpmLock) {
+  if (
+    !isEnvironmentLock(environment) ||
+    environment.lockfileVersion !== project.lockfileVersion
+  )
+    throw new Error('Unproven pnpm lock document layout.');
+}
+function validatePnpm(text: string, roots: LockRoots): void {
+  const documents = pnpmDocuments(text);
+  // pnpm writes an optional environment document before the project lock.
+  // Only the project importers prove coverage; the caller observes all bytes.
+  const project = documents.at(-1)!;
+  if (Object.values(project.importers).some(hasEnvironmentDependencies))
+    throw new Error('Unproven pnpm lock document layout.');
+  if (documents.length === 2) validateEnvironmentLock(documents[0]!, project);
+  requireImporter(project.importers, importerPath(roots), roots);
 }
 function validateNpm(text: string, roots: LockRoots): void {
   const value = JSON.parse(text) as {
