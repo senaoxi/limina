@@ -4,8 +4,9 @@ const text = z.string();
 const texts = z.array(text);
 const dependencies = z.array(dependency);
 const domain = z.object({
-  adapter: z.literal('physical-installation-v1'),
+  adapter: z.literal('physical-installation-v2'),
   root: text,
+  lockRoot: text,
   resolutionRoot: text,
   managerIdentity: text,
   manager: z.enum(['pnpm', 'npm', 'yarn', 'bun']),

@@ -35,7 +35,20 @@ export function readInstallationYaml(
   dependencies: InputDependency[],
 ): Record<string, unknown> {
   const text = readInstallationText(file, inputs, dependencies);
-  return text === undefined ? {} : (parse(text) as Record<string, unknown>);
+  if (text === undefined) return {};
+  const content = inputs.observe(file, 'content');
+  const key = JSON.stringify([
+    'installation-yaml',
+    content.inputId,
+    content.expectedVersion,
+  ]);
+  // The read above still observes current bytes and retains binding receipts.
+  // Reuse only parsing within this input set, and keep callers isolated.
+  const parsed = inputs.memoizeObservation(
+    key,
+    () => parse(text) as Record<string, unknown>,
+  );
+  return structuredClone(parsed);
 }
 export function requireInstallationManifest(
   file: string,

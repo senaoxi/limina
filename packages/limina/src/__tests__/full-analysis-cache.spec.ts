@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseTypeScriptCommandLine } from '../checker/project-base';
 import {
   captureInvocationData,
@@ -24,6 +24,8 @@ import {
 } from '../config/invocation-data';
 import { getActiveCheckers } from '../config/runtime';
 import { directoryFingerprint } from '../core/analysis-cache/directory-fingerprint';
+import { observeInstallationDomain } from '../core/analysis-cache/installation-domain';
+import { validateInstallationLock } from '../core/analysis-cache/installation-locks';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic';
@@ -36,7 +38,18 @@ import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const roots: string[] = [];
+vi.mock('../core/analysis-cache/installation-locks', async (original) => {
+  const locks =
+    await original<
+      typeof import('../core/analysis-cache/installation-locks')
+    >();
+  return {
+    ...locks,
+    validateInstallationLock: vi.fn(locks.validateInstallationLock),
+  };
+});
 afterEach(() => {
+  vi.clearAllMocks();
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
@@ -356,14 +369,57 @@ describe('R01 effective local metadata and installation trust', () => {
         }),
       );
       const first = analyze(f.project('packages/member/tsconfig.json'));
+      const parses = vi.mocked(validateInstallationLock).mock.calls.length;
+      expect(parses).toBeGreaterThan(0);
       const warm = analyze(
         f.project('packages/member/tsconfig.json'),
         first.cache,
       );
       expect(warm.restored).toBe(true);
+      expect(validateInstallationLock).toHaveBeenCalledTimes(parses);
       expect(warm.cache.metrics.semanticPrograms).toBe(0);
       expect(warm.cache.metrics.localRootScans ?? 0).toBe(0);
       expect(warm.facts).toEqual(first.facts);
+      const encoded = structuredClone(first.cache.snapshot());
+      const context = Object.values(encoded.contexts)[0] as {
+        environment: {
+          domains: {
+            adapter: string;
+            locks: string[];
+            dependencies: { inputId: string }[];
+          }[];
+        };
+      };
+      const domain = context.environment.domains[0]!;
+      const receiptId = JSON.stringify(['physical', 'bytes', domain.locks[0]]);
+      domain.dependencies = domain.dependencies.filter(
+        (item) => item.inputId !== receiptId,
+      );
+      expect(parseAnalysisSnapshot(encoded, 'fixture')).toBeUndefined();
+      const legacy = structuredClone(first.cache.snapshot());
+      for (const value of Object.values(legacy.contexts) as (typeof context)[])
+        for (const item of value.environment.domains)
+          item.adapter = 'physical-installation-v1';
+      expect(parseAnalysisSnapshot(legacy, 'fixture')).toBeUndefined();
+      f.write(
+        'packages/uncovered/package.json',
+        '{"name":"uncovered","private":true}',
+      );
+      f.write('packages/uncovered/tsconfig.json', '{}');
+      const other = new NativeAnalysisCache(
+        'fixture',
+        first.cache.snapshot(),
+        'fixture-config',
+      );
+      expect(other.inputs.domainDirty).toBe(false);
+      expect(() =>
+        observeInstallationDomain({
+          root: f.root,
+          configPath: f.file('packages/uncovered/tsconfig.json'),
+          inputs: other.inputs,
+        }),
+      ).toThrow('Lock does not cover resolution root');
+      expect(validateInstallationLock).toHaveBeenCalledTimes(parses + 1);
       if (environmentDocument) {
         f.write(
           'pnpm-lock.yaml',
@@ -374,6 +430,9 @@ describe('R01 effective local metadata and installation trust', () => {
           warm.cache,
         );
         expect(changed.restored).toBe(false);
+        expect(
+          vi.mocked(validateInstallationLock).mock.calls.length,
+        ).toBeGreaterThan(parses + 1);
         expect(changed.cache.inputs.domainDirty).toBe(true);
         expect(changed.cache.metrics.factHits).toBe(0);
         expect(changed.facts).toEqual(first.facts);
