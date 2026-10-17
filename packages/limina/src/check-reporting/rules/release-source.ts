@@ -111,12 +111,6 @@ export const releaseSourceIssueRules: readonly LiminaCheckIssueRuleDefinition[] 
       task: 'source:check',
     }),
     defineIssueRule({
-      code: C.sourceResourceModuleTypeUndeclared,
-      description:
-        'A physical resource import has no declaration visible to its checker project.',
-      task: 'source:check',
-    }),
-    defineIssueRule({
       code: C.sourceTsconfigGovernance,
       description:
         'A source tsconfig is missing or outside checker governance.',

@@ -213,6 +213,7 @@ export class NativeContextRecords {
     const id = nativeContextId(project);
     cache.projects[id] = candidate.state;
     cache.contexts[id] = candidate.record;
+    adoptSyntax(cache, candidate.state.members);
     cache.inputs.consume(candidate.record.dependencies);
     cache.inputs.consumeNative();
     cache.increment('restoredContexts');
@@ -244,7 +245,11 @@ export class NativeContextRecords {
   environment(id: string): TypeEnvironmentRecord | undefined {
     return this.#environments.get(id);
   }
-  capture(project: TypeScriptSemanticProject, state: SemanticState): void {
+  capture(
+    project: TypeScriptSemanticProject,
+    state: SemanticState,
+    isComplete: boolean,
+  ): void {
     const id = nativeContextId(project);
     const record = createContextRecord({
       cache: this.#cache,
@@ -252,6 +257,7 @@ export class NativeContextRecords {
       state,
       compilerInputs: this.#compilerDependencies(id),
     });
+    record.complete = [record.complete, isComplete].every(Boolean);
     if (!isSerializableProject(record.project)) {
       this.#cache.fallback('executable-native-options');
       return;
@@ -274,4 +280,15 @@ export class NativeContextRecords {
     const identity = createTypeScriptSemanticContextIdentity(project);
     return this.#memoized(project, identity);
   }
+}
+
+function adoptSyntax(cache: NativeAnalysisCache, files: string[]): void {
+  for (const file of files) {
+    const syntax = previousSyntax(cache, file);
+    if (syntax !== undefined) cache.files[file] = syntax;
+  }
+}
+
+function previousSyntax(cache: NativeAnalysisCache, file: string) {
+  return cache.previous?.files[file];
 }

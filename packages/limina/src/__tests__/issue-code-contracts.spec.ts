@@ -34,7 +34,7 @@ describe('Limina issue code contracts', () => {
     ).sort((left, right) => Number(left > right) - Number(left < right));
     const metadata = listLiminaCheckIssueRuleMetadata();
 
-    expect(codes).toHaveLength(61);
+    expect(codes).toHaveLength(60);
     expect(coverageCodes).toEqual(codes);
     expect(
       metadata
@@ -54,7 +54,7 @@ describe('Limina issue code contracts', () => {
             metadata.filter((entry) => entry.status === status).length,
           ]),
       ),
-    ).toEqual({ active: 59, planned: 1, retired: 1 });
+    ).toEqual({ active: 58, planned: 1, retired: 1 });
     expect(LIMINA_CHECK_TASK_NAMES).toHaveLength(11);
   });
 
@@ -118,7 +118,7 @@ describe('Limina issue code contracts', () => {
       'external-tool': 5,
       'fault-injection': 11,
       fixture: 36,
-      integration: 2,
+      integration: 1,
       planned: 1,
       retired: 1,
       unit: 5,

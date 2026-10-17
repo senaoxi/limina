@@ -1,5 +1,9 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import type { ImportRecord } from '#core/import-analysis/runner';
+import type {
+  CompilerMembership,
+  ProjectReferenceRedirect,
+} from '../dependency-semantics';
 import type { TypeEvidence } from '../type-evidence/cache';
 
 export type FrameworkSemanticKind = 'astro' | 'svelte' | 'vue';
@@ -33,13 +37,22 @@ export interface FrameworkSemanticEvidence<Profile = unknown> {
 }
 
 export interface PreparedDependencyFact {
+  redirect?: ProjectReferenceRedirect;
+  compilerMembership?: CompilerMembership;
+  // Recorded by the adapter after querying the mapped literal in its Program.
+  typeEvidenceOrigin?: {
+    contextIdentity: string;
+    fileName: string;
+    start: number;
+    end: number;
+  };
   framework: FrameworkSemanticKind;
   importRecord: ImportRecord;
-  provenance: 'strict-source-map';
+  provenance: FrameworkSemanticProvenance;
   resolutionMode: string;
   semanticSpecifier: string;
   target: ResolvedCheckerModuleName | null;
-  typeEvidence: TypeEvidence;
+  typeEvidence?: TypeEvidence;
 }
 
 export interface FrameworkSemanticUnmappedGeneratedDependency {

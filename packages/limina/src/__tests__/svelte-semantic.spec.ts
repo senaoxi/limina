@@ -336,22 +336,21 @@ describe('Svelte public bounded semantic adapter', () => {
 
     expect(preparation.kind).toBe('supported');
     if (preparation.kind !== 'supported') return;
-    expect(preparation.directSourceRecords).toMatchObject([
-      { kind: 'triple-slash-types', specifier: 'vitest' },
-    ]);
+    // svelte2tsx places this comment after generated imports, where TS does not treat it as a directive.
+    expect(preparation.directSourceRecords).toEqual([]);
     expect(
       preparation.facts.map((fact) => ({
-        evidence: fact.typeEvidence.kind,
+        evidence: fact.typeEvidence?.kind,
         resolvedBy: fact.target?.resolvedBy ?? null,
         specifier: fact.importRecord.specifier,
       })),
     ).toEqual([
       {
-        evidence: 'checker-source',
+        evidence: undefined,
         resolvedBy: 'checker-source',
         specifier: './Child.svelte',
       },
-      { evidence: 'missing', resolvedBy: null, specifier: './theme.css' },
+      { evidence: undefined, resolvedBy: null, specifier: './theme.css' },
     ]);
     expect(
       preparation.facts.every(
@@ -360,7 +359,7 @@ describe('Svelte public bounded semantic adapter', () => {
     ).toBe(true);
   });
 
-  it('separates ambient TypeChecker evidence from a null module target', async () => {
+  it('keeps an unresolved resource request without querying ambient TypeChecker evidence', async () => {
     const fixture = await createProject({ ambientCss: true });
     const preparation = prepareSvelteSemanticDependencies({
       ...fixture,
@@ -374,10 +373,7 @@ describe('Svelte public bounded semantic adapter', () => {
       (fact) => fact.semanticSpecifier === './theme.css',
     );
     expect(css?.target).toBeNull();
-    expect(css?.typeEvidence).toMatchObject({
-      kind: 'ambient',
-      modulePattern: '*.css',
-    });
+    expect(css?.typeEvidence).toBeUndefined();
   });
 
   it('only opts into TSX generation for an explicit script lang', () => {

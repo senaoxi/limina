@@ -186,6 +186,7 @@ export interface SourceRelativeImportEscapesScopeFacts {
 }
 
 export type SourceResourceTypeEvidenceKind =
+  | 'unobserved'
   | 'ambient'
   | 'checker-source'
   | 'concrete-declaration'
@@ -201,18 +202,6 @@ export interface SourceResourceModuleNotFoundFacts {
   readonly line: number;
   readonly specifier: string;
   readonly typeEvidenceKind: SourceResourceTypeEvidenceKind;
-}
-
-export interface SourceResourceModuleTypeUndeclaredFacts {
-  readonly checkerName: string;
-  readonly configPath: string;
-  readonly importerPath: string;
-  readonly kind: 'resource-module-type-undeclared';
-  readonly line: number;
-  readonly runtimeAuthority: 'filesystem' | 'oxc' | 'package-export';
-  readonly runtimeFilePath: string;
-  readonly specifier: string;
-  readonly typeEvidenceKind: 'missing';
 }
 
 export type SourceTsconfigGovernanceFacts =

@@ -166,7 +166,7 @@ describe('TypeScript resource type evidence', () => {
         });
 
         expect(evidence.type.kind).toBe(type);
-        expect(fact.typeEvidence).toEqual(evidence.type);
+        expect(fact.typeEvidence).toBeUndefined();
         expect(evidence.classification).toBe(classification);
         expect(evidence.runtime.kind).toBe(runtime);
         if (type === 'checker-source') {

@@ -17,6 +17,7 @@ import { TypeEvidenceCore } from '../core/type-evidence';
 import { isSupportedVueTypeEvidenceVersionTuple } from '../core/type-evidence/vue-provider';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import { VueSemanticContextManager } from '../core/vue-semantic/context';
+import { observeVueDependency } from '../core/vue-semantic/dependency-observation';
 import { prepareVueSemanticDependencies } from '../core/vue-semantic/preparation';
 import {
   type AnalysisMetricAggregate,
@@ -252,27 +253,39 @@ describe('Vue resource type evidence', () => {
       const filePath = path.join(fixture.rootDir, 'src/App.vue');
       const metrics = createProfilingMetricsRecorder();
       const contexts = new VueSemanticContextManager(metrics);
+      const context = contexts.acquire(project.vueSemanticIdentity!);
       const preparation = prepareVueSemanticDependencies({
-        context: contexts.acquire(project.vueSemanticIdentity!),
+        context,
         filePath,
       });
       expect(preparation.kind).toBe('supported');
       if (preparation.kind === 'unsupported') return;
-      const evidence = preparation.facts.map((fact) => fact.typeEvidence);
+      expect(
+        preparation.facts.every((fact) => fact.typeEvidence === undefined),
+      ).toBe(true);
+      const evidence = preparation.facts.map(
+        (fact) =>
+          observeVueDependency({
+            context,
+            importRecord: fact.importRecord,
+            target: fact.target,
+          }).typeEvidence,
+      );
 
-      expect(evidence.map((item) => item.kind)).toEqual([
+      expect(evidence.map((item) => item?.kind)).toEqual([
         'ambient',
         'ambient',
         'ambient',
       ]);
       expect(
         evidence.map((item) =>
-          item.kind === 'ambient' ? item.modulePattern : null,
+          item?.kind === 'ambient' ? item.modulePattern : null,
         ),
       ).toEqual(['*.css', '*.css', '*?raw']);
       const metricSnapshot = metrics.snapshot();
       expect(metricCount(metricSnapshot, 'vue-program-create')).toBe(1);
       expect(metricCount(metricSnapshot, 'typescript-program-create')).toBe(0);
+      contexts.dispose();
     } finally {
       await fixture.cleanup();
     }
@@ -296,14 +309,23 @@ describe('Vue resource type evidence', () => {
       const project = createVueProject(fixture.rootDir);
       const filePath = path.join(fixture.rootDir, 'src/App.vue');
       const contexts = new VueSemanticContextManager();
+      const context = contexts.acquire(project.vueSemanticIdentity!);
       const preparation = prepareVueSemanticDependencies({
-        context: contexts.acquire(project.vueSemanticIdentity!),
+        context,
         filePath,
       });
-      expect(preparation).toMatchObject({
-        facts: [{ typeEvidence: { kind: 'ambient', modulePattern: '*.css' } }],
-        kind: 'supported',
-      });
+      expect(preparation.kind).toBe('supported');
+      if (preparation.kind === 'unsupported') return;
+      const fact = preparation.facts[0]!;
+      expect(fact.typeEvidence).toBeUndefined();
+      expect(
+        observeVueDependency({
+          context,
+          importRecord: fact.importRecord,
+          target: fact.target,
+        }).typeEvidence,
+      ).toMatchObject({ kind: 'ambient', modulePattern: '*.css' });
+      contexts.dispose();
     } finally {
       await fixture.cleanup();
     }

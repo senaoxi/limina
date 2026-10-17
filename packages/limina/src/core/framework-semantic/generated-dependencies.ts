@@ -1,6 +1,7 @@
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
 import { collectTypeScriptSourceFileImports } from '../import-analysis/typescript-imports';
+import { potentialAugmentations } from '../typescript-semantic/request-eligibility';
 
 export interface GeneratedSemanticDependency {
   generatedFilePath: string;
@@ -60,11 +61,16 @@ export function enumerateGeneratedSemanticDependencies(options: {
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
 }): GeneratedSemanticDependency[] {
-  return collectTypeScriptSourceFileImports({
+  const records = collectTypeScriptSourceFileImports({
     filePath: options.generatedFilePath,
     sourceFile: options.sourceFile,
     tsModule: options.tsModule,
-  }).map((record) => ({
+  });
+  if (options.tsModule.isExternalModule(options.sourceFile))
+    records.push(
+      ...potentialAugmentations(options.sourceFile, options.tsModule),
+    );
+  return records.map((record) => ({
     generatedFilePath: options.generatedFilePath,
     literal: findLiteralAtRecord({ ...options, record }),
     record,

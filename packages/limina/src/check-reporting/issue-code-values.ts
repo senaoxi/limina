@@ -62,8 +62,6 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   sourceRelativeImportEscapesScope:
     'LIMINA_SOURCE_RELATIVE_IMPORT_ESCAPES_SCOPE',
   sourceResourceModuleNotFound: 'LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND',
-  sourceResourceModuleTypeUndeclared:
-    'LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED',
   sourceTsconfigGovernance: 'LIMINA_SOURCE_TSCONFIG_GOVERNANCE',
   sourceUnusedModule: 'LIMINA_SOURCE_UNUSED_MODULE',
   sourceUnusedWorkspaceDependency: 'LIMINA_SOURCE_UNUSED_WORKSPACE_DEPENDENCY',

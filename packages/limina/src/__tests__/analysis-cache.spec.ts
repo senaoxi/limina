@@ -23,7 +23,7 @@ import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import { createImportAnalysisContext } from '../core/import-analysis/runner';
 import { createProjectDependencyCaches } from '../core/project-dependencies/cache';
 import { collectProjectDependencies } from '../core/project-dependencies/provider';
-import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic/context';
+import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
 import { createFixturePathResolver } from './helpers/path';
@@ -312,21 +312,21 @@ describe('persistent native analysis facts', () => {
     expect(result.members).toContain(file('ambient.d.ts'));
     expect(
       result.facts.find(({ record }) => record.filePath === file('b.ts'))!.fact
-        .typeEvidence.kind,
-    ).toBe('ambient');
+        .resolution.target,
+    ).toBeNull();
     write('a.ts', 'export {};');
     result = analyze(input, result.cache);
     expectCold(result, input);
     expect(result.members).not.toContain(file('ambient.d.ts'));
-    expect(result.facts[0]!.fact.typeEvidence.kind).toBe('missing');
+    expect(result.facts[0]!.fact.resolution.target).toBeNull();
     write('a.ts', '/// <reference path="./ambient.d.ts" />\nexport {};');
     result = analyze(input, result.cache);
     expectCold(result, input);
     expect(result.members).toContain(file('ambient.d.ts'));
     expect(
       result.facts.find(({ record }) => record.filePath === file('b.ts'))!.fact
-        .typeEvidence.kind,
-    ).toBe('ambient');
+        .resolution.target,
+    ).toBeNull();
   });
 });
 
@@ -551,7 +551,11 @@ it('invalidates redirected declaration providers through removal and restoration
     projectReferences: [{ path: file('dep/tsconfig.json') }],
   };
   let result = analyze(input);
-  expect(result.facts[0]!.fact.typeEvidence.kind).toBe('concrete-declaration');
+  expect(result.facts[0]!.fact.redirect).toMatchObject({
+    originalTarget: file('dep/src/value.ts'),
+    declarationTarget: file('dep/lib/value.d.ts'),
+    availability: 'present',
+  });
   result = analyze(input, result.cache);
   expect(result.cache.metrics.factQueries).toBe(0);
   for (const isPresent of [false, true, false]) {
@@ -560,9 +564,10 @@ it('invalidates redirected declaration providers through removal and restoration
     else rmSync(file('dep/lib/value.d.ts'));
     result = analyze(input, result.cache);
     expectCold(result, input);
-    expect(result.facts[0]!.fact.typeEvidence.kind).toBe(
-      isPresent ? 'concrete-declaration' : 'missing',
+    expect(result.facts[0]!.fact.redirect?.availability).toBe(
+      isPresent ? 'present' : 'missing',
     );
+    expect(result.facts[0]!.fact.referenceRequirement).toBeNull();
   }
 });
 

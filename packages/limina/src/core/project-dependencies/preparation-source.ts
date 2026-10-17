@@ -162,7 +162,8 @@ function collectSemanticSourceEvidence(
 }
 
 function getNativeSemanticContext(options: FilePreparationOptions) {
-  return isTypeScriptSemanticSource(options.fileName)
+  return options.request.context.semanticAuthority.family !== 'vue' &&
+    isTypeScriptSemanticSource(options.fileName)
     ? options.request.typeScriptSemanticContext
     : undefined;
 }

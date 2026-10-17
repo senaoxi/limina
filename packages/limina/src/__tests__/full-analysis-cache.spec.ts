@@ -26,7 +26,7 @@ import { getActiveCheckers } from '../config/runtime';
 import { directoryFingerprint } from '../core/analysis-cache/directory-fingerprint';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
-import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic/context';
+import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
@@ -136,7 +136,7 @@ async function runCache(options={}) {
       await manager.ensureGeneratedGraph();
       await manager.publishAnalysisCache();
     }
-    return {graph:{manifest:graph.manifest,ownershipPlan:graph.ownershipPlan},events,isPassed};
+    return {graph:{manifest:graph.manifest,ownershipPlan:graph.ownershipPlan,edges:graph.dependencyEdges},events,isPassed};
   }finally{manager.dispose();}
 }
 ${script}`,
@@ -544,9 +544,9 @@ graph:{rules:{runtime:process.env.LIMINA_CONFIG_DENIED === 'yes' ? {deny:{deps:[
     expect(changed.isPassed).toBe(uncached.isPassed);
     expect(
       changed.events.find((event) => event.kind === 'semanticPrograms')?.count,
-    ).toBeGreaterThan(0);
+    ).toBe(0);
     expect(
-      changed.events.find((event) => event.kind === 'factQueries')?.count,
+      changed.events.find((event) => event.kind === 'syntaxExtractions')?.count,
     ).toBeGreaterThan(0);
     expect(changed.events).toContainEqual(
       expect.objectContaining({ kind: 'factHits', count: 0 }),
@@ -750,6 +750,9 @@ console.log(JSON.stringify([config.pipelines,Object.isFrozen(config.pipelines)])
           expect(config.package.entries[0]?.boundary.environment()).toBe(value);
           expect(
             events.find((event) => event.kind === 'semanticPrograms')?.count,
+          ).toBe(0);
+          expect(
+            events.find((event) => event.kind === 'graphBuilds')?.count,
           ).toBeGreaterThan(0);
           expect(events).toContainEqual(
             expect.objectContaining({ kind: 'factHits', count: 0 }),
@@ -771,12 +774,105 @@ console.log(JSON.stringify([config.pipelines,Object.isFrozen(config.pipelines)])
 });
 
 interface GraphRunResult {
-  graph: { manifest: unknown; ownershipPlan: unknown };
+  graph: {
+    manifest: unknown;
+    ownershipPlan: unknown;
+    edges: { fromConfigPath: string; toConfigPath: string }[];
+  };
   events: { name?: string; kind?: string; count?: number }[];
   isPassed: boolean;
 }
 
 describe('production graph snapshots and publication', () => {
+  it('restores a compatible compiler support closure in a new process and recovers native eligibility after removal', () => {
+    const f = fixture();
+    f.write(
+      'limina.config.mjs',
+      'export default {scope:{checkers:{tsc:{include:["tsconfig.json","b/tsconfig.json"]}}}};',
+    );
+    f.write(
+      'tsconfig.json',
+      JSON.stringify({
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          noLib: true,
+          types: [],
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          allowJs: true,
+          checkJs: true,
+          maxNodeModuleJsDepth: 2,
+        },
+        files: ['src/a.ts'],
+      }),
+    );
+    f.write(
+      'b/tsconfig.json',
+      JSON.stringify({
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          noLib: true,
+          types: [],
+        },
+        files: ['index.ts'],
+      }),
+    );
+    f.write('b/index.ts', 'export interface Value {n:number}');
+    const run = 'console.log(JSON.stringify(await runCache()));';
+    f.execute<GraphRunResult>(run);
+    const warm = f.execute<GraphRunResult>(run);
+    expect(warm.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    f.write('src/value.d.ts', 'import "compat";export interface V {}');
+    f.write(
+      'node_modules/compat/package.json',
+      JSON.stringify({ name: 'compat', version: '1.0.0', main: 'index.js' }),
+    );
+    f.write(
+      'node_modules/compat/index.js',
+      'function use(require){return require("./nested");}export {};',
+    );
+    f.write(
+      'node_modules/compat/nested.d.ts',
+      'import type {Value} from "../../b/index";export declare const value:Value;',
+    );
+    const compatibility = f.execute<GraphRunResult>(run);
+    expect(compatibility.graph.edges).toContainEqual(
+      expect.objectContaining({
+        fromConfigPath: f.file('tsconfig.json'),
+        toConfigPath: f.file('b/tsconfig.json'),
+      }),
+    );
+    expect(compatibility.events).toContainEqual(
+      expect.objectContaining({ kind: 'semanticPrograms', count: 1 }),
+    );
+    const restored = f.execute<GraphRunResult>(run);
+    expect(restored.graph).toEqual(compatibility.graph);
+    expect(restored.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    expect(restored.events).toContainEqual(
+      expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
+    );
+    f.write(
+      'src/value.d.ts',
+      'import type {Value} from "../b/index";export interface V extends Value {}',
+    );
+    const recovered = f.execute<GraphRunResult>(run);
+    expect(recovered.graph.edges.map((edge) => edge.toConfigPath)).toEqual(
+      compatibility.graph.edges.map((edge) => edge.toConfigPath),
+    );
+    expect(recovered.events).toContainEqual(
+      expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
+    );
+    expect(recovered.events).toContainEqual(
+      expect.objectContaining({ kind: 'syntaxExtractions', count: 1 }),
+    );
+  });
+
   it('rejects invalid configuration before adopting or replacing a warm snapshot', () => {
     const f = fixture();
     const run = 'console.log(JSON.stringify(await runCache()));';
@@ -845,7 +941,10 @@ describe('production graph snapshots and publication', () => {
     );
     expect(
       changed.events.find((event) => event.kind === 'semanticPrograms')?.count,
-    ).toBeGreaterThan(0);
+    ).toBe(0);
+    expect(
+      changed.events.find((event) => event.kind === 'syntaxExtractions')?.count,
+    ).toBe(1);
     expect(changed.events.some((event) => event.kind === 'write')).toBe(false);
     expect(readFileSync(store.path)).toEqual(bytes);
     expect(statSync(store.path).mtimeMs).toBe(modified);
@@ -890,7 +989,7 @@ describe('production graph snapshots and publication', () => {
         expect(
           result.events.some((event) => event.name === 'analysis-cache'),
         ).toBe(false);
-        expect(result.events).toContainEqual(
+        expect(result.events).not.toContainEqual(
           expect.objectContaining({ name: 'bounded-program-create' }),
         );
         expect(readFileSync(store.path)).toEqual(bytes);
@@ -901,6 +1000,22 @@ describe('production graph snapshots and publication', () => {
 
   it('restores the graph and artifact authority before Program and keeps a strict clean snapshot unchanged', () => {
     const f = fixture();
+    const sourceConfig = JSON.parse(
+      readFileSync(f.file('tsconfig.json'), 'utf8'),
+    );
+    f.write(
+      'tsconfig.json',
+      JSON.stringify({
+        ...sourceConfig,
+        compilerOptions: {
+          ...sourceConfig.compilerOptions,
+          types: ['./env'],
+          typeRoots: ['./types'],
+        },
+      }),
+    );
+    f.write('env.d.ts', 'export interface Competing {}');
+    f.write('types/env/index.d.ts', 'export interface Selected {}');
     const first = f.execute<GraphRunResult>(
       'console.log(JSON.stringify(await runCache()));',
     );
@@ -916,7 +1031,7 @@ describe('production graph snapshots and publication', () => {
     const encoded = JSON.parse(before.toString());
     const persisted = parseAnalysisSnapshot(encoded, encoded.header.identity);
     expect(persisted).toBeDefined();
-    expect(Object.keys(persisted!.graphs)).toEqual(['generated-graph-v1']);
+    expect(Object.keys(persisted!.graphs)).toEqual(['generated-graph-v2']);
     expect(Object.values(persisted!.contexts)).toEqual(
       expect.arrayContaining([expect.objectContaining({ complete: true })]),
     );
@@ -933,6 +1048,21 @@ describe('production graph snapshots and publication', () => {
     );
     expect(readFileSync(store.path)).toEqual(before);
     expect(statSync(store.path).mtimeMs).toBe(mtime);
+    f.write(
+      'src/a.ts',
+      "\nimport type { V } from './value.js'; export type T = V;",
+    );
+    const changed = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache()));',
+    );
+    expect(changed.graph.edges).toEqual(first.graph.edges);
+    expect(changed.graph.manifest).toEqual(first.graph.manifest);
+    expect(changed.events).toContainEqual(
+      expect.objectContaining({ kind: 'resolverCalls', count: 0 }),
+    );
+    expect(changed.events).toContainEqual(
+      expect.objectContaining({ kind: 'syntaxExtractions', count: 1 }),
+    );
   });
   it('cold-starts forced analysis, publishes its result and restores it on the next normal run', () => {
     const f = fixture();
@@ -957,6 +1087,9 @@ describe('production graph snapshots and publication', () => {
     );
     expect(
       forced.events.find((event) => event.kind === 'semanticPrograms')?.count,
+    ).toBe(0);
+    expect(
+      forced.events.find((event) => event.kind === 'syntaxExtractions')?.count,
     ).toBeGreaterThan(0);
     expect(forced.events).toContainEqual(
       expect.objectContaining({ kind: 'write' }),
@@ -983,7 +1116,7 @@ describe('production graph snapshots and publication', () => {
     const programs = result.events
       .filter((event) => event.kind === 'semanticPrograms')
       .map((event) => event.count);
-    expect(programs[0]).toBeGreaterThan(0);
+    expect(programs[0]).toBe(0);
     expect(programs[1]).toBe(programs[0]);
     expect(result.events).toContainEqual(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),

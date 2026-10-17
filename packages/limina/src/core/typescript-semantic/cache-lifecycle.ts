@@ -2,8 +2,6 @@ import type ts from 'typescript';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ImportRecord } from '../import-analysis/records';
 import type { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
-import { isNativeAmbientEvidence } from './ambient-provider';
-import type { ContextServices } from './context-services';
 import type {
   TypeScriptSemanticContext,
   TypeScriptSemanticProject,
@@ -15,13 +13,8 @@ import {
 export function beginNativeAnalysis(
   cache: NativeAnalysisCache | undefined,
   project: TypeScriptSemanticProject,
-  services: ContextServices,
 ): void {
   if (cache === undefined) return;
-  cache.qualifyFacts(
-    project,
-    isNativeAmbientEvidence(services.getAmbientEvidence),
-  );
   cache.beginContext(project);
 }
 export function recordNativeProgram(

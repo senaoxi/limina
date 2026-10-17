@@ -51,6 +51,7 @@ const occurrence = z.object({
     'triple-slash-types',
     'jsx-import-source',
     'environment-pragma',
+    'module-augmentation',
   ]),
   line: z.number(),
   locator: z.object({
@@ -79,6 +80,7 @@ const dependencyFact = z.object({
     'checker-source',
     'concrete-declaration',
     'missing',
+    'unobserved',
   ]),
   referenceRequirement: requirement.optional(),
 });
