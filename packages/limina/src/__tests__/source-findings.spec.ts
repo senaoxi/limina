@@ -222,21 +222,6 @@ const findingByCode = {
       typeEvidenceKind: 'ambient',
     },
   },
-  [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared]: {
-    ...commonFindingFields('Resource module type is undeclared'),
-    code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
-    facts: {
-      checkerName: 'source-contract',
-      configPath: '/repo/packages/app/tsconfig.dts.json',
-      importerPath: '/repo/packages/app/src/index.ts',
-      kind: 'resource-module-type-undeclared',
-      line: 8,
-      runtimeAuthority: 'filesystem',
-      runtimeFilePath: '/repo/packages/app/src/style.css',
-      specifier: './style.css',
-      typeEvidenceKind: 'missing',
-    },
-  },
   [LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance]: {
     ...commonFindingFields('Project ownership route is invalid'),
     code: LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance,

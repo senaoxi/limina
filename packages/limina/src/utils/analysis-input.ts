@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 export type AnalysisReadDescriptor =
+  | { kind: 'directory' | 'directories' | 'realpath'; path: string }
   | { kind: 'file'; path: string }
   | { kind: 'content'; path: string }
   | { kind: 'typescript-content'; path: string }

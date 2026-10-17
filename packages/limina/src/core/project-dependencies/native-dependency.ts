@@ -1,15 +1,6 @@
 import type { ImportRecord } from '../import-analysis/records';
-import type { CanonicalImportResolutionEvidence } from '../import-analysis/runner';
-import type { TypeEvidence } from '../type-evidence/cache';
-import type {
-  DeclarationReferenceRequirement,
-  NativeDependencyFact,
-} from '../typescript-semantic/dependency-fact';
-import type {
-  ProjectDependencyCollection,
-  ProjectDependencyRequest,
-} from './contracts';
-import { createDirectDependencyEvidence } from './evidence';
+import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
+import type { ProjectDependencyRequest } from './contracts';
 import { isTypeScriptSemanticSource } from './source-evidence';
 
 export function getDirectNativeFact(options: {
@@ -22,44 +13,6 @@ export function getDirectNativeFact(options: {
   return context?.getDependencyFact(options.importRecord);
 }
 
-export function isCollectAmbientNativeObservation(options: {
-  evidence: CanonicalImportResolutionEvidence;
-  collection: ProjectDependencyCollection;
-  importRecord: ImportRecord;
-  request: ProjectDependencyRequest;
-}): boolean {
-  const fact = getDirectNativeFact(options);
-  return fact !== undefined && isCollectAmbientFact({ ...options, fact });
-}
-
-function isCollectAmbientFact(options: {
-  request: ProjectDependencyRequest;
-  evidence: CanonicalImportResolutionEvidence;
-  collection: ProjectDependencyCollection;
-  importRecord: ImportRecord;
-  fact: NativeDependencyFact;
-}): boolean {
-  const { fact } = options;
-  if (
-    fact.typeEvidence.kind !== 'ambient' ||
-    fact.referenceRequirement !== null
-  )
-    return false;
-  const resolutionMode = String(fact.resolution.resolutionMode);
-  options.collection.observations.push({
-    evidence: createDirectDependencyEvidence({
-      ...options,
-      nativeFact: fact,
-      resolutionMode,
-    }),
-    importRecord: options.importRecord,
-    kind: 'semantic-only',
-    resolutionMode,
-    typeEvidence: fact.typeEvidence,
-  });
-  return true;
-}
-
 function isNativeRequest(options: {
   importRecord: ImportRecord;
   request: ProjectDependencyRequest;
@@ -70,24 +23,8 @@ function isNativeRequest(options: {
   );
 }
 
-export function getNativeTypeEvidence(
-  fact: NativeDependencyFact | undefined,
-): TypeEvidence | undefined {
-  return fact?.typeEvidence;
-}
-
 export function getNativeTargetPath(
   fact: NativeDependencyFact,
 ): string | undefined {
   return fact.resolution.target?.resolvedFileName;
-}
-
-export function getNativeReferenceRequirement(
-  fact: NativeDependencyFact | undefined,
-  evidence: TypeEvidence,
-): DeclarationReferenceRequirement | null {
-  if (fact !== undefined) return fact.referenceRequirement;
-  return evidence.kind === 'checker-source'
-    ? { kind: 'source-semantic' as const, targetFileName: evidence.filePath }
-    : null;
 }

@@ -15,8 +15,12 @@ import type {
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { SvelteSemanticContextManager } from '../svelte-semantic/context';
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
-import type { TypeScriptSemanticResolutionContext } from '../typescript-semantic';
+import type {
+  TypeScriptSemanticResolutionContext,
+  WorkspaceSourceBoundary,
+} from '../typescript-semantic';
 import type { VueSemanticContextManager } from '../vue-semantic/context';
+import type { VueDependencyObservation } from '../vue-semantic/dependency-observation';
 import type { ImportRuntimeResolutionEvidence } from './evidence';
 import type { ImportRecord } from './records';
 import type { SemanticEligibility } from './semantic-eligibility';
@@ -75,6 +79,14 @@ export type StandaloneInternalImportArguments = [
 ];
 
 export interface ImportAnalysisContext {
+  collectCheckerSupportInputs?: (
+    context: ImportResolveContextFields,
+  ) => readonly { filePath: string; records: readonly ImportRecord[] }[];
+  observeCheckerDependency?: (options: {
+    context: ImportResolveContextFields;
+    importRecord: ImportRecord;
+    resolution: CanonicalImportResolutionEvidence;
+  }) => VueDependencyObservation;
   clearOxcResolverCaches?: () => void;
   collectImportsFromFile: (
     filePath: string,
@@ -83,6 +95,7 @@ export interface ImportAnalysisContext {
   ) => ImportRecord[];
   dispose?: () => void;
   prepareCheckerSemanticDependencies: (options: {
+    supportInputBoundary?: WorkspaceSourceBoundary;
     context: ImportResolveContextFields;
     filePath: string;
     managedOutputLookup?: ManagedOutputDeclarationLookup;

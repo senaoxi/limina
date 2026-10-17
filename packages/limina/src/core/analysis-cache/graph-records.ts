@@ -1,5 +1,9 @@
 import { normalizeAbsolutePath } from '#utils/path';
-import type { GraphRecord, NativeContextRecord } from './contracts';
+import type {
+  GraphRecord,
+  NativeContextRecord,
+  ResolutionRecord,
+} from './contracts';
 import { type DataNode, encodeData } from './data-codec';
 import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
@@ -54,6 +58,28 @@ function graphData(value: unknown): DataNode | undefined {
     return undefined;
   }
 }
+function previousGraphQuery(
+  cache: NativeAnalysisCache,
+  id: string,
+): ResolutionRecord | undefined {
+  return cache.queries[id] ?? cache.previous?.queries[id];
+}
+function isReusableGraphQuery(
+  cache: NativeAnalysisCache,
+  query: ResolutionRecord | undefined,
+): query is ResolutionRecord {
+  if (query === undefined) return false;
+  return [
+    query.coverage === 'complete',
+    query.dependencies.every((input) => cache.inputs.valid(input)),
+  ].every(Boolean);
+}
+function didRestoreGraphQuery(cache: NativeAnalysisCache, id: string): boolean {
+  const query = previousGraphQuery(cache, id);
+  if (!isReusableGraphQuery(cache, query)) return false;
+  cache.restoreQuery(id, query);
+  return true;
+}
 interface Capture {
   workspaceVersion: string;
   value: unknown;
@@ -71,6 +97,7 @@ export class CachedGraphRecords {
       await this.#cache.epoch.validate(record.discovery),
       record.vueContextIds.every((id) => this.#cache.vue.restore(id)),
       record.contextIds.every((id) => canRestoreContext(this.#cache, id)),
+      record.queryIds.every((id) => didRestoreGraphQuery(this.#cache, id)),
       !this.#cache.inputs.domainDirty,
     ];
     if (!checks.every(Boolean)) return undefined;
@@ -91,6 +118,7 @@ export class CachedGraphRecords {
     }
     const record: GraphRecord = {
       workspaceVersion: options.workspaceVersion,
+      queryIds: [...this.#cache.retainedQueryIds],
       contextIds: Object.keys(this.#cache.contexts),
       vueContextIds: Object.keys(this.#cache.vue.records),
       dependencies: Object.entries(this.#cache.snapshotRecords().inputs).map(

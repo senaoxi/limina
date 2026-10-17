@@ -1,10 +1,11 @@
-import type ts from 'typescript';
+import ts from 'typescript';
 import {
   createBoundedTypeScriptSemanticContext,
   type TypeScriptSemanticContext,
   type WorkspaceSourceBoundary,
 } from '../typescript-semantic';
 import { memoizedNativeAmbientEvidence } from '../typescript-semantic/ambient-provider';
+import { collectNativeProviderEvidence } from '../typescript-semantic/provider-evidence';
 import type {
   TypeEvidence,
   TypeEvidenceGenerationCache,
@@ -83,12 +84,14 @@ export function createTypeScriptTypeEvidenceProvider(options: {
     },
     query({ importRecord }): TypeEvidence {
       assertProviderActive(isDisposed);
-      const context =
-        options.cache.analysisCache?.restoreContext({
-          ...options.project,
-          admissionMode: 'full-program',
-        }) ?? getOrCreateTypeScriptSemanticContext(options);
-      return context.getDependencyFact(importRecord).typeEvidence;
+      const context = getOrCreateTypeScriptSemanticContext(options);
+      return collectNativeProviderEvidence({
+        context,
+        record: importRecord,
+        resolution: context.resolveImportRecord(importRecord),
+        tsModule: ts,
+        getAmbientEvidence: memoizedNativeAmbientEvidence(options.cache),
+      });
     },
   };
 }

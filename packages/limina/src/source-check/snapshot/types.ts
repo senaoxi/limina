@@ -5,8 +5,8 @@ import type {
 } from '../../check-reporting/inventory-presentation';
 import type { SourceIssueCode } from '../report';
 
-export const SOURCE_ISSUE_SNAPSHOT_VERSION = 1;
-export const CHECK_ISSUE_SNAPSHOT_VERSION = 8;
+export const SOURCE_ISSUE_SNAPSHOT_VERSION = 2;
+export const CHECK_ISSUE_SNAPSHOT_VERSION = 9;
 
 export const LIMINA_CHECK_TASK_NAMES = [
   'checker:build',

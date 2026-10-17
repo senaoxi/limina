@@ -1618,7 +1618,7 @@ describe('runExecutionTasks', () => {
             },
           ],
           status: 'completed',
-          version: 1,
+          version: 2,
         },
       );
       await runExecutionTasks({
@@ -1762,7 +1762,7 @@ describe('runExecutionTasks', () => {
           },
         ],
         status: 'completed',
-        version: 1,
+        version: 2,
       });
     });
   }, 40_000);

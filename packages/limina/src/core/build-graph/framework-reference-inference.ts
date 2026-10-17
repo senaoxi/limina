@@ -10,9 +10,13 @@ import {
   addAmbiguousFrameworkSourceOwnerProblem,
   addMissingFrameworkBuildOwnerProblem,
   createFrameworkDependencyEdge,
+  hasFrameworkCompilationRequirement,
   recordFrameworkDependencyEdge,
 } from './framework-dependency-edge';
-import { reportUnresolvedFrameworkImport } from './framework-import-problems';
+import {
+  isFrameworkContribution,
+  reportUnresolvedFrameworkImport,
+} from './framework-import-problems';
 import type { ReferenceImportContext } from './reference-import-types';
 import { processDeclarationProviderImport } from './reference-imports';
 import type {
@@ -194,9 +198,10 @@ function processFrameworkDependency(options: {
   project: SourceProject;
   projectDependency: ProjectDependency;
 }): void {
-  if (!hasSourceRequirement(options.projectDependency)) return;
+  if (!hasFrameworkCompilationRequirement(options.projectDependency)) return;
   const fileName = options.projectDependency.importRecord.filePath;
-  if (!options.frameworkFiles.has(fileName)) return;
+  if (!isFrameworkContribution({ ...options, context: options.base.context }))
+    return;
   processFrameworkImport({
     ...options.base,
     fileName,
@@ -280,11 +285,4 @@ export function processFrameworkSourceReferences(options: {
   for (const source of options.governedSources) {
     processFrameworkSource({ ...options, source });
   }
-}
-
-function hasSourceRequirement(dependency: ProjectDependency): boolean {
-  return (
-    dependency.targetKind === 'source' &&
-    dependency.referenceRequirement?.kind === 'source-semantic'
-  );
 }

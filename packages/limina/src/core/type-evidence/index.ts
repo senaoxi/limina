@@ -192,6 +192,7 @@ export class TypeEvidenceCore {
   }
 
   #nativeOptions(options: TypeScriptContextRequest) {
+    this.#assertConfigNotCompleted(options.project.configPath);
     return {
       cache: this.cache,
       checkerName: options.checkerName,
@@ -219,6 +220,7 @@ export class TypeEvidenceCore {
   resolveImportEvidence(
     options: ResolveImportEvidenceOptions,
   ): ImportResolutionEvidence {
+    this.#assertConfigNotCompleted(options.project.configPath);
     const boundedOptions = addWorkspaceSourceBoundary({
       input: options,
       provider: this.#workspaceSourceBoundaryProvider,
@@ -246,8 +248,6 @@ export class TypeEvidenceCore {
     }
 
     return resolveCoreTypeEvidence({
-      native: typeScriptSemanticContext !== undefined,
-      pair,
       request: boundedOptions,
       resolveProvider: () =>
         this.#resolveProviderEvidence(boundedOptions, pair.runtimeEvidence),

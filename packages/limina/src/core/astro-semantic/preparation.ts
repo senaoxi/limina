@@ -7,8 +7,11 @@ import {
   mergePreparedDirectSourceRecords,
   prepareResolvedFrameworkCandidates,
 } from '../framework-semantic/prepared-dependency';
+import { requiresReferenceStructure } from '../framework-semantic/prepared-type-evidence';
+import { collectFrameworkSupportContributions } from '../framework-semantic/support-contributions';
 import type { ImportRecord } from '../import-analysis/records';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
+import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type {
   AstroMaterializedServiceScript,
   AstroSemanticContext,
@@ -82,11 +85,11 @@ function resolveCandidates(
   });
 }
 
-function getEvidenceProgram(
+function getStructuralProgram(
   context: AstroSemanticContext,
   resolved: ReturnType<typeof resolveCandidates>,
 ): ts.Program | undefined {
-  return resolved.some((item) => item.target === null)
+  return resolved.some((item) => requiresReferenceStructure(item.target))
     ? context.program
     : undefined;
 }
@@ -111,6 +114,7 @@ function createSupportedPreparation(options: {
 }
 
 function prepareMappedServices(options: {
+  supportInputBoundary?: WorkspaceSourceBoundary;
   candidates: readonly AstroCandidate[];
   context: AstroSemanticContext;
   directSourceRecords: ImportRecord[];
@@ -127,19 +131,20 @@ function prepareMappedServices(options: {
     checkerName: 'astro',
     framework: 'astro',
     managedOutputLookup: options.managedOutputLookup,
-    program: getEvidenceProgram(options.context, resolved),
+    getProgram: () => getStructuralProgram(options.context, resolved),
     resolved,
     tsModule: options.context.toolchain.tsModule,
   });
   if (prepared.kind === 'unsupported') return prepared;
   return createSupportedPreparation({
     directSourceRecords: direct.records,
-    facts: prepared.facts,
+    facts: [...prepared.facts, ...supportContributions(options)],
     unmapped: options.unmapped,
   });
 }
 
 function prepareUnchecked(options: {
+  supportInputBoundary?: WorkspaceSourceBoundary;
   context: AstroSemanticContext;
   filePath: string;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
@@ -169,6 +174,7 @@ function prepareUnchecked(options: {
   });
   if (mapped.kind === 'unsupported') return mapped;
   return prepareMappedServices({
+    supportInputBoundary: options.supportInputBoundary,
     candidates: mapped.candidates,
     context: options.context,
     directSourceRecords,
@@ -182,6 +188,7 @@ function formatError(error: unknown): string {
 }
 
 export function prepareAstroSemanticDependencies(options: {
+  supportInputBoundary?: WorkspaceSourceBoundary;
   context: AstroSemanticContext;
   filePath: string;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
@@ -195,4 +202,25 @@ export function prepareAstroSemanticDependencies(options: {
       'service-script-materialization',
     );
   }
+}
+
+function supportContributions(
+  options: Parameters<typeof prepareMappedServices>[0],
+) {
+  const boundary = options.supportInputBoundary;
+  if (boundary === undefined) return [];
+  const { context } = options;
+  return collectFrameworkSupportContributions({
+    boundary,
+    checkerName: 'astro',
+    framework: 'astro',
+    identity: context.identity,
+    managedOutputLookup: options.managedOutputLookup,
+    program: context.program,
+    rootNames: context.project.snapshot.fileNames,
+    tsModule: context.toolchain.tsModule,
+    resolutionHost: context.languageServiceHost as ts.ModuleResolutionHost,
+    resolve: (candidate) =>
+      resolveCandidates(context, [candidate as AstroCandidate])[0]!,
+  });
 }

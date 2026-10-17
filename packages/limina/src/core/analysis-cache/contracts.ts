@@ -2,12 +2,13 @@ import type { AnalysisReadDescriptor } from '#utils/analysis-input';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
+import type { FileDependencyFacts } from '../typescript-semantic/file-dependency-facts';
 import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
 import type { VueContextRecord } from './vue-contracts';
 
 // Config domains change persisted diagnostic paths, including for an empty config.
-export const ANALYSIS_ADAPTER = 'typescript-6.0.3-vue-3.2.4-v6';
+export const ANALYSIS_ADAPTER = 'typescript-6.0.3-vue-3.2.4-v11';
 
 export interface InputDependency {
   inputId: string;
@@ -77,6 +78,11 @@ export interface ReferenceContribution {
 }
 
 export interface NativeContextRecord {
+  collection?: {
+    adapter: 'native-requests-v1';
+    mode: 'programless' | 'compatibility';
+    reason?: string;
+  };
   queryIds: string[];
   sharedEnvironment: {
     dependencies: InputDependency[];
@@ -109,6 +115,7 @@ export interface DiscoveryRecord {
 
 export interface GraphRecord {
   workspaceVersion: string;
+  queryIds: string[];
   contextIds: string[];
   vueContextIds: string[];
   dependencies: InputDependency[];
@@ -165,7 +172,7 @@ export interface ConfigModuleSnapshot {
 
 export interface AnalysisSnapshot {
   header: {
-    schema: 6;
+    schema: 8;
     implementation: string;
     identity: string;
     configVersion: string | null;
@@ -175,6 +182,7 @@ export interface AnalysisSnapshot {
   inputs: Record<string, AnalysisInput>;
   queries: Record<string, ResolutionRecord>;
   importers: Record<string, ImporterRecord>;
+  files: Record<string, FileDependencyFacts>;
   projects: Record<string, ProjectRecord>;
   contributions: Record<string, ReferenceContribution[]>;
   contexts: Record<string, NativeContextRecord>;

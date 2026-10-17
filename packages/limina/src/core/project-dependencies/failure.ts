@@ -52,6 +52,7 @@ function createDefaultFailureIdentity(options: {
 }
 
 export function createProjectDependencyFailure(options: {
+  decision?: ProjectDependencyFailure['decision'];
   evidence?: ProjectDependencyEvidence;
   identity?: string;
   reason: string;
@@ -61,6 +62,7 @@ export function createProjectDependencyFailure(options: {
 }): ProjectDependencyFailure {
   const framework = options.request.context.semanticAuthority.family;
   return {
+    decision: options.decision,
     evidence:
       options.evidence ?? createUnobservedDependencyEvidence(options.request),
     configPath: options.request.context.configPath,

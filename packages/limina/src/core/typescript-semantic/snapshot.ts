@@ -1,7 +1,6 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type { ImportRecord } from '../import-analysis/records';
 import type {
-  TypeScriptSemanticContext,
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticResolution,
 } from './contracts';
@@ -22,7 +21,7 @@ function cloneResolution(
 }
 
 function captureSourceFile(options: {
-  context: TypeScriptSemanticContext;
+  context: TypeScriptSemanticDependencyContext;
   fileName: string;
   facts: Map<string, NativeDependencyFact>;
   recordsByFileName: Map<string, readonly ImportRecord[]>;
@@ -49,7 +48,7 @@ function captureSourceFile(options: {
 }
 
 export function createTypeScriptSemanticDependencySnapshot(options: {
-  context: TypeScriptSemanticContext;
+  context: TypeScriptSemanticDependencyContext;
   fileNames: readonly string[];
 }): TypeScriptSemanticDependencyContext {
   const facts = new Map<string, NativeDependencyFact>();
@@ -60,7 +59,9 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
   >();
   const sourceFileNames = new Set<string>();
 
-  for (const fileName of options.fileNames) {
+  const contributionFiles = contributionFileNames(options.context);
+  const files = new Set([...options.fileNames, ...contributionFiles]);
+  for (const fileName of files) {
     captureSourceFile({
       context: options.context,
       facts,
@@ -73,6 +74,7 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
 
   return {
     identity: options.context.identity,
+    getContributionFileNames: () => [...sourceFileNames],
     getDependencyFact(record) {
       const fact = facts.get(createImportRecordIdentity(record));
       if (fact === undefined)
@@ -104,7 +106,7 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
 }
 
 function capturedFact(
-  context: TypeScriptSemanticContext,
+  context: TypeScriptSemanticDependencyContext,
   record: ImportRecord,
 ): NativeDependencyFact {
   const facts = collectedFacts(context);
@@ -115,7 +117,13 @@ function capturedFact(
 }
 
 function collectedFacts(
-  context: TypeScriptSemanticContext,
+  context: TypeScriptSemanticDependencyContext,
 ): ReadonlyMap<string, NativeDependencyFact> | undefined {
   return context.getCollectedDependencyFacts?.();
+}
+
+function contributionFileNames(
+  context: TypeScriptSemanticDependencyContext,
+): readonly string[] {
+  return context.getContributionFileNames?.() ?? [];
 }

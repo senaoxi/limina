@@ -93,7 +93,36 @@ const dependencyAnalysis = z.object({
   diagnostics: texts,
   facts: z.array(relation),
 });
+const coveredOutput = z.object({ file: text, owner: text, outputConfig: text });
+const effectiveTypeInput = z.object({ name: text, target: text.nullable() });
+const effectiveTypeInputs = z.array(effectiveTypeInput);
+const compilerOptions = z.record(text, z.json());
+const outputProjection = z.object({
+  scope: z.literal('existing-output-relations'),
+  version: z.literal(1),
+  sourceConfig: text,
+  generatedConfig: text,
+  sourceTarget: z.number().nullable(),
+  outputTarget: z.number().nullable(),
+  contextId: text.nullable(),
+  optionsVersion: text,
+  roots: texts,
+  covered: z.array(coveredOutput),
+});
+const typeInputProjection = z.object({
+  scope: z.literal('config-type-directives'),
+  version: z.literal(2),
+  compilerVersion: text,
+  sourceConfig: text,
+  generatedConfig: text,
+  sourceOptions: compilerOptions,
+  generatedOptions: compilerOptions,
+  source: effectiveTypeInputs,
+  generated: effectiveTypeInputs,
+});
 const graph = z.object({
+  outputProjections: z.array(outputProjection),
+  typeInputProjections: z.array(typeInputProjection),
   dependencyAnalysis,
   checkers: z.array(selection),
   manifestPath: text,

@@ -14,13 +14,17 @@ import {
 import { normalizeAbsolutePath } from '#utils/path';
 import type { GovernanceRootBase } from '#utils/workspace-root';
 import type ts from 'typescript';
+import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import type { ImportAnalysisMetricsRecorder } from '../import-analysis/types';
+import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import type { AstroMaterializedServiceScript } from './context-host';
 import {
+  canReuseAstroContext,
   createAstroLanguage,
   createAstroProjectHost,
   getAstroLanguageId,
   materializeAstroServiceScripts,
+  recordAstroMetric,
   resolveAstroModuleNameLiterals,
 } from './context-host';
 
@@ -40,6 +44,7 @@ export class AstroSemanticContext {
   readonly #snapshots = new Map<string, SnapshotEntry>();
   readonly #uriByFileName = new Map<string, AstroUri>();
   #languageService: ts.LanguageService | undefined;
+  readonly #boundedHost: ReturnType<typeof createBoundedLanguageServiceHost>;
   #program: ts.Program | undefined;
   #disposed = false;
   readonly identity: string;
@@ -73,6 +78,17 @@ export class AstroSemanticContext {
       host,
     );
     this.languageServiceHost = host;
+    this.#boundedHost = createBoundedLanguageServiceHost({
+      host,
+      tsModule: options.toolchain.tsModule,
+      project: {
+        configPath: options.project.seed.configPath,
+        fileNames: host.getScriptFileNames(),
+        options: host.getCompilationSettings(),
+        projectReferences: host.getProjectReferences?.(),
+        workspaceSourceBoundary: createWorkspaceSourceBoundary([]),
+      },
+    });
   }
 
   #deleteRegisteredScripts(): void {
@@ -89,7 +105,7 @@ export class AstroSemanticContext {
   #getLanguageService(): ts.LanguageService {
     if (this.#languageService === undefined) {
       this.#languageService = this.toolchain.tsModule.createLanguageService(
-        this.languageServiceHost,
+        this.#boundedHost.host,
       );
     }
     return this.#languageService;
@@ -116,15 +132,24 @@ export class AstroSemanticContext {
     this.language.scripts.set(id, snapshot, getAstroLanguageId(fileName));
   }
 
+  #createProgram(): ts.Program {
+    do {
+      this.#boundedHost.begin();
+      const program = this.#requireProgram();
+      if (!this.#boundedHost.needsRebuild()) return program;
+      this.#disposeLanguageService();
+    } while (true);
+  }
+  #requireProgram(): ts.Program {
+    const program = this.#getLanguageService().getProgram();
+    if (program === undefined)
+      throw new Error('Astro Language Service did not create a Program.');
+    return program;
+  }
   get program(): ts.Program {
     this.assertActive();
-    if (this.#program !== undefined) return this.#program;
-    const program = this.#getLanguageService().getProgram();
-    if (program === undefined) {
-      throw new Error('Astro Language Service did not create a Program.');
-    }
-    this.#program = program;
-    return program;
+    this.#program ??= this.#createProgram();
+    return this.#program;
   }
 
   asUri(fileName: string): AstroUri {
@@ -183,32 +208,6 @@ export class AstroSemanticContext {
   }
 }
 
-function recordMetric(options: {
-  metrics: ImportAnalysisMetricsRecorder | undefined;
-  name:
-    | 'astro-context-dispose'
-    | 'astro-context-materialize'
-    | 'astro-context-reuse';
-}): void {
-  options.metrics?.record({ name: options.name, provider: 'astro-semantic' });
-}
-
-function canReuseContext(options: {
-  active: AstroSemanticContext | undefined;
-  project: AstroSemanticProject;
-  toolchain: AstroSemanticToolchain;
-}): options is {
-  active: AstroSemanticContext;
-  project: AstroSemanticProject;
-  toolchain: AstroSemanticToolchain;
-} {
-  return (
-    options.active !== undefined &&
-    options.active.project.seed.id === options.project.seed.id &&
-    options.active.toolchain === options.toolchain
-  );
-}
-
 export class AstroSemanticContextManager {
   readonly #metrics: ImportAnalysisMetricsRecorder | undefined;
   readonly #resolveToolchain: AstroSemanticToolchainResolver;
@@ -239,7 +238,10 @@ export class AstroSemanticContextManager {
     if (this.#active === undefined) return;
     this.#active.dispose();
     this.#active = undefined;
-    recordMetric({ metrics: this.#metrics, name: 'astro-context-dispose' });
+    recordAstroMetric({
+      metrics: this.#metrics,
+      name: 'astro-context-dispose',
+    });
   }
 
   #getToolchain(packageRootDirectory: string): AstroSemanticToolchain {
@@ -261,9 +263,12 @@ export class AstroSemanticContextManager {
     this.#assertActive();
     const toolchain = this.#getToolchain(project.seed.packageRootDir);
     const reusable = { active: this.#active, project, toolchain };
-    if (canReuseContext(reusable)) {
+    if (canReuseAstroContext(reusable)) {
       reusable.active.assertActive();
-      recordMetric({ metrics: this.#metrics, name: 'astro-context-reuse' });
+      recordAstroMetric({
+        metrics: this.#metrics,
+        name: 'astro-context-reuse',
+      });
       return reusable.active;
     }
     const materializedProject = materializeAstroSemanticProject(project);
@@ -272,7 +277,7 @@ export class AstroSemanticContextManager {
       project: materializedProject,
       toolchain,
     });
-    recordMetric({
+    recordAstroMetric({
       metrics: this.#metrics,
       name: 'astro-context-materialize',
     });

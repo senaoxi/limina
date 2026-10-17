@@ -3,7 +3,7 @@ import type { ResolvedLiminaInputs } from '#config/runner';
 import { createLiminaTsconfigSchemaPath } from '#core/tsconfig/actions';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
-import path from 'pathe';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { createGeneratedCompilerOptionOverrides } from './compiler-overrides';
 import { readGraphRules } from './generated/config-readers';
 import {
@@ -12,55 +12,13 @@ import {
   getGeneratedOutputTsBuildInfoPath,
   getGeneratedTsBuildInfoPath,
 } from './generated/paths';
+import { getCommonSourceRootDirectory } from './generated/source-root';
+import { proveTypeInputProjection } from './type-input-projection';
 import type {
   OutputSolutionProject,
   SolutionProject,
   SourceProject,
 } from './types';
-
-function isSameOrParentDirectory(
-  parentDirectory: string,
-  childDirectory: string,
-): boolean {
-  const relativePath = path.relative(parentDirectory, childDirectory);
-  return (
-    relativePath === '' ||
-    (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
-  );
-}
-
-function isContainsAllDirectories(
-  parentDirectory: string,
-  childDirectories: string[],
-): boolean {
-  return childDirectories.every((childDirectory) =>
-    isSameOrParentDirectory(parentDirectory, childDirectory),
-  );
-}
-
-function findCommonDirectory(
-  initialDirectory: string,
-  fileDirectories: string[],
-): string {
-  let commonDirectory = initialDirectory;
-  while (!isContainsAllDirectories(commonDirectory, fileDirectories)) {
-    const parentDirectory = path.dirname(commonDirectory);
-    if (parentDirectory === commonDirectory) {
-      return commonDirectory;
-    }
-    commonDirectory = parentDirectory;
-  }
-  return commonDirectory;
-}
-
-function getCommonSourceRootDirectory(project: SourceProject): string {
-  const fileDirectories = project.fileNames.map((fileName) =>
-    path.dirname(fileName),
-  );
-  return fileDirectories.length === 0
-    ? path.dirname(project.configPath)
-    : findCommonDirectory(fileDirectories[0]!, fileDirectories);
-}
 
 function assertDeclarationInputFiles(project: SourceProject): void {
   if (!isBuildCapablePreset(project.context.checkerPresets[0]!)) return;
@@ -96,6 +54,7 @@ function createRelativeImportRewriteOverride(
 }
 
 export function createGeneratedDtsConfig(options: {
+  cache?: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
   project: SourceProject;
 }): Record<string, unknown> {
@@ -111,7 +70,7 @@ export function createGeneratedDtsConfig(options: {
     project.dtsConfigPath,
     managedOutDirectory,
   );
-  return {
+  const result = {
     $schema: createLiminaTsconfigSchemaPath(
       config.rootDir,
       project.dtsConfigPath,
@@ -123,6 +82,7 @@ export function createGeneratedDtsConfig(options: {
     include: [],
     compilerOptions: {
       ...createGeneratedCompilerOptionOverrides({
+        cache: options.cache,
         config,
         project,
         generatedConfigPath: project.dtsConfigPath,
@@ -157,6 +117,13 @@ export function createGeneratedDtsConfig(options: {
       })),
     liminaOptions: createDtsLiminaOptions(project),
   };
+  (project.typeInputProjections ??= []).push(
+    proveTypeInputProjection(project, project.dtsConfigPath, {
+      overrides: result.compilerOptions,
+      cache: options.cache,
+    }),
+  );
+  return result;
 }
 
 function requireOutputOptions(options: {
@@ -172,12 +139,13 @@ function requireOutputOptions(options: {
 }
 
 export function createGeneratedOutputProjectConfig(options: {
+  cache?: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
   project: SourceProject;
 }): Record<string, unknown> {
   const { config, project } = options;
   const outputOptions = requireOutputOptions(options);
-  return {
+  const result = {
     $schema: createLiminaTsconfigSchemaPath(
       config.rootDir,
       project.outputConfigPath,
@@ -189,6 +157,7 @@ export function createGeneratedOutputProjectConfig(options: {
     include: [],
     compilerOptions: {
       ...createGeneratedCompilerOptionOverrides({
+        cache: options.cache,
         config,
         project,
         generatedConfigPath: project.outputConfigPath,
@@ -235,6 +204,13 @@ export function createGeneratedOutputProjectConfig(options: {
       ),
     },
   };
+  (project.typeInputProjections ??= []).push(
+    proveTypeInputProjection(project, project.outputConfigPath, {
+      overrides: result.compilerOptions,
+      cache: options.cache,
+    }),
+  );
+  return result;
 }
 
 function createGeneratedSolutionConfig(options: {

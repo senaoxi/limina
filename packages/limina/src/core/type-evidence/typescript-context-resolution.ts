@@ -2,6 +2,11 @@ import type {
   TypeScriptSemanticContext,
   TypeScriptSemanticDependencyContext,
 } from '../typescript-semantic';
+import {
+  createTypeScriptDependencyContext,
+  createTypeScriptSemanticContextIdentity,
+  createTypeScriptSemanticDependencySnapshot,
+} from '../typescript-semantic';
 import type { TypeEvidenceGenerationCache } from './cache';
 import { createTypeScriptProviderKey } from './provider-resolution';
 import type { ResolveImportEvidenceOptions } from './resolution';
@@ -68,9 +73,29 @@ function restoreCoreContext(
 export function getCoreTypeScriptSemanticDependencyContext(
   options: CoreContextOptions,
 ): TypeScriptSemanticDependencyContext {
-  return (
-    restoreCoreContext(options) ?? getCoreTypeScriptSemanticContext(options)
-  );
+  const project = {
+    ...options.project,
+    admissionMode: 'full-program' as const,
+    analysisBinding: coreBinding(options),
+  };
+  const key = createTypeScriptSemanticContextIdentity(project);
+  const prior =
+    options.cache.dependencyContexts.get(key) ?? restoreCoreContext(options);
+  if (prior !== undefined) return prior;
+  const context = createTypeScriptDependencyContext(project, {
+    analysisCache: options.cache.analysisCache,
+    syntaxFacts: options.cache.syntaxFacts,
+  });
+  try {
+    const snapshot = createTypeScriptSemanticDependencySnapshot({
+      context,
+      fileNames: project.fileNames,
+    });
+    options.cache.dependencyContexts.set(key, snapshot);
+    return snapshot;
+  } finally {
+    context.dispose();
+  }
 }
 
 export interface TypeScriptContextRequest {

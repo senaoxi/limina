@@ -1,5 +1,6 @@
 export type ImportRecordKind =
   | 'static'
+  | 'module-augmentation'
   | 'export'
   | 'dynamic'
   | 'import-type'

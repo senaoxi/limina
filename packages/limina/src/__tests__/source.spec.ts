@@ -10,6 +10,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
@@ -505,10 +506,7 @@ describe('runSourceCheck package authority', () => {
     {
       physical: true,
       declaration: false,
-      codes: [
-        LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid,
-        LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
-      ],
+      codes: [LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid],
     },
   ])(
     'validates package-import resources independently of declarations ($physical, $declaration)',
@@ -549,22 +547,6 @@ export default logo;
           ),
         );
         expect(isPassed).toBe(codes.length === 0);
-        if (!declaration) {
-          expect(
-            sourceIssues.find(
-              ({ code }) =>
-                code ===
-                LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
-            ),
-          ).toMatchObject({
-            facts: {
-              runtimeAuthority: 'oxc',
-              runtimeFilePath: fixture.path('app/src/assets/logo.svg'),
-              specifier: '#assets/logo.svg',
-              typeEvidenceKind: 'missing',
-            },
-          });
-        }
       } finally {
         await fixture.cleanup();
       }
@@ -647,7 +629,7 @@ export default logo;
           ),
           kind: 'resource-module-not-found',
           specifier: './missing.css',
-          typeEvidenceKind: 'ambient',
+          typeEvidenceKind: 'unobserved',
         },
         task: 'source:check',
       });
@@ -754,11 +736,12 @@ export default logo;
     ]);
   });
 
-  it('reports an existing physical resource without current-project type evidence', async () => {
+  it('leaves pure resource type availability to the actual checker', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
-          source: "import './style.css';\nexport const value = true;\n",
+          source:
+            "import style from './style.css';\nexport const value = style;\n",
         }),
         'app/src/style.css': '.root { color: green; }\n',
       },
@@ -773,24 +756,29 @@ export default logo;
           report: { defer: true },
           sourceIssues,
         }),
-      ).resolves.toBe(false);
+      ).resolves.toBe(true);
 
-      expect(
-        sourceIssues.find((issue) => issue.code.includes('RESOURCE_MODULE')),
-      ).toMatchObject({
-        checkerName: 'tsc',
-        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
-        facts: {
-          checkerName: 'tsc',
-          kind: 'resource-module-type-undeclared',
-          runtimeFilePath: normalizeAbsolutePath(
-            path.join(fixture.rootDir, 'app/src/style.css'),
-          ),
-          specifier: './style.css',
-          typeEvidenceKind: 'missing',
+      expect(sourceIssues).toEqual([]);
+      const program = ts.createProgram({
+        rootNames: [fixture.path('app/src/index.ts')],
+        options: {
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+          noEmit: true,
+          types: [],
         },
-        task: 'source:check',
       });
+      expect(
+        ts
+          .getPreEmitDiagnostics(program)
+          .some(
+            (diagnostic) =>
+              diagnostic.code === 2307 &&
+              ts
+                .flattenDiagnosticMessageText(diagnostic.messageText, '\n')
+                .includes('./style.css'),
+          ),
+      ).toBe(true);
     } finally {
       await fixture.cleanup();
     }

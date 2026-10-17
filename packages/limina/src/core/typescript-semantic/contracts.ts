@@ -40,9 +40,11 @@ export interface TypeScriptSemanticResolutionContext {
 
 export interface TypeScriptSemanticDependencyContext
   extends TypeScriptSemanticResolutionContext {
+  getContributionFileNames?(): readonly string[];
   getDependencyFact(importRecord: ImportRecord): NativeDependencyFact;
   getImportRecords(fileName: string): readonly ImportRecord[];
   hasSourceFile(fileName: string): boolean;
+  getCollectedDependencyFacts?(): ReadonlyMap<string, NativeDependencyFact>;
 }
 
 export interface TypeScriptSemanticContext

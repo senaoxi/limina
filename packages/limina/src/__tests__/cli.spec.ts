@@ -787,7 +787,7 @@ export default {scope: {checkers: {
                 },
               ],
               status: 'completed',
-              version: 8,
+              version: 9,
             }),
           );
           const seedSnapshot = await readFile(lastRunPath, 'utf8');
@@ -1123,7 +1123,7 @@ export default {scope: {checkers: {
             },
           ],
           status: 'completed',
-          version: 8,
+          version: 9,
         }),
       );
       const completedCheck = await readFile(lastRunPath, 'utf8');
@@ -1289,7 +1289,7 @@ export default {scope: {checkers: {
           createdAt: '2026-07-17T00:00:00.000Z',
           issues: [],
           status: 'completed',
-          version: 8,
+          version: 9,
         }),
       );
       const seedSnapshot = await readFile(lastRunPath, 'utf8');
@@ -2724,7 +2724,7 @@ export default {scope: {checkers: {
             title: 'Unused source module',
           })),
           status: 'completed',
-          version: 8,
+          version: 9,
         }),
       );
       const invocationId = '00000000-0000-4000-8000-000000000000';
@@ -2987,7 +2987,7 @@ export default {scope: {checkers: {
             ],
           },
           status: 'completed',
-          version: 8,
+          version: 9,
         }),
       );
 
@@ -3132,7 +3132,7 @@ export default {scope: {checkers: {
             },
           ],
           status: 'completed',
-          version: 8,
+          version: 9,
         }),
       );
 

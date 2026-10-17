@@ -35,6 +35,9 @@ const glob = z.object({
   lexicalDirectories: z.boolean().optional(),
 });
 const descriptor = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('directory'), path: text }),
+  z.object({ kind: z.literal('directories'), path: text }),
+  z.object({ kind: z.literal('realpath'), path: text }),
   file,
   content,
   tsContent,

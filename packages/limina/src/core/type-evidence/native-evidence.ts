@@ -1,31 +1,15 @@
 import type { ImportResolutionEvidence } from '../import-analysis/evidence';
-import type {
-  ResolvedImportPair,
-  ResolveImportEvidenceOptions,
-} from './resolution';
-import {
-  resolveConcreteTypeEvidence,
-  resolveManagedSource,
-} from './resolution';
+import type { ResolveImportEvidenceOptions } from './resolution';
+import { resolveManagedSource } from './resolution';
 
 export function resolveCoreTypeEvidence(options: {
-  native: boolean;
-  pair: ResolvedImportPair;
   request: ResolveImportEvidenceOptions;
   resolveProvider(): ImportResolutionEvidence;
 }): ImportResolutionEvidence {
-  if (options.native)
-    return attributeNativeDeclarationEvidence({
-      evidence: options.resolveProvider(),
-      request: options.request,
-    });
-  const concrete = resolveConcreteTypeEvidence({
+  return attributeNativeDeclarationEvidence({
+    evidence: options.resolveProvider(),
     request: options.request,
-    resolution: options.pair.typeScriptResolution,
   });
-  return concrete === null
-    ? options.resolveProvider()
-    : { ...options.pair.runtimeEvidence, type: concrete };
 }
 
 export function attributeNativeDeclarationEvidence(options: {

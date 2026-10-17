@@ -3,13 +3,11 @@ import { normalizeAbsolutePathIdentity } from '#utils/path';
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
-import type { TypeEvidence } from '../type-evidence/cache';
 import type {
   FrameworkSemanticKind,
   PreparedDependencyFact,
 } from './contracts';
 import {
-  canonicalTypeEvidenceIdentity,
   cloneTypeEvidence,
   createPreparedFact,
   type ResolvedFrameworkCandidate,
@@ -57,21 +55,8 @@ function semanticIdentity(fact: PreparedDependencyFact): string {
     fact.resolutionMode,
     targetIdentity(fact.target),
     fact.importRecord.kind,
-    canonicalTypeEvidenceIdentity(fact.typeEvidence),
+    fact.redirect,
   ]);
-}
-
-function findUnsupportedEvidence(
-  facts: readonly PreparedDependencyFact[],
-): Extract<TypeEvidence, { kind: 'unsupported-checker' }> | undefined {
-  return facts
-    .map((fact) => fact.typeEvidence)
-    .find(
-      (
-        evidence,
-      ): evidence is Extract<TypeEvidence, { kind: 'unsupported-checker' }> =>
-        evidence.kind === 'unsupported-checker',
-    );
 }
 
 function finalizeOccurrences(facts: PreparedDependencyFact[]): void {
@@ -185,6 +170,10 @@ function clonePreparedFact(
     },
     target: fact.target === null ? null : { ...fact.target },
     typeEvidence: cloneTypeEvidence(fact.typeEvidence),
+    typeEvidenceOrigin:
+      fact.typeEvidenceOrigin === undefined
+        ? undefined
+        : { ...fact.typeEvidenceOrigin },
   };
 }
 
@@ -196,7 +185,7 @@ function mergePreparedGroup(options: {
   if (identities.size !== 1) {
     return {
       kind: 'unsupported',
-      reason: `${options.framework} service scripts did not agree on one semantic target and canonical type evidence for the same source occurrence.`,
+      reason: `${options.framework} service scripts did not agree on one semantic target, mode, request kind and reference redirect for the same source occurrence.`,
       stage: 'source-map-mismatch',
     };
   }
@@ -221,26 +210,37 @@ export function prepareResolvedFrameworkCandidates(options: {
   framework: FrameworkSemanticKind;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
   program?: ts.Program;
+  getProgram?: () => ts.Program | undefined;
   resolved: readonly ResolvedFrameworkCandidate[];
   tsModule: typeof ts;
 }): PreparedDependencyMergeResult {
+  const rawFacts = options.resolved.map((resolved) =>
+    createPreparedFact({
+      ...options,
+      resolved,
+      program: undefined,
+      managedOutputLookup: options.managedOutputLookup,
+    }),
+  );
+  const raw = mergePreparedGroups({
+    framework: options.framework,
+    grouped: groupByIdentity(rawFacts, occurrenceIdentity),
+  });
+  return raw.kind === 'unsupported' ? raw : observePreparedCandidates(options);
+}
+function observePreparedCandidates(
+  options: Parameters<typeof prepareResolvedFrameworkCandidates>[0],
+): PreparedDependencyMergeResult {
+  const program = evidenceProgram(options);
   const facts = options.resolved.map((resolved) =>
     createPreparedFact({
       checkerName: options.checkerName,
       managedOutputLookup: options.managedOutputLookup,
-      program: options.program,
+      program,
       resolved,
       tsModule: options.tsModule,
     }),
   );
-  const unsupported = findUnsupportedEvidence(facts);
-  if (unsupported !== undefined) {
-    return {
-      kind: 'unsupported',
-      reason: unsupported.reason,
-      stage: 'toolchain-compatibility',
-    };
-  }
   const result = mergePreparedGroups({
     framework: options.framework,
     grouped: groupByIdentity(facts, occurrenceIdentity),
@@ -248,4 +248,12 @@ export function prepareResolvedFrameworkCandidates(options: {
   if (result.kind === 'unsupported') return result;
   finalizeOccurrences(result.facts);
   return result;
+}
+
+function evidenceProgram(
+  options: Parameters<typeof prepareResolvedFrameworkCandidates>[0],
+) {
+  return options.getProgram === undefined
+    ? options.program
+    : options.getProgram();
 }

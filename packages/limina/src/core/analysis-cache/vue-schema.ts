@@ -5,6 +5,12 @@ import { typeEnvironmentSchema } from './environment-schema';
 import { occurrenceSchema } from './occurrence-schema';
 import type { VueQueryKind, VueQueryResults } from './vue-contracts';
 import { VUE_ANALYSIS_ADAPTER } from './vue-identity';
+const redirectSchema = z.object({
+  originalTarget: z.string(),
+  declarationTarget: z.string(),
+  referenceConfig: z.string(),
+  availability: z.enum(['present', 'missing']),
+});
 
 const text = z.string();
 const texts = z.array(text);
@@ -39,13 +45,32 @@ const evidence = z.discriminatedUnion('kind', [
 const fact = z.object({
   framework: z.literal('vue'),
   importRecord: occurrenceSchema,
-  provenance: z.literal('strict-source-map'),
+  provenance: z.enum(['direct-source', 'strict-source-map']),
   resolutionMode: text,
   semanticSpecifier: text,
   target: target.nullable(),
-  typeEvidence: evidence,
+  redirect: redirectSchema.optional(),
+  typeEvidence: evidence.optional(),
+  typeEvidenceOrigin: z
+    .object({
+      contextIdentity: text,
+      fileName: text,
+      start: z.number(),
+      end: z.number(),
+    })
+    .optional(),
+  compilerMembership: z
+    .enum(['covered', 'not-covered', 'unobserved'])
+    .optional(),
 });
 const schemas = {
+  'support-inputs': z.array(
+    z.object({ filePath: text, records: z.array(occurrenceSchema) }),
+  ),
+  'dependency-observation': z.object({
+    coverage: z.literal('complete'),
+    redirect: redirectSchema.optional(),
+  }),
   evidence,
   preparation: z.object({
     kind: z.literal('supported'),
@@ -88,7 +113,13 @@ export function decodeVueQuery<K extends VueQueryKind>(
 }
 
 const querySchema = z.object({
-  kind: z.enum(['preparation', 'resolution', 'evidence']),
+  kind: z.enum([
+    'preparation',
+    'resolution',
+    'evidence',
+    'dependency-observation',
+    'support-inputs',
+  ]),
   data: z.json(),
 });
 export const vueContextSchema: z.ZodType<unknown> = z.object({

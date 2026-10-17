@@ -42,6 +42,13 @@ const project = z.object({
 });
 const boundaryEntry = z.tuple([text, z.boolean()]);
 export const nativeContextSchema: z.ZodType<unknown> = z.object({
+  collection: z
+    .object({
+      adapter: z.literal('native-requests-v1'),
+      mode: z.enum(['programless', 'compatibility']),
+      reason: text.optional(),
+    })
+    .optional(),
   project,
   sharedEnvironment: z.object({ dependencies, queryIds: texts, version: text }),
   environment: typeEnvironmentSchema,

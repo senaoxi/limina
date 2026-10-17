@@ -1,5 +1,5 @@
 import {
-  createBoundedTypeScriptSemanticContext,
+  createTypeScriptDependencyContext,
   createTypeScriptProjectDependencyFactsIdentity,
   createTypeScriptSemanticDependencySnapshot,
 } from '../typescript-semantic';
@@ -14,6 +14,10 @@ import type {
   ProjectDependencyRequest,
 } from './contracts';
 import { collectProjectDependencyFile } from './preparation';
+import {
+  collectSupportContributions,
+  collectVueSupportContributions,
+} from './support-contributions';
 
 function createEmptyCollection(): ProjectDependencyCollection {
   return { dependencies: [], failures: [], observations: [] };
@@ -60,7 +64,7 @@ function deduplicateFailures(collection: ProjectDependencyCollection): void {
 }
 
 function createCollectionContext(request: ProjectDependencyRequest) {
-  return createBoundedTypeScriptSemanticContext(
+  return createTypeScriptDependencyContext(
     {
       analysisBinding: {
         phase: 'locked',
@@ -73,9 +77,7 @@ function createCollectionContext(request: ProjectDependencyRequest) {
       virtualFiles: request.context.virtualFiles,
       workspaceSourceBoundary: request.context.workspaceSourceBoundary,
     },
-    {
-      ...collectionServices(request),
-    },
+    collectionServices(request),
   );
 }
 
@@ -127,6 +129,7 @@ function collectProjectDependenciesWithNewContext(options: {
         request: semanticRequest,
       });
     }
+    collectSupportContributions(collection, semanticRequest);
     const snapshot = createTypeScriptSemanticDependencySnapshot({
       context: typeScriptSemanticContext,
       fileNames: options.request.context.fileNames,
@@ -156,6 +159,7 @@ function collectProjectDependenciesWithContext(options: {
   for (const fileName of request.context.fileNames) {
     collectProjectDependencyFile({ collection, fileName, request });
   }
+  collectSupportContributions(collection, request);
   deduplicateFailures(collection);
   return collection;
 }
@@ -183,6 +187,9 @@ function collectUncachedProjectDependencies(options: {
   factsCacheKey: string;
   request: ProjectDependencyRequest;
 }): ProjectDependencyCollection {
+  if (options.request.context.semanticAuthority.family === 'vue') {
+    return collectVueDependencies(options.request);
+  }
   const cachedContext = cachedCollectionContext(options);
   if (cachedContext === undefined) {
     return collectProjectDependenciesWithNewContext(options);
@@ -278,4 +285,15 @@ function coldCollection(
   family: string,
 ): undefined {
   cache.fallback(family);
+}
+
+function collectVueDependencies(
+  request: ProjectDependencyRequest,
+): ProjectDependencyCollection {
+  const collection = createEmptyCollection();
+  for (const fileName of request.context.fileNames)
+    collectProjectDependencyFile({ collection, fileName, request });
+  collectVueSupportContributions(collection, request);
+  deduplicateFailures(collection);
+  return collection;
 }

@@ -42,6 +42,11 @@ function readGlob(
   return glob(descriptor.patterns, options);
 }
 const readers = {
+  directory: (descriptor: { path: string }) =>
+    ts.sys.directoryExists(descriptor.path),
+  directories: (descriptor: { path: string }) =>
+    ts.sys.getDirectories(descriptor.path),
+  realpath: (descriptor: { path: string }) => ts.sys.realpath!(descriptor.path),
   file: (descriptor: Extract<AnalysisReadDescriptor, { kind: 'file' }>) =>
     inputStat(descriptor.path)?.isFile() ?? false,
   content: (descriptor: Extract<AnalysisReadDescriptor, { kind: 'content' }>) =>

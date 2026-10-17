@@ -21,6 +21,7 @@ import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
 import { ProofLogger } from '../logger';
 import { LiminaPreflightManager } from '../preflight';
+import { addDtsConfigSemanticFindings } from '../proof/declaration-parity';
 import {
   type ProofFinding,
   type ProofFindingForCode,
@@ -1490,6 +1491,48 @@ describe('runProofCheck dts config semantics', () => {
       await fixture.cleanup();
     }
   });
+
+  it.each(['/repo', 'C:/repo'])(
+    'compares source-anchored types without changing named types at %s',
+    async (rootDirectory) => {
+      const fixture = await createFixture(createPassingFiles());
+      const preflight = new LiminaPreflightManager({ config: fixture.config });
+      try {
+        const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
+        for (const [declarationType, expectedFindings] of [
+          [`${rootDirectory}/env.d.ts`, 0],
+          [`${rootDirectory}/different.d.ts`, 1],
+        ] as const) {
+          const findings: ProofFinding[] = [];
+          addDtsConfigSemanticFindings({
+            config: fixture.config,
+            dtsConfig: {
+              fileNames: [],
+              options: { types: [declarationType, 'node', '.hidden'] },
+            },
+            dtsConfigPath: `${rootDirectory}/generated/tsconfig.dts.json`,
+            findings,
+            localConfig: {
+              fileNames: [],
+              options: { types: ['./env.d.ts', 'node', '.hidden'] },
+            },
+            localConfigPath: `${rootDirectory}/tsconfig.json`,
+            workspaceLookup,
+          });
+          expect(findings).toHaveLength(expectedFindings);
+          if (expectedFindings > 0) {
+            expect(findings[0]?.facts).toMatchObject({
+              kind: 'declaration-option-parity',
+              optionName: 'types',
+            });
+          }
+        }
+      } finally {
+        preflight.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('ignores inert dts compiler option drift from the local typecheck config', async () => {
     const fixture = await createFixture(
