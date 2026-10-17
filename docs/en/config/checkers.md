@@ -249,3 +249,9 @@ If multiple aliases previously used the same `preset`, merge their non-overlappi
 Run `limina graph prepare` to materialize `.limina/manifest.json` and generated checker configs. Managed build/typecheck commands and pipelines materialize them when needed; read-only graph, source, and proof checks calculate the graph in memory.
 
 The current manifest is version 5. It stores the ownership plan (config roles, final owners, and solution leaf closures), stable typed `dependencyEdges`, and build/framework execution targets. Manifest versions 1 through 4 are accepted only as old owned-artifact ledgers for safe cleanup before a fresh version 5 manifest is written. Future or malformed versions fail closed.
+
+Declaration support inputs can contribute their explicit legal dependencies without becoming Source Configs. Limina does not infer a producer tsconfig, bundler or task from an arbitrary `.d.ts`; declare additional production relationships explicitly.
+
+Generated declaration/output configs preserve the source's selected `compilerOptions.types` entries, including relative entries and effective inherited `typeRoots`. This does not require an identical complete type environment: existing `liminaOptions.outputs.target` choices and defaults remain valid, and default libraries may differ. Actual output governance dependencies must be covered by existing output relations. Uncovered or incompletely observed inputs report a capability limit and source chain instead of expanding the source graph.
+
+Expected declaration outputs of explicit project references may be absent before an ordered `tsc -b` creates them. This permission does not cover arbitrary missing declarations or allow stale output to supplement source discovery.
