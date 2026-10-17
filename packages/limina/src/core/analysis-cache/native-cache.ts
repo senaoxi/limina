@@ -27,13 +27,13 @@ import { validateInstallationDomains } from './installation-environment';
 import { AnalysisInvalidation } from './invalidation';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
 import { SemanticState } from './semantic-state';
+import { measuredSnapshot } from './snapshot-measurement';
 import {
   type ConfigCacheOptions,
   configCacheState,
   currentSnapshotRecords,
   emptySnapshot,
   isUnchangedCache,
-  newSnapshot,
   retainData,
 } from './snapshot-records';
 import { VueAnalysisRecords } from './vue-records';
@@ -57,7 +57,9 @@ export class NativeAnalysisCache {
   readonly inputs: AnalysisInputs;
   readonly invalidation: AnalysisInvalidation;
   readonly queries: Record<string, ResolutionRecord>;
+  readonly retainedQueryIds: ReadonlySet<string>;
   readonly importers: Record<string, ImporterRecord>;
+  readonly files: AnalysisSnapshot['files'] = {};
   readonly projects: AnalysisSnapshot['projects'] = {};
   readonly contributions: ReferenceContributions;
   readonly contexts: Record<string, NativeContextRecord> = {};
@@ -102,6 +104,7 @@ export class NativeAnalysisCache {
       dirty: this.invalidation.semanticDirty,
     });
     this.queries = this.#resolutions.records;
+    this.retainedQueryIds = this.#resolutions.retained;
     this.importers = this.#facts.records;
     this.#contexts = new NativeContextRecords(this);
     this.#graphs = new CachedGraphRecords(this);
@@ -199,13 +202,13 @@ export class NativeAnalysisCache {
   captureContext(
     project: TypeScriptSemanticProject,
     program: ts.Program,
-    collect: () => void,
+    isCovered: () => boolean,
   ): void {
     const state = this.#states.get(nativeContextId(project));
     if (state?.options.program !== program) return;
-    collect();
+    const isComplete = isCovered();
     this.#facts.finish(state.contextId);
-    this.#contexts.capture(project, state);
+    this.#contexts.capture(project, state, isComplete);
   }
   restoreContext(
     project: TypeScriptSemanticProject,
@@ -292,6 +295,6 @@ export class NativeAnalysisCache {
   snapshot(): AnalysisSnapshot {
     if (this.isUnchanged()) return this.previous!;
     this.metrics.snapshotClones = (this.metrics.snapshotClones ?? 0) + 1;
-    return newSnapshot(this);
+    return measuredSnapshot(this);
   }
 }

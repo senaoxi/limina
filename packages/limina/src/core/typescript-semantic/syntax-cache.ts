@@ -1,11 +1,13 @@
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import type { ImportRecord } from '../import-analysis/records';
+import type { FileDependencyFacts } from './file-dependency-facts';
 import type { OwnedSyntaxInput } from './syntax-input';
 
 interface SyntaxEntry {
   readonly text: string;
   readonly records: ImportRecord[];
   readonly bytes: number;
+  readonly facts?: FileDependencyFacts;
 }
 
 export interface SyntaxCacheStatistics {
@@ -168,6 +170,23 @@ export class SourceSyntaxFactsCache {
     }
   }
 
+  #dependencyFacts(
+    file: string,
+    version: string,
+  ): FileDependencyFacts | undefined {
+    const key = `dependency-facts:${file}`;
+    const entry = this.#entries.get(key);
+    if (entry?.text !== version) {
+      this.#remove(key);
+      this.#record('miss');
+      return undefined;
+    }
+    this.#entries.delete(key);
+    this.#entries.set(key, entry);
+    this.#record('hit');
+    return entry.facts;
+  }
+
   get statistics(): Readonly<SyntaxCacheStatistics> {
     return { ...this.#statistics, entries: this.#entries.size };
   }
@@ -178,6 +197,40 @@ export class SourceSyntaxFactsCache {
       return undefined;
     }
     return this.#getEntry(input);
+  }
+
+  getDependencyFacts(
+    file: string,
+    version: string,
+  ): FileDependencyFacts | undefined {
+    if (this.#disposed) {
+      this.#record('bypass');
+      return undefined;
+    }
+    return this.#dependencyFacts(file, version);
+  }
+  setDependencyFacts(facts: FileDependencyFacts): void {
+    if (this.#disposed) return;
+    const key = `dependency-facts:${facts.filePath}`;
+    this.#remove(key);
+    const bytes = 192 + 2 * JSON.stringify(facts).length;
+    if (bytes > Math.min(this.#entryLimit, this.#budget)) {
+      this.#record('bypass');
+      return;
+    }
+    this.#makeRoom(bytes);
+    this.#entries.set(key, {
+      text: facts.sourceVersion,
+      records: [],
+      facts,
+      bytes,
+    });
+    this.#statistics.estimatedBytes += bytes;
+    this.#statistics.peakEstimatedBytes = Math.max(
+      this.#statistics.peakEstimatedBytes,
+      this.#statistics.estimatedBytes,
+    );
+    this.#recordRetained(bytes);
   }
 
   bypass(): void {

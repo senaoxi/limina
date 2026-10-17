@@ -99,9 +99,11 @@ export function collectLockedProjectFacts(options: {
 function getSupportedEvidenceKind(
   dependency: ProjectDependency,
 ): CheckerDependencyFact['typeEvidenceKind'] {
-  if (dependency.typeEvidence.kind === 'unsupported-checker')
+  const evidence = dependency.typeEvidence;
+  if (evidence === undefined) return 'unobserved';
+  if (evidence.kind === 'unsupported-checker')
     throw new Error(
       'Unsupported evidence cannot become a locked dependency fact.',
     );
-  return dependency.typeEvidence.kind;
+  return evidence.kind;
 }

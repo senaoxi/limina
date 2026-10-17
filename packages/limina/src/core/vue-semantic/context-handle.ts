@@ -9,6 +9,8 @@ import type ts from 'typescript';
 import { createVueOverlaySystem } from '../../checker/vue-semantic-identity';
 import { createUnsupportedVueToolchainCompatibilityError } from '../../checker/vue-semantic-toolchain';
 import type { VueInputTrace } from '../analysis-cache/vue-inputs';
+import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
+import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import {
   createMeasuredProgram,
   getCachedSemanticSourceFile,
@@ -147,13 +149,15 @@ export class VueSemanticContext {
 
   readonly #texts = new Map<string, string>();
 
+  readonly #boundedHost: ReturnType<typeof createBoundedLanguageServiceHost>;
+
   #disposed = false;
 
   readonly identity: VueProjectSemanticIdentity;
 
   readonly language: VolarLanguage;
 
-  readonly languageService: ts.LanguageService;
+  languageService: ts.LanguageService;
 
   readonly languageServiceHost: VueLanguageServiceHost;
 
@@ -213,17 +217,41 @@ export class VueSemanticContext {
     hostResult.languageServiceHost.getProjectVersion = () =>
       `${identity.generation}:${identity.id}`;
     this.languageServiceHost = hostResult.languageServiceHost;
+    this.#boundedHost = createBoundedLanguageServiceHost({
+      host: this.languageServiceHost,
+      tsModule: this.tsModule,
+      project: {
+        configPath: identity.configPath,
+        fileNames: identity.fileNames,
+        options: identity.options,
+        projectReferences: identity.projectReferences,
+        virtualFiles: identity.virtualFiles,
+        workspaceSourceBoundary: createWorkspaceSourceBoundary([]),
+      },
+    });
     this.languageService = this.tsModule.createLanguageService(
-      this.languageServiceHost,
+      this.#boundedHost.host,
     );
+  }
+
+  #createProgram(): ts.Program {
+    do {
+      this.#boundedHost.begin();
+      const program = createMeasuredProgram({
+        languageService: this.languageService,
+        observer: this.#onProgramCreated,
+      });
+      if (!this.#boundedHost.needsRebuild()) return program;
+      this.languageService.dispose();
+      this.languageService = this.tsModule.createLanguageService(
+        this.#boundedHost.host,
+      );
+    } while (true);
   }
 
   get program(): ts.Program {
     this.assertActive();
-    this.#program ??= createMeasuredProgram({
-      languageService: this.languageService,
-      observer: this.#onProgramCreated,
-    });
+    this.#program ??= this.#createProgram();
     return this.#program;
   }
 

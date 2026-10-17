@@ -328,8 +328,8 @@ describe('Astro semantic toolchain', () => {
           specifier: '#component',
         },
         target: { resolvedFileName: fixturePath('src/Component.astro') },
-        typeEvidence: { kind: 'checker-source' },
       });
+      expect(fact?.typeEvidence).toBeUndefined();
       const expectedEntries = [
         expect.objectContaining({
           framework: 'astro',
@@ -337,6 +337,10 @@ describe('Astro semantic toolchain', () => {
           semanticSpecifier: '#component',
           resolvedFilePath: fixturePath('src/Component.astro'),
           targetKind: 'source',
+          referenceRequirement: {
+            kind: 'source-semantic',
+            targetFileName: fixturePath('src/Component.astro'),
+          },
         }),
       ];
       expect(

@@ -138,6 +138,8 @@ function prepareGeneratedSemanticDependencies(options: {
           options.base.request.context.svelteSemanticProject,
         vueSemanticIdentity: options.base.request.context.vueSemanticIdentity,
       },
+      supportInputBoundary:
+        options.base.request.context.workspaceSourceBoundary,
       filePath: options.base.fileName,
       managedOutputLookup: options.base.request.managedOutputLookup,
     },

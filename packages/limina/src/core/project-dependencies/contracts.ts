@@ -9,6 +9,7 @@ import type {
 import type ts from 'typescript';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-types';
+import type { RequirementDecision } from '../dependency-semantics';
 import type { PreparedDependencyFact } from '../framework-semantic/contracts';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
@@ -54,7 +55,7 @@ interface ProjectDependencyBase {
   resolvedFilePath: string;
   semanticSpecifier: string;
   targetKind: 'declaration' | 'source';
-  typeEvidence: TypeEvidence;
+  typeEvidence?: TypeEvidence;
 }
 
 export interface DirectSourceDependency extends ProjectDependencyBase {
@@ -100,6 +101,7 @@ export type ProjectDependencyObservation = {
 );
 
 export type ProjectDependencyFailureStage =
+  | 'dependency-semantics'
   | 'dependency-enumeration'
   | 'generated-script-materialization'
   | 'module-resolution'
@@ -111,6 +113,7 @@ export type ProjectDependencyFailureStage =
   | 'toolchain-resolution';
 
 export interface ProjectDependencyFailure {
+  decision?: Extract<RequirementDecision, { state: 'pending' }>;
   readonly evidence: ProjectDependencyEvidence;
   configPath: string;
   framework: 'astro' | 'svelte' | 'typescript' | 'vue';

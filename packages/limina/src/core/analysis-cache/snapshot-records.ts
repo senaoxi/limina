@@ -13,8 +13,10 @@ export function currentSnapshotRecords(
   cache: NativeAnalysisCache,
 ): Omit<AnalysisSnapshot, 'header'> {
   const importers = Object.fromEntries(
-    Object.entries(cache.importers).filter(([, importer]) =>
-      cache.projects[importer.contextId]?.roots.includes(importer.filePath),
+    Object.entries(cache.importers).filter(([id, importer]) =>
+      Object.values(cache.contexts[importer.contextId]?.sources ?? {}).includes(
+        id,
+      ),
     ),
   );
   const used = usedSnapshotQueries(cache, importers);
@@ -44,6 +46,9 @@ export function currentSnapshotRecords(
     inputs,
     queries,
     importers,
+    files: Object.fromEntries(
+      Object.entries(cache.files).filter(([file]) => members.has(file)),
+    ),
     projects: cache.projects,
     contexts: cache.contexts,
     vueContexts: cache.vue.records,
@@ -57,7 +62,7 @@ export function emptySnapshot(
 ): AnalysisSnapshot {
   return {
     header: {
-      schema: 6,
+      schema: 8,
       implementation: ANALYSIS_ADAPTER,
       identity,
       configVersion: configVersion ?? null,
@@ -68,6 +73,7 @@ export function emptySnapshot(
     projects: {},
     queries: {},
     importers: {},
+    files: {},
     contributions: {},
     contexts: {},
     vueContexts: {},
@@ -96,7 +102,7 @@ export function matchingConfigSnapshot(
     configVersion !== undefined,
     previous.header.configVersion === configVersion,
     previous.header.identity === identity,
-    previous.header.schema === 6,
+    previous.header.schema === 8,
     hasCompleteConfigModules(previous),
     previous.header.implementation === ANALYSIS_ADAPTER,
   ];
@@ -106,7 +112,7 @@ export function matchingConfigSnapshot(
 export function newSnapshot(cache: NativeAnalysisCache): AnalysisSnapshot {
   return cloneAnalysisSnapshot({
     header: {
-      schema: 6,
+      schema: 8,
       implementation: ANALYSIS_ADAPTER,
       identity: cache.identity,
       configVersion: cache.configVersion ?? null,

@@ -1,19 +1,9 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
-import path from 'pathe';
-import ts from 'typescript';
-import { isRelativeTypeName } from '../typescript-semantic/effective-roots';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { collectTypeRootCandidates } from './generated/config-readers';
 import { createRelativePath } from './generated/paths';
+import { projectTypeDirectiveNames } from './type-input-projection';
 import type { SourceProject } from './types';
-
-function getSourceTypeNames(project: SourceProject): string[] {
-  const compiler =
-    project.context.vueSemanticIdentity?.toolchain.tsModule ?? ts;
-  return compiler.getAutomaticTypeDirectiveNames(project.options, {
-    ...compiler.sys,
-    getCurrentDirectory: () => path.dirname(project.configPath),
-  });
-}
 
 function createGeneratedTypeRootOverrides(options: {
   config: ResolvedLiminaInputs;
@@ -40,19 +30,17 @@ function createGeneratedTypeRootOverrides(options: {
 }
 
 export function createGeneratedCompilerOptionOverrides(options: {
+  cache?: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
   project: SourceProject;
   generatedConfigPath: string;
 }): Record<string, unknown> {
-  const output: Record<string, unknown> = {};
-  const types = options.project.options.types;
-  if (types !== undefined) {
-    output.types = getSourceTypeNames(options.project).filter(
-      (name) => !isRelativeTypeName(name),
-    );
-  }
-
-  Object.assign(output, createGeneratedTypeRootOverrides(options));
+  const output = createGeneratedTypeRootOverrides(options);
+  output.types = projectTypeDirectiveNames(
+    options.project,
+    options.generatedConfigPath,
+    { overrides: output, cache: options.cache },
+  );
 
   return output;
 }

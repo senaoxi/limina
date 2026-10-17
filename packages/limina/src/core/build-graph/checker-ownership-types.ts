@@ -75,7 +75,8 @@ export interface CheckerDependencyFact {
     | 'ambient'
     | 'checker-source'
     | 'concrete-declaration'
-    | 'missing';
+    | 'missing'
+    | 'unobserved';
 }
 
 export interface PhysicalFrameworkCandidate {

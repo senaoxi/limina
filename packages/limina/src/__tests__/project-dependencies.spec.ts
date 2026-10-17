@@ -16,11 +16,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseVueQuery } from '../core/analysis-cache/vue-schema';
 import type { PreparedDependencyFact } from '../core/framework-semantic/contracts';
+import { prepareResolvedFrameworkCandidates } from '../core/framework-semantic/prepared-dependency';
+import { createPreparedFact } from '../core/framework-semantic/prepared-type-evidence';
 import { cloneProjectDependencyPreparation } from '../core/project-dependencies/cache';
+import type { ProjectDependencyCollection } from '../core/project-dependencies/contracts';
+import { collectPreparedProjectDependencyFact } from '../core/project-dependencies/dependency-record';
 import { createUnobservedDependencyEvidence } from '../core/project-dependencies/evidence';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
+import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 const temporaryRoots: string[] = [];
 
@@ -127,6 +133,7 @@ function withPreparedFact(fact: PreparedDependencyFact): {
   return {
     context: {
       ...base,
+      collectCheckerSupportInputs: () => [],
       prepareCheckerSemanticDependencies: vi.fn(() => ({
         directSourceRecords: [],
         facts: [fact],
@@ -182,8 +189,8 @@ describe('project dependency authority', () => {
         resolvedFilePath: targetFile,
         semanticSpecifier: './target',
         targetKind: 'source',
-        typeEvidence: { kind: 'missing' },
-        nativeFact: { admission: 'excluded' },
+        typeEvidence: undefined,
+        nativeFact: { admission: 'admitted' },
         referenceRequirement: {
           kind: 'source-semantic',
           targetFileName: targetFile,
@@ -412,6 +419,79 @@ describe('project dependency authority', () => {
     expect(first.observations).toMatchObject([{ kind: 'missing' }]);
   });
 
+  it.each([
+    {
+      evidence: undefined,
+      membership: undefined,
+      requirement: undefined,
+      need: 'type-evidence',
+    },
+    {
+      evidence: { kind: 'missing' as const },
+      membership: undefined,
+      requirement: 'source-semantic',
+      need: undefined,
+    },
+    {
+      evidence: {
+        kind: 'ambient' as const,
+        modulePattern: 'dep',
+        declarationFilePaths: ['/virtual/env.d.ts'],
+      },
+      membership: undefined,
+      requirement: undefined,
+      need: 'compiler-membership',
+    },
+    {
+      evidence: {
+        kind: 'ambient' as const,
+        modulePattern: 'dep',
+        declarationFilePaths: ['/virtual/env.d.ts'],
+      },
+      membership: 'covered' as const,
+      requirement: null,
+      need: undefined,
+    },
+    {
+      evidence: {
+        kind: 'ambient' as const,
+        modulePattern: 'dep',
+        declarationFilePaths: ['/virtual/env.d.ts'],
+      },
+      membership: 'not-covered' as const,
+      requirement: 'compiler-membership',
+      need: undefined,
+    },
+  ])(
+    'keeps resolved implementation obligations independent of optional type evidence: %j',
+    ({ evidence, membership }) => {
+      const source = '/virtual/decision/App.vue';
+      const target = '/virtual/decision/foreign.ts';
+      const fact = createFact({
+        record: createRecord(source, 'dep'),
+        target: createTarget(target),
+      });
+      fact.typeEvidence = evidence;
+      fact.compilerMembership = membership;
+      const analysis = withPreparedFact(fact);
+      const collection = collectProjectDependencies({
+        context: createSemanticContext({
+          family: 'vue',
+          fileName: source,
+          rootDir: '/virtual/decision',
+        }),
+        importAnalysis: analysis.context,
+      });
+      expect(collection.failures).toEqual([]);
+      expect(collection.dependencies[0]?.referenceRequirement).toEqual({
+        kind: 'source-semantic',
+        targetFileName: target,
+      });
+      expect(collection.dependencies[0]?.resolvedFilePath).toBe(target);
+      analysis.context.dispose?.();
+    },
+  );
+
   it('consumes a prepared source target without framework re-resolution', () => {
     const fixturePath = createFixturePathResolver('/virtual/mapped-vue');
     const rootDirectory = fixturePath();
@@ -518,7 +598,209 @@ describe('project dependency authority', () => {
     expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
   });
 
-  it('fails closed when prepared target and TypeEvidence paths disagree', () => {
+  it('retains a resolved mapped dependency without asking the Program for type evidence', async () => {
+    const fixture = await createSemanticRepairFixture({
+      'main.ts': 'import { value } from "./target";',
+      'target.ts': 'export const value = 1;',
+    });
+    try {
+      const fileName = fixture.path('main.ts');
+      const source = ts.createSourceFile(
+        fileName,
+        'import { value } from "./target";',
+        ts.ScriptTarget.Latest,
+        true,
+      );
+      const literal = (source.statements[0] as ts.ImportDeclaration)
+        .moduleSpecifier as ts.StringLiteral;
+      const record = {
+        ...createRecord(fileName, './target'),
+        locator: {
+          occurrence: 0,
+          sourceStart: literal.getStart(source),
+          sourceEnd: literal.getEnd(),
+        },
+      };
+      const target = createTarget(fixture.path('target.ts'));
+      const preparation = prepareResolvedFrameworkCandidates({
+        checkerName: 'vue-tsc',
+        framework: 'vue',
+        tsModule: ts,
+        program: ts.createProgram({
+          rootNames: [],
+          options: { noLib: true, types: [] },
+        }),
+        resolved: [
+          {
+            target,
+            resolutionMode: 'import',
+            candidate: {
+              containingSourceFile: source,
+              literal,
+              framework: 'vue',
+              identityId: 'unavailable-literal-context',
+              provenance: 'strict-source-map',
+              semanticSpecifier: './target',
+              sourceRecord: record,
+            },
+          },
+        ],
+      });
+      expect(preparation.kind).toBe('supported');
+      if (preparation.kind !== 'supported') throw new Error(preparation.reason);
+      expect(
+        parseVueQuery('preparation', {
+          ...preparation,
+          directSourceRecords: [],
+          unmapped: [],
+        }),
+      ).toBeDefined();
+      const analysis = withPreparedFact(preparation.facts[0]!);
+      const collection: ProjectDependencyCollection = {
+        dependencies: [],
+        failures: [],
+        observations: [],
+      };
+      try {
+        collectPreparedProjectDependencyFact({
+          collection,
+          fact: preparation.facts[0]!,
+          request: {
+            context: createSemanticContext({
+              family: 'vue',
+              fileName,
+              rootDir: fixture.root,
+            }),
+            importAnalysis: analysis.context,
+          },
+        });
+        expect(collection.failures).toEqual([]);
+        expect(collection.dependencies).toMatchObject([
+          {
+            referenceRequirement: {
+              kind: 'source-semantic',
+              targetFileName: target.resolvedFileName,
+            },
+          },
+        ]);
+      } finally {
+        analysis.context.dispose?.();
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts a different declaration provider proven by the original checker Program', async () => {
+    const fixture = await createSemanticRepairFixture({
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          types: [],
+          paths: { dep: ['./b/value.ts'] },
+        },
+        files: ['main.ts'],
+        references: [{ path: './b' }],
+      }),
+      'main.ts': "import {value} from 'dep'; export {value};",
+      'b/tsconfig.json': JSON.stringify({
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          emitDeclarationOnly: true,
+          outDir: 'out',
+          types: [],
+        },
+        files: ['value.ts'],
+      }),
+      'b/value.ts': 'export const value = 1;',
+    });
+    const importAnalysis = createImportAnalysisContext();
+    try {
+      expect(
+        ts
+          .createSolutionBuilder(
+            ts.createSolutionBuilderHost(ts.sys),
+            [fixture.path('b/tsconfig.json')],
+            {},
+          )
+          .build(),
+      ).toBe(0);
+      const parsed = fixture.parse();
+      const program = ts.createProgram({
+        rootNames: parsed.fileNames,
+        options: parsed.options,
+        projectReferences: parsed.projectReferences,
+      });
+      const source = program.getSourceFile(fixture.path('main.ts'))!;
+      const statement = source.statements[0] as ts.ImportDeclaration;
+      const literal = statement.moduleSpecifier as ts.StringLiteral;
+      const record = {
+        ...createRecord(source.fileName, 'dep'),
+        locator: {
+          occurrence: 0,
+          sourceStart: literal.getStart(source),
+          sourceEnd: literal.getEnd(),
+        },
+      };
+      const fact = createPreparedFact({
+        checkerName: 'vue-tsc',
+        managedOutputLookup: undefined,
+        program,
+        tsModule: ts,
+        resolved: {
+          resolutionMode: 'import',
+          target: createTarget(fixture.path('b/value.ts')),
+          candidate: {
+            framework: 'vue',
+            identityId: 'original-reference-context',
+            provenance: 'direct-source',
+            sourceRecord: record,
+            containingSourceFile: source,
+            literal,
+            semanticSpecifier: 'dep',
+          },
+        },
+      });
+      expect(fact.redirect).toMatchObject({
+        originalTarget: fixture.path('b/value.ts'),
+        declarationTarget: fixture.path('b/out/value.d.ts'),
+        availability: 'present',
+      });
+      expect(fact.typeEvidence).toBeUndefined();
+      const collection: ProjectDependencyCollection = {
+        dependencies: [],
+        observations: [],
+        failures: [],
+      };
+      collectPreparedProjectDependencyFact({
+        collection,
+        fact,
+        request: {
+          context: createSemanticContext({
+            family: 'vue',
+            fileName: source.fileName,
+            rootDir: fixture.root,
+          }),
+          importAnalysis,
+        },
+      });
+      expect(collection.failures).toEqual([]);
+      expect(collection.dependencies).toMatchObject([
+        {
+          resolvedFilePath: fixture.path('b/value.ts'),
+          referenceRequirement: null,
+          typeEvidence: fact.typeEvidence,
+        },
+      ]);
+    } finally {
+      importAnalysis.dispose?.();
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not replace a resolved target with an unrelated optional type provider', () => {
     const rootDirectory = '/virtual/mismatch-vue';
     const sourceFile = path.join(rootDirectory, 'App.vue');
     const fact = createFact({
@@ -540,10 +822,16 @@ describe('project dependency authority', () => {
       importAnalysis: analysis.context,
     });
 
-    expect(collection.dependencies).toEqual([]);
-    expect(collection.failures).toMatchObject([
-      { framework: 'vue', stage: 'module-resolution' },
+    expect(collection.dependencies).toMatchObject([
+      {
+        resolvedFilePath: fact.target!.resolvedFileName,
+        referenceRequirement: {
+          kind: 'source-semantic',
+          targetFileName: fact.target!.resolvedFileName,
+        },
+      },
     ]);
+    expect(collection.failures).toEqual([]);
     expect(analysis.resolveCheckerImportEvidence).not.toHaveBeenCalled();
     expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
   });
@@ -576,33 +864,44 @@ describe('project dependency authority', () => {
         'typescript',
       ),
     },
-  ])('fails closed for $name at the same path', ({ evidence, target }) => {
-    const rootDirectory = '/virtual/mismatch-kind-vue';
-    const sourceFile = `${rootDirectory}/App.vue`;
-    const fact = createFact({
-      record: createRecord(sourceFile, './target'),
-      target,
-      typeEvidence: evidence,
-    });
-    const analysis = withPreparedFact(fact);
+  ])(
+    'uses the structural target for $name at the same path',
+    ({ evidence, target }) => {
+      const rootDirectory = '/virtual/mismatch-kind-vue';
+      const sourceFile = `${rootDirectory}/App.vue`;
+      const fact = createFact({
+        record: createRecord(sourceFile, './target'),
+        target,
+        typeEvidence: evidence,
+      });
+      const analysis = withPreparedFact(fact);
 
-    const collection = collectProjectDependencies({
-      context: createSemanticContext({
-        family: 'vue',
-        fileName: sourceFile,
-        rootDir: rootDirectory,
-      }),
-      importAnalysis: analysis.context,
-    });
+      const collection = collectProjectDependencies({
+        context: createSemanticContext({
+          family: 'vue',
+          fileName: sourceFile,
+          rootDir: rootDirectory,
+        }),
+        importAnalysis: analysis.context,
+      });
 
-    expect(collection.dependencies).toEqual([]);
-    expect(collection.observations).toEqual([]);
-    expect(collection.failures).toMatchObject([
-      { framework: 'vue', stage: 'module-resolution' },
-    ]);
-    expect(analysis.resolveCheckerImportEvidence).not.toHaveBeenCalled();
-    expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
-  });
+      expect(collection.dependencies).toMatchObject([
+        {
+          resolvedFilePath: target.resolvedFileName,
+          referenceRequirement: target.resolvedFileName.endsWith('/target.ts')
+            ? {
+                kind: 'source-semantic',
+                targetFileName: target.resolvedFileName,
+              }
+            : null,
+        },
+      ]);
+      expect(collection.observations).toEqual([]);
+      expect(collection.failures).toEqual([]);
+      expect(analysis.resolveCheckerImportEvidence).not.toHaveBeenCalled();
+      expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+    },
+  );
 
   it('deep-clones prepared targets, ambient declarations, and managed sources', () => {
     const fact = createFact({
@@ -666,11 +965,11 @@ describe('project dependency authority', () => {
     expect(cloned.facts[0]!.target).not.toBe(fact.target);
     expect(cloned.facts[0]!.typeEvidence).not.toBe(fact.typeEvidence);
     expect(
-      cloned.facts[0]!.typeEvidence.kind === 'concrete-declaration'
+      cloned.facts[0]!.typeEvidence?.kind === 'concrete-declaration'
         ? cloned.facts[0]!.typeEvidence.managedSource?.checkerNames
         : null,
     ).not.toBe(
-      fact.typeEvidence.kind === 'concrete-declaration'
+      fact.typeEvidence?.kind === 'concrete-declaration'
         ? fact.typeEvidence.managedSource?.checkerNames
         : null,
     );
@@ -728,6 +1027,7 @@ describe('project dependency authority', () => {
       expect(first.dependencies).toEqual([]);
       expect(cached).toEqual(first);
       expect(resolveCheckerImportEvidence).toHaveBeenCalledTimes(1);
+      expect(first.failures).toEqual([]);
       expect(first.observations).toMatchObject([
         {
           evidence: {

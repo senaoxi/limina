@@ -1,3 +1,4 @@
+import ts from 'typescript';
 import type { AnalysisSnapshot, InputDependency } from './contracts';
 import { decodeData } from './data-codec';
 import { analysisHash } from './identity';
@@ -18,6 +19,7 @@ function hasBrokenInputs(
 }
 function hasBrokenQueries(snapshot: AnalysisSnapshot): boolean {
   const consumers = [
+    ...Object.values(snapshot.graphs),
     ...Object.values(snapshot.importers),
     ...Object.values(snapshot.contexts),
     ...Object.values(snapshot.contexts).map(
@@ -46,6 +48,43 @@ function hasBrokenFacts(snapshot: AnalysisSnapshot): boolean {
       importer.occurrences.some(
         (record) => importer.facts[occurrenceKey(record)] === undefined,
       ),
+  );
+}
+
+function hasBrokenFile(snapshot: AnalysisSnapshot, file: string): boolean {
+  const facts = snapshot.files[file];
+  return [
+    facts.filePath !== file,
+    facts.compilerVersion !== ts.version,
+    snapshot.inputs[JSON.stringify(['physical', 'content', file])]?.version !==
+      facts.sourceVersion,
+    facts.requests.some((request) => request.occurrence.filePath !== file),
+  ].some(Boolean);
+}
+function hasBrokenSourceVersion(
+  snapshot: AnalysisSnapshot,
+  file: string,
+  id: string | null,
+): boolean {
+  return id === null || hasDifferentSourceVersion(snapshot, file, id);
+}
+function hasBrokenContextSyntax(
+  snapshot: AnalysisSnapshot,
+  context: AnalysisSnapshot['contexts'][string],
+): boolean {
+  return (
+    context.collection?.mode === 'programless' &&
+    Object.entries(context.sources).some(([file, id]) =>
+      hasBrokenSourceVersion(snapshot, file, id),
+    )
+  );
+}
+function hasBrokenSyntax(snapshot: AnalysisSnapshot): boolean {
+  return (
+    Object.keys(snapshot.files).some((file) => hasBrokenFile(snapshot, file)) ||
+    Object.values(snapshot.contexts).some((context) =>
+      hasBrokenContextSyntax(snapshot, context),
+    )
   );
 }
 function hasBrokenContributions(snapshot: AnalysisSnapshot): boolean {
@@ -102,6 +141,7 @@ export function validatedSnapshot(
     hasBrokenQueries(snapshot),
     hasBrokenSources(snapshot),
     hasBrokenFacts(snapshot),
+    hasBrokenSyntax(snapshot),
     hasBrokenContributions(snapshot),
     Object.entries(snapshot.vueContexts).some(
       ([id, context]) => !isVueRecordValid(id, context),
@@ -125,4 +165,15 @@ function isVueRecordValid(
       (query) => decodeVueQuery(query.kind, query.data) !== undefined,
     ),
   ].every(Boolean);
+}
+
+function hasDifferentSourceVersion(
+  snapshot: AnalysisSnapshot,
+  file: string,
+  id: string,
+): boolean {
+  return (
+    snapshot.files[file]?.sourceVersion !==
+    snapshot.importers[id]?.sourceVersion
+  );
 }

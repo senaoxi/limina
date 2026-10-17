@@ -6,11 +6,11 @@ import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
 import { collectTypeScriptSourceFileImports } from '../core/import-analysis/typescript-imports';
-import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import {
   BoundedTypeScriptSemanticContext,
   createBoundedTypeScriptSemanticContext,
-} from '../core/typescript-semantic/context';
+  createWorkspaceSourceBoundary,
+} from '../core/typescript-semantic';
 import { SourceSyntaxFactsCache } from '../core/typescript-semantic/syntax-cache';
 import { OwnedSyntaxScope } from '../core/typescript-semantic/syntax-input';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
