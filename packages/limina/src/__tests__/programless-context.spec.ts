@@ -303,7 +303,13 @@ describe('programless dependency contracts', () => {
     result = collect(project, result.cache);
     expect(result.members).not.toContain(f.file('cycle.d.ts'));
     expect(result.targets).toEqual([]);
-    expect(result.cache.snapshot().files[f.file('env.d.ts')]).toBeUndefined();
+    const snapshot = result.cache.snapshot();
+    expect(snapshot.files[f.file('env.d.ts')]).toBeUndefined();
+    const retained = Object.values(snapshot.importers).map(
+      (importer) => importer.filePath,
+    );
+    for (const file of ['env.d.ts', 'cycle.d.ts'])
+      expect(retained).not.toContain(f.file(file));
   });
 
   it('invalidates a complete miss when a resolution candidate appears without editing the importer', () => {
