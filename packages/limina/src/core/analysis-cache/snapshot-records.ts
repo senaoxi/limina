@@ -12,11 +12,15 @@ import { cloneAnalysisSnapshot } from './snapshot-receipts';
 export function currentSnapshotRecords(
   cache: NativeAnalysisCache,
 ): Omit<AnalysisSnapshot, 'header'> {
+  const sources = new Map(
+    Object.entries(cache.contexts).map(([id, context]) => [
+      id,
+      new Set(Object.values(context.sources)),
+    ]),
+  );
   const importers = Object.fromEntries(
     Object.entries(cache.importers).filter(([id, importer]) =>
-      Object.values(cache.contexts[importer.contextId]?.sources ?? {}).includes(
-        id,
-      ),
+      sources.get(importer.contextId)?.has(id),
     ),
   );
   const used = usedSnapshotQueries(cache, importers);

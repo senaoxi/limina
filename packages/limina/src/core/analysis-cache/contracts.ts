@@ -7,8 +7,8 @@ import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
 import type { VueContextRecord } from './vue-contracts';
 
-// Config domains change persisted diagnostic paths, including for an empty config.
-export const ANALYSIS_ADAPTER = 'typescript-6.0.3-vue-3.2.4-v11';
+// Installation coverage now requires the selected lock root and byte receipt.
+export const ANALYSIS_ADAPTER = 'typescript-6.0.3-vue-3.2.4-v12';
 
 export interface InputDependency {
   inputId: string;

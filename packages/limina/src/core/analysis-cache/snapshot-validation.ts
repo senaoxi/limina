@@ -2,6 +2,7 @@ import ts from 'typescript';
 import type { AnalysisSnapshot, InputDependency } from './contracts';
 import { decodeData } from './data-codec';
 import { analysisHash } from './identity';
+import { hasBrokenInstallationCoverage } from './installation-lock-coverage';
 import { occurrenceKey } from './semantic-state';
 import { decodeVueQuery } from './vue-schema';
 
@@ -138,6 +139,7 @@ export function validatedSnapshot(
   ];
   const broken = [
     hasBrokenInputs(snapshot, records),
+    hasBrokenInstallationCoverage(snapshot),
     hasBrokenQueries(snapshot),
     hasBrokenSources(snapshot),
     hasBrokenFacts(snapshot),

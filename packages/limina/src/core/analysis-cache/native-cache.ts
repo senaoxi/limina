@@ -24,6 +24,7 @@ import { nativeContextId } from './identity';
 import { type FactRequest, ImporterFacts } from './importer-facts';
 import { AnalysisInputs } from './inputs';
 import { validateInstallationDomains } from './installation-environment';
+import { restoreInstallationLockCoverage } from './installation-lock-coverage';
 import { AnalysisInvalidation } from './invalidation';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
 import { SemanticState } from './semantic-state';
@@ -91,6 +92,7 @@ export class NativeAnalysisCache {
     validateInstallationDomains(state, this.inputs);
     this.invalidation = new AnalysisInvalidation(this.previous, this.inputs);
     this.#checkConsumerCoverage();
+    restoreInstallationLockCoverage(state, this.inputs);
     this.#resolutions = new ResolutionQueries({
       inputs: this.inputs,
       metrics: this.metrics,
@@ -248,9 +250,7 @@ export class NativeAnalysisCache {
     this.#facts.prepare(id);
     this.#recordProject(id, state.projectRecord);
     return () => {
-      if (this.#states.get(id) !== state) {
-        return;
-      }
+      if (this.#states.get(id) !== state) return;
 
       this.#states.delete(id);
       this.#captures.delete(id);
