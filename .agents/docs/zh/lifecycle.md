@@ -64,6 +64,8 @@ Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以�
 
 [Graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖 consumer 隔离、空标签与失败后的新 pass；[Vue 回归](../../../packages/limina/src/__tests__/vue-semantic.spec.ts)覆盖成功／空文本读取、缺失／错误重试与最后一个 owner 释放；[preflight 回归](../../../packages/limina/src/__tests__/preflight.spec.ts)覆盖真实 provider-only replan 和物化输入。后续独立命令按既有持久缓存失效规则读取当前输入；这些局部 memo 不新增跨命令新鲜度或速度保证。
 
+Vue 声明闭包投影仅在一次[支撑贡献收集](../../../packages/limina/src/core/project-dependencies/support-contributions.ts)内保留 occurrence 到 dependency 的索引。每条追加依赖沿用既有 occurrence identity，只入索引一次；重复 identity 保留首个匹配项。声明支撑收集仍先解析并追加依赖，再执行查询；缺失 fact 保持既有 incomplete 或 unresolved 结果。索引随本次收集结束而释放，不跨配置、provider 或调用共享。[项目依赖回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)保护首项顺序、不同 occurrence 位置及独立收集；[图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖 Vue 声明遍历中追加的依赖。
+
 ## 原生持久化分析缓存
 
 Native／Vue snapshot 将声明解析 receipt、结果与类型环境入口一起保存。Adapter identity 使旧解释失效，缺失或不兼容的必要 receipt 触发重新分析。每次收集按当前根 membership 与入口可达性决定治理投影，包括无 membership 的负向判断。Manifest 内容、symlink 绑定、有效 types／typeRoots、声明内容和失败候选仍属于观察输入。删除最后一个合法本地入口时撤销内部贡献，其他合法入口仍保留共享贡献。更新使用现有项目替换生命周期，不扩大 `replaceProject` 的事务范围。

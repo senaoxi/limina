@@ -1,4 +1,3 @@
-import type { ImportRecord } from '../import-analysis/records';
 import {
   type ClosureFact,
   projectDeclarationClosure,
@@ -54,15 +53,26 @@ function vueSupportFiles(request: ProjectDependencyRequest) {
     }) ?? []
   );
 }
+function createDependencyFactReader(collection: ProjectDependencyCollection) {
+  const dependencies = new Map<
+    string,
+    ProjectDependencyCollection['dependencies'][number]
+  >();
+  let indexedCount = 0;
+  return (key: string): ClosureFact => {
+    // Collection only appends dependencies while this closure is projected.
+    // Preserve Array.find's first match, including duplicate occurrences.
+    while (indexedCount < collection.dependencies.length) {
+      const dependency = collection.dependencies[indexedCount++]!;
+      const identity = createImportRecordIdentity(dependency.importRecord);
+      if (!dependencies.has(identity)) dependencies.set(identity, dependency);
+    }
+    return dependencyFact(dependencies.get(key));
+  };
+}
 function dependencyFact(
-  collection: ProjectDependencyCollection,
-  record: ImportRecord,
+  dependency: ProjectDependencyCollection['dependencies'][number] | undefined,
 ): ClosureFact {
-  const dependency = collection.dependencies.find(
-    (item) =>
-      createImportRecordIdentity(item.importRecord) ===
-      createImportRecordIdentity(record),
-  );
   if (!dependency) return { target: null, referenceRequirement: null };
   return {
     target: getDependencyCheckerTarget(dependency.evidence),
@@ -95,6 +105,7 @@ export function collectVueSupportContributions(
     ...collection.observations.filter((item) => 'importRecord' in item),
   ].flatMap((item) => ('importRecord' in item ? [item.importRecord] : []));
   const facts = new Map<string, ClosureFact>();
+  const readDependencyFact = createDependencyFactReader(collection);
   const projection = projectDeclarationClosure({
     configPath: request.context.configPath,
     entries: [
@@ -126,7 +137,7 @@ export function collectVueSupportContributions(
           request,
           importRecord: record,
         });
-      const fact = dependencyFact(collection, record);
+      const fact = readDependencyFact(key);
       facts.set(key, fact);
       return fact;
     },
