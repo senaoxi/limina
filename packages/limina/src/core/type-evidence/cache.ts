@@ -3,8 +3,13 @@ import { normalizeAbsolutePathIdentity } from '#utils/path';
 import type ts from 'typescript';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ManagedOutputDeclarationProvider } from '../import-graph/managed-output-provider';
-import type { TypeScriptSemanticContext } from '../typescript-semantic';
+import type {
+  TypeScriptSemanticContext,
+  TypeScriptSemanticDependencyContext,
+} from '../typescript-semantic';
 import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
+import { TYPE_EVIDENCE_METRIC_NAMES } from './metric-names';
+export { TYPE_EVIDENCE_METRIC_NAMES } from './metric-names';
 
 export type TypeEvidence =
   | {
@@ -53,21 +58,6 @@ export interface TypeEvidenceProviderIdentity {
   projectIdentity?: string;
   versionTuple?: readonly string[];
 }
-
-export const TYPE_EVIDENCE_METRIC_NAMES = [
-  'type-evidence-provider-create',
-  'type-evidence-provider-hit',
-  'typescript-program-create',
-  'vue-program-create',
-  'program-create-duration',
-  'program-source-file-count',
-  'type-evidence-query',
-  'type-evidence-cache-hit',
-  'ambient-symbol-hit',
-  'ambient-symbol-miss',
-  'affected-source-config-count',
-  'resource-import-count',
-] as const;
 
 interface TypeEvidenceMetricMeasurement {
   readonly count?: number;
@@ -142,6 +132,10 @@ export class TypeEvidenceGenerationCache {
   readonly importTypeEvidenceCache: ImportTypeEvidenceCache = new Map();
 
   readonly programCache: ProgramCache = new Map();
+  readonly dependencyContexts: Map<
+    string,
+    TypeScriptSemanticDependencyContext
+  > = new Map();
 
   readonly typeEvidenceProviderCache: TypeEvidenceProviderCache = new Map();
 
@@ -293,6 +287,7 @@ export class TypeEvidenceGenerationCache {
     disposePrograms(this.programCache);
     this.typeEvidenceProviderCache.clear();
     this.programCache.clear();
+    this.dependencyContexts.clear();
     this.importTypeEvidenceCache.clear();
   }
 }

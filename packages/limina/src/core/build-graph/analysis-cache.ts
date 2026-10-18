@@ -14,6 +14,8 @@ import { restoreGraphContexts, storeGraphContexts } from './analysis-cache-vue';
 import { removeStaleGeneratedFiles } from './artifact-ledger';
 import { writeGeneratedContent } from './artifact-writer';
 import { readMaterializationStateSnapshot } from './materialization-state';
+import { isValidOutputProjection } from './output-projection';
+import { isValidTypeInputProjection } from './type-input-projection';
 import type {
   DependencyAnalysisResult,
   GeneratedGraphWriteContext,
@@ -22,7 +24,7 @@ import type {
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
 
-const key = 'generated-graph-v1';
+const key = 'generated-graph-v2';
 
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
@@ -98,14 +100,14 @@ function decodeBoundGraph(
   >,
 ): CachedGraphData | undefined {
   const stored = decodeGraph(record.data);
-  return stored === undefined
-    ? undefined
-    : restoreGraphContexts({
-        cache: options.cache,
-        data: stored,
-        contextIds: record.vueContextIds,
-        generation: options.generation ?? 0,
-      });
+  if (stored === undefined) return undefined;
+  if (!hasValidProjections(stored, options.cache)) return undefined;
+  return restoreGraphContexts({
+    cache: options.cache,
+    data: stored,
+    contextIds: record.vueContextIds,
+    generation: restoredGeneration(options),
+  });
 }
 export async function restoreGeneratedGraph(
   options: GraphRestoreInput & {
@@ -225,4 +227,22 @@ function captureGraphData(
     ...version,
     value: storeGraphContexts(value as CachedGraphData),
   });
+}
+
+function hasValidProjections(
+  stored: NonNullable<ReturnType<typeof decodeGraph>>,
+  cache: NativeAnalysisCache,
+): boolean {
+  return (
+    stored.typeInputProjections!.every((receipt) =>
+      isValidTypeInputProjection(receipt, cache),
+    ) &&
+    stored.outputProjections!.every((receipt) =>
+      isValidOutputProjection(receipt, cache),
+    )
+  );
+}
+
+function restoredGeneration(options: GraphRestoreInput): number {
+  return options.generation ?? 0;
 }

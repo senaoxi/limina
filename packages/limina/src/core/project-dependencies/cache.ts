@@ -53,6 +53,8 @@ export function cloneProjectDependencyCollection(
     })),
     failures: collection.failures.map((failure) => ({
       ...failure,
+      decision:
+        failure.decision === undefined ? undefined : { ...failure.decision },
       evidence: cloneDependencyEvidence(failure.evidence),
       importRecord:
         failure.importRecord === undefined
@@ -75,9 +77,15 @@ export function cloneProjectDependencyPreparation(
       importRecord: structuredClone(fact.importRecord),
       target: fact.target === null ? null : { ...fact.target },
       typeEvidence: cloneTypeEvidence(fact.typeEvidence),
+      typeEvidenceOrigin:
+        fact.typeEvidenceOrigin === undefined
+          ? undefined
+          : { ...fact.typeEvidenceOrigin },
     })),
     failures: preparation.failures.map((failure) => ({
       ...failure,
+      decision:
+        failure.decision === undefined ? undefined : { ...failure.decision },
       evidence: cloneDependencyEvidence(failure.evidence),
       importRecord:
         failure.importRecord === undefined

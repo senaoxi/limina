@@ -4,8 +4,9 @@ const text = z.string();
 const texts = z.array(text);
 const dependencies = z.array(dependency);
 const domain = z.object({
-  adapter: z.literal('physical-installation-v1'),
+  adapter: z.literal('physical-installation-v2'),
   root: text,
+  lockRoot: text,
   resolutionRoot: text,
   managerIdentity: text,
   manager: z.enum(['pnpm', 'npm', 'yarn', 'bun']),
@@ -42,6 +43,13 @@ const project = z.object({
 });
 const boundaryEntry = z.tuple([text, z.boolean()]);
 export const nativeContextSchema: z.ZodType<unknown> = z.object({
+  collection: z
+    .object({
+      adapter: z.literal('native-requests-v1'),
+      mode: z.enum(['programless', 'compatibility']),
+      reason: text.optional(),
+    })
+    .optional(),
   project,
   sharedEnvironment: z.object({ dependencies, queryIds: texts, version: text }),
   environment: typeEnvironmentSchema,

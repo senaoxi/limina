@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { digestFile } from '#utils/file-digest';
+import { statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'pathe';
@@ -21,7 +21,7 @@ function observation(file: string): string {
 }
 function capture(file: string): ToolFile {
   const before = observation(file);
-  const version = createHash('sha256').update(readFileSync(file)).digest('hex');
+  const version = digestFile(file).hash;
   if (observation(file) !== before)
     throw new Error('Analysis tool changed during observation.');
   return { path: file, version, observation: before };

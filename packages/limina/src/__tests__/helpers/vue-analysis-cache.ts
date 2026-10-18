@@ -3,7 +3,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
-  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -14,7 +13,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AnalysisSnapshot } from '../../core/analysis-cache/contracts';
-import { decodeAnalysisSnapshotReceipts } from '../../core/analysis-cache/snapshot-receipts';
+import {
+  readStoredAnalysisSnapshot,
+  writeStoredAnalysisSnapshot,
+} from './analysis-snapshot';
 import { createFixturePathResolver } from './path';
 
 export interface VueCacheRun {
@@ -139,17 +141,16 @@ try {
     return JSON.parse(output.trim().split('\n').at(-1)!);
   };
   const snapshotFile = () => {
-    const base = file('.limina/cache/analysis-v1');
+    const base = file('.limina/cache/analysis-v2');
     const entry = readdirSync(base, { recursive: true }).find(
-      (name) => typeof name === 'string' && name.endsWith('snapshot.json'),
+      (name) => typeof name === 'string' && name.endsWith('index.liminainfo'),
     );
     if (typeof entry !== 'string')
       throw new Error('Expected published analysis snapshot.');
-    return file('.limina/cache/analysis-v1', entry);
+    return file('.limina/cache/analysis-v2', entry);
   };
   const snapshot = (): AnalysisSnapshot => {
-    const encoded = JSON.parse(readFileSync(snapshotFile(), 'utf8'));
-    return decodeAnalysisSnapshotReceipts(encoded) as AnalysisSnapshot;
+    return readStoredAnalysisSnapshot(snapshotFile());
   };
   return {
     rootDir: rootDirectory,
@@ -157,6 +158,8 @@ try {
     write,
     run,
     snapshot,
+    writeSnapshot: (value: AnalysisSnapshot) =>
+      writeStoredAnalysisSnapshot(snapshotFile(), value),
     snapshotFile,
     cleanup: () => rmSync(rootDirectory, { recursive: true, force: true }),
   };

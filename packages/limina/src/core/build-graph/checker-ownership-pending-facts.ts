@@ -3,7 +3,7 @@ import {
   isNativeTypeScriptProjectInput,
 } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
-import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
+import { normalizeAbsolutePath } from '#utils/path';
 import { TypeScriptConfigInputError } from '../../checker/project-base';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
@@ -13,10 +13,6 @@ import type {
   TypeScriptSemanticDependencyContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
-import {
-  hasDeclarationResolution,
-  type NativeDependencyFact,
-} from '../typescript-semantic/dependency-fact';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import {
@@ -61,126 +57,32 @@ interface CollectPendingOptions {
   workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
-interface PhysicalTarget {
-  path: string;
-  provenance: CheckerDependencyFact['physicalTargetProvenance'];
-}
-
-function createUnsupportedProblem(options: {
-  config: ResolvedLiminaInputs;
-  evidence: Extract<
-    ReturnType<TypeEvidenceCore['resolveImportEvidence']>['type'],
-    { kind: 'unsupported-checker' }
-  >;
-  fact: Omit<CheckerDependencyFact, 'typeEvidenceKind'>;
-}): string {
-  return [
-    'Unsupported checker type evidence:',
-    `  config: ${toRelativePath(options.config.rootDir, options.fact.consumerConfigPath)}`,
-    `  file: ${toRelativePath(options.config.rootDir, options.fact.importRecord.filePath)}:${options.fact.importRecord.line}`,
-    `  imported specifier: ${options.fact.importRecord.specifier}`,
-    `  checker: ${options.evidence.checker}`,
-    `  reason: ${options.evidence.reason}`,
-  ].join('\n');
-}
-
-function getPendingFrameworkTarget(options: {
-  context: FactCollectionContext;
-  evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>;
-  importRecord: CheckerDependencyFact['importRecord'];
-  problems: string[];
-}): PhysicalTarget | null {
-  if (options.evidence.type.kind !== 'missing') return null;
-  const candidate = resolvePendingPhysicalCandidate(options);
-  if (candidate === null) return null;
-  return {
-    path: candidate.targetPath,
-    provenance: 'pending-framework-candidate',
-  };
-}
-
-// Checker-derived facts come first; runtime classification cannot cancel them.
-function getPhysicalTarget(options: {
-  context: FactCollectionContext;
-  evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>;
-  importRecord: CheckerDependencyFact['importRecord'];
-  nativeFact: NativeDependencyFact;
-  problems: string[];
-}): PhysicalTarget | null {
-  const requirement = options.nativeFact.referenceRequirement;
-  if (requirement !== null)
-    return { path: requirement.targetFileName, provenance: 'checker-source' };
-  return hasDeclarationResolution(options.nativeFact.resolution)
-    ? null
-    : getPendingFrameworkTarget(options);
-}
-
-function isRuntimeOnlyResource(
-  evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>,
-  nativeFact: NativeDependencyFact,
-): boolean {
-  return (
-    evidence.classification === 'resource' &&
-    nativeFact.referenceRequirement === null &&
-    !hasDeclarationResolution(nativeFact.resolution)
-  );
-}
-
-function collectTypeEvidenceFact(options: {
+function collectDependencyFact(options: {
   context: FactCollectionContext;
   facts: CheckerDependencyFact[];
   importRecord: CheckerDependencyFact['importRecord'];
   problems: string[];
 }): void {
-  const evidence = options.context.core.resolveImportEvidence({
-    checkerName: options.context.semantic.checkerName,
-    importRecord: options.importRecord,
-    project: options.context.semantic.project,
-    resolutionMode: 'checker-only',
-  });
-  const nativeFact =
-    options.context.typeScriptSemanticContext.getDependencyFact(
-      options.importRecord,
-    );
+  const fact = options.context.typeScriptSemanticContext.getDependencyFact(
+    options.importRecord,
+  );
+  const requirement = fact.referenceRequirement;
   const base = {
-    referenceRequirement: nativeFact.referenceRequirement,
     consumerConfigPath: options.context.project.configPath,
     importRecord: options.importRecord,
-    physicalTargetPath: null,
-    physicalTargetProvenance: null,
+    referenceRequirement: requirement,
   };
-  if (evidence.type.kind === 'unsupported-checker') {
-    options.problems.push(
-      createUnsupportedProblem({
-        config: options.context.config,
-        evidence: evidence.type,
-        fact: base,
-      }),
-    );
+  if (requirement !== null) {
+    options.facts.push({
+      ...base,
+      physicalTargetPath: requirement.targetFileName,
+      physicalTargetProvenance: 'checker-source',
+      typeEvidenceKind: 'unobserved',
+    });
     return;
   }
-  if (isRuntimeOnlyResource(evidence, nativeFact)) return;
-  options.facts.push(
-    createDependencyFact(
-      base,
-      evidence.type.kind,
-      getPhysicalTarget({ ...options, evidence, nativeFact }),
-    ),
-  );
-}
-
-function createDependencyFact(
-  base: Omit<CheckerDependencyFact, 'typeEvidenceKind'>,
-  typeEvidenceKind: CheckerDependencyFact['typeEvidenceKind'],
-  target: PhysicalTarget | null,
-): CheckerDependencyFact {
-  if (target === null) return { ...base, typeEvidenceKind };
-  return {
-    ...base,
-    physicalTargetPath: target.path,
-    physicalTargetProvenance: target.provenance,
-    typeEvidenceKind,
-  };
+  const candidate = pendingCandidate(options, fact.resolution.target);
+  options.facts.push({ ...base, ...candidate });
 }
 
 function collectImportFact(options: {
@@ -192,7 +94,7 @@ function collectImportFact(options: {
   if (!shouldInferDeclarationReferenceFromImportRecord(options.importRecord)) {
     return;
   }
-  collectTypeEvidenceFact(options);
+  collectDependencyFact(options);
 }
 
 function getProgramSourceFile(
@@ -202,7 +104,7 @@ function getProgramSourceFile(
 ) {
   if (context.hasSourceFile(normalizeAbsolutePath(fileName))) return;
   throw new TypeScriptConfigInputError(
-    `Pending TypeScript Program did not contain an effective source file: ${fileName}\n  config: ${configPath}\n  stage: pending-ownership-evidence`,
+    `Pending TypeScript analysis did not contain an effective source file: ${fileName}\n  config: ${configPath}\n  stage: pending-ownership-evidence`,
   );
 }
 
@@ -256,7 +158,8 @@ function collectProjectFacts(
     typeScriptSemanticContext,
   };
   try {
-    for (const fileName of semantic.project.fileNames) {
+    const files = contributionFiles(typeScriptSemanticContext, semantic);
+    for (const fileName of files) {
       if (!isNativeTypeScriptProjectInput(fileName)) continue;
       collectFileFacts({ context, facts, fileName, problems });
     }
@@ -295,4 +198,33 @@ function createPendingCacheKey(options: CollectPendingOptions): string {
     references: options.project.references,
     virtualFiles: configInputIdentity(options.project.virtualFiles),
   });
+}
+
+function pendingCandidate(
+  options: Parameters<typeof collectDependencyFact>[0],
+  target: unknown,
+): Pick<
+  CheckerDependencyFact,
+  'physicalTargetPath' | 'physicalTargetProvenance' | 'typeEvidenceKind'
+> {
+  const candidate =
+    target === null ? resolvePendingPhysicalCandidate(options) : null;
+  if (candidate === null)
+    return {
+      physicalTargetPath: null,
+      physicalTargetProvenance: null,
+      typeEvidenceKind: 'unobserved',
+    };
+  return {
+    physicalTargetPath: candidate.targetPath,
+    physicalTargetProvenance: 'pending-framework-candidate',
+    typeEvidenceKind: 'missing',
+  };
+}
+
+function contributionFiles(
+  context: TypeScriptSemanticDependencyContext,
+  semantic: EvidenceProject,
+): readonly string[] {
+  return context.getContributionFileNames?.() ?? semantic.project.fileNames;
 }

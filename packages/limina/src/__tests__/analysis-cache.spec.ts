@@ -15,17 +15,18 @@ import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { AnalysisInputs } from '../core/analysis-cache/inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { SemanticState } from '../core/analysis-cache/semantic-state';
-import {
-  cloneAnalysisSnapshot,
-  serializeAnalysisSnapshot,
-} from '../core/analysis-cache/snapshot-receipts';
+import { cloneAnalysisSnapshot } from '../core/analysis-cache/snapshot-receipts';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import { createImportAnalysisContext } from '../core/import-analysis/runner';
 import { createProjectDependencyCaches } from '../core/project-dependencies/cache';
 import { collectProjectDependencies } from '../core/project-dependencies/provider';
-import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic/context';
+import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
+import {
+  readStoredAnalysisSnapshot,
+  writeStoredAnalysisSnapshot,
+} from './helpers/analysis-snapshot';
 import { createFixturePathResolver } from './helpers/path';
 
 const fixtures: string[] = [];
@@ -312,21 +313,21 @@ describe('persistent native analysis facts', () => {
     expect(result.members).toContain(file('ambient.d.ts'));
     expect(
       result.facts.find(({ record }) => record.filePath === file('b.ts'))!.fact
-        .typeEvidence.kind,
-    ).toBe('ambient');
+        .resolution.target,
+    ).toBeNull();
     write('a.ts', 'export {};');
     result = analyze(input, result.cache);
     expectCold(result, input);
     expect(result.members).not.toContain(file('ambient.d.ts'));
-    expect(result.facts[0]!.fact.typeEvidence.kind).toBe('missing');
+    expect(result.facts[0]!.fact.resolution.target).toBeNull();
     write('a.ts', '/// <reference path="./ambient.d.ts" />\nexport {};');
     result = analyze(input, result.cache);
     expectCold(result, input);
     expect(result.members).toContain(file('ambient.d.ts'));
     expect(
       result.facts.find(({ record }) => record.filePath === file('b.ts'))!.fact
-        .typeEvidence.kind,
-    ).toBe('ambient');
+        .resolution.target,
+    ).toBeNull();
   });
 });
 
@@ -551,7 +552,11 @@ it('invalidates redirected declaration providers through removal and restoration
     projectReferences: [{ path: file('dep/tsconfig.json') }],
   };
   let result = analyze(input);
-  expect(result.facts[0]!.fact.typeEvidence.kind).toBe('concrete-declaration');
+  expect(result.facts[0]!.fact.redirect).toMatchObject({
+    originalTarget: file('dep/src/value.ts'),
+    declarationTarget: file('dep/lib/value.d.ts'),
+    availability: 'present',
+  });
   result = analyze(input, result.cache);
   expect(result.cache.metrics.factQueries).toBe(0);
   for (const isPresent of [false, true, false]) {
@@ -560,9 +565,10 @@ it('invalidates redirected declaration providers through removal and restoration
     else rmSync(file('dep/lib/value.d.ts'));
     result = analyze(input, result.cache);
     expectCold(result, input);
-    expect(result.facts[0]!.fact.typeEvidence.kind).toBe(
-      isPresent ? 'concrete-declaration' : 'missing',
+    expect(result.facts[0]!.fact.redirect?.availability).toBe(
+      isPresent ? 'present' : 'missing',
     );
+    expect(result.facts[0]!.fact.referenceRequirement).toBeNull();
   }
 });
 
@@ -819,7 +825,7 @@ it('retains complete dependency receipts beyond the function argument limit', ()
   expect(state.dependencies(f.file('source.ts'))).toEqual(expected);
 });
 
-it('round-trips interned receipts and rejects missing references or conflicting expected versions', () => {
+it('preserves JSON semantics, clone isolation and distinct expected versions through scope storage', () => {
   const f = fixture();
   f.write('source.ts', "import { value } from './value.js'; export { value };");
   f.write('value.ts', 'export const value = 1;');
@@ -833,36 +839,77 @@ it('round-trips interned receipts and rejects missing references or conflicting 
     'long-request-boundary'.repeat(100),
     undefined,
   );
-  const encoded = JSON.parse(serializeAnalysisSnapshot(snapshot));
+  const index = f.file('index.liminainfo');
+  writeStoredAnalysisSnapshot(index, snapshot);
+  const encoded = readStoredAnalysisSnapshot(index);
   const raw = JSON.stringify(snapshot);
   const expected = parseAnalysisSnapshot(JSON.parse(raw), 'fixture');
   expect(expected).toBeDefined();
   expect(parseAnalysisSnapshot(encoded, 'fixture')).toEqual(expected);
+  const request = Object.values(snapshot.queries)[0]!.request as unknown[];
+  const nested = { values: ['original', undefined] };
+  request.push({
+    data: {
+      ordered: new Map([
+        ['second', nested],
+        ['first', nested],
+      ]),
+      members: new Set(['second', 'first']),
+      absent: undefined,
+    },
+  });
   const cloned = cloneAnalysisSnapshot(snapshot);
   expect(cloned).toEqual(snapshot);
+  const clonedRequest = Object.values(cloned.queries)[0]!
+    .request as typeof request;
+  const clonedValue = clonedRequest.at(-1) as {
+    data: {
+      ordered: Map<string, typeof nested>;
+      members: Set<string>;
+      absent?: undefined;
+    };
+  };
+  expect(clonedValue.data.ordered.keys().toArray()).toEqual([
+    'second',
+    'first',
+  ]);
+  expect([...clonedValue.data.members]).toEqual(['second', 'first']);
+  expect(Object.hasOwn(clonedValue.data, 'absent')).toBe(true);
+  clonedValue.data.ordered.get('second')!.values[0] = 'changed-clone';
+  expect(nested.values).toEqual(['original', undefined]);
+  nested.values.push('changed-original');
+  expect(clonedValue.data.ordered.get('first')!.values).toEqual([
+    'original',
+    undefined,
+  ]);
+  cloned.header.revision = 'changed-clone';
+  cloned.configModules.otherUnknownReasons.push('changed-clone');
+  expect(snapshot.header.revision).not.toBe('changed-clone');
+  expect(snapshot.configModules.otherUnknownReasons).not.toContain(
+    'changed-clone',
+  );
   const clonedImporter = Object.values(cloned.importers)[0]!;
   clonedImporter.dependencies[0]!.expectedVersion = 'changed-clone';
   const importer = Object.values(snapshot.importers)[0]!;
   expect(importer.dependencies[0]!.expectedVersion).not.toBe('changed-clone');
+  request.pop();
+  let getterReads = 0;
+  const accessor = Object.defineProperty({}, 'value', {
+    enumerable: true,
+    get() {
+      getterReads++;
+      return 'opaque';
+    },
+  });
+  request.push({ data: accessor });
+  expect(() => cloneAnalysisSnapshot(snapshot)).toThrow();
+  expect(getterReads).toBe(0);
+  request.pop();
   importer.dependencies.push({
     ...importer.dependencies[0]!,
     expectedVersion: 'different-version',
   });
-  const conflicting = JSON.parse(serializeAnalysisSnapshot(snapshot));
+  writeStoredAnalysisSnapshot(index, snapshot);
+  const conflicting = readStoredAnalysisSnapshot(index);
   expect(parseAnalysisSnapshot(conflicting, 'fixture')).toBeUndefined();
-  const malformed = structuredClone(encoded);
-  malformed.receiptEncoding.dependencies[0].inputId = 1;
-  expect(parseAnalysisSnapshot(malformed, 'fixture')).toBeUndefined();
-  const truncated = structuredClone(encoded);
-  const packed = (
-    Object.values(truncated.contexts) as {
-      analysisRecord?: string;
-      byteLength: number;
-    }[]
-  ).find((record) => typeof record.analysisRecord === 'string')!;
-  expect(packed).toBeDefined();
-  packed.byteLength += 1;
-  expect(parseAnalysisSnapshot(truncated, 'fixture')).toBeUndefined();
-  encoded.receiptEncoding.dependencies = [];
-  expect(parseAnalysisSnapshot(encoded, 'fixture')).toBeUndefined();
 });

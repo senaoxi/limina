@@ -16,7 +16,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, expect, it } from 'vitest';
 import { createFixturePathResolver } from '../../src/__tests__/helpers/path';
-import type { AnalysisSnapshot } from '../../src/core/analysis-cache/contracts';
+import type { AnalysisSnapshotIndex } from '../../src/core/analysis-cache/snapshot-shards';
 import { runLimina } from '../helpers/run-limina';
 
 const cli = fileURLToPath(new URL('../../dist/bin/limina.js', import.meta.url));
@@ -83,6 +83,25 @@ interface Metric {
 function count(events: Metric[], kind: string): number {
   return events.find((event) => event.kind === kind)?.count ?? 0;
 }
+function expectRebuiltGraph(events: Metric[], expectedGraphHits = 0): void {
+  expect(count(events, 'semanticPrograms')).toBe(0);
+  expect(count(events, 'graphHits')).toBe(expectedGraphHits);
+  expect(count(events, 'graphBuilds')).toBeGreaterThan(0);
+}
+function expectUncachedAnalysis(events: Metric[]): void {
+  expect(
+    events.find(
+      (event) => event.name === 'syntax-cache' && event.kind === 'miss',
+    )?.count ?? 0,
+  ).toBeGreaterThan(0);
+  for (const name of [
+    'bounded-program-create',
+    'typescript-program-create',
+    'vue-program-create',
+  ]) {
+    expect(events.find((event) => event.name === name)?.count ?? 0).toBe(0);
+  }
+}
 async function runProfile(
   f: ReturnType<typeof fixture>,
   loader: string,
@@ -119,10 +138,10 @@ async function check(
   options: { env?: Record<string, string>; args?: string[] } = {},
 ) {
   const profile = await runProfile(f, loader, options);
-  const snapshotPath = artifact(f, 'snapshot.json');
+  const snapshotPath = artifact(f, 'index.liminainfo');
   const snapshot = JSON.parse(
     readFileSync(snapshotPath, 'utf8'),
-  ) as AnalysisSnapshot;
+  ) as AnalysisSnapshotIndex;
   return { ...profile, snapshot, path: snapshotPath };
 }
 it.each([
@@ -136,12 +155,16 @@ it.each([
     const f = fixture(extension);
     const cold = await check(f, loader);
     expect(cold.snapshot.configModules.complete).toBe(true);
-    expect(count(cold.events, 'semanticPrograms')).toBeGreaterThan(0);
+    expectRebuiltGraph(cold.events);
+    expect(count(cold.events, 'read-block')).toBe(0);
     const bytes = readFileSync(cold.path);
     const timestamp = statSync(cold.path).mtimeMs;
     const warm = await check(f, loader);
     expect(count(warm.events, 'semanticPrograms')).toBe(0);
     expect(count(warm.events, 'graphHits')).toBe(1);
+    expect(count(warm.events, 'read-block')).toBe(
+      cold.snapshot.storage.blocks.length,
+    );
     const mtime = statSync(f.path(f.helper)).mtimeMs / 1000;
     utimesSync(f.path(f.helper), mtime + 100, mtime + 100);
     const touch = await check(f, loader);
@@ -154,8 +177,9 @@ it.each([
       `${f.declaration} // changed module, identical configuration`,
     );
     const changed = await check(f, loader);
-    expect(count(changed.events, 'semanticPrograms')).toBeGreaterThan(0);
+    expectRebuiltGraph(changed.events);
     expect(count(changed.events, 'graphHits')).toBe(0);
+    expect(count(changed.events, 'read-block')).toBe(0);
   },
 );
 it('keeps tsx CommonJS cold when its extension hook bypasses source observation', async () => {
@@ -164,7 +188,7 @@ it('keeps tsx CommonJS cold when its extension hook bypasses source observation'
   const next = await check(f, 'tsx');
   expect(next.snapshot.configModules.complete).toBe(false);
   expect(count(next.events, 'graphHits')).toBe(0);
-  expect(count(next.events, 'semanticPrograms')).toBeGreaterThan(0);
+  expectRebuiltGraph(next.events);
   expect(next.snapshot.configModules.otherUnknownReasons).toContain(
     `module-format-unobserved:${f.path(f.entry)}`,
   );
@@ -230,7 +254,12 @@ function expectCache(
   isWarm: boolean,
 ): void {
   expect(count(result.events, 'graphHits')).toBe(isWarm ? 1 : 0);
-  expect(count(result.events, 'semanticPrograms') === 0).toBe(isWarm);
+  expect(count(result.events, 'semanticPrograms')).toBe(0);
+  if (isWarm) {
+    expect(count(result.events, 'graphBuilds')).toBe(0);
+    expect(count(result.events, 'syntaxExtractions')).toBe(0);
+    expect(count(result.events, 'resolverCalls')).toBe(0);
+  } else expectRebuiltGraph(result.events);
 }
 
 it.each(['native', 'tsx'])(
@@ -497,12 +526,10 @@ it.each([
     expect(
       initial.events.some((event) => event.name === 'analysis-cache'),
     ).toBe(false);
-    expect(initial.events).toContainEqual(
-      expect.objectContaining({ name: 'bounded-program-create' }),
-    );
+    expectUncachedAnalysis(initial.events);
     expect(
       readdirSync(f.path('.limina'), { recursive: true }).some((entry) =>
-        String(entry).endsWith('snapshot.json'),
+        String(entry).endsWith('index.liminainfo'),
       ),
     ).toBe(false);
     const seed = await check(f, loader);
@@ -517,9 +544,7 @@ it.each([
       expect(
         disabled.events.some((event) => event.name === 'analysis-cache'),
       ).toBe(false);
-      expect(disabled.events).toContainEqual(
-        expect.objectContaining({ name: 'bounded-program-create' }),
-      );
+      expectUncachedAnalysis(disabled.events);
       expect(readFileSync(seed.path)).toEqual(bytes);
       expect(statSync(seed.path).mtimeMs).toBe(modified);
     }
@@ -583,13 +608,11 @@ it('forces one config namespace without changing another config or worktree snap
     f.entry,
     "import config from './helper.mjs'; export default {...config,cache:true};",
   );
-  expect(
-    count((await runProfile(f, 'native')).events, 'semanticPrograms'),
-  ).toBeGreaterThan(0);
+  expectRebuiltGraph((await runProfile(f, 'native')).events);
   expect(count((await runProfile(f, 'native')).events, 'graphHits')).toBe(1);
   const secondPath = readdirSync(f.path('.limina'), { recursive: true })
     .map(String)
-    .filter((entry) => entry.endsWith('snapshot.json'))
+    .filter((entry) => entry.endsWith('index.liminainfo'))
     .map((entry) => f.path('.limina', entry))
     .find((file) => file !== first.path)!;
   expect(secondPath).toBeDefined();
@@ -645,7 +668,8 @@ pipelines:{probe:[
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     const current = await check(f, 'native', { args: ['--force'] });
-    expect(count(current.events, 'semanticPrograms')).toBeGreaterThan(0);
+    // The second graph task restores the snapshot published before the command.
+    expectRebuiltGraph(current.events, 1);
     const published = readFileSync(seed.path);
     const modified = statSync(seed.path).mtimeMs;
     expect(published).not.toEqual(old);
@@ -714,7 +738,8 @@ pipelines:{probe:['graph:check','checker:build']}};`,
         profile.events.some((event) => event.name === 'analysis-cache'),
       ).toBe(false);
     } else {
-      expect(count(profile.events, 'semanticPrograms')).toBeGreaterThan(0);
+      expectRebuiltGraph(profile.events);
+      expect(count(profile.events, 'read-block')).toBe(0);
     }
   }
   expect(readFileSync(seed.path)).not.toEqual(snapshot);

@@ -27,7 +27,9 @@ import type {
 } from './generated-knip';
 import type { OutputOptions } from './generated/config-readers';
 import type { GeneratedTsconfigGraphManifest } from './manifest-types';
+import type { OutputProjectionReceipt } from './output-projection';
 import type { AutoFrameworkEvidence } from './source-capabilities';
+import type { TypeInputProjectionReceipt } from './type-input-projection';
 
 export type { AutoScopeProject } from './auto-checker-types';
 export type { GeneratedTsconfigGraphManifest } from './manifest-types';
@@ -75,6 +77,8 @@ export interface GeneratedOutputDeclarationCopyContext {
 }
 
 export interface GeneratedTsconfigGraphResult {
+  outputProjections?: OutputProjectionReceipt[];
+  typeInputProjections?: TypeInputProjectionReceipt[];
   artifactPlan: ArtifactPlan;
   changed: boolean;
   checkers: ResolvedCheckerConfig[];
@@ -107,6 +111,8 @@ export interface PrepareGeneratedTsconfigGraphOptions {
 }
 
 export interface SourceProject {
+  outputProjections?: OutputProjectionReceipt[];
+  typeInputProjections?: TypeInputProjectionReceipt[];
   virtualFiles?: ReadonlyMap<string, string>;
   checkerName: ResolvedCheckerConfig['name'];
   configPath: string;

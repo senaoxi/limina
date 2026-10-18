@@ -27,6 +27,7 @@ import { type ExecutionTask, taskId } from '../execution/tasks';
 import { LiminaPreflightManager } from '../preflight';
 import { AnalysisCacheController } from '../preflight/analysis-cache';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
+import { readStoredAnalysisSnapshot } from './helpers/analysis-snapshot';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
@@ -585,7 +586,7 @@ it('rejects incompatible root metadata before reading ordinary model fields', ()
 
 function storedSnapshot(store: AnalysisCacheStore) {
   return parseAnalysisSnapshot(
-    JSON.parse(readFileSync(store.path, 'utf8')),
+    readStoredAnalysisSnapshot(store.path),
     store.identity,
   );
 }

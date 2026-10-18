@@ -8,7 +8,6 @@ import { toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
-import { readRelativeTypeRoots } from '../../typescript-semantic/effective-roots';
 
 export function isDefaultTsconfigPath(configPath: string): boolean {
   return path.basename(configPath) === 'tsconfig.json';
@@ -69,13 +68,6 @@ export function addSourceReferenceConfigProblems(options: {
       '  fix: remove obsolete tsc -b references from source configs, move IDE aggregation references to a files: [] solution tsconfig.json, or replace dynamic source edges with liminaOptions.implicitRefs.',
     ].join('\n'),
   );
-}
-
-export function readRelativeTypeFiles(
-  config: ResolvedLiminaInputs,
-  sourceConfigPath: string,
-): string[] {
-  return readRelativeTypeRoots(sourceConfigPath, config.virtualFiles);
 }
 
 function isTraversalBoundary(

@@ -37,7 +37,6 @@ interface SveltePreparationContext {
   manager: NonNullable<ProviderDependencies['svelteSemanticContexts']>;
   project: NonNullable<PreparationOptions['context']['svelteSemanticProject']>;
 }
-
 function unsupported(options: {
   framework: 'astro' | 'svelte' | 'vue';
   reason: string;
@@ -48,11 +47,9 @@ function unsupported(options: {
     stage: 'context-creation',
   };
 }
-
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
-
 function classifyToolchainFailure(
   error: unknown,
 ): Extract<
@@ -67,7 +64,6 @@ function classifyToolchainFailure(
     ? 'toolchain-resolution'
     : 'context-creation';
 }
-
 function getVueContext(
   options: PreparationOptions,
 ): ContextFailure | VuePreparationContext {
@@ -190,6 +186,7 @@ function runAstroPreparation(
   try {
     return prepareAstroSemanticDependencies({
       context: options.manager.acquire(options.project),
+      supportInputBoundary: options.supportInputBoundary,
       filePath: options.filePath,
       managedOutputLookup: options.managedOutputLookup,
     });
@@ -250,7 +247,11 @@ function runSveltePreparation(
   try {
     return options.manager
       .acquire(options.project)
-      .prepare(options.filePath, options.managedOutputLookup);
+      .prepare(
+        options.filePath,
+        options.managedOutputLookup,
+        options.supportInputBoundary,
+      );
   } catch (error) {
     return {
       kind: 'unsupported',

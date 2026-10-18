@@ -100,6 +100,7 @@ async function prepareGraph(
   });
   const projectDependencyCaches = dependencyCaches(options);
   try {
+    const coloringStart = performance.now();
     const checkerResolution = await resolveGeneratedGraphCheckerSelections({
       config,
       importAnalysisContext,
@@ -108,22 +109,24 @@ async function prepareGraph(
       workspaceContext,
       workspacePathIndex: activatedRegions,
     });
+    recordElapsed(projectDependencyCaches, 'coloringMs', coloringStart);
     const checkerSelections = checkerResolution.selections;
     const checkers = checkerSelections.map(({ checker }) => checker);
     const state = createGeneratedGraphPreparationState(
       config.rootDir,
       checkerResolution.ownershipPlan,
     );
-    const preparedCheckers = prepareCheckerGraphs({
-      activatedRegions,
-      config,
-      ownershipPlan: checkerResolution.ownershipPlan,
-      projectConfigCache: options.projectConfigCache,
-      selections: checkerSelections,
-    });
-    registerCheckers(preparedCheckers, state);
-    const completeGraph = graphCompletion(isAnalysisOnly);
-    completeGraph({
+    prepareAndRegisterCheckers(
+      {
+        activatedRegions,
+        config,
+        ownershipPlan: checkerResolution.ownershipPlan,
+        projectConfigCache: options.projectConfigCache,
+        selections: checkerSelections,
+      },
+      state,
+    );
+    completePreparedGraph(isAnalysisOnly, {
       activatedRegions,
       checkers,
       config,
@@ -140,6 +143,7 @@ async function prepareGraph(
       workspaceContext,
     });
     await writeGeneratedGraphConfigs({
+      cache: projectDependencyCaches.analysisCache,
       checkers,
       config,
       generatedKnip,
@@ -257,4 +261,38 @@ function isAnalysisInputError(error: unknown): error is Error {
     TypeScriptConfigInputError,
     TsconfigInputError,
   ].some((Type) => error instanceof Type);
+}
+
+function recordElapsed(
+  caches: ReturnType<typeof dependencyCaches>,
+  key: string,
+  start: number,
+): void {
+  const metrics = caches.analysisCache?.metrics;
+  if (metrics !== undefined) addElapsed(metrics, key, start);
+}
+
+function addElapsed(
+  metrics: Record<string, number>,
+  key: string,
+  start: number,
+): void {
+  metrics[key] = (metrics[key] ?? 0) + performance.now() - start;
+}
+
+function prepareAndRegisterCheckers(
+  options: Parameters<typeof prepareCheckerGraphs>[0],
+  state: Parameters<typeof registerCheckers>[1],
+): void {
+  registerCheckers(prepareCheckerGraphs(options), state);
+}
+
+function completePreparedGraph(
+  isAnalysisOnly: boolean,
+  options: Parameters<typeof validateAndCompleteGeneratedGraph>[0],
+): void {
+  const start = performance.now();
+  graphCompletion(isAnalysisOnly)(options);
+  if (options.projectDependencyCaches !== undefined)
+    recordElapsed(options.projectDependencyCaches, 'graphValidationMs', start);
 }

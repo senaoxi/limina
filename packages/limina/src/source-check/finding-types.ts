@@ -15,7 +15,6 @@ import type {
   SourcePackageImportUnauthorizedFacts,
   SourceRelativeImportEscapesScopeFacts,
   SourceResourceModuleNotFoundFacts,
-  SourceResourceModuleTypeUndeclaredFacts,
   SourceTsconfigGovernanceFacts,
   SourceUnusedModuleFacts,
   SourceUnusedWorkspaceDependencyFacts,
@@ -41,7 +40,6 @@ export type SourceSemanticIssueCode =
   | typeof LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceRelativeImportEscapesScope
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound
-  | typeof LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceUnusedModule
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency;
@@ -59,7 +57,6 @@ export const SOURCE_SEMANTIC_ISSUE_CODES: readonly SourceSemanticIssueCode[] = [
   LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized,
   LIMINA_CHECK_ISSUE_CODES.sourceRelativeImportEscapesScope,
   LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
-  LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
   LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance,
   LIMINA_CHECK_ISSUE_CODES.sourceUnusedModule,
   LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency,
@@ -78,7 +75,6 @@ export interface SourceFindingFactsByCode {
   readonly [LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized]: SourcePackageImportUnauthorizedFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceRelativeImportEscapesScope]: SourceRelativeImportEscapesScopeFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound]: SourceResourceModuleNotFoundFacts;
-  readonly [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared]: SourceResourceModuleTypeUndeclaredFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance]: SourceTsconfigGovernanceFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceUnusedModule]: SourceUnusedModuleFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency]: SourceUnusedWorkspaceDependencyFacts;

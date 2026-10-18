@@ -1,6 +1,7 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { readFileSync } from 'node:fs';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
+import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { SvelteDependencyPreparation } from './dependency';
 import { prepareSvelteSemanticDependencies } from './dependency';
 import {
@@ -64,21 +65,24 @@ export class SvelteSemanticContext {
   prepare(
     fileName: string,
     managedOutputLookup?: ManagedOutputDeclarationLookup,
+    supportInputBoundary?: WorkspaceSourceBoundary,
   ): SvelteDependencyPreparation {
     this.assertActive();
     const normalized = normalizeAbsolutePath(fileName);
     const sourceText = readFileSync(normalized, 'utf8');
     const cache = this.#getPreparationCache(managedOutputLookup);
-    const cached = cache.get(normalized);
+    const key = preparationKey(normalized, supportInputBoundary);
+    const cached = cache.get(key);
     if (cached?.sourceText === sourceText) return cached.preparation;
     const preparation = prepareSvelteSemanticDependencies({
       filePath: normalized,
+      supportInputBoundary,
       managedOutputLookup,
       project: this.project,
       sourceText,
       toolchain: this.toolchain,
     });
-    cache.set(normalized, { preparation, sourceText });
+    cache.set(key, { preparation, sourceText });
     return preparation;
   }
 
@@ -146,4 +150,11 @@ export class SvelteSemanticContextManager {
     this.#activeIdentity = undefined;
     this.#toolchainByRoot.clear();
   }
+}
+
+function preparationKey(
+  fileName: string,
+  boundary?: WorkspaceSourceBoundary,
+): string {
+  return JSON.stringify([fileName, boundary?.identity]);
 }

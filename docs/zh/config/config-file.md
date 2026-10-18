@@ -53,6 +53,8 @@ pnpm exec limina --config ./limina.config.mts check
 
 `check` 可以读取并发布具备资格的模型；独立 graph／source 消费者保留原有只读权限。启用 `cache` 不会让所有命令获得发布权限。`limina check [pipeline] --force` 跳过本次恢复，通常仍发布本次具备资格的新结果。配置为 `cache: false` 时，force 在持久化分析缓存层面没有额外效果，也不会开启写入。Force 不删除本配置、其他配置或其他 worktree 的 snapshot，不强制重建 checker，仍不能与 `--issues` 合用。
 
+受支持的物理 TypeScript／TSX 项目可在冷建图及局部变更时复用文件语法与解析事实，无需分析 Program；JS、原始引用及框架输入保留各自的兼容路径。这不跳过实际 Checker 的诊断和构建。类型入口保持与输出投影有效性在缓存恢复时分别校验。旧语义快照会被拒绝并按需重建，不清理其他命名空间或 Checker 缓存。
+
 ### `cache.dependencies` {#cache-dependencies}
 
 - **类型：** `string[]`（对象形式必填）

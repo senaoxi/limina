@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { expect, it, vi } from 'vitest';
-import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { createImportAnalysisContext } from '../core/import-analysis/runner';
 import { collectTypeScriptSourceTextImports } from '../core/import-analysis/typescript-imports';
 import { TypeEvidenceCore } from '../core/type-evidence';
@@ -19,8 +18,8 @@ import { createSemanticRepairFixture } from './helpers/semantic-repair';
 type ResourceOptions = Parameters<typeof addResourceModuleProblems>[0];
 
 it.each([false, true])(
-  'reports a declaration companion only when it supplies bounded types: admitted=%s',
-  async (admitted) => {
+  'accepts a real declaration companion without requiring root ownership: root=%s',
+  async (isRoot) => {
     const fixture = await createSemanticRepairFixture({
       'package.json': '{"name":"fixture","type":"module"}',
       'tsconfig.json': JSON.stringify({
@@ -30,7 +29,7 @@ it.each([false, true])(
           allowArbitraryExtensions: true,
           types: [],
         },
-        files: ['main.ts', ...(admitted ? ['style.d.css.ts'] : [])],
+        files: ['main.ts', ...(isRoot ? ['style.d.css.ts'] : [])],
       }),
       'main.ts': "import style from './style.css'; void style;",
       'style.css': '.root {}',
@@ -85,15 +84,10 @@ it.each([false, true])(
         project,
         typeEvidence: core,
       });
-      expect(findings).toHaveLength(admitted ? 0 : 1);
-      if (!admitted)
-        expect(findings[0]).toMatchObject({
-          code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
-          facts: {
-            typeEvidenceKind: 'missing',
-            runtimeFilePath: fixture.path('style.css'),
-          },
-        });
+      expect(findings).toEqual([]);
+      expect(
+        project.ownedFileNames.includes(fixture.path('style.d.css.ts')),
+      ).toBe(isRoot);
     } finally {
       core.dispose();
       await fixture.cleanup();
@@ -264,19 +258,8 @@ it('passes complete package-import identities to the physical Node resolver', as
         } as ResourceOptions['project'],
         typeEvidence,
       });
-      expect(findings).toHaveLength(1);
-      expect(findings[0]).toMatchObject({
-        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
-        facts: {
-          runtimeAuthority:
-            specifier === '#foo' || specifier === '#foo/bar'
-              ? 'oxc'
-              : 'package-export',
-          runtimeFilePath: expectedPath,
-          specifier,
-          typeEvidenceKind: 'missing',
-        },
-      });
+      expect(findings).toEqual([]);
+      expect(typeEvidence.resolveImportEvidence).not.toHaveBeenCalled();
     }
   } finally {
     await rm(rootDirectory, { recursive: true, force: true });

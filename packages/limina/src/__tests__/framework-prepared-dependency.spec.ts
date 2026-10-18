@@ -1,6 +1,5 @@
-import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type {
   FrameworkSemanticCandidate,
   PreparedDependencyFact,
@@ -136,66 +135,37 @@ describe('prepared framework dependency canonical merge', () => {
     });
   });
 
-  it('fails closed when canonical ambient evidence disagrees', () => {
-    const first = createCandidate({
-      generatedFilePath: '/generated/a.ts',
-      semanticSpecifier: './theme.css',
+  it('merges structural misses without consulting a type checker', () => {
+    const getTypeChecker = vi.fn(() => {
+      throw new Error('Ordinary preparation must not request type evidence.');
     });
-    const second = createCandidate({
-      generatedFilePath: '/generated/b.ts',
-      semanticSpecifier: './theme.css',
-    });
-    const wildcard = ts.createSourceFile(
-      '/types/wildcard.d.ts',
-      "declare module '*.css' {}",
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    ).statements[0]!;
-    const exact = ts.createSourceFile(
-      '/types/exact.d.ts',
-      "declare module './theme.css' {}",
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TS,
-    ).statements[0]!;
-    const sourceFiles = new Map([
-      [
-        normalizeAbsolutePath(first.containingSourceFile.fileName),
-        first.containingSourceFile,
-      ],
-      [
-        normalizeAbsolutePath(second.containingSourceFile.fileName),
-        second.containingSourceFile,
-      ],
-    ]);
-    const program = {
-      getSourceFile: (fileName: string) =>
-        sourceFiles.get(normalizeAbsolutePath(fileName)),
-      getTypeChecker: () => ({
-        getSymbolAtLocation: (literal: ts.Node) => ({
-          declarations: [
-            literal.getSourceFile().fileName ===
-            first.containingSourceFile.fileName
-              ? wildcard
-              : exact,
-          ],
-        }),
-      }),
-    } as unknown as ts.Program;
-
     const result = prepare(
       [
-        { candidate: first, resolutionMode: 'import', target: null },
-        { candidate: second, resolutionMode: 'import', target: null },
+        {
+          candidate: createCandidate({
+            generatedFilePath: '/generated/a.ts',
+            semanticSpecifier: './theme.css',
+          }),
+          resolutionMode: 'import',
+          target: null,
+        },
+        {
+          candidate: createCandidate({
+            generatedFilePath: '/generated/b.ts',
+            semanticSpecifier: './theme.css',
+          }),
+          resolutionMode: 'import',
+          target: null,
+        },
       ],
-      program,
+      { getTypeChecker } as unknown as ts.Program,
     );
-
     expect(result).toMatchObject({
-      kind: 'unsupported',
-      stage: 'source-map-mismatch',
+      kind: 'supported',
+      facts: [{ target: null, typeEvidence: undefined }],
     });
+    if (result.kind === 'supported') expect(result.facts).toHaveLength(1);
+    expect(getTypeChecker).not.toHaveBeenCalled();
   });
 
   it('canonicalizes ambient paths and complete managed-source identity', () => {
@@ -235,7 +205,7 @@ describe('prepared framework dependency canonical merge', () => {
     );
   });
 
-  it('turns missing Program support into a structured compatibility failure', () => {
+  it('preserves unresolved candidates as unobserved without a Program', () => {
     const result = prepare([
       {
         candidate: createCandidate({ generatedFilePath: '/generated/a.ts' }),
@@ -245,8 +215,8 @@ describe('prepared framework dependency canonical merge', () => {
     ]);
 
     expect(result).toMatchObject({
-      kind: 'unsupported',
-      stage: 'toolchain-compatibility',
+      kind: 'supported',
+      facts: [{ target: null, typeEvidence: undefined }],
     });
   });
 });

@@ -12,8 +12,9 @@ import type { AnalysisInputs } from './inputs';
 import { observeInstallationDomain } from './installation-domain';
 
 export interface InstallationDomain {
-  adapter: 'physical-installation-v1';
+  adapter: 'physical-installation-v2';
   root: string;
+  lockRoot: string;
   resolutionRoot: string;
   managerIdentity: string;
   manager: SupportedPackageManager;

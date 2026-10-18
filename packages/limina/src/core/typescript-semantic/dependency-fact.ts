@@ -1,4 +1,9 @@
 import type ts from 'typescript';
+import type { ProjectReferenceRedirect } from '../dependency-semantics';
+import {
+  decideReferenceRequirement,
+  type DeclarationReferenceRequirement,
+} from '../dependency-semantics';
 import type { ImportRecord } from '../import-analysis/records';
 import { getResolvedTargetKind } from '../import-graph/declaration-classifier';
 import type { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
@@ -7,22 +12,17 @@ import type {
   TypeScriptSemanticContext,
   TypeScriptSemanticResolution,
 } from './contracts';
-import {
-  collectNativeProviderEvidence,
-  isOriginalTargetInProgram,
-} from './provider-evidence';
-
-export interface DeclarationReferenceRequirement {
-  // An implementation prerequisite, not proof of current type provision.
-  kind: 'source-semantic' | 'compiler-membership';
-  targetFileName: string;
-}
+import { isOriginalTargetInProgram } from './provider-evidence';
+import { observeProjectReferenceRedirect } from './reference-redirect';
+import { requestEligibility } from './request-eligibility';
+export type { DeclarationReferenceRequirement } from '../dependency-semantics';
 
 export interface NativeDependencyFact {
   admission: 'admitted' | 'excluded' | 'unresolved';
   referenceRequirement: DeclarationReferenceRequirement | null;
   resolution: TypeScriptSemanticResolution;
-  typeEvidence: TypeEvidence;
+  typeEvidence?: TypeEvidence;
+  redirect?: ProjectReferenceRedirect;
 }
 
 export function hasDeclarationResolution(
@@ -32,64 +32,6 @@ export function hasDeclarationResolution(
     resolution.target !== null &&
     getResolvedTargetKind(resolution.target.resolvedFileName) === 'declaration'
   );
-}
-
-function isNeedsCompilerMembership(options: {
-  context: TypeScriptSemanticContext;
-  resolution: TypeScriptSemanticResolution;
-}): boolean {
-  const target = options.resolution.target;
-  return (
-    !(target === null || target.isExternalLibraryImport) &&
-    !isAlreadyCovered(options.context.program, target.resolvedFileName)
-  );
-}
-
-function isAlreadyCovered(program: ts.Program, target: string): boolean {
-  if (isExplicitInput(program, target)) return true;
-  const file = program.getSourceFile(target);
-  return file !== undefined && program.isSourceFileFromExternalLibrary(file);
-}
-
-function getRequirement(options: {
-  context: TypeScriptSemanticContext;
-  resolution: TypeScriptSemanticResolution;
-  typeEvidence: TypeEvidence;
-}): DeclarationReferenceRequirement | null {
-  const target = options.resolution.target;
-  return target === null || hasDeclarationResolution(options.resolution)
-    ? null
-    : getSourceRequirement(options);
-}
-
-function getSourceRequirement(options: {
-  context: TypeScriptSemanticContext;
-  resolution: TypeScriptSemanticResolution;
-  typeEvidence: TypeEvidence;
-}): DeclarationReferenceRequirement | null {
-  if (options.typeEvidence.kind === 'ambient')
-    return getAmbientRequirement(options);
-  if (options.typeEvidence.kind === 'concrete-declaration') return null;
-  return {
-    kind: 'source-semantic',
-    targetFileName: options.resolution.target!.resolvedFileName,
-  };
-}
-
-function getAmbientRequirement(options: {
-  context: TypeScriptSemanticContext;
-  resolution: TypeScriptSemanticResolution;
-  typeEvidence: TypeEvidence;
-}): DeclarationReferenceRequirement | null {
-  if (
-    options.typeEvidence.kind !== 'ambient' ||
-    !isNeedsCompilerMembership(options)
-  )
-    return null;
-  return {
-    kind: 'compiler-membership',
-    targetFileName: options.resolution.target!.resolvedFileName,
-  };
 }
 
 function getAdmission(
@@ -114,31 +56,38 @@ export function collectNativeDependencyFact(options: {
   tsModule: typeof ts;
 }): NativeDependencyFact {
   const resolution = options.context.resolveImportRecord(options.record);
-  const typeEvidence = collectNativeProviderEvidence({
-    ...options,
-    resolution,
+  const redirect = resolvedRedirect(options, resolution);
+  const decision = decideReferenceRequirement({
+    target: requestEligibility(
+      options.context.getSourceFile(options.record.filePath)!,
+      options.record,
+      options.tsModule,
+    ).governance
+      ? resolution.target
+      : null,
+    redirect,
   });
+  if (decision.state === 'pending')
+    throw new Error(
+      `Native dependency observation is incomplete: ${decision.need}`,
+    );
   return {
     admission: getAdmission(options.context, resolution, options.tsModule),
-    referenceRequirement: getRequirement({
-      ...options,
-      resolution,
-      typeEvidence,
-    }),
+    referenceRequirement: decision.value,
     resolution,
-    typeEvidence,
+    redirect,
   };
 }
 
-function isExplicitInput(program: ts.Program, target: string): boolean {
-  return (
-    program.getRootFileNames().includes(target) ||
-    isReferencedInput(program, target)
-  );
-}
-
-function isReferencedInput(program: ts.Program, target: string): boolean {
-  return (program.getResolvedProjectReferences() ?? []).some((reference) =>
-    reference?.commandLine.fileNames.includes(target),
-  );
+function resolvedRedirect(
+  options: Parameters<typeof collectNativeDependencyFact>[0],
+  resolution: TypeScriptSemanticResolution,
+): ProjectReferenceRedirect | undefined {
+  return resolution.target === null
+    ? undefined
+    : observeProjectReferenceRedirect(
+        options.context.program,
+        resolution.target.resolvedFileName,
+        options.tsModule,
+      );
 }

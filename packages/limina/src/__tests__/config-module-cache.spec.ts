@@ -609,6 +609,7 @@ it.each<{
     const rejected = f.run();
     expect(rejected.restored, reason).toBe(false);
     expect(rejected.adoptedInputs, reason).toEqual([]);
+    expect(count(rejected.events, 'read-block')).toBe(0);
     expect(count(rejected.events, `config-modules-result-${reason}`)).toBe(1);
     if (reason !== 'match')
       expect(rejected.events.some((event) => event.kind === 'validation')).toBe(

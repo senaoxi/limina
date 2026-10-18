@@ -1,6 +1,7 @@
 import { AstroSemanticContextManager } from '../astro-semantic/context';
 import { SvelteSemanticContextManager } from '../svelte-semantic/context';
 import { VueSemanticContextManager } from '../vue-semantic/context';
+import { createVueDependencyObserver } from '../vue-semantic/dependency-observer';
 import { createModuleResolutionRequestIndex } from './request-index';
 import { createResolutionProvider } from './resolution-provider';
 import {
@@ -64,5 +65,6 @@ export function createImportAnalysisContext(
       disposeOwnedManager(vue);
     },
     ...resolution,
+    ...createVueDependencyObserver(vue.manager),
   };
 }

@@ -94,8 +94,20 @@ export class AnalysisCacheController {
     this.cache.metrics.referenceOccurrences = Object.values(
       this.cache.contributions.records,
     ).flat().length;
-    for (const [kind, value] of Object.entries(this.cache.metrics)) {
-      recordCacheMetric(metrics, kind, this.#totalMetric(kind, value));
+    this.#reportCacheMetrics(metrics);
+  }
+
+  #reportCacheMetrics(metrics: AnalysisMetricsRecorder): void {
+    const kinds = new Set([
+      ...Object.keys(this.#completedMetrics),
+      ...Object.keys(this.cache.metrics),
+    ]);
+    for (const kind of kinds) {
+      recordCacheMetric(
+        metrics,
+        kind,
+        this.#totalMetric(kind, this.cache.metrics[kind] ?? 0),
+      );
     }
   }
 

@@ -6,6 +6,8 @@ export function effectiveCompilerOptions(
   options: ts.CompilerOptions,
 ): ts.CompilerOptions {
   return Object.fromEntries(
-    Object.entries(options).filter(([key]) => key !== 'configFile'),
+    Object.entries(options).filter(
+      ([key, value]) => key !== 'configFile' && value !== undefined,
+    ),
   );
 }

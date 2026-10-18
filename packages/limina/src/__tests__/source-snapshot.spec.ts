@@ -1549,15 +1549,6 @@ describe('check issue snapshots', () => {
         task: 'source:check',
         title: 'Resource module was not found',
       }),
-      createLiminaCheckIssue({
-        checkerName: 'vue-tsc',
-        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
-        filePath: 'packages/web/src/App.vue',
-        reason: 'The current Vue checker project has no declaration.',
-        rootDir: '/repo',
-        task: 'source:check',
-        title: 'Resource module type is undeclared',
-      }),
     ];
     const snapshot = createCheckSnapshot(issues);
     const json = JSON.parse(
@@ -1577,11 +1568,6 @@ describe('check issue snapshots', () => {
       expect.objectContaining({
         checkerName: 'tsc',
         code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
-        task: 'source:check',
-      }),
-      expect.objectContaining({
-        checkerName: 'vue-tsc',
-        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
         task: 'source:check',
       }),
     ]);

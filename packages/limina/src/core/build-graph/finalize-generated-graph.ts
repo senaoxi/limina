@@ -83,7 +83,7 @@ export async function finalizeGeneratedGraph(options: {
       ownedPaths: [...options.state.writeContext.expectedFiles],
     },
   );
-  return createResult({
+  const result = createResult({
     artifactPlan,
     changed: options.state.writeContext.changed,
     checkers: options.checkers,
@@ -96,4 +96,19 @@ export async function finalizeGeneratedGraph(options: {
     ownershipPlan: options.state.checkerOwnershipPlan,
     rootDir: options.config.rootDir,
   });
+  return {
+    ...result,
+    outputProjections: options.state.projectsByChecker
+      .values()
+      .flatMap((projects) =>
+        projects.flatMap((project) => project.outputProjections ?? []),
+      )
+      .toArray(),
+    typeInputProjections: options.state.projectsByChecker
+      .values()
+      .flatMap((projects) =>
+        projects.flatMap((project) => project.typeInputProjections ?? []),
+      )
+      .toArray(),
+  };
 }

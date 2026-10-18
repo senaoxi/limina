@@ -1,16 +1,7 @@
 import type { ImportRecord } from '#core/import-analysis/runner';
-import { compareCodeUnits } from '#utils/collections';
-import type ts from 'typescript';
 import { occurrenceKey } from '../analysis-cache/semantic-state';
-import type {
-  VueSemanticContext,
-  VueSemanticContextManager,
-} from '../vue-semantic/context';
-import {
-  collectSemanticDependencyEvidence,
-  type SemanticDependencyEvidence,
-} from '../vue-semantic/dependency';
-import { createAmbientTypeEvidence } from './ambient-symbol';
+import type { VueSemanticContextManager } from '../vue-semantic/context';
+import { observeVueDependency } from '../vue-semantic/dependency-observation';
 import type {
   TypeEvidence,
   TypeEvidenceGenerationCache,
@@ -38,74 +29,6 @@ function createUnsupportedEvidence(
   return { checker, kind: 'unsupported-checker', reason };
 }
 
-function createLiteralEvidence(options: {
-  cache: TypeEvidenceGenerationCache;
-  context: VueSemanticContext;
-  literal: ts.StringLiteralLike;
-}): TypeEvidence {
-  const symbol = options.context.program
-    .getTypeChecker()
-    .getSymbolAtLocation(options.literal);
-  return symbol === undefined
-    ? { kind: 'missing' }
-    : options.cache.getOrCreateAmbientSymbolEvidence(symbol, () =>
-        createAmbientTypeEvidence(symbol, options.context.tsModule),
-      );
-}
-
-function canonicalAmbientIdentity(evidence: TypeEvidence): string | null {
-  if (evidence.kind !== 'ambient') return null;
-  return JSON.stringify([
-    evidence.modulePattern,
-    [...evidence.declarationFilePaths].sort(compareCodeUnits),
-  ]);
-}
-
-function hasCanonicalIdentity(
-  identities: readonly (string | null)[],
-  firstIdentity: string | null | undefined,
-): boolean {
-  return [
-    firstIdentity !== null,
-    firstIdentity !== undefined,
-    identities.every((identity) => identity === firstIdentity),
-  ].every(Boolean);
-}
-
-function selectCanonicalEvidence(options: {
-  checkerName: string;
-  evidence: readonly TypeEvidence[];
-}): TypeEvidence {
-  if (options.evidence.every((item) => item.kind === 'missing')) {
-    return { kind: 'missing' };
-  }
-  const identities = options.evidence.map(canonicalAmbientIdentity);
-  const firstIdentity = identities[0];
-  return hasCanonicalIdentity(identities, firstIdentity)
-    ? options.evidence[0]!
-    : createUnsupportedEvidence(
-        options.checkerName,
-        'Vue source-map candidates did not agree on one canonical ambient module symbol.',
-      );
-}
-
-function evaluateEvidence(options: {
-  context: VueSemanticContext;
-  evidence: readonly SemanticDependencyEvidence[];
-  state: VueEvidenceProviderState;
-}): TypeEvidence {
-  return selectCanonicalEvidence({
-    checkerName: options.state.options.checkerName,
-    evidence: options.evidence.map((candidate) =>
-      createLiteralEvidence({
-        cache: options.state.options.cache,
-        context: options.context,
-        literal: candidate.literal,
-      }),
-    ),
-  });
-}
-
 function formatProviderError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -117,21 +40,8 @@ function querySemanticProvider(
   const context = state.options.contexts.acquire(
     state.options.capability.identity,
   );
-  const dependency = collectSemanticDependencyEvidence({
-    context,
-    importRecord,
-  });
-  if (dependency.kind === 'unsupported') {
-    return createUnsupportedEvidence(
-      state.options.checkerName,
-      dependency.reason,
-    );
-  }
-  return evaluateEvidence({
-    context,
-    evidence: dependency.candidates,
-    state,
-  });
+  return observeVueDependency({ context, importRecord, target: null })
+    .typeEvidence;
 }
 
 function queryProviderSafely(

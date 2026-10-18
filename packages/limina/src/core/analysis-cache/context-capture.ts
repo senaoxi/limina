@@ -1,5 +1,6 @@
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
+import { isDependencyContributionInput } from '../typescript-semantic/contribution-inputs';
 import type {
   ImporterRecord,
   InputDependency,
@@ -17,11 +18,14 @@ interface CaptureOptions {
   state: SemanticState;
   compilerInputs: Iterable<InputDependency>;
 }
+function isContributionSource(options: CaptureOptions, file: string): boolean {
+  return isDependencyContributionInput(options.project, file);
+}
 function sources(options: CaptureOptions): Record<string, string | null> {
   const result: Record<string, string | null> = {};
-  for (const file of options.state.projectRecord.roots) {
-    if (!options.state.projectRecord.members.includes(file)) continue;
-    result[file] = sourceId(options, file);
+  for (const file of options.state.projectRecord.members) {
+    if (isContributionSource(options, file))
+      result[file] = sourceId(options, file);
   }
   return result;
 }

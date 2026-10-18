@@ -696,7 +696,7 @@ describe('Vue semantic architecture', () => {
           .snapshot()
           .filter((metric) => metric.name === 'vue-program-create')
           .reduce((total, metric) => total + metric.count, 0),
-      ).toBe(0);
+      ).toBe(1);
     } finally {
       manager.dispose();
       await fixture.cleanup();

@@ -5,6 +5,10 @@ import {
   parseAnalysisSnapshot,
   parseAnalysisSnapshotRoot,
 } from '../core/analysis-cache/snapshot-schema';
+import {
+  type AnalysisBlockReference,
+  readAnalysisBlocks,
+} from '../core/analysis-cache/snapshot-shards';
 import { compareConfigModules } from './config-module-comparison';
 import type { ConfigObservation } from './config-observation';
 interface DecodeOptions {
@@ -13,6 +17,7 @@ interface DecodeOptions {
   configVersion?: string;
   configuration?: ConfigObservation;
   metrics?: AnalysisMetricsRecorder;
+  readBlock: (reference: AnalysisBlockReference) => Buffer;
 }
 type SnapshotRoot = Pick<AnalysisSnapshot, 'header' | 'configModules'>;
 export class AnalysisSnapshotDecoder {
@@ -62,7 +67,7 @@ export class AnalysisSnapshotDecoder {
     const start = performance.now();
     try {
       return parseAnalysisSnapshot(
-        value,
+        readAnalysisBlocks(value, this.#options.readBlock),
         this.#options.identity,
         this.#options.configVersion,
       );
@@ -81,7 +86,12 @@ export class AnalysisSnapshotDecoder {
     const root = parseAnalysisSnapshotRoot(value, this.#options.identity);
     const isQualified = this.#qualify(root);
     this.#record('config-modules-gate', start);
-    return isQualified ? this.#restore(value) : undefined;
+    return [
+      isQualified,
+      root?.header.configVersion === this.#options.configVersion,
+    ].every(Boolean)
+      ? this.#restore(value)
+      : undefined;
   }
 }
 

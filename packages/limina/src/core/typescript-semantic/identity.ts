@@ -26,7 +26,7 @@ export function createTypeScriptSemanticContextIdentity(
   project: TypeScriptSemanticProject,
 ): string {
   return createIdentity('bounded-typescript-semantic', {
-    adapterVersion: 'bounded-typescript-semantic-v4-scope-evidence',
+    adapterVersion: 'bounded-typescript-semantic-v5-support-semantics',
     analysisBinding: project.analysisBinding,
     admissionMode: project.admissionMode ?? 'full-program',
     configPath: normalizeAbsolutePath(project.configPath),
@@ -45,7 +45,7 @@ export function createTypeScriptProjectDependencyFactsIdentity(
 ): string {
   // Evidence depends on admitted ambient declarations as well as raw resolution.
   return createIdentity('typescript-project-dependency-facts', {
-    adapterVersion: 'typescript-project-dependency-facts-v3-scope-evidence',
+    adapterVersion: 'typescript-project-dependency-facts-v4-support-semantics',
     workspaceSourceBoundary: project.workspaceSourceBoundary.identity,
     configPath: normalizeAbsolutePath(project.configPath),
     virtualFiles: configInputIdentity(project.virtualFiles),

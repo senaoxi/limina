@@ -5,6 +5,7 @@ import { inputStat } from './input-state';
 import type { AnalysisInputs } from './inputs';
 import { installationBindings } from './installation-bindings';
 import type { InstallationDomain } from './installation-environment';
+import { pnpmLockCoverageKey } from './installation-lock-coverage';
 import { validateInstallationLock } from './installation-locks';
 import { installationOwner } from './installation-owner';
 
@@ -33,15 +34,9 @@ function validateObservedLock(
     validateInstallationLock(options);
     return;
   }
-  const key = JSON.stringify([
-    'pnpm-lock-coverage',
-    options.file,
-    options.roots.lockRoot,
-    options.roots.resolutionRoot,
-    version,
-  ]);
+  const key = pnpmLockCoverageKey(options.file, options.roots, version);
   // Reuse only the pure coverage decision. Each caller still observes current
-  // bytes and bindings before reaching this per-invocation memo.
+  // bytes and bindings before using a restored or invocation-local decision.
   inputs.memoizeObservation(key, () => {
     validateInstallationLock(options);
     return true;
@@ -102,8 +97,9 @@ export function observeInstallationDomain(options: {
   for (const file of locks)
     dependencies.push(options.inputs.observe(file, 'bytes'));
   return {
-    adapter: 'physical-installation-v1',
+    adapter: 'physical-installation-v2',
     root,
+    lockRoot: binding.lockRoot,
     resolutionRoot: binding.resolutionRoot,
     managerIdentity: binding.managerIdentity,
     manager: binding.manager,

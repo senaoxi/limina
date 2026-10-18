@@ -3,12 +3,16 @@ import type {
   FrameworkSemanticDependencyPreparation,
   FrameworkSemanticEvidence,
 } from '../framework-semantic/contracts';
+import type { ImportRecord } from '../import-analysis/records';
 import type { TypeEvidence } from '../type-evidence/cache';
+import type { VueDependencyObservation } from '../vue-semantic/dependency-observation';
 import type { InputDependency } from './contracts';
 import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
 
 export interface VueQueryResults {
+  'support-inputs': { filePath: string; records: ImportRecord[] }[];
+  'dependency-observation': VueDependencyObservation;
   preparation: Extract<
     FrameworkSemanticDependencyPreparation,
     { kind: 'supported' }
@@ -28,7 +32,7 @@ export interface VueQueryRecord {
   data: DataNode;
 }
 export interface VueContextRecord {
-  adapter: 'vue-3.2.4-v1';
+  adapter: 'vue-3.2.4-v2';
   project: Pick<VueProjectSemanticIdentity, 'configPath' | 'projectRootDir'> & {
     extensions: string[];
   };

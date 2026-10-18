@@ -5,6 +5,7 @@ import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptInclusionLedger } from './admission';
 import { findDirectiveRecord } from './import-record';
 import { collectOwnedSourceRecords } from './owned-source-records';
+import { potentialAugmentations } from './request-eligibility';
 import { resolveTripleSlashPathSemanticRecord } from './resolution';
 import type { TypeScriptResolutionLedger } from './resolution-ledger';
 import type { SourceSyntaxFactsCache } from './syntax-cache';
@@ -20,6 +21,7 @@ export function collectSemanticSourceRecords(options: {
   syntaxInput?: OwnedSyntaxInput;
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
+  compilerOptions: ts.CompilerOptions;
 }): readonly ImportRecord[] {
   const filePath = normalizeAbsolutePath(options.sourceFile.fileName);
   const records = collectOwnedSourceRecords({
@@ -29,6 +31,10 @@ export function collectSemanticSourceRecords(options: {
     sourceFile: options.sourceFile,
     tsModule: options.tsModule,
   });
+  if (options.tsModule.isExternalModule(options.sourceFile))
+    records.push(
+      ...potentialAugmentations(options.sourceFile, options.tsModule),
+    );
 
   admitExplicitReferences({ ...options, filePath, records });
   admitLibraryReferences(options);
@@ -45,6 +51,7 @@ function admitExplicitReferences(options: {
   records: readonly ImportRecord[];
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
+  compilerOptions: ts.CompilerOptions;
 }): void {
   const occurrenceBySpecifier = new Map<string, number>();
   for (const reference of options.sourceFile.referencedFiles) {
@@ -62,7 +69,8 @@ function admitExplicitReferences(options: {
       reference.fileName,
       options.filePath,
     );
-    options.admission.addExplicitReference(resolvedFileName);
+    if (!options.compilerOptions.noResolve)
+      options.admission.addExplicitReference(resolvedFileName);
     storeExplicitReference({ ...options, record });
   }
 }
@@ -100,7 +108,9 @@ function storeExplicitReference(options: {
 function admitLibraryReferences(options: {
   admission: TypeScriptInclusionLedger;
   sourceFile: ts.SourceFile;
+  compilerOptions: ts.CompilerOptions;
 }): void {
+  if (options.compilerOptions.noLib) return;
   for (const reference of options.sourceFile.libReferenceDirectives) {
     options.admission.addLibReference(reference.fileName);
   }
