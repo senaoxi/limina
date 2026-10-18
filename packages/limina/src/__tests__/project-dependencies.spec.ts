@@ -820,13 +820,14 @@ describe('project dependency authority', () => {
   });
 
   it('does not replace a resolved target with an unrelated optional type provider', () => {
-    const rootDirectory = '/virtual/mismatch-vue';
-    const sourceFile = path.join(rootDirectory, 'App.vue');
+    const file = createFixturePathResolver('/virtual/mismatch-vue');
+    const rootDirectory = file();
+    const sourceFile = file('App.vue');
     const fact = createFact({
       record: createRecord(sourceFile, './target'),
-      target: createTarget(path.join(rootDirectory, 'target.ts')),
+      target: createTarget(file('target.ts')),
       typeEvidence: {
-        filePath: path.join(rootDirectory, 'other.ts'),
+        filePath: file('other.ts'),
         kind: 'checker-source',
       },
     });
@@ -843,10 +844,10 @@ describe('project dependency authority', () => {
 
     expect(collection.dependencies).toMatchObject([
       {
-        resolvedFilePath: fact.target!.resolvedFileName,
+        resolvedFilePath: file('target.ts'),
         referenceRequirement: {
           kind: 'source-semantic',
-          targetFileName: fact.target!.resolvedFileName,
+          targetFileName: file('target.ts'),
         },
       },
     ]);
