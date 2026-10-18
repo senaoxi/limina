@@ -178,6 +178,67 @@ afterEach(async () => {
 });
 
 describe('project dependency authority', () => {
+  it('keeps the first closure fact per occurrence within each Vue collection', () => {
+    const fixturePath = createFixturePathResolver('/workspace/vue-occurrences');
+    const sourceFile = fixturePath('App.vue');
+    const record = createRecord(sourceFile, './target');
+    const second = {
+      ...record,
+      line: 2,
+      locator: { occurrence: 1, sourceStart: 30, sourceEnd: 38 },
+    };
+    for (const targetName of ['first.ts', 'replacement.ts']) {
+      const target = createTarget(fixturePath(targetName));
+      const distinct = createTarget(fixturePath('distinct.ts'));
+      const facts = [
+        createFact({ record, target }),
+        createFact({ record, target: createTarget(fixturePath('later.ts')) }),
+        createFact({ record: second, target: distinct }),
+      ];
+      const prepared = withPreparedFact(facts[0]!);
+      const context = createSemanticContext({
+        family: 'vue',
+        fileName: sourceFile,
+        rootDir: fixturePath(),
+      });
+      try {
+        const collection = collectProjectDependencies({
+          context,
+          importAnalysis: {
+            ...prepared.context,
+            prepareCheckerSemanticDependencies: () => ({
+              directSourceRecords: [],
+              facts,
+              kind: 'supported',
+              unmapped: [],
+            }),
+          },
+        });
+        expect(collection.failures).toEqual([]);
+        expect(collection.dependencies).toHaveLength(3);
+        expect(
+          collection.declarationClosure?.links.map((link) => link.target),
+        ).toEqual([
+          target.resolvedFileName,
+          target.resolvedFileName,
+          distinct.resolvedFileName,
+        ]);
+        expect(
+          collection.declarationClosure?.requirements.map((entry) => ({
+            target: entry.requirement.targetFileName,
+            occurrence: entry.occurrence.locator.occurrence,
+          })),
+        ).toEqual([
+          { target: target.resolvedFileName, occurrence: 0 },
+          { target: distinct.resolvedFileName, occurrence: 1 },
+        ]);
+        expect(prepared.resolveCheckerImportEvidence).not.toHaveBeenCalled();
+      } finally {
+        prepared.context.dispose?.();
+      }
+    }
+  });
+
   it('uses TypeScript AST plus checker resolution for direct-source dependencies', async () => {
     const temporaryRoot = await mkdtemp(
       path.join(tmpdir(), 'limina-project-deps-'),
