@@ -415,11 +415,13 @@ describe('R01 effective local metadata and installation trust', () => {
       expect(other.inputs.domainDirty).toBe(false);
       expect(() =>
         observeInstallationDomain({
-          root: f.root,
+          root: f.file(),
           configPath: f.file('packages/uncovered/tsconfig.json'),
           inputs: other.inputs,
         }),
-      ).toThrow('Lock does not cover resolution root');
+      ).toThrow(
+        `Lock does not cover resolution root: ${f.file('packages/uncovered')}`,
+      );
       expect(validateInstallationLock).toHaveBeenCalledTimes(parses + 1);
       if (environmentDocument) {
         f.write(
