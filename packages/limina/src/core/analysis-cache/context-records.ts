@@ -4,6 +4,7 @@ import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
 } from '../typescript-semantic/contracts';
+import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import { getEffectiveImporterRoots } from '../typescript-semantic/effective-roots';
 import { createTypeScriptSemanticContextIdentity } from '../typescript-semantic/identity';
 import { createContextRecord, isCompleteImporter } from './context-capture';
@@ -21,6 +22,7 @@ import {
   type TypeEnvironmentRecord,
 } from './installation-environment';
 import type { NativeAnalysisCache } from './native-cache';
+import { hasResolutionReceipt } from './resolution-queries';
 import { restoredDependencyContext } from './restored-context';
 import type { SemanticState } from './semantic-state';
 import { isSameData } from './snapshot-records';
@@ -105,6 +107,7 @@ function qualifiedQuery(
 ): [string, ResolutionRecord] | undefined {
   return [
     item.coverage === 'complete',
+    hasResolutionReceipt(item),
     hasValidInputs(cache, item.dependencies),
   ].every(Boolean)
     ? [key, item]
@@ -248,16 +251,17 @@ export class NativeContextRecords {
   capture(
     project: TypeScriptSemanticProject,
     state: SemanticState,
-    isComplete: boolean,
+    observation: { isComplete: boolean; entries: DeclarationEntry[] },
   ): void {
     const id = nativeContextId(project);
     const record = createContextRecord({
+      typeEntries: observation.entries,
       cache: this.#cache,
       project,
       state,
       compilerInputs: this.#compilerDependencies(id),
     });
-    record.complete = [record.complete, isComplete].every(Boolean);
+    record.complete = [record.complete, observation.isComplete].every(Boolean);
     if (!isSerializableProject(record.project)) {
       this.#cache.fallback('executable-native-options');
       return;

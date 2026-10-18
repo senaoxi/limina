@@ -1,5 +1,6 @@
 import { toRelativePath } from '#utils/path';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
+import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
   collectProjectDependencies,
   createSourceProjectSemanticContext,
@@ -47,7 +48,7 @@ function addProjectDependencyFailures(options: {
   });
   addDependencyCollectionFailures(options.context, collection.failures);
   const collect = () =>
-    processReferenceDependencies(options, collection.dependencies);
+    processReferenceDependencies(options, effectiveReferenceInputs(collection));
   const cache = options.context.projectDependencyCaches.analysisCache;
   if (cache === undefined) collect();
   else

@@ -1,3 +1,4 @@
+import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
 import { createWorkspaceSourceBoundaryFromProjects } from '../core/typescript-semantic';
 import { collectExpectedReferences } from './expected-reference-collection';
 import { addReferenceCompletenessProblems } from './reference-completeness';
@@ -22,6 +23,11 @@ export function runReferenceCompletenessPhase(state: GraphCheckState): void {
     workspaceLookup: state.workspaceLookup,
     workspaceSourceBoundary: createWorkspaceSourceBoundaryFromProjects(
       state.projects,
+      {
+        membership: new FileOwnerLookup(state.projects),
+        isWorkspaceFile: (file) =>
+          state.workspaceLookup.findOwnerForFile(file) !== null,
+      },
     ),
   });
 

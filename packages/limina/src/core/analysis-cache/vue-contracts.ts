@@ -5,12 +5,14 @@ import type {
 } from '../framework-semantic/contracts';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeEvidence } from '../type-evidence/cache';
+import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import type { VueDependencyObservation } from '../vue-semantic/dependency-observation';
 import type { InputDependency } from './contracts';
 import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
 
 export interface VueQueryResults {
+  'type-environment-entries': DeclarationEntry[];
   'support-inputs': { filePath: string; records: ImportRecord[] }[];
   'dependency-observation': VueDependencyObservation;
   preparation: Extract<
@@ -32,7 +34,7 @@ export interface VueQueryRecord {
   data: DataNode;
 }
 export interface VueContextRecord {
-  adapter: 'vue-3.2.4-v2';
+  adapter: 'vue-3.2.4-v3';
   project: Pick<VueProjectSemanticIdentity, 'configPath' | 'projectRootDir'> & {
     extensions: string[];
   };

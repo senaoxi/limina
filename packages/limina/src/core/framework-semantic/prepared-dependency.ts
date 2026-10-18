@@ -46,6 +46,7 @@ function targetIdentity(target: ResolvedCheckerModuleName | null): unknown {
     : [
         normalizeAbsolutePathIdentity(target.resolvedFileName),
         target.resolvedBy,
+        target.resolutionOrigin,
       ];
 }
 

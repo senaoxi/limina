@@ -37,7 +37,7 @@ These conditions combine different facts. Do not read the table as a classifier 
 
 | Condition                                                                                                                                                  | Effect on a new source reference                                                                               |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| The resolved target is `.d.ts`, `.d.mts`, or `.d.cts`                                                                                                      | Stops at the existing declaration boundary without inferring a source project reference                        |
+| The resolved target is `.d.ts`, `.d.mts`, or `.d.cts`                                                                                                      | Checks declaration entry eligibility; never infers the declaration file's producer                             |
 | Actual types come from a concrete declaration                                                                                                              | Adds no source relationship, even if the original resolution still records a source path                       |
 | A non-declaration source target exists, and type evidence is neither concrete nor ambient declaration evidence                                             | Retains a `source-semantic` requirement; this can also happen with `missing` type evidence                     |
 | A local source target and ambient declaration evidence exist, and the target is not already covered by explicit compiler inputs or other accepted coverage | May retain a `compiler-membership` requirement                                                                 |
@@ -77,9 +77,13 @@ Suppose the public entry of `core` has both type and runtime branches:
 }
 ```
 
-When the consuming checker actually selects `dist/index.d.ts`, Limina treats it as existing declaration consumption. The `default` branch pointing to source does not change that type-resolution result. A handwritten `src/index.d.ts` follows the same rule.
+When the checker selects `dist/index.d.ts`, the unselected `default` source branch does not create a reference. Known managed outputs and real Project Reference redirects preserve their artifact boundary. Third-party public declarations also stop internal dependency expansion.
 
-This relationship does not trigger a source declaration build for `core`. The project's own build, watch, or release workflow must maintain the declaration file's existence, freshness, and consistency with runtime output.
+A workspace public declaration enters governance analysis when an active governed tsconfig includes it in its effective root files. A declaration can belong to multiple configs. Without that membership the public entry stops; this does not prove that the file was generated or can type-check independently. Local relative imports, successful `paths` mappings and local `#imports` can enter the same declaration independently.
+
+After admission, ordinary declarations recurse without requiring their own owner. A chain `app → index.d.ts → helper.d.ts → feature.ts` can produce a reference from app to the project owning feature.ts. It does not produce a reference to the config containing index.d.ts. Traversal stops at feature.ts; that project's own analysis owns subsequent dependencies. A nested workspace public entry requires a new membership check.
+
+Explicit declaration roots, configuration `types/typeRoots`, legal triple-slash references and supported framework type environments also supply entries. `noResolve` can limit traversal, but does not erase independent roots; `skipLibCheck` does not disable dependency analysis. None of these entries changes the user's root-file membership. Declaration freshness remains the responsibility of the workflow producing any actual output artifacts.
 
 ## Declaration References and Framework Scheduling
 
@@ -156,7 +160,7 @@ Graph check computes the declaration build graph in memory and checks it against
 
 Reference-completeness checking also uses declaration-provider classification:
 
-- An import resolving to `.d.ts`, `.d.cts`, or `.d.mts` does not require a source project reference.
+- A declaration target alone does not require a reference to its producer. Eligible declaration closures can contribute requirements at their first implementation endpoints.
 - A dependency with a non-null declaration relationship requirement that reaches a valid source provider is checked for its corresponding project reference.
 - If TypeScript cannot confirm a declaration provider, graph check does not add a project reference from Oxc's runtime resolution result.
 - Extra-reference checks cover reachable declaration projects with files. They skip generated checker roots, expected edges, targets outside the reachable project set, references within the same generated checker namespace, and allowed references. Remaining references may be reported as extra.

@@ -1,3 +1,4 @@
+import { managedOutputLookupIdentity } from '../import-graph/managed-output-provider';
 import {
   createTypeScriptDependencyContext,
   createTypeScriptProjectDependencyFactsIdentity,
@@ -13,26 +14,29 @@ import type {
   ProjectDependencyObservation,
   ProjectDependencyRequest,
 } from './contracts';
+import { collectionReferenceInputs } from './declaration-projection';
 import { collectProjectDependencyFile } from './preparation';
 import {
   collectSupportContributions,
   collectVueSupportContributions,
 } from './support-contributions';
-
 function createEmptyCollection(): ProjectDependencyCollection {
   return { dependencies: [], failures: [], observations: [] };
 }
-
 function getCachedCollection(options: {
   cacheKey: string;
   request: ProjectDependencyRequest;
 }): ProjectDependencyCollection | undefined {
+  if (
+    managedOutputLookupIdentity(options.request.managedOutputLookup) ===
+    undefined
+  )
+    return undefined;
   const caches = options.request.caches;
   return caches === undefined
     ? undefined
     : readCachedCollection(caches, options.cacheKey);
 }
-
 function readCachedCollection(
   caches: NonNullable<ProjectDependencyRequest['caches']>,
   key: string,
@@ -49,6 +53,12 @@ function cacheCollection(options: {
   collection: ProjectDependencyCollection;
   request: ProjectDependencyRequest;
 }): void {
+  collectionReferenceInputs(options.collection);
+  if (
+    managedOutputLookupIdentity(options.request.managedOutputLookup) ===
+    undefined
+  )
+    return;
   options.request.caches?.projectDependencyCache.set(
     options.cacheKey,
     cloneProjectDependencyCollection(options.collection),
@@ -84,13 +94,9 @@ function createCollectionContext(request: ProjectDependencyRequest) {
 function restoreCollectionContext(
   request: ProjectDependencyRequest,
 ): ProjectDependencyRequest['typeScriptSemanticContext'] {
-  return persistentCollectionCache(request) === undefined
-    ? undefined
-    : restoreNativeCollection(request);
-}
-function restoreNativeCollection(request: ProjectDependencyRequest) {
-  const cache = request.caches?.analysisCache;
-  return cache?.restoreContext(collectionProject(request));
+  return persistentCollectionCache(request)?.restoreContext(
+    collectionProject(request),
+  );
 }
 function collectionBinding(request: ProjectDependencyRequest) {
   return {
@@ -147,10 +153,15 @@ function collectProjectDependenciesWithNewContext(options: {
 
 function collectProjectDependenciesWithContext(options: {
   request: ProjectDependencyRequest;
+  factsCacheKey: string;
   typeScriptSemanticContext: NonNullable<
     ProjectDependencyRequest['typeScriptSemanticContext']
   >;
 }): ProjectDependencyCollection {
+  options.request.caches?.typeScriptSemanticFactsCache.set(
+    options.factsCacheKey,
+    options.typeScriptSemanticContext,
+  );
   const collection = createEmptyCollection();
   const request = {
     ...options.request,
@@ -174,15 +185,6 @@ function cachedCollectionContext(options: {
     ) ?? restoreCollectionContext(options.request)
   );
 }
-function rememberCollectionContext(
-  options: { factsCacheKey: string; request: ProjectDependencyRequest },
-  context: NonNullable<ProjectDependencyRequest['typeScriptSemanticContext']>,
-): void {
-  options.request.caches?.typeScriptSemanticFactsCache.set(
-    options.factsCacheKey,
-    context,
-  );
-}
 function collectUncachedProjectDependencies(options: {
   factsCacheKey: string;
   request: ProjectDependencyRequest;
@@ -194,9 +196,8 @@ function collectUncachedProjectDependencies(options: {
   if (cachedContext === undefined) {
     return collectProjectDependenciesWithNewContext(options);
   }
-  rememberCollectionContext(options, cachedContext);
   return collectProjectDependenciesWithContext({
-    request: options.request,
+    ...options,
     typeScriptSemanticContext: cachedContext,
   });
 }

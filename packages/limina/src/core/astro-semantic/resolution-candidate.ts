@@ -5,6 +5,7 @@ import type {
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import { createFrameworkSemanticEvidence } from '../framework-semantic/contracts';
+import { getResolutionOrigin } from '../typescript-semantic/resolution-origin';
 import type { AstroSemanticContextManager } from './context';
 import type { AstroSemanticCandidate } from './dependency';
 import type { AstroSemanticResolution } from './resolution-types';
@@ -52,6 +53,7 @@ function createCheckerResolution(options: {
   return {
     isExternalLibraryImport:
       options.resolvedModule.isExternalLibraryImport === true,
+    resolutionOrigin: getResolutionOrigin(options.resolvedModule),
     resolvedBy: isCheckerSourcePath({
       fileName: resolvedFileName,
       project: options.project,

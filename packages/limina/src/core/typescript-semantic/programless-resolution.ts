@@ -16,6 +16,11 @@ import {
 } from './native-request-api';
 import { observedResolutionHost } from './observed-resolution-host';
 import { createMissingSemanticResolution } from './resolution';
+import {
+  getResolutionOrigin,
+  resolveModuleWithOrigin,
+  resolveTypeWithOrigin,
+} from './resolution-origin';
 function resolutionChannel(
   record: ImportRecord,
 ): TypeScriptSemanticResolution['channel'] {
@@ -48,6 +53,7 @@ function moduleTarget(
   return {
     ...normalizedTarget(module.resolvedFileName)!,
     isExternalLibraryImport: module.isExternalLibraryImport === true,
+    resolutionOrigin: getResolutionOrigin(module),
   };
 }
 export class ProgramlessResolution {
@@ -91,7 +97,8 @@ export class ProgramlessResolution {
       record.filePath,
       ['module', record.specifier, mode, this.project.options],
       (host) =>
-        ts.resolveModuleName(
+        resolveModuleWithOrigin(
+          ts,
           record.specifier,
           record.filePath,
           this.project.options,
@@ -118,6 +125,12 @@ export class ProgramlessResolution {
                 resolvedFileName: file,
                 extension: ts.Extension.Dts,
                 isExternalLibraryImport: false,
+                resolutionOrigin: {
+                  version: 1 as const,
+                  compiler: ts.version,
+                  route: 'local' as const,
+                  target: file,
+                },
               }
             : undefined,
           failedLookupLocations: [file],
@@ -132,9 +145,7 @@ export class ProgramlessResolution {
     mode: ts.ResolutionMode,
   ): TypeScriptSemanticResolution['target'] {
     if (record.kind === 'triple-slash-types')
-      return normalizedTarget(
-        this.typeTarget(record.specifier, record.filePath, mode),
-      );
+      return this.typeResolution(record.specifier, record.filePath, mode);
     return record.kind === 'triple-slash-path'
       ? this.#path(record)
       : this.#module(record, mode);
@@ -176,16 +187,17 @@ export class ProgramlessResolution {
       }),
     ).names;
   }
-  typeTarget(
+  typeResolution(
     name: string,
     file: string,
     mode?: ts.ResolutionMode,
-  ): string | undefined {
-    return this.query(
+  ): TypeScriptSemanticResolution['target'] {
+    const raw = this.query(
       file,
       ['type', name, mode, this.project.options],
       (host) =>
-        ts.resolveTypeReferenceDirective(
+        resolveTypeWithOrigin(
+          ts,
           name,
           file,
           this.project.options,
@@ -194,7 +206,13 @@ export class ProgramlessResolution {
           undefined,
           mode,
         ),
-    ).resolvedTypeReferenceDirective?.resolvedFileName;
+    ).resolvedTypeReferenceDirective;
+    return raw === undefined
+      ? null
+      : {
+          ...normalizedTarget(raw.resolvedFileName)!,
+          resolutionOrigin: getResolutionOrigin(raw),
+        };
   }
   library(name: string): string {
     const filename = name.startsWith('lib.')

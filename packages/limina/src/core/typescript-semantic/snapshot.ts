@@ -16,7 +16,8 @@ function cloneResolution(
 ): TypeScriptSemanticResolution {
   return {
     ...resolution,
-    target: resolution.target === null ? null : { ...resolution.target },
+    target:
+      resolution.target === null ? null : structuredClone(resolution.target),
   };
 }
 
@@ -74,6 +75,10 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
 
   return {
     identity: options.context.identity,
+    getTypeEnvironmentEntries: (() => {
+      const entries = options.context.getTypeEnvironmentEntries?.() ?? [];
+      return () => structuredClone(entries);
+    })(),
     getContributionFileNames: () => [...sourceFileNames],
     getDependencyFact(record) {
       const fact = facts.get(createImportRecordIdentity(record));

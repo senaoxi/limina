@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import { decodeData } from './data-codec';
+import {
+  declarationEntrySchema,
+  hasDeclarationReceipt,
+  requestEligibilitySchema,
+  resolutionOriginSchema,
+} from './declaration-schema';
 import { dependencySchema } from './dependency-schema';
 import { typeEnvironmentSchema } from './environment-schema';
 import { occurrenceSchema } from './occurrence-schema';
@@ -14,11 +20,14 @@ const redirectSchema = z.object({
 
 const text = z.string();
 const texts = z.array(text);
-const target = z.object({
-  resolvedFileName: text,
-  resolvedBy: z.enum(['typescript', 'checker-source']),
-  isExternalLibraryImport: z.boolean(),
-});
+const target = z
+  .object({
+    resolutionOrigin: resolutionOriginSchema.optional(),
+    resolvedFileName: text,
+    resolvedBy: z.enum(['typescript', 'checker-source']),
+    isExternalLibraryImport: z.boolean(),
+  })
+  .refine(hasDeclarationReceipt);
 const managedSource = z
   .object({
     checkerNames: texts,
@@ -43,6 +52,7 @@ const evidence = z.discriminatedUnion('kind', [
   }),
 ]);
 const fact = z.object({
+  eligibility: requestEligibilitySchema.optional(),
   framework: z.literal('vue'),
   importRecord: occurrenceSchema,
   provenance: z.enum(['direct-source', 'strict-source-map']),
@@ -64,6 +74,7 @@ const fact = z.object({
     .optional(),
 });
 const schemas = {
+  'type-environment-entries': z.array(declarationEntrySchema),
   'support-inputs': z.array(
     z.object({ filePath: text, records: z.array(occurrenceSchema) }),
   ),
@@ -119,6 +130,7 @@ const querySchema = z.object({
     'evidence',
     'dependency-observation',
     'support-inputs',
+    'type-environment-entries',
   ]),
   data: z.json(),
 });

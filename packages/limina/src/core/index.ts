@@ -20,7 +20,7 @@ import { TsconfigCore } from './tsconfig';
 import { TypeEvidenceCore } from './type-evidence';
 import type { TypeEvidenceMetricsRecorder } from './type-evidence/cache';
 import {
-  createWorkspaceSourceBoundary,
+  createWorkspaceSourceBoundaryFromProjects,
   type WorkspaceSourceBoundary,
 } from './typescript-semantic';
 import { SourceSyntaxFactsCache } from './typescript-semantic/syntax-cache';
@@ -89,18 +89,11 @@ export class AnalysisProviderSet {
     const setWorkspaceSourceBoundary = (
       generatedGraph: Awaited<ReturnType<BuildGraphCore['getGraph']>>,
     ): void => {
-      workspaceSourceBoundary = createWorkspaceSourceBoundary(
+      workspaceSourceBoundary = createWorkspaceSourceBoundaryFromProjects(
         generatedGraph.governedSources
           .values()
-          .flatMap((sources) =>
-            sources
-              .values()
-              .flatMap((source) => [
-                ...source.ownedFileNames,
-                ...source.declarationFileNames,
-              ])
-              .toArray(),
-          )
+          .flatMap((sources) => sources.values())
+          .map((source) => ({ ...source, fileNames: source.ownedFileNames }))
           .toArray(),
       );
     };

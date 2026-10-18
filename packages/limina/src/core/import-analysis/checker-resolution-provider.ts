@@ -81,7 +81,11 @@ function resolveVuePair(options: {
       request: options.request,
     });
   }
-  if (NATIVE_TYPESCRIPT_CHANNEL_KINDS.has(options.importRecord.kind)) {
+  if (
+    ['environment-pragma', 'jsx-import-source'].includes(
+      options.importRecord.kind,
+    )
+  ) {
     return resolveTypeScriptPair(options);
   }
   options.dependencies.requests.recordRequest('typescript');

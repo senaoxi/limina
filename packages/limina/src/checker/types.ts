@@ -5,6 +5,7 @@ import type {
   ResolvedCheckerConfig,
 } from '#config/runner';
 import type ts from 'typescript';
+import type { ResolutionOrigin } from '../core/typescript-semantic/resolution-origin';
 import type {
   LiminaDependencyFailureKind,
   LiminaDependencyOwnership,
@@ -78,6 +79,7 @@ export interface CheckerModuleResolveOptions {
 }
 
 export interface ResolvedCheckerModuleName {
+  resolutionOrigin?: ResolutionOrigin;
   isExternalLibraryImport: boolean;
   resolvedBy: 'checker-source' | 'typescript';
   resolvedFileName: string;

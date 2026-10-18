@@ -6,6 +6,7 @@ import {
   createFrameworkSemanticFailure,
 } from '../framework-semantic/contracts';
 import type { VueSemanticContextManager } from '../vue-semantic/context';
+import { resolveVueReferenceDirective } from '../vue-semantic/reference-directives';
 import { resolveVueSemanticImport } from '../vue-semantic/resolution';
 import type { ImportRecord } from './records';
 import type {
@@ -87,6 +88,12 @@ function resolveUncachedVuePair(options: {
   manager: VueSemanticContextManager;
   oxc: string | null;
 }): ModuleResolutionPair {
+  if (
+    ['triple-slash-path', 'triple-slash-types'].includes(
+      options.importRecord.kind,
+    )
+  )
+    return resolveVueReferenceDirective(options);
   const semantic = resolveVueSemanticImport({
     identity: options.identity,
     importRecord: options.importRecord,

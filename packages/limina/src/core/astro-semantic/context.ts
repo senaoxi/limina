@@ -16,6 +16,7 @@ import type { GovernanceRootBase } from '#utils/workspace-root';
 import type ts from 'typescript';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import type { ImportAnalysisMetricsRecorder } from '../import-analysis/types';
+import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import type { AstroMaterializedServiceScript } from './context-host';
 import {
@@ -66,7 +67,7 @@ export class AstroSemanticContext {
       toolchain: options.toolchain,
     });
     const host = options.toolchain.volarTypeScript.createLanguageServiceHost(
-      options.toolchain.tsModule,
+      originTracingCompiler(options.toolchain.tsModule),
       options.toolchain.tsModule.sys,
       this.language,
       (fileName) => this.asUri(fileName),

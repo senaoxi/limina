@@ -3,13 +3,14 @@ import { analysisHash, nativeContextId } from '../analysis-cache/identity';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import {
   createTypeScriptDependencyContext,
-  createWorkspaceSourceBoundary,
+  createWorkspaceSourceBoundaryFromProjects,
 } from '../typescript-semantic';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
 } from '../typescript-semantic/contracts';
+import { projectNativeDeclarationClosure } from '../typescript-semantic/native-closure';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 import type { SourceProject } from './types';
 // Independent of config-type-directives receipts: covers output governance.
@@ -32,22 +33,19 @@ interface ProjectionInput {
 }
 function dependencies(
   context: TypeScriptSemanticDependencyContext,
+  project: TypeScriptSemanticProject,
 ): Map<string, string> {
-  const targets = new Map<string, string>();
-  const files = contributionFiles(context);
-  for (const file of files) addFileTargets(context, file, targets);
-  return targets;
-}
-function addFileTargets(
-  context: TypeScriptSemanticDependencyContext,
-  file: string,
-  targets: Map<string, string>,
-): void {
-  const records = context.getImportRecords(file);
-  for (const record of records) {
-    const requirement = context.getDependencyFact(record).referenceRequirement;
-    if (requirement !== null) targets.set(requirement.targetFileName, file);
-  }
+  const projection = projectNativeDeclarationClosure(context, project);
+  if (projection.incomplete.length > 0)
+    throw new Error(
+      `Output declaration closure is incomplete: ${project.configPath}`,
+    );
+  return new Map(
+    projection.requirements.map(({ occurrence, requirement }) => [
+      requirement.targetFileName,
+      occurrence.filePath,
+    ]),
+  );
 }
 function outputOptions(project: SourceProject): ts.CompilerOptions {
   const receipt = project.typeInputProjections?.findLast(
@@ -72,8 +70,8 @@ function outputContext(
       checker: `${project.checkerName}:output`,
     },
     admissionMode: 'full-program',
-    workspaceSourceBoundary: createWorkspaceSourceBoundary(
-      owners.keys().toArray(),
+    workspaceSourceBoundary: createWorkspaceSourceBoundaryFromProjects(
+      new Set(owners.values()),
     ),
   };
 }
@@ -127,13 +125,15 @@ function coveredTarget(
     outputConfig: owner.outputConfigPath,
   };
 }
-function coverDependencies(
-  project: SourceProject,
-  owners: Map<string, SourceProject>,
-  context: TypeScriptSemanticDependencyContext,
-): OutputProjectionReceipt['covered'] {
+function coverDependencies(options: {
+  project: SourceProject;
+  owners: Map<string, SourceProject>;
+  context: TypeScriptSemanticDependencyContext;
+  output: TypeScriptSemanticProject;
+}): OutputProjectionReceipt['covered'] {
+  const { project, owners, context, output } = options;
   const covered: OutputProjectionReceipt['covered'] = [];
-  const targets = dependencies(context);
+  const targets = dependencies(context, output);
   for (const [target, contributor] of targets) {
     const owner = foreignOwner(owners, target, project);
     if (owner !== undefined)
@@ -157,7 +157,12 @@ function nativeReceipt(
     return {
       ...baseReceipt(input.project, output),
       contextId: nativeContextId(output),
-      covered: coverDependencies(input.project, owners, context),
+      covered: coverDependencies({
+        project: input.project,
+        owners,
+        context,
+        output,
+      }),
     };
   } finally {
     disposeContext(context);
@@ -204,10 +209,4 @@ export function isValidOutputProjection(
   return receipt.contextId === null
     ? receipt.sourceTarget === receipt.outputTarget
     : isValidContext(receipt, cache, receipt.contextId);
-}
-
-function contributionFiles(
-  context: TypeScriptSemanticDependencyContext,
-): readonly string[] {
-  return context.getContributionFileNames?.() ?? [];
 }

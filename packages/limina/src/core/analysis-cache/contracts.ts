@@ -1,6 +1,7 @@
 import type { AnalysisReadDescriptor } from '#utils/analysis-input';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
+import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
 import type { FileDependencyFacts } from '../typescript-semantic/file-dependency-facts';
 import type { DataNode } from './data-codec';
@@ -8,7 +9,7 @@ import type { TypeEnvironmentRecord } from './installation-environment';
 import type { VueContextRecord } from './vue-contracts';
 
 // Installation coverage now requires the selected lock root and byte receipt.
-export const ANALYSIS_ADAPTER = 'typescript-6.0.3-vue-3.2.4-v12';
+export const ANALYSIS_ADAPTER = 'typescript-6.0.3-vue-3.2.4-v13';
 
 export interface InputDependency {
   inputId: string;
@@ -78,6 +79,7 @@ export interface ReferenceContribution {
 }
 
 export interface NativeContextRecord {
+  typeEntries: DeclarationEntry[];
   collection?: {
     adapter: 'native-requests-v1';
     mode: 'programless' | 'compatibility';

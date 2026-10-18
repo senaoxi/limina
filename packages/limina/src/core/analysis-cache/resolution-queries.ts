@@ -1,5 +1,6 @@
 import type ts from 'typescript';
 import type { AnalysisCacheMetrics, ResolutionRecord } from './contracts';
+import { hasDeclarationReceipt } from './declaration-schema';
 import { analysisHash } from './identity';
 import type { AnalysisInputs } from './inputs';
 import { QueryTrace } from './query-trace';
@@ -53,6 +54,7 @@ export class ResolutionQueries {
   #hasValidInputs(query: ResolutionRecord): boolean {
     const checks = [
       query.coverage === 'complete',
+      hasResolutionReceipt(query),
       query.dependencies.every((input) => this.#options.inputs.valid(input)),
     ];
     return checks.every(Boolean);
@@ -112,4 +114,21 @@ export class ResolutionQueries {
       ? this.#restore<T>(id, current)
       : this.#previous(query, id);
   }
+}
+
+export function hasResolutionReceipt(record: ResolutionRecord): boolean {
+  const request = record.request;
+  return (
+    !Array.isArray(request) ||
+    request[0] === 'library' ||
+    hasResultReceipt(record.result)
+  );
+}
+function hasResultReceipt(raw: unknown): boolean {
+  const result = raw as {
+    resolvedModule?: { resolvedFileName: string };
+    resolvedTypeReferenceDirective?: { resolvedFileName: string };
+  };
+  const target = result.resolvedModule ?? result.resolvedTypeReferenceDirective;
+  return target === undefined || hasDeclarationReceipt(target);
 }

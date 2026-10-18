@@ -33,6 +33,7 @@ export function restoredDependencyContext(
   };
   return {
     identity,
+    getTypeEnvironmentEntries: () => structuredClone(context.typeEntries),
     getContributionFileNames: () => Object.keys(context.sources),
     hasSourceFile: (file) =>
       Object.hasOwn(context.sources, normalizeAbsolutePath(file)),

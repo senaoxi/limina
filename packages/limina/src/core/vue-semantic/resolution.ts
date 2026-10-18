@@ -7,6 +7,7 @@ import type { ImportRecord } from '#core/import-analysis/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type { FrameworkSemanticFailureStage } from '../framework-semantic/contracts';
+import { getResolutionOrigin } from '../typescript-semantic/resolution-origin';
 import type { VueSemanticContextManager } from './context';
 import {
   collectSemanticDependencyEvidence,
@@ -94,6 +95,7 @@ function createCheckerResolution(options: {
   return {
     isExternalLibraryImport:
       options.resolvedModule.isExternalLibraryImport === true,
+    resolutionOrigin: getResolutionOrigin(options.resolvedModule),
     resolvedBy: isCheckerSource({
       fileName: resolvedFileName,
       context: options.context,
@@ -108,6 +110,7 @@ function canonicalCandidate(candidate: ResolvedSemanticCandidate): string {
   return JSON.stringify([
     candidate.evidence.semanticSpecifier,
     candidate.mode,
+    candidate.resolution?.resolutionOrigin,
     getResolutionValue(candidate.resolution, 'resolvedFileName'),
     getResolutionValue(candidate.resolution, 'resolvedBy'),
   ]);

@@ -164,6 +164,7 @@ function records(file: (...segments: string[]) => string): AnalysisSnapshot {
       queryIds: [],
       boundary: [],
       sources: {},
+      typeEntries: [],
       complete: true,
     };
     for (let index = 0; index < 40; index++) {

@@ -1,6 +1,7 @@
 import { isBuildCapablePreset } from '#checkers';
 import type { formatImportRecordLocation } from '#core/import-graph/context';
 import { uniqueCodeUnitSortedStrings } from '#utils/collections';
+import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
   collectProjectDependencies,
   createSourceProjectSemanticContext,
@@ -264,7 +265,7 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
   });
   processFrameworkDependencies({
     base: options,
-    dependencies: collection.dependencies,
+    dependencies: effectiveReferenceInputs(collection),
     frameworkFiles,
     project,
   });

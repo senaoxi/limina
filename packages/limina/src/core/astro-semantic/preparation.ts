@@ -2,6 +2,7 @@ import type ts from 'typescript';
 import type {
   FrameworkSemanticCandidate,
   FrameworkSemanticDependencyPreparation,
+  PreparedDependencyFact,
 } from '../framework-semantic/contracts';
 import {
   mergePreparedDirectSourceRecords,
@@ -136,11 +137,15 @@ function prepareMappedServices(options: {
     tsModule: options.context.toolchain.tsModule,
   });
   if (prepared.kind === 'unsupported') return prepared;
-  return createSupportedPreparation({
-    directSourceRecords: direct.records,
-    facts: [...prepared.facts, ...supportContributions(options)],
-    unmapped: options.unmapped,
-  });
+  const support = supportContributions(options, prepared.facts);
+  return {
+    ...createSupportedPreparation({
+      directSourceRecords: direct.records,
+      facts: [...prepared.facts, ...support.facts],
+      unmapped: options.unmapped,
+    }),
+    declarationClosure: support.closure,
+  } as FrameworkSemanticDependencyPreparation;
 }
 
 function prepareUnchecked(options: {
@@ -206,11 +211,14 @@ export function prepareAstroSemanticDependencies(options: {
 
 function supportContributions(
   options: Parameters<typeof prepareMappedServices>[0],
+  entryFacts: PreparedDependencyFact[],
 ) {
   const boundary = options.supportInputBoundary;
-  if (boundary === undefined) return [];
+  if (boundary === undefined) return { facts: [], closure: undefined };
   const { context } = options;
   return collectFrameworkSupportContributions({
+    configPath: context.project.seed.configPath,
+    entryFacts,
     boundary,
     checkerName: 'astro',
     framework: 'astro',

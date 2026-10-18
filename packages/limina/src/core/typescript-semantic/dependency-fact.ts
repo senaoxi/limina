@@ -18,6 +18,7 @@ import { requestEligibility } from './request-eligibility';
 export type { DeclarationReferenceRequirement } from '../dependency-semantics';
 
 export interface NativeDependencyFact {
+  eligibility?: { governance: boolean; expansion: boolean };
   admission: 'admitted' | 'excluded' | 'unresolved';
   referenceRequirement: DeclarationReferenceRequirement | null;
   resolution: TypeScriptSemanticResolution;
@@ -72,6 +73,11 @@ export function collectNativeDependencyFact(options: {
       `Native dependency observation is incomplete: ${decision.need}`,
     );
   return {
+    eligibility: requestEligibility(
+      options.context.getSourceFile(options.record.filePath)!,
+      options.record,
+      options.tsModule,
+    ),
     admission: getAdmission(options.context, resolution, options.tsModule),
     referenceRequirement: decision.value,
     resolution,

@@ -38,10 +38,12 @@ This page registers 12 properties that affect system correctness. They come from
 - **Problem**: Promoting relative types to roots expanded ownership; deleting all non-root dependencies lost compiler support obligations; using Program membership to suppress edges lost governance relations.
 - **Root cause**: Requests, resolution, actual loading and reference contributions have different qualification rules.
 - **Enforcement / Why it works**: [Request eligibility](../../packages/limina/src/core/typescript-semantic/request-eligibility.ts) and effective configuration control expansion. Unified projection stops foreign implementation internals at their actual owner. Programless contexts publish only after completion; unsupported consumers switch atomically to the compatible adapter.
-- **Concrete example**: A's env.d.ts imports B, which imports C: retain A→B and B→C, not A→C. A shadowed JS require is not a runtime governance request, but a compiler-loaded env.d.ts can still contribute its legal dependency on B. `noResolve` restricts declaration recursion without deleting resolved implementation candidates.
+- **Concrete example**: A's env.d.ts imports B, which imports C: retain A→B and B→C, not A→C. A shadowed JS require does not establish a governance entry; a compiler-loaded env.d.ts contributes its legal dependency on B only through another qualifying entry. `noResolve` restricts declaration recursion without deleting resolved implementation candidates.
 - **Protected property**: Complete compiler-support contributions, bounded governance ownership, reachable and atomic closure updates.
 - **Evidence / Strength / Confidence**: [Programless](../../packages/limina/src/__tests__/programless-context.spec.ts), [native provider](../../packages/limina/src/__tests__/native-provider-evidence.spec.ts), [generated graph](../../packages/limina/src/__tests__/generated-graph.spec.ts), and [fresh-process cache](../../packages/limina/src/__tests__/full-analysis-cache.spec.ts) tests cover entries, cycle cleanup, actual builds and restoration.
 - **Boundaries**: Original references are structural inputs; inferred references never feed discovery. Relative types preserve their selected entries without becoming roots. Arbitrary declarations do not identify producer configurations or tasks.
+
+Public workspace declaration admission uses active effective-root membership, not Program inclusion or output ownership. Local declarations recurse without per-node ownership; each new public entry is gated again. Entry provenance, governance qualification and expansion remain separate. See [declaration entry governance](./semantics.md#declaration-entry-governance).
 
 ## I04 — Locked dependency facts preserve checker occurrences and provenance
 

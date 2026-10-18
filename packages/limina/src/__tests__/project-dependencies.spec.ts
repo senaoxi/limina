@@ -24,7 +24,10 @@ import { cloneProjectDependencyPreparation } from '../core/project-dependencies/
 import type { ProjectDependencyCollection } from '../core/project-dependencies/contracts';
 import { collectPreparedProjectDependencyFact } from '../core/project-dependencies/dependency-record';
 import { createUnobservedDependencyEvidence } from '../core/project-dependencies/evidence';
-import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
+import {
+  createWorkspaceSourceBoundary,
+  createWorkspaceSourceBoundaryFromProjects,
+} from '../core/typescript-semantic';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
@@ -70,7 +73,13 @@ function createSemanticContext(options: {
       kind: 'locked',
       source: 'explicit',
     },
-    workspaceSourceBoundary: createWorkspaceSourceBoundary([fileName]),
+    workspaceSourceBoundary: createWorkspaceSourceBoundaryFromProjects([
+      {
+        configPath: fixturePath('tsconfig.json'),
+        fileNames: [fileName],
+        packageRootDir: rootDirectory,
+      },
+    ]),
   };
   if (options.family === 'vue') {
     context.vueSemanticIdentity = {
@@ -88,6 +97,12 @@ function createTarget(
     isExternalLibraryImport: false,
     resolvedBy,
     resolvedFileName,
+    resolutionOrigin: {
+      version: 1,
+      compiler: ts.version,
+      route: 'local',
+      target: resolvedFileName,
+    },
   };
 }
 
@@ -133,7 +148,11 @@ function withPreparedFact(fact: PreparedDependencyFact): {
   return {
     context: {
       ...base,
-      collectCheckerSupportInputs: () => [],
+      collectCheckerSupportInputs: () =>
+        fact.target === null
+          ? []
+          : [{ filePath: fact.target.resolvedFileName, records: [] }],
+      collectCheckerTypeEnvironmentEntries: () => [],
       prepareCheckerSemanticDependencies: vi.fn(() => ({
         directSourceRecords: [],
         facts: [fact],

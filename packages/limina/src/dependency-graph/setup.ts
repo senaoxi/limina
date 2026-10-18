@@ -5,6 +5,7 @@ import {
   type ProjectInfo,
 } from '#core/import-graph/context';
 import type { WorkspacePackage } from '#core/workspace/actions';
+import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
 import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
 import { createWorkspaceSourceBoundaryFromProjects } from '../core/typescript-semantic';
 import {
@@ -107,13 +108,14 @@ export async function createDependencyGraphCollectionContext(options: {
       filterProjectInfoToActivatedRegion(project, workspaceLookup),
     );
     const importAnalysis = core.imports.context;
+    const membership = createFileOwnerLookup(projects);
     throwGraphProblems(problems);
 
     return {
       config: options.config,
       core,
       edgesByKey: new Map(),
-      fileOwnerLookup: createFileOwnerLookup(projects),
+      fileOwnerLookup: membership,
       importAnalysis,
       ownsCore,
       outputRoots,
@@ -124,8 +126,14 @@ export async function createDependencyGraphCollectionContext(options: {
       view: normalizeDependencyGraphView(options.graphOptions.view),
       workspaceLookup,
       workspacePackages,
-      workspaceSourceBoundary:
-        createWorkspaceSourceBoundaryFromProjects(projects),
+      workspaceSourceBoundary: createWorkspaceSourceBoundaryFromProjects(
+        projects,
+        {
+          membership: new FileOwnerLookup(projects),
+          isWorkspaceFile: (file) =>
+            pathIndex.findPackageForPath(file) !== null,
+        },
+      ),
     };
   } catch (error) {
     if (ownsCore) core.dispose();

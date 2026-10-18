@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { configModuleSnapshotSchema } from './config-module-schema';
 import { ANALYSIS_ADAPTER, type AnalysisSnapshot } from './contracts';
+import {
+  hasDeclarationReceipt,
+  requestEligibilitySchema,
+  resolutionOriginSchema,
+} from './declaration-schema';
 import { dependencySchema as dependency } from './dependency-schema';
 import { discoveryRecordSchema } from './discovery-schema';
 import { nativeContextSchema } from './environment-schema';
@@ -11,11 +16,14 @@ import { vueContextSchema } from './vue-schema';
 const text = z.string();
 const texts = z.array(text);
 const optionalNumber = z.number().optional();
-const target = z.object({
-  resolvedFileName: text,
-  resolvedBy: z.literal('typescript'),
-  isExternalLibraryImport: z.boolean(),
-});
+const target = z
+  .object({
+    resolutionOrigin: resolutionOriginSchema.optional(),
+    resolvedFileName: text,
+    resolvedBy: z.literal('typescript'),
+    isExternalLibraryImport: z.boolean(),
+  })
+  .refine(hasDeclarationReceipt);
 const typeEvidence = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('missing') }),
   z.object({
@@ -27,6 +35,7 @@ const typeEvidence = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('checker-source'), filePath: text }),
 ]);
 const fact = z.object({
+  eligibility: requestEligibilitySchema.optional(),
   admission: z.enum(['admitted', 'excluded', 'unresolved']),
   typeEvidence: typeEvidence.optional(),
   redirect: z
@@ -60,6 +69,7 @@ const fact = z.object({
 });
 const rawTarget = z
   .looseObject({
+    resolutionOrigin: resolutionOriginSchema.optional(),
     resolvedFileName: text,
     extension: text.optional(),
     isExternalLibraryImport: z.boolean().optional(),

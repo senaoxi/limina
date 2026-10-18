@@ -37,6 +37,14 @@ export function cloneProjectDependencyCollection(
   collection: ProjectDependencyCollection,
 ): ProjectDependencyCollection {
   return {
+    declarationClosure:
+      collection.declarationClosure === undefined
+        ? undefined
+        : structuredClone(collection.declarationClosure),
+    referenceInputs:
+      collection.referenceInputs === undefined
+        ? undefined
+        : structuredClone(collection.referenceInputs),
     dependencies: collection.dependencies.map((dependency) => ({
       ...dependency,
       evidence: cloneDependencyEvidence(dependency.evidence),
@@ -69,13 +77,17 @@ export function cloneProjectDependencyPreparation(
   preparation: ProjectDependencyPreparation,
 ): ProjectDependencyPreparation {
   return {
+    declarationClosure:
+      preparation.declarationClosure === undefined
+        ? undefined
+        : structuredClone(preparation.declarationClosure),
     directSourceRecords: preparation.directSourceRecords.map((record) =>
       structuredClone(record),
     ),
     facts: preparation.facts.map((fact) => ({
       ...fact,
       importRecord: structuredClone(fact.importRecord),
-      target: fact.target === null ? null : { ...fact.target },
+      target: fact.target === null ? null : structuredClone(fact.target),
       typeEvidence: cloneTypeEvidence(fact.typeEvidence),
       typeEvidenceOrigin:
         fact.typeEvidenceOrigin === undefined

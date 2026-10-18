@@ -3,6 +3,7 @@ import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
 } from '../typescript-semantic/contracts';
+import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
 import { emptyMetrics } from './cache-metrics';
 import { NativeContextRecords } from './context-records';
@@ -39,7 +40,6 @@ import {
 } from './snapshot-records';
 import { VueAnalysisRecords } from './vue-records';
 import { observePreviousVueBytes } from './vue-toolchain-inputs';
-
 export class NativeAnalysisCache {
   readonly #resolutions: ResolutionQueries;
   readonly #facts: ImporterFacts;
@@ -66,7 +66,6 @@ export class NativeAnalysisCache {
   readonly contexts: Record<string, NativeContextRecord> = {};
   readonly graphs: Record<string, GraphRecord> = {};
   readonly vue: VueAnalysisRecords;
-
   readonly identity: string;
   readonly configVersion: string | undefined;
   readonly configModules: ConfigModuleSnapshot;
@@ -112,12 +111,10 @@ export class NativeAnalysisCache {
     this.#graphs = new CachedGraphRecords(this);
     this.vue = new VueAnalysisRecords(this);
   }
-
   #checkConsumerCoverage(): void {
     if (this.previous === undefined) return;
     this.#checkCoverage(this.previous);
   }
-
   #checkCoverage(previous: AnalysisSnapshot): void {
     const isIncomplete = Object.values(previous.queries).some(
       (query) => query.coverage === 'unknown',
@@ -133,11 +130,9 @@ export class NativeAnalysisCache {
     );
     this.inputs.domainDirty ||= hasChanges;
   }
-
   #recordProject(id: string, record: ProjectRecord): void {
     this.projects[id] = retainData(this.previous?.projects[id], record);
   }
-
   #physicalProject(project: TypeScriptSemanticProject): boolean {
     return (project.virtualFiles?.size ?? 0) === 0;
   }
@@ -204,13 +199,16 @@ export class NativeAnalysisCache {
   captureContext(
     project: TypeScriptSemanticProject,
     program: ts.Program,
-    isCovered: () => boolean,
+    observation: { isCovered(): boolean; entries: DeclarationEntry[] },
   ): void {
     const state = this.#states.get(nativeContextId(project));
     if (state?.options.program !== program) return;
-    const isComplete = isCovered();
+    const isComplete = observation.isCovered();
     this.#facts.finish(state.contextId);
-    this.#contexts.capture(project, state, isComplete);
+    this.#contexts.capture(project, state, {
+      isComplete,
+      entries: observation.entries,
+    });
   }
   restoreContext(
     project: TypeScriptSemanticProject,

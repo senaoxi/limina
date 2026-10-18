@@ -1,6 +1,9 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
-import type { FrameworkSemanticDependencyPreparation } from '../framework-semantic/contracts';
+import type {
+  FrameworkSemanticDependencyPreparation,
+  PreparedDependencyFact,
+} from '../framework-semantic/contracts';
 import { enumerateGeneratedSemanticDependencies } from '../framework-semantic/generated-dependencies';
 import {
   mergePreparedDirectSourceRecords,
@@ -98,9 +101,11 @@ function prepareProjectedCandidates(options: {
     tsModule: options.toolchain.tsModule,
   });
   if (prepared.kind === 'unsupported') return prepared;
+  const support = supportContributions(options, getProgram, prepared.facts);
   return {
+    declarationClosure: support.closure,
     directSourceRecords: direct.records,
-    facts: [...prepared.facts, ...supportContributions(options, getProgram)],
+    facts: [...prepared.facts, ...support.facts],
     kind: 'supported',
     unmapped: options.unmapped,
   };
@@ -189,10 +194,13 @@ export function prepareSvelteSemanticDependencies(options: {
 function supportContributions(
   options: Parameters<typeof prepareProjectedCandidates>[0],
   getProgram: () => ts.Program | undefined,
+  entryFacts: PreparedDependencyFact[],
 ) {
   const boundary = options.supportInputBoundary;
-  if (boundary === undefined) return [];
+  if (boundary === undefined) return { facts: [], closure: undefined };
   return collectFrameworkSupportContributions({
+    configPath: options.project.configPath,
+    entryFacts,
     boundary,
     checkerName: 'svelte-check',
     framework: 'svelte',

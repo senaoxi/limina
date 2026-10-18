@@ -11,6 +11,11 @@ import {
   createRedirectedReferenceIdentity,
   createTypeScriptResolutionIdentity,
 } from './identity';
+import {
+  getResolutionOrigin,
+  resolveModuleWithOrigin,
+  resolveTypeWithOrigin,
+} from './resolution-origin';
 
 function toCheckerResolution(
   resolved: ts.ResolvedModuleFull | undefined,
@@ -18,6 +23,7 @@ function toCheckerResolution(
   if (resolved === undefined) return null;
   return {
     isExternalLibraryImport: resolved.isExternalLibraryImport === true,
+    resolutionOrigin: getResolutionOrigin(resolved),
     resolvedBy: 'typescript',
     resolvedFileName: normalizeAbsolutePath(resolved.resolvedFileName),
   };
@@ -85,7 +91,8 @@ export function resolveModuleSemanticRecord(options: {
     options.compilerOptions,
   );
   const resolve = (host: ts.ModuleResolutionHost) =>
-    options.tsModule.resolveModuleName(
+    resolveModuleWithOrigin(
+      options.tsModule,
       options.literal.text,
       options.containingFile,
       options.compilerOptions,
@@ -127,6 +134,12 @@ export function resolveTripleSlashPathSemanticRecord(options: {
           extension: options.tsModule.Extension.Dts,
           isExternalLibraryImport: false,
           resolvedFileName,
+          resolutionOrigin: {
+            version: 1 as const,
+            compiler: options.tsModule.version,
+            route: 'local' as const,
+            target: normalizeAbsolutePath(resolvedFileName),
+          },
         }
       : undefined,
     failedLookupLocations: [resolvedFileName],
@@ -143,6 +156,13 @@ export function resolveTripleSlashPathSemanticRecord(options: {
     resolve,
   });
   const target = toCheckerResolution(raw.resolvedModule);
+  if (target)
+    target.resolutionOrigin = {
+      version: 1,
+      compiler: options.tsModule.version,
+      route: 'local',
+      target: resolvedFileName,
+    };
   return createResolution({
     channel: 'triple-slash-path',
     contextIdentity: options.contextIdentity,
@@ -170,7 +190,8 @@ export function resolveTypeReferenceSemanticRecord(options: {
   semantic: TypeScriptSemanticResolution;
 } {
   const resolve = (host: ts.ModuleResolutionHost) =>
-    options.tsModule.resolveTypeReferenceDirective(
+    resolveTypeWithOrigin(
+      options.tsModule,
       options.importRecord.specifier,
       options.containingFile,
       options.compilerOptions,
@@ -192,6 +213,7 @@ export function resolveTypeReferenceSemanticRecord(options: {
       ? null
       : {
           isExternalLibraryImport: resolved.isExternalLibraryImport === true,
+          resolutionOrigin: getResolutionOrigin(resolved),
           resolvedBy: 'typescript' as const,
           resolvedFileName: normalizeAbsolutePath(resolved.resolvedFileName),
         };

@@ -2,6 +2,7 @@ import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
+import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
   collectProjectDependencies,
   createAutoProjectSemanticContext,
@@ -85,7 +86,7 @@ export function collectLockedProjectFacts(options: {
   const problems = collection.failures.map((failure) =>
     formatProjectDependencyFailure({ config: options.config, failure }),
   );
-  for (const dependency of collection.dependencies) {
+  for (const dependency of effectiveReferenceInputs(collection)) {
     if (
       !shouldInferDeclarationReferenceFromImportRecord(dependency.importRecord)
     ) {

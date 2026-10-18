@@ -22,6 +22,18 @@ Consumer 包含 JS、虚拟输入、原始项目引用、不支持的编译器�
 
 原始 references 只来自源码／解析配置；推断引用不回流 discovery。兼容 adapter 将编译器真实引用映射记录为独立的原始目标、声明目标、引用配置和输出可用性。输出存在或缺失都保留结构，不重新产生源码关系。只有明确引用的正向映射可以许可预期输出尚未生成；不读取陈旧输出，也不伪造内容。直接消费 `.d.ts` 不标识其生产者，无论文件位于源码目录还是 dist。
 
+## 声明入口治理
+
+声明文件不拥有编译边界。[统一闭包投影](../../../packages/limina/src/core/typescript-semantic/declaration-closure.ts)将入口来源、治理资格、展开资格与编译器 admission 分开。根文件和配置类型环境仍是不同入口，均不能据此改变 tsconfig 的有效根文件集合。
+
+第三方公共声明停止内部治理展开。Workspace 公共声明仅在至少一个当前激活的受治理配置将其纳入有效 roots 时进入闭包。现有 `FileOwnerLookup` 处理逻辑路径与真实路径 membership；声明可同时属于多个配置。Membership 只控制公共入口准入，不要求每个中间声明独立归属，也不能识别 producer。本地相对导入、成功的 `paths` 映射及本地 `#imports` 继续遍历普通声明；再次经过公共包入口时重新判断。已知托管输出与真实 reference redirect 优先保留既有产物边界。未管辖公共入口是正常停止，不证明文件由工具生成或能独立完成类型检查。
+
+对于 `A → 公共 index.d.ts → helper.d.ts → C.ts`，公共入口符合资格后，即使 helper 无 owner 也产生 A → C；不会因此产生 A → 纳入 index.d.ts 的配置。遍历在 C.ts 停止，C → D 属于 C 自身分析。实现终点仍经过现有 owner、provider、checker、region、deny 和循环检查。最后一个 occurrence 保持声明文件中的真实位置，内部投影保留声明链，不伪造根文件 import。原始 `referenceRequirement: null`、`TypeEvidence` 和 `source.declarations` 保持各自职责。
+
+[解析 receipt](../../../packages/limina/src/core/typescript-semantic/resolution-origin.ts)标识原始编译器调用最终成功的分支。结构化 resolver 结果不足时，通过受版本约束的 trace 捕获将证据与结果一起保存，包括 TypeScript 内存缓存命中。缺失 receipt 时从同一 resolver 重新获取，未知证据保持 incomplete。仅凭 specifier、最终路径或 `isExternalLibraryImport` 不能区分成功的 `paths` 映射与包入口回退。Native、Vue、Astro、Svelte 使用同一政策，保留各自 host 和映射 authority。治理停止不删除编译器输入，替换标准库的声明产物也适用。
+
+[政策回归](../../../packages/limina/src/__tests__/declaration-policy.spec.ts)和[生成图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖双入口、根 membership、包解析分支、配置类型、循环与实现终点。`noResolve` 限制遍历，但独立纳入的根仍贡献依赖；`skipLibCheck` 不是遍历开关。Augmentation 名称本身不提供入口证据。
+
 ## 持久化 importer 有效性
 
 [共享文件事实](../../../packages/limina/src/core/typescript-semantic/file-dependency-facts.ts) 保存 occurrence、位置、请求模板、源码显式属性、模块形态与隐式请求触发因素。[上下文绑定](../../../packages/limina/src/core/typescript-semantic/context-requests.ts) 具体化 JSX／helper 请求和有效 mode。同一份 TSX 文本可以共享提取结果，同时在不同 context 中分别产生 React 和 Preact runtime 请求。
@@ -40,14 +52,14 @@ Consumer 包含 JS、虚拟输入、原始项目引用、不支持的编译器�
 
 数据流为：共享语法 → 上下文请求 → 观察到的解析 → 有资格的 consumer 闭包 → occurrence 贡献 → Owner／Provider／Checker／policy 投影 → 项目边。运行时治理资格与编译支撑贡献资格分开，保留来源分类并进入同一投影路径；并非所有字符串或编译器请求都自动生成 references。
 
-| 请求                                              | 资格及闭包规则                                                                                                                                                            |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| import、re-export、import type、字面量动态 import | 合法收集的 occurrence 使用 module 通道；有资格的目标扩展支撑闭包，但有效配置可限制加载。                                                                                  |
-| CommonJS                                          | 受支持的词法 `require` 和不可变 `createRequire` 绑定属于治理请求。Shadowed 调用不宣称为 Node 加载；JS 兼容 context 中由结构证据确认实际加载的声明，仍贡献其自身合法依赖。 |
-| ambient／augmentation                             | 脚本 ambient module 名称不是依赖；外部模块中的有效 augmentation 可保留已解析实现候选，但其名称不能单独准入声明。                                                          |
-| 声明内 import 与 JSDoc                            | 合法声明导入独立贡献；仅作说明的 TypeScript JSDoc 不扩展闭包，JS 编译器请求依据兼容 adapter 的实际输入证据。                                                              |
-| path／types／配置 types／lib                      | 分别使用自身编译器通道和有效配置；准入不改变 roots 或 Ownership。已从其他有效入口纳入的声明按独立入口分析。                                                               |
-| JSX／helper                                       | 按有效编译选项、pragma 和模块形态具体化受支持请求；单独的 `jsx` 选项或字符串匹配不足以证明请求。                                                                          |
+| 请求                                              | 资格及闭包规则                                                                                                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| import、re-export、import type、字面量动态 import | 合法收集的 occurrence 使用 module 通道；有资格的目标扩展支撑闭包，但有效配置可限制加载。                                                                                       |
+| CommonJS                                          | 受支持的词法 `require` 和不可变 `createRequire` 绑定属于治理请求。Shadowed 调用不宣称为 Node 加载；编译器加载的声明只有经合格入口才贡献治理依赖；shadowed 调用本身不建立入口。 |
+| ambient／augmentation                             | 脚本 ambient module 名称不是依赖；外部模块中的有效 augmentation 可保留已解析实现候选，但其名称不能单独准入声明。                                                               |
+| 声明内 import 与 JSDoc                            | 合法声明导入通过合格入口贡献；仅作说明的 TypeScript JSDoc 不扩展闭包，JS 编译器请求依据兼容 adapter 的实际输入证据。                                                           |
+| path／types／配置 types／lib                      | 分别使用自身编译器通道和有效配置；准入不改变 roots 或 Ownership。已从其他有效入口纳入的声明按独立入口分析。                                                                    |
+| JSX／helper                                       | 按有效编译选项、pragma 和模块形态具体化受支持请求；单独的 `jsx` 选项或字符串匹配不足以证明请求。                                                                               |
 
 `noResolve` 不删除 occurrence，也不阻止对实现目标进行治理解析；它限制支撑闭包扩展，未加载的已解析实现仍可保留源码需求。`skipLibCheck` 抑制特定 Checker 诊断，不等于停止依赖加载。[无 Program 测试](../../../packages/limina/src/__tests__/programless-context.spec.ts)、[Native 测试](../../../packages/limina/src/__tests__/native-provider-evidence.spec.ts)和[生成图测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)负责正反例。
 
