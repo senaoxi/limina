@@ -16,10 +16,6 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 import type ts from 'typescript';
-import {
-  isRelativeTypeName,
-  readRelativeTypeRoots,
-} from '../core/typescript-semantic/effective-roots';
 import { isPlainRecord } from './config-values';
 
 export interface ParsedProofConfig {
@@ -124,19 +120,6 @@ export function getProofCompanionConfigPath(
   return typeof sourceConfig === 'string'
     ? resolveReferencePath(configPath, sourceConfig)
     : getDtsCompanionConfigPath(configPath);
-}
-
-export function readRelativeTypeFiles(
-  _config: ResolvedLiminaConfig,
-  sourceConfigPath: string,
-): string[] {
-  return readRelativeTypeRoots(sourceConfigPath);
-}
-
-export function normalizeGeneratedDtsTypes(value: unknown): unknown {
-  return Array.isArray(value)
-    ? value.filter((typeName) => !isRelativeTypeName(typeName))
-    : value;
 }
 
 export function formatJsonValue(value: unknown): string {

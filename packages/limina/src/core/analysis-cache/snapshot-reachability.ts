@@ -9,11 +9,13 @@ export function usedSnapshotQueries(
   cache: NativeAnalysisCache,
   importers: Record<string, ImporterRecord>,
 ): Set<string> {
-  const used = new Set<string>();
-  for (const record of Object.values(importers))
-    addQueries(used, record.queryIds);
-  for (const record of Object.values(cache.contexts))
-    addQueries(used, record.queryIds);
+  const used = new Set(cache.retainedQueryIds);
+  const consumers = [
+    ...Object.values(cache.graphs),
+    ...Object.values(importers),
+    ...Object.values(cache.contexts),
+  ];
+  for (const record of consumers) addQueries(used, record.queryIds);
   return used;
 }
 

@@ -170,17 +170,6 @@ export const SOURCE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
       'packages/limina/src/__tests__/source.spec.ts',
     ],
   },
-  [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared]: {
-    kind: 'integration',
-    producers: [
-      'packages/limina/src/source-check/resource-module-findings.ts#addResourceModuleProblems',
-    ],
-    task: 'source:check',
-    tests: [
-      'packages/limina/src/__tests__/source-findings.spec.ts',
-      'packages/limina/src/__tests__/source.spec.ts',
-    ],
-  },
   [LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance]: {
     kind: 'fixture',
     producers: [

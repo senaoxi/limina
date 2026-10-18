@@ -8,6 +8,7 @@ export interface ResolutionQuery<T> {
   contextId: string;
   file: string;
   identity: unknown;
+  retain?: boolean;
   host: ts.ModuleResolutionHost;
   resolve(host: ts.ModuleResolutionHost): T;
 }
@@ -31,6 +32,7 @@ export class ResolutionQueries {
   readonly #options: QueryOptions;
   readonly #byContext = new Map<string, Map<string, Set<string>>>();
   readonly records: Record<string, ResolutionRecord> = {};
+  readonly retained: Set<string> = new Set<string>();
   constructor(options: QueryOptions) {
     this.#options = options;
   }
@@ -103,6 +105,7 @@ export class ResolutionQueries {
 
   query<T>(query: ResolutionQuery<T>): T {
     const id = analysisHash([query.contextId, query.file, query.identity]);
+    if (query.retain) this.retained.add(id);
     this.#subscribe(query.contextId, query.file, id);
     const current = this.records[id];
     return this.#isValid(current)

@@ -447,14 +447,14 @@ async function createHarness(
 describe('Astro bounded semantic resolution', () => {
   it('admits only reverse-mapped source dependencies from generated service scripts', async () => {
     const harness = await createHarness();
-    const source = "---\nimport './target.ts';\n---\n";
+    const source = "---\nimport './target.d.ts';\n---\n";
     const sourceFile = harness.fixture.path('src', 'entry.astro');
-    const targetFile = harness.fixture.path('src', 'target.ts');
+    const targetFile = harness.fixture.path('src', 'target.d.ts');
     await Promise.all([
       writeText(sourceFile, source),
       writeText(targetFile, 'export {};\n'),
     ]);
-    harness.state.resolvedBySpecifier.set('./target.ts', targetFile);
+    harness.state.resolvedBySpecifier.set('./target.d.ts', targetFile);
     const project = createTestAstroSemanticProject({
       analysisGeneration: 1,
       compilerOptions: {
@@ -480,8 +480,8 @@ describe('Astro bounded semantic resolution', () => {
       kind: 'supported',
       facts: [
         {
-          importRecord: { filePath: sourceFile, specifier: './target.ts' },
-          semanticSpecifier: './target.ts',
+          importRecord: { filePath: sourceFile, specifier: './target.d.ts' },
+          semanticSpecifier: './target.d.ts',
         },
       ],
       unmapped: [

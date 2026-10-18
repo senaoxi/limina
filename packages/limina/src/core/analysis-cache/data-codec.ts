@@ -60,22 +60,18 @@ function encodeObject(value: object, stack: Set<object>): DataNode {
   return ['object', entries];
 }
 function scalarNode(value: unknown): DataNode | undefined {
-  const fixed = new Map<unknown, DataNode>([
-    [undefined, ['undefined']],
-    [null, ['null']],
-  ]);
-  return fixed.has(value) ? fixed.get(value) : typedScalar(value);
+  // Avoid constructing lookup tables and closures for every visited value.
+  if (value === undefined) return ['undefined'];
+  return value === null ? ['null'] : typedScalar(value);
 }
 function typedScalar(value: unknown): DataNode | undefined {
-  const encoders: Record<string, (value: unknown) => DataNode> = {
-    string: (item) => ['string', item as string],
-    boolean: (item) => ['boolean', item as boolean],
-    number: (item) => {
-      if (!Number.isFinite(item)) throw new Error('Non-finite data.');
-      return ['number', item as number];
-    },
-  };
-  return encoders[typeof value]?.(value);
+  if (typeof value === 'string') return ['string', value];
+  return typeof value === 'boolean' ? ['boolean', value] : numberNode(value);
+}
+function numberNode(value: unknown): DataNode | undefined {
+  if (typeof value !== 'number') return undefined;
+  if (!Number.isFinite(value)) throw new Error('Non-finite data.');
+  return ['number', value];
 }
 function requireObject(value: unknown, stack: Set<object>): object {
   if (typeof value !== 'object') throw new Error('Executable data.');

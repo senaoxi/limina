@@ -958,7 +958,7 @@ describe('runPipeline', () => {
           ],
         },
         status: 'completed',
-        version: 8,
+        version: 9,
       });
     } finally {
       await fixture.cleanup();

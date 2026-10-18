@@ -6,7 +6,6 @@ import type { ProjectInfo } from '#core/import-graph/context';
 import type ts from 'typescript';
 import type { FrameworkSemanticFailure } from '../framework-semantic/contracts';
 import type { ImportRuntimeResolutionEvidence } from '../import-analysis/evidence';
-import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { TypeScriptSemanticDependencyContext } from '../typescript-semantic';
 import type { TypeEvidence } from './cache';
@@ -68,80 +67,6 @@ export function resolveImportPair(options: {
     semanticFailure: evidence.semanticFailure,
     typeScriptResolution: evidence.typeScriptResolution,
   };
-}
-
-function resolveCheckerSourceEvidence(
-  resolution: ResolvedImportPair['typeScriptResolution'],
-): TypeEvidence | null {
-  return resolution !== null && !isDeclarationFile(resolution.resolvedFileName)
-    ? {
-        filePath: resolution.resolvedFileName,
-        kind: 'checker-source',
-      }
-    : null;
-}
-
-export function resolveManagedSource(options: {
-  checkerName: string;
-  filePath: string;
-  lookup: ManagedOutputDeclarationLookup | undefined;
-}): ReturnType<ManagedOutputDeclarationLookup['resolve']> {
-  return options.lookup === undefined
-    ? null
-    : options.lookup.resolve(options.filePath, options.checkerName);
-}
-
-type TypeScriptResolution = ResolvedImportPair['typeScriptResolution'];
-type ConcreteTypeScriptResolution = NonNullable<TypeScriptResolution>;
-
-function isDeclarationResolution(
-  resolution: TypeScriptResolution,
-): resolution is ConcreteTypeScriptResolution {
-  return (
-    resolution !== undefined &&
-    resolution !== null &&
-    isDeclarationFile(resolution.resolvedFileName)
-  );
-}
-
-function resolveDeclarationEvidence(options: {
-  request: ResolveImportEvidenceOptions;
-  resolution: ResolvedImportPair['typeScriptResolution'];
-}): TypeEvidence | null {
-  const resolution = options.resolution;
-
-  if (!isDeclarationResolution(resolution)) {
-    return null;
-  }
-
-  const managedSource = resolveManagedSource({
-    checkerName: options.request.checkerName,
-    filePath: resolution.resolvedFileName,
-    lookup: options.request.managedOutputLookup,
-  });
-
-  if (managedSource === null) {
-    return {
-      filePath: resolution.resolvedFileName,
-      kind: 'concrete-declaration',
-    };
-  }
-
-  return {
-    filePath: resolution.resolvedFileName,
-    kind: 'concrete-declaration',
-    managedSource,
-  };
-}
-
-export function resolveConcreteTypeEvidence(options: {
-  request: ResolveImportEvidenceOptions;
-  resolution: ResolvedImportPair['typeScriptResolution'];
-}): TypeEvidence | null {
-  return (
-    resolveCheckerSourceEvidence(options.resolution) ??
-    resolveDeclarationEvidence(options)
-  );
 }
 
 function getEffectivePresets(
@@ -219,4 +144,14 @@ export function resolveUnsupportedVueEvidence(options: {
   }
 
   return null;
+}
+
+export function resolveManagedSource(options: {
+  checkerName: string;
+  filePath: string;
+  lookup: ManagedOutputDeclarationLookup | undefined;
+}): ReturnType<ManagedOutputDeclarationLookup['resolve']> {
+  return options.lookup === undefined
+    ? null
+    : options.lookup.resolve(options.filePath, options.checkerName);
 }

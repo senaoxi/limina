@@ -1,16 +1,11 @@
 import { getCheckerAdapter } from '#checkers';
 import type { ResolvedCheckerConfig } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
+import { digestFile } from '#utils/file-digest';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import type { Stats } from 'node:fs';
-import {
-  lstatSync,
-  readFileSync,
-  readlinkSync,
-  realpathSync,
-  statSync,
-} from 'node:fs';
+import { lstatSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import ts from 'typescript';
@@ -58,9 +53,7 @@ function calculateCompilerIdentity(): string {
   const stats = statSync(implementationPath);
   return hashValue({
     dev: String(stats.dev),
-    hash: createHash('sha256')
-      .update(readFileSync(implementationPath))
-      .digest('hex'),
+    hash: digestFile(implementationPath).hash,
     ino: String(stats.ino),
     path: implementationPath,
     version: ts.version,
@@ -103,11 +96,11 @@ function addSymlinkFileIdentity(options: {
   targetStats: Stats;
 }): ConfigDependencyIdentity {
   if (!options.targetStats.isFile()) return options.identity;
-  const content = readFileSync(options.logicalPath);
+  const content = digestFile(options.logicalPath);
   return {
     ...options.identity,
-    targetHash: createHash('sha256').update(content).digest('hex'),
-    targetLength: content.byteLength,
+    targetHash: content.hash,
+    targetLength: content.length,
     targetMode: Number(options.targetStats.mode) & 0o7777,
     targetNlink: Number(options.targetStats.nlink),
   };
@@ -138,12 +131,12 @@ function createFileIdentity(options: {
   logicalPath: string;
   stats: Stats;
 }): ConfigDependencyIdentity {
-  const content = readFileSync(options.logicalPath);
+  const content = digestFile(options.logicalPath);
   return {
     ...options.base,
-    hash: createHash('sha256').update(content).digest('hex'),
+    hash: content.hash,
     kind: 'file',
-    length: content.byteLength,
+    length: content.length,
     mode: Number(options.stats.mode) & 0o7777,
     nlink: Number(options.stats.nlink),
   };

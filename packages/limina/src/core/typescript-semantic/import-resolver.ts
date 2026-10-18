@@ -17,12 +17,14 @@ import type {
 } from './host';
 import { createImportRecordIdentity } from './import-record';
 import { resolveTypeScriptLibrary } from './library-resolution';
+import { admitHostModuleResult } from './module-admission';
 import {
   createConfiguredJsxRecord,
   createSyntheticImportRecord,
   findSemanticModuleRecord,
   getStandaloneModuleLocation,
 } from './module-records';
+import { requestEligibility } from './request-eligibility';
 import {
   createMissingSemanticResolution,
   resolveModuleSemanticRecord,
@@ -107,21 +109,17 @@ export class TypeScriptImportResolver {
       literal: options.literal,
       record,
     });
-    return this.#admitHostModuleResult(
-      result.raw,
-      options.input.containingFile,
-    );
-  }
-
-  #admitHostModuleResult(
-    result: ts.ResolvedModuleWithFailedLookupLocations,
-    containingFile: string,
-  ): ts.ResolvedModuleWithFailedLookupLocations {
-    const resolved = result.resolvedModule;
-    if (resolved === undefined) return result;
-    return this.options.admission.allowModuleTarget(resolved, containingFile)
-      ? result
-      : { ...result, resolvedModule: undefined };
+    return admitHostModuleResult(this.options, {
+      result: result.raw,
+      containingFile: options.input.containingFile,
+      canExpand:
+        record === undefined ||
+        requestEligibility(
+          options.input.sourceFile,
+          record,
+          this.options.tsModule,
+        ).expansion,
+    });
   }
 
   #resolveModule(options: {

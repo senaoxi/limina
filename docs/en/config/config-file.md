@@ -53,6 +53,8 @@ Object form enables caching and requires `dependencies: string[]`. An empty arra
 
 `check` can read and publish eligible models. Standalone graph/source consumers keep their existing read-only permission; enabling `cache` does not grant every command publication authority. `limina check [pipeline] --force` skips restoration for this invocation and normally publishes the new eligible result. With `cache: false`, force has no additional effect on persistent analysis caching and does not enable writing. Force does not delete snapshots in this configuration, other configurations or other worktrees, and does not force checker rebuilds. It remains incompatible with `--issues`.
 
+Supported physical TypeScript/TSX projects collect cold and changed graphs using file syntax and resolution facts without an analysis Program. JS, original-reference and framework inputs retain their respective compatibility paths. Actual Checker diagnostics and builds still run. Cache restoration separately validates type-entry preservation and output projection validity. Old semantic snapshots are rejected and rebuilt as needed, without clearing other namespaces or checker caches.
+
 ### `cache.dependencies` {#cache-dependencies}
 
 - **Type:** `string[]` (required in object form)

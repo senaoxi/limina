@@ -2,6 +2,7 @@ import type {
   ResolvedCheckerConfig,
   ResolvedLiminaInputs,
 } from '#config/runner';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { writeGeneratedJson } from './artifact-writer';
 import {
   createCheckerBuildConfig,
@@ -12,6 +13,7 @@ import {
 } from './generated-configs';
 import type { prepareGeneratedKnipPackageConfigs } from './generated-knip';
 import { assertDistinctGeneratedProjectPaths } from './generated/project-paths';
+import { proveOutputProjection } from './output-projection';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 
 type GeneratedKnipPreparation = ReturnType<
@@ -23,6 +25,7 @@ function getArrayValue<T>(map: ReadonlyMap<string, T[]>, key: string): T[] {
 }
 
 function writeDtsProjects(options: {
+  cache?: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
   checkerName: string;
@@ -34,7 +37,11 @@ function writeDtsProjects(options: {
     writeGeneratedJson({
       context: options.state.writeContext,
       filePath: project.dtsConfigPath,
-      value: createGeneratedDtsConfig({ config: options.config, project }),
+      value: createGeneratedDtsConfig({
+        cache: options.cache,
+        config: options.config,
+        project,
+      }),
     }),
   );
 }
@@ -60,6 +67,7 @@ function writeSolutions(options: {
 }
 
 function writeOutputProjects(options: {
+  cache?: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
   checkerName: string;
@@ -67,16 +75,25 @@ function writeOutputProjects(options: {
   return getArrayValue(
     options.state.outputProjectsByChecker,
     options.checkerName,
-  ).map((project) =>
-    writeGeneratedJson({
+  ).map((project) => {
+    const value = createGeneratedOutputProjectConfig({
+      cache: options.cache,
+      config: options.config,
+      project,
+    });
+    (project.outputProjections ??= []).push(
+      proveOutputProjection({
+        project,
+        state: options.state,
+        cache: options.cache,
+      }),
+    );
+    return writeGeneratedJson({
       context: options.state.writeContext,
       filePath: project.outputConfigPath,
-      value: createGeneratedOutputProjectConfig({
-        config: options.config,
-        project,
-      }),
-    }),
-  );
+      value,
+    });
+  });
 }
 
 function writeOutputSolutions(options: {
@@ -121,6 +138,7 @@ function writeCheckerEntry(options: {
 }
 
 async function writeCheckerArtifacts(options: {
+  cache?: NativeAnalysisCache;
   checker: ResolvedCheckerConfig;
   config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
@@ -130,6 +148,7 @@ async function writeCheckerArtifacts(options: {
     return;
   }
   const base = {
+    cache: options.cache,
     checkerName: options.checker.name,
     config: options.config,
     state: options.state,
@@ -144,6 +163,7 @@ async function writeCheckerArtifacts(options: {
 }
 
 export async function writeGeneratedGraphConfigs(options: {
+  cache?: NativeAnalysisCache;
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaInputs;
   generatedKnip: GeneratedKnipPreparation;
@@ -156,6 +176,7 @@ export async function writeGeneratedGraphConfigs(options: {
   await Promise.all(
     options.checkers.map((checker) =>
       writeCheckerArtifacts({
+        cache: options.cache,
         checker,
         config: options.config,
         state: options.state,

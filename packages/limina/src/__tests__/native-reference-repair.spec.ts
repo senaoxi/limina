@@ -49,7 +49,7 @@ function context(
 
 describe('native reference repair independent Program evidence', () => {
   it.each(['relative', 'extends', 'included'])(
-    'enumerates explicit environment roots: %s',
+    'retains explicit type environment contributions without promoting roots: %s',
     async (variant) => {
       const f = await fixture({
         'package.json': '{"type":"module"}',
@@ -87,7 +87,16 @@ describe('native reference repair independent Program evidence', () => {
         expect(fact.referenceRequirement?.targetFileName).toBe(
           f.path('provider/value.ts'),
         );
-        expect(bounded.hasSourceFile(f.path('provider/value.ts'))).toBe(false);
+        expect(bounded.hasSourceFile(f.path('provider/value.ts'))).toBe(true);
+        expect(new Set(bounded.program.getRootFileNames())).toEqual(
+          new Set(parsed.fileNames),
+        );
+        expect(bounded.getContributionFileNames?.()).toContain(
+          f.path('env.d.ts'),
+        );
+        expect(bounded.getContributionFileNames?.()).not.toContain(
+          f.path('provider/value.ts'),
+        );
         expect(parsed.fileNames.includes(f.path('env.d.ts'))).toBe(
           variant === 'included',
         );
@@ -209,7 +218,7 @@ describe('native reference repair independent Program evidence', () => {
   );
 
   it.each(['external', 'paths', 'augmentation', 'augmentation-admitted'])(
-    'keeps type evidence distinct from compiler membership: %s',
+    'keeps resolved implementation requirements independent of ambient symbols and membership: %s',
     async (variant) => {
       const f = await fixture({
         'package.json': '{"type":"module"}',
@@ -252,35 +261,18 @@ describe('native reference repair independent Program evidence', () => {
         expect(symbol.declarations?.some(ts.isSourceFile)).toBe(
           variant.startsWith('augmentation'),
         );
-        expect(fact.typeEvidence.kind).toBe(
-          variant === 'augmentation'
-            ? 'missing'
-            : variant === 'augmentation-admitted'
-              ? 'checker-source'
-              : 'ambient',
-        );
+        expect(fact.typeEvidence).toBeUndefined();
         const boundedSymbol = bounded.getSymbolAtImportRecord(record);
-        if (variant === 'augmentation') {
-          expect(boundedSymbol).toBeUndefined();
-          expect(fact.admission).toBe('excluded');
-          expect(
-            ts
-              .getPreEmitDiagnostics(bounded.program)
-              .map((diagnostic) => diagnostic.code),
-          ).toContain(2307);
-        } else if (variant === 'augmentation-admitted') {
+        if (variant.startsWith('augmentation')) {
           expect(boundedSymbol?.declarations).toContain(
             bounded.getSourceFile(f.path('provider/index.ts')),
           );
           expect(fact.admission).toBe('admitted');
+          expect(new Set(bounded.program.getRootFileNames())).toEqual(
+            new Set(parsed.fileNames),
+          );
         }
-        expect(fact.referenceRequirement?.kind ?? null).toBe(
-          variant === 'external'
-            ? null
-            : variant === 'paths'
-              ? 'compiler-membership'
-              : 'source-semantic',
-        );
+        expect(fact.referenceRequirement?.kind).toBe('source-semantic');
       } finally {
         bounded.dispose();
       }
@@ -317,8 +309,13 @@ describe('native reference repair independent Program evidence', () => {
       );
       try {
         const record = bounded.getImportRecords(f.path('main.ts'))[1]!;
-        expect(bounded.getDependencyFact(record).typeEvidence.kind).toBe(
-          preserveSymlinks === 'workspace' ? 'missing' : 'ambient',
+        expect(bounded.getDependencyFact(record).typeEvidence).toBeUndefined();
+        expect(bounded.getDependencyFact(record).resolution.target).toBeNull();
+        expect(
+          bounded.getDependencyFact(record).referenceRequirement,
+        ).toBeNull();
+        expect(new Set(bounded.program.getRootFileNames())).toEqual(
+          new Set(parsed.fileNames),
         );
         expect(bounded.getImportRecords(f.path('main.ts'))).toHaveLength(2);
         const full = ts.createProgram({

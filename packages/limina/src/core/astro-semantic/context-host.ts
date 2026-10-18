@@ -1,12 +1,15 @@
 import type {
   AstroLanguage,
   AstroMaterializedProject,
+  AstroSemanticProject,
   AstroSemanticToolchain,
   AstroServiceScript,
   AstroSourceScript,
 } from '#checkers';
 import path from 'node:path';
 import type ts from 'typescript';
+import type { ImportAnalysisMetricsRecorder } from '../import-analysis/types';
+import type { AstroSemanticContext } from './context';
 
 export interface AstroMaterializedServiceScript {
   fileName: string;
@@ -186,5 +189,31 @@ export function createAstroLanguage(options: {
     ],
     options.scriptRegistry,
     options.sync,
+  );
+}
+
+export function recordAstroMetric(options: {
+  metrics: ImportAnalysisMetricsRecorder | undefined;
+  name:
+    | 'astro-context-dispose'
+    | 'astro-context-materialize'
+    | 'astro-context-reuse';
+}): void {
+  options.metrics?.record({ name: options.name, provider: 'astro-semantic' });
+}
+
+export function canReuseAstroContext(options: {
+  active: AstroSemanticContext | undefined;
+  project: AstroSemanticProject;
+  toolchain: AstroSemanticToolchain;
+}): options is {
+  active: AstroSemanticContext;
+  project: AstroSemanticProject;
+  toolchain: AstroSemanticToolchain;
+} {
+  return (
+    options.active !== undefined &&
+    options.active.project.seed.id === options.project.seed.id &&
+    options.active.toolchain === options.toolchain
   );
 }
