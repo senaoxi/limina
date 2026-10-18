@@ -1,10 +1,5 @@
-import {
-  type CheckerProjectConfigCache,
-  isNativeTypeScriptProjectInput,
-} from '#checkers';
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
-import { normalizeAbsolutePath } from '#utils/path';
-import { TypeScriptConfigInputError } from '../../checker/project-base';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import { configInputIdentity } from '../tsconfig/input-identity';
@@ -13,6 +8,7 @@ import type {
   TypeScriptSemanticDependencyContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
+import { projectNativeDeclarationClosure } from '../typescript-semantic/native-closure';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import {
@@ -97,44 +93,6 @@ function collectImportFact(options: {
   collectDependencyFact(options);
 }
 
-function getProgramSourceFile(
-  context: TypeScriptSemanticDependencyContext,
-  fileName: string,
-  configPath: string,
-) {
-  if (context.hasSourceFile(normalizeAbsolutePath(fileName))) return;
-  throw new TypeScriptConfigInputError(
-    `Pending TypeScript analysis did not contain an effective source file: ${fileName}\n  config: ${configPath}\n  stage: pending-ownership-evidence`,
-  );
-}
-
-function collectFileImportRecords(options: {
-  context: FactCollectionContext;
-  fileName: string;
-}): CheckerDependencyFact['importRecord'][] {
-  getProgramSourceFile(
-    options.context.typeScriptSemanticContext,
-    options.fileName,
-    options.context.project.configPath,
-  );
-  return [
-    ...options.context.typeScriptSemanticContext.getImportRecords(
-      options.fileName,
-    ),
-  ];
-}
-
-function collectFileFacts(options: {
-  context: FactCollectionContext;
-  facts: CheckerDependencyFact[];
-  fileName: string;
-  problems: string[];
-}): void {
-  for (const importRecord of collectFileImportRecords(options)) {
-    collectImportFact({ ...options, importRecord });
-  }
-}
-
 function collectProjectFacts(
   options: CollectPendingOptions,
 ): PendingOwnershipEvidence {
@@ -158,11 +116,19 @@ function collectProjectFacts(
     typeScriptSemanticContext,
   };
   try {
-    const files = contributionFiles(typeScriptSemanticContext, semantic);
-    for (const fileName of files) {
-      if (!isNativeTypeScriptProjectInput(fileName)) continue;
-      collectFileFacts({ context, facts, fileName, problems });
-    }
+    const projection = projectNativeDeclarationClosure(
+      typeScriptSemanticContext,
+      {
+        ...semantic.project,
+        workspaceSourceBoundary: options.workspaceSourceBoundary,
+      },
+    );
+    for (const importRecord of projection.records)
+      collectImportFact({ context, facts, importRecord, problems });
+    for (const failure of projection.incomplete)
+      problems.push(
+        `Declaration closure is incomplete (${failure.reason}): ${failure.fileName}`,
+      );
   } finally {
     options.core.completeProject(options.project.configPath);
   }
@@ -190,7 +156,8 @@ function assertPendingAuthority(state: TypeConfigOwnershipState): void {
 
 function createPendingCacheKey(options: CollectPendingOptions): string {
   return JSON.stringify({
-    adapterVersion: 'pending-typescript-v4-scope-evidence',
+    adapterVersion: 'pending-typescript-v5-declaration-closure',
+    boundary: options.workspaceSourceBoundary.identity,
     authority: options.state.semanticAuthority,
     configPath: options.project.configPath,
     fileNames: options.project.filePartition.typescriptFiles,
@@ -220,11 +187,4 @@ function pendingCandidate(
     physicalTargetProvenance: 'pending-framework-candidate',
     typeEvidenceKind: 'missing',
   };
-}
-
-function contributionFiles(
-  context: TypeScriptSemanticDependencyContext,
-  semantic: EvidenceProject,
-): readonly string[] {
-  return context.getContributionFileNames?.() ?? semantic.project.fileNames;
 }

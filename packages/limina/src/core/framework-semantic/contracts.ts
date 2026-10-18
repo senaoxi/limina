@@ -5,6 +5,7 @@ import type {
   ProjectReferenceRedirect,
 } from '../dependency-semantics';
 import type { TypeEvidence } from '../type-evidence/cache';
+import type { DeclarationClosure } from '../typescript-semantic/declaration-closure';
 
 export type FrameworkSemanticKind = 'astro' | 'svelte' | 'vue';
 
@@ -37,6 +38,7 @@ export interface FrameworkSemanticEvidence<Profile = unknown> {
 }
 
 export interface PreparedDependencyFact {
+  eligibility?: { governance: boolean; expansion: boolean };
   redirect?: ProjectReferenceRedirect;
   compilerMembership?: CompilerMembership;
   // Recorded by the adapter after querying the mapped literal in its Program.
@@ -62,6 +64,7 @@ export interface FrameworkSemanticUnmappedGeneratedDependency {
 
 export type FrameworkSemanticDependencyPreparation =
   | {
+      declarationClosure?: DeclarationClosure;
       directSourceRecords: ImportRecord[];
       facts: PreparedDependencyFact[];
       kind: 'supported';

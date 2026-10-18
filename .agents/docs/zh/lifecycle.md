@@ -66,6 +66,8 @@ Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以�
 
 ## 原生持久化分析缓存
 
+Native／Vue snapshot 将声明解析 receipt、结果与类型环境入口一起保存。Adapter identity 使旧解释失效，缺失或不兼容的必要 receipt 触发重新分析。每次收集按当前根 membership 与入口可达性决定治理投影，包括无 membership 的负向判断。Manifest 内容、symlink 绑定、有效 types／typeRoots、声明内容和失败候选仍属于观察输入。删除最后一个合法本地入口时撤销内部贡献，其他合法入口仍保留共享贡献。更新使用现有项目替换生命周期，不扩大 `replaceProject` 的事务范围。
+
 `check` 通过 [AnalysisCacheController](../../../packages/limina/src/preflight/analysis-cache.ts)请求本地分析快照。`check [pipeline] --force` 跳过既有持久化模型，执行冷分析，并通过正常发布路径发布本次具备资格的结果。它只阻止跨调用语义恢复；provider 刷新仍可复用本次调用内已验证的内存数据。由于 issue query 不执行分析，[CLI 入口](../../../packages/limina/src/cli/register/check.ts)在配置求值或创建 preflight 前拒绝 `--issues --force`。
 
 公开 `cache?: boolean | CacheOptions` 默认启用。对象形式要求 `dependencies: string[]`，接受空数组，拒绝其他字段；旧顶层 `configDependencies` 会报错。[加载器](../../../packages/limina/src/config/loader.ts)绑定执行元数据时保留自有属性描述符，因此非枚举的 `cache: false` 仍会禁用持久化，枚举可见性也继续参与配置版本计算。统一 [preflight 创建边界](../../../packages/limina/src/preflight/setup.ts)在构造控制器前应用 `cache: false`，覆盖调用者的 `analysisCache: true` 和 `read-only`。禁用后不读取、不发布分析 snapshot，即使带 force 也不改变已有 snapshot 字节及 mtime；执行期缓存、配置观测／漂移保护、issues 和独立产物仍正常工作。内部 `analysisCache: false` 与 `read-only` 控制仍保留。`cache: true` 不会为原本未请求控制器的命令创建控制器。

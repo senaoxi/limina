@@ -10,6 +10,7 @@ import { createVueOverlaySystem } from '../../checker/vue-semantic-identity';
 import { createUnsupportedVueToolchainCompatibilityError } from '../../checker/vue-semantic-toolchain';
 import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
+import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import {
   createMeasuredProgram,
@@ -17,18 +18,15 @@ import {
   type ProgramCreationObserver,
 } from './context-lazy-state';
 import { resolveModuleNameLiteralMap } from './context-resolution';
-
 interface SnapshotEntry {
   snapshot: ts.IScriptSnapshot;
   text: string;
 }
-
 interface VueScriptStore {
   language: VolarLanguage | undefined;
   snapshots: Map<string, SnapshotEntry>;
   texts: Map<string, string>;
 }
-
 const languageIdPatterns: readonly [RegExp, string][] = [
   [/\.(?:cts|mts|ts)$/iu, 'typescript'],
   [/\.tsx$/iu, 'typescriptreact'],
@@ -208,7 +206,7 @@ export class VueSemanticContext {
     this.#snapshots = store.snapshots;
     const hostResult =
       identity.toolchain.volarTypeScript.createLanguageServiceHost(
-        this.tsModule,
+        originTracingCompiler(this.tsModule),
         this.sys,
         this.language,
         (fileName) => fileName,

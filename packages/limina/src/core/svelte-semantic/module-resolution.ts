@@ -1,6 +1,10 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
+import {
+  getResolutionOrigin,
+  resolveModuleWithOrigin,
+} from '../typescript-semantic/resolution-origin';
 import type { SvelteSemanticProject } from './types';
 
 function getVirtualSource(
@@ -60,6 +64,7 @@ function createResolvedTarget(
   return {
     isExternalLibraryImport: resolved.isExternalLibraryImport === true,
     resolvedBy: source === undefined ? 'typescript' : 'checker-source',
+    resolutionOrigin: getResolutionOrigin(resolved),
     resolvedFileName: normalizeAbsolutePath(
       source ?? resolved.resolvedFileName,
     ),
@@ -76,7 +81,8 @@ export function resolveSvelteModuleOccurrence(options: {
   tsModule: typeof ts;
 }): { resolutionMode: string; target: ResolvedCheckerModuleName | null } {
   const mode = getMode(options);
-  const resolved = options.tsModule.resolveModuleName(
+  const resolved = resolveModuleWithOrigin(
+    options.tsModule,
     options.literal.text,
     options.sourceFile.fileName,
     options.project.options,

@@ -38,10 +38,12 @@
 - **Problem**：将相对 types 提升为 roots 会扩大 Ownership；删除全部非 root 依赖会漏掉编译支撑义务；按 Program membership 抹边会漏掉治理关系。
 - **Root cause**：请求、解析、实际加载及引用贡献具有不同资格规则。
 - **Enforcement / Why it works**：[请求资格](../../../packages/limina/src/core/typescript-semantic/request-eligibility.ts)与有效配置决定闭包扩展，统一投影按实际 Owner 截断外部实现的内部依赖。无 Program context 完成后才发布；能力不足时整个 consumer 切换兼容 adapter。
-- **Concrete example**：A 的 env.d.ts 导入 B 实现，B 导入 C，保留 A→B 和 B→C，不增加 A→C。JS 的 shadowed require 不是运行时治理请求，但编译器实际加载的 env.d.ts 仍可贡献其对 B 的合法依赖。`noResolve` 阻止相应声明递归，不删除已解析实现候选。
+- **Concrete example**：A 的 env.d.ts 导入 B 实现，B 导入 C，保留 A→B 和 B→C，不增加 A→C。JS 的 shadowed require 不建立治理入口；编译器实际加载的 env.d.ts 仅在另有合格入口时贡献其对 B 的合法依赖。`noResolve` 阻止相应声明递归，不删除已解析实现候选。
 - **Protected property**：编译支撑贡献完整，治理归属不扩大，闭包更新具备可达性与原子性。
 - **Evidence / Strength / Confidence**：[无 Program 测试](../../../packages/limina/src/__tests__/programless-context.spec.ts)、[Native provider 测试](../../../packages/limina/src/__tests__/native-provider-evidence.spec.ts)、[生成图测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)及[新进程缓存测试](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)覆盖入口、环清理、实际构建及恢复。
 - **Boundaries**：原始 references 是结构输入，推断引用不回流 discovery。相对 types 保持实际选中入口，不成为 roots；不从任意声明反推生产配置或任务。
+
+Workspace 公共声明准入依据当前激活配置的有效根 membership，不依据 Program 包含或输出归属。本地声明递归不要求逐节点 owner，再次进入公共入口时重新判断。入口来源、治理资格与展开资格保持独立。见[声明入口治理](./semantics.md#声明入口治理)。
 
 ## I04 — locked dependency fact 必须保持 checker occurrence 与 provenance
 

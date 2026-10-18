@@ -1,53 +1,48 @@
 import type { ImportRecord } from '../import-analysis/records';
-import type { TypeScriptSemanticDependencyContext } from '../typescript-semantic';
-import { isDependencyContributionInput } from '../typescript-semantic/contribution-inputs';
+import {
+  type ClosureFact,
+  projectDeclarationClosure,
+} from '../typescript-semantic/declaration-closure';
+import { createImportRecordIdentity } from '../typescript-semantic/import-record';
+import { projectNativeDeclarationClosure } from '../typescript-semantic/native-closure';
 import type {
   ProjectDependencyCollection,
   ProjectDependencyRequest,
 } from './contracts';
+import { addDeclarationProjection } from './declaration-projection';
 import { collectProjectDependencyRecord } from './direct-dependency-record';
+import { getDependencyCheckerTarget } from './evidence';
 
-function collectNativeSupportFile(options: {
-  collection: ProjectDependencyCollection;
-  request: ProjectDependencyRequest;
-  context: TypeScriptSemanticDependencyContext;
-  fileName: string;
-}): void {
-  for (const importRecord of options.context.getImportRecords(
-    options.fileName,
-  )) {
-    const fact = options.context.getDependencyFact(importRecord);
-    if (fact.referenceRequirement === null) continue;
-    collectProjectDependencyRecord({ ...options, importRecord });
-  }
-}
-function contributionFiles(
-  context: TypeScriptSemanticDependencyContext,
-): readonly string[] {
-  return context.getContributionFileNames?.() ?? [];
-}
-function collectNativeSupport(options: {
-  collection: ProjectDependencyCollection;
-  request: ProjectDependencyRequest;
-  context: TypeScriptSemanticDependencyContext;
-}): void {
-  const roots = new Set(options.request.context.fileNames);
-  for (const fileName of contributionFiles(options.context)) {
-    if (!roots.has(fileName))
-      collectNativeSupportFile({ ...options, fileName });
-  }
-}
 export function collectSupportContributions(
   collection: ProjectDependencyCollection,
   request: ProjectDependencyRequest,
 ): void {
   const context = request.typeScriptSemanticContext;
   if (
-    context === undefined ||
-    request.context.semanticAuthority.family === 'vue'
+    [
+      context === undefined,
+      request.context.semanticAuthority.family === 'vue',
+    ].some(Boolean)
   )
     return;
-  collectNativeSupport({ collection, request, context });
+  const projection = projectNativeDeclarationClosure(
+    context!,
+    {
+      configPath: request.context.configPath,
+      fileNames: request.context.fileNames,
+      options: request.context.compilerOptions,
+      workspaceSourceBoundary: request.context.workspaceSourceBoundary,
+    },
+    request.managedOutputLookup,
+  );
+  addDeclarationProjection(collection, request, projection);
+  const roots = new Set(request.context.fileNames);
+  const supportRecords = projection.records.filter(
+    (record) => !roots.has(record.filePath),
+  );
+  for (const importRecord of supportRecords) {
+    collectProjectDependencyRecord({ collection, request, importRecord });
+  }
 }
 function vueSupportFiles(request: ProjectDependencyRequest) {
   return (
@@ -59,51 +54,82 @@ function vueSupportFiles(request: ProjectDependencyRequest) {
     }) ?? []
   );
 }
-function canContribute(
-  request: ProjectDependencyRequest,
-  file: string,
-): boolean {
-  return isDependencyContributionInput(
-    {
-      configPath: request.context.configPath,
-      fileNames: request.context.fileNames,
-      options: request.context.compilerOptions,
-      workspaceSourceBoundary: request.context.workspaceSourceBoundary,
-    },
-    file,
-  );
-}
-function collectVueSupportInput(
+function dependencyFact(
   collection: ProjectDependencyCollection,
-  request: ProjectDependencyRequest,
-  input: { records: readonly ImportRecord[] },
-): void {
-  const support: ProjectDependencyCollection = {
-    dependencies: [],
-    failures: [],
-    observations: [],
-  };
-  for (const importRecord of input.records)
-    collectProjectDependencyRecord({
-      collection: support,
-      importRecord,
-      request,
-    });
-  collection.dependencies.push(
-    ...support.dependencies.filter(
-      (dependency) => dependency.referenceRequirement !== null,
-    ),
+  record: ImportRecord,
+): ClosureFact {
+  const dependency = collection.dependencies.find(
+    (item) =>
+      createImportRecordIdentity(item.importRecord) ===
+      createImportRecordIdentity(record),
   );
-  collection.failures.push(...support.failures);
+  if (!dependency) return { target: null, referenceRequirement: null };
+  return {
+    target: getDependencyCheckerTarget(dependency.evidence),
+    referenceRequirement: dependency.referenceRequirement,
+    ...checkerQualification(dependency),
+  };
 }
+function checkerQualification(
+  dependency: ProjectDependencyCollection['dependencies'][number],
+) {
+  const evidence = dependency.evidence.checker;
+  if (evidence.kind === 'native' || evidence.kind === 'framework')
+    return {
+      redirect: evidence.fact.redirect,
+      eligibility: evidence.fact.eligibility,
+    };
+  return {};
+}
+
 export function collectVueSupportContributions(
   collection: ProjectDependencyCollection,
   request: ProjectDependencyRequest,
 ): void {
   const roots = new Set(request.context.fileNames);
-  const files = vueSupportFiles(request).filter(
-    (file) =>
-      !roots.has(file.filePath) && canContribute(request, file.filePath),
+  const files = new Map(
+    vueSupportFiles(request).map((input) => [input.filePath, input.records]),
   );
-  for (const file of files) collectVueSupportInput(collection, request, file);
+  const rootRecords = [
+    ...collection.dependencies,
+    ...collection.observations.filter((item) => 'importRecord' in item),
+  ].flatMap((item) => ('importRecord' in item ? [item.importRecord] : []));
+  const facts = new Map<string, ClosureFact>();
+  const projection = projectDeclarationClosure({
+    configPath: request.context.configPath,
+    entries: [
+      ...request.context.fileNames.map((fileName) => ({
+        kind: 'root' as const,
+        fileName,
+      })),
+      ...(request.importAnalysis.collectCheckerTypeEnvironmentEntries?.({
+        checkerPresets: [],
+        extensions: [...request.context.extensions],
+        semanticFamily: 'vue',
+        vueSemanticIdentity: request.context.vueSemanticIdentity,
+      }) ?? []),
+    ],
+    noResolve: request.context.compilerOptions.noResolve,
+    boundary: request.context.workspaceSourceBoundary,
+    managedOutputLookup: request.managedOutputLookup,
+    records: (file) =>
+      roots.has(file)
+        ? rootRecords.filter((record) => record.filePath === file)
+        : files.get(file),
+    fact: (record) => {
+      const key = createImportRecordIdentity(record);
+      const cached = facts.get(key);
+      if (cached) return cached;
+      if (!roots.has(record.filePath))
+        collectProjectDependencyRecord({
+          collection,
+          request,
+          importRecord: record,
+        });
+      const fact = dependencyFact(collection, record);
+      facts.set(key, fact);
+      return fact;
+    },
+  });
+  addDeclarationProjection(collection, request, projection);
 }

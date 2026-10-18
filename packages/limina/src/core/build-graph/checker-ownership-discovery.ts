@@ -31,6 +31,7 @@ import type {
 } from './types';
 
 export interface CheckerOwnershipDiscovery {
+  activatedRegions?: WorkspaceRegionPathIndex;
   activeEntryPaths: string[];
   autoChecker: 'tsc' | 'tsgo';
   explicitOwnerByEntryPath: Map<string, CheckerName>;
@@ -220,6 +221,7 @@ export async function discoverCheckerOwnership(options: {
     ],
   });
   return {
+    activatedRegions: options.activatedRegions,
     activeEntryPaths: managedEntryPaths,
     autoChecker: getAutoCheckerConfig(options.config.scope?.checkers).useTsgo
       ? 'tsgo'

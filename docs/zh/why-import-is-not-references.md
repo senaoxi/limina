@@ -49,7 +49,7 @@ references：声明构建时应该先构建并消费哪个上游项目输出
 import { createClient } from '@acme/core';
 ```
 
-当前检查器和 `tsconfig` 决定 TypeScript 解析到哪个入口。如果经 `types` 解析到 `./dist/index.d.ts`，Limina 不会为该目标生成源码项目引用。`default` 分支指向 `./src/index.ts` 不会改变这个结果。
+当前检查器和 `tsconfig` 决定 TypeScript 解析到哪个入口。如果经 `types` 解析到 `./dist/index.d.ts`，Limina 不会为该目标生成源码项目引用。`default` 分支指向 `./src/index.ts` 不会改变这个结果。合法的本地或受管辖 workspace 声明入口，仍可通过内部声明链发现对其他实现项目的依赖。
 
 再看另一条导入：
 

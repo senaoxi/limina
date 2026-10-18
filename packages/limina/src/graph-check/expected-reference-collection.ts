@@ -1,11 +1,13 @@
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../core/import-graph/declaration-reference-evidence';
+import { effectiveReferenceInputs } from '../core/project-dependencies/declaration-projection';
 import {
   collectProjectDependencies,
   createParsedProjectSemanticContext,
   type ProjectDependency,
   type ProjectDependencyObservation,
 } from '../core/project-dependencies/runner';
+import { createImportRecordIdentity } from '../core/typescript-semantic/import-record';
 import { addDeniedDependencyImportProblem } from './import-access-denied';
 import { resolveImportForReferenceExpectation } from './reference-import-resolution';
 import {
@@ -151,18 +153,6 @@ function collectResolvedExpectedReference(options: {
   });
 }
 
-function collectExpectedReferencesForDependency(options: {
-  context: ExpectedReferenceCollectionContext;
-  project: ProjectInfo;
-  projectDependency: ProjectDependency;
-}): void {
-  collectExpectedReferenceForImport({
-    ...options,
-    filePath: options.projectDependency.importRecord.filePath,
-    importRecord: options.projectDependency.importRecord,
-  });
-}
-
 function collectExpectedReferencesForObservation(options: {
   context: ExpectedReferenceCollectionContext;
   observation: ProjectDependencyObservation;
@@ -232,6 +222,7 @@ function collectProjectDependenciesForGraph(options: {
   );
   return collectProjectDependencies({
     caches: options.context.projectDependencyCaches,
+    managedOutputLookup: options.context.managedOutputLookup,
     context: createParsedProjectSemanticContext({
       authority,
       packageRootDir: packageRootDirectory,
@@ -249,20 +240,31 @@ function collectExpectedReferencesForProject(
   if (!isProjectSelected(context, project)) return;
   const collection = collectProjectDependenciesForGraph({ context, project });
   assertGraphCollection(collection);
-  collectExpectedDependencies(context, project, collection.dependencies);
+  collectExpectedDependencies(context, project, collection);
   collectExpectedObservations(context, project, collection.observations);
 }
 
 function collectExpectedDependencies(
   context: ExpectedReferenceCollectionContext,
   project: ProjectInfo,
-  dependencies: readonly ProjectDependency[],
+  collection: ReturnType<typeof collectProjectDependencies>,
 ): void {
-  for (const projectDependency of dependencies) {
-    collectExpectedReferencesForDependency({
+  const eligible = new Set(
+    effectiveReferenceInputs(collection).map((dependency) =>
+      createImportRecordIdentity(dependency.importRecord),
+    ),
+  );
+  for (const projectDependency of collection.dependencies) {
+    collectExpectedReferenceForImport({
       context,
       project,
-      projectDependency,
+      filePath: projectDependency.importRecord.filePath,
+      importRecord: projectDependency.importRecord,
+      projectDependency: eligible.has(
+        createImportRecordIdentity(projectDependency.importRecord),
+      )
+        ? projectDependency
+        : { ...projectDependency, referenceRequirement: null },
     });
   }
 }

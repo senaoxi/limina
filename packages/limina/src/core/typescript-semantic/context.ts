@@ -24,6 +24,7 @@ import type {
   TypeScriptSemanticResolution,
 } from './contracts';
 import { isDependencyContributionInput } from './contribution-inputs';
+import type { DeclarationEntry } from './declaration-closure';
 import type { NativeDependencyFact } from './dependency-fact';
 import { getEffectiveImporterRoots } from './effective-roots';
 import { createTypeScriptSemanticHost } from './host';
@@ -35,7 +36,7 @@ import { TypeScriptResolutionLedger } from './resolution-ledger';
 import { collectSemanticSourceRecords } from './source-records';
 import type { SourceSyntaxFactsCache } from './syntax-cache';
 import { type OwnedSyntaxInput, OwnedSyntaxScope } from './syntax-input';
-
+import { collectTypeEnvironmentEntries } from './type-environment-entries';
 function normalizeProject(
   project: TypeScriptSemanticProject,
 ): TypeScriptSemanticProject {
@@ -46,39 +47,25 @@ function normalizeProject(
     ),
   };
 }
-
 export class BoundedTypeScriptSemanticContext
   implements TypeScriptSemanticContext
 {
   readonly #admission: TypeScriptInclusionLedger;
-
   readonly #host: ts.CompilerHost;
-
   readonly #ledger = new TypeScriptResolutionLedger();
-
   readonly #recordsByFile = new Map<string, readonly ImportRecord[]>();
   readonly #facts = new Map<string, NativeDependencyFact>();
-
   readonly #resolver: TypeScriptImportResolver;
-
   readonly #sourceFiles = new Map<string, ts.SourceFile>();
-
   readonly #getAmbientEvidence: typeof createAmbientTypeEvidence;
-
   readonly #syntaxFacts: SourceSyntaxFactsCache | undefined;
-
   readonly #checkerObservation: TypeCheckerObservation;
   readonly #analysisCache: NativeAnalysisCache | undefined;
-
   #disposed = false;
   readonly #releaseAnalysisState: (() => void) | undefined;
-
   readonly identity: string;
-
   readonly project: TypeScriptSemanticProject;
-
   readonly tsModule: typeof ts;
-
   readonly program: ts.Program;
 
   constructor(
@@ -209,13 +196,15 @@ export class BoundedTypeScriptSemanticContext
   }
 
   #captureAnalysis(): void {
-    this.#analysisCache?.captureContext(this.project, this.program, () =>
-      this.getContributionFileNames().every((file) =>
-        this.#getRecords(file).every((record) =>
-          this.#facts.has(createImportRecordIdentity(record)),
+    this.#analysisCache?.captureContext(this.project, this.program, {
+      isCovered: () =>
+        this.getContributionFileNames().every((file) =>
+          this.#getRecords(file).every((record) =>
+            this.#facts.has(createImportRecordIdentity(record)),
+          ),
         ),
-      ),
-    );
+      entries: this.getTypeEnvironmentEntries(),
+    });
   }
 
   dispose(): void {
@@ -263,6 +252,15 @@ export class BoundedTypeScriptSemanticContext
         isDependencyContributionInput(this.project, file.fileName),
       )
       .map((file) => normalizeAbsolutePath(file.fileName));
+  }
+
+  getTypeEnvironmentEntries(): DeclarationEntry[] {
+    return collectTypeEnvironmentEntries({
+      compiler: this.tsModule,
+      options: this.project.options,
+      host: this.#host,
+      configPath: this.project.configPath,
+    });
   }
 
   getImportRecords(fileName: string): readonly ImportRecord[] {

@@ -1,4 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import type { DeclarationClosure } from '../typescript-semantic/declaration-closure';
 import {
   cloneProjectDependencyPreparation,
   getProjectSemanticCacheIdentity,
@@ -8,6 +9,7 @@ import type {
   ProjectDependencyRequest,
   SourceEvidence,
 } from './contracts';
+import { addDeclarationProjection } from './declaration-projection';
 import {
   collectPreparedProjectDependencyFact,
   collectProjectDependencyRecord,
@@ -36,6 +38,11 @@ function getCachedPreparation(options: {
     );
   if (cached === undefined) return undefined;
   const preparation = cloneProjectDependencyPreparation(cached);
+  addDeclarationProjection(
+    options.base.collection,
+    options.base.request,
+    preparation.declarationClosure,
+  );
   options.base.collection.failures.push(...preparation.failures);
   options.base.collection.observations.push(...preparation.observations);
   return preparation;
@@ -49,8 +56,10 @@ function finishPreparation(options: {
   observationStart: number;
   facts: ProjectDependencyPreparation['facts'];
   ready: boolean;
+  declarationClosure?: DeclarationClosure;
 }): ProjectDependencyPreparation {
   const preparation = {
+    declarationClosure: options.declarationClosure,
     directSourceRecords: options.directSourceRecords,
     failures: options.base.collection.failures.slice(options.failureStart),
     facts: options.facts,
@@ -69,7 +78,7 @@ function finishPreparation(options: {
 type PreparationFinisher = (
   isReady: boolean,
   directSourceRecords: ProjectDependencyPreparation['directSourceRecords'],
-  facts?: ProjectDependencyPreparation['facts'],
+  support?: Pick<ProjectDependencyPreparation, 'facts' | 'declarationClosure'>,
 ) => ProjectDependencyPreparation;
 
 function createPreparationFinisher(options: {
@@ -78,8 +87,14 @@ function createPreparationFinisher(options: {
   failureStart: number;
   observationStart: number;
 }): PreparationFinisher {
-  return (ready, directSourceRecords, facts = []) =>
-    finishPreparation({ ...options, directSourceRecords, facts, ready });
+  return (ready, directSourceRecords, support = { facts: [] }) =>
+    finishPreparation({
+      ...options,
+      directSourceRecords,
+      facts: support.facts,
+      ready,
+      declarationClosure: support.declarationClosure,
+    });
 }
 
 function getPreparationSource(options: {
@@ -118,7 +133,17 @@ function prepareGeneratedSource(options: {
     return options.finish(false, []);
   }
   addGeneratedObservations(options.base, semantic.unmapped);
-  return options.finish(true, semantic.directSourceRecords, semantic.facts);
+  addDeclarationProjection(
+    options.base.collection,
+    options.base.request,
+    semantic.declarationClosure,
+  );
+  const prepared = options.finish(true, semantic.directSourceRecords, {
+    facts: semantic.facts,
+    declarationClosure: semantic.declarationClosure,
+  });
+  prepared.declarationClosure = semantic.declarationClosure;
+  return prepared;
 }
 
 function prepareGeneratedSemanticDependencies(options: {

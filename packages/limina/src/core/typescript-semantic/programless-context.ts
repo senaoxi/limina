@@ -12,6 +12,7 @@ import type {
   TypeScriptSemanticProject,
   TypeScriptSemanticResolution,
 } from './contracts';
+import type { DeclarationEntry } from './declaration-closure';
 import type { NativeDependencyFact } from './dependency-fact';
 import { getEffectiveImporterRoots } from './effective-roots';
 import type {
@@ -38,6 +39,7 @@ export class ProgramlessDependencyContext
   readonly #pending: string[] = [];
   readonly #seen = new Set<string>();
   readonly #roots: Set<string>;
+  readonly #typeEntries: DeclarationEntry[] = [];
   readonly identity: string;
   readonly files: Map<string, FileDependencyFacts> = new Map();
   readonly records: Map<string, ImportRecord[]> = new Map();
@@ -71,14 +73,24 @@ export class ProgramlessDependencyContext
   }
   #typeInputs(): void {
     for (const name of this.resolver.typeNames()) {
-      const target = this.resolver.typeTarget(
+      const target = this.resolver.typeResolution(
         name,
         path.join(
           path.dirname(this.project.configPath),
           '__inferred type names__.ts',
         ),
       );
-      if (target !== undefined) this.#pending.push(target);
+      if (target === null) {
+        continue;
+      }
+
+      this.#pending.push(target.resolvedFileName);
+      this.#typeEntries.push({
+        kind: 'type-environment',
+        name,
+        fileName: target.resolvedFileName,
+        origin: target.resolutionOrigin,
+      });
     }
   }
   #libraries(): void {
@@ -197,6 +209,10 @@ export class ProgramlessDependencyContext
     if (decision.state !== 'decided')
       throw new NativeCapabilityError('unobserved reference requirement');
     return {
+      eligibility: {
+        governance: request.governance,
+        expansion: request.expansion,
+      },
       resolution,
       referenceRequirement: decision.value,
       admission: this.#admission(resolution, canExpand),
@@ -216,6 +232,9 @@ export class ProgramlessDependencyContext
   }
   getContributionFileNames(): readonly string[] {
     return this.files.keys().toArray();
+  }
+  getTypeEnvironmentEntries(): readonly DeclarationEntry[] {
+    return structuredClone(this.#typeEntries);
   }
   hasSourceFile(file: string): boolean {
     return this.files.has(normalizeAbsolutePath(file));
