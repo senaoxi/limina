@@ -18,6 +18,7 @@ import type {
   TypeScriptSemanticDependencyContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
+import type { DeclarationClosure } from '../typescript-semantic/declaration-closure';
 import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
 
 import type {
@@ -124,12 +125,15 @@ export interface ProjectDependencyFailure {
 }
 
 export interface ProjectDependencyCollection {
+  declarationClosure?: DeclarationClosure;
+  referenceInputs?: ProjectDependency[];
   dependencies: ProjectDependency[];
   failures: ProjectDependencyFailure[];
   observations: ProjectDependencyObservation[];
 }
 
 export interface ProjectDependencyPreparation {
+  declarationClosure?: DeclarationClosure;
   directSourceRecords: ImportRecord[];
   facts: PreparedDependencyFact[];
   failures: ProjectDependencyFailure[];

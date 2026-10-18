@@ -12,6 +12,7 @@ import {
 import { requiresReferenceStructure } from '../framework-semantic/prepared-type-evidence';
 import type { ImportRecord } from '../import-analysis/records';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
+import { getResolutionOrigin } from '../typescript-semantic/resolution-origin';
 import type { VueSemanticContext } from './context';
 import { getVueServiceScript } from './dependency';
 import { collectVueMappedCandidates, type VueCandidate } from './projection';
@@ -57,6 +58,7 @@ function createTarget(options: {
     options.resolvedModule.resolvedFileName,
   );
   return {
+    resolutionOrigin: getResolutionOrigin(options.resolvedModule),
     isExternalLibraryImport:
       options.resolvedModule.isExternalLibraryImport === true,
     resolvedBy: isCheckerSource({

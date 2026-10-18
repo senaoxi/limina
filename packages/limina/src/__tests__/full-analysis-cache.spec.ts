@@ -844,7 +844,7 @@ interface GraphRunResult {
 }
 
 describe('production graph snapshots and publication', () => {
-  it('restores a compatible compiler support closure in a new process and recovers native eligibility after removal', () => {
+  it('preserves compiler support while stopping governance at an implementation and restores that boundary', () => {
     const f = fixture();
     f.write(
       'limina.config.mjs',
@@ -900,12 +900,15 @@ describe('production graph snapshots and publication', () => {
       'import type {Value} from "../../b/index";export declare const value:Value;',
     );
     const compatibility = f.execute<GraphRunResult>(run);
-    expect(compatibility.graph.edges).toContainEqual(
-      expect.objectContaining({
-        fromConfigPath: f.file('tsconfig.json'),
-        toConfigPath: f.file('b/tsconfig.json'),
-      }),
-    );
+    expect(compatibility.graph.edges).toEqual([]);
+    const original = f.project();
+    const compilerProgram = ts.createProgram({
+      rootNames: [...original.fileNames],
+      options: original.options,
+    });
+    expect(
+      compilerProgram.getSourceFile(f.file('node_modules/compat/nested.d.ts')),
+    ).toBeDefined();
     expect(compatibility.events).toContainEqual(
       expect.objectContaining({ kind: 'semanticPrograms', count: 1 }),
     );
@@ -922,9 +925,9 @@ describe('production graph snapshots and publication', () => {
       'import type {Value} from "../b/index";export interface V extends Value {}',
     );
     const recovered = f.execute<GraphRunResult>(run);
-    expect(recovered.graph.edges.map((edge) => edge.toConfigPath)).toEqual(
-      compatibility.graph.edges.map((edge) => edge.toConfigPath),
-    );
+    expect(recovered.graph.edges.map((edge) => edge.toConfigPath)).toEqual([
+      f.file('b/tsconfig.json'),
+    ]);
     expect(recovered.events).toContainEqual(
       expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
     );

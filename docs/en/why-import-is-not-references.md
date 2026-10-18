@@ -49,7 +49,7 @@ Another package imports it:
 import { createClient } from '@acme/core';
 ```
 
-The current checker and `tsconfig` determine which entry TypeScript resolves. If it resolves through `types` to `./dist/index.d.ts`, Limina does not generate a source project reference for that target. The `default` branch pointing to `./src/index.ts` does not change that result.
+The current checker and `tsconfig` determine which entry TypeScript resolves. If it resolves through `types` to `./dist/index.d.ts`, Limina does not generate a source project reference for that target. The `default` branch pointing to `./src/index.ts` does not change that result. Eligible local or governed workspace declaration entries can still reveal dependencies on other implementation projects through their internal declaration chain.
 
 Now consider another import:
 

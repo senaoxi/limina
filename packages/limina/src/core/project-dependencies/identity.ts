@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { managedOutputLookupIdentity } from '../import-graph/managed-output-provider';
 import { configInputIdentity } from '../tsconfig/input-identity';
 import type {
   ProjectDependencyRequest,
@@ -6,7 +7,7 @@ import type {
 } from './contracts';
 
 export const PROJECT_DEPENDENCY_ADAPTER_VERSION =
-  'service-script-facts-v6-resolution-evidence';
+  'service-script-facts-v7-declaration-closure';
 
 const workspaceBoundarySnapshotIdentities = new WeakMap<
   ProjectSemanticContext['workspaceSourceBoundary'],
@@ -81,6 +82,9 @@ export function getProjectSemanticCacheIdentity(
 ): string {
   return (
     request.projectSemanticCacheIdentity ??
-    createProjectSemanticCacheIdentity(request.context)
+    JSON.stringify([
+      createProjectSemanticCacheIdentity(request.context),
+      managedOutputLookupIdentity(request.managedOutputLookup),
+    ])
   );
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { declarationEntrySchema } from './declaration-schema';
 import { dependencySchema as dependency } from './dependency-schema';
 const text = z.string();
 const texts = z.array(text);
@@ -43,6 +44,7 @@ const project = z.object({
 });
 const boundaryEntry = z.tuple([text, z.boolean()]);
 export const nativeContextSchema: z.ZodType<unknown> = z.object({
+  typeEntries: z.array(declarationEntrySchema),
   collection: z
     .object({
       adapter: z.literal('native-requests-v1'),

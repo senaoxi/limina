@@ -163,22 +163,30 @@ export function inferProjectReferences(options: {
     problems,
     projects: options.projects,
   });
+  const membership = createOwnerLookup(ownerGovernedSources);
   const context: ReferenceImportContext = {
     analysis,
     activatedRegions: options.activatedRegions,
     config: options.config,
     dtsProjectsBySourcePath: createDtsProjectsBySourcePath(ownerProjects),
-    fileOwnerLookup: createOwnerLookup(ownerGovernedSources),
+    fileOwnerLookup: membership,
     importAnalysis: resolveBuildGraphImportAnalysis(options),
     projectDependencyCaches: resolveProjectDependencyCaches(
       options.projectDependencyCaches,
     ),
     problems,
     dependencyEdgesByKey,
-    workspaceSourceBoundary: createWorkspaceSourceBoundary([
-      ...ownerProjects.flatMap((project) => project.fileNames),
-      ...ownerGovernedSources.flatMap((source) => source.ownedFileNames),
-    ]),
+    workspaceSourceBoundary: createWorkspaceSourceBoundary(
+      [
+        ...ownerProjects.flatMap((project) => project.fileNames),
+        ...ownerGovernedSources.flatMap((source) => source.ownedFileNames),
+      ],
+      {
+        membership,
+        isWorkspaceFile: (file) =>
+          options.activatedRegions.findPackageForPath(file) !== null,
+      },
+    ),
   };
   processReferenceImports({
     context,

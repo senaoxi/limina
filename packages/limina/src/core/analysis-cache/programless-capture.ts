@@ -77,6 +77,7 @@ function createRecord(input: Capture): NativeContextRecord {
   }
   dependencies.push(...queries.flatMap(([, query]) => query.dependencies));
   return {
+    typeEntries: [...context.getTypeEnvironmentEntries()],
     collection: { mode: 'programless', adapter: 'native-requests-v1' },
     project: {
       configPath: project.configPath,

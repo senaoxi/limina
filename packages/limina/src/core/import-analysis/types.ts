@@ -19,6 +19,7 @@ import type {
   TypeScriptSemanticResolutionContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
+import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import type { VueSemanticContextManager } from '../vue-semantic/context';
 import type { VueDependencyObservation } from '../vue-semantic/dependency-observation';
 import type { ImportRuntimeResolutionEvidence } from './evidence';
@@ -79,6 +80,9 @@ export type StandaloneInternalImportArguments = [
 ];
 
 export interface ImportAnalysisContext {
+  collectCheckerTypeEnvironmentEntries?: (
+    context: ImportResolveContextFields,
+  ) => readonly DeclarationEntry[];
   collectCheckerSupportInputs?: (
     context: ImportResolveContextFields,
   ) => readonly { filePath: string; records: readonly ImportRecord[] }[];

@@ -1,6 +1,7 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
+import type { DeclarationEntry } from './declaration-closure';
 import type { NativeDependencyFact } from './dependency-fact';
 import type { WorkspaceSourceBoundary } from './workspace-source-boundary';
 
@@ -40,6 +41,7 @@ export interface TypeScriptSemanticResolutionContext {
 
 export interface TypeScriptSemanticDependencyContext
   extends TypeScriptSemanticResolutionContext {
+  getTypeEnvironmentEntries?(): readonly DeclarationEntry[];
   getContributionFileNames?(): readonly string[];
   getDependencyFact(importRecord: ImportRecord): NativeDependencyFact;
   getImportRecords(fileName: string): readonly ImportRecord[];

@@ -102,8 +102,19 @@ export async function collectCheckerDependencyFacts(options: {
   projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: CheckerProjectConfigCache;
 }): Promise<string[]> {
+  const membership = createActualMembershipIndex(
+    options.discovery.projectByConfigPath,
+  );
   const workspaceSourceBoundary = createWorkspaceSourceBoundaryFromProjects(
     options.discovery.projectByConfigPath.values(),
+    options.discovery.activatedRegions
+      ? {
+          membership,
+          isWorkspaceFile: (file) =>
+            options.discovery.activatedRegions!.findPackageForPath(file) !==
+            null,
+        }
+      : undefined,
   );
   const caches =
     options.projectDependencyCaches ?? createProjectDependencyCaches();
@@ -118,9 +129,7 @@ export async function collectCheckerDependencyFacts(options: {
     const collected = collectAllProjectFacts({
       ...options,
       core,
-      membership: createActualMembershipIndex(
-        options.discovery.projectByConfigPath,
-      ),
+      membership: workspaceSourceBoundary.governance!.membership,
       projectDependencyCaches: caches,
       workspaceSourceBoundary,
     });

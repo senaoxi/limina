@@ -3,6 +3,7 @@ import type { AnalysisProviderSet } from '#core';
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
 import type { CheckCounter } from '../check-reporting/stats';
+import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
 import {
   collectProjectDependencies,
   createParsedProjectSemanticContext,
@@ -239,6 +240,16 @@ export function addSourceImportProblems(
     ),
     workspaceSourceBoundary: createWorkspaceSourceBoundary(
       options.sourceProjectEntries.flatMap((entry) => entry.fileNames),
+      {
+        membership: new FileOwnerLookup(
+          options.sourceProjectEntries.map((entry) => ({
+            configPath: entry.project.configPath,
+            fileNames: entry.project.fileNames,
+          })),
+        ),
+        isWorkspaceFile: (file) =>
+          options.pathIndex.findPackageForPath(file) !== null,
+      },
     ),
   };
   try {

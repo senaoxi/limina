@@ -1,6 +1,7 @@
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync, realpathSync } from 'node:fs';
+import { FileOwnerLookup } from '../build-graph/file-owner-lookup';
 
 function getRealPath(fileName: string): string {
   return normalizeAbsolutePath(
@@ -14,11 +15,16 @@ function getPathIdentities(fileName: string): string[] {
 
 export interface WorkspaceSourceBoundary {
   readonly identity: string;
+  readonly governance?: {
+    membership: FileOwnerLookup;
+    isWorkspaceFile(fileName: string): boolean;
+  };
   has(fileName: string): boolean;
 }
 
 export function createWorkspaceSourceBoundary(
   fileNames: Iterable<string>,
+  governance?: WorkspaceSourceBoundary['governance'],
 ): WorkspaceSourceBoundary {
   const pathIdentitiesByFileName = new Map<string, readonly string[]>();
   const getCachedPathIdentities = (fileName: string): readonly string[] => {
@@ -37,8 +43,13 @@ export function createWorkspaceSourceBoundary(
   }
   const sortedIdentities = [...identities].sort(compareCodeUnits);
   return {
+    governance,
     identity: JSON.stringify({
-      adapterVersion: 'workspace-source-boundary-v1',
+      adapterVersion: 'workspace-source-boundary-v2',
+      membership: sortedIdentities.map((file) => [
+        file,
+        governance?.membership.get(file) ?? [],
+      ]),
       fileNames: sortedIdentities,
     }),
     has(fileName: string): boolean {
@@ -50,9 +61,44 @@ export function createWorkspaceSourceBoundary(
 }
 
 export function createWorkspaceSourceBoundaryFromProjects(
-  projects: Iterable<{ fileNames: readonly string[] }>,
+  projects: Iterable<{
+    fileNames: readonly string[];
+    ownedFileNames?: readonly string[];
+    configPath?: string;
+    packageRootDir?: string;
+  }>,
+  governance?: WorkspaceSourceBoundary['governance'],
 ): WorkspaceSourceBoundary {
+  const inputs = [...projects];
+  const membership =
+    governance === undefined
+      ? new FileOwnerLookup(
+          inputs.flatMap((project) =>
+            project.configPath === undefined
+              ? []
+              : [
+                  {
+                    configPath: project.configPath,
+                    fileNames: project.ownedFileNames ?? project.fileNames,
+                  },
+                ],
+          ),
+        )
+      : governance.membership;
+  const roots = inputs.flatMap((project) =>
+    project.packageRootDir ? [getRealPath(project.packageRootDir)] : [],
+  );
   return createWorkspaceSourceBoundary(
-    [...projects].flatMap((project) => project.fileNames),
+    inputs.flatMap((project) => project.ownedFileNames ?? project.fileNames),
+    governance ?? {
+      membership,
+      isWorkspaceFile: (file) => {
+        const real = getRealPath(file);
+        return (
+          !real.includes('/node_modules/') &&
+          roots.some((root) => real.startsWith(`${root}/`))
+        );
+      },
+    },
   );
 }

@@ -1,6 +1,7 @@
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import { isDependencyContributionInput } from '../typescript-semantic/contribution-inputs';
+import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import type {
   ImporterRecord,
   InputDependency,
@@ -13,6 +14,7 @@ import type { SemanticState } from './semantic-state';
 import { occurrenceKey } from './semantic-state';
 
 interface CaptureOptions {
+  typeEntries: DeclarationEntry[];
   cache: NativeAnalysisCache;
   project: TypeScriptSemanticProject;
   state: SemanticState;
@@ -78,6 +80,7 @@ export function createContextRecord(
   );
   const sourceRecords = sources(options);
   return {
+    typeEntries: structuredClone(options.typeEntries),
     project: {
       configPath: project.configPath,
       fileNames: project.fileNames,

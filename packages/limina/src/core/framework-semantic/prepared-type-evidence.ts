@@ -6,6 +6,7 @@ import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { TypeEvidence } from '../type-evidence/cache';
 import { observeProjectReferenceRedirect } from '../typescript-semantic/reference-redirect';
+import { requestEligibility } from '../typescript-semantic/request-eligibility';
 import type {
   FrameworkSemanticCandidate,
   PreparedDependencyFact,
@@ -78,6 +79,11 @@ export function createPreparedFact(
   const { candidate, target } = options.resolved;
   const redirect = preparedRedirect(options);
   return {
+    eligibility: requestEligibility(
+      candidate.containingSourceFile,
+      candidate.sourceRecord,
+      options.tsModule,
+    ),
     redirect,
     framework: candidate.framework,
     importRecord: {
@@ -88,7 +94,7 @@ export function createPreparedFact(
     provenance: candidate.provenance,
     resolutionMode: options.resolved.resolutionMode,
     semanticSpecifier: candidate.semanticSpecifier,
-    target: target === null ? null : { ...target },
+    target: target === null ? null : structuredClone(target),
   };
 }
 

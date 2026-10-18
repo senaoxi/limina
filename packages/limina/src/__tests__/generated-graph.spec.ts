@@ -8454,6 +8454,144 @@ describe('reference graph repair compiler differentials', () => {
     30_000,
   );
 
+  it.each(['path', 'types'])(
+    'uses the Vue host for a declaration %s directive entry',
+    async (kind) => {
+      const fixture = await createFixture({
+        'packages/a/package.json': json({
+          name: '@directive/a',
+          type: 'module',
+        }),
+        'packages/b/package.json': json({
+          name: '@directive/b',
+          type: 'module',
+        }),
+        'packages/a/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            types: [],
+            typeRoots: ['./types'],
+          },
+          files: ['index.ts', 'App.vue'],
+        }),
+        'packages/b/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            types: [],
+          },
+          files: ['value.ts'],
+        }),
+        'packages/a/index.ts':
+          kind === 'path'
+            ? '/// <reference path="./types/env/index.d.ts" />\nexport {};'
+            : '/// <reference types="env" />\nexport {};',
+        'packages/a/App.vue':
+          '<script setup lang="ts">const value = 1;</script><template>{{value}}</template>',
+        'packages/a/types/env/index.d.ts':
+          'export type { Value } from "../../../b/value";',
+        'packages/b/value.ts': 'export type Value = number;',
+      });
+      fixture.config.scope!.checkers = {
+        'vue-tsc': { include: ['packages/**/tsconfig.json'] },
+      };
+      try {
+        const generated = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(
+          generated.dependencyEdges
+            .filter(
+              (edge) =>
+                edge.fromConfigPath ===
+                fixture.path('packages/a/tsconfig.json'),
+            )
+            .map((edge) => edge.toConfigPath),
+        ).toEqual([fixture.path('packages/b/tsconfig.json')]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it.each(
+    ['tsc', 'vue-tsc'].flatMap((checker) =>
+      [false, true].map((governed) => ({ checker, governed })),
+    ),
+  )(
+    'projects $checker public declarations with governed=$governed',
+    async ({ checker, governed }) => {
+      const files: Record<string, string> = {
+        'packages/a/package.json': json({ name: '@closure/a', type: 'module' }),
+        'packages/bridge/package.json': json({
+          name: '@closure/bridge',
+          type: 'module',
+          types: './index.d.ts',
+        }),
+        'packages/b/package.json': json({ name: '@closure/b', type: 'module' }),
+        'packages/a/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            types: [],
+          },
+          files: [checker === 'tsc' ? 'index.ts' : 'App.vue'],
+        }),
+        'packages/b/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            types: [],
+          },
+          files: ['value.ts'],
+        }),
+        'packages/a/index.ts': 'export type { Value } from "@closure/bridge";',
+        'packages/bridge/index.d.ts': 'export type { Value } from "./helper";',
+        'packages/bridge/helper.d.ts':
+          'export type { Value } from "../b/value";',
+        'packages/b/value.ts': 'export type Value = number;',
+      };
+      if (checker === 'vue-tsc')
+        files['packages/a/App.vue'] =
+          '<script setup lang="ts">import type { Value } from "@closure/bridge"; const value: Value = 1;</script><template>{{value}}</template>';
+      if (governed)
+        files['packages/bridge/tsconfig.json'] = json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            types: [],
+          },
+          files: ['index.d.ts'],
+        });
+      const fixture = await createFixture(files);
+      fixture.config.scope!.checkers = {
+        [checker]: { include: ['packages/**/tsconfig.json'] },
+      };
+      try {
+        await mkdir(fixture.path('node_modules/@closure'), { recursive: true });
+        await symlink(
+          fixture.path('packages/bridge'),
+          fixture.path('node_modules/@closure/bridge'),
+          'junction',
+        );
+        const generated = await prepareGeneratedTsconfigGraph(fixture.config);
+        const edges = generated.dependencyEdges.filter(
+          (edge) =>
+            edge.fromConfigPath === fixture.path('packages/a/tsconfig.json'),
+        );
+        expect(edges.map((edge) => edge.toConfigPath)).toEqual(
+          governed ? [fixture.path('packages/b/tsconfig.json')] : [],
+        );
+        expect(
+          edges.every((edge) => edge.kind === 'declaration-provider'),
+        ).toBe(true);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    30_000,
+  );
+
   it.each(
     ['svelte', 'astro'].flatMap((framework) =>
       [
@@ -8461,6 +8599,9 @@ describe('reference graph repair compiler differentials', () => {
         'ambient-membership',
         'support-module',
         'support-path',
+        'support-public',
+        'support-public-governed',
+        'support-public-local',
       ].map((kind) => ({
         framework,
         kind,
@@ -8534,6 +8675,36 @@ describe('reference graph repair compiler differentials', () => {
         config.files = [`src/Entry.${framework}`];
         files['packages/a/tsconfig.json'] = json(config);
       }
+      if (kind.startsWith('support-public')) {
+        files['packages/bridge/package.json'] = json({
+          name: '@closure/bridge',
+          type: 'module',
+          types: './index.d.ts',
+        });
+        files['packages/bridge/index.d.ts'] =
+          'export type { Support } from "./helper";';
+        files['packages/bridge/helper.d.ts'] =
+          'export type { Value as Support } from "../b/src/value";';
+        files[`packages/a/src/Entry.${framework}`] = files[
+          `packages/a/src/Entry.${framework}`
+        ]!.replace('./env', '@closure/bridge');
+        if (kind === 'support-public-governed')
+          files['packages/bridge/tsconfig.json'] = json({
+            compilerOptions: {
+              module: 'ESNext',
+              moduleResolution: 'Bundler',
+              types: [],
+            },
+            files: ['index.d.ts'],
+          });
+        else if (kind === 'support-public-local') {
+          files['packages/a/src/env.d.ts'] =
+            'export type { Support } from "../../bridge/index";';
+          const config = JSON.parse(files['packages/a/tsconfig.json']!);
+          config.files.push('src/env.d.ts');
+          files['packages/a/tsconfig.json'] = json(config);
+        }
+      }
       const fixture = await createFixture(files);
       fixture.config.scope!.checkers = {
         [framework === 'svelte' ? 'svelte-check' : 'astro']: {
@@ -8542,6 +8713,23 @@ describe('reference graph repair compiler differentials', () => {
         tsc: { include: ['packages/b/tsconfig.json'] },
       };
       try {
+        if (kind.startsWith('support-public')) {
+          await mkdir(fixture.path('node_modules/@closure'), {
+            recursive: true,
+          });
+          await symlink(
+            fixture.path('packages/bridge'),
+            fixture.path('node_modules/@closure/bridge'),
+            'junction',
+          );
+          if (kind === 'support-public-governed')
+            fixture.config.scope!.checkers!.tsc = {
+              include: [
+                'packages/b/tsconfig.json',
+                'packages/bridge/tsconfig.json',
+              ],
+            };
+        }
         const leafRoot = path.join(fixture.rootDir, 'packages/a');
         if (framework === 'astro') await linkAstroToolchain(leafRoot);
         else {
@@ -8562,8 +8750,16 @@ describe('reference graph repair compiler differentials', () => {
           });
         }
         const generated = await prepareGeneratedTsconfigGraph(fixture.config);
-        if (kind === 'ambient-membership' || kind.startsWith('support-')) {
-          expect(generated.dependencyEdges).toEqual([
+        if (kind === 'support-public')
+          expect(generated.dependencyEdges).toEqual([]);
+        else if (kind === 'ambient-membership' || kind.startsWith('support-')) {
+          expect(
+            generated.dependencyEdges.filter(
+              (edge) =>
+                edge.fromConfigPath ===
+                fixture.path('packages/a/tsconfig.json'),
+            ),
+          ).toEqual([
             expect.objectContaining({
               fromConfigPath: fixture.path('packages/a/tsconfig.json'),
               toConfigPath: fixture.path('packages/b/tsconfig.json'),
@@ -8577,7 +8773,7 @@ describe('reference graph repair compiler differentials', () => {
               (unit) =>
                 unit.configPath === fixture.path('packages/a/tsconfig.json'),
             )!;
-          if (kind.startsWith('support-'))
+          if (kind !== 'support-public-local' && kind.startsWith('support-'))
             expect(source.ownedFileNames).toEqual([
               fixture.path(`packages/a/src/Entry.${framework}`),
             ]);
@@ -9211,7 +9407,7 @@ describe('ambient references and compiler membership', () => {
     }
   });
   it.each([false, true])(
-    'checks output-only library dependencies without expanding the source graph: explicit lib=%s',
+    'keeps replacement library artifacts outside governance: explicit lib=%s',
     async (explicitLibrary) => {
       const fixture = await createFixture({
         'packages/a/package.json': json({ name: '@example/a', private: true }),
@@ -9244,34 +9440,22 @@ describe('ambient references and compiler membership', () => {
         'packages/b/src/index.ts': 'export interface Value { value: number }',
       });
       try {
-        if (explicitLibrary) {
-          const source = fixture.path('packages/a/tsconfig.json');
-          const graph = await prepareGeneratedTsconfigGraph(fixture.config);
-          expect(
-            graph.dependencyEdges
-              .filter((edge) => edge.fromConfigPath === source)
-              .map((edge) => edge.toConfigPath),
-          ).toEqual([fixture.path('packages/b/tsconfig.json')]);
-          const configs = [
-            graph.sourceToDts.get('tsc')!.get(source)!,
-            graph.configToOutputBuild.get('tsc')!.get(source)!.path,
-          ];
-          expect(
-            ts
-              .createSolutionBuilder(
-                ts.createSolutionBuilderHost(ts.sys),
-                configs,
-                { force: true },
-              )
-              .build(),
-          ).toBe(0);
-        } else {
-          await expect(
-            prepareGeneratedTsconfigGraph(fixture.config),
-          ).rejects.toThrow(
-            'an output dependency is not covered by existing output references',
-          );
-        }
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(graph.dependencyEdges).toEqual([]);
+        const source = fixture.path('packages/a/tsconfig.json');
+        const output = graph.configToOutputBuild.get('tsc')!.get(source)!.path;
+        const parsed = parseProject(fixture.config, output);
+        const program = ts.createProgram({
+          rootNames: parsed.fileNames,
+          options: parsed.options,
+        });
+        // A public artifact boundary changes governance, not compiler inputs.
+        expect(
+          program.getSourceFile(fixture.path('packages/b/src/index.ts')),
+        ).toBeDefined();
+        expect(program.getRootFileNames()).toEqual([
+          fixture.path('packages/a/src/index.ts'),
+        ]);
       } finally {
         await fixture.cleanup();
       }

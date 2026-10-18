@@ -7,6 +7,10 @@ import { occurrenceKey } from '../analysis-cache/semantic-state';
 import type { VueQueryResults } from '../analysis-cache/vue-contracts';
 import type { ImportAnalysisContext } from '../import-analysis/types';
 import { collectTypeScriptSourceFileImports } from '../import-analysis/typescript-imports';
+import {
+  collectFrameworkEnvironmentEntries,
+  collectTypeEnvironmentEntries,
+} from '../typescript-semantic/type-environment-entries';
 import type { VueSemanticContextManager } from './context';
 import {
   observeVueGraphDependency,
@@ -83,9 +87,40 @@ export function createVueDependencyObserver(
   manager: VueSemanticContextManager,
 ): Pick<
   ImportAnalysisContext,
-  'collectCheckerSupportInputs' | 'observeCheckerDependency'
+  | 'collectCheckerSupportInputs'
+  | 'observeCheckerDependency'
+  | 'collectCheckerTypeEnvironmentEntries'
 > {
   return {
+    collectCheckerTypeEnvironmentEntries: (request) => {
+      const identity = request.vueSemanticIdentity;
+      if ([!identity, request.semanticFamily !== 'vue'].some(Boolean))
+        return [];
+      return (
+        manager.query({
+          identity: identity!,
+          kind: 'type-environment-entries',
+          request: [],
+          collect: () => {
+            const context = manager.acquire(identity!);
+            return [
+              ...collectFrameworkEnvironmentEntries({
+                compiler: context.tsModule,
+                host: context.languageServiceHost as ts.ModuleResolutionHost,
+                rootNames: identity!.fileNames,
+                scriptNames: context.languageServiceHost.getScriptFileNames(),
+              }),
+              ...collectTypeEnvironmentEntries({
+                compiler: context.tsModule,
+                options: identity!.options,
+                host: context.languageServiceHost as ts.ModuleResolutionHost,
+                configPath: identity!.configPath,
+              }),
+            ];
+          },
+        }) ?? []
+      );
+    },
     collectCheckerSupportInputs: (context) => {
       const identity = context.vueSemanticIdentity;
       return identity === undefined || context.semanticFamily !== 'vue'
