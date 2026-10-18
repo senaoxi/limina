@@ -11,13 +11,13 @@ import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
-import { serializeAnalysisSnapshot } from '../core/analysis-cache/snapshot-receipts';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import {
   createTypeScriptDependencyContext,
   createWorkspaceSourceBoundary,
 } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
+import { roundTripAnalysisSnapshot } from './helpers/analysis-snapshot';
 import { createFixturePathResolver } from './helpers/path';
 
 const roots: string[] = [];
@@ -390,5 +390,5 @@ describe('programless dependency contracts', () => {
 
 function serializedSnapshot(cache: NativeAnalysisCache): unknown {
   const snapshot = cache.snapshot();
-  return JSON.parse(serializeAnalysisSnapshot(snapshot));
+  return roundTripAnalysisSnapshot(snapshot);
 }

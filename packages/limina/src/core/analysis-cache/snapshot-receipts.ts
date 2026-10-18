@@ -1,44 +1,51 @@
+import { compareCodeUnits } from '#utils/collections';
 import { isPlainRecord } from '#utils/values';
 import { z } from 'zod';
 import type { AnalysisSnapshot, InputDependency } from './contracts';
+import { decodeData, encodeData } from './data-codec';
 import { shareValidatedDependency } from './dependency-schema';
-import {
-  mapAnalysisRecords,
-  packAnalysisRecord,
-  unpackAnalysisRecord,
-} from './record-payload';
+import { mapAnalysisRecords } from './record-payload';
 
 const dependency = z.object({
   inputId: z.string(),
   expectedVersion: z.string(),
 });
+const listIndex = z.number().int().nonnegative();
+const receiptBlock = z.array(listIndex).max(128);
 const encoding = z.object({
-  version: z.literal(2),
+  version: z.literal(3),
   dependencies: z.array(dependency),
   queryIds: z.array(z.string()),
+  lists: z.array(receiptBlock),
 });
 interface ReceiptTables {
-  version: 2;
+  version: 3;
   dependencies: InputDependency[];
   queryIds: string[];
+  lists: number[][];
 }
 type Transform = (key: string, value: unknown) => unknown;
-function visit(value: unknown, transform: Transform): unknown {
-  if (Array.isArray(value)) return value.map((item) => visit(item, transform));
-  return isPlainRecord(value) ? visitRecord(value, transform) : value;
+interface VisitOptions {
+  transform: Transform;
+  shouldSortKeys?: boolean;
+}
+function visit(value: unknown, options: VisitOptions): unknown {
+  if (Array.isArray(value)) return value.map((item) => visit(item, options));
+  return isPlainRecord(value) ? visitRecord(value, options) : value;
 }
 function visitRecord(
   value: Record<string, unknown>,
-  transform: Transform,
+  options: VisitOptions,
 ): unknown {
+  const entries = Object.entries(value);
+  if (options.shouldSortKeys)
+    entries.sort(([left], [right]) => compareCodeUnits(left, right));
   return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => {
-      const transformed = transform(key, item);
+    entries.map(([key, item]) => {
+      const transformed = options.transform(key, item);
       return [
         key,
-        transformed === item
-          ? visitUnpacked(key, item, transform)
-          : transformed,
+        transformed === item ? visitUnpacked(key, item, options) : transformed,
       ];
     }),
   );
@@ -46,10 +53,25 @@ function visitRecord(
 function visitUnpacked(
   key: string,
   item: unknown,
-  transform: Transform,
+  options: VisitOptions,
 ): unknown {
-  // Encoded semantic/graph data contains no receipt fields.
-  return key === 'data' ? item : visit(item, transform);
+  // These values are opaque to receipt encoding. Preserve ordered compiler
+  // configuration and resolution requests, while omitting non-enumerable
+  // compiler AST attachments from their plain data view.
+  if (key === 'data') return item;
+  const opaque = [
+    'options',
+    'request',
+    'references',
+    'projectReferences',
+    'identity',
+  ];
+  // Leave tagged payloads for the data codec: structuredClone would invoke
+  // their accessors before the codec can reject live data.
+  return visit(
+    item,
+    opaque.includes(key) ? { transform: (_key, value) => value } : options,
+  );
 }
 function isDependencyList(value: unknown): value is InputDependency[] {
   return Array.isArray(value) && value.every((item) => isDependency(item));
@@ -71,11 +93,31 @@ function isQueryList(value: unknown): value is string[] {
 class ReceiptEncoder {
   readonly #dependencies = new Map<string, Map<string, number>>();
   readonly #queries = new Map<string, number>();
+  readonly #lists = new Map<string, number>();
   readonly tables: ReceiptTables = {
-    version: 2,
+    version: 3,
     dependencies: [],
     queryIds: [],
+    lists: [],
   };
+
+  #list(ids: number[]): { receiptBlocks: number[] } {
+    const receiptBlocks: number[] = [];
+    // Bound dictionary entries so near-identical large receipts share their
+    // unchanged runs without changing ordering or expected input versions.
+    for (let offset = 0; offset < ids.length; offset += 128) {
+      const values = ids.slice(offset, offset + 128);
+      const key = JSON.stringify(values);
+      let id = this.#lists.get(key);
+      if (id === undefined) {
+        id = this.tables.lists.length;
+        this.#lists.set(key, id);
+        this.tables.lists.push(values);
+      }
+      receiptBlocks.push(id);
+    }
+    return { receiptBlocks };
+  }
 
   #dependency(value: InputDependency): number {
     let versions = this.#dependencies.get(value.inputId);
@@ -113,51 +155,65 @@ class ReceiptEncoder {
   }
   dependencies(value: unknown): unknown {
     return isDependencyList(value)
-      ? { receiptIds: value.map((item) => this.#dependency(item)) }
+      ? this.#list(value.map((item) => this.#dependency(item)))
       : value;
   }
   queries(value: unknown): unknown {
     return isQueryList(value)
-      ? { receiptIds: value.map((item) => this.#query(item)) }
+      ? this.#list(value.map((item) => this.#query(item)))
       : value;
   }
 }
-function encodeAnalysisSnapshot(
-  snapshot: AnalysisSnapshot,
-  format: 'json' | 'data' = 'json',
+function encodeRecords(
+  records: Record<string, unknown>,
+  encodeRecord: (record: unknown) => unknown,
+  shouldSortKeys: boolean,
 ): Record<string, unknown> {
   const encoder = new ReceiptEncoder();
-  const { header, configModules, ...records } = snapshot;
   const encoded = mapAnalysisRecords(records, (record) =>
-    packAnalysisRecord(
-      visit(record, (key, value) => encoder.field(key, value)),
-      format,
+    encodeRecord(
+      visit(record, {
+        transform: (key, item) => encoder.field(key, item),
+        shouldSortKeys,
+      }),
     ),
   );
-  return {
-    header,
-    configModules,
-    ...encoded,
-    receiptEncoding: encoder.tables,
-  };
+  return { ...encoded, receiptEncoding: encoder.tables };
 }
-export function serializeAnalysisSnapshot(snapshot: AnalysisSnapshot): string {
-  return JSON.stringify(encodeAnalysisSnapshot(snapshot));
+export function encodeAnalysisRecords(
+  records: Record<string, unknown>,
+): Record<string, unknown> {
+  // Canonical ordering belongs to persisted blocks, never runtime identities.
+  return encodeRecords(records, (record) => record, true);
 }
 export function cloneAnalysisSnapshot(
   snapshot: AnalysisSnapshot,
 ): AnalysisSnapshot {
-  // Keep isolation without cloning repeated receipt strings once per fact.
-  return decodeRecords(
-    structuredClone(encodeAnalysisSnapshot(snapshot, 'data')),
-  ) as AnalysisSnapshot;
+  const { header, configModules, ...records } = snapshot;
+  // Copy compact tagged values without serializing or compressing them. Receipt
+  // parsing owns the tuples; opaque values and runtime identity order survive.
+  const encoded = encodeRecords(
+    records,
+    (record) => decodeData(encodeData(record)),
+    false,
+  );
+  return {
+    ...structuredClone({ header, configModules }),
+    ...decodeAnalysisRecords(encoded, false),
+  } as AnalysisSnapshot;
 }
-function receiptList(value: unknown, table: readonly unknown[]): unknown {
+function receiptList(
+  value: unknown,
+  table: readonly unknown[],
+  lists: readonly number[][],
+): unknown {
   if (!isPlainRecord(value)) return value;
-  const ids = value.receiptIds;
+  const ids = value.receiptBlocks;
   if (!Array.isArray(ids))
     throw new Error('Invalid analysis receipt references.');
-  return ids.map((id) => receipt(id, table));
+  return ids.flatMap((id) =>
+    (receipt(id, lists) as number[]).map((index) => receipt(index, table)),
+  );
 }
 function receipt(id: unknown, table: readonly unknown[]): unknown {
   const valid = [
@@ -176,42 +232,29 @@ function decodeField(
 ): unknown {
   switch (key) {
     case 'dependencies': {
-      return receiptList(value, tables.dependencies);
+      return receiptList(value, tables.dependencies, tables.lists);
     }
     case 'queryIds': {
-      return receiptList(value, tables.queryIds);
+      return receiptList(value, tables.queryIds, tables.lists);
     }
     default: {
       return value;
     }
   }
 }
-function decodeRecords(
+export function decodeAnalysisRecords(
   value: Record<string, unknown>,
-  shouldShareValidated?: boolean,
-): unknown {
-  if (value.receiptEncoding === undefined) return value;
+  shouldShareValidated = true,
+): Record<string, unknown> {
   const tables = encoding.parse(value.receiptEncoding);
   if (shouldShareValidated)
     tables.dependencies = tables.dependencies.map(shareValidatedDependency);
-  const { header, configModules, ...records } = value;
+  const records = { ...value };
   delete records.receiptEncoding;
   const decoded = mapAnalysisRecords(records, (record) =>
-    visit(unpackAnalysisRecord(record), (key, item) =>
-      decodeField(key, item, tables),
-    ),
+    visit(record, {
+      transform: (key, item) => decodeField(key, item, tables),
+    }),
   );
-  return { header, configModules, ...decoded };
-}
-export function decodeAnalysisSnapshotReceipts(
-  value: unknown,
-  shouldShareValidated?: boolean,
-): unknown {
-  try {
-    return isPlainRecord(value)
-      ? decodeRecords(value, shouldShareValidated)
-      : value;
-  } catch {
-    return undefined;
-  }
+  return decoded;
 }

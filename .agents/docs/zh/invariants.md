@@ -114,6 +114,8 @@
 
 **持久化分析有效性**：native importer 复用绑定事实版本、query coverage 和共享环境证据。完整 clean DTO 还在创建 Program 前校验当前 roots／admission、importer scope／mode 输入、lock 信任、本地 typeRoots 、namespace 级有效 `configVersion` 门及完整的逐文件 `configModules` 门；独立 CLI 进程之间，已知配置模块、原始解析边、绑定和已观测 loader 输出摘要必须匹配，mtime 相等信任旧 hash，mtime 不同按单文件 hash fallback。实际模块和显式声明文件共用同一证据门。未执行的动态导入不使配置失去资格；真实 incomplete 证据总触发冷分析，包括原因移除后的首次 complete 调用。严格调用内漂移仍终止执行，不重放命令。Preflight 访问策略可以关闭持久化恢复及发布，但不能关闭调用内有效性保护；调用者的读写／只读权限和 force 均不能覆盖公开配置的禁用策略。冷／dirty 分析建立当前有资格的支撑闭包；受支持 Native 无需 Program。恢复数据不授予运行时 ownership 或写权限。仅分析 epoch 的重试不能重放已完成命令。见[持久化缓存生命周期](./lifecycle.md#原生持久化分析缓存)及其回归证据。
 
+**分片持久化**：Scope 文件是存储边界，不是独立语义权威。Root 门先于任何旧块读取；包含中性文件事实和有序回执的完整模型经校验后才能采用。先写块，再经过既有漂移、lease 与物理基线检查后原子发布 index。见[存储生命周期](./lifecycle.md#原生持久化分析缓存)和[存储守卫](../../../packages/limina/src/__tests__/analysis-cache-shards.spec.ts)。
+
 **规划输入 identity**：Migration 配置 overlay 纳入 semantic/provider cache identity，并贯穿 parser、ownership 与 TypeScript host。原生 reference 清单与规范化 source 输入上的推导相分离。Outputs 试加入只在封闭 reader 内复用单次发现快照，重新验证候选输出与物理 authority；末次规划和磁盘消费重新发现。已读取的 manifest 与 workspace descriptor 也纳入写入前漂移检查。Migration bundle 将 provider、namespace、错误类和 writer 的生产消费作为整体内联；新进程 worker 使用同一内嵌源码版本重新读取磁盘，不借用规划 context。包版本元数据观察不成为 semantic evidence。构建源码来源守卫、配对发布守卫与打包消费者测试挑战旧 dist、self metadata 不一致及 worker 资源缺失。这是 generation 内的输入边界，不是持久 read-view runtime；见[迁移生命周期](./lifecycle.md#migration-是另一种事务)。
 
 ## I10 — mutation 权限不能从路径字符串推导

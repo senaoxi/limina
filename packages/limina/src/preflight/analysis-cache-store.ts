@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync } from 'node:fs';
 import { rename } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import path from 'pathe';
@@ -8,18 +7,16 @@ import { writeJsonAtomically } from '../check-reporting/atomic-writer';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
 import { analysisHash } from '../core/analysis-cache/identity';
 import type { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
-import { serializeAnalysisSnapshot } from '../core/analysis-cache/snapshot-receipts';
 import {
-  assertArtifactPathLexicallyContained,
   assertArtifactPathOperationSafe,
   type LiminaArtifactNamespace,
   resolveArtifactNamespacePath,
 } from '../domain/artifacts/namespace';
-import {
-  assertArtifactPathStatsSafe,
-  getRelativeSegments,
-} from '../domain/artifacts/namespace-safety-shared';
 import { acquireCrossProcessWriteLease } from '../utils/mutation/cross-process-lease';
+import {
+  AnalysisCacheBlocks,
+  readAnalysisCacheFile,
+} from './analysis-cache-blocks';
 import { AnalysisSnapshotDecoder } from './analysis-cache-decode';
 import type { ConfigObservation } from './config-observation';
 
@@ -37,6 +34,7 @@ export class AnalysisCacheStore {
   #hasBaseline = true;
   #storedRevision: string | undefined;
   #baseline: string | undefined;
+  readonly #blocks: AnalysisCacheBlocks;
   readonly path: string;
   readonly identity: string;
   constructor(options: CacheStoreOptions) {
@@ -45,30 +43,22 @@ export class AnalysisCacheStore {
     this.path = resolveArtifactNamespacePath(
       options.namespace,
       'cache',
-      'analysis-v1',
+      'analysis-v2',
       analysisHash(options.configPath),
-      'snapshot.json',
+      'index.liminainfo',
+    );
+    this.#blocks = new AnalysisCacheBlocks(
+      options.namespace,
+      path.dirname(this.path),
     );
   }
 
   #readBytes(): Buffer | undefined {
     try {
-      this.#assertReadSafe();
-      return readFileSync(this.path);
+      return readAnalysisCacheFile(this.#options.namespace, this.path);
     } catch (error) {
       if (!isAbsent(error)) this.#hasBaseline = false;
       return undefined;
-    }
-  }
-
-  #assertReadSafe(): void {
-    const namespace = this.#options.namespace;
-    assertArtifactPathLexicallyContained(namespace, this.path);
-    let cursor = namespace.rootDir;
-    for (const segment of ['', ...getRelativeSegments(namespace, this.path)]) {
-      cursor = path.join(cursor, segment);
-      const role = cursor === this.path ? 'target-file' : 'parent-directory';
-      assertArtifactPathStatsSafe(cursor, lstatSync(cursor), new Set([role]));
     }
   }
 
@@ -88,9 +78,10 @@ export class AnalysisCacheStore {
     const start = performance.now();
     let encoded = '';
     try {
-      await writeJsonAtomically(this.#options.namespace, this.path, snapshot, {
+      const { index, writtenBytes } = await this.#blocks.write(snapshot);
+      await writeJsonAtomically(this.#options.namespace, this.path, index, {
         serialize: () => {
-          encoded = serializeAnalysisSnapshot(snapshot);
+          encoded = JSON.stringify(index);
           return encoded;
         },
         rename: async (from, to) => {
@@ -108,7 +99,7 @@ export class AnalysisCacheStore {
         name: 'analysis-cache',
         kind: 'write',
         durationMs: performance.now() - start,
-        estimatedBytes: Buffer.byteLength(encoded) + 1,
+        estimatedBytes: Buffer.byteLength(encoded) + 1 + writtenBytes,
       });
     } catch (error) {
       // Only storage I/O is best effort; drift and authorization failures stop
@@ -170,10 +161,21 @@ export class AnalysisCacheStore {
     bytes: Buffer | undefined,
     shouldRestore: boolean,
   ): AnalysisSnapshot | undefined {
-    return new AnalysisSnapshotDecoder(this.#options).decode(
-      bytes,
-      shouldRestore,
-    );
+    return new AnalysisSnapshotDecoder({
+      ...this.#options,
+      readBlock: (reference) => {
+        const start = performance.now();
+        const bytes = this.#blocks.read(reference);
+        this.#record({
+          name: 'analysis-cache',
+          kind: 'read-block',
+          durationMs: performance.now() - start,
+          estimatedBytes: bytes.length,
+          count: 1,
+        });
+        return bytes;
+      },
+    }).decode(bytes, shouldRestore);
   }
 
   #canPublish(cache: NativeAnalysisCache): boolean {

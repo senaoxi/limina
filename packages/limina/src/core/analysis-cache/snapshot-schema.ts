@@ -5,7 +5,6 @@ import { dependencySchema as dependency } from './dependency-schema';
 import { discoveryRecordSchema } from './discovery-schema';
 import { nativeContextSchema } from './environment-schema';
 import { occurrenceSchema } from './occurrence-schema';
-import { decodeAnalysisSnapshotReceipts } from './snapshot-receipts';
 import { validatedSnapshot } from './snapshot-validation';
 import { vueContextSchema } from './vue-schema';
 
@@ -198,9 +197,7 @@ export function parseAnalysisSnapshot(
 ): AnalysisSnapshot | undefined {
   const root = parseAnalysisSnapshotRoot(value, identity);
   if (!isRestorableRoot(root, configVersion)) return undefined;
-  const parsed = snapshot.safeParse(
-    decodeAnalysisSnapshotReceipts(value, true),
-  );
+  const parsed = snapshot.safeParse(value);
   return parsed.success
     ? validatedSnapshot(parsed.data as unknown as AnalysisSnapshot)
     : undefined;
