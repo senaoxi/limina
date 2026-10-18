@@ -16,7 +16,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, expect, it } from 'vitest';
 import { createFixturePathResolver } from '../../src/__tests__/helpers/path';
-import type { AnalysisSnapshot } from '../../src/core/analysis-cache/contracts';
+import type { AnalysisSnapshotIndex } from '../../src/core/analysis-cache/snapshot-shards';
 import { runLimina } from '../helpers/run-limina';
 
 const cli = fileURLToPath(new URL('../../dist/bin/limina.js', import.meta.url));
@@ -138,10 +138,10 @@ async function check(
   options: { env?: Record<string, string>; args?: string[] } = {},
 ) {
   const profile = await runProfile(f, loader, options);
-  const snapshotPath = artifact(f, 'snapshot.json');
+  const snapshotPath = artifact(f, 'index.liminainfo');
   const snapshot = JSON.parse(
     readFileSync(snapshotPath, 'utf8'),
-  ) as AnalysisSnapshot;
+  ) as AnalysisSnapshotIndex;
   return { ...profile, snapshot, path: snapshotPath };
 }
 it.each([
@@ -156,11 +156,15 @@ it.each([
     const cold = await check(f, loader);
     expect(cold.snapshot.configModules.complete).toBe(true);
     expectRebuiltGraph(cold.events);
+    expect(count(cold.events, 'read-block')).toBe(0);
     const bytes = readFileSync(cold.path);
     const timestamp = statSync(cold.path).mtimeMs;
     const warm = await check(f, loader);
     expect(count(warm.events, 'semanticPrograms')).toBe(0);
     expect(count(warm.events, 'graphHits')).toBe(1);
+    expect(count(warm.events, 'read-block')).toBe(
+      cold.snapshot.storage.blocks.length,
+    );
     const mtime = statSync(f.path(f.helper)).mtimeMs / 1000;
     utimesSync(f.path(f.helper), mtime + 100, mtime + 100);
     const touch = await check(f, loader);
@@ -175,6 +179,7 @@ it.each([
     const changed = await check(f, loader);
     expectRebuiltGraph(changed.events);
     expect(count(changed.events, 'graphHits')).toBe(0);
+    expect(count(changed.events, 'read-block')).toBe(0);
   },
 );
 it('keeps tsx CommonJS cold when its extension hook bypasses source observation', async () => {
@@ -524,7 +529,7 @@ it.each([
     expectUncachedAnalysis(initial.events);
     expect(
       readdirSync(f.path('.limina'), { recursive: true }).some((entry) =>
-        String(entry).endsWith('snapshot.json'),
+        String(entry).endsWith('index.liminainfo'),
       ),
     ).toBe(false);
     const seed = await check(f, loader);
@@ -607,7 +612,7 @@ it('forces one config namespace without changing another config or worktree snap
   expect(count((await runProfile(f, 'native')).events, 'graphHits')).toBe(1);
   const secondPath = readdirSync(f.path('.limina'), { recursive: true })
     .map(String)
-    .filter((entry) => entry.endsWith('snapshot.json'))
+    .filter((entry) => entry.endsWith('index.liminainfo'))
     .map((entry) => f.path('.limina', entry))
     .find((file) => file !== first.path)!;
   expect(secondPath).toBeDefined();
@@ -734,6 +739,7 @@ pipelines:{probe:['graph:check','checker:build']}};`,
       ).toBe(false);
     } else {
       expectRebuiltGraph(profile.events);
+      expect(count(profile.events, 'read-block')).toBe(0);
     }
   }
   expect(readFileSync(seed.path)).not.toEqual(snapshot);

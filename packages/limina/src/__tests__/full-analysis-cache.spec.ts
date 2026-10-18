@@ -34,6 +34,7 @@ import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/works
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { LiminaPreflightManager } from '../preflight';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
+import { readStoredAnalysisSnapshot } from './helpers/analysis-snapshot';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
@@ -1087,7 +1088,7 @@ describe('production graph snapshots and publication', () => {
       identity: 'unused',
     });
     const before = readFileSync(store.path);
-    const encoded = JSON.parse(before.toString());
+    const encoded = readStoredAnalysisSnapshot(store.path);
     const persisted = parseAnalysisSnapshot(encoded, encoded.header.identity);
     expect(persisted).toBeDefined();
     expect(Object.keys(persisted!.graphs)).toEqual(['generated-graph-v2']);

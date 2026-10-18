@@ -1,6 +1,12 @@
 import { isPlainRecord } from '#utils/values';
 import { constants } from 'node:buffer';
-import { deflateRawSync, inflateRawSync } from 'node:zlib';
+import {
+  brotliCompressSync,
+  brotliDecompressSync,
+  deflateRawSync,
+  inflateRawSync,
+  constants as zlibConstants,
+} from 'node:zlib';
 import { z } from 'zod';
 import { decodeData, encodeData } from './data-codec';
 
@@ -8,19 +14,32 @@ const payloadSchema = z.strictObject({
   analysisRecord: z.string(),
   byteLength: z.number().int().min(1).max(constants.MAX_STRING_LENGTH),
   format: z.enum(['json', 'data']),
+  compression: z.enum(['deflate', 'brotli']).optional(),
 });
 
 export function packAnalysisRecord(
   value: unknown,
   format: 'json' | 'data',
+  compression: 'deflate' | 'brotli' = 'deflate',
 ): unknown {
-  const text = JSON.stringify(format === 'data' ? encodeData(value) : value);
+  const text = recordText(value, format);
   if (text.length < 1024) return value;
   return {
-    analysisRecord: deflateRawSync(text).toString('base64'),
+    analysisRecord: compress(text, compression).toString('base64'),
     byteLength: Buffer.byteLength(text),
     format,
+    compression,
   };
+}
+function recordText(value: unknown, format: 'json' | 'data'): string {
+  return JSON.stringify(format === 'data' ? encodeData(value) : value);
+}
+function compress(text: string, compression: 'deflate' | 'brotli'): Buffer {
+  return compression === 'brotli'
+    ? brotliCompressSync(text, {
+        params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 },
+      })
+    : deflateRawSync(text);
 }
 
 export function unpackAnalysisRecord(value: unknown): unknown {
@@ -30,13 +49,19 @@ export function unpackAnalysisRecord(value: unknown): unknown {
 
 function unpack(value: unknown): unknown {
   const payload = payloadSchema.parse(value);
-  const bytes = inflateRawSync(Buffer.from(payload.analysisRecord, 'base64'), {
+  const decompress = decompressor(payload.compression);
+  const bytes = decompress(Buffer.from(payload.analysisRecord, 'base64'), {
     maxOutputLength: payload.byteLength,
   });
   if (bytes.length !== payload.byteLength)
     throw new Error('Incomplete analysis record payload.');
   const decoded: unknown = JSON.parse(bytes.toString('utf8'));
   return payload.format === 'data' ? decodeData(decoded) : decoded;
+}
+function decompressor(
+  compression: 'deflate' | 'brotli' | undefined,
+): typeof inflateRawSync {
+  return compression === 'brotli' ? brotliDecompressSync : inflateRawSync;
 }
 
 export function mapAnalysisRecords(

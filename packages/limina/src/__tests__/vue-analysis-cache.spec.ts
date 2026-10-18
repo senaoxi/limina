@@ -1,4 +1,4 @@
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   cacheMetric,
@@ -129,7 +129,7 @@ describe('persistent Vue and mixed graph analysis', () => {
           break;
         }
       }
-      writeFileSync(f.snapshotFile(), JSON.stringify(snapshot));
+      f.writeSnapshot(snapshot);
       const rebuilt = f.run();
       expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
       expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);

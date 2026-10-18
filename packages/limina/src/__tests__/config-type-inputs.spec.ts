@@ -10,9 +10,9 @@ import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, expect, it, vi } from 'vitest';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
-import { serializeAnalysisSnapshot } from '../core/analysis-cache/snapshot-receipts';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import { collectConfigTypeInputs } from '../core/build-graph/config-type-inputs';
+import { roundTripAnalysisSnapshot } from './helpers/analysis-snapshot';
 import { createFixturePathResolver } from './helpers/path';
 
 const fixtures: string[] = [];
@@ -49,8 +49,10 @@ function fixture() {
 }
 
 function restored(cache: NativeAnalysisCache): NativeAnalysisCache {
-  const encoded = serializeAnalysisSnapshot(cache.snapshot());
-  const snapshot = parseAnalysisSnapshot(JSON.parse(encoded), 'fixture');
+  const snapshot = parseAnalysisSnapshot(
+    roundTripAnalysisSnapshot(cache.snapshot()),
+    'fixture',
+  );
   expect(snapshot).toBeDefined();
   return new NativeAnalysisCache('fixture', snapshot, 'config');
 }
