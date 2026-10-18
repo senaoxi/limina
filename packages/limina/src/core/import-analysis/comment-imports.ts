@@ -5,17 +5,13 @@ import {
   createImportRecord,
   type ImportRecordKind,
 } from './records';
+import { collectReferenceDirectives } from './reference-directives';
 
 const jsDocumentImportRE = /import\(\s*['"]([^'"]+)['"]\s*\)(?:\.\w+)?/gu;
 const jsDocumentImportTagRE =
   /@import\s+(?:\{[^}]*\}|\*\s+as\s+\w+)\s+from\s+['"]([^'"]+)['"]/gu;
 const jsxImportSourceRE = /@jsxImportSource\s+([^\s*]+)/gu;
 const environmentPragmaRE = /@(vitest|jest)-environment\s+([@\w./-]+)/gu;
-const tripleSlashPathReferenceRE =
-  /\/\/\/\s*<reference\s+path\s*=\s*["']([^"']+)["'][^/]*\/>/gu;
-const tripleSlashTypesReferenceRE =
-  /\/\/\/\s*<reference\s+types\s*=\s*["']([^"']+)["'][^/]*\/>/gu;
-
 interface CommentImportOptions {
   commentStart: number;
   filePath: string;
@@ -185,8 +181,6 @@ function addStandardCommentImports(
     ['jsdoc-import', jsDocumentImportRE],
     ['jsdoc-import', jsDocumentImportTagRE],
     ['jsx-import-source', jsxImportSourceRE],
-    ['triple-slash-path', tripleSlashPathReferenceRE],
-    ['triple-slash-types', tripleSlashTypesReferenceRE],
   ];
   for (const [kind, regex] of entries) {
     addCommentImportRecords({ ...common, kind, regex });
@@ -280,5 +274,6 @@ export function collectCommentImports(options: {
     sourceOffset: getLineOffset(options.sourceOffset),
     tsModule,
   });
+  records.push(...collectReferenceDirectives({ ...options, tsModule }));
   return records;
 }

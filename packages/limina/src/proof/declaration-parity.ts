@@ -1,14 +1,14 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { toRelativePath } from '#utils/path';
+import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import { isRelativeTypeName } from '../core/typescript-semantic/effective-roots';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
   formatJsonValue,
   ignoredSemanticCompilerOptions,
   normalizeCompilerOptionValue,
-  normalizeGeneratedDtsTypes,
   type ParsedProofConfig,
-  readRelativeTypeFiles,
 } from './config-reader';
 import {
   createProofDiagnosticFinding,
@@ -28,10 +28,7 @@ function collectFileSetDifference(options: {
   companionPath: string;
 }): FileSetDifference {
   const declarationFiles = new Set(options.declaration.fileNames);
-  const companionFiles = new Set([
-    ...options.companion.fileNames,
-    ...readRelativeTypeFiles(options.config, options.companionPath),
-  ]);
+  const companionFiles = new Set(options.companion.fileNames);
 
   return {
     onlyInDeclaration: options.declaration.fileNames.filter(
@@ -126,11 +123,21 @@ function addFileSetDifferenceFinding(options: {
   );
 }
 
-function normalizeSemanticOption(optionName: string, value: unknown): unknown {
-  const normalizedTypes =
-    optionName === 'types' ? normalizeGeneratedDtsTypes(value) : value;
-
-  return normalizeCompilerOptionValue(normalizedTypes);
+function normalizeRelativeType(value: unknown, configPath: string): unknown {
+  return isRelativeTypeName(value)
+    ? path.resolve(path.dirname(configPath), value)
+    : value;
+}
+function normalizeSemanticOption(
+  optionName: string,
+  value: unknown,
+  configPath: string,
+): unknown {
+  const normalized =
+    optionName === 'types' && Array.isArray(value)
+      ? value.map((typeName) => normalizeRelativeType(typeName, configPath))
+      : value;
+  return normalizeCompilerOptionValue(normalized);
 }
 
 function addCompilerOptionDifferenceFinding(options: {
@@ -200,10 +207,12 @@ function compareCompilerOption(options: {
     (options.declaration.options as Record<string, unknown>)[
       options.optionName
     ],
+    options.declarationPath,
   );
   const companionValue = normalizeSemanticOption(
     options.optionName,
     (options.companion.options as Record<string, unknown>)[options.optionName],
+    options.companionPath,
   );
 
   if (formatJsonValue(declarationValue) === formatJsonValue(companionValue)) {

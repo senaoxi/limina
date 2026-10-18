@@ -21,12 +21,9 @@ export function createDeclarationClassifier(): DeclarationClassifier {
         return cached;
       }
 
-      const isDeclarationFile = ts.createSourceFile(
-        normalizedFilePath,
-        '',
-        ts.ScriptTarget.Latest,
-        false,
-      ).isDeclarationFile;
+      const isDeclarationFile = (
+        ts as unknown as { isDeclarationFileName(file: string): boolean }
+      ).isDeclarationFileName(normalizedFilePath);
 
       classificationByPath.set(normalizedFilePath, isDeclarationFile);
       return isDeclarationFile;

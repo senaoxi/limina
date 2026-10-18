@@ -1706,7 +1706,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         createdAt: '2026-07-17T00:00:00.000Z',
         issues,
         status: 'completed' as const,
-        version: 8 as const,
+        version: 9 as const,
       };
       const byFile = JSON.parse(
         formatCheckIssueSnapshotInventory({

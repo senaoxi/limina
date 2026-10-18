@@ -9,6 +9,7 @@ import {
   mergePreparedDirectSourceRecords,
   prepareResolvedFrameworkCandidates,
 } from '../framework-semantic/prepared-dependency';
+import { requiresReferenceStructure } from '../framework-semantic/prepared-type-evidence';
 import type { ImportRecord } from '../import-analysis/records';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { VueSemanticContext } from './context';
@@ -107,11 +108,11 @@ function resolveCandidates(options: {
   }));
 }
 
-function getEvidenceProgram(
+function getStructuralProgram(
   context: VueSemanticContext,
   resolved: readonly ResolvedVueCandidate[],
 ): ts.Program | undefined {
-  return resolved.some((item) => item.target === null)
+  return resolved.some((item) => requiresReferenceStructure(item.target))
     ? context.program
     : undefined;
 }
@@ -133,7 +134,7 @@ function prepareMappedCandidates(options: {
     checkerName: 'vue-tsc',
     framework: 'vue',
     managedOutputLookup: options.managedOutputLookup,
-    program: getEvidenceProgram(options.context, resolved),
+    getProgram: () => getStructuralProgram(options.context, resolved),
     resolved,
     tsModule: options.context.tsModule,
   });

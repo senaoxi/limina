@@ -32,24 +32,24 @@
 - **Evidence / Strength / Confidence**：[generated graph tests](../../../packages/limina/src/__tests__/generated-graph.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：freeze 是快照与校验机制，不是全对象 deep freeze；named solution 的 explicit ownership constraints 在 discovery 阶段已经存在。
 
-## I03 — importer roots、Program admission 与 resolution 分开
+## I03 — Importer roots、支撑准入与解析相互独立
 
-- **Statement / Applies when**：原生 dependency collection 只枚举 effective importer roots，使用 bounded Program 解释它们；resolver 命中普通 workspace implementation 不自动使其进入 Program。
-- **Problem**：枚举 transitive Program closure 会把 provider 的 imports 当成 consumer 的 imports；只用 parsed files 又会遗漏 relative `types` declaration roots。
-- **Root cause**：compiler 为解释一个项目加载的环境，比项目实际治理的 importer 集合更大。
-- **Enforcement / Why it works**：[effective-roots](../../../packages/limina/src/core/typescript-semantic/effective-roots.ts) 明确输入；[admission](../../../packages/limina/src/core/typescript-semantic/admission.ts) 记录加入理由，workspace boundary 拦住普通外部来源越权；provider 迭代 context.fileNames。足够的类型环境与受控 importer enumeration 可以并存。
-- **Concrete example**：`main.ts` import `provider.ts`，后者不在 root/reference 输入时仍保留物理 resolution 和 source-semantic 候选，但 evidence 为 missing，admission 为 excluded。raw reference redirect 可提供实际输出 declaration，而原 source 仍为 excluded；继承 relative `types: ['./env']` 的 `env.d.ts` 则成为 importer root。
-- **Protected property**：完整但不外溢的输入归属、独立的 provider reference 证据。
-- **Evidence / Strength / Confidence**：[native repair tests](../../../packages/limina/src/__tests__/native-reference-repair.spec.ts)、[bounded context tests](../../../packages/limina/src/__tests__/typescript-semantic-context.spec.ts)；**Strongly executable / Confirmed**。
-- **Boundaries**：raw references、explicit path/types、libs 和合法 external declaration closure 仍可被 admission 接纳；full mode 不等于 roots-only，snapshot 的 roots membership 不等于旧 Program 的完整 membership。
+- **Statement / Applies when**：Checker 解析出的 roots、类型入口、合法支撑输入与治理 Owner 是不同集合。声明参与分析不自动成为 Source Config，解析命中不自动授予闭包扩展资格。
+- **Problem**：将相对 types 提升为 roots 会扩大 Ownership；删除全部非 root 依赖会漏掉编译支撑义务；按 Program membership 抹边会漏掉治理关系。
+- **Root cause**：请求、解析、实际加载及引用贡献具有不同资格规则。
+- **Enforcement / Why it works**：[请求资格](../../../packages/limina/src/core/typescript-semantic/request-eligibility.ts)与有效配置决定闭包扩展，统一投影按实际 Owner 截断外部实现的内部依赖。无 Program context 完成后才发布；能力不足时整个 consumer 切换兼容 adapter。
+- **Concrete example**：A 的 env.d.ts 导入 B 实现，B 导入 C，保留 A→B 和 B→C，不增加 A→C。JS 的 shadowed require 不是运行时治理请求，但编译器实际加载的 env.d.ts 仍可贡献其对 B 的合法依赖。`noResolve` 阻止相应声明递归，不删除已解析实现候选。
+- **Protected property**：编译支撑贡献完整，治理归属不扩大，闭包更新具备可达性与原子性。
+- **Evidence / Strength / Confidence**：[无 Program 测试](../../../packages/limina/src/__tests__/programless-context.spec.ts)、[Native provider 测试](../../../packages/limina/src/__tests__/native-provider-evidence.spec.ts)、[生成图测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)及[新进程缓存测试](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)覆盖入口、环清理、实际构建及恢复。
+- **Boundaries**：原始 references 是结构输入，推断引用不回流 discovery。相对 types 保持实际选中入口，不成为 roots；不从任意声明反推生产配置或任务。
 
 ## I04 — locked dependency fact 必须保持 checker occurrence 与 provenance
 
-- **Statement / Applies when**：locked project dependency 路径保留 occurrence kind/locator、compiler channel/mode/redirect、checker target 与 evidence；generated fact 必须有可信 source mapping，target path 和 semantic kind 一致，miss 不被 Oxc 补成 semantic target。
+- **Statement / Applies when**：locked project dependency 路径保留 occurrence kind/locator、compiler channel/mode/redirect、checker target 与 evidence；generated fact 必须有可信 source mapping，实际 provider 观察可归因，miss 不被 Oxc 补成 semantic target。
 - **Problem**：同一个 specifier 在 import/require condition 下指向不同目标；宽松 source map 或 fallback 会把一个合法物理文件冒充 checker 实际看到的依赖。
 - **Root cause**：specifier/path 是不完整 identity，runtime resolution 与 checker program 观察也不同。
 - **Enforcement / Why it works**：[identity](../../../packages/limina/src/core/typescript-semantic/identity.ts)、[checker-resolution-provider](../../../packages/limina/src/core/import-analysis/checker-resolution-provider.ts) 和 [dependency-record](../../../packages/limina/src/core/project-dependencies/dependency-record.ts) 分别保护 occurrence、locked resolver route 和 target/evidence 一致性。框架 strict-source-map 检查只接受可归因片段。
-- **Concrete example**：Svelte conditional export 用例用 occurrence mode 选择 import/require branch；prepared declaration target 配 checker-source evidence 必须失败，不能凭 `.vue` 原始扩展重建另一目标。
+- **Concrete example**：Svelte conditional export 用例用 occurrence mode 选择 import/require branch；缺少 Checker 观察出处的不同 provider 必须失败，不能凭 `.vue` 原始扩展重建另一目标。
 - **Protected property**：checker fidelity、provenance 可追踪、失败不扩大 authority。
 - **Evidence / Strength / Confidence**：[project dependencies tests](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)、[Svelte tests](../../../packages/limina/src/__tests__/svelte-semantic.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：pending physical candidate bootstrap 和 runtime-like inspection 有别的 Oxc 路径，但两者都不重新解释带 query 或 fragment 的 specifier；该语法属于 occurrence identity，只有 checker 能赋予其含义。runtime filesystem check 与 missing-provider fallback 也会在路径归一化前停止，因为后接 `..` 的 query/fragment 片段可能在归一化中被消去。TypeScript 类型要求 locked 不等于任意 JS 输入均有 runtime authentication。
@@ -57,24 +57,24 @@
 
 - **静态块边界**：类静态块具有独立的 var 作用域，同时保留词法父级。块内 var/let/function 绑定不能遮蔽兄弟静态块或类之后的外部 require 与不可变 createRequire 别名。[导入分析回归](../../../packages/limina/src/__tests__/import-analysis.spec.ts) 覆盖这些边界及 require.resolve。
 
-## I05 — TypeEvidence 与 referenceRequirement 独立保真
+## I05 — TypeEvidence 不控制依赖存在性或引用投影
 
-- **Statement / Applies when**：原生事实分别记录类型供给与 compiler relation 需求；evidence 表达 bounded scope 中实际 provider（包括 missing），requirement 表达候选 compiler relation。完整真值表归[语义事实](./semantics.md#occurrence证据与建图需求)。
-- **Problem**：为了建边重分类 ambient 会说错类型来源；看到 ambient 就停止建边又会漏掉必要 compiler membership。
-- **Root cause**：symbol 的类型供给和 compiler 对 source implementation 的输入关系并不是同一命题。
-- **Enforcement / Why it works**：[dependency-fact](../../../packages/limina/src/core/typescript-semantic/dependency-fact.ts) 区分物理 resolution、原目标 admission、provider proof 与 requirement；[provider evidence](../../../packages/limina/src/core/typescript-semantic/provider-evidence.ts) 检查 occurrence Symbol/Program 对象身份及实际 compiler input，Core 保留原生结果；[native-dependency](../../../packages/limina/src/core/project-dependencies/native-dependency.ts) 保留 fact，只有 ambient 且无 requirement 才作为纯 observation。
-- **Concrete example**：ambient module 加 `paths` 指到尚未纳入 compiler 输入的本地 implementation，得到 ambient + compiler-membership；把 implementation 明确加入 roots 后 requirement 为 null。已 admitted 但无 module Symbol 的 script 保留 missing + source-semantic；实际 reference output 提供记录输出路径的 concrete-declaration，不新增 source requirement。`import raw from './foo.ts?raw'` 配 `declare module '*?raw'` 得到 ambient + null，即使 `foo.ts` 存在也没有 source relation；没有该声明时保持 missing + null，不会被修复成 `./foo.ts`。当 checker 为解析到 `theme.css.ts` 的 `../b/theme.css` 证明了 requirement 时，看到 missing resource 的 runtime classification 不能取消它。
-- **Protected property**：类型解释与声明建图同时准确。
-- **Evidence / Strength / Confidence**：[native provider evidence](../../../packages/limina/src/__tests__/native-provider-evidence.spec.ts)、[native repair](../../../packages/limina/src/__tests__/native-reference-repair.spec.ts)、[generated graph](../../../packages/limina/src/__tests__/generated-graph.spec.ts)、[type evidence](../../../packages/limina/src/__tests__/type-evidence.spec.ts)；**Strongly executable / Confirmed**。
-- **Boundaries**：referenceRequirement 只是下一阶段输入，还须唯一 actual owner、deny 与 relation 分类；resource observation 不必含 TypeEvidence；没有 requirement 的 ambient 供给是 semantic-only observation，不是 resource。本版本不存在宿主 query 语义；query 或 fragment 永远不是第三种 relation kind。
+- **Statement / Applies when**：普通依赖事实以完整解析和真实引用重定向为依据；TypeEvidence 仅在显式类型证明中解释类型供给。
+- **Problem**：Ambient 类型或 Program membership 曾掩盖已解析的受治理实现；依赖少量关系却提前创建类型分析 context。
+- **Root cause**：类型供给与治理源码关系是不同命题。
+- **Enforcement / Why it works**：[统一需求判定](../../../packages/limina/src/core/dependency-semantics.ts)不查询 Symbol，不使用 TypeEvidence 或 membership 抑制实现候选。[重定向观察](../../../packages/limina/src/core/typescript-semantic/reference-redirect.ts)分别保留原始目标、声明目标、引用配置和输出可用性。
+- **Concrete example**：Ambient module 与 `paths` 同时指向 B 实现时仍保留 A→B 候选。直接命中声明或真实原始 reference redirect 不产生新源码关系。`./foo.ts?raw` miss 不修复成 `./foo.ts`。物理资源缺失独立报告，纯类型可用性由实际 Checker 诊断。
+- **Protected property**：治理关系忠实，类型证明按需执行。
+- **Evidence / Strength / Confidence**：[Native provider](../../../packages/limina/src/__tests__/native-provider-evidence.spec.ts)、[Native repair](../../../packages/limina/src/__tests__/native-reference-repair.spec.ts)、[生成图](../../../packages/limina/src/__tests__/generated-graph.spec.ts)及[TypeEvidence](../../../packages/limina/src/__tests__/type-evidence.spec.ts)分别保护普通建图与显式证明。
+- **Boundaries**：完整 miss 不同于 unsupported／failed／unobserved；后者不能发布自称完整的图。最终边仍需要唯一 Owner、policy、Provider 与 Checker 能力。
 
 ## I06 — 声明、调度与 artifact attribution 不互相升级
 
-- **Statement / Applies when**：declaration-provider 可产生 generated TypeScript references；framework-schedule 只表达 source execution dependency；物理 declaration target 或实际 declaration provider 停止新增 source relation，即使仍保留原 source resolution 或物理 declaration 缺少 evidence。
+- **Statement / Applies when**：declaration-provider 可产生 generated TypeScript references；framework-schedule 只表达 source execution dependency；直接物理 declaration target 或真实原始 reference redirect 停止新增 source relation，不通过 TypeEvidence 推断生产者。
 - **Problem**：把所有“依赖”画成一种边，会给 Astro/Svelte 制造不存在的 declaration project，或把已经产出的 `.d.ts` 重新连回 source 形成伪依赖。
 - **Root cause**：类型供给、源码编译需求、执行先后和输出归属需要不同消费者。
 - **Enforcement / Why it works**：[reference-recording](../../../packages/limina/src/core/build-graph/reference-recording.ts) 要求 normalized requirement；[framework inference](../../../packages/limina/src/core/build-graph/framework-reference-inference.ts) 仅接受符合条件的 source implementation；[framework edge](../../../packages/limina/src/core/build-graph/framework-dependency-edge.ts) 拒绝 declaration path。各 edge type 拥有不同字段和投影。
-- **Concrete example**：consumer 命中 managed output `.d.ts`，lookup 可解释它来自哪个输出，但不添加 sourceToBuild reference；Astro/Svelte source prerequisite 可以参与 schedule，却不生成 tsconfig references；ambient compiler-membership 不进入 scheduling。missing declaration companion 不得 bootstrap Oxc 或提升 consumer checker。没有 checker target 的带 query 框架组件（如 `./Widget.svelte?x`）不得 bootstrap Oxc、给 consumer 染色或产生 edge。
+- **Concrete example**：consumer 命中 managed output `.d.ts`，lookup 可解释它来自哪个输出，但不添加 sourceToBuild reference；Astro/Svelte source prerequisite 可以参与 schedule，却不生成 tsconfig references；框架调度由符合资格的实现需求及所属 Checker 能力决定，不由 ambient 类型或 Program membership 单独控制。missing declaration companion 不得 bootstrap Oxc 或提升 consumer checker。没有 checker target 的带 query 框架组件（如 `./Widget.svelte?x`）不得 bootstrap Oxc、给 consumer 染色或产生 edge。
 - **Protected property**：声明关系真实、构建职责分明、artifact 消费不重开源码边界。
 - **Evidence / Strength / Confidence**：[generated graph](../../../packages/limina/src/__tests__/generated-graph.spec.ts)、[dependency graph tests](../../../packages/limina/src/__tests__/dependency-graph.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：raw references、solution closure、`implicitRefs` 各有独立 evidence，不要求全部 graph edges 都源自 import；exported dependency graph 也不是 task graph。
@@ -112,7 +112,9 @@
 - **Evidence / Strength / Confidence**：[preflight tests](../../../packages/limina/src/__tests__/preflight.spec.ts)、[context tests](../../../packages/limina/src/__tests__/typescript-semantic-context.spec.ts)；**Partially executable / Confirmed**。
 - **Boundaries**：外部复用 caches 必须尊重 lifecycle；key 没有普遍 file-content digest；manager ensure-after-dispose 没有统一 guard；Vue active slot 的共享模式另见生命周期页。
 
-**持久化分析有效性**：native importer 复用绑定事实版本、query coverage 和共享环境证据。完整 clean DTO 还在创建 Program 前校验当前 roots／admission、importer scope／mode 输入、lock 信任、本地 typeRoots 、namespace 级有效 `configVersion` 门及完整的逐文件 `configModules` 门；独立 CLI 进程之间，已知配置模块、原始解析边、绑定和已观测 loader 输出摘要必须匹配，mtime 相等信任旧 hash，mtime 不同按单文件 hash fallback。实际模块和显式声明文件共用同一证据门。未执行的动态导入不使配置失去资格；真实 incomplete 证据总触发冷分析，包括原因移除后的首次 complete 调用。严格调用内漂移仍终止执行，不重放命令。Preflight 访问策略可以关闭持久化恢复及发布，但不能关闭调用内有效性保护；调用者的读写／只读权限和 force 均不能覆盖公开配置的禁用策略。冷／dirty 分析建立当前 Program 闭包。恢复数据不授予运行时 ownership 或写权限。仅分析 epoch 的重试不能重放已完成命令。见[持久化缓存生命周期](./lifecycle.md#原生持久化分析缓存)及其回归证据。
+**持久化分析有效性**：native importer 复用绑定事实版本、query coverage 和共享环境证据。完整 clean DTO 还在创建 Program 前校验当前 roots／admission、importer scope／mode 输入、lock 信任、本地 typeRoots 、namespace 级有效 `configVersion` 门及完整的逐文件 `configModules` 门；独立 CLI 进程之间，已知配置模块、原始解析边、绑定和已观测 loader 输出摘要必须匹配，mtime 相等信任旧 hash，mtime 不同按单文件 hash fallback。实际模块和显式声明文件共用同一证据门。未执行的动态导入不使配置失去资格；真实 incomplete 证据总触发冷分析，包括原因移除后的首次 complete 调用。严格调用内漂移仍终止执行，不重放命令。Preflight 访问策略可以关闭持久化恢复及发布，但不能关闭调用内有效性保护；调用者的读写／只读权限和 force 均不能覆盖公开配置的禁用策略。冷／dirty 分析建立当前有资格的支撑闭包；受支持 Native 无需 Program。恢复数据不授予运行时 ownership 或写权限。仅分析 epoch 的重试不能重放已完成命令。见[持久化缓存生命周期](./lifecycle.md#原生持久化分析缓存)及其回归证据。
+
+**分片持久化**：Scope 文件是存储边界，不是独立语义权威。Root 门先于任何旧块读取；包含中性文件事实和有序回执的完整模型经校验后才能采用。先写块，再经过既有漂移、lease 与物理基线检查后原子发布 index。见[存储生命周期](./lifecycle.md#原生持久化分析缓存)和[存储守卫](../../../packages/limina/src/__tests__/analysis-cache-shards.spec.ts)。
 
 **规划输入 identity**：Migration 配置 overlay 纳入 semantic/provider cache identity，并贯穿 parser、ownership 与 TypeScript host。原生 reference 清单与规范化 source 输入上的推导相分离。Outputs 试加入只在封闭 reader 内复用单次发现快照，重新验证候选输出与物理 authority；末次规划和磁盘消费重新发现。已读取的 manifest 与 workspace descriptor 也纳入写入前漂移检查。Migration bundle 将 provider、namespace、错误类和 writer 的生产消费作为整体内联；新进程 worker 使用同一内嵌源码版本重新读取磁盘，不借用规划 context。包版本元数据观察不成为 semantic evidence。构建源码来源守卫、配对发布守卫与打包消费者测试挑战旧 dist、self metadata 不一致及 worker 资源缺失。这是 generation 内的输入边界，不是持久 read-view runtime；见[迁移生命周期](./lifecycle.md#migration-是另一种事务)。
 
@@ -157,20 +159,20 @@
 
 上面的链接提供精确 production/test owner；下表描述测试挑战什么，以及改动后要检查的 observable。测试名称/路径只是检索锚点，真实结果见 audit。
 
-| Invariant | 主要 executable enforcement                                             | 反例机会 / reviewer 观察                                                         | 代表性回归 guard                                                                                                                   |
-| --------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| I01       | validated context、canonical Governance Trie、workspace/facade guards   | cut、重入、external package 与 canonical identity                                | 增强现有重入 guard：package/owner facade 与 path index 一致                                                                        |
-| I02       | authority state / freeze assertions / coloring tests                    | TS semantic + Vue final owner、依赖顺序与冲突                                    | missing native source 不锁框架；合格 component candidate 可以锁定                                                                  |
-| I03       | effective roots / inclusion ledger / native compiler differential tests | relative types、external closure、source excluded 但可 resolution                | built/unbuilt reference 的 provider identity 与原 source admission                                                                 |
-| I04       | occurrence identity / locked dispatch / prepared consistency assertions | import/require condition、mapping ambiguity、kind mismatch、query/fragment       | 完整 specifier 到达 checker；query 与 fragment 不被拆分，也不经 Oxc 救回                                                           |
-| I05       | NativeDependencyFact discriminated fields / symbol evidence tests       | ambient+membership、included/external controls、augmentation、带 query 的 source | Program/Symbol identity、admitted script、实际 declaration provider、ambient membership、ambient query                             |
-| I06       | edge union / reference-recording requirement / declaration guards       | concrete managed output、framework-only schedule、implicit ref、带 query 的组件  | 物理 declaration companion 阻止 bootstrap；missing source 保留真实 schedule edge；已证明 requirement 不被 resource 样 runtime 取消 |
-| I07       | equality coloring / final graph guard / SCC declaration guard           | exact checker conflict、pure schedule cycle                                      | 无：局部 helper 与终态 guard 的差异应解释，不误改 helper                                                                           |
-| I08       | proof phase、expected vs coverage set comparisons                       | 不可观察的邻接扩展、uncovered/duplicate source                                   | 无：配置边界必须由人审，不增 blanket exclusion                                                                                     |
-| I09       | scheduler generation、provider replacement、slot identity、dispose      | stale promise、replan 不推进 task gen、外部 stale cache                          | snapshot 一致性、Program/query 数量、释放及 alias 变化后的新 owner 索引                                                            |
-| I10       | namespace/plan auth、physical mutation guard                            | forged/cross-token plan、symlink escape、binding drift                           | 无：已有异常与 filesystem tests                                                                                                    |
-| I11       | writer lease、revision、marker、verify、recovery tests                  | 中途写失败、并行 revision drift、stale ownership ledger                          | 无：现有 semantic recovery guard 更稳                                                                                              |
-| I12       | sequence/digest/freshness、query/invocation guards                      | torn pair、newer running、corrupt latest、old completion                         | 无：现有 end-to-end CLI tests                                                                                                      |
+| Invariant | 主要 executable enforcement                                             | 反例机会 / reviewer 观察                                                        | 代表性回归 guard                                                                                                                   |
+| --------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| I01       | validated context、canonical Governance Trie、workspace/facade guards   | cut、重入、external package 与 canonical identity                               | 增强现有重入 guard：package/owner facade 与 path index 一致                                                                        |
+| I02       | authority state / freeze assertions / coloring tests                    | TS semantic + Vue final owner、依赖顺序与冲突                                   | missing native source 不锁框架；合格 component candidate 可以锁定                                                                  |
+| I03       | effective roots / inclusion ledger / native compiler differential tests | relative types、external closure、source excluded 但可 resolution               | built/unbuilt reference 的 provider identity 与原 source admission                                                                 |
+| I04       | occurrence identity / locked dispatch / prepared consistency assertions | import/require condition、mapping ambiguity、kind mismatch、query/fragment      | 完整 specifier 到达 checker；query 与 fragment 不被拆分，也不经 Oxc 救回                                                           |
+| I05       | 结构依赖事实与独立显式 proof 测试                                       | Ambient 实现、redirect、augmentation、完整 query source                         | 显式 Program/Symbol proof、结构 redirect、ambient 实现候选、完整 miss                                                              |
+| I06       | edge union / reference-recording requirement / declaration guards       | concrete managed output、framework-only schedule、implicit ref、带 query 的组件 | 物理 declaration companion 阻止 bootstrap；missing source 保留真实 schedule edge；已证明 requirement 不被 resource 样 runtime 取消 |
+| I07       | equality coloring / final graph guard / SCC declaration guard           | exact checker conflict、pure schedule cycle                                     | 无：局部 helper 与终态 guard 的差异应解释，不误改 helper                                                                           |
+| I08       | proof phase、expected vs coverage set comparisons                       | 不可观察的邻接扩展、uncovered/duplicate source                                  | 无：配置边界必须由人审，不增 blanket exclusion                                                                                     |
+| I09       | scheduler generation、provider replacement、slot identity、dispose      | stale promise、replan 不推进 task gen、外部 stale cache                         | snapshot 一致性、Program/query 数量、释放及 alias 变化后的新 owner 索引                                                            |
+| I10       | namespace/plan auth、physical mutation guard                            | forged/cross-token plan、symlink escape、binding drift                          | 无：已有异常与 filesystem tests                                                                                                    |
+| I11       | writer lease、revision、marker、verify、recovery tests                  | 中途写失败、并行 revision drift、stale ownership ledger                         | 无：现有 semantic recovery guard 更稳                                                                                              |
+| I12       | sequence/digest/freshness、query/invocation guards                      | torn pair、newer running、corrupt latest、old completion                        | 无：现有 end-to-end CLI tests                                                                                                      |
 
 12 条均有机械连接；11 条在明确作用域内 Strongly executable，I09 依赖额外生命周期契约，列 Partially executable。没有把 Prose-only 的未来愿望伪装成已建立 core invariant。值得机器化但本次不直接实施的部分：若 human 决定统一 disposed API 或将持久化缓存扩展到其他 provider，再增加对应状态拒绝/版本回归；如果扩大架构静态 guard 的语法范围，先增加动态/alias 路径的负例，不要求整个目录保持当前形状。
 

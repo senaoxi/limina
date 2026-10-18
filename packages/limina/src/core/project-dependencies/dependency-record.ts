@@ -1,10 +1,15 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import {
+  decideReferenceRequirement,
+  type DeclarationReferenceRequirement,
+  pendingRequirementReason,
+} from '../dependency-semantics';
 import type { PreparedDependencyFact } from '../framework-semantic/contracts';
 import { cloneTypeEvidence } from '../framework-semantic/prepared-dependency';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { TypeEvidence } from '../type-evidence/cache';
 import type {
-  MappedSourceDependency,
+  ProjectDependency,
   ProjectDependencyCollection,
   ProjectDependencyRequest,
 } from './contracts';
@@ -22,7 +27,7 @@ interface CollectFactOptions {
 
 function getTargetKind(
   resolvedFilePath: string,
-): MappedSourceDependency['targetKind'] {
+): ProjectDependency['targetKind'] {
   return isDeclarationFile(resolvedFilePath) ? 'declaration' : 'source';
 }
 
@@ -66,41 +71,6 @@ function hasFrameworkExtension(options: {
   );
 }
 
-function getEvidenceTargetPath(evidence: TypeEvidence): string | null {
-  if (evidence.kind === 'checker-source') return evidence.filePath;
-  return evidence.kind === 'concrete-declaration' ? evidence.filePath : null;
-}
-
-function isEvidenceKindMatchesTarget(
-  evidence: TypeEvidence,
-  targetPath: string,
-): boolean {
-  return isDeclarationFile(targetPath)
-    ? evidence.kind === 'concrete-declaration'
-    : evidence.kind === 'checker-source';
-}
-
-function isPhysicalEvidenceMatchesTarget(
-  evidence: TypeEvidence,
-  target: NonNullable<PreparedDependencyFact['target']>,
-): boolean {
-  const evidencePath = getEvidenceTargetPath(evidence);
-  if (evidencePath === null) return false;
-  const targetPath = normalizeAbsolutePath(target.resolvedFileName);
-  return (
-    normalizeAbsolutePath(evidencePath) === targetPath &&
-    isEvidenceKindMatchesTarget(evidence, targetPath)
-  );
-}
-
-function isEvidenceMatchesTarget(fact: PreparedDependencyFact): boolean {
-  const target = fact.target;
-  const evidence = fact.typeEvidence;
-  return target === null
-    ? ['ambient', 'missing'].includes(evidence.kind)
-    : isPhysicalEvidenceMatchesTarget(evidence, target);
-}
-
 function addFactFailure(options: CollectFactOptions, reason: string): void {
   options.collection.failures.push(
     createProjectDependencyFailure({
@@ -120,18 +90,18 @@ function addFactFailure(options: CollectFactOptions, reason: string): void {
   );
 }
 
-function addMappedDependency(options: CollectFactOptions): void {
+function addMappedDependency(
+  options: CollectFactOptions,
+  requirement: DeclarationReferenceRequirement | null,
+): void {
   const target = options.fact.target!;
   const resolvedFilePath = normalizeAbsolutePath(target.resolvedFileName);
-  const dependency: MappedSourceDependency = {
+  const dependency: ProjectDependency = {
     evidence: createPreparedDependencyEvidence(options),
     framework: options.fact.framework,
     importRecord: options.fact.importRecord,
-    provenance: 'strict-source-map',
-    referenceRequirement:
-      options.fact.typeEvidence.kind === 'checker-source'
-        ? { kind: 'source-semantic', targetFileName: resolvedFilePath }
-        : null,
+    provenance: options.fact.provenance,
+    referenceRequirement: requirement,
     resolutionMode: options.fact.resolutionMode,
     resolvedFilePath,
     semanticSpecifier: options.fact.semanticSpecifier,
@@ -141,27 +111,9 @@ function addMappedDependency(options: CollectFactOptions): void {
   options.collection.dependencies.push(dependency);
 }
 
-function validatePreparedFact(options: CollectFactOptions): string | null {
-  if (options.fact.typeEvidence.kind === 'unsupported-checker') {
-    return options.fact.typeEvidence.reason;
-  }
-  return isEvidenceMatchesTarget(options.fact)
-    ? null
-    : 'Prepared framework dependency target and TypeEvidence do not describe the same semantic result.';
-}
-
-function isAddTargetedFact(options: CollectFactOptions): boolean {
-  if (options.fact.target === null) return false;
-  if (isFrameworkProjectTarget(options)) {
-    addMappedDependency(options);
-    return true;
-  }
-  return isAddTypedTargetObservation(options);
-}
-
 function isAddTypedTargetObservation(options: CollectFactOptions): boolean {
   const evidence = options.fact.typeEvidence;
-  if (evidence.kind !== 'checker-source') return false;
+  if (evidence?.kind !== 'checker-source') return false;
   options.collection.observations.push({
     evidence: createPreparedDependencyEvidence(options),
     importRecord: options.fact.importRecord,
@@ -173,20 +125,36 @@ function isAddTypedTargetObservation(options: CollectFactOptions): boolean {
 }
 
 function addTargetlessFact(options: CollectFactOptions): void {
-  if (options.fact.typeEvidence.kind === 'ambient') {
+  const typeEvidence = options.fact.typeEvidence;
+  if (typeEvidence === undefined) {
+    options.collection.observations.push({
+      evidence: createPreparedDependencyEvidence(options),
+      importRecord: options.fact.importRecord,
+      resolutionMode: options.fact.resolutionMode,
+      kind: 'missing',
+    });
+    return;
+  }
+  addObservedTargetlessFact(options, typeEvidence);
+}
+function addObservedTargetlessFact(
+  options: CollectFactOptions,
+  typeEvidence: TypeEvidence,
+): void {
+  if (typeEvidence.kind === 'ambient') {
     options.collection.observations.push({
       evidence: createPreparedDependencyEvidence(options),
       importRecord: options.fact.importRecord,
       resolutionMode: options.fact.resolutionMode,
       kind: 'semantic-only',
-      typeEvidence: cloneTypeEvidence(options.fact.typeEvidence) as Extract<
-        TypeEvidence,
-        { kind: 'ambient' }
-      >,
+      typeEvidence: {
+        ...typeEvidence,
+        declarationFilePaths: [...typeEvidence.declarationFilePaths],
+      },
     });
     return;
   }
-  if (options.fact.typeEvidence.kind === 'missing') {
+  if (typeEvidence.kind === 'missing') {
     options.collection.observations.push({
       evidence: createPreparedDependencyEvidence(options),
       importRecord: options.fact.importRecord,
@@ -205,11 +173,41 @@ function addTargetlessFact(options: CollectFactOptions): void {
 export function collectPreparedProjectDependencyFact(
   options: CollectFactOptions,
 ): void {
-  const failure = validatePreparedFact(options);
-  if (failure !== null) {
-    addFactFailure(options, failure);
+  collectDecidedFact(options);
+}
+function collectDecidedFact(options: CollectFactOptions): void {
+  const decision = decideReferenceRequirement(options.fact);
+  if (isRecordPendingFact(options, decision)) return;
+  if (decision.state === 'decided') collectFactTarget(options, decision.value);
+}
+function isRecordPendingFact(
+  options: CollectFactOptions,
+  decision: ReturnType<typeof decideReferenceRequirement>,
+): boolean {
+  if (decision.state !== 'pending') return false;
+  options.collection.failures.push(
+    createProjectDependencyFailure({
+      evidence: createPreparedDependencyEvidence(options),
+      decision,
+      importRecord: options.fact.importRecord,
+      request: options.request,
+      stage: 'dependency-semantics',
+      reason: pendingRequirementReason(decision),
+    }),
+  );
+  return true;
+}
+function collectFactTarget(
+  options: CollectFactOptions,
+  requirement: DeclarationReferenceRequirement | null,
+): void {
+  if (isFrameworkProjectTarget(options)) {
+    addMappedDependency(options, requirement);
     return;
   }
-  if (isAddTargetedFact(options)) return;
+  if (isResourceObservation(options)) return;
   addTargetlessFact(options);
+}
+function isResourceObservation(options: CollectFactOptions): boolean {
+  return options.fact.target !== null && isAddTypedTargetObservation(options);
 }

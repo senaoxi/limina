@@ -13,6 +13,7 @@ const MODULE_KINDS = new Set<ImportRecordKind>([
   'jsdoc-import',
   'require-resolve',
   'static',
+  'module-augmentation',
 ]);
 
 export function isModuleImportRecord(importRecord: ImportRecord): boolean {

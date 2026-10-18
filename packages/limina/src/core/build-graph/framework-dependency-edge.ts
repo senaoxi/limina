@@ -1,10 +1,36 @@
 import { formatImportRecordLocation } from '#core/import-graph/context';
 import { toRelativePath } from '#utils/path';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import type { ProjectDependency } from '../project-dependencies/contracts';
+import { getDependencyCheckerTarget } from '../project-dependencies/evidence';
 import type { ReferenceImportContext } from './reference-import-types';
 import type { GeneratedDependencyEdge, GovernedSourceUnit } from './types';
 
 type FrameworkImportRecord = Parameters<typeof formatImportRecordLocation>[1];
+
+export function hasFrameworkCompilationRequirement(
+  dependency: ProjectDependency,
+): boolean {
+  return [
+    dependency.targetKind === 'source',
+    [
+      dependency.referenceRequirement?.kind === 'source-semantic',
+      hasFrameworkMembershipRequirement(dependency),
+    ].some(Boolean),
+  ].every(Boolean);
+}
+
+function hasFrameworkMembershipRequirement(
+  dependency: ProjectDependency,
+): boolean {
+  // A framework resolver's component target still needs its owning checker
+  // even when a wildcard ambient declaration supplies the current types.
+  return [
+    dependency.referenceRequirement?.kind === 'compiler-membership',
+    getDependencyCheckerTarget(dependency.evidence)?.resolvedBy ===
+      'checker-source',
+  ].every(Boolean);
+}
 
 export function createFrameworkDependencyEdge(options: {
   context: ReferenceImportContext;

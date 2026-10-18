@@ -18,27 +18,11 @@ Limina 从每个已验证、已激活包的独立治理范围发现源码，包�
 
 ## 资源模块导入
 
-`source:check` 会验证 CSS、SVG、YAML、文本等被导入的物理资源，但不会把它们当成 TypeScript 源码工程。资源导入只有同时满足下面两个条件才算完整：
+`source:check` 保留 CSS、SVG、YAML、文本等物理资源的存在性、包授权、归属及边界检查。物理资源缺失报告 `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`。纯类型可用性由实际 Checker 负责；独立执行 source 检查不再报告 `LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED`。需要类型诊断时同时运行配置的 typecheck 流水线。
 
-1. 运行时解析器或文件系统能确认物理资源存在；
-2. 当前检查器工程能看到这条导入的类型证据。
+Ambient 声明不证明物理资源存在；物理资源存在也不证明类型完整或具备 Bundler 转换器。资源导入本身不产生 declaration-provider 或 project reference，缺失资源不阻止 `graph prepare`。如果 Checker 将请求解析到实际实现文件，该实现仍按普通治理规则处理。
 
-类型证据可以来自检查器确认的源码、`button.d.css.ts` 这类具体声明文件，或当前工程确实纳入的环境模块声明。环境声明不能证明物理资源存在；反过来，资源文件存在但当前工程看不到具体声明或环境声明，也不具备完整类型证据。
-
-Limina 只在 `source:check` 中报告这两类问题：
-
-| 规则                                            | 含义                                             |
-| ----------------------------------------------- | ------------------------------------------------ |
-| `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`       | 物理资源不存在；这个结果优先于类型证据。         |
-| `LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED` | 资源存在，但当前检查器工程看不到对应的类型声明。 |
-
-资源导入不会成为声明提供者、提供者边或项目引用；资源缺失也不会阻止 `graph prepare`。普通 TypeScript、JavaScript、JSON 和框架源码仍由已配置的检查器按原有方式解析。
-
-模块说明符会按原样检查。对于 `./foo.svg?raw` 或 `./foo.svg#fragment`，Limina 不会去掉查询参数或片段标识去检查 `./foo.svg`；完整说明符会原样交给已配置的检查器，只有检查器自己的结果决定类型是否存在。因此这类导入不会仅凭后缀被报告为资源缺失或类型未声明。对于 `#assets/logo.svg` 这类 `package.json#imports` 资源，物理路径查找会保留完整映射键。匹配的类型证据和包导入授权仍然必须满足。物理路径查找成功不表示检查器支持所有键的拼写，也不表示已安装相应打包器转换插件；当前版本也没有提供声明宿主查询语义的方式。
-
-虚拟模块和框架注入模块的运行时行为仍不受支持；只有环境声明不能让这类运行时模块自动变为合法，Limina 也不会把它误报为物理资源缺失。
-
-Vue 资源类型证据与图分析使用同一套受支持的语义适配器组合，具体版本见[Vue 检查器兼容范围](./checkers.md#vue-语义-import-分析)。不兼容的组件组合会被报告为工具链问题，不会误报成缺少资源类型声明。
+Specifier 保持原样：`./foo.svg?raw` 和 `./foo.svg#fragment` 不会去掉后缀再检查 `./foo.svg`，也不会仅按资源扩展报告缺失。`package.json#imports` 的 `#assets/logo.svg` 保留完整映射 key。Limina 不声明宿主 query 语义；虚拟／框架注入模块的运行时行为不由 ambient 声明证明，也不冒充物理资源缺失。
 
 ## `importAuthority`
 
@@ -46,7 +30,7 @@ Vue 资源类型证据与图分析使用同一套受支持的语义适配器组�
 
 源码导入授权默认严格：已验证的源码所属包清单必须在 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 中声明这个包。按源码归属方分组的授权可以让同一个源码归属方在指定范围内使用治理根目录 `package.json` 的依赖声明。根清单文件仍然要在同样的依赖区里声明这个包。
 
-这里的“源码导入”包括 Limina 能收集到的静态导入、类型导入和再导出。`Node` 内置模块、虚拟模块、`URL` / `data` / `file` 说明符和注释中的说明符不按普通裸包依赖处理。
+这里的“源码导入”包括 Limina 能收集到的静态导入、类型导入、再导出、字面量动态导入及受支持的 CommonJS 调用。`Node` 内置模块、虚拟模块、`URL` / `data` / `file` 说明符和注释中的说明符不按普通裸包依赖处理。
 
 当某个源码归属方确实要使用工作区根目录声明的依赖时，可以写 `allow` 授权：
 

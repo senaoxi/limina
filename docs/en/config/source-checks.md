@@ -18,27 +18,11 @@ By default, a nested `package.json` stops traversal by the outer package. With [
 
 ## Resource module imports
 
-`source:check` validates imported physical resources such as CSS, SVG, YAML, and text files without treating them as TypeScript source projects. A resource import is valid only when both of these statements are true:
+`source:check` retains physical resource existence, package authorization, ownership and boundary checks for CSS, SVG, YAML, text and similar imports. Missing physical resources report `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`. Actual Checkers own pure type-availability diagnostics; standalone source checks no longer report `LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED`. Run the configured typecheck pipeline when type diagnostics are required.
 
-1. the runtime resolver or filesystem confirms that the physical resource exists; and
-2. the current checker project can see type evidence for that import.
+Ambient declarations do not prove physical existence. Existing resources do not prove type completeness or the presence of a bundler transformer. Resource imports alone create no declaration-provider or project reference, and a missing resource does not stop `graph prepare`. If the checker resolves the request to an actual implementation, ordinary governance rules still apply to that implementation.
 
-Type evidence may come from a checker source file, a concrete declaration file such as `button.d.css.ts`, or an ambient module declaration included by the current project. An ambient declaration does not prove that the resource exists. Conversely, an existing resource without a visible concrete or ambient declaration is not type-complete.
-
-Limina reports these cases from `source:check` only:
-
-| Rule                                            | Meaning                                                                       |
-| ----------------------------------------------- | ----------------------------------------------------------------------------- |
-| `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`       | The physical resource does not exist. This takes precedence over types.       |
-| `LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED` | The resource exists, but the current checker project has no type declaration. |
-
-Resource imports do not become declaration providers, provider edges, or project references, and a missing resource does not stop `graph prepare`. Existing TypeScript, JavaScript, JSON, and framework source resolution continues through the configured checker.
-
-A module specifier is checked exactly as written. For `./foo.svg?raw` or `./foo.svg#fragment`, Limina does not remove the query or fragment to inspect `./foo.svg`; the complete specifier is handed to the configured checker, and only the checker's own result decides whether types exist. Such an import is therefore not reported as a missing or undeclared resource on the basis of its suffix. For `package.json#imports` resources such as `#assets/logo.svg`, the physical lookup preserves the complete mapping key. Matching type evidence and package import authority are still required. A successful physical lookup does not establish checker support for every key spelling or the presence of a bundler transformer, and Limina currently provides no way to declare host-specific query semantics.
-
-Virtual and framework-injected module runtime behavior remains unsupported; an ambient declaration alone does not make such a runtime module valid, and Limina does not report it as a missing physical resource.
-
-Vue resource type evidence uses the same supported semantic adapter combinations as graph analysis. See [Vue checker compatibility](./checkers.md#vue-semantic-import-analysis) for versions. Incompatible combinations are reported as toolchain problems, not as missing resource type declarations.
+Specifiers remain exact: `./foo.svg?raw` and `./foo.svg#fragment` are not stripped to inspect `./foo.svg`, nor reported missing just from their suffix. `package.json#imports` resource keys such as `#assets/logo.svg` remain intact. Limina supplies no host-specific query semantics. Ambient declarations do not establish virtual/framework-injected runtime behavior, which is not reported as physical resource absence.
 
 ## importAuthority
 
@@ -46,7 +30,7 @@ Vue resource type evidence uses the same supported semantic adapter combinations
 
 Source import authorization is strict by default: the validated source owner manifest must declare the package in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. An owner-keyed grant can let that same source owner use dependency declarations from the governance root `package.json` for selected packages. The root manifest must declare the package in one of the same dependency sections.
 
-Here, “source import” includes static imports, type imports, and re-exports collected by Limina. `Node` builtins, virtual modules, `URL` / `data` / `file` specifiers, and specifiers found only in comments are not treated as ordinary bare package dependencies.
+Here, “source import” includes static imports, type imports, re-exports, literal dynamic imports and supported CommonJS calls collected by Limina. `Node` builtins, virtual modules, `URL` / `data` / `file` specifiers, and specifiers found only in comments are not treated as ordinary bare package dependencies.
 
 Use `allow` when a workspace root dependency declaration is intentionally shared with a specific source owner:
 

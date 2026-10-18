@@ -3,6 +3,9 @@ import { TraceMap } from '@jridgewell/trace-mapping';
 import path from 'node:path';
 import type ts from 'typescript';
 import { buildLineStarts } from '../import-analysis/records';
+import { TypeScriptInclusionLedger } from '../typescript-semantic/admission';
+import { prepareTypeScriptSupportInputs } from '../typescript-semantic/support-inputs';
+import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import { createSvelteResolutionHost } from './module-resolution';
 import type { SvelteSemanticToolchain } from './toolchain';
 import type { SvelteSemanticProject } from './types';
@@ -84,12 +87,77 @@ export function createBoundedProgram(options: {
   const nativeRoots = options.project.fileNames.filter(
     (fileName) => !/\.(?:astro|svelte|vue)$/iu.test(fileName),
   );
-  return options.toolchain.tsModule.createProgram({
-    host: createOverlayHost(options),
-    options: options.project.options,
-    rootNames: [
+  const project = {
+    configPath: options.project.configPath,
+    fileNames: [
       ...nativeRoots,
       normalizeAbsolutePath(options.generated.filePath),
     ],
-  });
+    options: options.project.options,
+    workspaceSourceBoundary: createWorkspaceSourceBoundary([]),
+  };
+  const tsModule = options.toolchain.tsModule;
+  const admission = new TypeScriptInclusionLedger(project, tsModule);
+  const raw = createOverlayHost(options);
+  const host: ts.CompilerHost = {
+    ...raw,
+    getSourceFile: (...arguments_) => {
+      const file = arguments_[0];
+      const isAllowed = isAdmittedSource(admission, file);
+      return isAllowed ? raw.getSourceFile(...arguments_) : undefined;
+    },
+    resolveModuleNameLiterals: (...arguments_) => {
+      const [
+        literals,
+        containingFile,
+        redirected,
+        compilerOptions,
+        sourceFile,
+      ] = arguments_;
+      return literals.map((literal) => {
+        const result = tsModule.resolveModuleName(
+          literal.text,
+          containingFile,
+          compilerOptions,
+          raw,
+          undefined,
+          redirected,
+          tsModule.getModeForUsageLocation(
+            sourceFile,
+            literal,
+            compilerOptions,
+          ),
+        );
+        const target = result.resolvedModule;
+        if (
+          target === undefined ||
+          admission.allowModuleTarget(target, containingFile)
+        )
+          return result;
+        admission.exclude(target.resolvedFileName);
+        return { ...result, resolvedModule: undefined };
+      });
+    },
+  };
+  let program: ts.Program;
+  do {
+    prepareTypeScriptSupportInputs({ admission, host: raw, project, tsModule });
+    admission.beginProgram();
+    program = tsModule.createProgram({
+      host,
+      options: project.options,
+      rootNames: project.fileNames,
+    });
+    prepareTypeScriptSupportInputs({ admission, host: raw, project, tsModule });
+  } while (admission.needsProgramRebuild());
+  return program;
+}
+
+function isAdmittedSource(
+  admission: TypeScriptInclusionLedger,
+  file: string,
+): boolean {
+  const isAllowed = admission.has(file) || admission.allowDefaultLib(file);
+  if (!isAllowed) admission.exclude(file);
+  return isAllowed;
 }
