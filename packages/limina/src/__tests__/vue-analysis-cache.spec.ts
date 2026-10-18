@@ -27,6 +27,8 @@ function expectCold(run: VueCacheRun) {
   expect(cacheMetric(run, 'graphBuilds')).toBeGreaterThan(0);
 }
 
+// Each case starts multiple real compiler processes. Keep room for Windows
+// startup and cold analysis while retaining the warm/forced-cold controls.
 describe('persistent Vue and mixed graph analysis', () => {
   it('restores before analysis Programs, rebinds current runtime identities and materializes missing artifacts', () => {
     const f = fixture();
@@ -60,7 +62,7 @@ describe('persistent Vue and mixed graph analysis', () => {
     'invalidates changed %s inputs and warms the replacement',
     (input) => {
       const f = fixture();
-      f.run();
+      expectCold(f.run());
       switch (input) {
         case 'source': {
           f.write(
@@ -97,10 +99,15 @@ describe('persistent Vue and mixed graph analysis', () => {
         }
       }
       const changed = f.run();
+      expect(changed.passed).toBe(true);
       expect(cacheMetric(changed, 'graphBuilds')).toBeGreaterThan(0);
       expect(cacheMetric(changed, 'graphHits')).toBe(0);
-      expectRestored(f.run());
-      expect(f.run({ force: true }).graph).toEqual(changed.graph);
+      const restored = f.run();
+      expectRestored(restored);
+      expect(restored.graph).toEqual(changed.graph);
+      const forced = f.run({ force: true });
+      expectCold(forced);
+      expect(forced.graph).toEqual(changed.graph);
     },
   );
 
@@ -164,4 +171,4 @@ describe('persistent Vue and mixed graph analysis', () => {
     expect(cacheMetric(second, 'graphHits')).toBe(0);
     expect(Object.keys(f.snapshot().graphs)).toHaveLength(0);
   });
-});
+}, 60_000);
