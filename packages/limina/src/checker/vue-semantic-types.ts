@@ -155,6 +155,7 @@ export interface VueConfigClosureEntry {
 }
 
 export interface VueProjectSemanticIdentity {
+  outputSourceConfigPath?: string;
   configClosure: readonly VueConfigClosureEntry[];
   configPath: string;
   extensions: readonly string[];

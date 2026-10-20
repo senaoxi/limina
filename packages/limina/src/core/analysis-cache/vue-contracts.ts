@@ -1,4 +1,5 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
+import type ts from 'typescript';
 import type {
   FrameworkSemanticDependencyPreparation,
   FrameworkSemanticEvidence,
@@ -34,9 +35,14 @@ export interface VueQueryRecord {
   data: DataNode;
 }
 export interface VueContextRecord {
-  adapter: 'vue-3.2.4-v3';
+  adapter: 'vue-3.2.4-v4';
   project: Pick<VueProjectSemanticIdentity, 'configPath' | 'projectRootDir'> & {
     extensions: string[];
+    outputProjection?: {
+      sourceConfigPath: string;
+      options: ts.CompilerOptions;
+      fileNames: string[];
+    };
   };
   identity: DataNode;
   dependencies: InputDependency[];

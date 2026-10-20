@@ -45,6 +45,8 @@
 
 Workspace 公共声明准入依据当前激活配置的有效根 membership，不依据 Program 包含或输出归属。本地声明递归不要求逐节点 owner，再次进入公共入口时重新判断。入口来源、治理资格与展开资格保持独立。见[声明入口治理](./semantics.md#声明入口治理)。
 
+输出投影在有效输出选项下独立应用同一闭包策略。Vue 输出 context 保持源 roots 与 Checker 权威，在不增加源码关系的前提下证明既有输出引用覆盖。独立回执和恢复边界见[配置投影](./semantics.md#配置投影的边界)与[持久化生命周期](./lifecycle.md#原生持久化分析缓存)。生成图和 Vue 缓存回归共同保护 I03／I04／I06／I09。
+
 ## I04 — locked dependency fact 必须保持 checker occurrence 与 provenance
 
 - **Statement / Applies when**：locked project dependency 路径保留 occurrence kind/locator、compiler channel/mode/redirect、checker target 与 evidence；generated fact 必须有可信 source mapping，实际 provider 观察可归因，miss 不被 Oxc 补成 semantic target。

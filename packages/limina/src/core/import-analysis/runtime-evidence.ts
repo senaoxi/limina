@@ -13,6 +13,7 @@ import {
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'node:path';
 import type ts from 'typescript';
+import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type {
   ClassifyImportRuntimeEvidenceOptions,
   ImportModuleClassification,
@@ -221,13 +222,23 @@ function isMissingResource(
   return context.runtimeFilePath === null && isExplicitNonSourceExtensionValue;
 }
 
+function checkerImplementationPath(
+  resolution: ResolvedCheckerModuleName | null,
+  fallback: string,
+): string {
+  if (resolution === null) return fallback;
+  return isDeclarationFile(resolution.resolvedFileName)
+    ? fallback
+    : resolution.resolvedFileName;
+}
 function classifyRuntimeModule(
   context: RuntimeClassificationContext,
+  resolution: ResolvedCheckerModuleName | null,
 ): ImportModuleClassification {
   const runtimeCandidatePath =
-    context.runtimeFilePath === null
-      ? context.specifier
-      : context.runtimeFilePath;
+    context.runtimeFilePath ??
+    checkerImplementationPath(resolution, context.specifier);
+  const observed = { ...context, specifier: runtimeCandidatePath };
   const isRuntimeIsOrdinary = isOrdinaryTypeScriptModulePath(
     runtimeCandidatePath,
     context.compilerOptions,
@@ -238,7 +249,7 @@ function classifyRuntimeModule(
   );
   const isResource = [
     isResolvedResource(context, isRuntimeIsOrdinary, isRuntimeIsCheckerSource),
-    isMissingResource(context, isExplicitNonSourceExtension(context)),
+    isMissingResource(context, isExplicitNonSourceExtension(observed)),
   ].some(Boolean);
 
   return isResource ? 'resource' : 'ordinary-module';
@@ -277,7 +288,10 @@ export function classifyImportRuntimeEvidence(
   const context = createRuntimeContext(options);
 
   return {
-    classification: classifyRuntimeModule(context),
+    classification: classifyRuntimeModule(
+      context,
+      options.typeScriptResolution,
+    ),
     runtime: createRuntimeEvidence(context),
   };
 }

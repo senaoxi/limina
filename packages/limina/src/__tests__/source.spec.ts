@@ -594,6 +594,31 @@ export default logo;
     },
   );
 
+  it('accepts an extensionless dotted import resolved by the checker to an implementation', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: "export { value } from './consumer.fixtures';",
+        }),
+        'app/src/consumer.fixtures.ts': 'export const value = 1;',
+      },
+      { source: { knip: false } },
+    );
+    const sourceIssues: SourceCheckIssue[] = [];
+    try {
+      await expect(
+        isRunSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        }),
+      ).resolves.toBe(true);
+      expect(sourceIssues).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('reports a missing physical resource even when ambient type evidence exists', async () => {
     const fixture = await createFixture(
       {

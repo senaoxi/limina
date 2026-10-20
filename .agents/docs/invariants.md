@@ -45,6 +45,8 @@ This page registers 12 properties that affect system correctness. They come from
 
 Public workspace declaration admission uses active effective-root membership, not Program inclusion or output ownership. Local declarations recurse without per-node ownership; each new public entry is gated again. Entry provenance, governance qualification and expansion remain separate. See [declaration entry governance](./semantics.md#declaration-entry-governance).
 
+Output projection is a separate application of this closure policy under effective output options. Vue output contexts retain source roots and checker authority; they prove existing output-reference coverage without adding source relations. Their independent receipt and restoration boundary are defined in [configuration projection](./semantics.md#configuration-projection-boundaries) and [persistent lifecycle](./lifecycle.md#persistent-native-analysis-cache). Generated-graph and Vue-cache regressions protect I03/I04/I06/I09 together.
+
 ## I04 — Locked dependency facts preserve checker occurrences and provenance
 
 - **Statement / Applies when**: The locked project dependency path retains occurrence kind/locator, compiler channel/mode/redirect, checker target, and evidence. Generated facts require trustworthy source mapping and attributable provider observations; Oxc cannot turn a miss into a semantic target.

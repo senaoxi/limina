@@ -69,6 +69,8 @@ TypeEvidence 保留为显式类型供给证明 API，请求时可使用 Symbol �
 
 包含 query／fragment 的完整 specifier 保持原始身份。不删除 `?raw` 或 `#fragment`，不借 Oxc 修复 Checker miss，也不从声明扩展反推生产者。Checker 按精确 `paths` key 解析成功仍有效。[目标分类](../../../packages/limina/src/core/import-graph/declaration-classifier.ts) 独立描述物理目标，不等同于类型供给。
 
+运行时分类使用已观察的 Checker 实现目标，将 `./consumer.fixtures` 这类带点模块名与资源区分开。解析到声明或 ambient provider 不能证明物理运行时资源存在。运行时 evidence 本身不被 Checker target 替换；query／fragment identity 继续保留宿主语法不解释边界。[源码回归](../../../packages/limina/src/__tests__/source.spec.ts)与[资源守卫](../../../packages/limina/src/__tests__/resource-module-findings.spec.ts)保护这一区别。
+
 ## Locked resolution 与 framework preparation
 
 [checker-resolution-provider](../../../packages/limina/src/core/import-analysis/checker-resolution-provider.ts) 的 locked routes 将 Oxc 设为 null。checker miss 保留 miss；runtime/resource 分类不能补一个 semantic target。此限制适用于该调用链，不能扩张成“Oxc 在 Limina 的所有分析中都不产生 evidence”。Astro pre-semantic eligibility 只跳过已知 virtual specifier、纯粹的显式非源码扩展名和 Oxc 识别出的 resource 目标；query 或 fragment 语法不是 skip authority，完整 specifier 会到达 Astro adapter，其结果照单接受。
@@ -109,6 +111,8 @@ Vue 语义上下文中的原生文件使用同一套 Vue 所属 TypeScript 实�
 [Compiler overrides](../../../packages/limina/src/core/build-graph/compiler-overrides.ts) 通过[类型入口投影](../../../packages/limina/src/core/build-graph/type-input-projection.ts)保持源配置实际选中的 config type-directive 入口。不能直接重定位相对字符串：竞争的 `typeRoots` 候选可能先被源配置选中。直接、继承、绝对和自动／通配入口保留编译器选择，源 miss 不得变成无关 generated hit；不补多余边、扩张 roots 或删除 `typeRoots` 掩盖偏差。
 
 `TypeInputProjectionReceipt` 仅证明 `config-type-directives` 入口保持，不代表完整类型环境或全部请求关系等价。现有 `outputs.target` 选择及默认值继续有效，默认库集合不同本身不是错误。独立的[输出投影](../../../packages/limina/src/core/build-graph/output-projection.ts)检查实际输出治理依赖是否被既有输出关系覆盖；未覆盖或无法观察的输入报告能力限制和来源链，不扩张源图、不推断任意声明生产者。新进程分别校验类型入口保持与输出有效性。类型入口选择和证明查询使用同一观察解析缓存；图回执保留生成入口选择所用的查询，使后续局部变化在干净恢复后仍可复用它们。
+
+Vue 输出投影复用现有 `vue-tsc`／Vue Language Core／Volar provider 和共享声明闭包策略。[独立输出 identity](../../../packages/limina/src/core/vue-semantic/output-identity.ts)保留源 roots、profiles、配置闭包及工具链，并应用有效输出编译选项。Vue Owner 下的原生文件和映射后的 SFC 依赖均通过该 provider 重新收集；源与输出 target 可以不同，但每个受治理输出需求必须已有输出引用。缺失 identity、不支持的观察及未覆盖依赖继续 fail closed。[生成图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)通过真实 `vue-tsc -b` 产物检验两个 target 方向，并独立移除输出关系作为负例。不新增依赖或第二套框架 Resolver。
 
 推断引用可以前向指向随后由有序 `tsc -b` 创建的声明。不要求构建前 Checker 诊断成功或产物已存在，也不许可陈旧输出成为 discovery 证据。生成配置不能建立源 Checker 权威。
 

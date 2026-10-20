@@ -1,5 +1,6 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import { compareCodeUnits } from '#utils/collections';
+import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import { analysisHash } from './identity';
 import { observeTypeEnvironment } from './installation-environment';
@@ -20,6 +21,17 @@ function vueEnvironmentProject(
     projectReferences: identity.projectReferences,
     workspaceSourceBoundary: { identity: '', has: () => true },
   };
+}
+function outputProjection(
+  identity: VueProjectSemanticIdentity,
+): VueContextRecord['project']['outputProjection'] {
+  return identity.outputSourceConfigPath === undefined
+    ? undefined
+    : {
+        sourceConfigPath: identity.outputSourceConfigPath,
+        options: effectiveCompilerOptions(identity.options),
+        fileNames: [...identity.fileNames],
+      };
 }
 
 export class VueRecordState {
@@ -63,6 +75,7 @@ export class VueRecordState {
         configPath: this.identity.configPath,
         projectRootDir: this.identity.projectRootDir,
         extensions: [...this.identity.extensions],
+        outputProjection: outputProjection(this.identity),
       },
       identity: vueDataIdentity(this.identity),
       dependencies: dependencies.values().toArray(),

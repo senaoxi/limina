@@ -26,6 +26,7 @@ import { promisify } from 'node:util';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import * as generatedConfigs from '../core/build-graph/generated-configs';
 import * as configReaders from '../core/build-graph/generated/config-readers';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
@@ -9406,6 +9407,120 @@ describe('ambient references and compiler membership', () => {
       await fixture.cleanup();
     }
   });
+  it.each([
+    {
+      sourceTarget: 'ES2023',
+      outputTarget: 'ES2020',
+      component: false,
+      missingRelation: false,
+    },
+    {
+      sourceTarget: 'ES2020',
+      outputTarget: 'ES2023',
+      component: true,
+      missingRelation: false,
+    },
+    {
+      sourceTarget: 'ES2023',
+      outputTarget: 'ES2020',
+      component: true,
+      missingRelation: true,
+    },
+  ])(
+    'validates Vue output with $sourceTarget -> $outputTarget (component=$component, missingRelation=$missingRelation)',
+    async ({ sourceTarget, outputTarget, component, missingRelation }) => {
+      const compilerOptions = {
+        ...managedOutputCompilerOptions(),
+        target: sourceTarget,
+        skipLibCheck: true,
+      };
+      const fixture = await createFixture({
+        'packages/a/package.json': json({ name: '@output/a', type: 'module' }),
+        'packages/b/package.json': json({ name: '@output/b', type: 'module' }),
+        'packages/a/tsconfig.json': json({
+          compilerOptions,
+          include: ['src/**/*'],
+          liminaOptions: { outputs: { rootDir: 'src', target: outputTarget } },
+        }),
+        'packages/b/tsconfig.json': json({
+          compilerOptions,
+          files: ['src/value.ts'],
+          liminaOptions: { outputs: { rootDir: 'src', target: outputTarget } },
+        }),
+        'packages/b/src/value.ts': 'export const value: number = 1;',
+        [component ? 'packages/a/src/App.vue' : 'packages/a/src/index.ts']:
+          component
+            ? '<script setup lang="ts">import {value} from "../../b/src/value.js";</script><template>{{value}}</template>'
+            : 'export {value} from "../../b/src/value.js";',
+      });
+      fixture.config.scope!.checkers = {
+        'vue-tsc': { include: ['packages/**/tsconfig.json'] },
+      };
+      try {
+        await linkInstalledPackage({
+          installedName: 'vue',
+          packageName: 'vue',
+          rootDir: fixture.rootDir,
+        });
+        if (missingRelation) {
+          const createOutput =
+            generatedConfigs.createGeneratedOutputProjectConfig;
+          vi.spyOn(
+            generatedConfigs,
+            'createGeneratedOutputProjectConfig',
+          ).mockImplementation((options) => {
+            options.project.outputReferences.clear();
+            return createOutput(options);
+          });
+          await expect(
+            prepareGeneratedTsconfigGraph(fixture.config),
+          ).rejects.toThrow(
+            'an output dependency is not covered by existing output references',
+          );
+          return;
+        }
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const source = fixture.path('packages/a/tsconfig.json');
+        const output = graph.configToOutputBuild
+          .get('vue-tsc')!
+          .get(source)!.path;
+        const parsed = parseProject(fixture.config, output);
+        expect(parsed.options.target).toBe(
+          ts.ScriptTarget[outputTarget as 'ES2020' | 'ES2023'],
+        );
+        expect(graph.dependencyEdges).toContainEqual(
+          expect.objectContaining({
+            fromConfigPath: source,
+            toConfigPath: fixture.path('packages/b/tsconfig.json'),
+            kind: 'declaration-provider',
+          }),
+        );
+        const build = await execFileAsync(
+          process.execPath,
+          [
+            requireFromTest.resolve('vue-tsc/bin/vue-tsc.js'),
+            '-b',
+            output,
+            '--pretty',
+            'false',
+          ],
+          { cwd: fixture.rootDir },
+        );
+        expect(build.stderr).toBe('');
+        expect(
+          existsSync(
+            fixture.path(
+              'packages/a/dist',
+              component ? 'App.vue.d.ts' : 'index.d.ts',
+            ),
+          ),
+        ).toBe(true);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each([false, true])(
     'keeps replacement library artifacts outside governance: explicit lib=%s',
     async (explicitLibrary) => {
