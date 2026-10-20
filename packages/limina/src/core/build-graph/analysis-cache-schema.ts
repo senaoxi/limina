@@ -105,6 +105,7 @@ const outputProjection = z.object({
   sourceTarget: z.number().nullable(),
   outputTarget: z.number().nullable(),
   contextId: text.nullable(),
+  vueContextId: text.optional(),
   optionsVersion: text,
   roots: texts,
   covered: z.array(coveredOutput),

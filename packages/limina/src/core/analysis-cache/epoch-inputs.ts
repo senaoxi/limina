@@ -1,4 +1,5 @@
 import { type AnalysisRead, withAnalysisReads } from '#utils/analysis-input';
+import { compareCodeUnits } from '#utils/collections';
 import { AnalysisInputDriftError, type DiscoveryRecord } from './contracts';
 import { pathBinding } from './directory-fingerprint';
 import { replayDiscoveryRead } from './discovery-reads';
@@ -24,9 +25,18 @@ function isSameVersion(
     before.binding === after.binding,
   ].every(Boolean);
 }
+function globMembership(value: unknown): unknown {
+  return Array.isArray(value) ? value.toSorted(compareCodeUnits) : value;
+}
+function observedValue(input: AnalysisRead): unknown {
+  // Enumeration order is not membership; ordered configuration reads stay exact.
+  return input.descriptor?.kind === 'glob'
+    ? globMembership(input.value)
+    : input.value;
+}
 function observation(input: AnalysisRead): Observation {
   return {
-    version: analysisHash(input.value),
+    version: analysisHash(observedValue(input)),
     binding: analysisHash(pathBinding(input.path)),
     input,
   };

@@ -134,12 +134,18 @@ const querySchema = z.object({
   ]),
   data: z.json(),
 });
+const outputProjection = z.object({
+  sourceConfigPath: text,
+  options: z.record(text, z.json()),
+  fileNames: texts,
+});
 export const vueContextSchema: z.ZodType<unknown> = z.object({
   adapter: z.literal(VUE_ANALYSIS_ADAPTER),
   project: z.object({
     configPath: text,
     projectRootDir: text,
     extensions: texts,
+    outputProjection: outputProjection.optional(),
   }),
   identity: z.json(),
   dependencies: z.array(dependencySchema),
