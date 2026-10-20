@@ -13,6 +13,7 @@ import type {
 import { projectNativeDeclarationClosure } from '../typescript-semantic/native-closure';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 import type { SourceProject } from './types';
+import { collectVueOutputDependencies } from './vue-output-projection';
 // Independent of config-type-directives receipts: covers output governance.
 export interface OutputProjectionReceipt {
   scope: 'existing-output-relations';
@@ -22,6 +23,7 @@ export interface OutputProjectionReceipt {
   sourceTarget: number | null;
   outputTarget: number | null;
   contextId: string | null;
+  vueContextId?: string;
   optionsVersion: string;
   roots: string[];
   covered: { file: string; owner: string; outputConfig: string }[];
@@ -132,14 +134,37 @@ function coverDependencies(options: {
   output: TypeScriptSemanticProject;
 }): OutputProjectionReceipt['covered'] {
   const { project, owners, context, output } = options;
-  const covered: OutputProjectionReceipt['covered'] = [];
   const targets = dependencies(context, output);
+  return coverTargets(project, owners, targets);
+}
+function coverTargets(
+  project: SourceProject,
+  owners: Map<string, SourceProject>,
+  targets: Map<string, string>,
+): OutputProjectionReceipt['covered'] {
+  const covered: OutputProjectionReceipt['covered'] = [];
   for (const [target, contributor] of targets) {
     const owner = foreignOwner(owners, target, project);
     if (owner !== undefined)
       covered.push(coveredTarget(project, owner, { target, contributor }));
   }
   return covered;
+}
+function vueReceipt(
+  input: ProjectionInput,
+  output: TypeScriptSemanticProject,
+  owners: Map<string, SourceProject>,
+): OutputProjectionReceipt {
+  const projection = collectVueOutputDependencies({
+    project: input.project,
+    output,
+    cache: input.cache,
+  });
+  return {
+    ...baseReceipt(input.project, output),
+    vueContextId: projection.contextId,
+    covered: coverTargets(input.project, owners, projection.dependencies),
+  };
 }
 function disposeContext(context: TypeScriptSemanticDependencyContext): void {
   if ('dispose' in context && typeof context.dispose === 'function')
@@ -178,6 +203,8 @@ export function proveOutputProjection(
     ),
   );
   const output = outputContext(input.project, owners);
+  if (input.project.semanticAuthority.family === 'vue')
+    return vueReceipt(input, output, owners);
   return input.project.semanticAuthority.family === 'typescript'
     ? nativeReceipt(input, output, owners)
     : frameworkReceipt(input.project, baseReceipt(input.project, output));
@@ -206,7 +233,29 @@ export function isValidOutputProjection(
     ].every(Boolean)
   )
     return false;
+  return isValidProjectionContext(receipt, cache);
+}
+function isValidProjectionContext(
+  receipt: OutputProjectionReceipt,
+  cache: NativeAnalysisCache,
+): boolean {
+  if (receipt.vueContextId !== undefined)
+    return isValidVueContext(receipt, cache, receipt.vueContextId);
   return receipt.contextId === null
     ? receipt.sourceTarget === receipt.outputTarget
     : isValidContext(receipt, cache, receipt.contextId);
+}
+function isValidVueContext(
+  receipt: OutputProjectionReceipt,
+  cache: NativeAnalysisCache,
+  id: string,
+): boolean {
+  const identity = cache.vue.identity(id, 0);
+  if (identity === undefined) return false;
+  return [
+    identity.configPath === receipt.generatedConfig,
+    identity.outputSourceConfigPath === receipt.sourceConfig,
+    analysisHash(identity.options) === receipt.optionsVersion,
+    analysisHash(identity.fileNames) === analysisHash(receipt.roots),
+  ].every(Boolean);
 }

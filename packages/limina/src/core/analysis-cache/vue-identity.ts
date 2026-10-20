@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { type DataNode, encodeData } from './data-codec';
 import { analysisHash } from './identity';
 
-export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v3';
+export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v4';
 
 function hasPlugins(plugins: unknown): boolean {
   return plugins !== undefined && hasPluginEntries(plugins);
@@ -67,6 +67,7 @@ export function vueDataIdentity(
   return encodeData({
     adapter: VUE_ANALYSIS_ADAPTER,
     configPath: identity.configPath,
+    outputSourceConfigPath: identity.outputSourceConfigPath,
     projectRootDir: identity.projectRootDir,
     configClosure: identity.configClosure,
     options,

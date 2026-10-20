@@ -1,4 +1,5 @@
-import { readAnalysisInput } from '#utils/analysis-input';
+import type { AnalysisRead } from '#utils/analysis-input';
+import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
 import { resolveExistingFilePath } from '#utils/module-resolution';
 import { execFileSync } from 'node:child_process';
 import {
@@ -13,9 +14,11 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { glob } from 'tinyglobby';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseProjectConfigWithExtensions } from '../checker/project-base';
 import { loadConfig } from '../config/loader';
+import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import type { GeneratedTsconfigGraphResult } from '../core/build-graph/types';
@@ -23,7 +26,8 @@ import { readJsonFile } from '../core/workspace/package-manifest';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
 import { runExecutionTasks } from '../execution/executor';
-import { type ExecutionTask, taskId } from '../execution/tasks';
+import type { ExecutionTask } from '../execution/tasks';
+import { taskId } from '../execution/tasks';
 import { LiminaPreflightManager } from '../preflight';
 import { AnalysisCacheController } from '../preflight/analysis-cache';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
@@ -53,6 +57,95 @@ function fixture() {
   });
   return { path: file, rootDir: rootDirectory, config, namespace };
 }
+
+describe('glob discovery freshness', () => {
+  function input(
+    f: ReturnType<typeof fixture>,
+    value: string[],
+    kind: 'glob' | 'ts-directory' = 'glob',
+  ): AnalysisRead {
+    return {
+      path: f.rootDir,
+      key: 'workspace-glob',
+      descriptor:
+        kind === 'glob'
+          ? {
+              kind: 'glob',
+              patterns: ['packages/*'],
+              options: {
+                absolute: true,
+                cwd: f.rootDir,
+                onlyDirectories: true,
+                ignore: [],
+              },
+            }
+          : {
+              kind: 'ts-directory',
+              arguments: [f.rootDir, null, null, null, null],
+            },
+      value,
+      read: () => value,
+    };
+  }
+
+  it('accepts reordered glob results during observation and final validation without mutating the reader', async () => {
+    const f = fixture();
+    const first = [f.path('packages/b'), f.path('packages/a')];
+    const next = first.toReversed();
+    const epoch = new EpochInputs();
+    epoch.run(() =>
+      observeAnalysisRead({ ...input(f, first), read: () => next }),
+    );
+    await expect(epoch.assertStable()).resolves.toBeUndefined();
+    expect(() =>
+      epoch.run(() => observeAnalysisRead(input(f, next))),
+    ).not.toThrow();
+    expect(first).toEqual([f.path('packages/b'), f.path('packages/a')]);
+  });
+
+  it('replays unordered persisted glob membership and still rejects added directories', async () => {
+    const f = fixture();
+    mkdirSync(f.path('packages/a'), { recursive: true });
+    mkdirSync(f.path('packages/b'), { recursive: true });
+    const epoch = new EpochInputs();
+    const current = await glob('packages/*', {
+      absolute: true,
+      cwd: f.rootDir,
+      onlyDirectories: true,
+      ignore: [],
+    });
+    epoch.run(() => observeAnalysisRead(input(f, current.toReversed())));
+    const saved = epoch.snapshot()!;
+    await expect(new EpochInputs().validate(saved)).resolves.toBe(true);
+    mkdirSync(f.path('packages/c'), { recursive: true });
+    await expect(new EpochInputs().validate(saved)).resolves.toBe(false);
+  });
+
+  it('retains ordered non-glob observations and rejects removed glob members', async () => {
+    const f = fixture();
+    const first = [f.path('a.ts'), f.path('b.ts')];
+    const ordered = new EpochInputs();
+    ordered.run(() =>
+      observeAnalysisRead({
+        ...input(f, first, 'ts-directory'),
+        read: () => first.toReversed(),
+      }),
+    );
+    await expect(ordered.assertStable()).rejects.toThrow(
+      'Analysis input changed during analysis',
+    );
+    const membership = new EpochInputs();
+    membership.run(() =>
+      observeAnalysisRead({
+        ...input(f, first),
+        read: () => first.slice(0, 1),
+      }),
+    );
+    await expect(membership.assertStable()).rejects.toThrow(
+      'Analysis input changed during analysis',
+    );
+  });
+});
 
 describe('analysis transaction and publication', () => {
   it.each([

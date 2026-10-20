@@ -1,5 +1,6 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import { createVueProjectSemanticIdentity } from '../../checker/vue-semantic-identity';
+import { createVueOutputIdentity } from '../vue-semantic/output-identity';
 import { encodeData } from './data-codec';
 import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
@@ -16,6 +17,28 @@ import { VueAnalysisMemo } from './vue-memo';
 import { isCurrentVueRecord, VueRecordState } from './vue-record-state';
 import { parseVueQuery } from './vue-schema';
 import { observeVueTools } from './vue-toolchain-inputs';
+
+function parseRecordedProject(record: VueContextRecord, generation: number) {
+  return createVueProjectSemanticIdentity({
+    ...record.project,
+    configPath:
+      record.project.outputProjection?.sourceConfigPath ??
+      record.project.configPath,
+    generation,
+  });
+}
+function recordedIdentity(
+  record: VueContextRecord,
+  source: VueProjectSemanticIdentity,
+): VueProjectSemanticIdentity {
+  return record.project.outputProjection === undefined
+    ? source
+    : createVueOutputIdentity(source, {
+        configPath: record.project.configPath,
+        options: record.project.outputProjection.options,
+        fileNames: record.project.outputProjection.fileNames,
+      });
+}
 
 export class VueAnalysisRecords {
   readonly #states = new Map<string, VueRecordState>();
@@ -92,16 +115,11 @@ export class VueAnalysisRecords {
   ): VueProjectSemanticIdentity | undefined {
     const record = this.#previous(id);
     if (record === undefined) return undefined;
-    const parsed = createVueProjectSemanticIdentity({
-      ...record.project,
-      generation,
-    });
-    const valid = [
-      parsed.diagnostics.length === 0,
-      this.supports(parsed.identity),
-    ];
+    const parsed = parseRecordedProject(record, generation);
+    const identity = recordedIdentity(record, parsed.identity);
+    const valid = [parsed.diagnostics.length === 0, this.supports(identity)];
     return valid.every(Boolean)
-      ? this.#bindIdentity(parsed.identity, id, generation)
+      ? this.#bindIdentity(identity, id, generation)
       : undefined;
   }
 

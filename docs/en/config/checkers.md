@@ -254,4 +254,6 @@ Declaration support inputs can contribute their explicit legal dependencies with
 
 Generated declaration/output configs preserve the source's selected `compilerOptions.types` entries, including relative entries and effective inherited `typeRoots`. This does not require an identical complete type environment: existing `liminaOptions.outputs.target` choices and defaults remain valid, and default libraries may differ. Actual output governance dependencies must be covered by existing output relations. Uncovered or incompletely observed inputs report a capability limit and source chain instead of expanding the source graph.
 
+For a `vue-tsc` owner, source and output `target` values may differ. Limina observes the output's effective compiler options through a separate Vue semantic context, including native TypeScript files and mapped Vue components. It checks output dependencies against existing output references; it does not add source references to make the output pass. Unsupported observations and uncovered output dependencies still stop graph preparation.
+
 Expected declaration outputs of explicit project references may be absent before an ordered `tsc -b` creates them. This permission does not cover arbitrary missing declarations or allow stale output to supplement source discovery.

@@ -1,5 +1,6 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
+import * as snapshotCodec from '../core/analysis-cache/data-codec';
 import {
   cacheMetric,
   createVueCacheFixture,
@@ -50,6 +51,64 @@ describe('persistent Vue and mixed graph analysis', () => {
         (identity) => identity.generation > 0 && identity.hasRuntime,
       ),
     ).toBe(true);
+  });
+
+  it('restores distinct Vue output target contexts and invalidates a changed output target', () => {
+    const f = fixture();
+    const config = JSON.parse(
+      readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
+    );
+    config.liminaOptions = {
+      outputs: { target: 'ES2020', rootDir: 'src', outDir: 'build' },
+    };
+    f.write('vue/tsconfig.json', JSON.stringify(config));
+    const cold = f.run();
+    expectCold(cold);
+    expectRestored(f.run());
+    const projected = Object.values(f.snapshot().vueContexts).filter(
+      (context) => context.project.outputProjection !== undefined,
+    );
+    expect(projected).toHaveLength(1);
+    rmSync(f.path('.limina/tsconfig'), { recursive: true, force: true });
+    expectRestored(f.run());
+    expect(projected[0]!.project.outputProjection!.sourceConfigPath).toBe(
+      f.path('vue/tsconfig.json'),
+    );
+    config.liminaOptions.outputs.target = 'ES2023';
+    f.write('vue/tsconfig.json', JSON.stringify(config));
+    expectCold(f.run());
+    expectRestored(f.run());
+  });
+
+  it('rejects a Vue output receipt rebound to a source context', () => {
+    const f = fixture();
+    const config = JSON.parse(
+      readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
+    );
+    config.liminaOptions = {
+      outputs: { target: 'ES2020', rootDir: 'src', outDir: 'build' },
+    };
+    f.write('vue/tsconfig.json', JSON.stringify(config));
+    expectCold(f.run());
+    expectRestored(f.run());
+    const snapshot = f.snapshot();
+    const [sourceId] = Object.entries(snapshot.vueContexts).find(
+      ([, context]) =>
+        context.project.configPath === f.path('vue/tsconfig.json'),
+    )!;
+    const graph = Object.values(snapshot.graphs)[0]!;
+    const { decodeData, encodeData } = snapshotCodec;
+    const data = decodeData(graph.data) as {
+      outputProjections: { vueContextId?: string }[];
+    };
+    data.outputProjections[0]!.vueContextId = sourceId;
+    graph.data = encodeData(data);
+    f.writeSnapshot(snapshot);
+    const rebuilt = f.run();
+    expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
+    expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
+    expect(rebuilt.passed).toBe(true);
+    expectRestored(f.run());
   });
 
   it.each([
@@ -157,13 +216,16 @@ describe('persistent Vue and mixed graph analysis', () => {
     expectRestored(f.run());
   });
 
-  it('keeps custom Vue plugins on the cold path even when the plugin contributes no script', () => {
+  it('keeps custom Vue plugins on the cold path for source and output contexts', () => {
     const f = fixture();
     f.write('vue/plugin.cjs', 'module.exports = () => ({version: 2.2});');
     const config = JSON.parse(
       readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
     );
     config.vueCompilerOptions = { plugins: ['./plugin.cjs'] };
+    config.liminaOptions = {
+      outputs: { target: 'ES2020', rootDir: 'src', outDir: 'build' },
+    };
     f.write('vue/tsconfig.json', JSON.stringify(config));
     expectCold(f.run());
     const second = f.run();
