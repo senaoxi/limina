@@ -15,6 +15,7 @@
 - **PCR or saved technical audit results:** use [project-context-writing](.agents/skills/project-context-writing/SKILL.md) and follow [bilingual maintenance](.agents/docs/README.md#bilingual-publishing-and-maintenance) and [writing/privacy review](.agents/docs/README.md#writing-and-privacy-review).
 - **Local migration, publication or documentation deployment:** follow [the migration scope and gates](.agents/docs/migration.md).
 - **Commit messages or PR titles:** follow [the commit convention](.github/commit-convention.md).
+- **Online HTML explainers:** follow the global `answer-me-with-html` skill's default shared Vercel publication workflow; preserve the local HTML and return its path when publication fails or is unsuitable. The [project publisher skill](.agents/skills/answer-me-with-html-vercel/SKILL.md) remains available as a project-local compatibility entry.
 
 <!-- PCR:START -->
 
