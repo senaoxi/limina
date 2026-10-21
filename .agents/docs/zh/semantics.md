@@ -4,6 +4,20 @@
 
 本页解释 dependency fact 如何产生及其能力边界；实体和 relation 定义归[系统模型](./system-model.md)，不可意外改变的性质归 [I02–I07](./invariants.md)。本页描述当前 adapter 的行为，不宣称与所有上游版本的完整 checker 完全等价。
 
+## 独立 Native Evidence 合同
+
+**当前实现：**[Native Evidence v3](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 10；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
+
+**Coverage 证明：**[索引合同](../../../packages/limina/src/domain/analysis/native-coverage.ts)要求先按已激活的 entry selection 与 solution traversal 建立全集，再了解哪些配置成功解析。Extends 输入、生成配置和声明产物不因此成为 owner。只有发现闭合、当前配置成员枚举完成且文件身份经过验证，才能证明零或一个成员。无法限定范围的解析失败使相关全集保持不完整；只有带证据的目标身份排除才能缩小影响。Lexical 与 canonical 成员匹配均要求目标和成员具有当前版本的已验证身份；过期或不可用的身份不能计入已确认成员。Lexical 命中不跳过 canonical 别名检查。两个已确认的不同成员即使在部分索引中也能证明 ambiguous；其余不完整证据为 unavailable。文件身份只证明等价，不增加作用域。
+
+**编译义务证明：**[义务合同](../../../packages/limina/src/domain/analysis/native-obligation.ts)独立保留存在性、引用结构和声明可用性。已证明存在且结构未满足为 `required`，已证明存在且结构满足为 `already-satisfied`，已证明不存在为 `not-required`，其余为 `unknown`。上下文、原始 references 和端点映射必须匹配。产物缺失或陈旧不抹掉已满足的结构，文件存在本身不证明产物可用。解析目标、owner、加载尝试或 TypeEvidence 均不能单独提供存在性证明。
+
+**阶段资格：**[上下文合同](../../../packages/limina/src/domain/analysis/native-context.ts)保留实际 TypeScript 实现与版本、host、roots／options／raw references 指纹、源码与 Coverage 版本、工具链、epoch 和 collection 身份。Pending Native 观察可用于 baseline 分析及归属选择，框架候选只用于选择。锁定必须创建新 context 和 collection，TypeScript→TypeScript 锁定也适用。Locked 事实必须由已选语义族重新采集。输入、epoch、阶段、collection 或 locked selection evidence 变化撤销当前资格，不改变历史证据。归属歧义和重复锁定显式返回冲突；合同没有重试循环或最终执行 Checker 字段。这些是数据及生产者合同，不是对任意 JavaScript 伪造对象的身份认证。
+
+**物理边界：**[Bounded Host](../../../packages/limina/src/core/typescript-semantic/native-program-host.ts) 在创建 SourceFile 之前执行 Coverage 决策：实现 root 展开；至少具有一个当前已验证成员的声明展开，声明 root 也须满足此条件；所有非 root 实现记录归属后停止。没有当前已验证成员的声明正常停止。开放或部分全集不能证明实现归属唯一，却不撤销已确认的声明成员资格。Core 不增加标准库、第三方、原始 reference 产物或 Bundler 输出豁免，也不改变 `FileOwnerLookup` 的生产算法。完整 Program 只用于测试 Oracle，真实诊断与 emit 由最终 Checker 负责。[合同](../../../packages/limina/src/__tests__/native-evidence-contract.spec.ts)和[编译器观察测试](../../../packages/limina/src/__tests__/native-program-observation.spec.ts)分别保护数据推导与物理加载边界。
+
+**加载前 path 选择：**[选择 receipt](../../../packages/limina/src/core/typescript-semantic/native-path-selection.ts)在创建 SourceFile 前，按已适配编译器的候选顺序探测真实存在性与实际 reference map。Coverage 截断不能选择低优先级 `.tsx` 或 `.d.ts`。[加载资格](../../../packages/limina/src/core/typescript-semantic/native-program-loads.ts)要求真实 root，或来自已接纳源码的已选请求，同时满足 Coverage。被独立入口引入的备选声明保留自己的前驱。晚到资格与 reference map 发现使用 roots/options/references 相同的新 Bounded Program；不伪造 SourceFile、不扩大 roots、不回退完整 Program。redirect 产物真实缺失时允许编译器的正常回退，已存在但被截断时不允许。无法证明的 occurrence 保留 scoped unavailable。[Path 回归](../../../packages/limina/src/__tests__/native-path-selection.spec.ts)同时比较目标、完整 SourceFile 集合、后续请求与关系。 编译器的源码分类需要单独取得资格：备选声明被独立 external 入口合法加载时，仍可能继承被截断 path 回退产生的元数据。该源码及其已加载的非 root 后继保留原始观察，但受影响的 emit 义务保持 scoped unavailable；纯声明的无义务证明和独立 roots 仍可使用。
+
 ## 从 ownership 候选到 locked context
 
 [checker-ownership-resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先 discovery、root evidence、dependency facts 与 requirements convergence，再 freeze semantic authority，最后进行 Vue promotion、build coloring 与 finalization。[semantic-authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 只接受 explicit、config、root-file、dependency 作为语义锁证据；build-closure、fallback、solution-constraint、vue-promotion 不重写语义。
@@ -14,35 +28,33 @@ Locked [ProjectSemanticContext](../../../packages/limina/src/core/project-depend
 
 ## 一个项目的原生语义输入
 
-[依赖 context](../../../packages/limina/src/core/typescript-semantic/index.ts) 对自有 TypeScript **6.0.3** 实例上的物理 TypeScript／TSX 输入使用无 Program adapter：提取共享语法，按消费方的有效选项和模块形态绑定请求，通过 TypeScript 的 module／type／path／lib 通道解析，再遍历有资格的支撑闭包。冷收集和变化文件重算不需要分析 Program 或 TypeChecker。显式 proof API 以及实际 Checker 的诊断／emit 保留各自的编译器生命周期。
+[依赖入口](../../../packages/limina/src/core/typescript-semantic/index.ts)只有一个 Native 发现权威：[按版本适配的 TypeScript 观察适配器](../../../packages/limina/src/core/typescript-semantic/native-observation-adapter.ts)。请求来自编译器实际 inventory，包括绕过 resolver callback 的自身 ambient 模块、重复 occurrence、JSX/helper 隐式导入、三斜线以及 types/lib。Host 保留原始解析、options、types、lib 和 raw references；普通收集不调用 TypeChecker、完整 semantic diagnostics 或 emit。明确的 TypeEvidence 请求有独立生命周期。
 
-[有效 roots](../../../packages/limina/src/core/typescript-semantic/effective-roots.ts) 仍由 Checker 配置解析得到。声明是一等分析节点，不自动成为 Source Config、Owner 或构建任务。A 到达的声明若合法依赖 B 所属实现，可贡献 A→B；B 内部依赖 C 仍由 B 贡献 B→C，不追加 A→C。移除一个入口不影响声明的其他独立入口；最后入口退出后，不可达声明环的贡献必须撤销。
+[有效 roots](../../../packages/limina/src/core/typescript-semantic/effective-roots.ts)仍来自配置解析。A→B.ts→C.ts 在 A 的物理 frontier 停于 B，不能追加 A→C。A→index.d.ts→helper.d.ts→C.ts 只有每个到达声明都有可用 Coverage 才能继续；对 C 的编译边还要求独立义务证明。声明 membership 不标识生产者。
 
-Consumer 包含 JS、虚拟输入、原始项目引用、不支持的编译器或遍历中新到达的不支持输入时，整体切换到既有 bounded adapter。尚未完成的新闭包不发布；可以复用已完整验证的中立语法／解析事实，但不能把部分新贡献与旧成功图拼成完整结果。记录收集方式和能力原因，输入变化后重新判断资格，移除不支持依赖可恢复无 Program 路径。完整 Resolver miss 不触发切换。Bounded 稳定化要求 admission revision 有进展，最多尝试 32 次。
+既有 TypeScript 支持范围保持为 5.4–5.9 和 6.0。窄适配层在 5.4/5.5 使用编译器回调的 redirect options，在 5.8 之前使用编译器的库映射及名称规范化器，在 5.9 之前使用成对的 reference redirect 方法；后续版本使用已暴露的 Program 方法。实际版本和实现始终属于 context 身份。[打包 Native smoke](../../../smoke/native-compiler.spec.ts)覆盖各次版本首个稳定版本的实际 peer；未来补丁和预发布仍须通过 API 资格检查，不能由这些样例证明。Native DTO 持久恢复保留既有的 6.0.3 能力边界；其他受支持版本重新采集 Bounded Program，不使用替代发现算法。
 
-原始 references 只来自源码／解析配置；推断引用不回流 discovery。兼容 adapter 将编译器真实引用映射记录为独立的原始目标、声明目标、引用配置和输出可用性。输出存在或缺失都保留结构，不重新产生源码关系。只有明确引用的正向映射可以许可预期输出尚未生成；不读取陈旧输出，也不伪造内容。直接消费 `.d.ts` 不标识其生产者，无论文件位于源码目录还是 dist。
+不支持的编译器或观察 API 显式产生 unavailable/failure，不切换算法。JS、虚拟配置和原始 references 不触发 Programless 回退。每次冷采集构建新的 Bounded Program，随后释放编译器句柄；首版不保留 `oldProgram`。有效完整 DTO 可以独立恢复而不创建 Program，失效 context 重新采集。不存在按 hook 次数判断完整性的合同。
+
+[义务适配器](../../../packages/limina/src/core/typescript-semantic/native-program-obligations.ts)区分源码选项和生成声明项目的已审计规则，保留 raw reference/redirect 映射。解析命中、Coverage owner、加载尝试或类型证据不单独形成编译边。已有 reference 的结构满足与产物缺失/陈旧可以同时成立；未知产物不冒充可用。生成输出以实际投影选项和 references 建立独立 context，不覆盖源码事实。
 
 ## 声明入口治理
 
-声明文件不拥有编译边界。[统一闭包投影](../../../packages/limina/src/core/typescript-semantic/declaration-closure.ts)将入口来源、治理资格、展开资格与编译器 admission 分开。根文件和配置类型环境仍是不同入口，均不能据此改变 tsconfig 的有效根文件集合。
+[声明闭包投影](../../../packages/limina/src/core/typescript-semantic/native-closure-projection.ts)只消费已采集的物理有界事实，保留入口、最后 occurrence、支持关系与正常停止原因。它不重新执行包来源准入策略。相对导入、paths、package imports、公共包入口、托管输出和替换标准库均服从相同 Coverage 规则；解析来源只解释结果，不提供豁免。
 
-第三方公共声明停止内部治理展开。Workspace 公共声明仅在至少一个当前激活的受治理配置将其纳入有效 roots 时进入闭包。现有 `FileOwnerLookup` 处理逻辑路径与真实路径 membership；声明可同时属于多个配置。Membership 只控制公共入口准入，不要求每个中间声明独立归属，也不能识别 producer。本地相对导入、成功的 `paths` 映射及本地 `#imports` 继续遍历普通声明；再次经过公共包入口时重新判断。已知托管输出与真实 reference redirect 优先保留既有产物边界。未管辖公共入口是正常停止，不证明文件由工具生成或能独立完成类型检查。
+多成员声明可以继续展开；实现文件必须具有完整唯一性证明，且非 root 实现仍停止。无覆盖不自动产生治理违规。`noResolve` 的真实编译器行为限制加载，不能用解析成功补出编译义务；`skipLibCheck` 不授予输入删除权限。移除最后入口撤销不可达环；独立入口和菱形前驱保留各自来源。[声明回归](../../../packages/limina/src/__tests__/declaration-policy.spec.ts)覆盖包分支、配置入口、循环、别名改绑与独立 Oracle。
 
-对于 `A → 公共 index.d.ts → helper.d.ts → C.ts`，公共入口符合资格后，即使 helper 无 owner 也产生 A → C；不会因此产生 A → 纳入 index.d.ts 的配置。遍历在 C.ts 停止，C → D 属于 C 自身分析。实现终点仍经过现有 owner、provider、checker、region、deny 和循环检查。最后一个 occurrence 保持声明文件中的真实位置，内部投影保留声明链，不伪造根文件 import。原始 `referenceRequirement: null`、`TypeEvidence` 和 `source.declarations` 保持各自职责。
+Core 遍历所有可信合格入口；预期 Coverage 边界、确定歧义、正常 miss 和未知义务只停止对应分支。配置/文件/编译器/内部故障单独记录影响范围，独立上下文保留证据。[分析 outcome](../../../packages/limina/src/core/build-graph/analysis-outcome.ts)分别表达执行、范围内遍历、编译关系完整性、Governance 和 materialization Admission。Governance 不改写原始事实，投影不能删除违规/未知关系后宣称完整。Core 工作清单分别记录 baseline、selection、locked 的执行资格和结果。所有合格工作处理完毕后，即使仍有 authority-unavailable，也可完成调度；跳过合格工作不能宣称完整。真正执行故障单独记录。治理拒绝或 output projection 故障只改变建图事务，不改写已完成的 Core。Admission 检查具体候选计划的必要入口和编译引用；必要前提之外的 unknown 不形成统一拒绝。完整遍历不等于所有编译关系已确定。 候选前提分别保留声明引用与框架调度。已有合格候选关系可满足同一目标的必要前提，即使某个 occurrence 的义务仍为 unknown；缺少必要关系仍阻止准入。真正的收集故障在独立合格工作处理完后报告，不改判为治理违规。显式语义族冲突只使受影响的末端入口 unavailable；同语义族的 Checker 冲突仍属于治理判断。
 
-[解析 receipt](../../../packages/limina/src/core/typescript-semantic/resolution-origin.ts)标识原始编译器调用最终成功的分支。结构化 resolver 结果不足时，通过受版本约束的 trace 捕获将证据与结果一起保存，包括 TypeScript 内存缓存命中。缺失 receipt 时从同一 resolver 重新获取，未知证据保持 incomplete。仅凭 specifier、最终路径或 `isExternalLibraryImport` 不能区分成功的 `paths` 映射与包入口回退。Native、Vue、Astro、Svelte 使用同一政策，保留各自 host 和映射 authority。治理停止不删除编译器输入，替换标准库的声明产物也适用。
-
-[政策回归](../../../packages/limina/src/__tests__/declaration-policy.spec.ts)和[生成图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖双入口、根 membership、包解析分支、配置类型、循环与实现终点。`noResolve` 限制遍历，但独立纳入的根仍贡献依赖；`skipLibCheck` 不是遍历开关。Augmentation 名称本身不提供入口证据。
+Checker 归属阶段的工具链／语义脚本失败保留为执行失败和受影响上下文；独立项目的证据继续保留，不转换为治理违规。普通解析未命中可供迁移报告说明，仍不构成 Core 执行失败。迁移在 Coverage 边界留下关系不完整状态，并保守保留原生 reference；不能把已知边当成完整关系集。
 
 ## 持久化 importer 有效性
 
-[共享文件事实](../../../packages/limina/src/core/typescript-semantic/file-dependency-facts.ts) 保存 occurrence、位置、请求模板、源码显式属性、模块形态与隐式请求触发因素。[上下文绑定](../../../packages/limina/src/core/typescript-semantic/context-requests.ts) 具体化 JSX／helper 请求和有效 mode。同一份 TSX 文本可以共享提取结果，同时在不同 context 中分别产生 React 和 Preact runtime 请求。
+[Bounded context capture](../../../packages/limina/src/core/analysis-cache/bounded-context-capture.ts)保存编译器完整 inventory、occurrence 事实和实际输入 receipt。Schema 10、Native adapter、领域版本和 collection mode 共同排除旧 Programless 成功图；旧缓存不转换、不删除。Roots/options/raw references、配置全集、当前 lexical/canonical 身份、正负解析探测、目录、manifest 条件与安装环境均参与恢复资格。相同 importer 文本不足以证明旧 context 有效。
 
-复用同时要求语法内容有效、请求上下文等价、查询观察依赖仍有效。Topology fingerprint 相同不足以复用已绑定请求。仅位置变化也更新 line、UTF-16 offset、locator、sourceVersion 和贡献来源；重复 specifier 保持不同 occurrence。Resolver 观察包括成功／失败探测、package scope、有序 manifest conditions、目录、绑定及 redirect context。Importer 内容未变时，候选、mode 输入或观察到的配置变化仍使查询失效。
+[恢复绑定](../../../packages/limina/src/core/build-graph/native-cache-binding.ts)将图、已验证 context、原始快照与 locked ownership fact 绑定；缓存中的 summary 或 owner 字段不能自授资格。正常 Coverage stop 可完整恢复；执行失败、未知安装证据、残缺通道或伪造绑定触发冷采集。输入失效时原子替换 consumer 贡献，不把旧成功与新失败拼成完整图。纯 Native 完整命中不创建 Program；冷/变化 context 重新创建 Bounded Program，不承诺只解析变化文件。详见[生命周期](./lifecycle.md#原生持久化分析缓存)和[独立进程回归](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)。
 
-[无 Program capture](../../../packages/limina/src/core/analysis-cache/programless-capture.ts) 发布完整 consumer 闭包和查询订阅。新进程恢复校验普通 DTO、有效 roots／options、收集身份、当前边界／归属输入、环境及安装证据；拒绝不完整、陈旧和旧 schema 记录。变化 consumer 遍历缓存邻接关系，只重算失效查询，未变化文件不重复解析。V1 可以保守重跑全图 coloring、SCC 和构建校验；访问缓存节点不同于重新读取、解析所有文件。
-
-缓存支持自有 TypeScript 实例和物理 host；`tsc` 与 `tsgo` 保持不同 Checker 身份，不在此模型缓存完整诊断或 emit。完整兼容 context 也可无 Program 恢复，但输入变化必须重新评估能力。配置、host 或安装证据 unknown 时不恢复持久化结果。访问策略、事务及发布边界见[生命周期](./lifecycle.md#原生持久化分析缓存)。
+[双向缓存校验](../../../packages/limina/src/core/analysis-cache/bounded-inventory-validity.ts)要求实际 Program 成员与 source/importer 集合一致，并将具有源码 occurrence 的编译器请求与 occurrence/fact 一一对应。删除、孤立或重复记录不能借空集合取得完整性；配置级请求不强制产生源码 occurrence，合法无导入成员仍保留。原始请求与 resolution 也必须一一对应。存储解析和 [context adoption](../../../packages/limina/src/core/analysis-cache/context-records.ts) 使用同一校验，因此拒绝旧 graph 后不会复用缺失事实的上下文。Program 释放前会捕获并冻结编译器 inventory 回执：将每个原始 request 绑定到精确 occurrence（UTF-16 范围、kind、ordinal 和 synthetic 元数据），同时记录完整 SourceFile 集合、已接纳 roots 及实际加载别名。恢复时用回执校验消费投影，并将每个成功 load 反向关联到实际成员；两个同时截短的投影相等并不足够。Redirect 保留编译器实际返回的 SourceFile，不强制 lexical 路径相等。缺失回执或旧 adapter 身份必须冷采集；恢复不能从缓存投影重新生成回执。仅 graph 损坏时可以保留合法 context。校验只撤销缓存恢复资格，不把 scoped unavailable 改成执行失败，也不改写已完成 Core。损坏存储按既有完整模型策略冷回退；直接 context 恢复仍保留独立合法上下文。[真实 store 回归](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)覆盖有效 checksum 封装内的 source／occurrence／fact 损坏、重新采集、发布及下一进程恢复；这不证明正常生产者会自然生成该损坏状态。
 
 [Vue analysis records](../../../packages/limina/src/core/analysis-cache/vue-records.ts) 支持没有自定义 Vue 插件的物理项目，版本范围限定为 TypeScript 6.0.3、vue-tsc 与 language-core 3.2.4、Volar TypeScript 2.4.27。稳定 identity 包含有效选项、原始 references、source profiles、config closure 和 toolchain identity；运行期 generation 在恢复时重新绑定。受支持的 preparation facts、映射解析及 resource type evidence 使用已校验 DTO，在取得 Vue live context 前查询。查询覆盖必须完整。Host 读取、完整 manifest 内容、成功与失败探测、目录／路径绑定、生成脚本／映射摘要和安装环境构成 context receipt。未观测的目录枚举及 unsupported／opaque 结果不能授予完整性。工具模块字节和绑定在每次调用重新观测。Vue collection 使用现有 Vue context 观察直接源码依赖和支持输入，并将这些查询的覆盖与 resolution、preparation 分开记录。
 
@@ -50,32 +62,29 @@ Consumer 包含 JS、虚拟输入、原始项目引用、不支持的编译器�
 
 ## Occurrence、证据与建图需求
 
-数据流为：共享语法 → 上下文请求 → 观察到的解析 → 有资格的 consumer 闭包 → occurrence 贡献 → Owner／Provider／Checker／policy 投影 → 项目边。运行时治理资格与编译支撑贡献资格分开，保留来源分类并进入同一投影路径；并非所有字符串或编译器请求都自动生成 references。
+Native 数据流为：编译器实际请求 → 原始解析 → Coverage frontier → 独立义务证明 → qualified locked fact → reference projection。没有先验手写 request 列表作为 Native 入口门槛。
 
-| 请求                                              | 资格及闭包规则                                                                                                                                                                 |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| import、re-export、import type、字面量动态 import | 合法收集的 occurrence 使用 module 通道；有资格的目标扩展支撑闭包，但有效配置可限制加载。                                                                                       |
-| CommonJS                                          | 受支持的词法 `require` 和不可变 `createRequire` 绑定属于治理请求。Shadowed 调用不宣称为 Node 加载；编译器加载的声明只有经合格入口才贡献治理依赖；shadowed 调用本身不建立入口。 |
-| ambient／augmentation                             | 脚本 ambient module 名称不是依赖；外部模块中的有效 augmentation 可保留已解析实现候选，但其名称不能单独准入声明。                                                               |
-| 声明内 import 与 JSDoc                            | 合法声明导入通过合格入口贡献；仅作说明的 TypeScript JSDoc 不扩展闭包，JS 编译器请求依据兼容 adapter 的实际输入证据。                                                           |
-| path／types／配置 types／lib                      | 分别使用自身编译器通道和有效配置；准入不改变 roots 或 Ownership。已从其他有效入口纳入的声明按独立入口分析。                                                                    |
-| JSX／helper                                       | 按有效编译选项、pragma 和模块形态具体化受支持请求；单独的 `jsx` 选项或字符串匹配不足以证明请求。                                                                               |
+| 请求                                           | Native 与 runtime 的边界                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| import / export / import type / dynamic import | 保留编译器 occurrence、mode、重复位置及真实解析。                                                                                           |
+| CommonJS                                       | JS 中编译器识别的 require（含其实际 shadowed 行为）属于 Native；TS 中普通 require/createRequire 留在独立 runtime 收集器，不自动形成编译边。 |
+| ambient / augmentation                         | 保留自身 ambient 快路径；augmentation 的解析命中不证明编译义务，未知状态可正常停止。                                                        |
+| JSDoc / declarations                           | 按实际 TS/JS 编译器 inventory 和每个声明的 Coverage 决定，不扫描任意注释字符串。                                                            |
+| path / types / lib / JSX / helper              | 保留独立通道、配置来源和真实隐式请求；不删除 types/lib，不制造额外 roots。                                                                  |
 
-`noResolve` 不删除 occurrence，也不阻止对实现目标进行治理解析；它限制支撑闭包扩展，未加载的已解析实现仍可保留源码需求。`skipLibCheck` 抑制特定 Checker 诊断，不等于停止依赖加载。[无 Program 测试](../../../packages/limina/src/__tests__/programless-context.spec.ts)、[Native 测试](../../../packages/limina/src/__tests__/native-provider-evidence.spec.ts)和[生成图测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)负责正反例。
+[Runtime source collector](../../../packages/limina/src/core/project-dependencies/runtime-source.ts)保留 source/package 治理及导出图需要的词法 require、createRequire 和 require.resolve。其请求目的、缓存身份、输出资格与 Native 分开，`referenceRequirement` 为 null。Graph Check 的 Native 目标使用[已证明义务](../../../packages/limina/src/core/typescript-semantic/native-fact-qualification.ts)，不由 FileOwnerLookup 命中重新推出。
 
-[需求判定](../../../packages/limina/src/core/dependency-semantics.ts) 依据完整解析和真实 redirect 结构，不查询 Symbol 或 TypeEvidence。物理实现产生源码候选；直接声明、完整 miss 或明确引用重定向不产生新源码候选。Unsupported、failed 和 unobserved 不能伪装成完整 miss。Ambient 类型、external-library 标记和 Program membership 不能单独取消已解析的受治理实现；最终仍经 Owner、deny、Provider 能力、关系类别和去重决定边。
+Graph Check 通过[独立 workspace Governance 消费者](../../../packages/limina/src/graph-check/native-coverage-governance.ts)读取已证明无覆盖的实现文件事实。既有 source-package 策略可报告 unmapped/outside-graph import，不依赖其编译义务资格。不可用 Coverage 与声明停止不满足该诊断条件；缺失或无类型的包入口仍使用既有 runtime 策略诊断。该消费者不创建 reference 边。文件系统 detector fixtures 保留这两类策略反例，也保留被拒绝的生成 reference，后者必须继续在图中可见。
 
-TypeEvidence 保留为显式类型供给证明 API，请求时可使用 Symbol 和实际 Program identity；普通依赖存在性、引用投影和 Native 缓存资格不调用它。纯类型可用性诊断由实际 Checker 负责；source 检查保留物理资源存在性、包授权、源码归属和边界。
+TypeEvidence 是独立按需类型证明，不能创造或抹除编译义务；实际 Checker 负责纯类型诊断。完整 specifier（包括 query/fragment）保持身份，Oxc 不能修复 Native miss。Framework 的映射、能力和调度仍由各自适配器负责，不能把 runtime-use 升格为 Native reference。
 
-包含 query／fragment 的完整 specifier 保持原始身份。不删除 `?raw` 或 `#fragment`，不借 Oxc 修复 Checker miss，也不从声明扩展反推生产者。Checker 按精确 `paths` key 解析成功仍有效。[目标分类](../../../packages/limina/src/core/import-graph/declaration-classifier.ts) 独立描述物理目标，不等同于类型供给。
-
-运行时分类使用已观察的 Checker 实现目标，将 `./consumer.fixtures` 这类带点模块名与资源区分开。解析到声明或 ambient provider 不能证明物理运行时资源存在。运行时 evidence 本身不被 Checker target 替换；query／fragment identity 继续保留宿主语法不解释边界。[源码回归](../../../packages/limina/src/__tests__/source.spec.ts)与[资源守卫](../../../packages/limina/src/__tests__/resource-module-findings.spec.ts)保护这一区别。
+JSDoc 定位将既有 occurrence 绑定到真实解析 AST 节点，并覆盖所有相邻注释块；TypeScript 公开的 tag ownership helper 会遗漏部分编译器请求。[定位器](../../../packages/limina/src/core/typescript-semantic/source-file-literals.ts)保留精确 UTF-16 范围与节点身份，不发现新请求、不伪造 SourceFile，也不只凭 specifier 解析。框架类型查询将脱离 Program 的候选重新绑定到当前 Program，并要求其 inventory 包含同一个 JSDoc 字面量后才查询 Symbol。元数据缺失、范围不匹配或歧义仍为 scoped unavailable；已定位的编译器 miss 保持 missing，独立观察继续保留。[JSDoc 回归](../../../packages/limina/src/__tests__/jsdoc-semantic-location.spec.ts)覆盖原始 node:test 注解、重复 occurrence、@import、被忽略的文档、noResolve 和物理截断。缓存 adapter 身份使旧观察失效；不改变 roots、编译器选项、references 或发现权威。
 
 ## Locked resolution 与 framework preparation
 
 [checker-resolution-provider](../../../packages/limina/src/core/import-analysis/checker-resolution-provider.ts) 的 locked routes 将 Oxc 设为 null。checker miss 保留 miss；runtime/resource 分类不能补一个 semantic target。此限制适用于该调用链，不能扩张成“Oxc 在 Limina 的所有分析中都不产生 evidence”。Astro pre-semantic eligibility 只跳过已知 virtual specifier、纯粹的显式非源码扩展名和 Oxc 识别出的 resource 目标；query 或 fragment 语法不是 skip authority，完整 specifier 会到达 Astro adapter，其结果照单接受。
 
-[PreparedDependencyFact](../../../packages/limina/src/core/framework-semantic/contracts.ts) 保留 occurrence、mapping、原始解析及结构 redirect 证据。Native 与框架共用同一需求判定，完整 observed miss 不同于观察不可用。Pending 观察产生 dependency-semantics failure，不能发布完整图。不同 provider 必须有可归因的 Checker 结构；路径和扩展不能制造 positive TypeEvidence。
+[PreparedDependencyFact](../../../packages/limina/src/core/framework-semantic/contracts.ts) 保留 occurrence、mapping、原始解析及结构 redirect 证据。Native 使用独立编译义务证明，框架保留自身适配器判定，完整 observed miss 不同于观察不可用。Pending 观察产生 dependency-semantics failure，不能发布完整图。不同 provider 必须有可归因的 Checker 结构；路径和扩展不能制造 positive TypeEvidence。
 
 [框架支持贡献](../../../packages/limina/src/core/framework-semantic/support-contributions.ts)在 Astro/Svelte 的完整依赖 preparation 中从各适配器现有 Program 和 Resolver 收集。物理非 Root 支持输入保留 direct-source 来源；生成代码继续要求既有源码映射。模块 import 和合法 path/types 指令可以贡献义务，但不会成为 Roots。已归属其他 Scope 的实现内部依赖由其自身分析。治理层排除外部支持目标，保留 workspace 目标；声明文件中的 JSDoc 示例不属于编译 occurrence。仅解析的 preparation 仍保持惰性。
 
@@ -83,7 +92,7 @@ TypeEvidence 保留为显式类型供给证明 API，请求时可使用 Symbol �
 
 | Family     | 实际语义通道                                                                                                                                                                           | 必须保留的限制                                                                                                                                                           |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| TypeScript | 物理 TypeScript 无 Program 收集及 consumer 级 bounded 兼容                                                                                                                             | collection 保留 roots 和合法支持贡献；支持输入不因此取得 Ownership                                                                                                       |
+| TypeScript | 编译器驱动的物理 Coverage-bounded Program                                                                                                                                              | collection 保留 roots 和合法支持贡献；支持输入不因此取得 Ownership                                                                                                       |
 | Vue        | 由 Vue source profile 区分 native channel 与 Vue host/service script；[resolution](../../../packages/limina/src/core/vue-semantic/resolution.ts)                                       | 需要匹配的 VueSemanticIdentity；普通 native TS occurrence 不必都通过 SFC source map。strict mapping 失败不能任意挑另一段映射                                             |
 | Astro      | [context](../../../packages/limina/src/core/astro-semantic/context.ts) 的 lazy language-service Program、Astro 类型环境和 generated snapshots；其他原生 channel 可走 TS                | root/config/toolchain 决定上下文；不能把能读取某邻接扩展等同于全部 framework checker 功能                                                                                |
 | Svelte     | leaf-owned svelte2tsx / compiler / TS，TS host 解析 generated script；[module-resolution](../../../packages/limina/src/core/svelte-semantic/module-resolution.ts) 保留 occurrence mode | 显式 `.svelte` 解析不传 occurrence mode；虚拟 `.d.svelte.ts` 只在实际源存在且没有真实 `.svelte.d.ts` 时映回 source；真实 declaration 优先，无第二套 package exports 解析 |
