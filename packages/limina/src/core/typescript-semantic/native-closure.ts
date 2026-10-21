@@ -8,8 +8,19 @@ import {
   type DeclarationClosure,
   projectDeclarationClosure,
 } from './declaration-closure';
+import { projectObservedNativeClosure } from './native-closure-projection';
 
 export function projectNativeDeclarationClosure(
+  context: TypeScriptSemanticDependencyContext,
+  project: TypeScriptSemanticProject,
+  managedOutputLookup?: ManagedOutputDeclarationLookup,
+): DeclarationClosure {
+  return context.nativeEvidence === undefined
+    ? projectLegacyNativeClosure(context, project, managedOutputLookup)
+    : projectObservedNativeClosure(context, project);
+}
+
+function projectLegacyNativeClosure(
   context: TypeScriptSemanticDependencyContext,
   project: TypeScriptSemanticProject,
   managedOutputLookup?: ManagedOutputDeclarationLookup,

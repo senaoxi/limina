@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import { nativeFactEvidenceSchema } from '../analysis-cache/native-obligation-schema';
+import {
+  nativeCoverageSchema,
+  nativeOriginSchema,
+} from '../analysis-cache/native-proof-schema';
 import { checker, stringMap, text, texts } from './cached-data-schema';
 export const authority: z.ZodType<unknown> = z.object({
   kind: z.literal('locked'),
@@ -69,6 +74,17 @@ const occurrence = z.object({
     .optional(),
 });
 const dependencyFact = z.object({
+  frameworkCandidate: z
+    .object({
+      origin: nativeOriginSchema,
+      coverage: nativeCoverageSchema,
+      observer: z.literal('oxc-physical-candidate-v1'),
+      family: z.enum(['vue', 'astro', 'svelte']),
+      owningConfigPath: text,
+      targetPath: text,
+    })
+    .optional(),
+  nativeEvidence: nativeFactEvidenceSchema.optional(),
   consumerConfigPath: text,
   importRecord: occurrence,
   physicalTargetPath: text.nullable(),
@@ -104,6 +120,8 @@ const typeConfig = z.object({
   semanticAuthority: pendingAuthority,
 });
 export const ownershipSchema: z.ZodType<unknown> = z.object({
+  dependencyFactPhase: z.enum(['selection', 'locked']).optional(),
+  ownershipSelectionFacts: z.array(dependencyFact).optional(),
   dependencyFacts: z.array(dependencyFact),
   entryOwnerByConfigPath: stringMap(checker),
   solutions: stringMap(solution),

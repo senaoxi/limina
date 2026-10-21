@@ -1,4 +1,5 @@
 import type { AnalysisReadDescriptor } from '#utils/analysis-input';
+import { readPhysicalFileIdentity } from '#utils/physical-file-identity';
 import { readFileSync } from 'node:fs';
 import { glob } from 'tinyglobby';
 import ts from 'typescript';
@@ -42,6 +43,8 @@ function readGlob(
   return glob(descriptor.patterns, options);
 }
 const readers = {
+  'file-identity': (descriptor: { path: string }) =>
+    readPhysicalFileIdentity(descriptor.path),
   directory: (descriptor: { path: string }) =>
     ts.sys.directoryExists(descriptor.path),
   directories: (descriptor: { path: string }) =>
@@ -62,6 +65,15 @@ export async function replayDiscoveryRead(
 ): Promise<unknown> {
   const read = readers[descriptor.kind] as (
     input: AnalysisReadDescriptor,
+  ) => unknown;
+  return read(descriptor);
+}
+
+export function replaySynchronousDiscoveryRead(
+  descriptor: Exclude<AnalysisReadDescriptor, { kind: 'glob' }>,
+): unknown {
+  const read = readers[descriptor.kind] as (
+    input: typeof descriptor,
   ) => unknown;
   return read(descriptor);
 }

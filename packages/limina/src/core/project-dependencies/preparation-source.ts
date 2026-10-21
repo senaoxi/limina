@@ -1,10 +1,7 @@
 import { createAstroSemanticProject, resolveVueSourceProfile } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createSvelteSemanticProject } from '../svelte-semantic/project';
-import {
-  createProjectSemanticCacheIdentity,
-  getProjectSemanticCacheIdentity,
-} from './cache';
+import { getProjectSemanticCacheIdentity } from './cache';
 import type {
   ProjectDependencyCollection,
   ProjectDependencyRequest,
@@ -89,9 +86,15 @@ export function createFileRequest(
   return {
     ...request,
     context,
-    projectSemanticCacheIdentity: isPreservesSemanticIdentity
-      ? getProjectSemanticCacheIdentity(request)
-      : createProjectSemanticCacheIdentity(context),
+    projectSemanticCacheIdentity: getProjectSemanticCacheIdentity(
+      isPreservesSemanticIdentity
+        ? request
+        : {
+            ...request,
+            context,
+            projectSemanticCacheIdentity: undefined,
+          },
+    ),
   };
 }
 

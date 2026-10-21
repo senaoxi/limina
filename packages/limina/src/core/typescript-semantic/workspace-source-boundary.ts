@@ -1,7 +1,9 @@
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync, realpathSync } from 'node:fs';
+import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import { FileOwnerLookup } from '../build-graph/file-owner-lookup';
+import { nativeFingerprint } from './native-file-identity';
 
 function getRealPath(fileName: string): string {
   return normalizeAbsolutePath(
@@ -14,6 +16,7 @@ function getPathIdentities(fileName: string): string[] {
 }
 
 export interface WorkspaceSourceBoundary {
+  readonly sourceConfigCoverage?: SourceConfigCoverageIndex;
   readonly identity: string;
   readonly governance?: {
     membership: FileOwnerLookup;
@@ -25,6 +28,7 @@ export interface WorkspaceSourceBoundary {
 export function createWorkspaceSourceBoundary(
   fileNames: Iterable<string>,
   governance?: WorkspaceSourceBoundary['governance'],
+  sourceConfigCoverage?: SourceConfigCoverageIndex,
 ): WorkspaceSourceBoundary {
   const pathIdentitiesByFileName = new Map<string, readonly string[]>();
   const getCachedPathIdentities = (fileName: string): readonly string[] => {
@@ -43,9 +47,11 @@ export function createWorkspaceSourceBoundary(
   }
   const sortedIdentities = [...identities].sort(compareCodeUnits);
   return {
+    sourceConfigCoverage,
     governance,
     identity: JSON.stringify({
       adapterVersion: 'workspace-source-boundary-v2',
+      coverage: coverageIdentity(sourceConfigCoverage),
       membership: sortedIdentities.map((file) => [
         file,
         governance?.membership.get(file) ?? [],
@@ -60,6 +66,10 @@ export function createWorkspaceSourceBoundary(
   };
 }
 
+function coverageIdentity(index: SourceConfigCoverageIndex | undefined) {
+  return index === undefined ? null : nativeFingerprint(index);
+}
+
 export function createWorkspaceSourceBoundaryFromProjects(
   projects: Iterable<{
     fileNames: readonly string[];
@@ -68,6 +78,7 @@ export function createWorkspaceSourceBoundaryFromProjects(
     packageRootDir?: string;
   }>,
   governance?: WorkspaceSourceBoundary['governance'],
+  sourceConfigCoverage?: SourceConfigCoverageIndex,
 ): WorkspaceSourceBoundary {
   const inputs = [...projects];
   const membership =
@@ -100,5 +111,6 @@ export function createWorkspaceSourceBoundaryFromProjects(
         );
       },
     },
+    sourceConfigCoverage,
   );
 }

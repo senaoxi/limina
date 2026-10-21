@@ -7,7 +7,10 @@ import type {
   SolutionOwnershipState,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
-import { lockSemanticAuthorityForEvidence } from './checker-semantic-authority';
+import {
+  getCheckerSemanticFamily,
+  lockSemanticAuthorityForEvidence,
+} from './checker-semantic-authority';
 import { createGeneratedGraphStructuredError } from './problems';
 
 function formatLocalConflict(options: {
@@ -56,6 +59,7 @@ function addAuthoritativeCheckerRequirement(options: {
 }): string | null {
   const current = options.state.authoritativeOwner;
   if (current !== undefined && current !== options.checker) {
+    markConflictingExplicitAuthority(options, current);
     return [
       'Checker ownership conflict:',
       `  config: ${toRelativePath(options.config.rootDir, options.state.configPath)}`,
@@ -85,6 +89,8 @@ export function addLocalCheckerRequirement(options: {
 }): string | null {
   addEvidenceIfMissing(options.state, options.evidence);
   const semanticProblem = lockSemanticAuthorityForEvidence(options);
+  if (semanticProblem !== null)
+    options.state.semanticAuthorityUnavailable = semanticProblem;
   return semanticProblem === null
     ? resolveLocalCheckerRequirement(options)
     : semanticProblem;
@@ -258,4 +264,16 @@ export function assertOwnershipPhase(options: {
 }): void {
   if (options.problems.length === 0) return;
   throw createGeneratedGraphStructuredError(options);
+}
+
+function markConflictingExplicitAuthority(
+  options: Parameters<typeof addAuthoritativeCheckerRequirement>[0],
+  current: CheckerName,
+): void {
+  if (
+    getCheckerSemanticFamily(current) !==
+    getCheckerSemanticFamily(options.checker)
+  )
+    options.state.semanticAuthorityUnavailable =
+      'conflicting-explicit-semantic-authority';
 }

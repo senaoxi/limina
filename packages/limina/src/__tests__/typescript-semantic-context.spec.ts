@@ -11,8 +11,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
-import { BoundedTypeScriptSemanticContext } from '../core/typescript-semantic/context';
+import {
+  createBoundedTypeScriptSemanticContext,
+  createWorkspaceSourceBoundary,
+} from '../core/typescript-semantic';
+import type { TypeScriptSemanticContext } from '../core/typescript-semantic/contracts';
+import { readFixtureSourceCoverage } from './helpers/native-coverage';
 
 const temporaryRoots: string[] = [];
 
@@ -31,34 +35,39 @@ async function createFixture(files: Record<string, string>): Promise<string> {
 }
 
 function createContext(options: {
-  admissionMode?: 'full-program' | 'root-facts';
+  unavailableCoverage?: boolean;
+  coverageConfigs?: string[];
   fileNames: string[];
   options: ts.CompilerOptions;
   projectReferences?: readonly ts.ProjectReference[];
   rootDir: string;
-  tsModule?: typeof ts;
   workspaceSourceFileNames?: string[];
-}): BoundedTypeScriptSemanticContext {
-  return new BoundedTypeScriptSemanticContext(
-    {
-      admissionMode: options.admissionMode,
-      configPath: path.join(options.rootDir, 'tsconfig.json'),
-      fileNames: options.fileNames,
-      options: {
-        configFilePath: path.join(options.rootDir, 'tsconfig.json'),
-        ...options.options,
-      },
-      projectReferences: options.projectReferences,
-      workspaceSourceBoundary: createWorkspaceSourceBoundary(
-        options.workspaceSourceFileNames ?? options.fileNames,
-      ),
+}): TypeScriptSemanticContext {
+  const configs = options.coverageConfigs ?? [
+    path.join(options.rootDir, 'tsconfig.json'),
+  ];
+  const coverage = options.unavailableCoverage
+    ? undefined
+    : readFixtureSourceCoverage(configs.map(normalizeAbsolutePath));
+  return createBoundedTypeScriptSemanticContext({
+    admissionMode: 'coverage-bounded',
+    configPath: path.join(options.rootDir, 'tsconfig.json'),
+    fileNames: options.fileNames,
+    options: {
+      configFilePath: path.join(options.rootDir, 'tsconfig.json'),
+      ...options.options,
     },
-    options.tsModule,
-  );
+    projectReferences: options.projectReferences,
+    workspaceSourceBoundary: createWorkspaceSourceBoundary(
+      options.workspaceSourceFileNames ?? options.fileNames,
+      undefined,
+      coverage,
+    ),
+  });
 }
 
 function findRecord(
-  context: BoundedTypeScriptSemanticContext,
+  context: TypeScriptSemanticContext,
   fileName: string,
   kind: string,
 ) {
@@ -116,7 +125,7 @@ describe('bounded TypeScript semantic context', () => {
     });
 
     try {
-      expect(context.project.fileNames).toContain(jsonFile);
+      expect(context.program.getRootFileNames()).toContain(jsonFile);
       expect(context.program.getSourceFile(jsonFile)).toBeDefined();
     } finally {
       context.dispose();
@@ -185,7 +194,7 @@ describe('bounded TypeScript semantic context', () => {
     }
   });
 
-  it('admits transitive declarations inside a resolved external package', async () => {
+  it('admits transitive external declarations only through explicitly selected Source Config Coverage', async () => {
     const rootDirectory = await createFixture({
       'node_modules/pkg/index.d.ts': "export * from './internal';\n",
       'node_modules/pkg/internal.d.ts':
@@ -197,6 +206,12 @@ describe('bounded TypeScript semantic context', () => {
       }),
       'src/index.ts': "import { internal } from 'pkg';\nvoid internal;\n",
       'tsconfig.json': '{}\n',
+      'tsconfig.coverage.json': JSON.stringify({
+        files: [
+          'node_modules/pkg/index.d.ts',
+          'node_modules/pkg/internal.d.ts',
+        ],
+      }),
     });
     const sourceFile = path.join(rootDirectory, 'src/index.ts');
     const internalFile = normalizeAbsolutePath(
@@ -209,6 +224,10 @@ describe('bounded TypeScript semantic context', () => {
         moduleResolution: ts.ModuleResolutionKind.Bundler,
       },
       rootDir: rootDirectory,
+      coverageConfigs: [
+        path.join(rootDirectory, 'tsconfig.json'),
+        path.join(rootDirectory, 'tsconfig.coverage.json'),
+      ],
     });
 
     try {
@@ -218,7 +237,7 @@ describe('bounded TypeScript semantic context', () => {
     }
   });
 
-  it('retains root dependency facts without admitting the dependency closure', async () => {
+  it('retains root dependency facts while an unavailable Coverage index stops the closure', async () => {
     const rootDirectory = await createFixture({
       'node_modules/pkg/index.d.ts': "export * from './internal';\n",
       'node_modules/pkg/internal.d.ts':
@@ -248,7 +267,7 @@ describe('bounded TypeScript semantic context', () => {
       path.join(rootDirectory, 'src/env.d.ts'),
     );
     const context = createContext({
-      admissionMode: 'root-facts',
+      unavailableCoverage: true,
       fileNames: [sourceFile],
       options: {
         module: ts.ModuleKind.ESNext,
@@ -284,7 +303,7 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it.each([false, true])(
-    'preserves external package admission with preserveSymlinks=%s',
+    'preserves explicitly covered external declarations across preserveSymlinks=%s',
     async (preserveSymlinks) => {
       const rootDirectory = await createFixture({
         'external/pkg/index.d.ts': 'export declare const value: true;\n',
@@ -405,7 +424,7 @@ describe('bounded TypeScript semantic context', () => {
     },
   );
 
-  it('preserves raw project-reference admission instead of treating it as ordinary closure', async () => {
+  it('preserves raw project references without granting their outputs a Coverage exemption', async () => {
     const rootDirectory = await createFixture({
       'A/src/index.ts': [
         "import { value } from '../../B/src/index';",
@@ -457,7 +476,7 @@ describe('bounded TypeScript semantic context', () => {
       ).toBeUndefined();
       const redirectedSourceFile =
         withReference.program.getSourceFile(referencedFile);
-      expect(redirectedSourceFile?.fileName).toBe(referencedDeclaration);
+      expect(redirectedSourceFile).toBeUndefined();
       expect(withReference.program.getSourceFile(referencedDeclaration)).toBe(
         redirectedSourceFile,
       );
@@ -560,23 +579,6 @@ describe('bounded TypeScript semantic context', () => {
       'types/configured/index.d.ts': 'declare const configured: true;\n',
       'types/foo/index.d.ts': 'declare const foo: true;\n',
     });
-    const moduleSpecifiers: string[] = [];
-    const typeSpecifiers: string[] = [];
-    const instrumentedTypeScript = {
-      ...ts,
-      resolveModuleName(
-        ...arguments_: Parameters<typeof ts.resolveModuleName>
-      ) {
-        moduleSpecifiers.push(arguments_[0]);
-        return ts.resolveModuleName(...arguments_);
-      },
-      resolveTypeReferenceDirective(
-        ...arguments_: Parameters<typeof ts.resolveTypeReferenceDirective>
-      ) {
-        typeSpecifiers.push(arguments_[0]);
-        return ts.resolveTypeReferenceDirective(...arguments_);
-      },
-    } as typeof ts;
     const sourceFile = path.join(rootDirectory, 'src/index.ts');
     const context = createContext({
       fileNames: [sourceFile],
@@ -587,26 +589,19 @@ describe('bounded TypeScript semantic context', () => {
         types: ['configured'],
       },
       rootDir: rootDirectory,
-      tsModule: instrumentedTypeScript,
     });
 
     try {
-      const environmentRecord = findRecord(
-        context,
-        sourceFile,
-        'environment-pragma',
-      );
       const pathRecord = findRecord(context, sourceFile, 'triple-slash-path');
       const typesRecord = findRecord(context, sourceFile, 'triple-slash-types');
-      const environmentResolution =
-        context.resolveImportRecord(environmentRecord);
       const pathResolution = context.resolveImportRecord(pathRecord);
       const typesResolution = context.resolveImportRecord(typesRecord);
 
-      expect(environmentResolution).toMatchObject({
-        channel: 'environment-pragma',
-        target: null,
-      });
+      expect(
+        context
+          .getImportRecords(sourceFile)
+          .some((record) => record.specifier === 'happy-dom'),
+      ).toBe(false);
       expect(pathResolution.channel).toBe('triple-slash-path');
       expect(pathResolution.target?.resolvedFileName).toBe(
         normalizeAbsolutePath(path.join(rootDirectory, 'src/env.d.ts')),
@@ -626,10 +621,16 @@ describe('bounded TypeScript semantic context', () => {
           path.join(rootDirectory, 'types/configured/index.d.ts'),
         ),
       ).toBeDefined();
-      expect(moduleSpecifiers).toEqual([]);
-      expect(typeSpecifiers).toEqual(
-        expect.arrayContaining(['configured', 'foo']),
-      );
+      expect(
+        context.nativeEvidence?.requests.filter(
+          (request) => request.channel === 'module',
+        ),
+      ).toEqual([]);
+      expect(
+        context.nativeEvidence?.requests
+          .filter((request) => request.channel === 'type-directive')
+          .map((request) => request.specifier),
+      ).toEqual(expect.arrayContaining(['configured', 'foo']));
     } finally {
       context.dispose();
     }
@@ -681,7 +682,7 @@ describe('bounded TypeScript semantic context', () => {
     }
   });
 
-  it('admits a TypeScript library replacement through the library channel', async () => {
+  it('observes a TypeScript library replacement without automatically loading the uncovered declaration', async () => {
     const rootDirectory = await createFixture({
       'node_modules/@typescript/lib-dom/index.d.ts':
         'interface CustomDocument { replacement: true; }\n',
@@ -709,7 +710,12 @@ describe('bounded TypeScript semantic context', () => {
     });
 
     try {
-      expect(context.program.getSourceFile(replacement)).toBeDefined();
+      expect(context.program.getSourceFile(replacement)).toBeUndefined();
+      expect(context.nativeEvidence?.resolutions).toContainEqual(
+        expect.objectContaining({
+          target: expect.objectContaining({ lexicalPath: replacement }),
+        }),
+      );
     } finally {
       context.dispose();
     }

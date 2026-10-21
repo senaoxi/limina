@@ -184,12 +184,10 @@ function addReachableExpectedTarget(options: ExpectedTargetOptions): void {
 export function addExpectedReferenceForTarget(
   options: ExpectedTargetOptions,
 ): void {
-  if (
-    shouldIgnoreExpectedTarget(options) ||
-    isAddDeniedTargetIfNeeded(options)
-  ) {
+  if (shouldIgnoreExpectedTarget(options)) {
     return;
   }
 
+  isAddDeniedTargetIfNeeded(options);
   addReachableExpectedTarget(options);
 }

@@ -19,6 +19,25 @@ export default defineDetectorFixture({
         filePath: 'packages/app/src/runtime.ts',
         task: 'graph:check',
       },
+      {
+        checkerName: 'tsc',
+        code: LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
+        filePath:
+          '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.runtime.dts.json',
+        locations: [
+          {
+            filePath:
+              '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.runtime.dts.json',
+            label: 'referencing project',
+          },
+          {
+            filePath:
+              '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.node.dts.json',
+            label: 'referenced project',
+          },
+        ],
+        task: 'graph:check',
+      },
     ],
     primaryCode: LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
   },

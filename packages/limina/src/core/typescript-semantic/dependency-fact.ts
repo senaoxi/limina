@@ -1,4 +1,7 @@
 import type ts from 'typescript';
+import type { NativeEvidenceOrigin } from '../../domain/analysis/native-context';
+import type { NativeCoverage } from '../../domain/analysis/native-coverage';
+import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { ProjectReferenceRedirect } from '../dependency-semantics';
 import {
   decideReferenceRequirement,
@@ -18,6 +21,12 @@ import { requestEligibility } from './request-eligibility';
 export type { DeclarationReferenceRequirement } from '../dependency-semantics';
 
 export interface NativeDependencyFact {
+  nativeEvidence?: {
+    requestId: string;
+    origin: NativeEvidenceOrigin;
+    coverage: NativeCoverage | null;
+    obligation: NativeCompilationObligation | null;
+  };
   eligibility?: { governance: boolean; expansion: boolean };
   admission: 'admitted' | 'excluded' | 'unresolved';
   referenceRequirement: DeclarationReferenceRequirement | null;

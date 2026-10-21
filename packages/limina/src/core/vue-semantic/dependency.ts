@@ -4,6 +4,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type { FrameworkSemanticCandidate } from '../framework-semantic/contracts';
 import { rangeIdentity } from '../framework-semantic/generated-dependencies';
+import { findSourceFileLiterals } from '../typescript-semantic/source-file-literals';
 import type { VueSemanticContext } from './context';
 
 export type SemanticDependencyEvidence = FrameworkSemanticCandidate<
@@ -59,18 +60,10 @@ function findLiteralsAtRanges(options: {
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
 }): ts.StringLiteralLike[] {
-  const literals: ts.StringLiteralLike[] = [];
-  const visit = (node: ts.Node): void => {
-    if (
-      options.tsModule.isStringLiteralLike(node) &&
-      isLiteralInMappedRanges({ ...options, literal: node })
-    ) {
-      literals.push(node);
-    }
-    options.tsModule.forEachChild(node, visit);
-  };
-  visit(options.sourceFile);
-  return literals;
+  return findSourceFileLiterals({
+    ...options,
+    matches: (literal) => isLiteralInMappedRanges({ ...options, literal }),
+  });
 }
 
 function getGeneratedScript(

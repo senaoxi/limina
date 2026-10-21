@@ -19,6 +19,7 @@ export function nativeContextId(project: TypeScriptSemanticProject): string {
     options: effectiveCompilerOptions(project.options),
     admission: project.admissionMode,
     binding: project.analysisBinding,
+    compilationScope: project.compilationObligationScope,
     references: project.projectReferences,
   });
 }

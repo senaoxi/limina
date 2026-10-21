@@ -7,7 +7,6 @@ import type {
   TypeScriptSemanticContext,
   TypeScriptSemanticDependencyContext,
 } from '../typescript-semantic';
-import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
 import { TYPE_EVIDENCE_METRIC_NAMES } from './metric-names';
 export { TYPE_EVIDENCE_METRIC_NAMES } from './metric-names';
 
@@ -124,7 +123,6 @@ function disposePrograms(programs: ProgramCache): void {
 
 export class TypeEvidenceGenerationCache {
   readonly #metrics: TypeEvidenceMetricsRecorder | undefined;
-
   #disposed: boolean = false;
 
   readonly ambientSymbolLookupCache: AmbientSymbolLookupCache = new WeakMap();
@@ -139,16 +137,13 @@ export class TypeEvidenceGenerationCache {
 
   readonly typeEvidenceProviderCache: TypeEvidenceProviderCache = new Map();
 
-  readonly syntaxFacts: SourceSyntaxFactsCache | undefined;
   readonly analysisCache: NativeAnalysisCache | undefined;
 
   constructor(
     metrics?: TypeEvidenceMetricsRecorder,
-    syntaxFacts?: SourceSyntaxFactsCache,
     analysisCache?: NativeAnalysisCache,
   ) {
     this.#metrics = metrics;
-    this.syntaxFacts = syntaxFacts;
     this.analysisCache = analysisCache;
 
     if (metrics) {
@@ -183,6 +178,10 @@ export class TypeEvidenceGenerationCache {
     if (this.#disposed) {
       throw new Error('Type evidence generation cache has been disposed.');
     }
+  }
+
+  get metrics(): TypeEvidenceMetricsRecorder | undefined {
+    return this.#metrics;
   }
 
   getOrCreateProvider(

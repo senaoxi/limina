@@ -1,8 +1,10 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import type ts from 'typescript';
+import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import type { ImportRecord } from '../import-analysis/records';
 import type { DeclarationEntry } from './declaration-closure';
 import type { NativeDependencyFact } from './dependency-fact';
+import type { NativeContextInventory } from './native-context-inventory';
 import type { WorkspaceSourceBoundary } from './workspace-source-boundary';
 
 export type TypeScriptSemanticChannel =
@@ -13,9 +15,13 @@ export type TypeScriptSemanticChannel =
   | 'triple-slash-path'
   | 'triple-slash-types';
 
-export type TypeScriptSemanticAdmissionMode = 'full-program' | 'root-facts';
+export type TypeScriptSemanticAdmissionMode =
+  | 'full-program'
+  | 'root-facts'
+  | 'coverage-bounded';
 
 export interface TypeScriptSemanticProject {
+  compilationObligationScope?: 'generated-declaration-project-v1';
   analysisBinding?: { phase: 'pending' | 'locked'; checker: string };
   virtualFiles?: ReadonlyMap<string, string>;
   admissionMode?: TypeScriptSemanticAdmissionMode;
@@ -41,6 +47,8 @@ export interface TypeScriptSemanticResolutionContext {
 
 export interface TypeScriptSemanticDependencyContext
   extends TypeScriptSemanticResolutionContext {
+  readonly nativeEvidence?: NativeEvidenceSnapshot;
+  readonly nativeInventory?: NativeContextInventory;
   getTypeEnvironmentEntries?(): readonly DeclarationEntry[];
   getContributionFileNames?(): readonly string[];
   getDependencyFact(importRecord: ImportRecord): NativeDependencyFact;

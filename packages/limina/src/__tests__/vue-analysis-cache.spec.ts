@@ -1,6 +1,7 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as snapshotCodec from '../core/analysis-cache/data-codec';
+import type { StoredGraphData } from '../core/build-graph/analysis-cache-schema';
 import {
   cacheMetric,
   createVueCacheFixture,
@@ -35,6 +36,17 @@ describe('persistent Vue and mixed graph analysis', () => {
     const f = fixture();
     const cold = f.run();
     expectCold(cold);
+    const stored = snapshotCodec.decodeData(
+      Object.values(f.snapshot().graphs)[0]!.data,
+    ) as StoredGraphData;
+    expect(stored.dependencyAnalysis.diagnostics).toEqual(
+      expect.arrayContaining([expect.stringContaining('./theme.css')]),
+    );
+    expect(stored.dependencyAnalysis.outcome?.governance).toEqual({
+      scope: 'generated-graph',
+      state: 'compliant',
+      diagnostics: [],
+    });
     const before = readFileSync(f.snapshotFile(), 'utf8');
     const warm = f.run();
     expectRestored(warm);

@@ -13,7 +13,6 @@ import {
 } from './generated-configs';
 import type { prepareGeneratedKnipPackageConfigs } from './generated-knip';
 import { assertDistinctGeneratedProjectPaths } from './generated/project-paths';
-import { proveOutputProjection } from './output-projection';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 
 type GeneratedKnipPreparation = ReturnType<
@@ -81,13 +80,6 @@ function writeOutputProjects(options: {
       config: options.config,
       project,
     });
-    (project.outputProjections ??= []).push(
-      proveOutputProjection({
-        project,
-        state: options.state,
-        cache: options.cache,
-      }),
-    );
     return writeGeneratedJson({
       context: options.state.writeContext,
       filePath: project.outputConfigPath,

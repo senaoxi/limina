@@ -1,7 +1,9 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
+import { LiminaStructuredError } from '../../check-reporting/errors';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import { assertCollectedExecution } from './analysis-failure';
 import { promoteDirectedCheckerDependencies } from './auto-checker-promotion';
 import { colorBuildCheckerComponents } from './checker-build-coloring';
 import {
@@ -29,6 +31,7 @@ import {
   validateFrozenSemanticAuthorities,
 } from './checker-semantic-authority';
 import { getUniqueConstraint } from './checker-solution-constraints';
+import { coreCollectionRun } from './core-collection-run';
 import { createGeneratedGraphStructuredError } from './problems';
 import type {
   CheckerSelectionResolution,
@@ -125,17 +128,15 @@ function runDependencyRequirements(options: {
   let isChanged = true;
   while (isChanged) {
     const pass = applyDependencyRequirementPass(options);
-    assertOwnershipPhase({
-      config: options.config,
-      fallback: 'Failed to resolve checker dependency requirements.',
-      problems: pass.problems,
-    });
+    options.discovery.collectionProblems!.push(...pass.problems);
     isChanged = pass.changed;
-    validateOwnershipConstraints({
-      config: options.config,
-      discovery: options.discovery,
-      phase: 'dependency requirement analysis',
-    });
+    deferOwnershipProblems(options.discovery, () =>
+      validateOwnershipConstraints({
+        config: options.config,
+        discovery: options.discovery,
+        phase: 'dependency requirement analysis',
+      }),
+    );
   }
 }
 
@@ -150,45 +151,55 @@ export async function resolveCheckerOwnership(options: {
   workspaceSourceConfigPaths: readonly string[];
 }): Promise<CheckerSelectionResolution> {
   const discovery = await discoverCheckerOwnership(options);
-  validateOwnershipConstraints({
-    config: options.config,
-    discovery,
-    phase: 'config evidence',
-  });
-  assertOwnershipPhase({
-    config: options.config,
-    fallback: 'Failed to resolve checker root-file evidence.',
-    problems: applyRootFileEvidence({
+  discovery.collectionProblems ??= [];
+  deferOwnershipProblems(discovery, () =>
+    validateOwnershipConstraints({
+      config: options.config,
+      discovery,
+      phase: 'config evidence',
+    }),
+  );
+  discovery.collectionProblems.push(
+    ...applyRootFileEvidence({
       config: options.config,
       plan: discovery.plan,
       projectByConfigPath: discovery.projectByConfigPath,
     }),
-  });
-  validateOwnershipConstraints({
-    config: options.config,
-    discovery,
-    phase: 'effective root evidence',
-  });
-  assertOwnershipPhase({
-    config: options.config,
-    fallback: 'Failed to collect checker dependency evidence.',
-    problems: await collectCheckerDependencyFacts({
+  );
+  deferOwnershipProblems(discovery, () =>
+    validateOwnershipConstraints({
+      config: options.config,
+      discovery,
+      phase: 'effective root evidence',
+    }),
+  );
+  discovery.collectionProblems.push(
+    ...(await collectCheckerDependencyFacts({
       config: options.config,
       discovery,
       importAnalysis: options.importAnalysisContext,
       projectDependencyCaches: options.projectDependencyCaches,
       projectConfigCache: options.projectConfigCache,
-    }),
-  });
+    })),
+  );
   runDependencyRequirements({ config: options.config, discovery });
+  discovery.collectionProblems.push(
+    ...freezeSemanticAuthorities({
+      config: options.config,
+      states: discovery.plan.typeConfigs
+        .values()
+        .filter((state) => state.semanticAuthorityUnavailable === undefined),
+    }),
+  );
+  await collectFrozenDependencyFacts(options, discovery);
+  if (options.projectDependencyCaches)
+    coreCollectionRun(options.projectDependencyCaches).closed = true;
   assertOwnershipPhase({
     config: options.config,
-    fallback: 'Failed to freeze checker semantic authorities.',
-    problems: freezeSemanticAuthorities({
-      config: options.config,
-      states: discovery.plan.typeConfigs.values(),
-    }),
+    fallback: 'Failed to resolve checker governance.',
+    problems: discovery.collectionProblems,
   });
+  assertCollectedExecution(options.projectDependencyCaches);
   runVuePromotion({ config: options.config, discovery });
   assertOwnershipPhase({
     config: options.config,
@@ -227,4 +238,33 @@ export async function resolveCheckerOwnership(options: {
       discovery,
     }),
   };
+}
+
+async function collectFrozenDependencyFacts(
+  options: Parameters<typeof resolveCheckerOwnership>[0],
+  discovery: CheckerOwnershipDiscovery,
+): Promise<void> {
+  // The phase changes the producer/context identity. Selection observations
+  // remain historical evidence; no pending object becomes a locked fact.
+  const problems = await collectCheckerDependencyFacts({
+    phase: 'locked',
+    config: options.config,
+    discovery,
+    importAnalysis: options.importAnalysisContext,
+    projectDependencyCaches: options.projectDependencyCaches,
+    projectConfigCache: options.projectConfigCache,
+  });
+  discovery.collectionProblems!.push(...problems);
+}
+
+function deferOwnershipProblems(
+  discovery: CheckerOwnershipDiscovery,
+  collect: () => void,
+): void {
+  try {
+    collect();
+  } catch (error) {
+    if (!(error instanceof LiminaStructuredError)) throw error;
+    discovery.collectionProblems!.push(error.message);
+  }
 }

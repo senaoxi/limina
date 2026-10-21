@@ -43,6 +43,7 @@ export function collectCheckerSourceConfigs(
   const collection = createEmptySourceConfigCollection(
     options.entryConfigPaths,
   );
+  collection.sourceDiscovery = options.sourceDiscovery;
   const context: CollectionContext = {
     ...options,
     collection,
@@ -52,7 +53,8 @@ export function collectCheckerSourceConfigs(
   for (const sourceConfigPath of collection.entryConfigPaths) {
     collectCheckerSourceConfigModules({ ...context, sourceConfigPath });
   }
-  assertCollectionSucceeded({ context });
+  if (options.onProblems) options.onProblems(context.problems);
+  else assertCollectionSucceeded({ context });
   collection.rootConfigPaths = [...collection.entryConfigPaths].filter(
     (sourcePath) => collection.buildModulesBySourcePath.has(sourcePath),
   );

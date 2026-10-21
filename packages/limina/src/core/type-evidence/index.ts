@@ -69,7 +69,6 @@ export class TypeEvidenceCore {
   constructor(options: TypeEvidenceCoreOptions) {
     this.cache = new TypeEvidenceGenerationCache(
       options.metrics,
-      options.syntaxFacts,
       options.analysisCache,
     );
     this.#affectedSourceConfigs =

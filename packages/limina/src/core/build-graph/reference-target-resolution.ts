@@ -6,6 +6,7 @@ import {
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { formatAmbiguousCanonicalOwner } from './canonical-owner-problems';
+import { nativeReferenceTarget } from './native-reference-target';
 import { getDtsProjectsForSourcePath } from './project-indexes';
 import { formatReferenceBoundaryProblem } from './reference-boundary';
 import type {
@@ -190,6 +191,16 @@ function resolveProviderTarget(options: {
 }
 
 export function createReferenceTarget(options: {
+  base: ReferenceImportOptions;
+  provider: ResolvedProvider;
+}): ReferenceTarget | null {
+  const nativeTarget = nativeReferenceTarget(options.base);
+  return nativeTarget === undefined
+    ? legacyReferenceTarget(options)
+    : nativeTarget;
+}
+
+function legacyReferenceTarget(options: {
   base: ReferenceImportOptions;
   provider: ResolvedProvider;
 }): ReferenceTarget | null {

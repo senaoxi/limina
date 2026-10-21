@@ -1,6 +1,5 @@
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import type { ProjectDependency } from '../core/project-dependencies/contracts';
-import { addDeniedDependencyImportProblem } from './import-access-denied';
 import { getResolvedWorkspacePackage } from './import-resolution-utilities';
 import {
   type ManagedResolution,
@@ -10,7 +9,6 @@ import type {
   ExpectedReferenceCollectionContext,
   GraphImportResolution,
 } from './reference-types';
-import { getDeniedDependencyRuleForResolvedPackage } from './workspace-import-findings';
 
 interface ImportResolutionOptions {
   context: ExpectedReferenceCollectionContext;
@@ -26,23 +24,6 @@ function createAllowedResolution(options: {
     ExpectedReferenceCollectionContext['workspaceLookup']['findPackageForSpecifier']
   >;
 }): GraphImportResolution | null {
-  const deniedRule = getDeniedDependencyRuleForResolvedPackage({
-    context: options.base.context,
-    project: options.base.project,
-    resolvedFilePath: options.managed.resolvedFilePath,
-  });
-  if (deniedRule) {
-    addDeniedDependencyImportProblem({
-      config: options.base.context.config,
-      findings: options.base.context.findings,
-      importRecord: options.base.importRecord,
-      project: options.base.project,
-      projectCheckerNamesByPath: options.base.context.projectCheckerNamesByPath,
-      rule: deniedRule,
-    });
-    return null;
-  }
-
   const targetWorkspacePackageForResolved = getResolvedWorkspacePackage(
     options.managed.resolvedFilePath,
     options.base.context.workspaceLookup,
@@ -65,6 +46,14 @@ function createAllowedResolution(options: {
 export function resolveImportForReferenceExpectation(
   options: ImportResolutionOptions,
 ): GraphImportResolution | null {
+  return options.projectDependency.referenceRequirement === null
+    ? null
+    : resolveImportForGraphGovernance(options);
+}
+
+export function resolveImportForGraphGovernance(
+  options: ImportResolutionOptions,
+): GraphImportResolution | null {
   const targetPackage = options.context.workspaceLookup.findPackageForSpecifier(
     options.importRecord.specifier,
   );
@@ -79,18 +68,9 @@ export function resolveImportForReferenceExpectation(
     return null;
   }
 
-  return createExpectedDeclarationResolution({
+  return createAllowedResolution({
     base: options,
     managed,
     targetPackage,
   });
-}
-
-function createExpectedDeclarationResolution(
-  options: Parameters<typeof createAllowedResolution>[0],
-): GraphImportResolution | null {
-  const resolution = createAllowedResolution(options);
-  return options.base.projectDependency.referenceRequirement === null
-    ? null
-    : resolution;
 }

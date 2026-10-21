@@ -1,5 +1,6 @@
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
+import { qualifyNativeEvidence } from '../../domain/analysis/native-context';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
   CheckerDependencyFact,
@@ -51,25 +52,6 @@ function getFrameworkDomain(
     : getPendingFrameworkConstraint(state);
 }
 
-function formatAmbiguousMembership(options: {
-  config: ResolvedLiminaInputs;
-  fact: CheckerDependencyFact;
-  owners: readonly string[];
-}): string {
-  return [
-    'Ambiguous governed source ownership:',
-    `  importing config: ${toRelativePath(options.config.rootDir, options.fact.consumerConfigPath)}`,
-    `  file: ${toRelativePath(options.config.rootDir, options.fact.importRecord.filePath)}:${options.fact.importRecord.line}`,
-    `  imported specifier: ${options.fact.importRecord.specifier}`,
-    `  physical target: ${toRelativePath(options.config.rootDir, options.fact.physicalTargetPath!)}`,
-    '  actual owning configs:',
-    ...options.owners.map(
-      (owner) => `    - ${toRelativePath(options.config.rootDir, owner)}`,
-    ),
-    '  reason: dependency coloring requires exactly one actual effective-file membership.',
-  ].join('\n');
-}
-
 function createRequirementEvidence(options: {
   checker: CheckerName;
   config: ResolvedLiminaInputs;
@@ -119,27 +101,30 @@ function resolveOwnedPhysicalTarget(options: {
   plan: CheckerOwnershipPlan;
   targetPath: string;
 }): RequirementResolution {
-  const owners = getMembershipOwners(options.membership, options.targetPath);
-  if (owners.length > 1) {
-    return {
-      problem: formatAmbiguousMembership({
-        config: options.config,
-        fact: options.fact,
-        owners,
-      }),
-    };
-  }
-  const targetConfigPath = owners[0];
-  return targetConfigPath === undefined
+  const candidate = options.fact.frameworkCandidate;
+  const baseline = options.fact.nativeEvidence?.origin.context;
+  return [candidate, baseline].includes(undefined)
     ? {}
-    : resolveFrameworkDomain({ ...options, targetConfigPath });
+    : qualifiedFrameworkRequirement(options, candidate!, baseline!);
 }
-
-function getMembershipOwners(
-  membership: FileOwnerLookup,
-  targetPath: string,
-): string[] {
-  return membership.get(targetPath) ?? [];
+function qualifiedFrameworkRequirement(
+  options: Parameters<typeof resolveOwnedPhysicalTarget>[0],
+  candidate: NonNullable<CheckerDependencyFact['frameworkCandidate']>,
+  baseline: NonNullable<
+    CheckerDependencyFact['nativeEvidence']
+  >['origin']['context'],
+): RequirementResolution {
+  const eligibility = qualifyNativeEvidence(
+    candidate.origin,
+    baseline,
+    'ownership-selection',
+  );
+  return eligibility.eligible && candidate.coverage.state === 'unique'
+    ? resolveFrameworkDomain({
+        ...options,
+        targetConfigPath: candidate.owningConfigPath,
+      })
+    : {};
 }
 
 function resolveRequirement(options: {

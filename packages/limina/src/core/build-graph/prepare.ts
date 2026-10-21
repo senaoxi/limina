@@ -1,20 +1,20 @@
-import { isSourceKnipEnabled, type ResolvedLiminaInputs } from '#config/runner';
-import { LiminaStructuredError } from '../../check-reporting/errors';
-import { TypeScriptConfigInputError } from '../../checker/project-base';
+import type { ResolvedLiminaInputs } from '#config/runner';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
-import { TsconfigInputError } from '../tsconfig/config-paths';
 import {
   type ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../workspace/validated-context';
 import {
-  captureGeneratedGraph,
   restoreCachedDependencyAnalysis,
   restoreGeneratedGraph,
 } from './analysis-cache';
+import {
+  createGraphPreparationError,
+  failedGraphAnalysis,
+} from './analysis-failure';
 import { resolveGeneratedGraphCheckerSelections } from './checker-resolution';
-import { finalizeGeneratedGraph } from './finalize-generated-graph';
-import { prepareGeneratedKnipPackageConfigs } from './generated-knip';
+import { beginCoreCollection } from './core-collection-run';
+import { finishPreparedGraph } from './finish-prepared-graph';
 import {
   analyzeAndCompleteGeneratedGraph,
   validateAndCompleteGeneratedGraph,
@@ -39,7 +39,6 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-import { writeGeneratedGraphConfigs } from './write-generated-graph';
 
 function getWorkspacePathIndex(options: {
   workspaceContext: ValidatedWorkspaceContext;
@@ -51,30 +50,10 @@ function getWorkspacePathIndex(options: {
   );
 }
 
-function prepareGeneratedKnip(options: {
-  checkers: Parameters<
-    typeof prepareGeneratedKnipPackageConfigs
-  >[0]['checkers'];
-  config: ResolvedLiminaInputs;
-  state: ReturnType<typeof createGeneratedGraphPreparationState>;
-  workspaceContext: ValidatedWorkspaceContext;
-}): ReturnType<typeof prepareGeneratedKnipPackageConfigs> {
-  if (!isSourceKnipEnabled(options.config)) {
-    return { configs: [], diagnostics: [] };
-  }
-  return prepareGeneratedKnipPackageConfigs({
-    checkers: options.checkers,
-    config: options.config,
-    configToOutputBuildByChecker: options.state.configToOutputBuildByChecker,
-    workspacePackages: options.workspaceContext.packages,
-    workspaceContext: options.workspaceContext,
-  });
-}
-
 async function prepareGraph(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
-  isAnalysisOnly = false,
+  isAnalysisOnly: boolean,
 ): Promise<GeneratedTsconfigGraphResult | DependencyAnalysisResult> {
   const workspaceContext = await getBuildGraphWorkspace({
     config,
@@ -99,6 +78,12 @@ async function prepareGraph(
     vueSemanticContexts: ownedVueSemanticContexts,
   });
   const projectDependencyCaches = dependencyCaches(options);
+  beginCoreCollection(projectDependencyCaches);
+  let analysis: DependencyAnalysisResult = {
+    complete: true,
+    facts: [],
+    diagnostics: [],
+  };
   try {
     const coloringStart = performance.now();
     const checkerResolution = await resolveGeneratedGraphCheckerSelections({
@@ -116,6 +101,7 @@ async function prepareGraph(
       config.rootDir,
       checkerResolution.ownershipPlan,
     );
+    analysis = state.dependencyAnalysis;
     prepareAndRegisterCheckers(
       {
         activatedRegions,
@@ -135,35 +121,22 @@ async function prepareGraph(
       projectConfigCache: options.projectConfigCache,
       state,
     });
-    if (isAnalysisOnly) return state.dependencyAnalysis;
-    const generatedKnip = prepareGeneratedKnip({
+    return await finishPreparedGraph({
+      isAnalysisOnly,
       checkers,
       config,
       state,
       workspaceContext,
-    });
-    await writeGeneratedGraphConfigs({
-      cache: projectDependencyCaches.analysisCache,
-      checkers,
-      config,
-      generatedKnip,
-      state,
-    });
-    const result = await finalizeGeneratedGraph({
-      artifactNamespace: options.artifactNamespace,
-      checkers,
-      config,
-      generatedKnip,
-      state,
-    });
-    capturePreparedGraph({
-      config,
       options,
-      workspaceContext,
-      result,
-      analysis: state.dependencyAnalysis,
+      projectDependencyCaches,
     });
-    return result;
+  } catch (error) {
+    const failed = failedGraphAnalysis(
+      error,
+      analysis,
+      projectDependencyCaches,
+    );
+    return returnFailedGraph(error, failed, isAnalysisOnly);
   } finally {
     disposeOwnedAstroSemanticContexts(ownedAstroSemanticContexts);
     disposeOwnedSvelteSemanticContexts(ownedSvelteSemanticContexts);
@@ -171,23 +144,6 @@ async function prepareGraph(
   }
 }
 
-function capturePreparedGraph(input: {
-  config: ResolvedLiminaInputs;
-  options: PrepareGeneratedTsconfigGraphOptions;
-  workspaceContext: ValidatedWorkspaceContext;
-  result: GeneratedTsconfigGraphResult;
-  analysis: DependencyAnalysisResult;
-}): void {
-  const cache = input.options.projectDependencyCaches?.analysisCache;
-  if (cache !== undefined)
-    captureGeneratedGraph({
-      cache,
-      config: input.config,
-      workspace: input.workspaceContext,
-      result: input.result,
-      analysis: input.analysis,
-    });
-}
 async function restorePreparedGraph(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
@@ -212,7 +168,11 @@ export async function prepareGeneratedTsconfigGraph(
   const current = { ...options, workspaceContext };
   return (
     (await restorePreparedGraph(config, current)) ??
-    ((await prepareGraph(config, current)) as GeneratedTsconfigGraphResult)
+    ((await prepareGraph(
+      config,
+      current,
+      false,
+    )) as GeneratedTsconfigGraphResult)
   );
 }
 
@@ -220,11 +180,19 @@ export async function analyzeProjectDependencies(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<DependencyAnalysisResult> {
+  const caches =
+    options.projectDependencyCaches ?? createProjectDependencyCaches();
   try {
-    return await analyzePreparedDependencies(config, options);
+    return await analyzePreparedDependencies(config, {
+      ...options,
+      projectDependencyCaches: caches,
+    });
   } catch (error) {
-    if (!isAnalysisInputError(error)) throw error;
-    return { complete: false, facts: [], diagnostics: [error.message] };
+    return failedGraphAnalysis(
+      error,
+      { complete: false, facts: [], diagnostics: [] },
+      caches,
+    );
   }
 }
 
@@ -255,14 +223,6 @@ function graphCompletion(isAnalysisOnly: boolean) {
     ? analyzeAndCompleteGeneratedGraph
     : validateAndCompleteGeneratedGraph;
 }
-function isAnalysisInputError(error: unknown): error is Error {
-  return [
-    LiminaStructuredError,
-    TypeScriptConfigInputError,
-    TsconfigInputError,
-  ].some((Type) => error instanceof Type);
-}
-
 function recordElapsed(
   caches: ReturnType<typeof dependencyCaches>,
   key: string,
@@ -295,4 +255,13 @@ function completePreparedGraph(
   graphCompletion(isAnalysisOnly)(options);
   if (options.projectDependencyCaches !== undefined)
     recordElapsed(options.projectDependencyCaches, 'graphValidationMs', start);
+}
+
+function returnFailedGraph(
+  error: unknown,
+  analysis: DependencyAnalysisResult,
+  isAnalysisOnly: boolean,
+): DependencyAnalysisResult {
+  if (isAnalysisOnly) return analysis;
+  throw createGraphPreparationError(error, analysis);
 }

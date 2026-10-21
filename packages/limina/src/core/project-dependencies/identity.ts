@@ -7,7 +7,7 @@ import type {
 } from './contracts';
 
 export const PROJECT_DEPENDENCY_ADAPTER_VERSION =
-  'service-script-facts-v7-declaration-closure';
+  'native-and-framework-facts-v8-coverage';
 
 const workspaceBoundarySnapshotIdentities = new WeakMap<
   ProjectSemanticContext['workspaceSourceBoundary'],
@@ -85,6 +85,7 @@ export function getProjectSemanticCacheIdentity(
     JSON.stringify([
       createProjectSemanticCacheIdentity(request.context),
       managedOutputLookupIdentity(request.managedOutputLookup),
+      request.purpose ?? 'compiler-relations',
     ])
   );
 }

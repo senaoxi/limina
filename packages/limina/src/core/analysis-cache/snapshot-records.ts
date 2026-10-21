@@ -66,7 +66,7 @@ export function emptySnapshot(
 ): AnalysisSnapshot {
   return {
     header: {
-      schema: 8,
+      schema: 10,
       implementation: ANALYSIS_ADAPTER,
       identity,
       configVersion: configVersion ?? null,
@@ -106,7 +106,7 @@ export function matchingConfigSnapshot(
     configVersion !== undefined,
     previous.header.configVersion === configVersion,
     previous.header.identity === identity,
-    previous.header.schema === 8,
+    previous.header.schema === 10,
     hasCompleteConfigModules(previous),
     previous.header.implementation === ANALYSIS_ADAPTER,
   ];
@@ -116,7 +116,7 @@ export function matchingConfigSnapshot(
 export function newSnapshot(cache: NativeAnalysisCache): AnalysisSnapshot {
   return cloneAnalysisSnapshot({
     header: {
-      schema: 8,
+      schema: 10,
       implementation: ANALYSIS_ADAPTER,
       identity: cache.identity,
       configVersion: cache.configVersion ?? null,

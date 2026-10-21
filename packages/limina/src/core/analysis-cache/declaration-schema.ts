@@ -14,14 +14,16 @@ export const requestEligibilitySchema: z.ZodType<{
   governance: boolean;
   expansion: boolean;
 }> = z.object({ governance: z.boolean(), expansion: z.boolean() });
-export const declarationEntrySchema: z.ZodType<DeclarationEntry> = z
-  .object({
+export const declarationEntryDataSchema: z.ZodType<DeclarationEntry> = z.object(
+  {
     kind: z.enum(['root', 'type-environment', 'framework-environment']),
     fileName: z.string(),
     name: z.string().optional(),
     origin: resolutionOriginSchema.optional(),
-  })
-  .refine(
+  },
+);
+export const declarationEntrySchema: z.ZodType<DeclarationEntry> =
+  declarationEntryDataSchema.refine(
     (entry) =>
       entry.kind === 'root' ||
       hasDeclarationReceipt({

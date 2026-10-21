@@ -20,8 +20,11 @@ import type {
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import type { FileOwnerLookup } from './file-owner-lookup';
+import { collectIndependentCoreWork } from './independent-core-work';
+import { prepareLockedSemanticProject } from './locked-semantic-project';
 
 interface FactCollectionOptions {
+  phase?: 'selection' | 'locked';
   config: ResolvedLiminaInputs;
   core: TypeEvidenceCore;
   discovery: CheckerOwnershipDiscovery;
@@ -33,6 +36,7 @@ interface FactCollectionOptions {
 }
 
 interface ProjectFacts {
+  failures?: string[];
   facts: CheckerDependencyFact[];
   problems: string[];
 }
@@ -52,6 +56,9 @@ function collectProjectFacts(options: {
   if (state.semanticAuthority.kind === 'pending') {
     return collectPendingOwnershipEvidence({
       ...options.base,
+      baseline: options.caches.nativeSourceContexts?.get(
+        options.project.configPath,
+      ),
       cache: options.caches.pendingOwnershipEvidenceCache,
       project: options.project,
       state,
@@ -61,7 +68,12 @@ function collectProjectFacts(options: {
     caches: options.caches,
     config: options.base.config,
     importAnalysis: options.base.importAnalysis,
-    project: options.project,
+    project: prepareLockedSemanticProject({
+      project: options.project,
+      authority: state.semanticAuthority,
+      projectConfigCache: options.base.projectConfigCache,
+      rootDir: options.base.config.rootDir,
+    }),
     state: state as TypeConfigOwnershipState & {
       semanticAuthority: Extract<
         TypeConfigOwnershipState['semanticAuthority'],
@@ -73,6 +85,7 @@ function collectProjectFacts(options: {
 }
 
 function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
+  const failures: string[] = [];
   const facts: CheckerDependencyFact[] = [];
   const problems: string[] = [];
   const projects = options.discovery.projectByConfigPath
@@ -81,7 +94,12 @@ function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
     .sort((left, right) => compareCodeUnits(left.configPath, right.configPath));
   const caches = options.projectDependencyCaches;
   for (const project of projects) {
-    const collected = collectProjectFacts({ base: options, caches, project });
+    const collected = collectIndependentProjectFacts({
+      base: options,
+      caches,
+      project,
+    });
+    failures.push(...(collected.failures ?? []));
     facts.push(...collected.facts);
     problems.push(...collected.problems);
   }
@@ -92,10 +110,23 @@ function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
       rootDir: options.config.rootDir,
     }),
   );
-  return { facts, problems };
+  return { facts, problems, failures };
+}
+
+function collectIndependentProjectFacts(
+  input: Parameters<typeof collectProjectFacts>[0],
+): ProjectFacts {
+  return collectIndependentCoreWork({
+    caches: input.caches,
+    state: input.base.discovery.plan.typeConfigs.get(input.project.configPath)!,
+    phase: input.base.phase ?? 'selection',
+    membership: input.base.membership,
+    collect: () => collectProjectFacts(input),
+  });
 }
 
 export async function collectCheckerDependencyFacts(options: {
+  phase?: 'selection' | 'locked';
   config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
@@ -115,12 +146,13 @@ export async function collectCheckerDependencyFacts(options: {
             null,
         }
       : undefined,
+    options.discovery.sourceConfigCoverage,
   );
   const caches =
     options.projectDependencyCaches ?? createProjectDependencyCaches();
+  caches.sourceConfigCoverage = options.discovery.sourceConfigCoverage;
   const core = new TypeEvidenceCore({
     analysisCache: caches.analysisCache,
-    syntaxFacts: caches.syntaxFacts,
     generation: getGeneration(options.projectConfigCache),
     importAnalysis: options.importAnalysis,
     workspaceSourceBoundaryProvider: () => workspaceSourceBoundary,
@@ -133,9 +165,21 @@ export async function collectCheckerDependencyFacts(options: {
       projectDependencyCaches: caches,
       workspaceSourceBoundary,
     });
-    options.discovery.plan.dependencyFacts = collected.facts;
+    retainFactPhase(options, collected.facts);
     return collected.problems;
   } finally {
     core.dispose();
   }
+}
+
+function retainFactPhase(
+  options: Parameters<typeof collectCheckerDependencyFacts>[0],
+  facts: CheckerDependencyFact[],
+): void {
+  const plan = options.discovery.plan;
+  if (options.phase === 'locked') {
+    plan.ownershipSelectionFacts = structuredClone(plan.dependencyFacts);
+  }
+  plan.dependencyFacts = facts;
+  plan.dependencyFactPhase = options.phase ?? 'selection';
 }

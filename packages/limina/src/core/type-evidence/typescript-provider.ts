@@ -28,9 +28,8 @@ function createProgramHandle(
   cache: TypeEvidenceGenerationCache,
 ): TypeEvidenceProgramHandle {
   const context = createBoundedTypeScriptSemanticContext(project, {
-    syntaxFacts: cache.syntaxFacts,
     analysisCache: cache.analysisCache,
-    getAmbientEvidence: memoizedNativeAmbientEvidence(cache),
+    metrics: cache.metrics,
   });
   let isDisposed = false;
 

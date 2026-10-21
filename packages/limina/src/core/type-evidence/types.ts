@@ -5,7 +5,6 @@ import type {
   TypeScriptSemanticProject,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
-import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
 import type { VueSemanticContextManager } from '../vue-semantic/context';
 import type { TypeEvidenceMetricsRecorder } from './cache';
 import type { ResolveImportEvidenceOptions } from './resolution';
@@ -20,7 +19,6 @@ export type WorkspaceBoundedImportEvidenceOptions = Omit<
 
 export interface TypeEvidenceCoreOptions {
   analysisCache?: NativeAnalysisCache;
-  syntaxFacts?: SourceSyntaxFactsCache;
   generation: number;
   importAnalysis: ImportAnalysisContext;
   metrics?: TypeEvidenceMetricsRecorder;

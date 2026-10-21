@@ -5,11 +5,12 @@ import { TypeEvidenceCore } from '../core/type-evidence';
 import { createAmbientTypeEvidence } from '../core/type-evidence/ambient-symbol';
 import type { ResolveImportEvidenceOptions } from '../core/type-evidence/resolution';
 import {
-  BoundedTypeScriptSemanticContext,
+  createBoundedTypeScriptSemanticContext,
   createTypeScriptSemanticDependencySnapshot,
   createWorkspaceSourceBoundary,
 } from '../core/typescript-semantic';
 import { collectNativeProviderEvidence } from '../core/typescript-semantic/provider-evidence';
+import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -53,6 +54,7 @@ async function createCase(options: {
       : options.declaration
         ? 'export declare const value: 1;'
         : 'export const value = 1;',
+    'tsconfig.target.json': JSON.stringify({ files: [target] }),
   });
   cleanups.push(fixture.cleanup);
   return { fixture, target };
@@ -61,12 +63,17 @@ async function createCase(options: {
 function evidenceCore(
   fixture: Awaited<ReturnType<typeof createSemanticRepairFixture>>,
   target: string,
+  extraConfigs: string[] = [],
 ) {
   const parsed = fixture.parse();
-  const boundary = createWorkspaceSourceBoundary([
-    ...parsed.fileNames,
-    fixture.path(target),
-  ]);
+  const boundary = createWorkspaceSourceBoundary(
+    [...parsed.fileNames, fixture.path(target)],
+    undefined,
+    readFixtureSourceCoverage([
+      fixture.path('tsconfig.json'),
+      ...extraConfigs.map((name) => fixture.path(name)),
+    ]),
+  );
   const measurements: { name: string; count?: number }[] = [];
   const core = new TypeEvidenceCore({
     generation: 1,
@@ -118,7 +125,7 @@ describe('bounded native provider evidence', () => {
       ambient: false,
       admitted: true,
       type: 'checker-source',
-      relation: 'source-semantic',
+      relation: null,
     },
     {
       specifier: 'mapped#fragment',
@@ -126,7 +133,7 @@ describe('bounded native provider evidence', () => {
       ambient: false,
       admitted: false,
       type: 'missing',
-      relation: 'source-semantic',
+      relation: null,
     },
     {
       specifier: 'mapped?raw',
@@ -134,7 +141,7 @@ describe('bounded native provider evidence', () => {
       ambient: true,
       admitted: false,
       type: 'ambient',
-      relation: 'source-semantic',
+      relation: null,
     },
     {
       specifier: 'mapped?raw',
@@ -198,6 +205,7 @@ describe('bounded native provider evidence', () => {
     const { core, context, project, record, measurements } = evidenceCore(
       fixture,
       target,
+      ['tsconfig.target.json'],
     );
     try {
       const fact = context.getDependencyFact(record);
@@ -210,9 +218,7 @@ describe('bounded native provider evidence', () => {
       expect(explicitProviderEvidence(context, record).kind).toBe(
         options.expected,
       );
-      expect(fact.referenceRequirement?.kind ?? null).toBe(
-        options.declaration ? null : 'source-semantic',
-      );
+      expect(fact.referenceRequirement).toBeNull();
       const symbol = context.getSymbolAtImportRecord(record);
       if (options.expected === 'missing') expect(symbol).toBeUndefined();
       if (
@@ -271,7 +277,7 @@ describe('bounded native provider evidence', () => {
   });
 
   it.each(['early', 'late', 'jsx'] as const)(
-    'keeps provider observations stable when support admission arrives through %s input',
+    'keeps non-root implementations outside the frontier even when %s declarations request them',
     async (arrival) => {
       const isJsx = arrival === 'jsx';
       const main = isJsx ? 'main.tsx' : 'main.ts';
@@ -292,46 +298,48 @@ describe('bounded native provider evidence', () => {
         'runtime.d.ts':
           '/// <reference path="./foreign.ts" />\nexport declare const jsx: any; export namespace JSX { interface IntrinsicElements { div: any } }',
         'foreign.ts': 'export const value = 1;',
+        'tsconfig.support.json': JSON.stringify({
+          files: ['foreign.ts', 'runtime.d.ts'],
+        }),
       });
       cleanups.push(fixture.cleanup);
       const parsed = fixture.parse();
-      let programs = 0;
-      const context = new BoundedTypeScriptSemanticContext(
-        {
-          configPath: fixture.path('tsconfig.json'),
-          fileNames: parsed.fileNames,
-          options: parsed.options,
-          workspaceSourceBoundary: createWorkspaceSourceBoundary([
-            ...parsed.fileNames,
-            fixture.path('foreign.ts'),
-          ]),
-        },
-        {
-          ...ts,
-          createProgram: (
-            ...arguments_: Parameters<typeof ts.createProgram>
-          ) => {
-            programs += 1;
-            return ts.createProgram(...arguments_);
-          },
-        } as typeof ts,
-      );
+      const coverage = readFixtureSourceCoverage([
+        fixture.path('tsconfig.json'),
+        fixture.path('tsconfig.support.json'),
+      ]);
+      const context = createBoundedTypeScriptSemanticContext({
+        configPath: fixture.path('tsconfig.json'),
+        fileNames: parsed.fileNames,
+        options: parsed.options,
+        workspaceSourceBoundary: createWorkspaceSourceBoundary(
+          [...parsed.fileNames, fixture.path('foreign.ts')],
+          undefined,
+          coverage,
+        ),
+      });
       try {
         const record = context
           .getImportRecords(fixture.path(main))
           .find((item) => item.specifier === './foreign')!;
         expect(context.getDependencyFact(record)).toMatchObject({
-          admission: 'admitted',
-          referenceRequirement: { kind: 'source-semantic' },
+          admission: 'excluded',
+          referenceRequirement: null,
         });
         expect(explicitProviderEvidence(context, record)).toEqual({
-          kind: 'checker-source',
-          filePath: fixture.path('foreign.ts'),
+          kind: 'missing',
         });
         expect(context.program.getRootFileNames()).not.toContain(
           fixture.path('foreign.ts'),
         );
-        expect(programs).toBe(isJsx ? 2 : 1);
+        expect(
+          context.getSourceFile(fixture.path('foreign.ts')),
+        ).toBeUndefined();
+        const oracle = ts.createProgram({
+          rootNames: parsed.fileNames,
+          options: parsed.options,
+        });
+        expect(oracle.getSourceFile(fixture.path('foreign.ts'))).toBeDefined();
       } finally {
         context.dispose();
       }
@@ -339,7 +347,7 @@ describe('bounded native provider evidence', () => {
   );
 
   it.each([false, true])(
-    'uses the real Project Reference provider with built=%s',
+    'retains real Project Reference mapping without exempting its uncovered output with built=%s',
     async (built) => {
       const fixture = await createSemanticRepairFixture({
         'tsconfig.json': JSON.stringify({
@@ -383,14 +391,9 @@ describe('bounded native provider evidence', () => {
           fixture.path('b/value.ts'),
         );
         expect(fact.admission).toBe('excluded');
-        expect(explicitProviderEvidence(context, record)).toEqual(
-          built
-            ? {
-                kind: 'concrete-declaration',
-                filePath: fixture.path('b/out/value.d.ts'),
-              }
-            : { kind: 'missing' },
-        );
+        expect(explicitProviderEvidence(context, record)).toEqual({
+          kind: 'missing',
+        });
         expect(fact.referenceRequirement).toBeNull();
         expect(fact.redirect).toEqual({
           originalTarget: fixture.path('b/value.ts'),
@@ -398,17 +401,23 @@ describe('bounded native provider evidence', () => {
           referenceConfig: fixture.path('b/tsconfig.json'),
           availability: built ? 'present' : 'missing',
         });
-        if (built) {
-          const provider = context.getSourceFile(fixture.path('b/value.ts'))!;
-          expect(provider.fileName).toBe(fixture.path('b/out/value.d.ts'));
+        expect(
+          context.getSourceFile(fixture.path('b/value.ts')),
+        ).toBeUndefined();
+        expect(context.getSymbolAtImportRecord(record)).toBeUndefined();
+        const oracle = ts.createProgram({
+          rootNames: project.fileNames,
+          options: project.options,
+          projectReferences: project.projectReferences,
+        });
+        if (built)
           expect(
-            context.getSymbolAtImportRecord(record)?.declarations,
-          ).toContain(provider);
-        } else {
-          expect(context.getSymbolAtImportRecord(record)).toBeUndefined();
+            oracle.getSourceFile(fixture.path('b/value.ts'))?.fileName,
+          ).toBe(fixture.path('b/out/value.d.ts'));
+        else {
           expect(
             ts
-              .getPreEmitDiagnostics(context.program)
+              .getPreEmitDiagnostics(oracle)
               .map((diagnostic) => diagnostic.code),
           ).toContain(6305);
         }
@@ -421,12 +430,7 @@ describe('bounded native provider evidence', () => {
             managedOutputLookup: { resolve },
           }).type,
         ).toEqual(explicitProviderEvidence(context, record));
-        if (built)
-          expect(resolve).toHaveBeenCalledWith(
-            fixture.path('b/out/value.d.ts'),
-            'tsc',
-          );
-        else expect(resolve).not.toHaveBeenCalled();
+        expect(resolve).not.toHaveBeenCalled();
       } finally {
         core.dispose();
       }

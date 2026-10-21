@@ -14,14 +14,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { AnalysisInputs } from '../core/analysis-cache/inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
-import { SemanticState } from '../core/analysis-cache/semantic-state';
 import { cloneAnalysisSnapshot } from '../core/analysis-cache/snapshot-receipts';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
+import { collectSourceConfigCoverage } from '../core/build-graph/source-config-coverage';
 import { createImportAnalysisContext } from '../core/import-analysis/runner';
 import { createProjectDependencyCaches } from '../core/project-dependencies/cache';
 import { collectProjectDependencies } from '../core/project-dependencies/provider';
-import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic';
+import { createTypeScriptDependencyContext } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
+import type { NativeDependencyFact } from '../core/typescript-semantic/dependency-fact';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
 import {
   readStoredAnalysisSnapshot,
@@ -61,25 +62,91 @@ function analyze(
       : parseAnalysisSnapshot(diskSnapshot(previous), 'fixture');
   if (previous !== undefined) expect(snapshot).toBeDefined();
   const cache = new NativeAnalysisCache('fixture', snapshot, 'fixture-config');
-  const context = createBoundedTypeScriptSemanticContext(project, {
-    analysisCache: cache,
-  });
+  const bounded = withCoverage(project);
+  const context =
+    cache.restoreContext(bounded) ??
+    createTypeScriptDependencyContext(bounded, { analysisCache: cache });
   const facts = project.fileNames.flatMap((file) =>
     context
       .getImportRecords(file)
       .map((record) => ({ record, fact: context.getDependencyFact(record) })),
   );
-  const members = context.program.getSourceFiles().map((file) => file.fileName);
-  const diagnostics = ts
-    .getPreEmitDiagnostics(context.program)
-    .map((diagnostic) => ({
-      code: diagnostic.code,
-      file: diagnostic.file?.fileName,
-      start: diagnostic.start,
-      message: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
-    }));
-  context.dispose();
-  return { cache, facts, members, diagnostics };
+  const members = context.getContributionFileNames!();
+  const evidence = context.nativeEvidence!;
+  expect(evidence.failures).toEqual([]);
+  if ('dispose' in context && typeof context.dispose === 'function')
+    context.dispose();
+  return { cache, facts, members, evidence };
+}
+
+// This fixture's selected U contains its actual source config. Members come
+// from TypeScript config parsing, independently of the tested consumer roots.
+function withCoverage(
+  input: TypeScriptSemanticProject,
+): TypeScriptSemanticProject {
+  const coverage = collectSourceConfigCoverage({
+    universe: {
+      id: 'fixture',
+      revision: 'fixture',
+      scopeFingerprint: 'fixture',
+      inputVersion: 'fixture',
+      selectionEvidenceId: 'fixture-selected-config',
+      sourceConfigIds: [input.configPath],
+      discovery: 'closed',
+    },
+    parse: (config) =>
+      ts.getParsedCommandLineOfConfigFile(
+        config,
+        {},
+        {
+          ...ts.sys,
+          onUnRecoverableConfigFileDiagnostic: (error) => {
+            throw new Error(String(error.messageText));
+          },
+        },
+      ),
+  });
+  return {
+    ...input,
+    admissionMode: 'coverage-bounded',
+    workspaceSourceBoundary: createWorkspaceSourceBoundary(
+      input.fileNames,
+      undefined,
+      coverage,
+    ),
+  };
+}
+
+// Compare meaning across independently collected contexts. Exact identities
+// are asserted separately for restore, phase changes and source invalidation.
+function factMeaning(fact: NativeDependencyFact) {
+  const evidence = fact.nativeEvidence!;
+  const obligation = evidence.obligation;
+  const { identity: _identity, ...resolution } = fact.resolution;
+  return {
+    resolution,
+    admission: fact.admission,
+    redirect: fact.redirect,
+    referenceRequirement: fact.referenceRequirement,
+    coverage: evidence.coverage,
+    inputs: evidence.origin.context.inputs,
+    authority: evidence.origin.context.authority,
+    obligation:
+      obligation === null
+        ? null
+        : {
+            target: obligation.targetConfigId,
+            existence: obligation.existence.state,
+            rule:
+              obligation.existence.state === 'unknown'
+                ? obligation.existence.gapIds.map((id) =>
+                    id === evidence.requestId ? 'request' : id,
+                  )
+                : obligation.existence.proof.ruleOrObservation,
+            structure: obligation.structure.state,
+            artifact: obligation.artifact.state,
+          },
+  };
 }
 
 function project(
@@ -104,9 +171,15 @@ function expectCold(
   input: TypeScriptSemanticProject,
 ) {
   const cold = analyze(input);
-  expect(result.facts).toEqual(cold.facts);
+  expect(
+    result.facts.map(({ record, fact }) => ({
+      record,
+      fact: factMeaning(fact),
+    })),
+  ).toEqual(
+    cold.facts.map(({ record, fact }) => ({ record, fact: factMeaning(fact) })),
+  );
   expect(result.members).toEqual(cold.members);
-  expect(result.diagnostics).toEqual(cold.diagnostics);
 }
 
 describe('persistent native analysis facts', () => {
@@ -138,7 +211,7 @@ describe('persistent native analysis facts', () => {
     const collect = (cache: NativeAnalysisCache) =>
       collectProjectDependencies({
         context,
-        caches: createProjectDependencyCaches(undefined, cache),
+        caches: createProjectDependencyCaches(cache),
         importAnalysis: createImportAnalysisContext(),
       });
     let cache = new NativeAnalysisCache('fixture', undefined, 'fixture-config');
@@ -155,11 +228,15 @@ describe('persistent native analysis facts', () => {
         'fixture-config',
       );
       result = collect(cache);
-      expect(result).toEqual(
-        collect(
-          new NativeAnalysisCache('fixture', undefined, 'fixture-config'),
-        ),
+      const cold = collect(
+        new NativeAnalysisCache('fixture', undefined, 'fixture-config'),
       );
+      expect(result.observations.map((item) => item.evidence.runtime)).toEqual(
+        cold.observations.map((item) => item.evidence.runtime),
+      );
+      expect(
+        result.dependencies.map((item) => factMeaning(item.nativeFact!)),
+      ).toEqual(cold.dependencies.map((item) => factMeaning(item.nativeFact!)));
       expect(result.observations[0]?.evidence.runtime?.runtime.kind).toBe(
         isPresent ? 'file' : 'missing',
       );
@@ -218,7 +295,7 @@ describe('persistent native analysis facts', () => {
     for (const importer of Object.values(first.cache.importers))
       importer.coverage = 'unknown';
     const next = analyze(input, first.cache);
-    expect(next.cache.metrics.factQueries).toBe(1);
+    expect(next.cache.metrics.semanticPrograms).toBe(1);
     expectCold(next, input);
   });
 
@@ -246,7 +323,7 @@ describe('persistent native analysis facts', () => {
     );
   });
 
-  it('reuses unrelated importer facts through change, undo and change again', () => {
+  it('restores a context and reacquires facts through change, undo and change again', () => {
     const { file, write } = fixture();
     write('a.ts', "import { x } from './value'; export const a = x;");
     write('b.ts', "import { x } from './value'; export const b = x;");
@@ -266,8 +343,8 @@ describe('persistent native analysis facts', () => {
       );
       result = analyze(input, result.cache);
       expectCold(result, input);
-      expect(result.cache.metrics.factHits).toBe(1);
-      expect(result.cache.metrics.factQueries).toBe(1);
+      expect(result.cache.metrics.restoredContexts ?? 0).toBe(0);
+      expect(result.cache.metrics.semanticPrograms).toBe(1);
     }
   });
 
@@ -283,8 +360,8 @@ describe('persistent native analysis facts', () => {
     write('foo.ts', 'export const x = 2;');
     utimesSync(file('foo.ts'), 1, 1);
     result = analyze(input, result.cache);
-    expect(result.cache.invalidation.resolutionDirty.size).toBeGreaterThan(0);
-    expect(result.cache.invalidation.semanticDirty.size).toBeGreaterThan(0);
+    expect(result.cache.metrics.semanticPrograms).toBe(1);
+    expect(result.cache.metrics.restoredContexts ?? 0).toBe(0);
     expectCold(result, input);
     expect(result.facts[0]!.fact.resolution.target?.resolvedFileName).toBe(
       file('foo.ts'),
@@ -332,7 +409,7 @@ describe('persistent native analysis facts', () => {
 });
 
 describe('manifest and Program environment transitions', () => {
-  it('limits existing exports changes to consumers, including an earlier blocked request', () => {
+  it('reacquires exports consumers, including an earlier blocked request', () => {
     const { file, write } = fixture();
     write('a.ts', "import {x} from 'pkg/feature'; export {x};");
     write('b.ts', "import {y} from './local'; export {y};");
@@ -354,8 +431,8 @@ describe('manifest and Program environment transitions', () => {
       write('node_modules/pkg/package.json', manifest(exports));
       result = analyze(input, result.cache);
       expectCold(result, input);
-      expect(result.cache.metrics.factQueries).toBe(1);
-      expect(result.cache.metrics.factHits).toBe(1);
+      expect(result.cache.metrics.semanticPrograms).toBe(1);
+      expect(result.cache.metrics.restoredContexts ?? 0).toBe(0);
     }
     write(
       'node_modules/pkg/package.json',
@@ -441,7 +518,7 @@ describe('manifest and Program environment transitions', () => {
     }
   });
 
-  it('does not mechanically invalidate existing importers when an unrelated root is added', () => {
+  it('reacquires the new root context without changing existing dependency meaning', () => {
     const { file, write } = fixture();
     write('a.ts', "import {x} from './value'; export {x};");
     write('value.ts', 'export const x = 1;');
@@ -471,8 +548,22 @@ it.each(['types', 'jsx', 'import-mode', 'reference-types'] as const)(
   (channel) => {
     const { file, write } = fixture();
     write(
+      'package.json',
+      '{"name":"native-cache-fixture","private":true,"packageManager":"npm@11.6.1","devDependencies":{"@types/environment":"1.0.0"}}',
+    );
+    write(
+      'package-lock.json',
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          '': { devDependencies: { '@types/environment': '1.0.0' } },
+          'node_modules/@types/environment': { version: '1.0.0' },
+        },
+      }),
+    );
+    write(
       'node_modules/@types/environment/package.json',
-      '{"name":"@types/environment","types":"index.d.ts"}',
+      '{"name":"@types/environment","version":"1.0.0","types":"index.d.ts"}',
     );
     write(
       'node_modules/@types/environment/index.d.ts',
@@ -504,15 +595,16 @@ it.each(['types', 'jsx', 'import-mode', 'reference-types'] as const)(
     result = analyze(input, result.cache);
     expectCold(result, input);
     expect(result.cache.metrics.factQueries).toBe(0);
-    expect(result.cache.metrics.factHits).toBeGreaterThan(0);
+    expect(result.cache.metrics.restoredContexts).toBe(1);
+    expect(result.cache.metrics.semanticPrograms).toBe(0);
     write(source, `${contents[channel]}\nexport const changed = 1;`);
     result = analyze(input, result.cache);
     expectCold(result, input);
-    expect(result.cache.metrics.factQueries).toBeGreaterThan(0);
+    expect(result.cache.metrics.semanticPrograms).toBe(1);
   },
 );
 
-it('deduplicates queries without losing identical occurrences', () => {
+it('restores duplicate occurrences and removes a deleted occurrence', () => {
   const { file, write } = fixture();
   write('a.ts', 'import "./value"; import "./value"; export {};');
   write('value.ts', 'export {};');
@@ -522,7 +614,8 @@ it('deduplicates queries without losing identical occurrences', () => {
   const queryCount = Object.keys(first.cache.queries).length;
   const next = analyze(input, first.cache);
   expectCold(next, input);
-  expect(next.cache.metrics.factHits).toBe(2);
+  expect(next.cache.metrics.restoredContexts).toBe(1);
+  expect(next.evidence).toEqual(first.evidence);
   expect(Object.keys(next.cache.queries)).toHaveLength(queryCount);
   write('a.ts', 'import "./value"; export {};');
   const removed = analyze(input, next.cache);
@@ -601,11 +694,11 @@ it('tracks imports aliases, self-name exports and direct JSON consumers separate
     write('package.json', manifest(target));
     result = analyze(input, result.cache);
     expectCold(result, input);
-    expect(result.cache.metrics.factQueries).toBeGreaterThan(0);
+    expect(result.cache.metrics.semanticPrograms).toBe(1);
   }
 });
 
-it('invalidates a whole domain when manifest consumer metadata is incomplete', () => {
+it('rejects context restoration when the completeness proof is absent', () => {
   const { file, write } = fixture();
   write('a.ts', 'import "pkg"; export {};');
   write('b.ts', 'import "./local"; export {};');
@@ -615,12 +708,7 @@ it('invalidates a whole domain when manifest consumer metadata is incomplete', (
   write('node_modules/pkg/two.d.ts', 'export {};');
   const input = project(file('tsconfig.json'), [file('a.ts'), file('b.ts')]);
   const first = analyze(input);
-  const query = Object.values(first.cache.queries).find((query) =>
-    query.dependencies.some((dependency) =>
-      dependency.inputId.includes('exports'),
-    ),
-  )!;
-  query.coverage = 'unknown';
+  Object.values(first.cache.contexts)[0]!.complete = false;
   write('node_modules/pkg/package.json', '{"exports":"./two.d.ts"}');
   const next = analyze(input, first.cache);
   expectCold(next, input);
@@ -655,7 +743,7 @@ it('compares augmentation membership and environment order before reusing facts'
     result = analyze(input, result.cache);
     expectCold(result, input);
     expect(result.cache.metrics.factHits).toBe(0);
-    expect(Object.values(result.cache.projects)[0]!.environment).toEqual(
+    expect(result.members.filter((name) => name.endsWith('.d.ts'))).toEqual(
       names.map((name) => file(name)),
     );
   }
@@ -688,7 +776,7 @@ it('keeps per-input timestamp checkpoints and reconciles text actually read by t
   const next = analyze(input, first.cache);
   expectCold(next, input);
   expect(next.facts[0]!.record.specifier).toBe('./missing');
-  expect(next.cache.metrics.factQueries).toBe(1);
+  expect(next.cache.metrics.semanticPrograms).toBe(1);
 });
 
 it.each(['a.ts', 'virtual.json'])(
@@ -745,7 +833,7 @@ it('replaces occurrence contributions without duplicates or partial failed trans
   expect(ledger.counts().size).toBe(0);
 });
 
-it('uses domain invalidation when a previously missing package manifest appears or disappears', () => {
+it('reacquires context when a previously missing package manifest appears or disappears', () => {
   const { file, write } = fixture();
   write('a.ts', 'import {x} from "pkg"; export {x};');
   write('b.ts', 'import "./local"; export {};');
@@ -763,7 +851,7 @@ it('uses domain invalidation when a previously missing package manifest appears 
     result = analyze(input, result.cache);
     expectCold(result, input);
     expect(result.cache.metrics.factHits).toBe(0);
-    expect(result.cache.inputs.domainDirty).toBe(true);
+    expect(result.cache.metrics.semanticPrograms).toBe(1);
   }
 });
 
@@ -789,40 +877,32 @@ it('validates structural transitions even at a zero content timestamp', () => {
   );
 });
 
-it('retains complete dependency receipts beyond the function argument limit', () => {
+it('retains large complete dependency receipts through storage and validation', () => {
   const f = fixture();
-  f.write('source.ts', "import { value } from './value.js'; export { value };");
-  f.write('value.ts', 'export const value = 1;');
-  const input = project(f.file('tsconfig.json'), [
-    f.file('source.ts'),
-    f.file('value.ts'),
-  ]);
-  const analyzed = analyze(input);
-  const program = ts.createProgram({
-    rootNames: input.fileNames,
-    options: input.options,
-  });
-  const queries = analyzed.cache.queries;
-  const ids = Object.keys(queries);
-  expect(ids.length).toBeGreaterThan(0);
-  const state = new SemanticState({
-    project: input,
-    program,
-    tsModule: ts,
-    inputs: analyzed.cache.inputs,
-    queries,
-    queriesByFile: new Map([[f.file('source.ts'), new Set(ids)]]),
-    environmentDependencies: [],
-  });
-  const expected = state.dependencies(f.file('source.ts'));
-  expect(expected.complete).toBe(true);
-  const query = queries[ids[0]!]!;
-  const observation = query.dependencies[0]!;
-  expect(observation).toBeDefined();
-  query.dependencies = query.dependencies.concat(
-    Array.from({ length: 200_000 }, () => observation),
-  );
-  expect(state.dependencies(f.file('source.ts'))).toEqual(expected);
+  f.write('source.ts', 'export {};');
+  const snapshot = analyze(
+    project(f.file('tsconfig.json'), [f.file('source.ts')]),
+  ).cache.snapshot();
+  const importer = Object.values(snapshot.importers)[0]!;
+  const receipt = importer.dependencies[0]!;
+  importer.dependencies = Array.from({ length: 200_000 }, () => receipt);
+  const index = f.file('large.liminainfo');
+  writeStoredAnalysisSnapshot(index, snapshot);
+  const restored = parseAnalysisSnapshot(
+    readStoredAnalysisSnapshot(index),
+    'fixture',
+  )!;
+  expect(restored).toBeDefined();
+  expect(
+    Object.values(restored.importers)[0]!.dependencies.every(
+      (value) =>
+        value.inputId === receipt.inputId &&
+        value.expectedVersion === receipt.expectedVersion,
+    ),
+  ).toBe(true);
+  expect(
+    Object.values(restored.importers)[0]!.dependencies.length,
+  ).toBeGreaterThan(0);
 });
 
 it('preserves JSON semantics, clone isolation and distinct expected versions through scope storage', () => {
@@ -834,6 +914,15 @@ it('preserves JSON semantics, clone isolation and distinct expected versions thr
     f.file('value.ts'),
   ]);
   const snapshot = analyze(input).cache.snapshot();
+  // Resolution records remain an independently supported storage contract.
+  snapshot.queries.storageFixture = {
+    contextId: 'storage-fixture',
+    file: f.file('source.ts'),
+    request: ['storage'],
+    result: {},
+    dependencies: [],
+    coverage: 'unknown',
+  };
   // Large requests must retain the existing JSON treatment of undefined slots.
   (Object.values(snapshot.queries)[0]!.request as unknown[]).push(
     'long-request-boundary'.repeat(100),

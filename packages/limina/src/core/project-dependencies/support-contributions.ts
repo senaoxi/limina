@@ -24,6 +24,7 @@ export function collectSupportContributions(
     ].some(Boolean)
   )
     return;
+  collection.nativeEvidence = context!.nativeEvidence;
   const projection = projectNativeDeclarationClosure(
     context!,
     {

@@ -16,6 +16,7 @@ import {
 } from './source-capabilities';
 import { collectCheckerSourceConfigModules } from './source-config-collection';
 import type { CollectAutoSourceConfigModulesOptions } from './source-config-collection-types';
+import type { SourceConfigDiscovery } from './source-config-discovery';
 import {
   collectCheckerSourceConfigs,
   createEmptySourceConfigCollection,
@@ -48,6 +49,8 @@ function collectAutoSourceConfigModules(
 }
 
 function createAutoScope(options: {
+  onProblems?: (problems: string[]) => void;
+  sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   entryConfigPath: string;
@@ -56,6 +59,7 @@ function createAutoScope(options: {
   const collection = createEmptySourceConfigCollection([
     options.entryConfigPath,
   ]);
+  collection.sourceDiscovery = options.sourceDiscovery;
   const problems: string[] = [];
   const intentHintsByConfigPath = new Map<string, FrameworkIntentHint[]>();
   collectAutoSourceConfigModules({
@@ -76,7 +80,8 @@ function createAutoScope(options: {
       problems.push(...inspection.problems);
     },
   });
-  if (problems.length > 0) {
+  if (options.onProblems) options.onProblems(problems);
+  else if (problems.length > 0) {
     throw createGeneratedGraphStructuredError({
       config: options.config,
       fallback: 'Failed to collect auto checker scope.',
@@ -123,6 +128,8 @@ function createAutoScope(options: {
 }
 
 export function collectAutoScope(options: {
+  onProblems?: (problems: string[]) => void;
+  sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   entryConfigPath: string;
@@ -145,6 +152,8 @@ function getExplicitParsing(checkerName: CheckerName): {
 }
 
 export function collectExplicitScope(options: {
+  onProblems?: (problems: string[]) => void;
+  sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: CheckerName;
   config: ResolvedLiminaInputs;
@@ -153,6 +162,8 @@ export function collectExplicitScope(options: {
 }): AutoScope | null {
   const parsing = getExplicitParsing(options.checkerName);
   const collection = collectCheckerSourceConfigs({
+    onProblems: options.onProblems,
+    sourceDiscovery: options.sourceDiscovery,
     activatedRegions: options.activatedRegions,
     checkerName: options.checkerName,
     checkerPreset: parsing.checkerPreset,

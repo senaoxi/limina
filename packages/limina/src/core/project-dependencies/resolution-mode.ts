@@ -26,6 +26,16 @@ function getTypeScriptResolutionMode(options: {
   importRecord: DirectSourceDependency['importRecord'];
   request: ProjectDependencyRequest;
 }): ts.ResolutionMode | undefined {
+  const runtime = options.request.runtimeSourceResolver;
+  return runtime === undefined
+    ? semanticResolutionMode(options)
+    : runtime.resolve(options.importRecord)?.mode;
+}
+
+function semanticResolutionMode(options: {
+  importRecord: DirectSourceDependency['importRecord'];
+  request: ProjectDependencyRequest;
+}): ts.ResolutionMode {
   return options.request.typeScriptSemanticContext?.resolveImportRecord(
     options.importRecord,
   ).resolutionMode;

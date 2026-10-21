@@ -23,7 +23,6 @@ import {
   createWorkspaceSourceBoundaryFromProjects,
   type WorkspaceSourceBoundary,
 } from './typescript-semantic';
-import { SourceSyntaxFactsCache } from './typescript-semantic/syntax-cache';
 import { VueSemanticContextManager } from './vue-semantic/context';
 import {
   WorkspaceCore,
@@ -74,7 +73,6 @@ export class AnalysisProviderSet {
   readonly config: ResolvedLiminaInputs;
   readonly imports: ImportCore;
   readonly packages: PackageDomainCore;
-  readonly syntaxFacts: SourceSyntaxFactsCache;
   readonly projectConfigs: CheckerProjectConfigCache;
   readonly projectDependencies: ProjectDependencyCaches;
   readonly svelteSemanticContexts: SvelteSemanticContextManager;
@@ -95,6 +93,8 @@ export class AnalysisProviderSet {
           .flatMap((sources) => sources.values())
           .map((source) => ({ ...source, fileNames: source.ownedFileNames }))
           .toArray(),
+        undefined,
+        generatedGraph.sourceConfigCoverage,
       );
     };
     const getWorkspaceSourceBoundary = (): WorkspaceSourceBoundary => {
@@ -116,10 +116,9 @@ export class AnalysisProviderSet {
           virtualFiles,
         ),
     );
-    this.syntaxFacts = new SourceSyntaxFactsCache({ metrics: options.metrics });
     this.projectDependencies = createProjectDependencyCaches(
-      this.syntaxFacts,
       options.dependencies.analysisCache,
+      options.metrics,
     );
     this.workspace = new WorkspaceCore(options.config, options.metrics, {
       ...options.dependencies.workspace,
@@ -154,7 +153,6 @@ export class AnalysisProviderSet {
       analysisCache: options.dependencies.analysisCache,
       generation: options.artifactNamespace.generation,
       importAnalysis: this.imports.context,
-      syntaxFacts: this.syntaxFacts,
       metrics: options.metrics,
       vueSemanticContexts: this.vueSemanticContexts,
       workspaceSourceBoundaryProvider: getWorkspaceSourceBoundary,
@@ -176,7 +174,6 @@ export class AnalysisProviderSet {
   }
 
   dispose(): void {
-    this.syntaxFacts.dispose();
     this.typeEvidence.dispose();
     this.astroSemanticContexts.dispose();
     this.svelteSemanticContexts.dispose();

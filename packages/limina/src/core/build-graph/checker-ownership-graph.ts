@@ -10,9 +10,12 @@ import type {
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import { createPendingSemanticAuthority } from './checker-semantic-authority';
+import type { SourceConfigDiscovery } from './source-config-discovery';
 import type { AutoScope } from './types';
 
 export function collectOwnershipScopes(options: {
+  onProblems?: (problems: string[]) => void;
+  sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   entryConfigPaths: readonly string[];

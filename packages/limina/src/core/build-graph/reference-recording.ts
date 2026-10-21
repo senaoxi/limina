@@ -15,7 +15,6 @@ import type {
   ReferenceImportOptions,
   ReferenceTarget,
 } from './reference-import-types';
-import { isDeniedGeneratedReference } from './reference-policy';
 import type {
   GeneratedDependencyEdge,
   ProviderSelectionResult,
@@ -95,25 +94,11 @@ function createDependencyEdgeKey(edge: GeneratedDependencyEdge): string {
   ]);
 }
 
-function isTargetDenied(options: {
-  base: ReferenceImportOptions;
-  target: ReferenceTarget;
-}): boolean {
-  return isDeniedGeneratedReference({
-    config: options.base.context.config,
-    project: options.base.project,
-    targetSourceConfigPath: options.target.targetSourceConfigPath,
-  });
-}
-
 function addSelectedProviderReference(options: {
   base: ReferenceImportOptions;
   providerProject: SourceProject;
   target: ReferenceTarget;
 }): void {
-  if (isTargetDenied(options)) {
-    return;
-  }
   if (options.base.projectDependency.referenceRequirement === null)
     throw new Error(
       'Declaration reference requires an explicit semantic or compiler membership requirement.',

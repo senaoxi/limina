@@ -1,8 +1,8 @@
+import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { cloneTypeEvidence } from '../framework-semantic/prepared-dependency';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeEvidence } from '../type-evidence/cache';
-import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
 import type {
   ProjectDependencyCaches,
   ProjectDependencyCollection,
@@ -19,12 +19,12 @@ export {
 } from './identity';
 
 export function createProjectDependencyCaches(
-  syntaxFacts?: SourceSyntaxFactsCache,
   analysisCache?: NativeAnalysisCache,
+  metrics?: AnalysisMetricsRecorder,
 ): ProjectDependencyCaches {
   return {
+    metrics,
     analysisCache,
-    syntaxFacts,
     pendingOwnershipEvidenceCache: new Map(),
     projectDependencyCache: new Map(),
     projectDependencyPreparationCache: new Map(),
@@ -37,6 +37,7 @@ export function cloneProjectDependencyCollection(
   collection: ProjectDependencyCollection,
 ): ProjectDependencyCollection {
   return {
+    nativeEvidence: collection.nativeEvidence,
     declarationClosure:
       collection.declarationClosure === undefined
         ? undefined

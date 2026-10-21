@@ -4,6 +4,10 @@ import { toRelativePath } from '#utils/path';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import { addLocalCheckerRequirement } from './checker-ownership-evidence';
 import {
+  assertLockedDependencyFacts,
+  nativeDependencyTarget,
+} from './checker-ownership-fact-qualification';
+import {
   collectRequirementsForConsumer,
   createActualMembershipIndex,
 } from './checker-ownership-membership';
@@ -75,6 +79,8 @@ function applyConsumerRequirements(options: {
 }): DependencyRequirementPass {
   if (options.evidence.size === 0) return { changed: false, problems: [] };
   if (hasMultiplePendingRequirements(options)) {
+    options.state.semanticAuthorityUnavailable =
+      'ambiguous-framework-requirements';
     return {
       changed: false,
       problems: [formatMultipleDependencyRequirements(options)],
@@ -165,6 +171,16 @@ function getUniqueMembershipTarget(options: {
   fact: CheckerDependencyFact;
   membership: FileOwnerLookup;
 }): string | null {
+  const nativeTarget = nativeDependencyTarget(options.fact);
+  return nativeTarget === undefined
+    ? legacyMembershipTarget(options)
+    : nativeTarget;
+}
+
+function legacyMembershipTarget(options: {
+  fact: CheckerDependencyFact;
+  membership: FileOwnerLookup;
+}): string | null {
   if (options.fact.physicalTargetPath === null) return null;
   const owners = getMembershipOwners(
     options.membership,
@@ -201,6 +217,7 @@ function addOwnershipDependency(options: {
 export function createOwnershipDependenciesByConfig(options: {
   discovery: CheckerOwnershipDiscovery;
 }): Map<string, Set<string>> {
+  assertLockedDependencyFacts(options.discovery.plan);
   const membership = createActualMembershipIndex(
     options.discovery.projectByConfigPath,
   );

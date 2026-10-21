@@ -7,6 +7,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { TypeEvidenceCore } from '../core/type-evidence';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
+import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -76,7 +77,11 @@ function createCore(rootDirectory: string): TypeEvidenceCore {
       projectRootDir: rootDirectory,
     }),
     workspaceSourceBoundaryProvider: (project) =>
-      createWorkspaceSourceBoundary(project.fileNames),
+      createWorkspaceSourceBoundary(
+        project.fileNames,
+        undefined,
+        readFixtureSourceCoverage([project.configPath]),
+      ),
   });
 }
 
@@ -173,10 +178,10 @@ describe('TypeScript resource type evidence', () => {
           expect(fact.resolution.target?.resolvedFileName).toBe(
             toPortablePath(fooPath),
           );
-          expect(fact.referenceRequirement).toEqual({
-            kind: 'source-semantic',
-            targetFileName: toPortablePath(fooPath),
-          });
+          expect(fact.referenceRequirement).toBeNull();
+          expect(fact.nativeEvidence?.obligation?.existence.state).toBe(
+            'absent',
+          );
         } else {
           // Neither TypeScript nor Limina turns the specifier into foo.ts.
           expect(fact.resolution.target).toBeNull();
@@ -287,7 +292,7 @@ describe('TypeScript resource type evidence', () => {
     }
   });
 
-  it('loads vite/client ambient modules through the current Program types', async () => {
+  it('retains configured vite/client requests without exempting declarations lacking Coverage proof', async () => {
     const fixture = await createFixture({
       'node_modules/vite/client.d.ts': [
         "declare module '*.css' {",
@@ -322,15 +327,29 @@ describe('TypeScript resource type evidence', () => {
           importRecord: importRecord!,
           project,
         }).type,
-      ).toEqual({
-        declarationFilePaths: [
-          toPortablePath(
-            path.join(fixture.rootDir, 'node_modules/vite/client.d.ts'),
-          ),
-        ],
-        kind: 'ambient',
-        modulePattern: '*.css',
+      ).toEqual({ kind: 'missing' });
+      const context = core.getTypeScriptSemanticContext({
+        checkerName: 'tsc',
+        project,
       });
+      expect(context.program.getCompilerOptions().types).toEqual([
+        'vite/client',
+      ]);
+      expect(context.nativeEvidence?.requests).toContainEqual(
+        expect.objectContaining({
+          channel: 'type-directive',
+          specifier: 'vite/client',
+        }),
+      );
+      const oracle = ts.createProgram({
+        rootNames: project.fileNames,
+        options: project.options,
+      });
+      expect(
+        oracle.getSourceFile(
+          path.join(fixture.rootDir, 'node_modules/vite/client.d.ts'),
+        ),
+      ).toBeDefined();
     } finally {
       core.dispose();
       await fixture.cleanup();

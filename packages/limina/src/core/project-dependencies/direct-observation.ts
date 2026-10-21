@@ -23,6 +23,15 @@ export function observeDirectRequirement(
   options: CollectRecordOptions,
   evidence: CanonicalImportResolutionEvidence,
 ): DirectObservation {
+  return options.request.purpose === 'runtime-source'
+    ? { decision: { state: 'decided', value: null } }
+    : observeCompilerRequirement(options, evidence);
+}
+
+function observeCompilerRequirement(
+  options: CollectRecordOptions,
+  evidence: CanonicalImportResolutionEvidence,
+): DirectObservation {
   const nativeFact = getDirectNativeFact(options);
   if (nativeFact !== undefined)
     return {

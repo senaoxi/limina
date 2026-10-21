@@ -55,6 +55,7 @@ export function parseSourceConfig(
   });
   return {
     configObject,
+    configClosure: parsed.configClosure,
     fileNames: parsed.fileNames,
     options: parsed.options,
   };

@@ -18,10 +18,16 @@ import {
   type AnalysisMetricAggregate,
   createProfilingMetricsRecorder,
 } from '../profiling/metrics';
+import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { toPortablePath } from './helpers/path';
 
 const workspaceSourceBoundaryProvider: TypeEvidenceCoreOptions['workspaceSourceBoundaryProvider'] =
-  (project) => createWorkspaceSourceBoundary(project.fileNames);
+  (project) =>
+    createWorkspaceSourceBoundary(
+      project.fileNames,
+      undefined,
+      readFixtureSourceCoverage([project.configPath]),
+    );
 
 async function writeText(
   rootDirectory: string,

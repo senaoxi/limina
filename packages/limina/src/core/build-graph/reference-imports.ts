@@ -5,6 +5,9 @@ import {
   collectProjectDependencies,
   createSourceProjectSemanticContext,
 } from '../project-dependencies/runner';
+import { retainDependencyFailure } from './analysis-failure';
+import { retainNativeAnalysis } from './native-analysis-evidence';
+import { recordNativeGovernanceProblems } from './native-governance';
 import type {
   ReferenceImportContext,
   ReferenceImportOptions,
@@ -37,6 +40,7 @@ function addProjectDependencyFailures(options: {
   source?: GovernedSourceUnit;
 }): void {
   const collection = collectProjectDependencies({
+    compilationObligationScope: 'generated-declaration-project-v1',
     caches: options.context.projectDependencyCaches,
     context: createSourceProjectSemanticContext({
       authority: options.project.semanticAuthority,
@@ -46,6 +50,8 @@ function addProjectDependencyFailures(options: {
     }),
     importAnalysis: options.context.importAnalysis,
   });
+  retainNativeAnalysis(options.context.analysis, collection.nativeEvidence);
+  recordCollectionGovernance(options, collection.dependencies);
   addDependencyCollectionFailures(options.context, collection.failures);
   const collect = () =>
     processReferenceDependencies(options, effectiveReferenceInputs(collection));
@@ -58,7 +64,21 @@ function addProjectDependencyFailures(options: {
       collect,
       complete: collection.failures.length === 0,
     });
-  processMissingReferenceObservations(options, collection.observations);
+  processMissingReferenceObservations(options, collection);
+}
+
+function recordCollectionGovernance(
+  options: Parameters<typeof addProjectDependencyFailures>[0],
+  dependencies: ReturnType<typeof collectProjectDependencies>['dependencies'],
+): void {
+  for (const dependency of dependencies)
+    recordNativeGovernanceProblems({
+      context: options.context,
+      fileName: dependency.importRecord.filePath,
+      importRecord: dependency.importRecord,
+      project: options.project,
+      projectDependency: dependency,
+    });
 }
 
 function addDependencyCollectionFailures(
@@ -67,16 +87,23 @@ function addDependencyCollectionFailures(
 ): void {
   if (failures.length > 0) markAnalysisIncomplete(context);
   for (const failure of failures) {
-    context.problems.push(
-      [
-        'Project dependency collection failed while inferring references:',
-        `  config: ${toRelativePath(context.config.rootDir, failure.configPath)}`,
-        `  framework: ${failure.framework}`,
-        `  stage: ${failure.stage}`,
-        `  reason: ${failure.reason}`,
-      ].join('\n'),
-    );
+    retainDependencyCollectionFailure(context, failure);
   }
+}
+
+function retainDependencyCollectionFailure(
+  context: ReferenceImportContext,
+  failure: ReturnType<typeof collectProjectDependencies>['failures'][number],
+): void {
+  const detail = [
+    'Project dependency collection failed while inferring references:',
+    `  config: ${toRelativePath(context.config.rootDir, failure.configPath)}`,
+    `  framework: ${failure.framework}`,
+    `  stage: ${failure.stage}`,
+    `  reason: ${failure.reason}`,
+  ].join('\n');
+  context.analysis?.diagnostics.push(detail);
+  retainDependencyFailure(context.projectDependencyCaches, failure, detail);
 }
 
 function processReferenceDependencies(
@@ -110,12 +137,15 @@ function processReferenceDependency(
 
 function processMissingReferenceObservations(
   options: Parameters<typeof addProjectDependencyFailures>[0],
-  observations: ReturnType<typeof collectProjectDependencies>['observations'],
+  collection: ReturnType<typeof collectProjectDependencies>,
 ): void {
-  for (const observation of observations) {
-    if (observation.kind !== 'missing') continue;
-    markAnalysisIncomplete(options.context);
+  const missing = collection.observations.filter(
+    (entry) => entry.kind === 'missing',
+  );
+  for (const observation of missing) {
     recordMissingObservation(options, observation);
+    if (collection.nativeEvidence !== undefined) continue;
+    markAnalysisIncomplete(options.context);
     addMissingOwnedDeclarationProviderProblem({
       context: options.context,
       fileName: observation.importRecord.filePath,

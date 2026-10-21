@@ -2,59 +2,54 @@ import type {
   ResolvedCheckerConfig,
   ResolvedLiminaInputs,
 } from '#config/runner';
-import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
+import { createProjectDependencyCaches } from '../project-dependencies/cache';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import { finishAnalysisOutcome } from './analysis-outcome';
 import {
   addFrameworkOutputProblems,
   synchronizeProjectionSolutionReferences,
 } from './build-projections';
 import {
+  assertGeneratedGraphAdmission,
+  createCandidateBuildPlan,
+} from './candidate-build-plan';
+import { compareDependencyEdges } from './dependency-edge-order';
+import {
   addDuplicateCheckerOwnershipProblems,
   addOverlappingCheckerEntryProblems,
 } from './generated/validation';
+import { mergeNativeAnalysis } from './native-analysis-evidence';
 import { createCheckerOutputGraph } from './output-graph';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 import { getCheckerProjects } from './prepare-state';
-import { createGeneratedGraphStructuredError } from './problems';
 import { createSourceProjectsByDtsPath } from './project-indexes';
 import { addOutputBuildOwnerCollisionProblems } from './provider-selection';
 import { inferProjectReferences } from './reference-inference';
 import { createEmptySourceConfigCollection } from './source-config-root-collection';
 import { addActivatedRegionSourceProjectProblems } from './source-projects';
 import type { PrepareGeneratedTsconfigGraphOptions } from './types';
-
 function getAllProjects(
   state: GeneratedGraphPreparationState,
 ): ReturnType<typeof getCheckerProjects> {
   return state.projectsByChecker.values().toArray().flat();
 }
-
-function getAllPrimaryProjects(
-  state: GeneratedGraphPreparationState,
-): ReturnType<typeof getCheckerProjects> {
-  return state.primaryProjectsByChecker.values().toArray().flat();
-}
-
 function getAllGovernedSources(state: GeneratedGraphPreparationState) {
   return state.governedSourcesByChecker.values().toArray().flat();
 }
-
 function getCheckerGovernedSources(options: {
   checkerName: string;
   state: GeneratedGraphPreparationState;
 }) {
   return options.state.governedSourcesByChecker.get(options.checkerName) ?? [];
 }
-
 function getCheckerPrimaryProjects(options: {
   checkerName: string;
   state: GeneratedGraphPreparationState;
 }) {
   return options.state.primaryProjectsByChecker.get(options.checkerName) ?? [];
 }
-
 function addCheckerOwnershipProblems(options: {
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaInputs;
@@ -74,7 +69,7 @@ function addCheckerOwnershipProblems(options: {
 function addProjectValidationProblems(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   allProjects: ReturnType<typeof getAllProjects>;
-  allPrimaryProjects: ReturnType<typeof getAllPrimaryProjects>;
+  allPrimaryProjects: ReturnType<typeof getAllProjects>;
   config: ResolvedLiminaInputs;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
@@ -156,11 +151,7 @@ function addInferredReferences(options: {
       projects: getCheckerProjects({ checker, state: options.state }),
       sourceToBuildByChecker: options.state.sourceToBuildByChecker,
     });
-    options.state.dependencyAnalysis.facts.push(...collection.analysis.facts);
-    options.state.dependencyAnalysis.diagnostics.push(
-      ...collection.analysis.diagnostics,
-    );
-    options.state.dependencyAnalysis.complete &&= collection.analysis.complete;
+    mergeNativeAnalysis(options.state.dependencyAnalysis, collection.analysis);
     options.state.problems.push(...collection.problems);
     options.state.dependencyEdges.push(...collection.dependencyEdges);
   }
@@ -234,21 +225,6 @@ function addCheckerOutputGraphs(options: {
   }
 }
 
-function compareDependencyEdges(
-  left: GeneratedGraphPreparationState['dependencyEdges'][number],
-  right: GeneratedGraphPreparationState['dependencyEdges'][number],
-): number {
-  const comparisons = [
-    compareCodeUnits(left.fromChecker, right.fromChecker),
-    compareCodeUnits(left.fromConfigPath, right.fromConfigPath),
-    compareCodeUnits(left.toChecker, right.toChecker),
-    compareCodeUnits(left.toConfigPath, right.toConfigPath),
-    compareCodeUnits(left.file, right.file),
-    compareCodeUnits(left.importedSpecifier, right.importedSpecifier),
-  ];
-  return comparisons.find((comparison) => comparison !== 0) ?? 0;
-}
-
 export function analyzeAndCompleteGeneratedGraph(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   checkers: ResolvedCheckerConfig[];
@@ -260,7 +236,10 @@ export function analyzeAndCompleteGeneratedGraph(options: {
 }): void {
   addCheckerOwnershipProblems(options);
   const allProjects = getAllProjects(options.state);
-  const allPrimaryProjects = getAllPrimaryProjects(options.state);
+  const allPrimaryProjects = options.state.primaryProjectsByChecker
+    .values()
+    .toArray()
+    .flat();
   const allGovernedSources = getAllGovernedSources(options.state);
   addProjectValidationProblems({
     ...options,
@@ -282,19 +261,26 @@ export function analyzeAndCompleteGeneratedGraph(options: {
   addCheckerOutputGraphs({ ...options, allProjects });
   options.state.dependencyEdges.sort(compareDependencyEdges);
   const { dependencyAnalysis: analysis } = options.state;
+  analysis.candidate = createCandidateBuildPlan(
+    allGovernedSources,
+    options.state.dependencyEdges,
+  );
   analysis.diagnostics.push(...options.state.problems);
   analysis.diagnostics = [...new Set(analysis.diagnostics)];
+  finishAnalysisOutcome(
+    analysis,
+    options.projectDependencyCaches ?? createProjectDependencyCaches(),
+    {
+      scope: 'generated-graph',
+      state: options.state.problems.length === 0 ? 'compliant' : 'violations',
+      diagnostics: [...options.state.problems],
+    },
+  );
 }
 
 export function validateAndCompleteGeneratedGraph(
   options: Parameters<typeof analyzeAndCompleteGeneratedGraph>[0],
 ): void {
   analyzeAndCompleteGeneratedGraph(options);
-  if (options.state.problems.length > 0) {
-    throw createGeneratedGraphStructuredError({
-      config: options.config,
-      fallback: 'Failed to prepare generated tsconfig graph.',
-      problems: options.state.problems,
-    });
-  }
+  assertGeneratedGraphAdmission(options);
 }
