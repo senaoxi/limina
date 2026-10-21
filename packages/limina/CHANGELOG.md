@@ -10,6 +10,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- **BREAKING:** collect Native compiler evidence with a physical Coverage-bounded Program.
+  TypeScript runtime `require`, `createRequire`, and `require.resolve` no longer automatically
+  generate Native project references or checker-coloring relationships; source/package governance
+  retains its separate runtime collector. Every reached declaration requires current Source Config
+  Coverage, without package, standard-library or generated-output exemptions. Compilation obligation,
+  reference structure and declaration readiness are independent. Schema 9 rebuilds old Native
+  analysis snapshots without deleting checker caches. See the [English reference guide](../../docs/en/import-resolution-to-declaration-build-graph.md)
+  and [中文引用指南](../../docs/zh/import-resolution-to-declaration-build-graph.md).
+
 - **BREAKING:** group governance settings under `scope` and rename `execution` to `concurrency`.
   Move `config.source`, `config.checkers`, and `regions` into `scope`.
   `graph`, `source`, `proof`, `package`, `release`, `pipelines`, `concurrency`, and `cache`

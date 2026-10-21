@@ -1,6 +1,6 @@
 # From Import Resolution to the Declaration Build Graph
 
-Limina generates a declaration build graph from dependency facts under the current checker and tsconfig. An import can stop at an existing declaration boundary or form a candidate source relationship, becoming a project reference only after ownership, checker, and rule validation.
+Limina generates a declaration build graph from dependency facts under the current checker and tsconfig. An import can stop at a Coverage boundary or establish a compilation relationship. Reference projection preserves those facts; Governance evaluates policy and Build Admission controls execution separately.
 
 This page explains the decision process. If package dependencies, source imports, and `references` are still unfamiliar distinctions, start with [Why Imports Cannot Directly Become References](./why-import-is-not-references.md).
 
@@ -14,18 +14,18 @@ import { createClient } from '@acme/core';
 
 Limina first identifies the source leaf that owns this line, collects and resolves dependencies using that project's checker semantics, and then decides whether another project must participate in the declaration build. For native TypeScript dependencies, this preserves four separate facts:
 
-| Fact                                                   | Question it answers                                                                                     | Why it cannot decide a reference on its own                                                                 |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Resolution target                                      | Which file does the current checker resolve the specifier to, or is there no target?                    | The target may be an existing declaration, current-project source, or another project's source              |
-| Compiler input admission                               | Did the original resolved target enter the current bounded TypeScript `Program`?                        | Being read by the compiler does not mean the current leaf owns it or that it actually supplies the types    |
-| Type evidence (`TypeEvidence`)                         | Do types come from checker source, a concrete declaration, an ambient declaration, or are they missing? | The type source can differ from the original resolution path                                                |
-| Compiler relation requirement (`referenceRequirement`) | Is a source-semantic or compiler-membership relationship still needed?                                  | A non-null requirement is only a candidate; a valid, build-capable declaration provider must still be found |
+| Fact                                                   | Question it answers                                                                                     | Why it cannot decide a reference on its own                                                                     |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Resolution target                                      | Which file does the current checker resolve the specifier to, or is there no target?                    | The target may be an existing declaration, current-project source, or another project's source                  |
+| Compiler input admission                               | Did the original resolved target enter the current bounded TypeScript `Program`?                        | Being read by the compiler does not mean the current leaf owns it or that it actually supplies the types        |
+| Type evidence (`TypeEvidence`)                         | Do types come from checker source, a concrete declaration, an ambient declaration, or are they missing? | The type source can differ from the original resolution path                                                    |
+| Compiler relation requirement (`referenceRequirement`) | Is a compilation obligation proved, and is its reference structure satisfied?                           | Obligation, structure and output state are independent; valid projection and build admission are still required |
 
 Here, `Program` is the TypeScript program context the checker uses to analyze a set of files. A “declaration provider” is a managed source leaf that supplies declaration output for this build relationship.
 
 ### Collect Dependencies with Source Provenance
 
-Native TypeScript uses its owning toolchain's AST to collect static imports, re-exports, type imports, literal dynamic imports, and supported CommonJS forms. An import belongs first to the analysis scope of the leaf where it occurs. An import in a test config does not become a library config reference merely because both are in the same package.
+Native TypeScript uses the compiler's actual request inventory, preserving static imports, re-exports, type imports, dynamic imports, implicit types/lib/JSX requests and compiler modes. JavaScript require follows compiler behavior. Ordinary require, createRequire and require.resolve in TypeScript remain available to separate runtime and package governance but do not automatically generate Native project references. An import first belongs to its source leaf's context; a test-config import does not become a library reference merely because both are in one package.
 
 Once Vue, Astro, or Svelte resolution semantics are established, collection uses the official generated TypeScript representation. Each generated dependency must map strictly back to user source before it can participate in graph inference. Synthetic dependencies that cannot map back to source remain observations and create no edges; damaged or ambiguous mappings fail analysis.
 
@@ -33,31 +33,30 @@ A specifier in the semantic representation can differ from the source text. For 
 
 ### Determine Whether a Compiler Relation Is Required
 
-These conditions combine different facts. Do not read the table as a classifier based only on file extensions:
+Native records three questions independently: whether a compilation obligation exists, whether actual reference/redirect structure satisfies it, and whether the required declarations are available. Resolving another project's file, finding an owner or obtaining TypeEvidence cannot independently prove an obligation.
 
-| Condition                                                                                                                                                  | Effect on a new source reference                                                                               |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| The resolved target is `.d.ts`, `.d.mts`, or `.d.cts`                                                                                                      | Checks declaration entry eligibility; never infers the declaration file's producer                             |
-| Actual types come from a concrete declaration                                                                                                              | Adds no source relationship, even if the original resolution still records a source path                       |
-| A non-declaration source target exists, and type evidence is neither concrete nor ambient declaration evidence                                             | Retains a `source-semantic` requirement; this can also happen with `missing` type evidence                     |
-| A local source target and ambient declaration evidence exist, and the target is not already covered by explicit compiler inputs or other accepted coverage | May retain a `compiler-membership` requirement                                                                 |
-| No resolved target exists, but ambient declaration evidence does                                                                                           | Retains a typed semantic observation without proving that a physical runtime resource or virtual module exists |
-| Neither a resolved target nor type evidence exists                                                                                                         | Retains an unresolved record; the relevant dependency comparison is incomplete and produces diagnostics        |
+| Evidence                                 | Summary             |
+| ---------------------------------------- | ------------------- |
+| Proven obligation, unsatisfied structure | `required`          |
+| Proven obligation, satisfied structure   | `already-satisfied` |
+| Proven absence of this obligation        | `not-required`      |
+| Other insufficient evidence              | `unknown`           |
 
-For example, if the recorded resolution path is still `core/src/index.ts` but actual type evidence comes from a concrete declaration file, that source path alone cannot justify adding a reference from `app`. Conversely, a source target with missing type evidence does not mean “no declaration-build requirement.” A requirement may remain, but missing evidence cannot be interpreted as available types.
+`already-satisfied` describes structure, not completed declaration builds. Outputs can still be missing, stale or unknown; existence alone does not prove availability. Source and generated-declaration options qualify their proofs independently. Successful noResolve or augmentation resolution does not automatically create references. Type provision is a separate on-demand proof and cannot create or erase compilation obligations.
 
-The same distinction applies to ambient declarations. They can explain the type source without always replacing the need to admit local source into a compiler relationship. “Already covered” here means the target is a root input of the `Program`, an input of a resolved project reference, or a file the compiler identifies as an external library file. Entering the `Program` through an ordinary import alone does not satisfy this coverage condition.
+Expected uncovered boundaries, resolution misses and unknown obligations stop their branches without automatically creating governance diagnostics or failing the entire analysis. Configuration parsing, reading and compiler initialization failures carry impact scopes. Independent contexts retain evidence, but an untrustworthy transaction cannot publish a successful build plan. The final Checker reports real compiler errors.
 
 ### Validate the Target and Generate the Relationship
 
-If a compiler relation is required, Limina checks:
+To project a proved compiler relation, Limina checks:
 
 1. Whether the target belongs uniquely to another managed source leaf.
 2. Whether the target can provide declaration build output.
 3. Whether both ends have the same final `tsc`, `tsgo`, or `vue-tsc` checker.
-4. Whether graph rules allow the relationship.
 
-When these conditions hold, Limina maps the source leaves to declaration configs under `.limina/tsconfig/checkers/<checker>/projects/` and writes generated `references`. Dependencies within one leaf do not produce self-references. External dependencies without managed source ownership do not acquire internal workspace references from this process either.
+Qualified relationships map source leaves to declaration configs under `.limina/tsconfig/checkers/<checker>/projects/` and their generated `references`. Dependencies within one leaf do not produce self-references. External dependencies without managed source ownership do not acquire internal workspace references from this process either.
+
+Governance checks graph rules independently. A denied relationship remains in the evidence and reference projection so its violation stays visible; it is not deleted to make the graph appear complete. Unknown relationships retain their unresolved state without inventing a reference. Build Admission separately determines whether the plan may execute, and only a trustworthy transaction may publish a successful plan.
 
 Dependency declarations in `package.json` authorize package imports; they cannot replace this evidence. A package dependency, an existing file, or successful runtime resolution alone is insufficient to generate a declaration reference.
 
@@ -77,13 +76,13 @@ Suppose the public entry of `core` has both type and runtime branches:
 }
 ```
 
-When the checker selects `dist/index.d.ts`, the unselected `default` source branch does not create a reference. Known managed outputs and real Project Reference redirects preserve their artifact boundary. Third-party public declarations also stop internal dependency expansion.
+When the checker selects `dist/index.d.ts`, the unselected default source branch creates no reference, and the declaration path does not identify its producer.
 
-A workspace public declaration enters governance analysis when an active governed tsconfig includes it in its effective root files. A declaration can belong to multiple configs. Without that membership the public entry stops; this does not prove that the file was generated or can type-check independently. Local relative imports, successful `paths` mappings and local `#imports` can enter the same declaration independently.
+Native checks Source Config Coverage for every reached declaration: whether the currently activated configuration universe was completely enumerated and whether membership and physical identity are current. Unique or confirmed multiple memberships permit expansion; uncovered or unavailable evidence is recorded and stops that branch. Relative imports, paths, package entries, standard libraries, third-party and Bundler outputs receive no automatic exemption. Declaration roots remain as configured; types/lib and original references are preserved.
 
-After admission, ordinary declarations recurse without requiring their own owner. A chain `app → index.d.ts → helper.d.ts → feature.ts` can produce a reference from app to the project owning feature.ts. It does not produce a reference to the config containing index.d.ts. Traversal stops at feature.ts; that project's own analysis owns subsequent dependencies. A nested workspace public entry requires a new membership check.
+`app → index.d.ts → helper.d.ts → feature.ts` continues only when both index and helper have available Coverage, then stops before scanning feature.ts internals. A reference to feature's project additionally needs independent compilation-obligation proof. Declaration membership alone does not identify a producer.
 
-Explicit declaration roots, configuration `types/typeRoots`, legal triple-slash references and supported framework type environments also supply entries. `noResolve` can limit traversal, but does not erase independent roots; `skipLibCheck` does not disable dependency analysis. None of these entries changes the user's root-file membership. Declaration freshness remains the responsibility of the workflow producing any actual output artifacts.
+Original reference structure and output state remain separate. Missing outputs do not erase a real reference, and an existing reference does not prove readiness. The producing workflow and final Checker own actual builds, diagnostics and output freshness.
 
 ## Declaration References and Framework Scheduling
 
@@ -100,7 +99,7 @@ Pure framework-scheduling cycles can be handled as one scheduling component. Dec
 
 ### Why Checker Identity Propagates
 
-Before generated paths and execution targets are created, build-capable configs connected through allowed compiler relationships, aggregator membership, or `implicitRefs`, and needing to share declaration caches, form a group. A single known checker identity propagates to the whole group. With no known identity, the ordinary TypeScript default is used. Multiple different identities cause graph preparation to fail. Successful declaration-provider edges record `cacheReuse: "reusable"`.
+Before generated paths and execution targets are created, build-capable configs connected through proved compiler relationships, aggregator membership, or `implicitRefs`, and needing to share declaration caches, form a group. A single known checker identity propagates to the whole group. With no known identity, the ordinary TypeScript default is used. Multiple different identities cause graph preparation to fail. Successful declaration-provider edges record `cacheReuse: "reusable"`.
 
 A known identity comes from ownership evidence such as named checker constraints or a confirmed framework. The ordinary TypeScript default is applied only if the whole group still has no known identity. An automatically discovered shared TypeScript leaf connected to a Vue leaf can therefore use `vue-tsc` with it. Explicitly fixing the shared leaf to `tsc` instead creates a conflict when the same group requires both `tsc` and `vue-tsc`.
 
