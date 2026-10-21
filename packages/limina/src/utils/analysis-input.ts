@@ -5,6 +5,7 @@ export type AnalysisReadDescriptor =
   | { kind: 'file'; path: string }
   | { kind: 'content'; path: string }
   | { kind: 'typescript-content'; path: string }
+  | { kind: 'file-identity'; path: string }
   | {
       kind: 'ts-directory';
       arguments: [
@@ -51,6 +52,20 @@ export function withAnalysisReads<T>(
   return observations.run(observer, operation);
 }
 
+/**
+Record a context's own subscriptions without hiding the enclosing transaction.
+*/
+export function withAdditionalAnalysisReads<T>(
+  observer: AnalysisReadObserver,
+  operation: () => T,
+): T {
+  const parent = observations.getStore();
+  return observations.run((input) => {
+    parent?.(input);
+    observer(input);
+  }, operation);
+}
+
 export function observeAnalysisRead(input: AnalysisRead): void {
   observations.getStore()?.(input);
 }
@@ -58,7 +73,11 @@ export function observeAnalysisRead(input: AnalysisRead): void {
 export function readAnalysisInput<T>(
   path: string,
   read: () => T,
-  purpose: 'content' | 'file' | 'typescript-content' = 'content',
+  purpose:
+    | 'content'
+    | 'file'
+    | 'typescript-content'
+    | 'file-identity' = 'content',
 ): T {
   const value = read();
   observeAnalysisRead({

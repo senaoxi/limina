@@ -4,17 +4,17 @@ import { toRelativePath } from '#utils/path';
 import { colorAllBuildComponents } from './checker-build-coloring-components';
 import { isBuildColoringCandidate } from './checker-build-coloring-state';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
+import {
+  assertLockedDependencyFacts,
+  nativeDependencyTarget,
+} from './checker-ownership-fact-qualification';
 import { createActualMembershipIndex } from './checker-ownership-membership';
 import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import type { FileOwnerLookup } from './file-owner-lookup';
-import {
-  readGraphRules,
-  readImplicitReferences,
-} from './generated/config-readers';
-import { isDeniedGeneratedReferenceForConfig } from './reference-policy';
+import { readImplicitReferences } from './generated/config-readers';
 
 export interface ColoringEdge {
   from: string;
@@ -87,6 +87,8 @@ function getUniqueFactTarget(options: {
   fact: CheckerDependencyFact;
   membership: FileOwnerLookup;
 }): string | null {
+  const nativeTarget = nativeDependencyTarget(options.fact);
+  if (nativeTarget !== undefined) return nativeTarget;
   return options.fact.physicalTargetPath === null
     ? null
     : getSingleOwner(options.membership.get(options.fact.physicalTargetPath));
@@ -100,35 +102,13 @@ function isDeclarationRelationFact(fact: CheckerDependencyFact): boolean {
   return fact.referenceRequirement != null;
 }
 
-function getPassGraphRules(options: {
-  config: ResolvedLiminaInputs;
-  consumer: TypeConfigOwnershipState;
-  graphRulesByConfigPath: Map<string, readonly string[]>;
-}): readonly string[] {
-  const key = options.consumer.configPath;
-  let rules = options.graphRulesByConfigPath.get(key);
-  if (rules === undefined) {
-    rules = readGraphRules(options.config, key);
-    options.graphRulesByConfigPath.set(key, rules);
-  }
-  return rules;
-}
-
 function createBuildDependencyEdge(options: {
   config: ResolvedLiminaInputs;
   consumer: TypeConfigOwnershipState;
   fact: CheckerDependencyFact;
-  graphRulesByConfigPath: Map<string, readonly string[]>;
   provider: TypeConfigOwnershipState;
 }): ColoringEdge | null {
-  if (
-    ![options.consumer, options.provider].every(isBuildCandidate) ||
-    isDeniedGeneratedReferenceForConfig({
-      config: options.config,
-      graphRules: getPassGraphRules(options),
-      targetSourceConfigPath: options.provider.configPath,
-    })
-  )
+  if (![options.consumer, options.provider].every(isBuildCandidate))
     return null;
   return {
     from: options.consumer.configPath,
@@ -141,7 +121,6 @@ function createManagedDependencyEdge(options: {
   config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   fact: CheckerDependencyFact;
-  graphRulesByConfigPath: Map<string, readonly string[]>;
   target: string;
 }): ColoringEdge | null {
   const consumer = options.discovery.plan.typeConfigs.get(
@@ -157,7 +136,6 @@ function createDependencyEdge(options: {
   config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   fact: CheckerDependencyFact;
-  graphRulesByConfigPath: Map<string, readonly string[]>;
   membership: FileOwnerLookup;
 }): ColoringEdge | null {
   if (!isDeclarationRelationFact(options.fact)) return null;
@@ -175,12 +153,10 @@ function addDependencyEdges(options: {
   const membership = createActualMembershipIndex(
     options.discovery.projectByConfigPath,
   );
-  const graphRulesByConfigPath = new Map<string, readonly string[]>();
   for (const fact of options.discovery.plan.dependencyFacts) {
     const edge = createDependencyEdge({
       ...options,
       fact,
-      graphRulesByConfigPath,
       membership,
     });
     if (edge !== null) addEdge({ edge, graph: options.graph });
@@ -246,6 +222,7 @@ export function colorBuildCheckerComponents(options: {
   config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
 }): string[] {
+  assertLockedDependencyFacts(options.discovery.plan);
   const candidates = options.discovery.plan.typeConfigs
     .values()
     .filter(isBuildCandidate)

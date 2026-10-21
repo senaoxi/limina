@@ -14,6 +14,7 @@ import { restoreGraphContexts, storeGraphContexts } from './analysis-cache-vue';
 import { removeStaleGeneratedFiles } from './artifact-ledger';
 import { writeGeneratedContent } from './artifact-writer';
 import { readMaterializationStateSnapshot } from './materialization-state';
+import { hasBoundNativeGraph } from './native-cache-binding';
 import { isValidOutputProjection } from './output-projection';
 import { isValidTypeInputProjection } from './type-input-projection';
 import type {
@@ -24,7 +25,7 @@ import type {
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
 
-const key = 'generated-graph-v2';
+const key = 'generated-graph-coverage-bounded-v3';
 
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
@@ -101,13 +102,22 @@ function decodeBoundGraph(
 ): CachedGraphData | undefined {
   const stored = decodeGraph(record.data);
   if (stored === undefined) return undefined;
-  if (!hasValidProjections(stored, options.cache)) return undefined;
+  if (!isValidBoundGraph(stored, options.cache)) return undefined;
   return restoreGraphContexts({
     cache: options.cache,
     data: stored,
     contextIds: record.vueContextIds,
     generation: restoredGeneration(options),
   });
+}
+function isValidBoundGraph(
+  stored: StoredGraphData,
+  cache: NativeAnalysisCache,
+): boolean {
+  return (
+    hasBoundNativeGraph(stored, cache.contexts, cache.importers) &&
+    hasValidProjections(stored, cache)
+  );
 }
 export async function restoreGeneratedGraph(
   options: GraphRestoreInput & {
@@ -223,9 +233,20 @@ function captureGraphData(
   delete value.artifactPlan;
   delete value.changed;
   // Runtime authority never crosses the persistence boundary.
+  const stored = storeGraphContexts(value as CachedGraphData);
+  if (
+    !hasBoundNativeGraph(
+      stored,
+      options.cache.contexts,
+      options.cache.importers,
+    )
+  ) {
+    options.cache.fallback('graph-native-context-unbound');
+    return;
+  }
   options.cache.captureGraphRecord(key, {
     ...version,
-    value: storeGraphContexts(value as CachedGraphData),
+    value: stored,
   });
 }
 

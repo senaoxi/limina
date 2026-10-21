@@ -3,12 +3,22 @@ import { toRelativePath } from '#utils/path';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { ProjectDependency } from '../project-dependencies/contracts';
 import { getDependencyCheckerTarget } from '../project-dependencies/evidence';
+import { qualifiedNativeDependencyTarget } from '../typescript-semantic/native-fact-qualification';
 import type { ReferenceImportContext } from './reference-import-types';
 import type { GeneratedDependencyEdge, GovernedSourceUnit } from './types';
 
 type FrameworkImportRecord = Parameters<typeof formatImportRecordLocation>[1];
 
 export function hasFrameworkCompilationRequirement(
+  dependency: ProjectDependency,
+): boolean {
+  const evidence = dependency.nativeFact?.nativeEvidence;
+  return evidence === undefined
+    ? hasSourceCompilationRequirement(dependency)
+    : qualifiedNativeDependencyTarget(evidence) !== null;
+}
+
+function hasSourceCompilationRequirement(
   dependency: ProjectDependency,
 ): boolean {
   return [

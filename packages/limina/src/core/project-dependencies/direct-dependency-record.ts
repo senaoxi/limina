@@ -99,6 +99,15 @@ function getDirectCheckerTargetPath(
 }
 
 function resolveDirectCheckerEvidence(options: CollectRecordOptions) {
+  const runtime = options.request.runtimeSourceResolver?.resolve(
+    options.importRecord,
+  );
+  return runtime === undefined
+    ? resolveSemanticCheckerEvidence(options)
+    : runtime.evidence;
+}
+
+function resolveSemanticCheckerEvidence(options: CollectRecordOptions) {
   return options.request.importAnalysis.resolveCheckerImportEvidence(
     options.importRecord,
     options.importRecord.filePath,

@@ -1,5 +1,6 @@
 import { isBuildCapablePreset } from '#checkers';
 import type { ResolvedCheckerConfig } from '#config/runner';
+import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import type {
   CheckerSourceConfigCollection,
@@ -16,6 +17,7 @@ import type {
 } from './types';
 
 export interface GeneratedGraphPreparationState {
+  sourceConfigCoverage?: SourceConfigCoverageIndex;
   dependencyAnalysis: DependencyAnalysisResult;
   checkerOwnershipPlan: CheckerOwnershipPlan;
   checkerCollectionsByName: Map<string, CheckerSourceConfigCollection>;

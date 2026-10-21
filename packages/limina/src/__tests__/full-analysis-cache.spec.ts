@@ -23,19 +23,27 @@ import {
   invocationDataVersion,
 } from '../config/invocation-data';
 import { getActiveCheckers } from '../config/runtime';
+import { decodeData, encodeData } from '../core/analysis-cache/data-codec';
 import { directoryFingerprint } from '../core/analysis-cache/directory-fingerprint';
 import { observeInstallationDomain } from '../core/analysis-cache/installation-domain';
 import { validateInstallationLock } from '../core/analysis-cache/installation-locks';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
+import { occurrenceKey } from '../core/analysis-cache/semantic-state';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
+import type { StoredGraphData } from '../core/build-graph/analysis-cache-schema';
 import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { LiminaPreflightManager } from '../preflight';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
-import { readStoredAnalysisSnapshot } from './helpers/analysis-snapshot';
+import {
+  readStoredAnalysisSnapshot,
+  writeStoredAnalysisSnapshot,
+} from './helpers/analysis-snapshot';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
+import { readFixtureSourceCoverage } from './helpers/native-coverage';
+import { graphMeaning, nativeFactMeaning } from './helpers/native-meaning';
 import { createFixturePathResolver } from './helpers/path';
 
 const roots: string[] = [];
@@ -118,12 +126,16 @@ function fixture() {
     });
     return {
       analysisBinding: { phase: 'locked', checker: 'tsc' },
-      admissionMode: 'full-program',
+      admissionMode: 'coverage-bounded',
       configPath: file(name),
       fileNames: parsed.fileNames,
       options: parsed.options,
       projectReferences: parsed.projectReferences,
-      workspaceSourceBoundary: createWorkspaceSourceBoundary(parsed.fileNames),
+      workspaceSourceBoundary: createWorkspaceSourceBoundary(
+        parsed.fileNames,
+        undefined,
+        readFixtureSourceCoverage([file(name)]),
+      ),
     };
   };
   const execute = <T>(script: string): T => {
@@ -281,9 +293,13 @@ describe('complete native restoration and R02 scope evidence', () => {
       expect(dirty.facts[0]?.resolution.resolutionMode).not.toBe(
         first.facts[0]?.resolution.resolutionMode,
       );
-      expect(dirty.facts).toEqual(analyze(project).facts);
+      expect(dirty.facts.map(nativeFactMeaning)).toEqual(
+        analyze(project).facts.map(nativeFactMeaning),
+      );
       rmSync(f.file('src/package.json'));
-      expect(analyze(project, dirty.cache).facts).toEqual(first.facts);
+      expect(
+        analyze(project, dirty.cache).facts.map(nativeFactMeaning),
+      ).toEqual(first.facts.map(nativeFactMeaning));
     },
   );
 
@@ -300,7 +316,10 @@ describe('complete native restoration and R02 scope evidence', () => {
     symlinkSync(f.file('two.json'), f.file('src/package.json'));
     const next = analyze(f.project(), first.cache);
     expect(next.restored).toBe(false);
-    expect(next.cache.inputs.domainDirty).toBe(true);
+    expect(next.cache.metrics.semanticPrograms).toBe(1);
+    expect(next.facts[0]?.nativeEvidence?.origin.context.id).not.toBe(
+      first.facts[0]?.nativeEvidence?.origin.context.id,
+    );
   });
 });
 
@@ -438,7 +457,9 @@ describe('R01 effective local metadata and installation trust', () => {
         ).toBeGreaterThan(parses + 1);
         expect(changed.cache.inputs.domainDirty).toBe(true);
         expect(changed.cache.metrics.factHits).toBe(0);
-        expect(changed.facts).toEqual(first.facts);
+        expect(changed.facts.map(nativeFactMeaning)).toEqual(
+          first.facts.map(nativeFactMeaning),
+        );
         expect(
           analyze(f.project('packages/member/tsconfig.json'), changed.cache)
             .restored,
@@ -469,7 +490,7 @@ describe('R01 effective local metadata and installation trust', () => {
     },
   );
 
-  it('preserves an unchanged snapshot when unknown installation coverage rebuilds the Program but facts hit', () => {
+  it('keeps unknown installation coverage cold and recollects qualified facts', () => {
     const f = fixture();
     f.write(
       'node_modules/@types/pkg/index.d.ts',
@@ -484,27 +505,14 @@ describe('R01 effective local metadata and installation trust', () => {
     const warm = analyze(project, first.cache);
     expect(warm.restored).toBe(false);
     expect(warm.cache.metrics.semanticPrograms).toBe(1);
-    expect(warm.cache.metrics.factHits).toBeGreaterThan(0);
-    expect(warm.facts).toEqual(first.facts);
-    const { header: _header, ...previousRecords } = warm.cache.previous!;
-    expect(warm.cache.snapshotRecords()).toStrictEqual(previousRecords);
-    expect(warm.cache.isUnchanged()).toBe(true);
-    expect(warm.cache.snapshot()).toBe(warm.cache.previous);
-    expect(warm.cache.metrics.snapshotClones ?? 0).toBe(0);
-    f.write('unrelated.txt', 'not a snapshot dependency');
-    const unrelated = warm.cache.inputs.observe(
-      f.file('unrelated.txt'),
-      'content',
+    expect(warm.cache.metrics.factHits).toBe(0);
+    expect(warm.facts.map(nativeFactMeaning)).toEqual(
+      first.facts.map(nativeFactMeaning),
     );
-    expect(warm.cache.isUnchanged()).toBe(true);
-    expect(
-      warm.cache.snapshotRecords().inputs[unrelated.inputId],
-    ).toBeUndefined();
-    warm.cache.inputs.configInputs.add(unrelated.inputId);
-    expect(warm.cache.isUnchanged()).toBe(false);
-    expect(
-      warm.cache.snapshotRecords().inputs[unrelated.inputId],
-    ).toBeDefined();
+    expect(warm.facts[0]!.nativeEvidence!.origin.context.id).not.toBe(
+      first.facts[0]!.nativeEvidence!.origin.context.id,
+    );
+    expect(collectContextEnvironment(warm)).toBe('unknown');
   });
 
   it('observes inherited paths, backdated additions, renames, touches and missing versus empty', () => {
@@ -606,10 +614,8 @@ graph:{rules:{runtime:process.env.LIMINA_CONFIG_DENIED === 'yes' ? {deny:{deps:[
     expect(changed.isPassed).toBe(uncached.isPassed);
     expect(
       changed.events.find((event) => event.kind === 'semanticPrograms')?.count,
-    ).toBe(0);
-    expect(
-      changed.events.find((event) => event.kind === 'syntaxExtractions')?.count,
     ).toBeGreaterThan(0);
+
     expect(changed.events).toContainEqual(
       expect.objectContaining({ kind: 'factHits', count: 0 }),
     );
@@ -812,7 +818,7 @@ console.log(JSON.stringify([config.pipelines,Object.isFrozen(config.pipelines)])
           expect(config.package.entries[0]?.boundary.environment()).toBe(value);
           expect(
             events.find((event) => event.kind === 'semanticPrograms')?.count,
-          ).toBe(0);
+          ).toBeGreaterThan(0);
           expect(
             events.find((event) => event.kind === 'graphBuilds')?.count,
           ).toBeGreaterThan(0);
@@ -846,7 +852,289 @@ interface GraphRunResult {
 }
 
 describe('production graph snapshots and publication', () => {
-  it('preserves compiler support while stopping governance at an implementation and restores that boundary', () => {
+  it.each([
+    'missing-source',
+    'missing-empty-source',
+    'missing-occurrences',
+    'orphan-fact',
+    'duplicate-occurrence',
+    'shifted-range',
+    'wrong-kind',
+    'missing-source-and-member',
+    'missing-loaded-source',
+    'missing-inventory',
+  ] as const)(
+    'recollects %s from the real store and publishes a complete JSDoc graph for the next process',
+    (corruption) => {
+      const f = fixture();
+      f.write(
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: {
+            allowJs: true,
+            checkJs: true,
+            composite: true,
+            declaration: true,
+            noLib: true,
+            types: [],
+            module: 'NodeNext',
+            outDir: 'dist',
+          },
+          files: ['src/a.js', 'src/value.d.ts', 'src/empty.ts'],
+        }),
+      );
+      f.write(
+        'src/a.js',
+        '/** @type {import("./value.js").V} */\nexport let value;',
+      );
+      f.write('src/empty.ts', 'export const independent = 1;');
+      if (corruption === 'missing-loaded-source') {
+        const config = JSON.parse(
+          readFileSync(f.file('tsconfig.json'), 'utf8'),
+        );
+        config.files = ['src/a.js', 'src/empty.ts'];
+        f.write('tsconfig.json', JSON.stringify(config));
+        f.write(
+          'types/tsconfig.json',
+          JSON.stringify({
+            compilerOptions: {
+              composite: true,
+              declaration: true,
+              noLib: true,
+              types: [],
+            },
+            files: ['../src/value.d.ts'],
+          }),
+        );
+        f.write(
+          'limina.config.mjs',
+          'export default {scope:{checkers:{tsc:{include:["tsconfig.json","types/tsconfig.json"]}}}};',
+        );
+      }
+      const run = 'console.log(JSON.stringify(await runCache()));';
+      const cold = f.execute<GraphRunResult>(run);
+      const warm = f.execute<GraphRunResult>(run);
+      expect(warm.graph).toEqual(cold.graph);
+      expect(warm.events).toContainEqual(
+        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      );
+      const store = new AnalysisCacheStore({
+        namespace: createLiminaArtifactNamespace({
+          rootDir: f.root,
+          generation: 0,
+        }),
+        configPath: f.config.configPath,
+        identity: 'unused',
+      });
+      const snapshot = readStoredAnalysisSnapshot(store.path);
+      const before = decodeData(
+        Object.values(snapshot.graphs)[0]!.data,
+      ) as StoredGraphData;
+      expect(before.ownershipPlan.dependencyFacts).toHaveLength(1);
+      expect(before.ownershipPlan.ownershipSelectionFacts).toHaveLength(1);
+      for (const [contextId, context] of Object.entries(snapshot.contexts)) {
+        const id = context.sources[f.file('src/a.js')];
+        if (id == null) continue;
+        const importer = snapshot.importers[id];
+        expect(importer.occurrences).toHaveLength(1);
+        const damage = () => {
+          switch (corruption) {
+            case 'missing-source': {
+              delete context.sources[f.file('src/a.js')];
+              break;
+            }
+            case 'missing-empty-source': {
+              delete context.sources[f.file('src/empty.ts')];
+              break;
+            }
+            case 'missing-occurrences': {
+              importer.occurrences = [];
+              importer.facts = {};
+              break;
+            }
+            case 'orphan-fact': {
+              importer.facts.orphan = structuredClone(
+                Object.values(importer.facts)[0]!,
+              );
+              break;
+            }
+            case 'shifted-range':
+            case 'wrong-kind': {
+              const occurrence = importer.occurrences[0]!;
+              const key = occurrenceKey(occurrence);
+              const fact = importer.facts[key];
+              delete importer.facts[key];
+              if (corruption === 'shifted-range') {
+                occurrence.locator.sourceStart += 100_000;
+                occurrence.locator.sourceEnd += 100_000;
+              } else occurrence.kind = 'export';
+              importer.facts[occurrenceKey(occurrence)] = fact;
+              break;
+            }
+            case 'missing-source-and-member':
+            case 'missing-loaded-source': {
+              const target = f.file('src/value.d.ts');
+              expect(context.sources[target]).toBeTruthy();
+              expect(context.native!.snapshot.resolutions).toContainEqual(
+                expect.objectContaining({
+                  compilerLoad: 'loaded',
+                  target: expect.objectContaining({ lexicalPath: target }),
+                }),
+              );
+              delete context.sources[target];
+              snapshot.projects[contextId].members = snapshot.projects[
+                contextId
+              ].members.filter((member) => member !== target);
+              if (corruption === 'missing-loaded-source') {
+                context.native!.inventory = {
+                  ...context.native!.inventory,
+                  members: context.native!.inventory.members.filter(
+                    (member) => member !== target,
+                  ),
+                };
+              }
+              break;
+            }
+            case 'missing-inventory': {
+              Reflect.deleteProperty(context.native!, 'inventory');
+              break;
+            }
+            default: {
+              importer.occurrences.push(
+                structuredClone(importer.occurrences[0]!),
+              );
+            }
+          }
+        };
+        damage();
+      }
+      writeStoredAnalysisSnapshot(store.path, snapshot);
+      const rebuilt = f.execute<GraphRunResult>(run);
+      expect(rebuilt.events).not.toContainEqual(
+        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      );
+      expect(rebuilt.events).toContainEqual(
+        expect.objectContaining({
+          kind: 'semanticPrograms',
+          count: expect.any(Number),
+        }),
+      );
+      expect(
+        rebuilt.events
+          .filter((event) => event.kind === 'semanticPrograms')
+          .reduce((sum, event) => sum + (event.count ?? 0), 0),
+      ).toBeGreaterThan(0);
+      expect(
+        rebuilt.events.some(
+          (event) => event.kind === 'restoredContexts' && event.count! > 0,
+        ),
+      ).toBe(false);
+      expect(graphMeaning(rebuilt.graph)).toEqual(graphMeaning(cold.graph));
+      const repaired = readStoredAnalysisSnapshot(store.path);
+      const graph = decodeData(
+        Object.values(repaired.graphs)[0]!.data,
+      ) as StoredGraphData;
+      expect(graph.ownershipPlan.dependencyFacts).toHaveLength(1);
+      expect(graph.ownershipPlan.ownershipSelectionFacts).toHaveLength(1);
+      expect(graph.dependencyAnalysis.outcome?.execution).toBe('completed');
+      expect(repaired.header.revision).not.toBe(snapshot.header.revision);
+      const recovered = f.execute<GraphRunResult>(run);
+      expect(recovered.graph).toEqual(rebuilt.graph);
+      expect(recovered.events).toContainEqual(
+        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      );
+      expect(
+        recovered.events.some(
+          (event) => event.kind === 'semanticPrograms' && event.count! > 0,
+        ),
+      ).toBe(false);
+      expect(readStoredAnalysisSnapshot(store.path)).toEqual(repaired);
+    },
+  );
+
+  it.each([
+    'foreign-target',
+    'missing-native-proof',
+    'missing-core-work',
+    'foreign-candidate',
+  ] as const)(
+    'rejects ownership %s in a valid storage envelope and restores the recollected result',
+    (corruption) => {
+      const f = fixture();
+      const run = 'console.log(JSON.stringify(await runCache()));';
+      const first = f.execute<GraphRunResult>(run);
+      const warm = f.execute<GraphRunResult>(run);
+      expect(warm.graph).toEqual(first.graph);
+      expect(warm.events).toContainEqual(
+        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      );
+      const store = new AnalysisCacheStore({
+        namespace: createLiminaArtifactNamespace({
+          rootDir: f.root,
+          generation: 0,
+        }),
+        configPath: f.config.configPath,
+        identity: 'unused',
+      });
+      const snapshot = readStoredAnalysisSnapshot(store.path);
+      const record = Object.values(snapshot.graphs)[0]!;
+      const data = decodeData(record.data) as StoredGraphData;
+      const fact = data.ownershipPlan.dependencyFacts[0]!;
+      expect(fact.nativeEvidence).toBeDefined();
+      switch (corruption) {
+        case 'foreign-target': {
+          fact.physicalTargetPath = f.file('foreign.ts');
+          break;
+        }
+        case 'missing-native-proof': {
+          delete fact.nativeEvidence;
+          break;
+        }
+        case 'missing-core-work': {
+          data.dependencyAnalysis.outcome = {
+            ...data.dependencyAnalysis.outcome!,
+            core: { ...data.dependencyAnalysis.outcome!.core, entries: [] },
+          };
+          break;
+        }
+        default: {
+          data.dependencyAnalysis.candidate = {
+            configPaths: [],
+            references: [],
+            schedules: [],
+          };
+        }
+      }
+      record.data = encodeData(data);
+      writeStoredAnalysisSnapshot(store.path, snapshot);
+      const rejected = f.execute<GraphRunResult>(run);
+      expect(rejected.events).toContainEqual(
+        expect.objectContaining({
+          kind: 'fallback-graph-dto-invalid',
+          count: 1,
+        }),
+      );
+      expect(rejected.events).not.toContainEqual(
+        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      );
+      expect(rejected.events).toContainEqual(
+        expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
+      );
+      expect(
+        rejected.events.some(
+          (event) => event.kind === 'restoredContexts' && event.count! > 0,
+        ),
+      ).toBe(true);
+      expect(graphMeaning(rejected.graph)).toEqual(graphMeaning(first.graph));
+      const recovered = f.execute<GraphRunResult>(run);
+      expect(recovered.graph).toEqual(rejected.graph);
+      expect(recovered.events).toContainEqual(
+        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      );
+    },
+  );
+
+  it('physically stops a non-root implementation while the full Oracle loads its support and restores that boundary', () => {
     const f = fixture();
     f.write(
       'limina.config.mjs',
@@ -866,7 +1154,7 @@ describe('production graph snapshots and publication', () => {
           checkJs: true,
           maxNodeModuleJsDepth: 2,
         },
-        files: ['src/a.ts'],
+        files: ['src/a.ts', 'src/value.d.ts'],
       }),
     );
     f.write(
@@ -911,9 +1199,10 @@ describe('production graph snapshots and publication', () => {
     expect(
       compilerProgram.getSourceFile(f.file('node_modules/compat/nested.d.ts')),
     ).toBeDefined();
-    expect(compatibility.events).toContainEqual(
-      expect.objectContaining({ kind: 'semanticPrograms', count: 1 }),
-    );
+    expect(
+      compatibility.events.find((event) => event.kind === 'semanticPrograms')
+        ?.count,
+    ).toBeGreaterThan(0);
     const restored = f.execute<GraphRunResult>(run);
     expect(restored.graph).toEqual(compatibility.graph);
     expect(restored.events).toContainEqual(
@@ -930,12 +1219,10 @@ describe('production graph snapshots and publication', () => {
     expect(recovered.graph.edges.map((edge) => edge.toConfigPath)).toEqual([
       f.file('b/tsconfig.json'),
     ]);
-    expect(recovered.events).toContainEqual(
-      expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
-    );
-    expect(recovered.events).toContainEqual(
-      expect.objectContaining({ kind: 'syntaxExtractions', count: 1 }),
-    );
+    expect(
+      recovered.events.find((event) => event.kind === 'semanticPrograms')
+        ?.count,
+    ).toBeGreaterThan(0);
   });
 
   it('rejects invalid configuration before adopting or replacing a warm snapshot', () => {
@@ -1006,10 +1293,8 @@ describe('production graph snapshots and publication', () => {
     );
     expect(
       changed.events.find((event) => event.kind === 'semanticPrograms')?.count,
-    ).toBe(0);
-    expect(
-      changed.events.find((event) => event.kind === 'syntaxExtractions')?.count,
-    ).toBe(1);
+    ).toBeGreaterThan(0);
+
     expect(changed.events.some((event) => event.kind === 'write')).toBe(false);
     expect(readFileSync(store.path)).toEqual(bytes);
     expect(statSync(store.path).mtimeMs).toBe(modified);
@@ -1050,11 +1335,11 @@ describe('production graph snapshots and publication', () => {
         const result = f.execute<GraphRunResult>(
           `console.log(JSON.stringify(await runCache({cache:${JSON.stringify(mode)},force:${isForced}})));`,
         );
-        expect(result.graph).toEqual(seed.graph);
+        expect(graphMeaning(result.graph)).toEqual(graphMeaning(seed.graph));
         expect(
           result.events.some((event) => event.name === 'analysis-cache'),
         ).toBe(false);
-        expect(result.events).not.toContainEqual(
+        expect(result.events).toContainEqual(
           expect.objectContaining({ name: 'bounded-program-create' }),
         );
         expect(readFileSync(store.path)).toEqual(bytes);
@@ -1096,7 +1381,7 @@ describe('production graph snapshots and publication', () => {
     const encoded = readStoredAnalysisSnapshot(store.path);
     const persisted = parseAnalysisSnapshot(encoded, encoded.header.identity);
     expect(persisted).toBeDefined();
-    expect(Object.keys(persisted!.graphs)).toEqual(['generated-graph-v2']);
+    expect(Object.keys(persisted!.graphs)).toHaveLength(1);
     expect(Object.values(persisted!.contexts)).toEqual(
       expect.arrayContaining([expect.objectContaining({ complete: true })]),
     );
@@ -1125,9 +1410,9 @@ describe('production graph snapshots and publication', () => {
     expect(changed.events).toContainEqual(
       expect.objectContaining({ kind: 'resolverCalls', count: 0 }),
     );
-    expect(changed.events).toContainEqual(
-      expect.objectContaining({ kind: 'syntaxExtractions', count: 1 }),
-    );
+    expect(
+      changed.events.find((event) => event.kind === 'semanticPrograms')?.count,
+    ).toBeGreaterThan(0);
   });
   it('cold-starts forced analysis, publishes its result and restores it on the next normal run', () => {
     const f = fixture();
@@ -1146,15 +1431,12 @@ describe('production graph snapshots and publication', () => {
     const forced = f.execute<GraphRunResult>(
       'console.log(JSON.stringify(await runCache({force:true})));',
     );
-    expect(forced.graph).toEqual(seed.graph);
+    expect(graphMeaning(forced.graph)).toEqual(graphMeaning(seed.graph));
     expect(forced.events).not.toContainEqual(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),
     );
     expect(
       forced.events.find((event) => event.kind === 'semanticPrograms')?.count,
-    ).toBe(0);
-    expect(
-      forced.events.find((event) => event.kind === 'syntaxExtractions')?.count,
     ).toBeGreaterThan(0);
     expect(forced.events).toContainEqual(
       expect.objectContaining({ kind: 'write' }),
@@ -1181,7 +1463,7 @@ describe('production graph snapshots and publication', () => {
     const programs = result.events
       .filter((event) => event.kind === 'semanticPrograms')
       .map((event) => event.count);
-    expect(programs[0]).toBe(0);
+    expect(programs[0]).toBeGreaterThan(0);
     expect(programs[1]).toBe(programs[0]);
     expect(result.events).toContainEqual(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),
@@ -1246,3 +1528,7 @@ it.each(['relative', 'package-import'])(
     expect(statSync(store.path).mtimeMs).toBe(mtime);
   },
 );
+
+function collectContextEnvironment(result: ReturnType<typeof analyze>) {
+  return Object.values(result.cache.contexts)[0]?.environment.evidence;
+}

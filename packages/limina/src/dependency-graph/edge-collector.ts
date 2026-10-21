@@ -2,7 +2,7 @@ import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import {
-  collectProjectDependencies,
+  collectRuntimeProjectDependencies,
   createParsedProjectSemanticContext,
   type ProjectDependency,
 } from '../core/project-dependencies/runner';
@@ -194,7 +194,7 @@ function collectDependencyGraphProject(options: {
   );
   const packageRootDirectory =
     owner === null ? options.context.config.rootDir : owner.directory;
-  return collectProjectDependencies({
+  return collectRuntimeProjectDependencies({
     caches: options.context.projectDependencyCaches,
     context: createParsedProjectSemanticContext({
       authority: options.authority,
@@ -208,7 +208,7 @@ function collectDependencyGraphProject(options: {
 
 function collectDependencyGraphFailures(
   context: DependencyGraphCollectionContext,
-  failures: ReturnType<typeof collectProjectDependencies>['failures'],
+  failures: ReturnType<typeof collectRuntimeProjectDependencies>['failures'],
 ): void {
   for (const failure of failures) {
     context.problems.push(
@@ -224,7 +224,7 @@ function collectDependencyGraphFailures(
 }
 
 function collectDependencyGraphDependencies(options: {
-  collection: ReturnType<typeof collectProjectDependencies>;
+  collection: ReturnType<typeof collectRuntimeProjectDependencies>;
   context: DependencyGraphCollectionContext;
   project: ProjectInfo;
 }): void {
@@ -272,7 +272,9 @@ function isAddConsumptionFailure(
 
 function collectDependencyGraphObservations(
   context: DependencyGraphCollectionContext,
-  observations: ReturnType<typeof collectProjectDependencies>['observations'],
+  observations: ReturnType<
+    typeof collectRuntimeProjectDependencies
+  >['observations'],
 ): void {
   for (const observation of observations) {
     if (observation.kind !== 'unmapped-generated')

@@ -1,6 +1,11 @@
 import { z } from 'zod';
-import { declarationEntrySchema } from './declaration-schema';
+import {
+  declarationEntryDataSchema,
+  declarationEntrySchema,
+} from './declaration-schema';
 import { dependencySchema as dependency } from './dependency-schema';
+import { discoveryRecordSchema } from './discovery-schema';
+import { nativeEvidenceSchema } from './native-evidence-schema';
 const text = z.string();
 const texts = z.array(text);
 const dependencies = z.array(dependency);
@@ -39,25 +44,56 @@ const project = z.object({
   fileNames: texts,
   options,
   projectReferences: z.array(reference).optional(),
-  admissionMode: z.enum(['full-program', 'root-facts']).optional(),
+  admissionMode: z
+    .enum(['full-program', 'root-facts', 'coverage-bounded'])
+    .optional(),
   analysisBinding: binding.optional(),
+  compilationObligationScope: z
+    .literal('generated-declaration-project-v1')
+    .optional(),
 });
 const boundaryEntry = z.tuple([text, z.boolean()]);
-export const nativeContextSchema: z.ZodType<unknown> = z.object({
-  typeEntries: z.array(declarationEntrySchema),
-  collection: z
-    .object({
-      adapter: z.literal('native-requests-v1'),
-      mode: z.enum(['programless', 'compatibility']),
-      reason: text.optional(),
-    })
-    .optional(),
-  project,
-  sharedEnvironment: z.object({ dependencies, queryIds: texts, version: text }),
-  environment: typeEnvironmentSchema,
-  dependencies,
-  queryIds: texts,
-  boundary: z.array(boundaryEntry),
-  sources: z.record(text, text.nullable()),
-  complete: z.boolean(),
+const compilerInventory = z.object({
+  members: texts,
+  occurrences: z.array(z.object({ requestId: text, fingerprint: text })),
+  loads: z.array(z.object({ requestId: text, target: text, source: text })),
+  roots: z.array(z.object({ root: text, source: text })),
 });
+export const nativeContextSchema: z.ZodType<unknown> = z
+  .object({
+    native: z
+      .object({
+        snapshot: nativeEvidenceSchema,
+        inventory: compilerInventory,
+        discovery: z.array(discoveryRecordSchema),
+        boundaryIdentity: text,
+      })
+      .optional(),
+    typeEntries: z.array(declarationEntryDataSchema),
+    collection: z
+      .object({
+        adapter: z.literal('native-requests-v1'),
+        mode: z.enum(['programless', 'compatibility']),
+        reason: text.optional(),
+      })
+      .optional(),
+    project,
+    sharedEnvironment: z.object({
+      dependencies,
+      queryIds: texts,
+      version: text,
+    }),
+    environment: typeEnvironmentSchema,
+    dependencies,
+    queryIds: texts,
+    boundary: z.array(boundaryEntry),
+    sources: z.record(text, text.nullable()),
+    complete: z.boolean(),
+  })
+  .refine(
+    (context) =>
+      context.native !== undefined ||
+      context.typeEntries.every(
+        (entry) => declarationEntrySchema.safeParse(entry).success,
+      ),
+  );

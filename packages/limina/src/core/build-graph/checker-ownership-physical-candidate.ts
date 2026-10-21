@@ -1,7 +1,10 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { hasModuleSpecifierQueryOrFragment } from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
+import { deriveNativeCoverage } from '../../domain/analysis/native-coverage';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
+import type { TypeScriptSemanticDependencyContext } from '../typescript-semantic/contracts';
+import { observeNativeFileIdentity } from '../typescript-semantic/native-file-identity';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import type { EvidenceProject } from './checker-ownership-evidence-project';
@@ -13,6 +16,7 @@ import type {
 import type { FileOwnerLookup } from './file-owner-lookup';
 
 interface PhysicalCandidateContext {
+  typeScriptSemanticContext: TypeScriptSemanticDependencyContext;
   config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
@@ -72,10 +76,7 @@ function resolveUniqueOwner(options: {
   problems: string[];
   targetPath: string;
 }): string | null {
-  const owners = getPhysicalTargetOwners(
-    options.context.membership,
-    options.targetPath,
-  );
+  const owners = getPhysicalTargetOwners(options.context, options.targetPath);
   if (owners.length > 1) {
     options.problems.push(
       formatAmbiguousPhysicalCandidate({
@@ -91,10 +92,27 @@ function resolveUniqueOwner(options: {
 }
 
 function getPhysicalTargetOwners(
-  membership: FileOwnerLookup,
+  context: PhysicalCandidateContext,
   targetPath: string,
 ): string[] {
-  return membership.get(targetPath) ?? [];
+  const coverage = candidateCoverage(context, targetPath);
+  if (coverage === undefined) return [];
+  return ['unique', 'ambiguous'].includes(coverage.state)
+    ? coverage.members.map((member) => member.configId)
+    : [];
+}
+
+function candidateCoverage(
+  context: PhysicalCandidateContext,
+  targetPath: string,
+) {
+  const index = context.discovery.sourceConfigCoverage;
+  return index === undefined
+    ? undefined
+    : deriveNativeCoverage(
+        index,
+        observeNativeFileIdentity(targetPath, index.inputVersion),
+      );
 }
 
 function getOwnerStateAndProject(options: {
@@ -134,6 +152,7 @@ function createOwnedPhysicalCandidate(options: {
     ...options,
     family,
     project: owner.project,
+    context: options.context,
     registeredPaths: options.context.membership.registeredFileNames(
       options.targetPath,
       options.owningConfigPath,
@@ -142,20 +161,42 @@ function createOwnedPhysicalCandidate(options: {
 }
 
 function createFamilyCandidate(options: {
+  context: PhysicalCandidateContext;
   family: PhysicalFrameworkCandidate['family'];
   owningConfigPath: string;
   project: AutoScopeProject;
   targetPath: string;
   registeredPaths: readonly string[];
 }): PhysicalFrameworkCandidate | null {
-  if (!isFamilyTarget(options)) {
+  return isFamilyTarget(options) ? createProvenCandidate(options) : null;
+}
+
+function createProvenCandidate(
+  options: Parameters<typeof createFamilyCandidate>[0],
+): PhysicalFrameworkCandidate | null {
+  const observed =
+    options.context.typeScriptSemanticContext.nativeEvidence?.contexts[0];
+  const coverage = candidateCoverage(options.context, options.targetPath);
+  if ([observed === undefined, !isUniqueCoverage(coverage)].some(Boolean))
     return null;
-  }
   return {
+    observer: 'oxc-physical-candidate-v1',
+    origin: {
+      source: 'framework-candidate',
+      family: options.family,
+      context: observed!,
+    },
+    coverage: coverage!,
     family: options.family,
     owningConfigPath: options.owningConfigPath,
     targetPath: options.targetPath,
   };
+}
+
+function isUniqueCoverage(
+  coverage: ReturnType<typeof candidateCoverage>,
+): boolean {
+  return coverage?.state === 'unique';
 }
 
 function qualifyPendingPhysicalCandidate(options: {

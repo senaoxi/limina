@@ -1,4 +1,7 @@
-import type { CheckerProjectConfigCache } from '#checkers';
+import type {
+  CheckerProjectConfigCache,
+  ParsedCheckerProjectConfig,
+} from '#checkers';
 import type {
   ResolvedCheckerConfig,
   ResolvedLiminaInputs,
@@ -6,6 +9,7 @@ import type {
 import type { JsonObject } from '#core/tsconfig/actions';
 import type ts from 'typescript';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import type { SourceConfigDiscovery } from './source-config-discovery';
 import type { CheckerSourceConfigCollection } from './types';
 
 export interface CollectionContext {
@@ -38,12 +42,15 @@ export interface ConfigVisit extends CollectionContext {
 }
 
 export interface SourceConfigAnalysis {
+  configClosure: ParsedCheckerProjectConfig['configClosure'];
   configObject: JsonObject;
   fileNames: string[];
   options: ts.CompilerOptions;
 }
 
 export interface CollectCheckerSourceConfigsOptions {
+  onProblems?: (problems: string[]) => void;
+  sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: ResolvedCheckerConfig['name'];
   checkerPreset: ResolvedCheckerConfig['name'];

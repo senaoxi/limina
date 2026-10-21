@@ -1,15 +1,17 @@
 import type { AnalysisReadDescriptor } from '#utils/analysis-input';
+import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
 import type { FileDependencyFacts } from '../typescript-semantic/file-dependency-facts';
+import type { NativeContextInventory } from '../typescript-semantic/native-context-inventory';
 import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
 import type { VueContextRecord } from './vue-contracts';
 
-// Installation coverage now requires the selected lock root and byte receipt.
-export const ANALYSIS_ADAPTER = 'typescript-6.0.3-vue-3.2.4-v13';
+// Compiler occurrence/load receipts qualify restored projections.
+export const ANALYSIS_ADAPTER = 'typescript-5.4-6.0-coverage-bounded-v19';
 
 export interface InputDependency {
   inputId: string;
@@ -79,6 +81,12 @@ export interface ReferenceContribution {
 }
 
 export interface NativeContextRecord {
+  native?: {
+    snapshot: NativeEvidenceSnapshot;
+    inventory: NativeContextInventory;
+    discovery: DiscoveryRecord[];
+    boundaryIdentity: string;
+  };
   typeEntries: DeclarationEntry[];
   collection?: {
     adapter: 'native-requests-v1';
@@ -99,6 +107,7 @@ export interface NativeContextRecord {
     | 'projectReferences'
     | 'admissionMode'
     | 'analysisBinding'
+    | 'compilationObligationScope'
   >;
   environment: TypeEnvironmentRecord;
   dependencies: InputDependency[];
@@ -174,7 +183,7 @@ export interface ConfigModuleSnapshot {
 
 export interface AnalysisSnapshot {
   header: {
-    schema: 8;
+    schema: 10;
     implementation: string;
     identity: string;
     configVersion: string | null;

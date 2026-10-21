@@ -74,6 +74,7 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
   }
 
   return {
+    nativeEvidence: options.context.nativeEvidence,
     identity: options.context.identity,
     getTypeEnvironmentEntries: (() => {
       const entries = options.context.getTypeEnvironmentEntries?.() ?? [];

@@ -1,6 +1,11 @@
 import type { CheckerName } from '#config/runner';
 import type { ImportRecord } from '#core/import-analysis/runner';
-import type { DeclarationReferenceRequirement } from '../typescript-semantic/dependency-fact';
+import type { NativeEvidenceOrigin } from '../../domain/analysis/native-context';
+import type { NativeCoverage } from '../../domain/analysis/native-coverage';
+import type {
+  DeclarationReferenceRequirement,
+  NativeDependencyFact,
+} from '../typescript-semantic/dependency-fact';
 
 export type CheckerOwner =
   | { kind: 'pending' }
@@ -42,6 +47,7 @@ export interface CheckerEvidence {
 }
 
 export interface TypeConfigOwnershipState {
+  semanticAuthorityUnavailable?: string;
   authoritativeOwner?: CheckerName;
   configPath: string;
   constraintCandidates: Map<CheckerName, CheckerEvidence[]>;
@@ -63,6 +69,8 @@ export interface SolutionOwnershipState {
 }
 
 export interface CheckerDependencyFact {
+  frameworkCandidate?: PhysicalFrameworkCandidate;
+  nativeEvidence?: NativeDependencyFact['nativeEvidence'];
   referenceRequirement?: DeclarationReferenceRequirement | null;
   consumerConfigPath: string;
   importRecord: ImportRecord;
@@ -80,12 +88,17 @@ export interface CheckerDependencyFact {
 }
 
 export interface PhysicalFrameworkCandidate {
+  origin: NativeEvidenceOrigin;
+  coverage: NativeCoverage;
+  observer: 'oxc-physical-candidate-v1';
   family: Exclude<SemanticFamily, 'typescript'>;
   owningConfigPath: string;
   targetPath: string;
 }
 
 export interface CheckerOwnershipPlan {
+  dependencyFactPhase?: 'selection' | 'locked';
+  ownershipSelectionFacts?: readonly CheckerDependencyFact[];
   dependencyFacts: CheckerDependencyFact[];
   entryOwnerByConfigPath: Map<string, CheckerName>;
   solutions: Map<string, SolutionOwnershipState>;

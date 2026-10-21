@@ -1,4 +1,5 @@
 import { toRelativePath } from '#utils/path';
+import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { CheckerDependencyFact } from './checker-ownership-types';
 import type { FileOwnerLookup } from './file-owner-lookup';
 
@@ -28,7 +29,7 @@ export function collectCanonicalOwnerProblems(options: {
       fact.physicalTargetPath === null ? [] : [fact.physicalTargetPath],
     ),
   );
-  return [...paths]
+  const legacy = [...paths]
     .filter((filePath) => options.membership.isCanonicalAmbiguous(filePath))
     .map((filePath) =>
       formatAmbiguousCanonicalOwner({
@@ -37,4 +38,36 @@ export function collectCanonicalOwnerProblems(options: {
         rootDir: options.rootDir,
       }),
     );
+  const native = options.facts.flatMap((fact) =>
+    nativeAmbiguityProblem(fact, options.rootDir),
+  );
+  return [...new Set([...legacy, ...native])];
+}
+
+function nativeAmbiguityProblem(
+  fact: CheckerDependencyFact,
+  rootDirectory: string,
+): string[] {
+  const coverage = fact.nativeEvidence?.coverage;
+  return coverage == null
+    ? []
+    : ambiguousCoverageProblems(coverage, rootDirectory);
+}
+
+function ambiguousCoverageProblems(
+  coverage: NonNullable<
+    NonNullable<CheckerDependencyFact['nativeEvidence']>['coverage']
+  >,
+  rootDirectory: string,
+): string[] {
+  return coverage.state === 'ambiguous' &&
+    !isDeclarationFile(coverage.target.lexicalPath)
+    ? [
+        formatAmbiguousCanonicalOwner({
+          filePath: coverage.target.lexicalPath,
+          owners: coverage.members.map((member) => member.configId),
+          rootDir: rootDirectory,
+        }),
+      ]
+    : [];
 }

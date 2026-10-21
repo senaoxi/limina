@@ -66,7 +66,7 @@ function restoreCoreContext(
     return undefined;
   return options.cache.analysisCache?.restoreContext({
     ...options.project,
-    admissionMode: 'full-program',
+    admissionMode: 'coverage-bounded',
     analysisBinding: coreBinding(options),
   });
 }
@@ -75,7 +75,7 @@ export function getCoreTypeScriptSemanticDependencyContext(
 ): TypeScriptSemanticDependencyContext {
   const project = {
     ...options.project,
-    admissionMode: 'full-program' as const,
+    admissionMode: 'coverage-bounded' as const,
     analysisBinding: coreBinding(options),
   };
   const key = createTypeScriptSemanticContextIdentity(project);
@@ -84,7 +84,7 @@ export function getCoreTypeScriptSemanticDependencyContext(
   if (prior !== undefined) return prior;
   const context = createTypeScriptDependencyContext(project, {
     analysisCache: options.cache.analysisCache,
-    syntaxFacts: options.cache.syntaxFacts,
+    metrics: options.cache.metrics,
   });
   try {
     const snapshot = createTypeScriptSemanticDependencySnapshot({

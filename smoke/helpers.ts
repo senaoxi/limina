@@ -776,8 +776,10 @@ export async function installConsumerDependencies(options: {
   fixtureDir: string;
   manifest: DistributionPackageJson;
   tarballPath: string;
+  typeScriptVersion?: string;
 }): Promise<void> {
   const typescriptRange =
+    options.typeScriptVersion ??
     options.astroToolchain?.typeScriptVersion ??
     getPeerDependencyRange(options.manifest, 'typescript');
   const knipRange = getPeerDependencyRange(options.manifest, 'knip');
@@ -835,6 +837,7 @@ export async function createConsumerFixture(options: {
   manifest: DistributionPackageJson;
   sourceText?: string;
   tarballPath: string;
+  typeScriptVersion?: string;
 }): Promise<ConsumerFixture> {
   // Windows temp paths can contain DOS short names. Use one real path for
   // pnpm's project and workspace roots so add and frozen install agree on
@@ -867,6 +870,7 @@ export async function createConsumerFixture(options: {
       fixtureDir: fixtureDirectory,
       manifest: options.manifest,
       tarballPath: options.tarballPath,
+      typeScriptVersion: options.typeScriptVersion,
     });
 
     return {

@@ -12,4 +12,5 @@ export {
   collectProjectDependencies,
   isProjectDependencyCreatesSourceEdge as projectDependencyCreatesSourceEdge,
 } from './provider';
+export { collectRuntimeProjectDependencies } from './runtime-source';
 export { collectSourceEvidence } from './source-evidence';

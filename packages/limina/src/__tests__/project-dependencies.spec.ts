@@ -6,6 +6,7 @@ import {
 } from '#core/import-analysis/runner';
 import {
   collectProjectDependencies,
+  collectRuntimeProjectDependencies,
   createProjectDependencyCaches,
   projectDependencyCreatesSourceEdge,
   type ProjectDependencyPreparation,
@@ -239,7 +240,7 @@ describe('project dependency authority', () => {
     }
   });
 
-  it('uses TypeScript AST plus checker resolution for direct-source dependencies', async () => {
+  it('uses runtime source resolution without creating Native compilation obligations', async () => {
     const temporaryRoot = await mkdtemp(
       path.join(tmpdir(), 'limina-project-deps-'),
     );
@@ -253,7 +254,7 @@ describe('project dependency authority', () => {
     const base = createImportAnalysisContext();
     const resolveOxcImport = vi.fn(base.resolveOxcImport);
 
-    const collection = collectProjectDependencies({
+    const collection = collectRuntimeProjectDependencies({
       context: createSemanticContext({
         family: 'typescript',
         fileName: sourceFile,
@@ -270,13 +271,12 @@ describe('project dependency authority', () => {
         semanticSpecifier: './target',
         targetKind: 'source',
         typeEvidence: undefined,
-        nativeFact: { admission: 'admitted' },
-        referenceRequirement: {
-          kind: 'source-semantic',
-          targetFileName: targetFile,
-        },
+        referenceRequirement: null,
       },
     ]);
+    expect(collection.nativeEvidence).toBeUndefined();
+    expect(collection.referenceInputs).toEqual([]);
+    expect(collection.dependencies[0]?.nativeFact).toBeUndefined();
     expect(resolveOxcImport).not.toHaveBeenCalled();
   });
 

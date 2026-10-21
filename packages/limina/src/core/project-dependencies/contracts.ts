@@ -7,8 +7,11 @@ import type {
   ImportRecord,
 } from '#core/import-analysis/runner';
 import type ts from 'typescript';
+import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
+import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-types';
+import type { CoreCollectionRun } from '../build-graph/core-collection-run';
 import type { RequirementDecision } from '../dependency-semantics';
 import type { PreparedDependencyFact } from '../framework-semantic/contracts';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
@@ -19,14 +22,15 @@ import type {
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
 import type { DeclarationClosure } from '../typescript-semantic/declaration-closure';
-import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
 
 import type {
   DeclarationReferenceRequirement,
   NativeDependencyFact,
 } from '../typescript-semantic/dependency-fact';
 
+import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import type { ProjectDependencyEvidence } from './evidence';
+import type { RuntimeSourceResolver } from './runtime-source-resolution';
 
 export interface ProjectSemanticContext {
   analysisChecker?: string;
@@ -125,6 +129,7 @@ export interface ProjectDependencyFailure {
 }
 
 export interface ProjectDependencyCollection {
+  nativeEvidence?: NativeEvidenceSnapshot;
   declarationClosure?: DeclarationClosure;
   referenceInputs?: ProjectDependency[];
   dependencies: ProjectDependency[];
@@ -148,6 +153,9 @@ export interface SourceEvidence {
 }
 
 export interface ProjectDependencyRequest {
+  purpose?: 'runtime-source';
+  runtimeSourceResolver?: RuntimeSourceResolver;
+  compilationObligationScope?: 'generated-declaration-project-v1';
   caches?: ProjectDependencyCaches;
   context: ProjectSemanticContext;
   importAnalysis: ImportAnalysisContext;
@@ -157,8 +165,16 @@ export interface ProjectDependencyRequest {
 }
 
 export interface ProjectDependencyCaches {
+  coreCollectionRun?: CoreCollectionRun;
+  readonly metrics?: AnalysisMetricsRecorder;
+  nativeSourceEvidence?: NativeEvidenceSnapshot;
+  nativeSourceContexts?: ReadonlyMap<
+    string,
+    TypeScriptSemanticDependencyContext
+  >;
+  nativeObservations?: Map<string, NativeEvidenceSnapshot>;
+  sourceConfigCoverage?: SourceConfigCoverageIndex;
   readonly analysisCache?: NativeAnalysisCache;
-  readonly syntaxFacts?: SourceSyntaxFactsCache;
   pendingOwnershipEvidenceCache: Map<string, unknown>;
   projectDependencyCache: Map<string, ProjectDependencyCollection>;
   projectDependencyPreparationCache: Map<string, ProjectDependencyPreparation>;

@@ -3,6 +3,10 @@ import type ts from 'typescript';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
 import type { TypeEvidence } from '../type-evidence/cache';
+import {
+  findSourceFileLiterals,
+  isObservedJSDocumentLiteral,
+} from '../typescript-semantic/source-file-literals';
 import type { ResolvedFrameworkCandidate } from './prepared-type-evidence';
 
 function resolveManagedSource(options: {
@@ -62,25 +66,36 @@ function findProgramLiteral(options: {
     candidate.containingSourceFile,
   );
   const expectedEnd = candidate.literal.getEnd();
-  let matched: ts.StringLiteralLike | null = null;
-  const visit = (node: ts.Node): void => {
-    if (matched !== null) return;
-    const literal = asProgramLiteral({
-      candidate,
-      expectedEnd,
-      expectedStart,
-      node,
-      sourceFile,
-      tsModule: options.tsModule,
-    });
-    if (literal !== null) {
-      matched = literal;
-      return;
-    }
-    options.tsModule.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  return matched;
+  const literals = findSourceFileLiterals({
+    sourceFile,
+    tsModule: options.tsModule,
+    matches: (node) =>
+      asProgramLiteral({
+        candidate,
+        expectedEnd,
+        expectedStart,
+        node,
+        sourceFile,
+        tsModule: options.tsModule,
+      }) !== null,
+  });
+  return uniqueObservedLiteral(literals, sourceFile, options.tsModule);
+}
+
+function uniqueObservedLiteral(
+  literals: readonly ts.StringLiteralLike[],
+  sourceFile: ts.SourceFile,
+  tsModule: typeof ts,
+): ts.StringLiteralLike | null {
+  if (literals.length !== 1) return null;
+  const literal = literals[0]!;
+  return isObservedJSDocumentLiteral({
+    literal,
+    sourceFile,
+    tsModule,
+  })
+    ? literal
+    : null;
 }
 
 /**

@@ -7,6 +7,7 @@ import type {
 import type { ResolvedCheckerConfig } from '#config/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import type ts from 'typescript';
+import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import type { ArtifactChange, ArtifactPlan } from '../../domain/artifacts/plan';
 import type { CheckerEntrySelection } from '../checkers/entry-selection';
@@ -16,6 +17,8 @@ import type {
   ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../workspace/validated-context';
+import type { CandidateBuildPlan } from './analysis-admission';
+import type { AnalysisOutcome } from './analysis-outcome';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
   CheckerOwnershipPlan,
@@ -27,8 +30,10 @@ import type {
 } from './generated-knip';
 import type { OutputOptions } from './generated/config-readers';
 import type { GeneratedTsconfigGraphManifest } from './manifest-types';
+import type { NativeAnalysisEvidence } from './native-analysis-evidence';
 import type { OutputProjectionReceipt } from './output-projection';
 import type { AutoFrameworkEvidence } from './source-capabilities';
+import type { SourceConfigDiscovery } from './source-config-discovery';
 import type { TypeInputProjectionReceipt } from './type-input-projection';
 
 export type { AutoScopeProject } from './auto-checker-types';
@@ -77,6 +82,7 @@ export interface GeneratedOutputDeclarationCopyContext {
 }
 
 export interface GeneratedTsconfigGraphResult {
+  sourceConfigCoverage?: SourceConfigCoverageIndex;
   outputProjections?: OutputProjectionReceipt[];
   typeInputProjections?: TypeInputProjectionReceipt[];
   artifactPlan: ArtifactPlan;
@@ -187,6 +193,7 @@ export interface OutputSolutionProject {
 }
 
 export interface CheckerSourceConfigCollection {
+  sourceDiscovery?: SourceConfigDiscovery;
   buildModulesBySourcePath: Map<string, GeneratedBuildModule>;
   entryConfigPaths: Set<string>;
   projectConfigPaths: Set<string>;
@@ -248,6 +255,9 @@ export interface SemanticSourceRelation {
 }
 
 export interface DependencyAnalysisResult {
+  candidate?: CandidateBuildPlan;
+  outcome?: AnalysisOutcome;
+  nativeEvidence?: NativeAnalysisEvidence[];
   complete: boolean;
   facts: SemanticSourceRelation[];
   diagnostics: string[];

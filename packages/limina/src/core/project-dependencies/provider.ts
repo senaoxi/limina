@@ -15,6 +15,7 @@ import type {
   ProjectDependencyRequest,
 } from './contracts';
 import { collectionReferenceInputs } from './declaration-projection';
+import { retainNativeObservation } from './native-evidence-retention';
 import { collectProjectDependencyFile } from './preparation';
 import {
   collectSupportContributions,
@@ -53,6 +54,10 @@ function cacheCollection(options: {
   collection: ProjectDependencyCollection;
   request: ProjectDependencyRequest;
 }): void {
+  retainNativeObservation(
+    options.request.caches,
+    options.collection.nativeEvidence,
+  );
   collectionReferenceInputs(options.collection);
   if (
     managedOutputLookupIdentity(options.request.managedOutputLookup) ===
@@ -75,18 +80,7 @@ function deduplicateFailures(collection: ProjectDependencyCollection): void {
 
 function createCollectionContext(request: ProjectDependencyRequest) {
   return createTypeScriptDependencyContext(
-    {
-      analysisBinding: {
-        phase: 'locked',
-        checker: request.context.analysisChecker ?? 'tsc',
-      },
-      configPath: request.context.configPath,
-      fileNames: request.context.fileNames,
-      options: request.context.compilerOptions,
-      projectReferences: request.context.references,
-      virtualFiles: request.context.virtualFiles,
-      workspaceSourceBoundary: request.context.workspaceSourceBoundary,
-    },
+    collectionProject(request),
     collectionServices(request),
   );
 }
@@ -106,7 +100,8 @@ function collectionBinding(request: ProjectDependencyRequest) {
 }
 function collectionProject(request: ProjectDependencyRequest) {
   return {
-    admissionMode: 'full-program' as const,
+    compilationObligationScope: request.compilationObligationScope,
+    admissionMode: 'coverage-bounded' as const,
     analysisBinding: collectionBinding(request),
     configPath: request.context.configPath,
     fileNames: request.context.fileNames,
@@ -206,7 +201,10 @@ export function collectProjectDependencies(
   request: ProjectDependencyRequest,
 ): ProjectDependencyCollection {
   const projectSemanticIdentity = getProjectSemanticCacheIdentity(request);
-  const cacheKey = projectSemanticIdentity;
+  const cacheKey = JSON.stringify([
+    projectSemanticIdentity,
+    request.compilationObligationScope,
+  ]);
   const cached = getCachedCollection({ cacheKey, request });
   if (cached !== undefined) return cached;
   const semanticRequest = {
@@ -216,6 +214,8 @@ export function collectProjectDependencies(
   const factsCacheKey = JSON.stringify([
     projectSemanticIdentity,
     createTypeScriptProjectDependencyFactsIdentity({
+      compilationObligationScope: request.compilationObligationScope,
+      analysisBinding: collectionBinding(request),
       configPath: request.context.configPath,
       fileNames: request.context.fileNames,
       options: request.context.compilerOptions,
@@ -248,8 +248,8 @@ function collectionServices(request: ProjectDependencyRequest) {
   const caches = request.caches;
   if (caches === undefined) return {};
   return {
-    syntaxFacts: caches.syntaxFacts,
     analysisCache: persistentCollectionCache(request),
+    metrics: caches.metrics,
   };
 }
 

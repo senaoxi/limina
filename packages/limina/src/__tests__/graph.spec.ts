@@ -32,6 +32,7 @@ import { GraphLogger } from '../logger';
 import { LiminaPreflightManager } from '../preflight';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
+import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { createFixturePathResolver } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -1870,7 +1871,7 @@ packages:
     const fixture = await createFixture(
       createManualWorkspacePackageFiles({
         appSource:
-          "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+          "import { internalValue } from '../../internal/src/index';\nexport const value = internalValue;\n",
       }),
     );
 
@@ -1882,9 +1883,13 @@ packages:
         '@example/internal',
       );
 
+      const graph = createManualGeneratedGraph(fixture.rootDir);
+      graph.sourceConfigCoverage = readFixtureSourceCoverage([
+        fixture.path('packages/app/tsconfig.lib.json'),
+        fixture.path('packages/internal/tsconfig.lib.json'),
+      ]);
       const { issues, passed } = await runGraphCheckWithIssues(fixture.config, {
-        generatedGraphProvider: async () =>
-          createManualGeneratedGraph(fixture.rootDir),
+        generatedGraphProvider: async () => graph,
       });
 
       expect(passed).toBe(false);
@@ -1902,7 +1907,7 @@ packages:
   it('reports a generated target outside checker reachability', async () => {
     const files = createManualWorkspacePackageFiles({
       appSource:
-        "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+        "import { internalValue } from '../../internal/src/index';\nexport const value = internalValue;\n",
     });
     const generatedAppDtsRelativePath =
       '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.lib.dts.json';
@@ -1929,6 +1934,10 @@ packages:
       );
 
       const generatedGraph = createManualGeneratedGraph(fixture.rootDir);
+      generatedGraph.sourceConfigCoverage = readFixtureSourceCoverage([
+        fixture.path('packages/app/tsconfig.lib.json'),
+        fixture.path('packages/internal/tsconfig.lib.json'),
+      ]);
       const appSourceConfigPath = normalizeAbsolutePath(
         path.join(fixture.rootDir, 'packages/app/tsconfig.lib.json'),
       );

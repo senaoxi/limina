@@ -8,6 +8,7 @@ import {
   createWorkspaceSourceBoundary,
 } from '../core/typescript-semantic';
 import { getEffectiveImporterRoots } from '../core/typescript-semantic/effective-roots';
+import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -31,8 +32,12 @@ const options = {
 function context(
   f: Awaited<ReturnType<typeof fixture>>,
   parsed: ts.ParsedCommandLine,
-  extra: string[] = [],
+  extraConfigs: string[] = [],
 ) {
+  const coverage = readFixtureSourceCoverage([
+    f.path('tsconfig.json'),
+    ...extraConfigs.map((name) => f.path(name)),
+  ]);
   return createBoundedTypeScriptSemanticContext({
     configPath: f.path('tsconfig.json'),
     fileNames: getEffectiveImporterRoots({
@@ -40,10 +45,11 @@ function context(
       ...parsed,
     }),
     options: parsed.options,
-    workspaceSourceBoundary: createWorkspaceSourceBoundary([
-      ...parsed.fileNames,
-      ...extra,
-    ]),
+    workspaceSourceBoundary: createWorkspaceSourceBoundary(
+      parsed.fileNames,
+      undefined,
+      coverage,
+    ),
   });
 }
 
@@ -71,6 +77,8 @@ describe('native reference repair independent Program evidence', () => {
         'env.d.ts':
           "import type { Value } from './provider/value.js'; export {};",
         'provider/value.ts': 'export type Value = number;',
+        'tsconfig.env.json': JSON.stringify({ files: ['env.d.ts'] }),
+        'provider/tsconfig.json': JSON.stringify({ files: ['value.ts'] }),
       });
       const parsed = f.parse();
       const oracle = ts.createProgram({
@@ -78,16 +86,23 @@ describe('native reference repair independent Program evidence', () => {
         options: parsed.options,
       });
       expect(oracle.getSourceFile(f.path('env.d.ts'))).toBeDefined();
-      const bounded = context(f, parsed, [f.path('provider/value.ts')]);
+      const bounded = context(f, parsed, [
+        'tsconfig.env.json',
+        'provider/tsconfig.json',
+      ]);
       try {
         expect(bounded.getImportRecords(f.path('env.d.ts'))).toHaveLength(1);
         const fact = bounded.getDependencyFact(
           bounded.getImportRecords(f.path('env.d.ts'))[0]!,
         );
-        expect(fact.referenceRequirement?.targetFileName).toBe(
+        expect(fact.resolution.target?.resolvedFileName).toBe(
           f.path('provider/value.ts'),
         );
-        expect(bounded.hasSourceFile(f.path('provider/value.ts'))).toBe(true);
+        expect(fact.referenceRequirement).toBeNull();
+        expect(fact.nativeEvidence?.obligation?.existence.state).toBe(
+          'unknown',
+        );
+        expect(bounded.hasSourceFile(f.path('provider/value.ts'))).toBe(false);
         expect(new Set(bounded.program.getRootFileNames())).toEqual(
           new Set(parsed.fileNames),
         );
@@ -218,7 +233,7 @@ describe('native reference repair independent Program evidence', () => {
   );
 
   it.each(['external', 'paths', 'augmentation', 'augmentation-admitted'])(
-    'keeps resolved implementation requirements independent of ambient symbols and membership: %s',
+    'keeps resolution, ambient providers and compilation proof independent: %s',
     async (variant) => {
       const f = await fixture({
         'package.json': '{"type":"module"}',
@@ -246,7 +261,7 @@ describe('native reference repair independent Program evidence', () => {
         'node_modules/dep/index.ts': 'export interface Value { source: true }',
       });
       const parsed = f.parse();
-      const bounded = context(f, parsed, [f.path('provider/index.ts')]);
+      const bounded = context(f, parsed);
       try {
         const record = bounded.getImportRecords(f.path('main.ts'))[0]!;
         const fact = bounded.getDependencyFact(record);
@@ -263,7 +278,7 @@ describe('native reference repair independent Program evidence', () => {
         );
         expect(fact.typeEvidence).toBeUndefined();
         const boundedSymbol = bounded.getSymbolAtImportRecord(record);
-        if (variant.startsWith('augmentation')) {
+        if (variant === 'augmentation-admitted') {
           expect(boundedSymbol?.declarations).toContain(
             bounded.getSourceFile(f.path('provider/index.ts')),
           );
@@ -271,8 +286,13 @@ describe('native reference repair independent Program evidence', () => {
           expect(new Set(bounded.program.getRootFileNames())).toEqual(
             new Set(parsed.fileNames),
           );
+        } else if (variant === 'augmentation') {
+          expect(
+            bounded.getSourceFile(f.path('provider/index.ts')),
+          ).toBeUndefined();
+          expect(fact.admission).toBe('excluded');
         }
-        expect(fact.referenceRequirement?.kind).toBe('source-semantic');
+        expect(fact.referenceRequirement).toBeNull();
       } finally {
         bounded.dispose();
       }
@@ -280,7 +300,7 @@ describe('native reference repair independent Program evidence', () => {
   );
 
   it.each([false, true, 'workspace'] as const)(
-    'admits external declaration closure while bounding workspace sources: %s',
+    'requires explicit Coverage for external declaration closure with lexical aliases: %s',
     async (preserveSymlinks) => {
       const f = await fixture({
         'package.json': '{"type":"module"}',
@@ -298,6 +318,9 @@ describe('native reference repair independent Program evidence', () => {
         'external/index.d.ts': "import './inner.js';",
         'external/inner.d.ts':
           "declare module 'virtual:dep' { export type Value = number; }",
+        'external/tsconfig.json': JSON.stringify({
+          files: ['index.d.ts', 'inner.d.ts'],
+        }),
       });
       await mkdir(f.path('node_modules'));
       await symlink(f.path('external'), f.path('node_modules/dep'), 'junction');
@@ -305,7 +328,7 @@ describe('native reference repair independent Program evidence', () => {
       const bounded = context(
         f,
         parsed,
-        preserveSymlinks === 'workspace' ? [f.path('external/inner.d.ts')] : [],
+        preserveSymlinks === 'workspace' ? ['external/tsconfig.json'] : [],
       );
       try {
         const record = bounded.getImportRecords(f.path('main.ts'))[1]!;
@@ -318,6 +341,9 @@ describe('native reference repair independent Program evidence', () => {
           new Set(parsed.fileNames),
         );
         expect(bounded.getImportRecords(f.path('main.ts'))).toHaveLength(2);
+        expect(
+          bounded.getSourceFile(f.path('external/inner.d.ts')) !== undefined,
+        ).toBe(preserveSymlinks === 'workspace');
         const full = ts.createProgram({
           rootNames: parsed.fileNames,
           options: parsed.options,
