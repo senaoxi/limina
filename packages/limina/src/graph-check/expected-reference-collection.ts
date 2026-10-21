@@ -3,12 +3,14 @@ import { shouldInferDeclarationReferenceFromImportRecord } from '../core/import-
 import { effectiveReferenceInputs } from '../core/project-dependencies/declaration-projection';
 import {
   collectProjectDependencies,
+  collectRuntimeProjectDependencies,
   createParsedProjectSemanticContext,
   type ProjectDependency,
-  type ProjectDependencyObservation,
 } from '../core/project-dependencies/runner';
 import { createImportRecordIdentity } from '../core/typescript-semantic/import-record';
-import { addDeniedDependencyImportProblem } from './import-access-denied';
+import { qualifiedNativeDependencyTarget } from '../core/typescript-semantic/native-fact-qualification';
+import { getPreferredGeneratedTargetProjectPath } from './generated-project-paths';
+import { recordNativeCoverageGovernance } from './native-coverage-governance';
 import { resolveImportForReferenceExpectation } from './reference-import-resolution';
 import {
   addExpectedReferenceForTarget,
@@ -20,8 +22,7 @@ import type {
   ExpectedReferencesByProjectPath,
   GraphImportResolution,
 } from './reference-types';
-import { getDeniedDepRuleForSpecifier as getDeniedDependencyRuleForSpecifier } from './rules';
-import { isAddWorkspaceConsumptionProblem } from './workspace-import-findings';
+import { recordRuntimeDependencyGovernance } from './runtime-dependency-governance';
 
 function createExpectedReferenceCollectionContext(
   options: ExpectedReferenceCollectionOptions,
@@ -38,32 +39,6 @@ function isProjectSelected(
 ): boolean {
   const selectedPaths = context.selectedProjectPaths;
   return !selectedPaths || selectedPaths.has(project.configPath);
-}
-
-function isAddRawDeniedImportIfNeeded(options: {
-  context: ExpectedReferenceCollectionContext;
-  importRecord: ImportRecord;
-  project: ProjectInfo;
-  projectDependency?: ProjectDependency;
-}): boolean {
-  const rule = getDeniedDependencyRuleForSpecifier(
-    options.context.graphRules,
-    options.project.labels,
-    options.importRecord.specifier,
-  );
-  if (!rule) {
-    return false;
-  }
-
-  addDeniedDependencyImportProblem({
-    config: options.context.config,
-    findings: options.context.findings,
-    importRecord: options.importRecord,
-    project: options.project,
-    projectCheckerNamesByPath: options.context.projectCheckerNamesByPath,
-    rule,
-  });
-  return true;
 }
 
 function createResolvedTarget(options: {
@@ -104,32 +79,67 @@ function resolveExpectedTarget(options: {
 
   return createResolvedTarget({
     resolution,
-    targetProjectPath: findExpectedReferenceTargetProjectPath({
+    targetProjectPath: referenceTarget(options, resolution),
+  });
+}
+
+function referenceTarget(
+  options: Parameters<typeof resolveExpectedTarget>[0],
+  resolution: GraphImportResolution,
+): string | null {
+  const native = nativeEvidence(options.projectDependency);
+  if (native === undefined)
+    return findExpectedReferenceTargetProjectPath({
       context: options.context,
       importRecord: options.importRecord,
       project: options.project,
       resolution,
-    }),
+    });
+  const target = qualifiedNativeDependencyTarget(native);
+  return target === null ? null : mappedNativeTarget(options, target);
+}
+
+function mappedNativeTarget(
+  options: Parameters<typeof resolveExpectedTarget>[0],
+  target: string,
+): string {
+  return getPreferredGeneratedTargetProjectPath({
+    generatedGraph: options.context.generatedGraph,
+    importingProjectPath: options.project.configPath,
+    targetProjectPath: projectedNativeTarget(options.context, target),
   });
 }
 
-function collectExpectedReferenceForImport(options: {
-  context: ExpectedReferenceCollectionContext;
-  filePath: string;
-  importRecord: ImportRecord;
-  project: ProjectInfo;
-  projectDependency: ProjectDependency;
-}): void {
-  if (
-    isAddRawDeniedImportIfNeeded(options) ||
-    isAddWorkspaceConsumptionProblem({
-      ...options,
-      consumption: options.projectDependency,
-    })
-  )
-    return;
+function nativeEvidence(dependency: ProjectDependency) {
+  return dependency.nativeFact?.nativeEvidence;
+}
 
-  collectResolvedExpectedReference(options);
+function projectedNativeTarget(
+  context: ExpectedReferenceCollectionContext,
+  target: string,
+): string {
+  const graph = context.generatedGraph;
+  const owner = graph.ownershipPlan.typeConfigs.get(target)?.finalOwner;
+  return owner === undefined
+    ? parsedNativeTarget(context.projects, target)
+    : generatedNativeTarget(graph.sourceToDts.get(owner), target);
+}
+
+function parsedNativeTarget(
+  projects: readonly ProjectInfo[],
+  target: string,
+): string {
+  const candidates = projects.filter(
+    (project) => project.resolverConfigPath === target,
+  );
+  return candidates.length === 1 ? candidates[0]!.configPath : target;
+}
+
+function generatedNativeTarget(
+  mapping: ReadonlyMap<string, string> | undefined,
+  target: string,
+): string {
+  return mapping?.get(target) ?? target;
 }
 
 function collectResolvedExpectedReference(options: {
@@ -150,38 +160,6 @@ function collectResolvedExpectedReference(options: {
     project: options.project,
     resolution: target.resolution,
     targetProjectPath: target.targetProjectPath,
-  });
-}
-
-function collectExpectedReferencesForObservation(options: {
-  context: ExpectedReferenceCollectionContext;
-  observation: ProjectDependencyObservation;
-  project: ProjectInfo;
-}): void {
-  const observation = options.observation;
-  if (observation.kind === 'unmapped-generated') return;
-  collectExpectedReferencesForMappedObservation({
-    context: options.context,
-    importRecord: observation.importRecord,
-    observation,
-    project: options.project,
-  });
-}
-
-function collectExpectedReferencesForMappedObservation(options: {
-  context: ExpectedReferenceCollectionContext;
-  importRecord: ImportRecord;
-  observation: Exclude<
-    ProjectDependencyObservation,
-    { kind: 'unmapped-generated' }
-  >;
-  project: ProjectInfo;
-}): void {
-  const importRecord = options.observation.importRecord;
-  if (isAddRawDeniedImportIfNeeded({ ...options, importRecord })) return;
-  isAddWorkspaceConsumptionProblem({
-    ...options,
-    consumption: options.observation,
   });
 }
 
@@ -211,7 +189,7 @@ function assertGraphCollection(
   );
 }
 
-function collectProjectDependenciesForGraph(options: {
+function graphDependencyRequest(options: {
   context: ExpectedReferenceCollectionContext;
   project: ProjectInfo;
 }) {
@@ -220,7 +198,7 @@ function collectProjectDependenciesForGraph(options: {
     options.context,
     options.project,
   );
-  return collectProjectDependencies({
+  return {
     caches: options.context.projectDependencyCaches,
     managedOutputLookup: options.context.managedOutputLookup,
     context: createParsedProjectSemanticContext({
@@ -230,7 +208,7 @@ function collectProjectDependenciesForGraph(options: {
       workspaceSourceBoundary: options.context.workspaceSourceBoundary,
     }),
     importAnalysis: options.context.importAnalysis,
-  });
+  };
 }
 
 function collectExpectedReferencesForProject(
@@ -238,10 +216,16 @@ function collectExpectedReferencesForProject(
   project: ProjectInfo,
 ): void {
   if (!isProjectSelected(context, project)) return;
-  const collection = collectProjectDependenciesForGraph({ context, project });
+  const request = graphDependencyRequest({ context, project });
+  const runtime = collectRuntimeProjectDependencies(request);
+  assertGraphCollection(runtime);
+  recordRuntimeDependencyGovernance(context, project, runtime);
+  const collection = collectProjectDependencies({
+    ...request,
+    compilationObligationScope: 'generated-declaration-project-v1',
+  });
   assertGraphCollection(collection);
   collectExpectedDependencies(context, project, collection);
-  collectExpectedObservations(context, project, collection.observations);
 }
 
 function collectExpectedDependencies(
@@ -255,7 +239,14 @@ function collectExpectedDependencies(
     ),
   );
   for (const projectDependency of collection.dependencies) {
-    collectExpectedReferenceForImport({
+    recordNativeCoverageGovernance({
+      context,
+      project,
+      filePath: projectDependency.importRecord.filePath,
+      importRecord: projectDependency.importRecord,
+      projectDependency,
+    });
+    collectResolvedExpectedReference({
       context,
       project,
       filePath: projectDependency.importRecord.filePath,
@@ -265,20 +256,6 @@ function collectExpectedDependencies(
       )
         ? projectDependency
         : { ...projectDependency, referenceRequirement: null },
-    });
-  }
-}
-
-function collectExpectedObservations(
-  context: ExpectedReferenceCollectionContext,
-  project: ProjectInfo,
-  observations: readonly ProjectDependencyObservation[],
-): void {
-  for (const observation of observations) {
-    collectExpectedReferencesForObservation({
-      context,
-      observation,
-      project,
     });
   }
 }

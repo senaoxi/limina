@@ -1,16 +1,14 @@
-import type ts from 'typescript';
+import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import { analysisHash, nativeContextId } from '../analysis-cache/identity';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
-import {
-  createTypeScriptDependencyContext,
-  createWorkspaceSourceBoundaryFromProjects,
-} from '../typescript-semantic';
-import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
+import { createTypeScriptDependencyContext } from '../typescript-semantic';
 import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
 } from '../typescript-semantic/contracts';
 import { projectNativeDeclarationClosure } from '../typescript-semantic/native-closure';
+import { retainNativeAnalysis } from './native-analysis-evidence';
+import { outputSemanticProject } from './output-projection-context';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 import type { SourceProject } from './types';
 import { collectVueOutputDependencies } from './vue-output-projection';
@@ -32,50 +30,19 @@ interface ProjectionInput {
   project: SourceProject;
   state: GeneratedGraphPreparationState;
   cache?: NativeAnalysisCache;
+  metrics?: AnalysisMetricsRecorder;
 }
 function dependencies(
   context: TypeScriptSemanticDependencyContext,
   project: TypeScriptSemanticProject,
 ): Map<string, string> {
   const projection = projectNativeDeclarationClosure(context, project);
-  if (projection.incomplete.length > 0)
-    throw new Error(
-      `Output declaration closure is incomplete: ${project.configPath}`,
-    );
   return new Map(
     projection.requirements.map(({ occurrence, requirement }) => [
       requirement.targetFileName,
       occurrence.filePath,
     ]),
   );
-}
-function outputOptions(project: SourceProject): ts.CompilerOptions {
-  const receipt = project.typeInputProjections?.findLast(
-    (input) => input.generatedConfig === project.outputConfigPath,
-  );
-  if (receipt === undefined)
-    throw new Error(
-      `Output options were not observed: ${project.outputConfigPath}`,
-    );
-  return effectiveCompilerOptions(receipt.generatedOptions);
-}
-function outputContext(
-  project: SourceProject,
-  owners: Map<string, SourceProject>,
-): TypeScriptSemanticProject {
-  return {
-    configPath: project.outputConfigPath,
-    options: outputOptions(project),
-    fileNames: project.fileNames,
-    analysisBinding: {
-      phase: 'locked',
-      checker: `${project.checkerName}:output`,
-    },
-    admissionMode: 'full-program',
-    workspaceSourceBoundary: createWorkspaceSourceBoundaryFromProjects(
-      new Set(owners.values()),
-    ),
-  };
 }
 function baseReceipt(
   project: SourceProject,
@@ -159,6 +126,7 @@ function vueReceipt(
     project: input.project,
     output,
     cache: input.cache,
+    metrics: input.metrics,
   });
   return {
     ...baseReceipt(input.project, output),
@@ -177,8 +145,15 @@ function nativeReceipt(
 ): OutputProjectionReceipt {
   const context =
     input.cache?.restoreContext(output) ??
-    createTypeScriptDependencyContext(output, { analysisCache: input.cache });
+    createTypeScriptDependencyContext(output, {
+      analysisCache: input.cache,
+      metrics: input.metrics,
+    });
   try {
+    retainNativeAnalysis(
+      input.state.dependencyAnalysis,
+      context.nativeEvidence,
+    );
     return {
       ...baseReceipt(input.project, output),
       contextId: nativeContextId(output),
@@ -202,7 +177,7 @@ export function proveOutputProjection(
       owner.ownedFileNames.map((file) => [file, owner] as const),
     ),
   );
-  const output = outputContext(input.project, owners);
+  const output = outputSemanticProject(input.project, input.state, owners);
   if (input.project.semanticAuthority.family === 'vue')
     return vueReceipt(input, output, owners);
   return input.project.semanticAuthority.family === 'typescript'

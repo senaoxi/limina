@@ -3,6 +3,7 @@ import type {
   ImportRecord,
   ImportRecordKind,
 } from '../import-analysis/records';
+import { findSourceFileLiterals } from './source-file-literals';
 
 const MODULE_KINDS = new Set<ImportRecordKind>([
   'commonjs',
@@ -62,18 +63,11 @@ export function findImportRecordLiteral(options: {
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
 }): ts.StringLiteralLike | null {
-  let matched: ts.StringLiteralLike | null = null;
-  const visit = (node: ts.Node): void => {
-    if (matched !== null) return;
-    const candidate = { ...options, node };
-    if (isMatchesNode(candidate)) {
-      matched = candidate.node;
-      return;
-    }
-    options.tsModule.forEachChild(node, visit);
-  };
-  visit(options.sourceFile);
-  return matched;
+  const literals = findSourceFileLiterals({
+    ...options,
+    matches: (node) => isMatchesNode({ ...options, node }),
+  });
+  return literals.length === 1 ? literals[0]! : null;
 }
 
 export function findImportRecordByLiteral(options: {

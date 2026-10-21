@@ -84,21 +84,15 @@ function count(events: Metric[], kind: string): number {
   return events.find((event) => event.kind === kind)?.count ?? 0;
 }
 function expectRebuiltGraph(events: Metric[], expectedGraphHits = 0): void {
-  expect(count(events, 'semanticPrograms')).toBe(0);
+  expect(count(events, 'semanticPrograms')).toBeGreaterThan(0);
   expect(count(events, 'graphHits')).toBe(expectedGraphHits);
   expect(count(events, 'graphBuilds')).toBeGreaterThan(0);
 }
 function expectUncachedAnalysis(events: Metric[]): void {
   expect(
-    events.find(
-      (event) => event.name === 'syntax-cache' && event.kind === 'miss',
-    )?.count ?? 0,
+    events.find((event) => event.name === 'bounded-program-create')?.count ?? 0,
   ).toBeGreaterThan(0);
-  for (const name of [
-    'bounded-program-create',
-    'typescript-program-create',
-    'vue-program-create',
-  ]) {
+  for (const name of ['typescript-program-create', 'vue-program-create']) {
     expect(events.find((event) => event.name === name)?.count ?? 0).toBe(0);
   }
 }
@@ -254,8 +248,8 @@ function expectCache(
   isWarm: boolean,
 ): void {
   expect(count(result.events, 'graphHits')).toBe(isWarm ? 1 : 0);
-  expect(count(result.events, 'semanticPrograms')).toBe(0);
   if (isWarm) {
+    expect(count(result.events, 'semanticPrograms')).toBe(0);
     expect(count(result.events, 'graphBuilds')).toBe(0);
     expect(count(result.events, 'syntaxExtractions')).toBe(0);
     expect(count(result.events, 'resolverCalls')).toBe(0);

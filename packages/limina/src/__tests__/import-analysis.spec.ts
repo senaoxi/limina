@@ -37,6 +37,29 @@ async function writeText(
 }
 
 describe('import analysis', () => {
+  it.each(['ts', 'vue', 'astro', 'svelte'])(
+    'reads the supplied mutable %s AST instead of memoizing its original text',
+    (suffix) => {
+      const filePath = `/virtual/foreign.${suffix}`;
+      const sourceFile = ts.createSourceFile(
+        filePath,
+        "import 'first';",
+        ts.ScriptTarget.Latest,
+        true,
+      );
+      const input = { sourceFile, filePath, tsModule: ts };
+      expect(collectTypeScriptSourceFileImports(input)[0]?.specifier).toBe(
+        'first',
+      );
+      const literal = (sourceFile.statements[0] as ts.ImportDeclaration)
+        .moduleSpecifier as ts.StringLiteral & { text: string };
+      literal.text = 'changed';
+      expect(collectTypeScriptSourceFileImports(input)[0]?.specifier).toBe(
+        'changed',
+      );
+    },
+  );
+
   it('uses the injected TypeScript module for AST, scanner, and CommonJS enumeration', () => {
     const isImportDeclaration = vi.fn(ts.isImportDeclaration);
     const createScanner = vi.fn(ts.createScanner);

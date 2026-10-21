@@ -18,6 +18,7 @@ import {
   isFrameworkContribution,
   reportUnresolvedFrameworkImport,
 } from './framework-import-problems';
+import { nativeFrameworkTarget } from './native-framework-target';
 import type { ReferenceImportContext } from './reference-import-types';
 import { processDeclarationProviderImport } from './reference-imports';
 import type {
@@ -103,6 +104,15 @@ function getUniqueTargetConfigPath(options: {
 }
 
 function resolveFrameworkImportTarget(
+  options: FrameworkImportOptions,
+): FrameworkImportTarget | null {
+  const evidence = options.projectDependency.nativeFact?.nativeEvidence;
+  return evidence === undefined
+    ? resolveLegacyFrameworkTarget(options)
+    : nativeFrameworkTarget(options, evidence);
+}
+
+function resolveLegacyFrameworkTarget(
   options: FrameworkImportOptions,
 ): FrameworkImportTarget | null {
   const resolution = resolveFrameworkImportResolution(options);
@@ -254,6 +264,7 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
     getFrameworkSourceFileNames(options.source, project),
   );
   const collection = collectProjectDependencies({
+    compilationObligationScope: 'generated-declaration-project-v1',
     caches: options.context.projectDependencyCaches,
     context: createSourceProjectSemanticContext({
       authority: options.source.semanticAuthority,

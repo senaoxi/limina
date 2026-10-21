@@ -9,6 +9,7 @@ import {
 import { dependencySchema as dependency } from './dependency-schema';
 import { discoveryRecordSchema } from './discovery-schema';
 import { nativeContextSchema } from './environment-schema';
+import { nativeFactEvidenceSchema } from './native-obligation-schema';
 import { occurrenceSchema } from './occurrence-schema';
 import { validatedSnapshot } from './snapshot-validation';
 import { vueContextSchema } from './vue-schema';
@@ -16,14 +17,12 @@ import { vueContextSchema } from './vue-schema';
 const text = z.string();
 const texts = z.array(text);
 const optionalNumber = z.number().optional();
-const target = z
-  .object({
-    resolutionOrigin: resolutionOriginSchema.optional(),
-    resolvedFileName: text,
-    resolvedBy: z.literal('typescript'),
-    isExternalLibraryImport: z.boolean(),
-  })
-  .refine(hasDeclarationReceipt);
+const target = z.object({
+  resolutionOrigin: resolutionOriginSchema.optional(),
+  resolvedFileName: text,
+  resolvedBy: z.literal('typescript'),
+  isExternalLibraryImport: z.boolean(),
+});
 const typeEvidence = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('missing') }),
   z.object({
@@ -34,39 +33,58 @@ const typeEvidence = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('concrete-declaration'), filePath: text }),
   z.object({ kind: z.literal('checker-source'), filePath: text }),
 ]);
-const fact = z.object({
-  eligibility: requestEligibilitySchema.optional(),
-  admission: z.enum(['admitted', 'excluded', 'unresolved']),
-  typeEvidence: typeEvidence.optional(),
-  redirect: z
-    .object({
-      originalTarget: text,
-      declarationTarget: text,
-      referenceConfig: text,
-      availability: z.enum(['present', 'missing']),
-    })
-    .optional(),
-  referenceRequirement: z
-    .object({
-      kind: z.enum(['compiler-membership', 'source-semantic']),
-      targetFileName: text,
-    })
-    .nullable(),
-  resolution: z.object({
-    channel: z.enum([
-      'module',
-      'jsx-runtime',
-      'environment-pragma',
-      'lib-environment',
-      'triple-slash-path',
-      'triple-slash-types',
-    ]),
-    identity: text,
-    redirectedReferenceIdentity: text.nullable(),
-    resolutionMode: optionalNumber,
-    target: target.nullable(),
-  }),
-});
+const fact = z
+  .object({
+    nativeEvidence: nativeFactEvidenceSchema.optional(),
+    eligibility: requestEligibilitySchema.optional(),
+    admission: z.enum(['admitted', 'excluded', 'unresolved']),
+    typeEvidence: typeEvidence.optional(),
+    redirect: z
+      .object({
+        originalTarget: text,
+        declarationTarget: text,
+        referenceConfig: text,
+        availability: z.enum(['present', 'missing']),
+      })
+      .optional(),
+    referenceRequirement: z
+      .object({
+        kind: z.enum(['compiler-membership', 'source-semantic']),
+        targetFileName: text,
+      })
+      .nullable(),
+    resolution: z.object({
+      channel: z.enum([
+        'module',
+        'jsx-runtime',
+        'environment-pragma',
+        'lib-environment',
+        'triple-slash-path',
+        'triple-slash-types',
+      ]),
+      identity: text,
+      redirectedReferenceIdentity: text.nullable(),
+      resolutionMode: optionalNumber,
+      target: target.nullable(),
+    }),
+  })
+  .refine((value) => hasFactResolutionReceipt(value));
+
+function hasFactResolutionReceipt(value: {
+  nativeEvidence?: unknown;
+  resolution: { target: Parameters<typeof hasDeclarationReceipt>[0] | null };
+}): boolean {
+  return [
+    value.nativeEvidence !== undefined,
+    value.resolution.target === null,
+    hasDeclarationReceiptForTarget(value.resolution.target),
+  ].some(Boolean);
+}
+function hasDeclarationReceiptForTarget(
+  target: Parameters<typeof hasDeclarationReceipt>[0] | null,
+): boolean {
+  return target !== null && hasDeclarationReceipt(target);
+}
 const rawTarget = z
   .looseObject({
     resolutionOrigin: resolutionOriginSchema.optional(),
@@ -160,7 +178,7 @@ const graphRecord = z.object({
   discovery: z.array(discoveryRecordSchema),
 });
 const header = z.object({
-  schema: z.literal(8),
+  schema: z.literal(10),
   implementation: z.literal(ANALYSIS_ADAPTER),
   identity: text,
   configVersion: text,

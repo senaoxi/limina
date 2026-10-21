@@ -27,7 +27,7 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import * as generatedConfigs from '../core/build-graph/generated-configs';
-import * as configReaders from '../core/build-graph/generated/config-readers';
+import type { DependencyAnalysisResult } from '../core/build-graph/types';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
@@ -308,7 +308,7 @@ async function readGeneratedReferences(options: {
 
 describe('prepareGeneratedTsconfigGraph', () => {
   it.each(['tsc', 'vue-tsc'])(
-    'retains non-root type environment contributions without flattening foreign implementations: %s',
+    'respects Native coverage and framework authority for non-root type environments: %s',
     async (checker) => {
       const options = {
         composite: true,
@@ -365,8 +365,12 @@ describe('prepareGeneratedTsconfigGraph', () => {
           graph.dependencyEdges
             .filter((edge) => edge.fromConfigPath === app.configPath)
             .map((edge) => edge.toConfigPath),
-        ).toEqual([fixture.path('packages/core/tsconfig.json')]);
-        expect(graph.dependencyEdges).toHaveLength(2);
+        ).toEqual(
+          checker === 'tsc'
+            ? []
+            : [fixture.path('packages/core/tsconfig.json')],
+        );
+        expect(graph.dependencyEdges).toHaveLength(checker === 'tsc' ? 1 : 2);
       } finally {
         await fixture.cleanup();
       }
@@ -535,7 +539,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           ),
         ).toMatchObject({
           typeEvidenceKind: 'unobserved',
-          referenceRequirement: { kind: 'source-semantic' },
+          referenceRequirement: { kind: 'compiler-membership' },
         });
         expect(result.dependencyEdges).toMatchObject([
           {
@@ -588,7 +592,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(result.dependencyEdges).toEqual([]);
       expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
       expect(
-        result.ownershipPlan.dependencyFacts.find(
+        result.ownershipPlan.ownershipSelectionFacts!.find(
           (fact) =>
             fact.consumerConfigPath ===
             fixture.path('packages/a/tsconfig.json'),
@@ -2308,7 +2312,7 @@ export default component;
         referenceRequirement: null,
         physicalTargetPath: null,
       });
-      expect(result.ownershipPlan.dependencyFacts).toEqual(
+      expect(result.ownershipPlan.ownershipSelectionFacts!).toEqual(
         expect.arrayContaining([declarationBoundaryMatcher]),
       );
       expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
@@ -2633,7 +2637,7 @@ export default component;
           { importAnalysisContext: analysis.context },
         );
         expect(
-          result.ownershipPlan.dependencyFacts.filter(
+          result.ownershipPlan.ownershipSelectionFacts!.filter(
             (fact) =>
               fact.consumerConfigPath ===
               fixture.path('packages/a/tsconfig.json'),
@@ -2695,7 +2699,7 @@ export default component;
           )?.finalOwner,
         ).toBe('tsc');
         expect(
-          result.ownershipPlan.dependencyFacts.find(
+          result.ownershipPlan.ownershipSelectionFacts!.find(
             (fact) =>
               fact.consumerConfigPath ===
               fixture.path('packages/consumer/tsconfig.json'),
@@ -2756,7 +2760,7 @@ export default component;
           physicalTargetPath: fixture.path('packages/b/src/theme.css.ts'),
           physicalTargetProvenance: 'checker-source',
           referenceRequirement: {
-            kind: 'source-semantic',
+            kind: 'compiler-membership',
             targetFileName: fixture.path('packages/b/src/theme.css.ts'),
           },
         });
@@ -3811,7 +3815,7 @@ export default component;
     }
   });
 
-  it('deduplicates one Astro semantic root cause across records and consumers', async () => {
+  it('deduplicates one Astro execution failure without reporting a governance violation', async () => {
     const fixture = await createFixture(
       {
         'packages/app/src/App.astro': "---\nimport './target.ts';\n---\n",
@@ -3843,11 +3847,28 @@ export default component;
         thrown = error;
       }
 
-      expect(thrown).toBeInstanceOf(LiminaStructuredError);
+      expect(thrown).toBeInstanceOf(Error);
+      expect(thrown).not.toBeInstanceOf(LiminaStructuredError);
       expect(String(thrown)).toContain(
         'Missing Astro semantic toolchain dependency',
       );
-      expect((thrown as LiminaStructuredError).issues).toHaveLength(1);
+      const analysis = (
+        thrown as Error & { analysis: DependencyAnalysisResult }
+      ).analysis;
+      expect(analysis.outcome).toMatchObject({
+        execution: 'partial',
+        governance: { state: 'unavailable', diagnostics: [] },
+        buildAdmission: { state: 'unavailable' },
+      });
+      expect(
+        analysis.nativeEvidence
+          ?.flatMap((entry) => entry.snapshot.failures)
+          .filter((failure) =>
+            failure.detail.includes(
+              'Missing Astro semantic toolchain dependency',
+            ),
+          ),
+      ).toHaveLength(1);
     } finally {
       await fixture.cleanup();
     }
@@ -4008,10 +4029,16 @@ export default component;
       svelteTransform: true,
     },
   ])(
-    'converts Svelte parser failures into generated-graph structured diagnostics',
+    'retains independent evidence and separates Svelte execution failures from governance',
     async ({ expected, file, svelteCompiler, svelteTransform }) => {
       const fixture = await createFixture(
         {
+          'packages/healthy/src/index.ts': 'import "./value"; export {};\n',
+          'packages/healthy/src/value.ts': 'export const value = 1;\n',
+          'packages/healthy/tsconfig.json': json({
+            compilerOptions: managedOutputCompilerOptions(),
+            include: ['src/**/*'],
+          }),
           'packages/app/src/App.svelte': file,
           'packages/app/tsconfig.json': json({
             compilerOptions: managedOutputCompilerOptions(),
@@ -4034,11 +4061,27 @@ export default component;
         } catch (error) {
           thrown = error;
         }
-        expect(thrown).toBeInstanceOf(LiminaStructuredError);
+        expect(thrown).toBeInstanceOf(Error);
+        expect(thrown).not.toBeInstanceOf(LiminaStructuredError);
         expect(String(thrown)).toContain(expected);
-        expect((thrown as LiminaStructuredError).issues).toMatchObject([
-          { code: 'LIMINA_GRAPH_PREPARE_FAILED' },
-        ]);
+        const analysis = (thrown as { analysis: DependencyAnalysisResult })
+          .analysis;
+        expect(analysis.outcome).toMatchObject({
+          execution: 'partial',
+          governance: { state: 'unavailable', diagnostics: [] },
+          buildAdmission: { state: 'unavailable' },
+        });
+        expect(
+          analysis.nativeEvidence?.flatMap((entry) => entry.snapshot.requests),
+        ).toContainEqual(expect.objectContaining({ specifier: './value' }));
+        expect(
+          analysis.nativeEvidence?.flatMap((entry) => entry.snapshot.failures),
+        ).toContainEqual(
+          expect.objectContaining({
+            detail: expect.stringContaining(expected),
+            affected: expect.objectContaining({ kind: 'contexts' }),
+          }),
+        );
       } finally {
         await fixture.cleanup();
       }
@@ -6277,7 +6320,7 @@ export default component;
     }
   });
 
-  it('reads consumer rules once per coloring pass and refreshes after a failed pass', async () => {
+  it('retains denied Native relations between incompatible checker components', async () => {
     const projectConfig = (labels: string[]) =>
       json({
         compilerOptions: {
@@ -6302,7 +6345,6 @@ export default component;
       'packages/theme/src/index.ts': 'export interface Value { x: string }',
       'packages/theme/tsconfig.json': projectConfig([]),
     });
-    const reader = vi.spyOn(configReaders, 'readGraphRules');
     const selectedConfig: ResolvedLiminaConfig = {
       ...fixture.config,
       scope: {
@@ -6336,35 +6378,15 @@ export default component;
       await expect(
         resolveGeneratedGraphCheckers(selectedConfig),
       ).rejects.toThrow('Build checker ownership conflict');
-      expect(
-        reader.mock.calls
-          .map(([, file]) => file)
-          .sort((left, right) => left.localeCompare(right)),
-      ).toEqual([
-        fixture.path('packages/app/tsconfig.json'),
-        fixture.path('packages/other/tsconfig.json'),
-      ]);
+
       await writeText(
         fixture.path('packages/app/tsconfig.json'),
         projectConfig([' separate ', 'separate']),
       );
-      reader.mockClear();
       await expect(
         resolveGeneratedGraphCheckers(selectedConfig),
-      ).resolves.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ name: 'tsc' }),
-          expect.objectContaining({ name: 'tsgo' }),
-        ]),
-      );
-      expect(
-        reader.mock.calls
-          .map(([, file]) => file)
-          .sort((left, right) => left.localeCompare(right)),
-      ).toEqual([
-        fixture.path('packages/app/tsconfig.json'),
-        fixture.path('packages/other/tsconfig.json'),
-      ]);
+      ).rejects.toThrow('Build checker ownership conflict');
+
       await writeText(
         fixture.path('packages/app/tsconfig.json'),
         projectConfig([]),
@@ -6373,7 +6395,6 @@ export default component;
         resolveGeneratedGraphCheckers(selectedConfig),
       ).rejects.toThrow('Build checker ownership conflict');
     } finally {
-      reader.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -6908,23 +6929,12 @@ export default component;
             (fact) => fact.importRecord.specifier === '@example/provider',
           ),
         ).toMatchObject({
-          physicalTargetProvenance: 'checker-source',
+          physicalTargetProvenance: null,
           typeEvidenceKind: 'unobserved',
-          referenceRequirement: { kind: 'source-semantic' },
+          referenceRequirement: null,
+          nativeEvidence: { obligation: { existence: { state: 'absent' } } },
         });
-        expect(result.dependencyEdges).toMatchObject([
-          {
-            kind: 'declaration-provider',
-            fromConfigPath: fixture.path('packages/app/tsconfig.json'),
-            toConfigPath: fixture.path('packages/provider/tsconfig.json'),
-            resolvedFilePath: fixture.path(
-              preserveSymlinks
-                ? 'packages/app/node_modules/@example/provider/src/index.ts'
-                : 'packages/provider/src/index.ts',
-            ),
-          },
-        ]);
-        expect(result.dependencyEdges).toHaveLength(1);
+        expect(result.dependencyEdges).toEqual([]);
         expect(
           facts.filter(
             (fact) => fact.importRecord.specifier === 'virtual-foreign',
@@ -8330,6 +8340,7 @@ describe('reference graph repair compiler differentials', () => {
   ])(
     'builds same-package named leaves from inferred references: %s',
     async (variant) => {
+      const hasUncoveredEntry = variant.startsWith('relative-types');
       const isVue = variant === 'vue-direct';
       const compilerOptions = {
         target: 'ES2022',
@@ -8431,23 +8442,28 @@ describe('reference graph repair compiler differentials', () => {
               path.resolve(path.dirname(importer), reference.path),
             ),
           ),
-        ).toEqual([provider]);
-        expect(generated.dependencyEdges).toContainEqual(
-          expect.objectContaining({
-            fromConfigPath: fixturePath('packages/p/tsconfig.a.json'),
-            toConfigPath: fixturePath('packages/p/tsconfig.b.json'),
-            kind: 'declaration-provider',
-          }),
-        );
+        ).toEqual(hasUncoveredEntry ? [] : [provider]);
+        if (!hasUncoveredEntry)
+          expect(generated.dependencyEdges).toContainEqual(
+            expect.objectContaining({
+              fromConfigPath: fixturePath('packages/p/tsconfig.a.json'),
+              toConfigPath: fixturePath('packages/p/tsconfig.b.json'),
+              kind: 'declaration-provider',
+            }),
+          );
         const bin = requireFromTest.resolve(
           isVue ? 'vue-tsc/bin/vue-tsc.js' : 'typescript/bin/tsc',
         );
-        const build = await execFileAsync(
+        const build = execFileAsync(
           process.execPath,
           [bin, '-b', importer, '--pretty', 'false', '--force'],
           { cwd: fixture.rootDir },
         );
-        expect(build.stderr).toBe('');
+        if (hasUncoveredEntry)
+          await expect(build).rejects.toMatchObject({
+            stdout: expect.stringMatching(/TS6307|TS6059/),
+          });
+        else await expect(build).resolves.toMatchObject({ stderr: '' });
       } finally {
         await fixture.cleanup();
       }
@@ -8581,7 +8597,9 @@ describe('reference graph repair compiler differentials', () => {
             edge.fromConfigPath === fixture.path('packages/a/tsconfig.json'),
         );
         expect(edges.map((edge) => edge.toConfigPath)).toEqual(
-          governed ? [fixture.path('packages/b/tsconfig.json')] : [],
+          governed && checker === 'vue-tsc'
+            ? [fixture.path('packages/b/tsconfig.json')]
+            : [],
         );
         expect(
           edges.every((edge) => edge.kind === 'declaration-provider'),
@@ -8751,7 +8769,7 @@ describe('reference graph repair compiler differentials', () => {
           });
         }
         const generated = await prepareGeneratedTsconfigGraph(fixture.config);
-        if (kind === 'support-public')
+        if (kind === 'support-public' || kind === 'support-public-local')
           expect(generated.dependencyEdges).toEqual([]);
         else if (kind === 'ambient-membership' || kind.startsWith('support-')) {
           expect(
@@ -8784,7 +8802,7 @@ describe('reference graph repair compiler differentials', () => {
             expect.objectContaining({
               typeEvidenceKind: 'unobserved',
               referenceRequirement: expect.objectContaining({
-                kind: 'source-semantic',
+                kind: 'compiler-membership',
               }),
             }),
           );
@@ -8811,7 +8829,7 @@ describe('reference graph repair compiler differentials', () => {
 
 describe('ambient references and compiler membership', () => {
   it.each(['type-only', 'dynamic', 'cjs', 'paths', 'augmentation'])(
-    'retains governed relations and checks actual build cycles: %s',
+    'keeps external and augmentation obligations separate from actual compiler builds: %s',
     async (variant) => {
       const isMembership = variant === 'paths' || variant === 'augmentation';
       const extension = variant === 'cjs' ? 'cts' : 'ts';
@@ -8873,10 +8891,10 @@ describe('ambient references and compiler membership', () => {
           ]),
         ).toEqual(
           variant === 'augmentation'
-            ? [pair, pair, pair]
+            ? [pair, pair]
             : isMembership
               ? [pair]
-              : [pair.toReversed(), pair],
+              : [pair],
         );
         const facts = generated.ownershipPlan.dependencyFacts.filter(
           (fact) =>
@@ -8885,7 +8903,12 @@ describe('ambient references and compiler membership', () => {
         expect(facts).toHaveLength(variant === 'augmentation' ? 3 : 1);
         for (const fact of facts) {
           expect(fact.typeEvidenceKind).toBe('unobserved');
-          expect(fact.referenceRequirement?.kind).toBe('source-semantic');
+          const obligation = fact.nativeEvidence!.obligation!;
+          expect(fact.referenceRequirement?.kind).toBe(
+            obligation.existence.state === 'present'
+              ? 'compiler-membership'
+              : undefined,
+          );
         }
         const importer = generated.sourceToDts
           .get('tsc')!
@@ -8904,12 +8927,7 @@ describe('ambient references and compiler membership', () => {
           ],
           { cwd: fixture.rootDir },
         );
-        if (isMembership)
-          await expect(build).resolves.toMatchObject({ stderr: '' });
-        else
-          await expect(build).rejects.toMatchObject({
-            stdout: expect.stringContaining('TS6202'),
-          });
+        await expect(build).resolves.toMatchObject({ stderr: '' });
       } finally {
         await fixture.cleanup();
       }
@@ -9266,7 +9284,7 @@ describe('ambient references and compiler membership', () => {
     },
   );
   it.each(['relative', 'inherited-relative', 'absolute'])(
-    'keeps the selected typeRoots competitor through actual generated builds: %s',
+    'preserves uncovered typeRoots inputs for the final Checker: %s',
     async (variant) => {
       const compilerOptions = {
         ...managedOutputCompilerOptions(),
@@ -9322,7 +9340,6 @@ describe('ambient references and compiler membership', () => {
             }),
           );
         }
-        const expected = variant === 'absolute' ? 'b' : 'c';
         const selected = fixture.path(
           variant === 'absolute'
             ? 'packages/a/env.d.ts'
@@ -9333,7 +9350,7 @@ describe('ambient references and compiler membership', () => {
           graph.dependencyEdges
             .filter((edge) => edge.fromConfigPath === source)
             .map((edge) => edge.toConfigPath),
-        ).toEqual([fixture.path(`packages/${expected}/tsconfig.json`)]);
+        ).toEqual([]);
         const configs = [
           graph.sourceToDts.get('tsc')!.get(source)!,
           graph.configToOutputBuild.get('tsc')!.get(source)!.path,
@@ -9356,15 +9373,30 @@ describe('ambient references and compiler membership', () => {
             fixture.path('packages/a/types'),
           ]);
         }
+        const diagnostics: ts.Diagnostic[] = [];
+        const host = ts.createSolutionBuilderHost(
+          ts.sys,
+          undefined,
+          (diagnostic) => {
+            diagnostics.push(diagnostic);
+          },
+        );
         expect(
-          ts
-            .createSolutionBuilder(
-              ts.createSolutionBuilderHost(ts.sys),
-              configs,
-              { force: true },
-            )
-            .build(),
-        ).toBe(0);
+          ts.createSolutionBuilder(host, configs, { force: true }).build(),
+        ).not.toBe(0);
+        expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+          6307,
+        );
+        expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+          6059,
+        );
+        expect(
+          diagnostics.some(
+            (diagnostic) =>
+              diagnostic.file !== undefined &&
+              normalizeAbsolutePath(diagnostic.file.fileName) === selected,
+          ),
+        ).toBe(true);
       } finally {
         await fixture.cleanup();
       }
@@ -9472,11 +9504,20 @@ describe('ambient references and compiler membership', () => {
             options.project.outputReferences.clear();
             return createOutput(options);
           });
-          await expect(
-            prepareGeneratedTsconfigGraph(fixture.config),
-          ).rejects.toThrow(
+          const preparation = prepareGeneratedTsconfigGraph(fixture.config);
+          await expect(preparation).rejects.toThrow(
             'an output dependency is not covered by existing output references',
           );
+          await expect(preparation).rejects.toMatchObject({
+            analysis: {
+              outcome: {
+                execution: 'completed',
+                graphTransaction: { state: 'failed' },
+                governance: { state: 'compliant', diagnostics: [] },
+                buildAdmission: { state: 'unavailable' },
+              },
+            },
+          });
           return;
         }
         const graph = await prepareGeneratedTsconfigGraph(fixture.config);

@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { hasValidBoundedContext } from './bounded-context-validity';
 import type { AnalysisSnapshot, InputDependency } from './contracts';
 import { decodeData } from './data-codec';
 import { analysisHash } from './identity';
@@ -139,6 +140,13 @@ export function validatedSnapshot(
     ),
   ];
   const broken = [
+    Object.entries(snapshot.contexts).some(
+      ([id, context]) =>
+        !hasValidBoundedContext(context, snapshot.importers, {
+          project: snapshot.projects[id],
+          contextId: id,
+        }),
+    ),
     Object.values(snapshot.queries).some(
       (query) => !hasResolutionReceipt(query),
     ),

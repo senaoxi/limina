@@ -26,6 +26,7 @@ import type {
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import type { FileOwnerLookup } from './file-owner-lookup';
+import { qualifiedPendingContext } from './pending-native-context';
 
 interface FactCollectionContext {
   config: ResolvedLiminaInputs;
@@ -41,6 +42,7 @@ interface FactCollectionContext {
 }
 
 interface CollectPendingOptions {
+  baseline?: TypeScriptSemanticDependencyContext;
   cache?: Map<string, unknown>;
   config: ResolvedLiminaInputs;
   core: TypeEvidenceCore;
@@ -64,6 +66,7 @@ function collectDependencyFact(options: {
   );
   const requirement = fact.referenceRequirement;
   const base = {
+    nativeEvidence: fact.nativeEvidence,
     consumerConfigPath: options.context.project.configPath,
     importRecord: options.importRecord,
     referenceRequirement: requirement,
@@ -96,6 +99,7 @@ function collectImportFact(options: {
 function collectProjectFacts(
   options: CollectPendingOptions,
 ): PendingOwnershipEvidence {
+  const failures: string[] = [];
   const facts: CheckerDependencyFact[] = [];
   const problems: string[] = [];
   const semantic = createEvidenceProject({
@@ -105,11 +109,7 @@ function collectProjectFacts(
     state: options.state,
     workspaceSourceBoundary: options.workspaceSourceBoundary,
   });
-  const typeScriptSemanticContext =
-    options.core.getTypeScriptSemanticDependencyContext({
-      checkerName: semantic.checkerName,
-      project: semantic.project,
-    });
+  const typeScriptSemanticContext = pendingContext(options, semantic);
   const context: FactCollectionContext = {
     ...options,
     semantic,
@@ -126,13 +126,13 @@ function collectProjectFacts(
     for (const importRecord of projection.records)
       collectImportFact({ context, facts, importRecord, problems });
     for (const failure of projection.incomplete)
-      problems.push(
+      failures.push(
         `Declaration closure is incomplete (${failure.reason}): ${failure.fileName}`,
       );
   } finally {
     options.core.completeProject(options.project.configPath);
   }
-  return { facts, problems };
+  return { facts, problems, failures };
 }
 
 export function collectPendingOwnershipEvidence(
@@ -172,7 +172,10 @@ function pendingCandidate(
   target: unknown,
 ): Pick<
   CheckerDependencyFact,
-  'physicalTargetPath' | 'physicalTargetProvenance' | 'typeEvidenceKind'
+  | 'physicalTargetPath'
+  | 'physicalTargetProvenance'
+  | 'typeEvidenceKind'
+  | 'frameworkCandidate'
 > {
   const candidate =
     target === null ? resolvePendingPhysicalCandidate(options) : null;
@@ -183,8 +186,25 @@ function pendingCandidate(
       typeEvidenceKind: 'unobserved',
     };
   return {
+    frameworkCandidate: candidate,
     physicalTargetPath: candidate.targetPath,
     physicalTargetProvenance: 'pending-framework-candidate',
     typeEvidenceKind: 'missing',
   };
+}
+
+function pendingContext(
+  options: CollectPendingOptions,
+  semantic: EvidenceProject,
+): TypeScriptSemanticDependencyContext {
+  return (
+    qualifiedPendingContext(options.baseline, {
+      ...semantic.project,
+      workspaceSourceBoundary: options.workspaceSourceBoundary,
+    }) ??
+    options.core.getTypeScriptSemanticDependencyContext({
+      checkerName: semantic.checkerName,
+      project: semantic.project,
+    })
+  );
 }

@@ -11,6 +11,7 @@ import {
   type ProjectDependencyFailure,
 } from '../project-dependencies/runner';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
+import { retainDependencyFailure } from './analysis-failure';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
   CheckerDependencyFact,
@@ -40,8 +41,10 @@ function createLockedDependencyFact(
   project: AutoScopeProject,
   dependency: ProjectDependency,
 ): CheckerDependencyFact {
+  const nativeEvidence = dependency.nativeFact?.nativeEvidence;
   if (dependency.referenceRequirement !== null) {
     return {
+      nativeEvidence,
       consumerConfigPath: project.configPath,
       importRecord: dependency.importRecord,
       physicalTargetPath: dependency.referenceRequirement.targetFileName,
@@ -51,6 +54,7 @@ function createLockedDependencyFact(
     };
   }
   return {
+    nativeEvidence,
     consumerConfigPath: project.configPath,
     importRecord: dependency.importRecord,
     physicalTargetPath: null,
@@ -72,9 +76,10 @@ export function collectLockedProjectFacts(options: {
     >;
   };
   workspaceSourceBoundary: WorkspaceSourceBoundary;
-}): { facts: CheckerDependencyFact[]; problems: string[] } {
+}): { facts: CheckerDependencyFact[]; problems: string[]; failures: string[] } {
   const facts: CheckerDependencyFact[] = [];
   const collection = collectProjectDependencies({
+    compilationObligationScope: 'generated-declaration-project-v1',
     caches: options.caches,
     context: createAutoProjectSemanticContext({
       authority: options.state.semanticAuthority,
@@ -83,10 +88,16 @@ export function collectLockedProjectFacts(options: {
     }),
     importAnalysis: options.importAnalysis,
   });
-  const problems = collection.failures.map((failure) =>
-    formatProjectDependencyFailure({ config: options.config, failure }),
-  );
-  for (const dependency of effectiveReferenceInputs(collection)) {
+  const failures = collection.failures.map((failure) => {
+    const detail = formatProjectDependencyFailure({
+      config: options.config,
+      failure,
+    });
+    retainDependencyFailure(options.caches, failure, detail);
+    return detail;
+  });
+  const dependencies = lockedDependencies(collection);
+  for (const dependency of dependencies) {
     if (
       !shouldInferDeclarationReferenceFromImportRecord(dependency.importRecord)
     ) {
@@ -94,7 +105,7 @@ export function collectLockedProjectFacts(options: {
     }
     facts.push(createLockedDependencyFact(options.project, dependency));
   }
-  return { facts, problems };
+  return { facts, problems: [], failures };
 }
 
 function getSupportedEvidenceKind(
@@ -107,4 +118,12 @@ function getSupportedEvidenceKind(
       'Unsupported evidence cannot become a locked dependency fact.',
     );
   return evidence.kind;
+}
+
+function lockedDependencies(
+  collection: ReturnType<typeof collectProjectDependencies>,
+) {
+  return collection.nativeEvidence === undefined
+    ? effectiveReferenceInputs(collection)
+    : collection.dependencies;
 }

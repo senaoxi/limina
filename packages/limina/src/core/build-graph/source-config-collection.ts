@@ -48,6 +48,7 @@ function shouldSkipConfigVisit(options: ConfigVisit): boolean {
 }
 
 function registerSourceConfig(options: ConfigVisit): string {
+  options.collection.sourceDiscovery?.begin(options.sourceConfigPath);
   options.seenConfigs.add(options.sourceConfigPath);
   const packageRootDirectory = options.activatedRegions.findPackageForPath(
     options.sourceConfigPath,
@@ -196,13 +197,17 @@ function collectValidConfig(options: {
   packageRootDir: string;
   visit: ConfigVisit;
 }): void {
-  if (
-    isLiminaSolutionConfig({
-      configObject: options.analysis.configObject,
-      configPath: options.visit.sourceConfigPath,
-      fileNames: options.analysis.fileNames,
-    })
-  ) {
+  const isSolution = isLiminaSolutionConfig({
+    configObject: options.analysis.configObject,
+    configPath: options.visit.sourceConfigPath,
+    fileNames: options.analysis.fileNames,
+  });
+  options.visit.collection.sourceDiscovery?.parsed(
+    options.visit.sourceConfigPath,
+    options.analysis.fileNames,
+    { isSolution, basis: options.analysis.configClosure },
+  );
+  if (isSolution) {
     collectSolutionConfig(
       options.visit,
       options.packageRootDir,
@@ -266,7 +271,6 @@ function collectParsedSourceConfig(options: {
       problems: options.options.problems,
       sourceConfigPath: options.options.sourceConfigPath,
     });
-    return;
   }
   collectValidConfig({
     analysis,

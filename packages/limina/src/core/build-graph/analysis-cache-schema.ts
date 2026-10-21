@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import { nativeAnalysisEvidenceSchema } from '../analysis-cache/native-evidence-schema';
+import { nativeCoverageIndexSchema } from '../analysis-cache/native-proof-schema';
+import { createProjectDependencyCaches } from '../project-dependencies/cache';
+import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
+import { finishAnalysisOutcome } from './analysis-outcome';
 import {
   checker,
   stringMap,
@@ -7,6 +12,7 @@ import {
   texts,
 } from './cached-data-schema';
 import { jsonRecords, manifestSchema } from './cached-manifest-schema';
+import { analysisOutcomeSchema } from './cached-outcome-schema';
 import { authority, ownershipSchema } from './cached-ownership-schema';
 import type {
   DependencyAnalysisResult,
@@ -88,7 +94,17 @@ const relation = z.object({
   file: text,
   specifier: text,
 });
+const candidateReference = z.object({ from: text, to: text });
 const dependencyAnalysis = z.object({
+  candidate: z
+    .object({
+      configPaths: texts,
+      references: z.array(candidateReference),
+      schedules: z.array(candidateReference),
+    })
+    .optional(),
+  outcome: analysisOutcomeSchema,
+  nativeEvidence: z.array(nativeAnalysisEvidenceSchema).optional(),
   complete: z.boolean(),
   diagnostics: texts,
   facts: z.array(relation),
@@ -122,6 +138,7 @@ const typeInputProjection = z.object({
   generated: effectiveTypeInputs,
 });
 const graph = z.object({
+  sourceConfigCoverage: nativeCoverageIndexSchema.optional(),
   outputProjections: z.array(outputProjection),
   typeInputProjections: z.array(typeInputProjection),
   dependencyAnalysis,
@@ -143,7 +160,30 @@ const graph = z.object({
 });
 export function parseCachedGraph(value: unknown): StoredGraphData | undefined {
   const result = graph.safeParse(value);
-  return result.success
-    ? (result.data as unknown as StoredGraphData)
-    : undefined;
+  if (!result.success) return undefined;
+  const stored = result.data as unknown as StoredGraphData;
+  return admittedCachedGraph(stored);
+}
+
+function admittedCachedGraph(
+  stored: StoredGraphData,
+): StoredGraphData | undefined {
+  const analysis = stored.dependencyAnalysis;
+  const claimed = nativeFingerprint(analysis.outcome);
+  finishAnalysisOutcome(
+    analysis,
+    createProjectDependencyCaches(),
+    analysis.outcome!.governance,
+  );
+  return isConsistentAdmittedOutcome(analysis, claimed) ? stored : undefined;
+}
+
+function isConsistentAdmittedOutcome(
+  analysis: DependencyAnalysisResult,
+  claimed: string,
+): boolean {
+  return (
+    analysis.outcome!.buildAdmission.state === 'admitted' &&
+    nativeFingerprint(analysis.outcome) === claimed
+  );
 }

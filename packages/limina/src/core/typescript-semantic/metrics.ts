@@ -12,6 +12,7 @@ export function measureBoundedProgram(
   } finally {
     metrics.record({
       name: 'bounded-program-create',
+      count: 1,
       durationMs: performance.now() - start,
     });
   }
@@ -33,6 +34,7 @@ export class TypeCheckerObservation {
     } finally {
       this.#metrics?.record({
         name: 'bounded-first-typechecker',
+        count: 1,
         durationMs: performance.now() - start,
       });
     }

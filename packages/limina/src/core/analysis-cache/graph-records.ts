@@ -9,7 +9,18 @@ import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
 import { isSameData } from './snapshot-records';
 function isCompleteContext(context: NativeContextRecord): boolean {
-  return context.complete && context.environment.evidence !== 'unknown';
+  return context.complete && hasCompleteContextInputs(context);
+}
+function hasCompleteContextInputs(context: NativeContextRecord): boolean {
+  return (
+    context.environment.evidence !== 'unknown' &&
+    hasCompletedNativeCollection(context)
+  );
+}
+function hasCompletedNativeCollection(context: NativeContextRecord): boolean {
+  return (
+    context.native === undefined || context.native.snapshot.run === 'completed'
+  );
 }
 function previousGraph(
   cache: NativeAnalysisCache,
@@ -45,7 +56,7 @@ function canRestoreContext(cache: NativeAnalysisCache, id: string): boolean {
     cache.restoreContext({
       ...context.project,
       workspaceSourceBoundary: {
-        identity: analysisHash(context.boundary),
+        ...restoredNativeBoundary(context),
         has: (file) => isAllowed(allowed, file),
       },
     }) !== undefined
@@ -161,4 +172,14 @@ export class CachedGraphRecords {
     }
     this.#captureData(key, options, discovery!);
   }
+}
+
+function restoredNativeBoundary(context: NativeContextRecord) {
+  const native = context.native;
+  return native === undefined
+    ? { identity: analysisHash(context.boundary) }
+    : {
+        identity: native.boundaryIdentity,
+        sourceConfigCoverage: native.snapshot.coverageIndexes[0],
+      };
 }

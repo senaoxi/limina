@@ -1,6 +1,7 @@
 import type { CheckerDependencyFact } from './checker-ownership-types';
 
 export interface PendingOwnershipEvidence {
+  failures?: string[];
   facts: CheckerDependencyFact[];
   problems: string[];
 }
@@ -21,6 +22,7 @@ export function clonePendingOwnershipEvidence(
       },
     })),
     problems: [...value.problems],
+    failures: value.failures === undefined ? undefined : [...value.failures],
   };
 }
 

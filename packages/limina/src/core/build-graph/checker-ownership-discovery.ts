@@ -1,20 +1,18 @@
 import { getCheckerExtensions } from '#checkers';
 import {
   type CheckerName,
-  getActiveCheckers,
   getAutoCheckerConfig,
   type ResolvedCheckerConfig,
   type ResolvedLiminaInputs,
 } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toPosixPath, toRelativePath } from '#utils/path';
-import {
-  createCheckerEntrySelectionOptions,
-  resolveCheckerEntrySelection,
-} from '../checkers/entry-selection';
+import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
+import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { AutoScopeProject } from './auto-checker-types';
 import { applyConfigEvidence } from './checker-ownership-config-evidence';
+import { resolveOwnershipEntries } from './checker-ownership-entries';
 import { applyExplicitRequirements } from './checker-ownership-evidence';
 import {
   collectOwnershipScopes,
@@ -23,7 +21,8 @@ import {
   createProjectByConfigPath,
 } from './checker-ownership-graph';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
-import { createGeneratedGraphStructuredError } from './problems';
+import { recordCoreWork } from './core-collection-run';
+import { prepareNativeSourceBaseline } from './native-source-baseline';
 import type {
   AutoScope,
   PrepareGeneratedTsconfigGraphOptions,
@@ -31,6 +30,8 @@ import type {
 } from './types';
 
 export interface CheckerOwnershipDiscovery {
+  collectionProblems?: string[];
+  sourceConfigCoverage?: SourceConfigCoverageIndex;
   activatedRegions?: WorkspaceRegionPathIndex;
   activeEntryPaths: string[];
   autoChecker: 'tsc' | 'tsgo';
@@ -63,24 +64,6 @@ function createResolvedChecker(options: {
   };
 }
 
-async function collectNamedSelections(options: {
-  config: ResolvedLiminaInputs;
-  sourceConfigPaths: readonly string[];
-}): Promise<ResolvedCheckerEntrySelection[]> {
-  return Promise.all(
-    getActiveCheckers(options.config).map(async (checker) => ({
-      checker,
-      selection: await resolveCheckerEntrySelection(
-        {
-          config: options.config,
-          sourceConfigPaths: options.sourceConfigPaths,
-        },
-        createCheckerEntrySelectionOptions(checker),
-      ),
-    })),
-  );
-}
-
 function claimExplicitOwner(options: {
   checker: CheckerName;
   config: ResolvedLiminaInputs;
@@ -106,6 +89,7 @@ function claimExplicitOwner(options: {
 function createExplicitOwnerByEntryPath(options: {
   config: ResolvedLiminaInputs;
   selections: readonly ResolvedCheckerEntrySelection[];
+  problems: string[];
 }): Map<string, CheckerName> {
   const owners = new Map<string, CheckerName>();
   const problems: string[] = [];
@@ -121,54 +105,8 @@ function createExplicitOwnerByEntryPath(options: {
       );
     }
   }
-  throwOwnershipProblems({
-    config: options.config,
-    fallback: 'Failed to assign named checker entry ownership.',
-    problems,
-  });
+  options.problems.push(...problems);
   return owners;
-}
-
-async function collectAutoEntryPaths(options: {
-  config: ResolvedLiminaInputs;
-  sourceConfigPaths: readonly string[];
-}): Promise<string[]> {
-  const auto = getAutoCheckerConfig(options.config.scope?.checkers);
-  const selection = await resolveCheckerEntrySelection(
-    {
-      config: options.config,
-      sourceConfigPaths: options.sourceConfigPaths,
-    },
-    {
-      checkerName: '__auto__',
-      exclude: auto.exclude ?? [],
-      include: ['**/tsconfig.json'],
-    },
-  );
-  return selection.effectiveEntryPaths;
-}
-
-function collectActiveEntryPaths(options: {
-  autoEntryPaths: readonly string[];
-  namedSelections: readonly ResolvedCheckerEntrySelection[];
-}): string[] {
-  return [
-    ...new Set([
-      ...options.autoEntryPaths,
-      ...options.namedSelections.flatMap(
-        (selection) => selection.selection.effectiveEntryPaths,
-      ),
-    ]),
-  ].sort(compareCodeUnits);
-}
-
-function throwOwnershipProblems(options: {
-  config: ResolvedLiminaInputs;
-  fallback: string;
-  problems: string[];
-}): void {
-  if (options.problems.length === 0) return;
-  throw createGeneratedGraphStructuredError(options);
 }
 
 export async function discoverCheckerOwnership(options: {
@@ -176,23 +114,26 @@ export async function discoverCheckerOwnership(options: {
   config: ResolvedLiminaInputs;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceSourceConfigPaths: readonly string[];
+  projectDependencyCaches?: ProjectDependencyCaches;
 }): Promise<CheckerOwnershipDiscovery> {
-  const namedSelections = await collectNamedSelections({
+  const { namedSelections, activeEntryPaths } = await resolveOwnershipEntries({
     config: options.config,
     sourceConfigPaths: options.workspaceSourceConfigPaths,
   });
+  const baseline = prepareNativeSourceBaseline({
+    ...options,
+    entries: activeEntryPaths,
+  });
+  const collectionProblems: string[] = [];
   const explicitOwnerByEntryPath = createExplicitOwnerByEntryPath({
+    problems: collectionProblems,
     config: options.config,
     selections: namedSelections,
   });
-  const activeEntryPaths = collectActiveEntryPaths({
-    autoEntryPaths: await collectAutoEntryPaths({
-      config: options.config,
-      sourceConfigPaths: options.workspaceSourceConfigPaths,
-    }),
-    namedSelections,
-  });
   const scopes = collectOwnershipScopes({
+    onProblems: (problems) => {
+      collectionProblems.push(...problems);
+    },
     activatedRegions: options.activatedRegions,
     config: options.config,
     entryConfigPaths: activeEntryPaths,
@@ -208,19 +149,25 @@ export async function discoverCheckerOwnership(options: {
     (entryPath) =>
       plan.typeConfigs.has(entryPath) || plan.solutions.has(entryPath),
   );
-  throwOwnershipProblems({
-    config: options.config,
-    fallback: 'Failed to resolve checker config evidence.',
-    problems: [
-      ...applyExplicitRequirements({
+  collectionProblems.push(
+    ...namedSelections.flatMap((selection) =>
+      applyExplicitRequirements({
         config: options.config,
-        explicitOwnerByEntryPath,
+        explicitOwnerByEntryPath: new Map(
+          selection.selection.effectiveEntryPaths.map((entry) => [
+            entry,
+            selection.checker.name,
+          ]),
+        ),
         plan,
       }),
-      ...applyConfigEvidence({ config: options.config, plan, scopes }),
-    ],
-  });
+    ),
+    ...applyConfigEvidence({ config: options.config, plan, scopes }),
+  );
+  registerCoreWork(options.projectDependencyCaches, projectByConfigPath);
   return {
+    collectionProblems,
+    sourceConfigCoverage: baseline.coverageIndexes[0],
     activatedRegions: options.activatedRegions,
     activeEntryPaths: managedEntryPaths,
     autoChecker: getAutoCheckerConfig(options.config.scope?.checkers).useTsgo
@@ -280,4 +227,28 @@ function addCheckerEntry(
     return;
   }
   entries.push(entryPath);
+}
+
+function registerCoreWork(
+  caches: ProjectDependencyCaches | undefined,
+  projects: CheckerOwnershipDiscovery['projectByConfigPath'],
+): void {
+  if (caches === undefined) return;
+  for (const configPath of projects.keys()) {
+    recordCoreWork(caches, {
+      configPath,
+      phase: 'selection',
+      family: 'pending',
+      eligibility: 'eligible',
+      execution: 'not-run',
+    });
+    recordCoreWork(caches, {
+      configPath,
+      phase: 'locked',
+      family: 'unselected',
+      eligibility: 'unavailable',
+      execution: 'not-run',
+      reason: 'authority-unavailable',
+    });
+  }
 }

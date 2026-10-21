@@ -683,10 +683,22 @@ return {};};`,
       await f.cleanup();
     }
   });
-  it.each([false, true])(
-    'compares independently inferred source relations and preserves existing implicit reasons (deny=%s)',
-    async (denied) => {
+  it.each([
+    { denied: false, complete: true },
+    { denied: true, complete: true },
+    { denied: false, complete: false },
+    { denied: true, complete: false },
+  ])(
+    'compares proved relations or preserves declarations at Coverage boundaries (deny=$denied, complete=$complete)',
+    async ({ denied, complete }) => {
+      // Explicitly disable environment inputs only in the complete control.
+      // Default libraries in the other control remain uncovered evidence boundaries.
+      const compilerOptions = complete ? { noLib: true, types: [] } : {};
       const f = await fixture({
+        'packages/app/good/tsconfig.json': source({
+          ...compilerOptions,
+          noEmit: true,
+        }),
         'limina.config.mjs': `export default ${json(
           denied
             ? {
@@ -708,6 +720,7 @@ return {};};`,
             : {},
         )};`,
         'packages/app/a/tsconfig.json': json({
+          compilerOptions,
           files: ['./index.ts'],
           references: [{ path: '../b' }, { path: '../c' }],
           liminaOptions: {
@@ -717,11 +730,20 @@ return {};};`,
         }),
         'packages/app/a/index.ts':
           "import type { B } from '../b/index'; import type { D } from '../d/index'; export type A = B & D;",
-        'packages/app/b/tsconfig.json': json({ files: ['index.ts'] }),
+        'packages/app/b/tsconfig.json': json({
+          compilerOptions,
+          files: ['index.ts'],
+        }),
         'packages/app/b/index.ts': 'export interface B { b: string }',
-        'packages/app/c/tsconfig.json': json({ files: ['index.ts'] }),
+        'packages/app/c/tsconfig.json': json({
+          compilerOptions,
+          files: ['index.ts'],
+        }),
         'packages/app/c/index.ts': 'export interface C { c: string }',
-        'packages/app/d/tsconfig.json': json({ files: ['index.ts'] }),
+        'packages/app/d/tsconfig.json': json({
+          compilerOptions,
+          files: ['index.ts'],
+        }),
         'packages/app/d/index.ts': 'export interface D { d: string }',
       });
       try {
@@ -730,22 +752,42 @@ return {};};`,
         expect(config.references).toBeUndefined();
         expect(config.liminaOptions.implicitRefs).toEqual([
           { path: '../c', reason: 'user contract' },
+          ...(complete
+            ? []
+            : [
+                {
+                  path: '../b/tsconfig.json',
+                  reason:
+                    'Preserved native TypeScript reference ../b during Limina migration.',
+                },
+              ]),
         ]);
         const report = await f.report();
         expect(
           report.records.find((record) => record.kind === 'dependency-analysis')
             ?.message,
-        ).toBe('complete');
+        ).toBe(
+          complete
+            ? 'complete'
+            : 'incomplete; no definitive difference is inferred',
+        );
         expect(
           report.records
             .filter((record) => record.kind === 'native-comparison')
             .map((record) => record.message),
-        ).toEqual(['N ∩ G', 'N - G']);
+        ).toEqual(
+          complete
+            ? ['N ∩ G', 'N - G']
+            : [
+                'comparison unavailable; preserving explicit declaration',
+                'comparison unavailable; preserving explicit declaration',
+              ],
+        );
         expect(
           report.records
             .filter((record) => record.kind === 'inferred-only')
             .map((record) => record.details.toConfigPath),
-        ).toEqual([f.path('packages/app/d/tsconfig.json')]);
+        ).toEqual(complete ? [f.path('packages/app/d/tsconfig.json')] : []);
       } finally {
         await f.cleanup();
       }

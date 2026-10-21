@@ -5,7 +5,7 @@ import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
 import type { CheckCounter } from '../check-reporting/stats';
 import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
 import {
-  collectProjectDependencies,
+  collectRuntimeProjectDependencies,
   createParsedProjectSemanticContext,
   type ProjectDependencyCaches,
 } from '../core/project-dependencies/runner';
@@ -72,7 +72,7 @@ function getSourceOwner(
 }
 
 function assertSourceCollection(
-  collection: ReturnType<typeof collectProjectDependencies>,
+  collection: ReturnType<typeof collectRuntimeProjectDependencies>,
 ): void {
   const failure = collection.failures[0];
   if (failure === undefined) return;
@@ -144,7 +144,7 @@ function processSourceProject(
     fileNames: [...entry.fileNames],
     ownedFileNames: [...entry.fileNames],
   };
-  const collection = collectProjectDependencies({
+  const collection = collectRuntimeProjectDependencies({
     caches: base.projectDependencyCaches,
     context: createParsedProjectSemanticContext({
       authority,
@@ -163,7 +163,7 @@ function processSourceProject(
 
 function processSourceDependencies(options: {
   base: SourceImportOptions;
-  collection: ReturnType<typeof collectProjectDependencies>;
+  collection: ReturnType<typeof collectRuntimeProjectDependencies>;
   entry: SourceProjectEntry;
   project: ProjectInfo;
 }): void {
@@ -181,7 +181,7 @@ function processSourceDependencies(options: {
 
 function processSourceObservations(options: {
   base: SourceImportOptions;
-  collection: ReturnType<typeof collectProjectDependencies>;
+  collection: ReturnType<typeof collectRuntimeProjectDependencies>;
   entry: SourceProjectEntry;
   project: ProjectInfo;
 }): void {
@@ -194,7 +194,7 @@ function processSourceObservation(options: {
   base: SourceImportOptions;
   entry: SourceProjectEntry;
   observation: ReturnType<
-    typeof collectProjectDependencies
+    typeof collectRuntimeProjectDependencies
   >['observations'][number];
   project: ProjectInfo;
 }): void {

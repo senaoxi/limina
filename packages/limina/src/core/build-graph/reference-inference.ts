@@ -164,6 +164,9 @@ export function inferProjectReferences(options: {
     projects: options.projects,
   });
   const membership = createOwnerLookup(ownerGovernedSources);
+  const caches = resolveProjectDependencyCaches(
+    options.projectDependencyCaches,
+  );
   const context: ReferenceImportContext = {
     analysis,
     activatedRegions: options.activatedRegions,
@@ -171,9 +174,7 @@ export function inferProjectReferences(options: {
     dtsProjectsBySourcePath: createDtsProjectsBySourcePath(ownerProjects),
     fileOwnerLookup: membership,
     importAnalysis: resolveBuildGraphImportAnalysis(options),
-    projectDependencyCaches: resolveProjectDependencyCaches(
-      options.projectDependencyCaches,
-    ),
+    projectDependencyCaches: caches,
     problems,
     dependencyEdgesByKey,
     workspaceSourceBoundary: createWorkspaceSourceBoundary(
@@ -186,6 +187,7 @@ export function inferProjectReferences(options: {
         isWorkspaceFile: (file) =>
           options.activatedRegions.findPackageForPath(file) !== null,
       },
+      caches.sourceConfigCoverage,
     ),
   };
   processReferenceImports({

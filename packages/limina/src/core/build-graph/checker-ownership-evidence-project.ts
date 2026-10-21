@@ -19,6 +19,7 @@ import type {
 export interface EvidenceProject {
   checkerName: CheckerName;
   project: {
+    compilationObligationScope: 'generated-declaration-project-v1';
     analysisBinding: { phase: 'pending' | 'locked'; checker: string };
     virtualFiles?: ReadonlyMap<string, string>;
     checkerPresets: CheckerProjectParseContext['checkerPresets'];
@@ -168,6 +169,7 @@ export function createEvidenceProject(options: {
   return {
     checkerName,
     project: {
+      compilationObligationScope: 'generated-declaration-project-v1',
       analysisBinding: {
         phase: options.state.semanticAuthority.kind,
         checker: checkerName,

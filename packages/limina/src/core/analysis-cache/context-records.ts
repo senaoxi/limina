@@ -1,13 +1,14 @@
-import { isNativeTypeScriptProjectInput } from '#checkers';
 import ts from 'typescript';
 import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
 } from '../typescript-semantic/contracts';
 import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
-import { getEffectiveImporterRoots } from '../typescript-semantic/effective-roots';
 import { createTypeScriptSemanticContextIdentity } from '../typescript-semantic/identity';
+import { hasValidBoundedContext } from './bounded-context-validity';
 import { createContextRecord, isCompleteImporter } from './context-capture';
+import { hasCurrentContextEnvironment } from './context-environment';
+import { isCurrentContextShape } from './context-shape';
 import type {
   ImporterRecord,
   InputDependency,
@@ -16,7 +17,7 @@ import type {
   ResolutionRecord,
 } from './contracts';
 import { encodeData } from './data-codec';
-import { analysisHash, nativeContextId } from './identity';
+import { nativeContextId } from './identity';
 import {
   observeTypeEnvironment,
   type TypeEnvironmentRecord,
@@ -32,39 +33,6 @@ interface Candidate {
   state: ProjectRecord;
   importers: [string, ImporterRecord][];
   queries: [string, ResolutionRecord][];
-}
-function isCurrentShape(
-  project: TypeScriptSemanticProject,
-  candidate: Candidate,
-): boolean {
-  const roots = getEffectiveImporterRoots(project).filter(
-    isNativeTypeScriptProjectInput,
-  );
-  return [
-    analysisHash(roots) === analysisHash(candidate.state.roots),
-    candidate.record.boundary.every(
-      ([file, allowed]) =>
-        project.workspaceSourceBoundary.has(file) === allowed,
-    ),
-  ].every(Boolean);
-}
-function isCurrentEnvironment(
-  cache: NativeAnalysisCache,
-  project: TypeScriptSemanticProject,
-  candidate: Candidate,
-): boolean {
-  const current = observeTypeEnvironment(project, cache.inputs, {
-    members: candidate.state.members,
-  });
-  if (
-    analysisHash(current.domains) !==
-    analysisHash(candidate.record.environment.domains)
-  )
-    cache.inputs.invalidateDomain(project.configPath);
-  return (
-    current.evidence !== 'unknown' &&
-    analysisHash(current) === analysisHash(candidate.record.environment)
-  );
 }
 function hasValidInputs(
   cache: NativeAnalysisCache,
@@ -196,8 +164,13 @@ export class NativeContextRecords {
     const candidate = candidateFor(this.#cache, nativeContextId(project));
     if (candidate === undefined) return undefined;
     const valid = [
-      isCurrentShape(project, candidate),
-      isCurrentEnvironment(this.#cache, project, candidate),
+      hasValidBoundedContext(
+        candidate.record,
+        Object.fromEntries(candidate.importers),
+        { project: candidate.state, contextId: nativeContextId(project) },
+      ),
+      isCurrentContextShape(project, candidate),
+      hasCurrentContextEnvironment(this.#cache, project, candidate),
       hasValidInputs(this.#cache, candidate.record.dependencies),
     ];
     return valid.every(Boolean)
@@ -292,7 +265,6 @@ function adoptSyntax(cache: NativeAnalysisCache, files: string[]): void {
     if (syntax !== undefined) cache.files[file] = syntax;
   }
 }
-
 function previousSyntax(cache: NativeAnalysisCache, file: string) {
   return cache.previous?.files[file];
 }

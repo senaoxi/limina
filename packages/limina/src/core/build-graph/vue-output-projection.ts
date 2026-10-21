@@ -1,4 +1,5 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
+import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { vueContextId } from '../analysis-cache/vue-identity';
 import { createImportAnalysisContext } from '../import-analysis/context';
@@ -29,6 +30,7 @@ export function collectVueOutputDependencies(options: {
   project: SourceProject;
   output: TypeScriptSemanticProject;
   cache?: NativeAnalysisCache;
+  metrics?: AnalysisMetricsRecorder;
 }): { contextId: string | undefined; dependencies: Map<string, string> } {
   const { project, output, cache } = options;
   const source = project.context.vueSemanticIdentity;
@@ -37,7 +39,7 @@ export function collectVueOutputDependencies(options: {
       `Vue output projection has no source identity: ${project.configPath}`,
     );
   const identity = createVueOutputIdentity(source, output);
-  const contexts = new VueSemanticContextManager(undefined, cache);
+  const contexts = new VueSemanticContextManager(options.metrics, cache);
   const importAnalysis = createImportAnalysisContext({
     vueSemanticContexts: contexts,
   });
@@ -56,7 +58,7 @@ export function collectVueOutputDependencies(options: {
         references: [],
         vueSemanticIdentity: identity,
       },
-      caches: createProjectDependencyCaches(undefined, cache),
+      caches: createProjectDependencyCaches(cache, options.metrics),
       importAnalysis,
     });
     if (collection.failures.length > 0)

@@ -1,8 +1,15 @@
-import { type AnalysisRead, withAnalysisReads } from '#utils/analysis-input';
+import {
+  type AnalysisRead,
+  withAdditionalAnalysisReads,
+  withAnalysisReads,
+} from '#utils/analysis-input';
 import { compareCodeUnits } from '#utils/collections';
 import { AnalysisInputDriftError, type DiscoveryRecord } from './contracts';
 import { pathBinding } from './directory-fingerprint';
-import { replayDiscoveryRead } from './discovery-reads';
+import {
+  replayDiscoveryRead,
+  replaySynchronousDiscoveryRead,
+} from './discovery-reads';
 import { analysisHash } from './identity';
 
 interface Observation {
@@ -52,8 +59,23 @@ export class EpochInputs {
       throw new AnalysisInputDriftError(input.path);
     this.#reads.set(input.key, next);
   }
+  #validateSynchronousRecord(record: DiscoveryRecord): boolean {
+    const descriptor = record.descriptor;
+    if (descriptor.kind === 'glob') return false;
+    const read = () => replaySynchronousDiscoveryRead(descriptor);
+    const input = { ...record, value: read(), read };
+    if (!isSameVersion(record, observation(input))) return false;
+    this.#observe(input);
+    return true;
+  }
   run<T>(operation: () => T): T {
     return withAnalysisReads((input) => this.#observe(input), operation);
+  }
+  collect<T>(operation: () => T): T {
+    return withAdditionalAnalysisReads(
+      (input) => this.#observe(input),
+      operation,
+    );
   }
   async assertStable(): Promise<void> {
     for (const prior of this.#reads.values()) {
@@ -85,6 +107,12 @@ export class EpochInputs {
       const input = { ...record, value: await read(), read };
       if (!isSameVersion(record, observation(input))) return false;
       this.#observe(input);
+    }
+    return true;
+  }
+  validateSynchronous(records: readonly DiscoveryRecord[]): boolean {
+    for (const record of records) {
+      if (!this.#validateSynchronousRecord(record)) return false;
     }
     return true;
   }

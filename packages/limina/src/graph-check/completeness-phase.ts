@@ -28,6 +28,7 @@ export function runReferenceCompletenessPhase(state: GraphCheckState): void {
         isWorkspaceFile: (file) =>
           state.workspaceLookup.findOwnerForFile(file) !== null,
       },
+      state.generatedGraph.sourceConfigCoverage,
     ),
   });
 
