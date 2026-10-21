@@ -142,12 +142,14 @@ flowchart TB
 
 ## Relation taxonomy
 
+[Native Evidence 合同](./semantics.md#独立-native-evidence-合同)将 `resolved-project-use`、`compiler-reference-obligation`、`declaration-consumption`、`explicit-reference`、`framework-schedule` 和 `runtime-use` 分开。Native 编译投影只消费合格 locked 义务；use relation 不因 owner 命中成为编译边，引用结构满足不证明产物就绪。Runtime source/package 治理拥有独立入口和请求目的。Schema 9 保留原始证据及各状态，`FileOwnerLookup` 算法不变。
+
 | Relation                     | Producer / 意义                                                                                                 | 下游权限与边界                                                                               |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | raw tsconfig reference       | source config 的 TypeScript 输入关系                                                                            | 可影响原生语义与 solution closure；inferred/generated refs 不倒灌回该输入                    |
 | solution-leaf equality       | solution terminal leaf closure                                                                                  | 参与 build identity equality；不要求先有 import occurrence                                   |
 | native occurrence resolution | TS 的 module/path/type/lib/JSX channels                                                                         | 只证明该 occurrence 的解释结果；admission 与 TypeEvidence 独立                               |
-| referenceRequirement         | NativeDependencyFact 的 source-semantic / compiler-membership                                                   | 是需要 compiler relationship 的证据；仍需 membership、deny、identity 与 graph 分类           |
+| referenceRequirement         | Native 合格编译义务；framework 自身适配器判定                                                                   | 不能由解析、owner、加载尝试或 TypeEvidence 单独生成；不代表产物可用                          |
 | `implicitRefs`               | 用户 liminaOptions 声明的 config relation                                                                       | 可生成 references，拥有自己的合法性约束；无需虚构 import evidence                            |
 | declaration-provider         | [reference-recording](../../../packages/limina/src/core/build-graph/reference-recording.ts)                     | 生成 TypeScript references、声明构建依赖；成功边 exact checker 相同且 reusable               |
 | framework-schedule           | [framework-reference-inference](../../../packages/limina/src/core/build-graph/framework-reference-inference.ts) | 证明的 source implementation 顺序；不生成 tsconfig reference，不赋予 declaration cache reuse |
@@ -159,9 +161,11 @@ flowchart TB
 
 声明目标 `.d.ts/.d.mts/.d.cts` 是 artifact 终点；存在 source 文件也不够，必须有合法 requirement。执行依赖计划同时看到声明边与调度边；dependency plan 先过滤相同 target 的自依赖；两个及以上 target 的 SCC 中含 declaration relation 被拒绝，纯 framework SCC 可以执行。准确 guard 见 [graph-validation](../../../packages/limina/src/core/build-graph/graph-validation.ts) 与 [declaration-cycle](../../../packages/limina/src/typecheck/build/declaration-cycle.ts)。
 
-Occurrence 贡献在当前 reference 规则接受后记录。[ReferenceContributions](../../../packages/limina/src/core/analysis-cache/contributions.ts) 按 contextual importer 分组，原子替换已完成投影，去重重复阶段观察并保留不同 occurrence。计数解释 import 产生的边；原始 references、implicitRefs、solution membership 与 framework scheduling 保留各自生产者。持久化计数不能建立 ownership，也不能删除由独立来源支持的边。
+Occurrence 和关系证据在治理裁定前保留。[ReferenceContributions](../../../packages/limina/src/core/analysis-cache/contributions.ts)按 contextual importer 原子替换已完成投影，去重阶段观察并保留独立 occurrence。Deny 不删除原始边或让未知关系消失；原始 references、implicitRefs、solution 和 framework schedule 保留自身来源。计数不证明 owner、产物准备或执行准入。
 
 ## Failure semantics 与投影边界
+
+[AnalysisOutcome](../../../packages/limina/src/core/build-graph/analysis-outcome.ts)分别保留逐入口 Core 工作清单、执行故障、范围内遍历、编译关系、Governance、候选 Admission 和后置建图事务。Core 以 Coverage 为边界 best-effort 遍历可信入口；预期 stop 不自动转成诊断或失败。配置解析、文件读取、编译器初始化和内部故障携带影响范围，保留可独立继续的上下文；无法证明可信的事务不发布成功构建计划。部分关系图不因删掉未知/违规关系变成完整图；真实编译诊断由最终 Checker 给出。
 
 配置/namespace/authority 不合法通常直接 throw；语义 preparation 不支持、source-map 不可信等成为 stage-specific failure；module missing、resource、unmapped generated 可成为 observation。`resource` 不是 TypeEvidence，missing 不等于异常。graph/source/proof 在自己的领域决定这些事实是否构成 issue。
 
