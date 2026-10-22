@@ -153,7 +153,9 @@ function collectLibrary(
     channel: 'library',
     name: reference.fileName,
     target,
-    unavailable: options.program.getCompilerOptionsForFile(source).noLib,
+    // Library inclusion is controlled by the consumer Program, independently
+    // of per-source module resolution options in referenced declarations.
+    unavailable: options.program.getCompilerOptions().noLib,
   });
 }
 

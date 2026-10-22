@@ -7,6 +7,10 @@ import type {
 import type { ProjectReferenceRedirect } from '../dependency-semantics';
 import { nativeFingerprint } from './native-file-identity';
 import type { NativeModuleImpact } from './native-module-impact';
+import {
+  type NativeReferenceObservation,
+  observedDeclarationRedirect,
+} from './reference-redirect';
 
 export interface ObligationSite {
   context: NativeEvidenceContext;
@@ -32,19 +36,81 @@ export function existence(
 
 export function targetConfig(
   coverage: NativeCoverage,
-  redirect: ProjectReferenceRedirect | undefined,
+  observation: NativeReferenceObservation | undefined,
 ): string | null {
-  if (redirect !== undefined) return redirect.referenceConfig;
+  const reference = observedReferenceConfig(observation);
+  return reference ?? coveredConfig(coverage);
+}
+function observedReferenceConfig(
+  observation: NativeReferenceObservation | undefined,
+): string | undefined {
+  return observation?.state === 'observed'
+    ? observation.referenceConfig
+    : undefined;
+}
+function coveredConfig(coverage: NativeCoverage): string | null {
   return coverage.state === 'unique' ? coverage.members[0]!.configId : null;
 }
 
 export function structure(
   input: ObligationSite,
   configId: string | null,
+  observation: NativeReferenceObservation | undefined,
+): NativeCompilationObligation['structure'] {
+  const reason = structureGap(input, configId, observation);
+  return reason === undefined
+    ? provenStructure(
+        input,
+        configId!,
+        observedDeclarationRedirect(observation),
+      )
+    : { state: 'unknown', reason };
+}
+function structureGap(
+  input: ObligationSite,
+  configId: string | null,
+  observation: NativeReferenceObservation | undefined,
+): string | undefined {
+  if (configId === null) return 'compilation-unit-endpoint-unproved';
+  // Empty effective references are independent negative structure evidence.
+  return input.context.inputs.rawReferences === nativeFingerprint([])
+    ? undefined
+    : observedStructureGap(observation);
+}
+function observedStructureGap(
+  observation: NativeReferenceObservation | undefined,
+): string | undefined {
+  if (observation === undefined) return 'reference-map-not-observed';
+  return observation.state === 'unavailable'
+    ? observation.reason
+    : qualifiedStructureGap(observation);
+}
+function qualifiedStructureGap(
+  observation: Extract<NativeReferenceObservation, { state: 'observed' }>,
+): string | undefined {
+  return membershipGap(observation) ?? negativeReferenceGap(observation);
+}
+function negativeReferenceGap(
+  observation: Extract<NativeReferenceObservation, { state: 'observed' }>,
+): string | undefined {
+  return observation.redirect === undefined &&
+    !observation.canProveMissingReference
+    ? 'reference-map-negative-unqualified-for-target'
+    : undefined;
+}
+function membershipGap(
+  observation: Extract<NativeReferenceObservation, { state: 'observed' }>,
+): string | undefined {
+  return observation.referenceConfig !== undefined &&
+    observation.redirect === undefined
+    ? 'reference-membership-without-declaration-mapping'
+    : undefined;
+}
+function provenStructure(
+  input: ObligationSite,
+  configId: string,
   redirect: ProjectReferenceRedirect | undefined,
 ): NativeCompilationObligation['structure'] {
-  if (configId === null)
-    return { state: 'unknown', reason: 'compilation-unit-endpoint-unproved' };
   return {
     state: redirect === undefined ? 'unsatisfied' : 'satisfied',
     evidenceId: nativeFingerprint([input.requestId, redirect]),

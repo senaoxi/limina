@@ -8,6 +8,7 @@ import type { NativeDependencyFact } from '../typescript-semantic/dependency-fac
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { NATIVE_PROGRAM_ADAPTER } from '../typescript-semantic/native-program-api';
 import { hasCompleteBoundedInventory } from './bounded-inventory-validity';
+import { hasBoundObligations } from './bounded-obligation-validity';
 import { hasBoundCompilerObservations } from './bounded-observation-validity';
 import type {
   ImporterRecord,
@@ -77,9 +78,7 @@ function hasConsistentBoundedProof(record: NativeContextRecord): boolean {
         nativeFingerprint(request.origin.context) ===
           nativeFingerprint(context),
     ),
-    snapshot.obligations.every(
-      (obligation) => obligation.consumerContextId === context.id,
-    ),
+    hasBoundObligations(record, context),
   ].every(Boolean);
 }
 

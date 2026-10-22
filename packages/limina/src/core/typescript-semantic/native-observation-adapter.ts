@@ -6,19 +6,16 @@ import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-eviden
 import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
 import type { TypeScriptSemanticProject } from './contracts';
 import { collectNativeObligations } from './native-obligation-inventory';
-import {
-  assertNativeProgramCompiler,
-  nativeObservedProgram,
-} from './native-program-api';
+import { assertNativeProgramCompiler } from './native-program-api';
 import { createBoundedProgramClosure } from './native-program-closure';
 import { NativeProgramFrontier } from './native-program-frontier';
-import { collectNativeProgramInventory } from './native-program-inventory';
 import type { NativeModuleObservation } from './native-program-requests';
 import { createNativeProgramSnapshot } from './native-program-snapshot';
 import {
   assertNativeObservationInputs,
   nativeRootFailures,
 } from './native-program-validity';
+import type { NativeReferenceObservation } from './reference-redirect';
 
 export interface NativeProgramObservationOptions {
   project: TypeScriptSemanticProject;
@@ -38,6 +35,7 @@ export class NativeObservationAdapter {
   readonly configReads: readonly string[];
   readonly frontier: NativeProgramFrontier;
   readonly options: NativeProgramObservationOptions;
+  readonly references: ReadonlyMap<string, NativeReferenceObservation>;
 
   constructor(
     options: NativeProgramObservationOptions,
@@ -52,23 +50,14 @@ export class NativeObservationAdapter {
       project.fileNames,
       coverage,
     );
-    const { program, requests, loads, configReads, failures } =
+    const { program, modules, requests, loads, configReads, failures } =
       createBoundedProgramClosure(options, compiler, this.frontier);
     this.program = program;
-    const observed = nativeObservedProgram(
-      this.program,
-      compiler,
-      requests.optionsBySource,
-    );
-    this.modules = collectNativeProgramInventory({
-      program: observed,
-      compiler,
-      requests,
-      frontier: this.frontier,
-    });
+    this.modules = modules;
+    this.references = loads.references;
     this.configReads = Object.freeze(configReads);
     const snapshot = createNativeProgramSnapshot({
-      program: observed,
+      program,
       frontier: this.frontier,
       coverage,
       requests,
@@ -84,11 +73,12 @@ export class NativeObservationAdapter {
       obligations: collectNativeObligations({
         context,
         compiler,
-        program: observed,
+        program,
         frontier: this.frontier,
         requests,
         paths: loads.paths,
         modules: this.modules,
+        references: this.references,
       }),
     });
     this.snapshot = freezeNativeData(snapshot);

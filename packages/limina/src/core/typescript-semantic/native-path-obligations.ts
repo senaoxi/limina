@@ -1,7 +1,10 @@
 import type ts from 'typescript';
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
-import type { NativeModuleImpact } from './native-module-impact';
+import {
+  type NativeModuleImpact,
+  nativeTargetEligibility,
+} from './native-module-impact';
 import {
   artifact,
   existence,
@@ -13,6 +16,7 @@ import {
 import type { NativePathReceipt } from './native-path-selection';
 import type { NativeObservedProgram } from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
+import type { NativeReferenceObservation } from './reference-redirect';
 
 interface PathObligationInput extends ObligationSite {
   source?: ts.SourceFile;
@@ -20,6 +24,8 @@ interface PathObligationInput extends ObligationSite {
   receipt: NativePathReceipt;
   program: NativeObservedProgram;
   frontier: NativeProgramFrontier;
+  compiler: typeof ts;
+  references: ReadonlyMap<string, NativeReferenceObservation>;
 }
 
 /** A path occurrence supplies an input-membership proof directly. No synthetic
@@ -41,7 +47,7 @@ export function createNativePathObligation(
     structure:
       impact.state === 'absent'
         ? notApplicable
-        : structure(input, configId, input.receipt.redirect),
+        : structure(input, configId, pathReference(input)),
     artifact:
       impact.state === 'absent'
         ? notApplicable
@@ -88,11 +94,8 @@ function implementationImpact(
   input: PathObligationInput,
   target: string,
 ): NativeModuleImpact {
-  if (!/\.(?:ts|tsx|mts|cts)$/.test(target))
-    return {
-      state: 'unknown',
-      reason: 'path-emission-rule-unqualified-for-extension',
-    };
+  const qualification = pathTargetEligibility(input, target);
+  if (qualification.state !== 'present') return qualification;
   const isScoped = [
     input.program.getCompilerOptions().composite === true,
     input.context.inputs.compilationScope ===
@@ -117,7 +120,7 @@ function pathTargetConfig(
     ? null
     : targetConfig(
         input.frontier.inspect(logical).coverage,
-        input.receipt.redirect,
+        input.references.get(logical),
       );
 }
 
@@ -143,4 +146,38 @@ function hasExternalSource(input: PathObligationInput): boolean {
     input.source !== undefined &&
     input.program.isSourceFileFromExternalLibrary(input.source)
   );
+}
+
+function pathReference(
+  input: PathObligationInput,
+): NativeReferenceObservation | undefined {
+  const target = input.receipt.selection.logicalTarget;
+  return target === null ? undefined : input.references.get(target);
+}
+
+function pathTargetEligibility(
+  input: PathObligationInput,
+  target: string,
+): NativeModuleImpact {
+  const qualification = nativeTargetEligibility({
+    target,
+    compiler: input.compiler,
+    emitOptions: input.program.getCompilerOptions(),
+  });
+  return qualification.state === 'absent'
+    ? redirectedPathEmission(input, qualification)
+    : qualification;
+}
+function redirectedPathEmission(
+  input: PathObligationInput,
+  qualification: NativeModuleImpact,
+): NativeModuleImpact {
+  // A selected declaration mapping is not a JS SourceFile emitted by this
+  // consumer. Its noEmitForJsFiles cannot negate the provider's obligation.
+  return input.receipt.redirect === undefined
+    ? qualification
+    : {
+        state: 'unknown',
+        reason: 'redirected-path-javascript-emission-unproved',
+      };
 }

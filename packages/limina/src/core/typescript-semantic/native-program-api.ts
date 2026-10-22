@@ -5,7 +5,7 @@ import {
 } from '../../dependency-contract';
 import { NativeObservationError } from './native-observation-failure';
 
-export const NATIVE_PROGRAM_ADAPTER = 'bounded-program-ts5.4-6.0-v3';
+export const NATIVE_PROGRAM_ADAPTER = 'bounded-program-ts5.4-6.0-v6';
 
 /**
  * Internal observations adapted across TypeScript 5.4–5.9 and 6.0. No collector,
@@ -28,7 +28,9 @@ export interface NativeObservedProgram extends ts.Program {
     name: string,
     mode: ts.ResolutionMode,
   ): ts.ResolvedModuleWithFailedLookupLocations | undefined;
-  getCompilerOptionsForFile(file: ts.SourceFile): ts.CompilerOptions;
+  getCompilerOptionsForFile(
+    file: ts.SourceFile,
+  ): ts.CompilerOptions | undefined;
   getResolvedTypeReferenceDirective(
     file: ts.SourceFile,
     name: string,
@@ -164,7 +166,8 @@ function adaptFileOptions(
   // 5.4/5.5 supply the actual redirect to resolution callbacks instead of
   // exposing getCompilerOptionsForFile. Preserve those compiler observations.
   const facade = Object.create(program) as NativeObservedProgram;
-  facade.getCompilerOptionsForFile = (file) =>
-    optionsBySource.get(file) ?? program.getCompilerOptions();
+  // Even a root may be a referenced declaration with different options. A
+  // missing callback receipt cannot be replaced by the consumer's defaults.
+  facade.getCompilerOptionsForFile = (file) => optionsBySource.get(file);
   return facade;
 }

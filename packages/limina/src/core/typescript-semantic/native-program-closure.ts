@@ -3,28 +3,43 @@ import type { NativeEvidenceFailure } from '../../domain/analysis/native-evidenc
 import { measureBoundedProgram } from './metrics';
 import type { NativeProgramObservationOptions } from './native-observation-adapter';
 import { initializeNativeCompiler } from './native-observation-failure';
+import {
+  nativeObservedProgram,
+  type NativeObservedProgram,
+} from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
 import { createNativeProgramHost } from './native-program-host';
+import { collectNativeProgramInventory } from './native-program-inventory';
 import { NativeProgramLoads } from './native-program-loads';
-import { NativeProgramRequests } from './native-program-requests';
+import {
+  type NativeModuleObservation,
+  NativeProgramRequests,
+} from './native-program-requests';
 import { assertNativeObservationInputs } from './native-program-validity';
 export function createBoundedProgramClosure(
   options: NativeProgramObservationOptions,
   compiler: typeof ts,
   frontier: NativeProgramFrontier,
 ): {
-  program: ts.Program;
+  program: NativeObservedProgram;
+  modules: readonly NativeModuleObservation[];
   requests: NativeProgramRequests;
   loads: NativeProgramLoads;
   configReads: string[];
   failures: NativeEvidenceFailure[];
 } {
   const { project, context } = options;
-  const loads = new NativeProgramLoads(project, compiler, frontier);
   const configReads: string[] = [];
   const failures: NativeEvidenceFailure[] = [];
+  const loads = new NativeProgramLoads({
+    project,
+    compiler,
+    frontier,
+    failures: { contextId: context.id, failures },
+  });
   let requests: NativeProgramRequests;
-  let program: ts.Program;
+  let program: NativeObservedProgram;
+  let modules: readonly NativeModuleObservation[];
   let isRepeat: boolean;
   do {
     const revision = loads.revision;
@@ -40,7 +55,7 @@ export function createBoundedProgramClosure(
       contextId: context.id,
       failures,
     });
-    program = measureBoundedProgram(
+    const rawProgram = measureBoundedProgram(
       () =>
         initializeNativeCompiler(() =>
           compiler.createProgram({
@@ -52,8 +67,46 @@ export function createBoundedProgramClosure(
         ),
       options.metrics,
     );
+    program = nativeObservedProgram(
+      rawProgram,
+      compiler,
+      requests.optionsBySource,
+    );
+    modules = collectNativeProgramInventory({
+      program,
+      compiler,
+      requests,
+      frontier,
+    });
+    // A newly discovered import can change physical loading. Register it in
+    // the same convergence protocol as resolver callbacks, before freezing.
+    registerInventoryLoads(loads, modules);
     isRepeat = loads.finishPass(program, revision);
     assertNativeObservationInputs(options, compiler);
   } while (isRepeat);
-  return { program, requests, loads, configReads, failures };
+  loads.observeTargets(
+    program,
+    requests.entries.flatMap(({ resolution }) =>
+      resolution.target === null ? [] : [resolution.target.lexicalPath],
+    ),
+  );
+  return { program, modules, requests, loads, configReads, failures };
+}
+
+function registerInventoryLoads(
+  loads: NativeProgramLoads,
+  modules: readonly NativeModuleObservation[],
+): void {
+  for (const observation of modules) registerInventoryLoad(loads, observation);
+}
+function registerInventoryLoad(
+  loads: NativeProgramLoads,
+  observation: NativeModuleObservation,
+): void {
+  if (observation.role === 'import') loads.resolved(moduleTarget(observation));
+}
+function moduleTarget(
+  observation: NativeModuleObservation,
+): string | undefined {
+  return observation.raw?.resolvedModule?.resolvedFileName;
 }
