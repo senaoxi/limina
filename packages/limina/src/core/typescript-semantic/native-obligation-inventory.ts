@@ -11,6 +11,7 @@ import type {
   NativeModuleObservation,
   NativeProgramRequests,
 } from './native-program-requests';
+import type { NativeReferenceObservation } from './reference-redirect';
 interface Inventory {
   compiler: typeof ts;
   context: NativeEvidenceContext;
@@ -19,6 +20,7 @@ interface Inventory {
   requests: NativeProgramRequests;
   paths: ReadonlyMap<string, NativePathReceipt>;
   modules: readonly NativeModuleObservation[];
+  references: ReadonlyMap<string, NativeReferenceObservation>;
 }
 export function collectNativeObligations(
   input: Inventory,

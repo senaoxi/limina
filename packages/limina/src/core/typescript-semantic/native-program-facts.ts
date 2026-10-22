@@ -1,6 +1,5 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import type ts from 'typescript';
-import compiler from 'typescript';
 import type { NativeResolution } from '../../domain/analysis/native-evidence';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { DeclarationReferenceRequirement } from '../dependency-semantics';
@@ -13,7 +12,7 @@ import { createImportRecordIdentity } from './import-record';
 import { nativeFingerprint } from './native-file-identity';
 import type { NativeObservationAdapter } from './native-observation-adapter';
 import type { NativeRequestRecord } from './native-program-records';
-import { observeProjectReferenceRedirect } from './reference-redirect';
+import { observedDeclarationRedirect } from './reference-redirect';
 import { getResolutionOrigin } from './resolution-origin';
 
 export function nativeProgramFacts(
@@ -86,7 +85,7 @@ function targetRedirect(
 ) {
   return target === undefined
     ? undefined
-    : observeProjectReferenceRedirect(adapter.program, target, compiler);
+    : observedDeclarationRedirect(adapter.references.get(target));
 }
 
 function referenceRequirement(

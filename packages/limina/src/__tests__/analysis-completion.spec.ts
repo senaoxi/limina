@@ -168,12 +168,13 @@ it('retains a usable candidate outside an actual failure scope', () => {
 });
 
 it.each([
-  { noResolve: false, hasRawReference: false },
-  { noResolve: true, hasRawReference: false },
-  { noResolve: false, hasRawReference: true },
+  { noResolve: false, hasRawReference: false, json: false },
+  { noResolve: true, hasRawReference: false, json: false },
+  { noResolve: false, hasRawReference: true, json: false },
+  { noResolve: false, hasRawReference: false, json: true },
 ])(
-  'rebinds Native declaration prerequisites (noResolve=$noResolve, rawReference=$hasRawReference)',
-  async ({ noResolve, hasRawReference }) => {
+  'rebinds Native declaration prerequisites (noResolve=$noResolve, rawReference=$hasRawReference, json=$json)',
+  async ({ noResolve, hasRawReference, json }) => {
     const fixture = await createSemanticRepairFixture({
       'package.json': JSON.stringify({
         name: 'admission-contract',
@@ -195,6 +196,7 @@ it.each([
           types: [],
           noEmit: true,
           noResolve,
+          resolveJsonModule: json,
         },
         files: ['a.ts'],
         liminaOptions: {
@@ -208,9 +210,12 @@ it.each([
       }),
       'tsconfig.b.json': JSON.stringify({
         compilerOptions: { module: 'NodeNext', types: [], noEmit: true },
-        files: ['b.ts'],
+        files: [json ? 'b.json' : 'b.ts'],
       }),
-      'a.ts': 'import { b } from "./b.js"; export const a = b;',
+      'a.ts': json
+        ? 'import b from "./b.json"; export const a = b;'
+        : 'import { b } from "./b.js"; export const a = b;',
+      'b.json': '{"b":1}',
       'b.ts': 'export const b = 1;',
     });
     try {
@@ -247,10 +252,12 @@ it.each([
         ).state;
       expect(assess([pair], [])).toBe('admitted');
       const expectedSummary = noResolve
-        ? 'unknown'
-        : hasRawReference
-          ? 'already-satisfied'
-          : 'required';
+        ? 'not-required'
+        : json
+          ? 'unknown'
+          : hasRawReference
+            ? 'already-satisfied'
+            : 'required';
       const locked = evidence.nativeEvidence!.flatMap(({ snapshot }) =>
         snapshot.obligations.filter((obligation) =>
           snapshot.contexts.some(
@@ -267,10 +274,11 @@ it.each([
             summarizeCompilationObligation(obligation) === expectedSummary,
         ),
       ).toBe(true);
-      assertRelationIdentity(evidence, pair);
+      if (!noResolve) assertRelationIdentity(evidence, pair);
 
-      expect(assess([], [pair])).toBe(noResolve ? 'unavailable' : 'denied');
-      expect(assess([], [])).toBe(noResolve ? 'unavailable' : 'denied');
+      const missing = noResolve ? 'admitted' : json ? 'unavailable' : 'denied';
+      expect(assess([], [pair])).toBe(missing);
+      expect(assess([], [])).toBe(missing);
       expect(JSON.stringify(evidence.nativeEvidence)).toBe(original);
       expect(
         candidateAdmission(

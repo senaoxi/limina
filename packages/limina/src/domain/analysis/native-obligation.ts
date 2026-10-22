@@ -68,10 +68,29 @@ Artifact readiness is deliberately not an input to this summary.
 export function summarizeCompilationObligation(
   obligation: NativeCompilationObligation,
 ): CompilationObligationSummary {
-  return obligation.existence.state === 'unknown' ||
-    obligation.existence.proof.contextId !== obligation.consumerContextId
-    ? 'unknown'
-    : summarizeProvenObligation(obligation);
+  return hasValidExistenceContext(obligation)
+    ? summarizeProvenObligation(obligation)
+    : 'unknown';
+}
+
+function hasValidExistenceContext(
+  obligation: NativeCompilationObligation,
+): boolean {
+  if (obligation.existence.state === 'unknown') return false;
+  const proof = obligation.existence.proof;
+  return (
+    proof.contextId === obligation.consumerContextId &&
+    hasRequestProofBinding(obligation, proof)
+  );
+}
+function hasRequestProofBinding(
+  obligation: NativeCompilationObligation,
+  proof: CompilationProof,
+): boolean {
+  return (
+    proof.kind === 'compiler-observation' ||
+    obligation.requestIds.includes(proof.evidenceId)
+  );
 }
 
 function summarizeProvenObligation(

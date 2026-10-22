@@ -18,6 +18,9 @@ import { qualifiedNativeDependencyTarget } from '../core/typescript-semantic/nat
 import { observeNativeFileIdentity } from '../core/typescript-semantic/native-file-identity';
 import { NativeObservationAdapter } from '../core/typescript-semantic/native-observation-adapter';
 import { createNativeObservationContext } from '../core/typescript-semantic/native-observation-context';
+import { NativeObservationError } from '../core/typescript-semantic/native-observation-failure';
+import { nativeProgramFacts } from '../core/typescript-semantic/native-program-facts';
+import { nativeProgramRecords } from '../core/typescript-semantic/native-program-records';
 import { parseTypeScriptProjectConfig } from '../core/typescript-semantic/project-references';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
 import {
@@ -48,10 +51,13 @@ async function setup(
   files: Record<string, string>,
   configs = ['tsconfig.json'],
   discovery: 'closed' | 'open' = 'closed',
+  compiler: typeof ts = ts,
+  effectiveOptions: ts.CompilerOptions = {},
 ) {
   const fixture = await createSemanticRepairFixture(files);
   cleanups.push(fixture.cleanup);
   const parsed = fixture.parse();
+  Object.assign(parsed.options, effectiveOptions);
   const coverage = collectSourceConfigCoverage({
     universe: {
       id: 'activated-fixture',
@@ -88,7 +94,10 @@ async function setup(
     fixture,
     project,
     coverage,
-    adapter: new NativeObservationAdapter({ project, coverage, context }),
+    adapter: new NativeObservationAdapter(
+      { project, coverage, context },
+      compiler,
+    ),
   };
 }
 
@@ -919,7 +928,7 @@ describe('compiler-owned Native Program observations', () => {
       name: 'noResolve owner hit',
       noResolve: true,
       references: [],
-      expected: 'unknown',
+      expected: 'not-required',
       diagnostic: 2307,
     },
   ])(
@@ -975,3 +984,455 @@ describe('compiler-owned Native Program observations', () => {
     },
   );
 });
+
+describe('request-local compilation proofs and reference observations', () => {
+  it.each([false, true])(
+    'does not use consumer JS suppression to negate a redirected path (output=%s)',
+    async (hasOutput) => {
+      const { adapter } = await setup(
+        {
+          'tsconfig.json': config(['main.ts'], {
+            compilerOptions: {
+              ...compilerOptions,
+              noLib: true,
+              types: [],
+              allowJs: true,
+            },
+            references: [{ path: './dep.json' }],
+          }),
+          'main.ts': '/// <reference path="./value.js" />\nexport {};',
+          'value.js': 'export const value=1;',
+          'dep.json': config(['value.js'], {
+            compilerOptions: {
+              ...compilerOptions,
+              allowJs: true,
+              composite: true,
+              outDir: './out',
+            },
+          }),
+          'output.json': config(['out/value.d.ts']),
+          ...(hasOutput && {
+            'out/value.d.ts': 'export declare const value=1;',
+          }),
+        },
+        ['tsconfig.json', 'dep.json', 'output.json'],
+        'closed',
+        ts,
+        { noEmitForJsFiles: true },
+      );
+      const obligation = adapter.snapshot.obligations[0]!;
+      expect(obligation.existence.state).toBe('unknown');
+      expect(obligation.structure.state).toBe('satisfied');
+      expect(obligation.artifact.state).toBe(hasOutput ? 'unknown' : 'missing');
+      expect(adapter.snapshot.run).toBe('completed');
+    },
+  );
+  it.each(
+    ['.js', '.jsx', '.mjs', '.cjs'].flatMap((extension) =>
+      ['module', 'path'].flatMap((channel) =>
+        [false, true].map((suppressed) => ({ extension, channel, suppressed })),
+      ),
+    ),
+  )(
+    'keeps selected $channel $extension separate from module allowJs (suppressed=$suppressed)',
+    async ({ extension, channel, suppressed }) => {
+      const { adapter, project, fixture } = await setup(
+        {
+          'tsconfig.json': config(['main.ts'], {
+            compilerOptions: {
+              ...compilerOptions,
+              noLib: true,
+              types: [],
+              allowJs: false,
+              noImplicitAny: false,
+              jsx: 'preserve',
+            },
+          }),
+          'main.ts':
+            channel === 'path'
+              ? `/// <reference path="./value${extension}" />\nexport {};`
+              : `import "./value${extension}"; export {};`,
+          [`value${extension}`]: 'export const value=1;',
+          'dep.json': config([`value${extension}`], {
+            compilerOptions: {
+              ...compilerOptions,
+              allowJs: true,
+              jsx: 'preserve',
+            },
+          }),
+        },
+        ['tsconfig.json', 'dep.json'],
+        'closed',
+        ts,
+        { allowNonTsExtensions: true, noEmitForJsFiles: suppressed },
+      );
+      const oracle = ts.createProgram({
+        rootNames: [...project.fileNames],
+        options: project.options,
+      });
+      expect(
+        oracle.getSourceFile(fixture.path(`value${extension}`)) !== undefined,
+      ).toBe(channel === 'path');
+      expect(
+        summarizeCompilationObligation(adapter.snapshot.obligations[0]!),
+      ).toBe(channel === 'path' && !suppressed ? 'required' : 'not-required');
+    },
+  );
+  it.each(
+    ['ts', 'js'].flatMap((extension) =>
+      [false, true].map((noResolve) => ({ extension, noResolve })),
+    ),
+  )(
+    'keeps the importer reference context separate from target $extension structure and options (noResolve=$noResolve)',
+    async ({ extension, noResolve }) => {
+      const { adapter, fixture } = await setup(
+        {
+          'tsconfig.json': config(['main.ts'], {
+            compilerOptions: {
+              ...compilerOptions,
+              noLib: true,
+              types: [],
+              allowJs: true,
+            },
+            references: [{ path: './types.json' }],
+          }),
+          'main.ts': `/// <reference path="./types.d.ts" />\n${noResolve ? `/// <reference path="./value.${extension}" />\n` : ''}export {};`,
+          'types.d.ts': 'import "./value.js"; export {};',
+          'types.json': config(['types.d.ts'], {
+            compilerOptions: {
+              ...compilerOptions,
+              allowJs: false,
+              noImplicitAny: false,
+              noResolve,
+            },
+          }),
+          [`value.${extension}`]: 'export const value=1;',
+          'dep.json': config([`value.${extension}`], {
+            compilerOptions: { ...compilerOptions, allowJs: true },
+          }),
+        },
+        ['tsconfig.json', 'types.json', 'dep.json'],
+      );
+      const request = adapter.snapshot.requests.find(
+        (entry) =>
+          entry.channel === 'module' && entry.specifier === './value.js',
+      )!;
+      const resolution = adapter.snapshot.resolutions.find(
+        (entry) => entry.requestId === request.id,
+      )!;
+      expect(resolution.rawRedirectEvidenceIds).toContain(
+        fixture.path('types.json'),
+      );
+      const obligation = adapter.snapshot.obligations.find((entry) =>
+        entry.requestIds.includes(request.id),
+      )!;
+      expect(obligation.targetConfigId).toBe(fixture.path('dep.json'));
+      expect(obligation.structure.state).toBe('unsatisfied');
+      expect(summarizeCompilationObligation(obligation)).toBe(
+        extension === 'ts' && !noResolve ? 'required' : 'not-required',
+      );
+      if (!noResolve) return;
+      {
+        const path = adapter.snapshot.requests.find(
+          (entry) =>
+            entry.channel === 'path-directive' &&
+            entry.specifier === `./value.${extension}`,
+        )!;
+        const pathObligation = adapter.snapshot.obligations.find((entry) =>
+          entry.requestIds.includes(path.id),
+        )!;
+        expect(path.id).not.toBe(request.id);
+        expect(summarizeCompilationObligation(pathObligation)).toBe('required');
+        expect(
+          adapter.snapshot.resolutions.find(
+            (entry) => entry.requestId === path.id,
+          )!.target,
+        ).toEqual(resolution.target);
+      }
+    },
+  );
+  it.each(
+    ['.js', '.jsx', '.mjs', '.cjs'].flatMap((extension) =>
+      [false, true].map((noEmitForJsFiles) => ({
+        extension,
+        noEmitForJsFiles,
+      })),
+    ),
+  )(
+    'qualifies selected path $extension (noEmitForJsFiles=$noEmitForJsFiles)',
+    async ({ extension, noEmitForJsFiles }) => {
+      const { adapter, project, fixture } = await setup(
+        {
+          'tsconfig.json': config(['main.ts'], {
+            compilerOptions: {
+              ...compilerOptions,
+              noLib: true,
+              types: [],
+              checkJs: true,
+              jsx: 'preserve',
+              composite: true,
+            },
+          }),
+          'main.ts': `/// <reference path="./value${extension}" />\nexport {};`,
+          [`value${extension}`]: 'export const value=1;',
+          'dep.json': config([`value${extension}`], {
+            compilerOptions: { ...compilerOptions, allowJs: true },
+          }),
+        },
+        ['tsconfig.json', 'dep.json'],
+        'closed',
+        ts,
+        { noEmitForJsFiles },
+      );
+      const obligation = adapter.snapshot.obligations[0]!;
+      expect(summarizeCompilationObligation(obligation)).toBe(
+        noEmitForJsFiles ? 'not-required' : 'required',
+      );
+      const oracle = ts.createProgram({
+        rootNames: [...project.fileNames],
+        options: project.options,
+      });
+      // noEmitForJsFiles suppresses emit, not Program membership.
+      expect(
+        oracle.getSourceFile(fixture.path(`value${extension}`)),
+      ).toBeDefined();
+      expect(
+        adapter.program.getSourceFile(fixture.path(`value${extension}`)),
+      ).toBeUndefined();
+      expect(adapter.snapshot.failures).toEqual([]);
+    },
+  );
+
+  it.each(['resolved', 'unresolved', 'unavailable'] as const)(
+    'retains noResolve absence with %s resolution',
+    async (resolution) => {
+      const compiler =
+        resolution === 'unavailable'
+          ? compilerWithReferenceFault('resolution')
+          : ts;
+      const { adapter } = await setup(
+        {
+          'tsconfig.json': config(['main.ts'], {
+            compilerOptions: {
+              ...compilerOptions,
+              noResolve: true,
+              noLib: true,
+              types: [],
+            },
+          }),
+          'main.ts': `import "./${resolution === 'unresolved' ? 'missing' : 'value'}.js"; export {};`,
+          'value.ts': 'export {};',
+          'dep.json': config(['value.ts']),
+        },
+        ['tsconfig.json', 'dep.json'],
+        'closed',
+        compiler,
+      );
+      expect(adapter.snapshot.resolutions[0]!.state).toBe(resolution);
+      expect(
+        summarizeCompilationObligation(adapter.snapshot.obligations[0]!),
+      ).toBe('not-required');
+      expect(adapter.snapshot.run).toBe('completed');
+      expect(nativeCollectionStatus(adapter.snapshot)).toMatchObject({
+        execution: 'completed',
+        traversal: 'complete-within-boundary',
+        compilationRelations:
+          resolution === 'unavailable' ? 'undetermined' : 'determined',
+      });
+    },
+  );
+
+  it.each(
+    ['none', 'unavailable', 'throw', 'unsupported-error'].flatMap((fault) =>
+      ['ts', 'js'].map((extension) => ({ fault, extension })),
+    ),
+  )(
+    'isolates augmentation and import with reference observation $fault, target $extension',
+    async ({ fault, extension }) => {
+      const { adapter, fixture } = await setup(
+        {
+          'tsconfig.json': config(['main.ts'], {
+            compilerOptions: {
+              ...compilerOptions,
+              noLib: true,
+              types: [],
+              composite: true,
+              allowJs: true,
+            },
+            references: [{ path: './other.json' }],
+          }),
+          'main.ts':
+            'import "./value.js"; declare module "./value.js" { interface Extra {} } export {};',
+          [`value.${extension}`]: 'export const value=1;',
+          'dep.json': config([`value.${extension}`], {
+            compilerOptions: { ...compilerOptions, allowJs: true },
+          }),
+          'other.json': config(['other.ts']),
+          'other.ts': 'export {};',
+        },
+        ['tsconfig.json', 'dep.json', 'other.json'],
+        'closed',
+        compilerWithReferenceFault(
+          fault as Parameters<typeof compilerWithReferenceFault>[0],
+        ),
+      );
+      const observations = adapter.modules.filter(
+        (entry) => entry.literal.text === './value.js',
+      );
+      expect(observations.map((entry) => entry.role)).toEqual([
+        'import',
+        'augmentation',
+      ]);
+      const obligations = observations.map(
+        (entry) =>
+          adapter.snapshot.obligations.find((item) =>
+            item.requestIds.includes(entry.requestId),
+          )!,
+      );
+      expect(obligations.map((item) => item.existence.state)).toEqual([
+        'present',
+        'absent',
+      ]);
+      expect(obligations.map(summarizeCompilationObligation)).toEqual([
+        fault === 'none' ? 'required' : 'unknown',
+        'not-required',
+      ]);
+      expect(adapter.snapshot.run).toBe(
+        fault === 'throw' || fault.endsWith('error')
+          ? 'unavailable'
+          : 'completed',
+      );
+      expect(nativeCollectionStatus(adapter.snapshot).traversal).toBe(
+        fault === 'throw' || fault.endsWith('error')
+          ? 'incomplete'
+          : 'complete-within-boundary',
+      );
+      expect(adapter.snapshot.failures.length).toBe(
+        fault === 'throw' || fault.endsWith('error') ? 1 : 0,
+      );
+      expect(
+        adapter.program.getSourceFiles().map((file) => file.fileName),
+      ).toEqual([fixture.path('main.ts')]);
+      // The fact stage must not re-enter a getter after the evidence is frozen.
+      Object.assign(adapter.program, {
+        getRedirectFromSourceFile: () => {
+          throw new Error('late getter');
+        },
+      });
+      const facts = nativeProgramFacts(adapter, nativeProgramRecords(adapter));
+      expect(
+        facts
+          .values()
+          .map((fact) => fact.nativeEvidence!.obligation!.existence.state)
+          .toArray(),
+      ).toEqual(['present', 'absent']);
+    },
+  );
+
+  it.each(['.d.ts', '.json'] as const)(
+    'keeps reference membership without outputDts for %s',
+    async (extension) => {
+      const { adapter, fixture } = await setup(
+        {
+          'tsconfig.json': config(['main.ts'], {
+            compilerOptions: {
+              ...compilerOptions,
+              resolveJsonModule: true,
+              noLib: true,
+              types: [],
+            },
+            references: [{ path: './dep.json' }],
+          }),
+          'main.ts': `/// <reference path="./value${extension}" />\nexport {};`,
+          [`value${extension}`]:
+            extension === '.json' ? '{"value":1}' : 'export interface Value {}',
+          'dep.json': config([`value${extension}`], {
+            compilerOptions: {
+              ...compilerOptions,
+              composite: true,
+              resolveJsonModule: true,
+            },
+          }),
+        },
+        ['tsconfig.json', 'dep.json'],
+      );
+      const reference = adapter.references.get(
+        fixture.path(`value${extension}`),
+      );
+      expect(reference).toMatchObject({
+        state: 'observed',
+        referenceConfig: fixture.path('dep.json'),
+        redirect: undefined,
+      });
+      const obligation = adapter.snapshot.obligations[0]!;
+      expect(obligation.targetConfigId).toBe(fixture.path('dep.json'));
+      expect(obligation.existence.state).toBe(
+        extension === '.json' ? 'unknown' : 'absent',
+      );
+      if (extension === '.json')
+        expect(obligation.structure.state).toBe('unknown');
+      expect(adapter.snapshot.relations).toContainEqual(
+        expect.objectContaining({
+          kind: 'explicit-reference',
+          targetConfigId: fixture.path('dep.json'),
+        }),
+      );
+      expect(adapter.snapshot.failures).toEqual([]);
+    },
+  );
+
+  it('does not classify allowNonTsExtensions as JavaScript qualification', async () => {
+    const { adapter } = await setup(
+      {
+        'tsconfig.json': config(['main.ts'], {
+          compilerOptions: {
+            ...compilerOptions,
+            noLib: true,
+            types: [],
+            allowJs: true,
+          },
+        }),
+        'main.ts': '/// <reference path="./value.vue" />\nexport {};',
+        'value.vue': 'export const value=1;',
+        'dep.json': config(['value.vue']),
+      },
+      ['tsconfig.json', 'dep.json'],
+      'closed',
+      ts,
+      { allowNonTsExtensions: true },
+    );
+    expect(adapter.snapshot.obligations[0]!.existence).toMatchObject({
+      state: 'unknown',
+      gapIds: ['target-emission-rule-unqualified-for-extension'],
+    });
+  });
+});
+
+function compilerWithReferenceFault(
+  fault: 'none' | 'unavailable' | 'throw' | 'resolution' | 'unsupported-error',
+): typeof ts {
+  const createProgram: typeof ts.createProgram = (...arguments_: unknown[]) => {
+    const program = Reflect.apply(
+      ts.createProgram,
+      ts,
+      arguments_,
+    ) as ts.Program;
+    if (fault === 'none') return program;
+    if (fault === 'resolution')
+      return { ...program, getResolvedModule: () => {} };
+    return Object.assign(program, {
+      getRedirectFromSourceFile:
+        fault === 'throw' || fault === 'unsupported-error'
+          ? () => {
+              throw new NativeObservationError(
+                fault === 'throw' ? 'internal' : 'unsupported',
+                'reference getter failed',
+              );
+            }
+          : undefined,
+      getProjectReferenceRedirect: undefined,
+      getResolvedProjectReferenceToRedirect: undefined,
+    });
+  };
+  return { ...ts, createProgram };
+}

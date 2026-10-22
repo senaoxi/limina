@@ -1,6 +1,7 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type { ProjectReferenceRedirect } from '../dependency-semantics';
+import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import { NativeObservationError } from './native-observation-failure';
 import { observedResolutionHost } from './observed-resolution-host';
 
@@ -11,10 +12,103 @@ interface StructuralProgram extends ts.Program {
   ): ts.ResolvedProjectReference | undefined;
   getRedirectFromSourceFile?(file: string):
     | {
-        outputDts: string;
+        outputDts?: string;
         resolvedRef: ts.ResolvedProjectReference;
       }
     | undefined;
+}
+
+/** A project member is not necessarily a declaration redirect (notably JSON
+ * and declaration inputs). Unavailable is an audited missing-API stop only;
+ * exceptions from an API that exists must reach the execution failure owner. */
+export type NativeReferenceObservation =
+  | {
+      readonly state: 'observed';
+      readonly referenceConfig?: string;
+      readonly redirect?: ProjectReferenceRedirect;
+      readonly javascriptReference: boolean;
+      readonly canProveMissingReference: boolean;
+    }
+  | { readonly state: 'unavailable'; readonly reason: string };
+
+type CompilerReference = ReturnType<
+  NonNullable<StructuralProgram['getRedirectFromSourceFile']>
+>;
+
+export function observeNativeReference(
+  program: ts.Program,
+  target: string,
+  compiler: typeof ts,
+): NativeReferenceObservation {
+  if (!hasReferences(program))
+    return {
+      state: 'observed',
+      javascriptReference: false,
+      canProveMissingReference: true,
+    };
+  const raw = readCompilerReference(program, target, compiler);
+  return raw === null
+    ? { state: 'unavailable', reason: 'reference-map-unavailable' }
+    : referenceObservation(raw, target, compiler);
+}
+function readCompilerReference(
+  program: StructuralProgram,
+  target: string,
+  compiler: typeof ts,
+): CompilerReference | null {
+  const method = program.getRedirectFromSourceFile;
+  if (typeof method === 'function') return method.call(program, target);
+  return hasLegacyReferenceApi(program, compiler)
+    ? legacyReferenceRedirect(program, target)
+    : null;
+}
+function referenceObservation(
+  raw: CompilerReference,
+  target: string,
+  compiler: typeof ts,
+): NativeReferenceObservation {
+  return {
+    state: 'observed',
+    referenceConfig:
+      raw === undefined
+        ? undefined
+        : normalizeAbsolutePath(raw.resolvedRef.sourceFile.fileName),
+    redirect: declarationRedirect(raw, target, compiler),
+    javascriptReference:
+      raw !== undefined && isJavaScriptReference(target, compiler),
+    canProveMissingReference: isReferenceNegativeQualified(target, compiler),
+  };
+}
+
+function isReferenceNegativeQualified(
+  target: string,
+  compiler: typeof ts,
+): boolean {
+  return (
+    /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs|json)$/.test(target) &&
+    !isUnmappedDeclaration(target, compiler)
+  );
+}
+function isUnmappedDeclaration(target: string, compiler: typeof ts): boolean {
+  // 5.9 intentionally omits declaration inputs from its source map; 6.0
+  // records membership without outputDts. A completed lookup is not always
+  // qualified to prove that a target's reference is missing.
+  return /^5\.9\./.test(compiler.version) && isDeclarationFile(target);
+}
+function isJavaScriptReference(target: string, compiler: typeof ts): boolean {
+  // Legacy project membership is qualified by the compiler's declaration/JSON
+  // exclusion. For supported JS targets this is the same predicate as the
+  // modern map; 5.4 has no JS reference exception.
+  return [
+    !/^5\.4\./.test(compiler.version),
+    !/\.(?:d\.[cm]?ts|json)$/.test(target),
+  ].every(Boolean);
+}
+
+export function observedDeclarationRedirect(
+  observation: NativeReferenceObservation | undefined,
+): ProjectReferenceRedirect | undefined {
+  return observation?.state === 'observed' ? observation.redirect : undefined;
 }
 
 /**
@@ -25,75 +119,80 @@ export function observeProjectReferenceRedirect(
   target: string,
   tsModule: typeof ts,
 ): ProjectReferenceRedirect | undefined {
-  const redirect = compilerReferenceRedirect(program, target, tsModule);
-  if (redirect === undefined) return undefined;
+  const observed = observeNativeReference(program, target, tsModule);
+  if (observed.state === 'unavailable')
+    throw new NativeObservationError('unsupported', observed.reason);
+  return observed.redirect;
+}
+
+function declarationRedirect(
+  redirect: CompilerReference,
+  target: string,
+  compiler: typeof ts,
+): ProjectReferenceRedirect | undefined {
+  return redirect === undefined || redirect.outputDts === undefined
+    ? undefined
+    : concreteRedirect(
+        { target, output: redirect.outputDts, reference: redirect.resolvedRef },
+        compiler,
+      );
+}
+function concreteRedirect(
+  input: {
+    target: string;
+    output: string;
+    reference: ts.ResolvedProjectReference;
+  },
+  compiler: typeof ts,
+): ProjectReferenceRedirect {
+  const config = input.reference.sourceFile.fileName;
   return {
-    originalTarget: normalizeAbsolutePath(target),
-    declarationTarget: normalizeAbsolutePath(redirect.outputDts),
-    referenceConfig: normalizeAbsolutePath(
-      redirect.resolvedRef.sourceFile.fileName,
-    ),
-    availability: observedResolutionHost(
-      tsModule,
-      redirect.resolvedRef.sourceFile.fileName,
-    ).fileExists(redirect.outputDts)
+    originalTarget: normalizeAbsolutePath(input.target),
+    declarationTarget: normalizeAbsolutePath(input.output),
+    referenceConfig: normalizeAbsolutePath(config),
+    availability: observedResolutionHost(compiler, config).fileExists(
+      input.output,
+    )
       ? 'present'
       : 'missing',
   };
-}
-
-export function compilerReferenceRedirect(
-  program: ts.Program,
-  target: string,
-  compiler: typeof ts,
-): ReturnType<NonNullable<StructuralProgram['getRedirectFromSourceFile']>> {
-  const method = (program as StructuralProgram).getRedirectFromSourceFile;
-  if (method !== undefined) return method.call(program, target);
-  return /^5\.[4-8]\./.test(compiler.version)
-    ? legacyReferenceRedirect(program as StructuralProgram, target)
-    : unsupportedReferenceRedirect(program, target, compiler);
-}
-
-function unsupportedReferenceRedirect(
-  program: ts.Program,
-  target: string,
-  compiler: typeof ts,
-): undefined {
-  if (hasReferences(program))
-    throw new NativeObservationError(
-      'unsupported',
-      `Project reference redirect observation is unsupported by TypeScript ${compiler.version}: ${target}`,
-    );
 }
 
 function legacyReferenceRedirect(
   program: StructuralProgram,
   target: string,
 ): ReturnType<NonNullable<StructuralProgram['getRedirectFromSourceFile']>> {
-  assertLegacyReferenceApi(program);
   const outputDts = program.getProjectReferenceRedirect!(target);
-  if (outputDts === undefined) return outputDts;
   const resolvedReference =
     program.getResolvedProjectReferenceToRedirect!(target);
-  if (resolvedReference === undefined)
+  assertReferenceContext(outputDts, resolvedReference);
+  return resolvedReference === undefined
+    ? undefined
+    : { outputDts, resolvedRef: resolvedReference };
+}
+
+function assertReferenceContext(
+  output: string | undefined,
+  reference: ts.ResolvedProjectReference | undefined,
+): void {
+  if (reference === undefined && output !== undefined)
     throw new NativeObservationError(
       'internal',
       'Compiler redirect has no reference context.',
     );
-  return { outputDts, resolvedRef: resolvedReference };
 }
 
-function assertLegacyReferenceApi(program: StructuralProgram): void {
-  if (
+function hasLegacyReferenceApi(
+  program: StructuralProgram,
+  compiler: typeof ts,
+): boolean {
+  return (
+    /^5\.[4-8]\./.test(compiler.version) &&
     [
       program.getProjectReferenceRedirect,
       program.getResolvedProjectReferenceToRedirect,
-    ].some((method) => typeof method !== 'function')
-  )
-    throw new NativeObservationError(
-      'unsupported',
-      'Native reference map unavailable.',
-    );
+    ].every((method) => typeof method === 'function')
+  );
 }
 function hasReferences(program: ts.Program): boolean {
   return (program.getProjectReferences()?.length ?? 0) > 0;

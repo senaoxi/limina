@@ -2,6 +2,7 @@ import type ts from 'typescript';
 import type { NativeEvidenceContext } from '../../domain/analysis/native-context';
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import {
+  independentModuleAbsence,
   type NativeModuleImpact,
   observeNativeModuleImpact,
 } from './native-module-impact';
@@ -12,14 +13,13 @@ import {
   structure,
   targetConfig,
 } from './native-obligation-projection';
-import { NativeObservationError } from './native-observation-failure';
 import {
   type NativeObservedProgram,
   nativeProgramSource,
 } from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
 import type { NativeModuleObservation } from './native-program-requests';
-import { observeProjectReferenceRedirect } from './reference-redirect';
+import type { NativeReferenceObservation } from './reference-redirect';
 
 interface ObligationInput {
   sourceLoadGap?: string;
@@ -28,15 +28,23 @@ interface ObligationInput {
   frontier: NativeProgramFrontier;
   program: NativeObservedProgram;
   observation: NativeModuleObservation;
+  references: ReadonlyMap<string, NativeReferenceObservation>;
 }
 
 function observedImpact(
   input: ObligationInput,
   target: string,
 ): NativeModuleImpact {
-  return input.program.getRootFileNames().includes(target)
-    ? { state: 'absent', rule: 'consumer-root-has-no-cross-unit-obligation' }
-    : scopedImpact(input, observeNativeModuleImpact(input));
+  return (
+    independentModuleAbsence(input) ??
+    scopedImpact(
+      input,
+      observeNativeModuleImpact({
+        ...input,
+        reference: input.references.get(target),
+      }),
+    )
+  );
 }
 
 function scopedImpact(
@@ -71,17 +79,7 @@ function hasCompositeScope(input: ObligationInput): boolean {
 export function createNativeModuleObligation(
   input: ObligationInput,
 ): NativeCompilationObligation {
-  try {
-    return observedObligation(input);
-  } catch (error) {
-    if (!isUnsupportedObservation(error)) throw error;
-    return unavailableObligation(input, 'reference-map-unavailable');
-  }
-}
-function isUnsupportedObservation(error: unknown): boolean {
-  return (
-    error instanceof NativeObservationError && error.kind === 'unsupported'
-  );
+  return observedObligation(input);
 }
 function observedObligation(
   input: ObligationInput,
@@ -98,9 +96,11 @@ function unresolvedObligation(
   const isAmbient = nativeProgramSource(
     input.observation.source,
   ).ambientModuleNames.includes(input.observation.literal.text);
-  const impact: NativeModuleImpact = isAmbient
-    ? { state: 'absent', rule: 'compiler-local-ambient-module' }
-    : missingModuleImpact(input.observation);
+  const impact: NativeModuleImpact =
+    independentModuleAbsence(input) ??
+    (isAmbient
+      ? { state: 'absent', rule: 'compiler-local-ambient-module' }
+      : missingModuleImpact(input.observation));
   return {
     ...obligationIdentity(site(input)),
     targetConfigId: null,
@@ -135,37 +135,19 @@ function resolvedObligation(
   target: string,
 ): NativeCompilationObligation {
   const { coverage } = input.frontier.inspect(target);
-  const redirect = observeProjectReferenceRedirect(
-    input.program,
-    target,
-    input.compiler,
-  );
-  const configId = targetConfig(coverage, redirect);
+  const reference = input.references.get(target);
+  const redirect =
+    reference?.state === 'observed' ? reference.redirect : undefined;
+  const configId = targetConfig(coverage, reference);
   return {
     ...obligationIdentity(site(input)),
     targetConfigId: configId,
     existence: existence(site(input), observedImpact(input, target)),
-    structure: structure(site(input), configId, redirect),
+    structure: structure(site(input), configId, reference),
     artifact: artifact(redirect),
   };
 }
 
 function site(input: ObligationInput) {
   return { context: input.context, requestId: input.observation.requestId };
-}
-
-function unavailableObligation(
-  input: ObligationInput,
-  reason: string,
-): NativeCompilationObligation {
-  return {
-    ...obligationIdentity(site(input)),
-    targetConfigId: null,
-    existence: {
-      state: 'unknown',
-      gapIds: [input.observation.requestId, reason],
-    },
-    structure: { state: 'unknown', reason },
-    artifact: { state: 'unknown', reason },
-  };
 }

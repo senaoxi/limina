@@ -543,6 +543,35 @@ describe('three independent compilation obligation axes', () => {
       }),
     ).toBe('unknown');
   });
+
+  it('binds audited rules to their request while preserving independent compiler observation identities', () => {
+    const current = obligation();
+    expect(summarizeCompilationObligation(current)).toBe('already-satisfied');
+    if (current.existence.state === 'unknown')
+      throw new Error('Expected proof');
+    for (const evidenceId of ['request-A', 'request-B']) {
+      const bound = {
+        ...current,
+        existence: {
+          ...current.existence,
+          proof: {
+            ...current.existence.proof,
+            kind: 'audited-rule' as const,
+            evidenceId,
+          },
+        },
+      };
+      expect(summarizeCompilationObligation(bound)).toBe(
+        evidenceId === 'request-A' ? 'already-satisfied' : 'unknown',
+      );
+      expect(
+        summarizeCompilationObligation({
+          ...bound,
+          existence: { ...bound.existence, state: 'absent' },
+        }),
+      ).toBe(evidenceId === 'request-A' ? 'not-required' : 'unknown');
+    }
+  });
 });
 
 function pending(): NativeEvidenceContext {
