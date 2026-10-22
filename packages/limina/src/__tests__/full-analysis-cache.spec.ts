@@ -863,6 +863,11 @@ describe('production graph snapshots and publication', () => {
     'missing-source-and-member',
     'missing-loaded-source',
     'missing-inventory',
+    'foreign-proof-request',
+    'foreign-proof-context',
+    'orphan-obligation-request',
+    'missing-obligations',
+    'foreign-obligation-target',
   ] as const)(
     'recollects %s from the real store and publishes a complete JSDoc graph for the next process',
     (corruption) => {
@@ -932,6 +937,69 @@ describe('production graph snapshots and publication', () => {
       ) as StoredGraphData;
       expect(before.ownershipPlan.dependencyFacts).toHaveLength(1);
       expect(before.ownershipPlan.ownershipSelectionFacts).toHaveLength(1);
+      const compilerEvidence = () =>
+        Object.values(snapshot.contexts).map((context) => ({
+          inventory: context.native?.inventory,
+          requests: context.native?.snapshot.requests,
+          resolutions: context.native?.snapshot.resolutions,
+          coverage: context.native?.snapshot.coverageIndexes,
+        }));
+      const retainedEvidence = structuredClone(compilerEvidence());
+      const corruptProofs = (value: unknown): void => {
+        if (typeof value !== 'object' || value === null) return;
+        const entry = value as Record<string, unknown>;
+        if (corruption === 'missing-obligations') {
+          if (Array.isArray(entry.obligations)) entry.obligations = [];
+          if ('obligation' in entry) entry.obligation = null;
+          if ('referenceRequirement' in entry)
+            entry.referenceRequirement = null;
+        }
+        if ('existence' in entry && 'requestIds' in entry) {
+          const obligation =
+            entry as unknown as import('../domain/analysis/native-obligation').NativeCompilationObligation;
+          if (obligation.existence.state !== 'unknown') {
+            switch (corruption) {
+              case 'foreign-proof-request': {
+                Object.assign(obligation.existence.proof, {
+                  evidenceId: 'unbound-request',
+                });
+                break;
+              }
+              case 'foreign-proof-context': {
+                Object.assign(obligation.existence.proof, {
+                  contextId: 'unbound-context',
+                });
+                break;
+              }
+              case 'orphan-obligation-request': {
+                Object.assign(obligation, { requestIds: ['unbound-request'] });
+                break;
+              }
+              case 'foreign-obligation-target': {
+                const targetConfigId = f.file('foreign/tsconfig.json');
+                Object.assign(obligation, { targetConfigId });
+                if ('mapping' in obligation.structure)
+                  Object.assign(obligation.structure.mapping, {
+                    targetConfigId,
+                  });
+                break;
+              }
+            }
+          }
+        }
+        for (const child of Object.values(entry)) corruptProofs(child);
+      };
+      if (corruption.includes('obligation') || corruption.includes('proof')) {
+        // Corrupt every retained copy consistently, then publish through the
+        // real checksummed envelope. Copy equality cannot validate provenance.
+        corruptProofs(snapshot.contexts);
+        corruptProofs(snapshot.importers);
+        for (const graph of Object.values(snapshot.graphs)) {
+          const data = decodeData(graph.data);
+          corruptProofs(data);
+          graph.data = encodeData(data);
+        }
+      }
       for (const [contextId, context] of Object.entries(snapshot.contexts)) {
         const id = context.sources[f.file('src/a.js')];
         if (id == null) continue;
@@ -999,6 +1067,13 @@ describe('production graph snapshots and publication', () => {
               Reflect.deleteProperty(context.native!, 'inventory');
               break;
             }
+            case 'foreign-proof-request':
+            case 'foreign-proof-context':
+            case 'orphan-obligation-request':
+            case 'missing-obligations':
+            case 'foreign-obligation-target': {
+              break;
+            }
             default: {
               importer.occurrences.push(
                 structuredClone(importer.occurrences[0]!),
@@ -1008,6 +1083,11 @@ describe('production graph snapshots and publication', () => {
         };
         damage();
       }
+      if (
+        corruption === 'missing-obligations' ||
+        corruption === 'foreign-obligation-target'
+      )
+        expect(compilerEvidence()).toEqual(retainedEvidence);
       writeStoredAnalysisSnapshot(store.path, snapshot);
       const rebuilt = f.execute<GraphRunResult>(run);
       expect(rebuilt.events).not.toContainEqual(

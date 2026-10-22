@@ -2,7 +2,13 @@ import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type { ProjectReferenceRedirect } from '../dependency-semantics';
 import type { TypeScriptSemanticProject } from './contracts';
-import { NativeObservationError } from './native-observation-failure';
+import { nativeFingerprint } from './native-file-identity';
+import type { NativeHostFailures } from './native-host-failures';
+import {
+  nativeFailure,
+  nativeObservationFailureKind,
+  observationErrorDetail,
+} from './native-observation-failure';
 import {
   type NativePathReceipt,
   physicalTarget,
@@ -10,31 +16,35 @@ import {
 } from './native-path-selection';
 import type { NativeProgramFrontier } from './native-program-frontier';
 import type { NativeProgramRequests } from './native-program-requests';
-import { observeProjectReferenceRedirect } from './reference-redirect';
+import {
+  type NativeReferenceObservation,
+  observeNativeReference,
+} from './reference-redirect';
 
 /** A load grant is rooted in real input or a compiler request from an admitted
  * source. Coverage alone never authorizes a speculative path fallback. */
 export class NativeProgramLoads {
   readonly #grants = new Set<string>();
   readonly #candidates = new Set<string>();
-  readonly #redirects = new Map<
-    string,
-    ProjectReferenceRedirect | undefined | null
-  >();
+  readonly #redirects = new Map<string, NativeReferenceObservation>();
   #revision = 0;
   readonly paths: Map<string, NativePathReceipt> = new Map();
   readonly project: TypeScriptSemanticProject;
   readonly compiler: typeof ts;
   readonly frontier: NativeProgramFrontier;
+  readonly failures: NativeHostFailures;
 
-  constructor(
-    project: TypeScriptSemanticProject,
-    compiler: typeof ts,
-    frontier: NativeProgramFrontier,
-  ) {
+  constructor(input: {
+    project: TypeScriptSemanticProject;
+    compiler: typeof ts;
+    frontier: NativeProgramFrontier;
+    failures: NativeHostFailures;
+  }) {
+    const { project, compiler, frontier, failures } = input;
     this.project = project;
     this.compiler = compiler;
     this.frontier = frontier;
+    this.failures = failures;
     for (const root of project.fileNames)
       this.#grants.add(normalizeAbsolutePath(root));
     if (hasDefaultLibrary(project))
@@ -45,9 +55,8 @@ export class NativeProgramLoads {
     if (!hasProjectReferences(this.project)) return undefined;
     const candidate = normalizeAbsolutePath(file);
     this.#candidates.add(candidate);
-    return this.#redirects.has(candidate)
-      ? this.#redirects.get(candidate)
-      : null;
+    const observation = this.#redirects.get(candidate);
+    return selectionRedirect(observation);
   }
 
   private hasLateGrant(program: ts.Program, previousRevision: number): boolean {
@@ -59,22 +68,36 @@ export class NativeProgramLoads {
     );
   }
   private completeRedirects(program: ts.Program): boolean {
-    const pending = [...this.#candidates].filter(
-      (candidate) => !this.#redirects.has(candidate),
-    );
-    for (const candidate of pending)
-      this.#redirects.set(candidate, this.observeRedirect(program, candidate));
-    return pending.length > 0;
+    let hasChange = false;
+    // Rebind to the current pass, including already known candidates. The map
+    // used to grant a load must agree with the Program we eventually publish.
+    for (const candidate of this.#candidates) {
+      const previous = this.#redirects.get(candidate);
+      const current = this.observeRedirect(program, candidate);
+      if (hasChangedReference(previous, current)) hasChange = true;
+      this.#redirects.set(candidate, current);
+    }
+    return hasChange;
   }
 
-  private observeRedirect(program: ts.Program, candidate: string) {
+  private observeRedirect(
+    program: ts.Program,
+    candidate: string,
+  ): NativeReferenceObservation {
     try {
-      return observeProjectReferenceRedirect(program, candidate, this.compiler);
+      return observeNativeReference(program, candidate, this.compiler);
     } catch (error) {
-      if (isUnsupported(error)) return null;
-      throw error;
+      const failure = nativeFailure({
+        contextId: this.failures.contextId,
+        kind: nativeObservationFailureKind(error),
+        detail: observationErrorDetail(error),
+      });
+      if (this.failures.failures.every((prior) => prior.id !== failure.id))
+        this.failures.failures.push(failure);
+      return { state: 'unavailable', reason: 'reference-map-execution-failed' };
     }
   }
+
   private grantRedirect(
     file: string,
     redirect: ProjectReferenceRedirect | undefined | null,
@@ -89,6 +112,22 @@ export class NativeProgramLoads {
     );
   }
 
+  get references(): ReadonlyMap<string, NativeReferenceObservation> {
+    return this.#redirects;
+  }
+
+  /** Final inventory also includes requests that never invoked a resolver
+   * callback. Observe their targets before freezing, without load authority. */
+  observeTargets(program: ts.Program, targets: readonly string[]): void {
+    for (const target of targets) {
+      const candidate = normalizeAbsolutePath(target);
+      if (!this.#redirects.has(candidate))
+        this.#redirects.set(
+          candidate,
+          this.observeRedirect(program, candidate),
+        );
+    }
+  }
   get revision(): number {
     return this.#revision;
   }
@@ -159,11 +198,6 @@ function hasDefaultLibrary(project: TypeScriptSemanticProject): boolean {
 function hasProjectReferences(project: TypeScriptSemanticProject): boolean {
   return (project.projectReferences?.length ?? 0) > 0;
 }
-function isUnsupported(error: unknown): boolean {
-  return (
-    error instanceof NativeObservationError && error.kind === 'unsupported'
-  );
-}
 function isPathUnavailable(receipt: NativePathReceipt): boolean {
   return ['unavailable', 'disabled'].includes(receipt.selection.state);
 }
@@ -171,4 +205,19 @@ function pathRedirects(receipt: NativePathReceipt): string[] {
   return receipt.redirect === undefined
     ? []
     : [receipt.redirect.referenceConfig];
+}
+
+function selectionRedirect(
+  observation: NativeReferenceObservation | undefined,
+): ProjectReferenceRedirect | undefined | null {
+  return observation?.state === 'observed' ? observation.redirect : null;
+}
+function hasChangedReference(
+  previous: NativeReferenceObservation | undefined,
+  current: NativeReferenceObservation,
+): boolean {
+  return (
+    previous === undefined ||
+    nativeFingerprint(previous) !== nativeFingerprint(current)
+  );
 }

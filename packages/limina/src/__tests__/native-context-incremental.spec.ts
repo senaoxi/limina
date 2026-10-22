@@ -20,6 +20,7 @@ import {
   createWorkspaceSourceBoundary,
 } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
+import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
 import { roundTripAnalysisSnapshot } from './helpers/analysis-snapshot';
 import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { createFixturePathResolver } from './helpers/path';
@@ -120,6 +121,42 @@ function collect(
 }
 
 describe('bounded compiler context replacement and incremental inputs', () => {
+  it('restores a compiler reference endpoint ahead of source Coverage ownership', () => {
+    const f = fixture();
+    f.write('a.ts', 'import type { Value } from "./b"; export type T = Value;');
+    f.write('b.ts', 'export interface Value {}');
+    f.write(
+      '.limina/provider.json',
+      JSON.stringify({
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          noLib: true,
+          types: [],
+          outDir: 'dts',
+        },
+        files: ['../b.ts'],
+      }),
+    );
+    const project = {
+      ...f.project(['a.ts']),
+      projectReferences: [{ path: f.file('.limina/provider.json') }],
+    };
+    const first = collect(project);
+    const evidence = first.facts[0]!.nativeEvidence!;
+    expect(evidence.coverage).toMatchObject({
+      state: 'unique',
+      members: [{ configId: f.file('tsconfig.support.json') }],
+    });
+    expect(evidence.obligation?.targetConfigId).toBe(
+      f.file('.limina/provider.json'),
+    );
+    const warm = collect(project, first.cache);
+    expect(warm.cache.metrics.restoredContexts).toBe(1);
+    expect(warm.cache.metrics.semanticPrograms).toBe(0);
+    expect(warm.facts).toEqual(first.facts);
+  });
+
   it.each([
     'missing-facts',
     'shifted-range',
@@ -232,7 +269,7 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     let result = collect(f.project(['a.ts']));
     expect(result.targets).toEqual([]);
     expect(result.facts[0]?.nativeEvidence?.obligation?.existence.state).toBe(
-      'unknown',
+      'absent',
     );
     expect(result.members).not.toContain(f.file('env.d.ts'));
     f.write('a.ts', 'declare module "./b" {}');
@@ -244,7 +281,7 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     );
     expect(result.targets).toEqual([]);
     expect(result.facts[0]?.nativeEvidence?.obligation?.existence.state).toBe(
-      'unknown',
+      'absent',
     );
   });
 
@@ -337,7 +374,7 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     },
   );
 
-  it('keeps noResolve obligations unknown while retaining independently admitted declarations', () => {
+  it('proves request-local noResolve absence while retaining independently admitted declarations', () => {
     const f = fixture();
     f.write('a.ts', 'import "./b"; import "./env"; export {};');
     f.write('b.ts', 'export {};');
@@ -346,12 +383,22 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     const first = collect(f.project(['a.ts'], { noResolve: true }));
     expect(first.targets).toEqual([]);
     expect(first.members).not.toContain(f.file('env.d.ts'));
+    expect(
+      Object.values(first.cache.contexts).flatMap((record) =>
+        record.native!.snapshot.obligations.map(summarizeCompilationObligation),
+      ),
+    ).toEqual(['not-required', 'not-required']);
     const next = collect(
       f.project(['a.ts', 'env.d.ts'], { noResolve: true }),
       first.cache,
     );
     expect(next.targets).toEqual([]);
     expect(next.members).toContain(f.file('env.d.ts'));
+    expect(
+      Object.values(next.cache.contexts).flatMap((record) =>
+        record.native!.snapshot.obligations.map(summarizeCompilationObligation),
+      ),
+    ).toEqual(['not-required', 'not-required', 'not-required']);
   });
 
   it('collects separate compiler implicit requests for distinct TSX contexts', () => {
