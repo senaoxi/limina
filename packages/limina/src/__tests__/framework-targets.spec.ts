@@ -19,6 +19,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { createCheckerFailureIssues } from '../commands/checker-failure-issues';
 import { runCheckerTypecheck } from '../commands/typecheck';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
@@ -725,7 +726,7 @@ describe('framework checker targets', () => {
     }
   });
 
-  it('propagates cancellation while preserving progress and result identity maps', async () => {
+  it('rejects an unobserved graph without inventing process results or losing progress identities', async () => {
     const fixture = await createFixture();
     try {
       const packageRootDirectory = fixture.path('packages', 'a');
@@ -747,8 +748,6 @@ describe('framework checker targets', () => {
         namespace: preflight.artifactNamespace,
         rootDir: fixture.rootDir,
       });
-      const controller = new AbortController();
-      controller.abort(new Error('cancel framework targets'));
       const progress = createProgressRecorder();
       const calls: TypecheckTarget[] = [];
 
@@ -762,21 +761,44 @@ describe('framework checker targets', () => {
         generatedGraphProvider: async () => graph,
         preflight,
         progress: progress.reporter,
-        runner: async (target, runOptions) => {
+        runner: async (target) => {
           calls.push(target);
-          expect(runOptions?.signal).toBe(controller.signal);
-          runOptions?.signal?.throwIfAborted();
           return { configPath: target.configPath, status: 0 };
         },
-        signal: controller.signal,
       });
 
       expect(result.passed).toBe(false);
-      expect(calls).toHaveLength(2);
-      expect(result.targetResults).toHaveLength(2);
-      expect(new Set(result.targetResults.map((item) => item.id))).toEqual(
-        new Set(calls.map((target) => target.id)),
+      expect(calls).toHaveLength(0);
+      expect(result.targetResults).toHaveLength(0);
+      expect(result.failureKind).toBe('execution-admission');
+      const issues = createCheckerFailureIssues({
+        failedTargets: result.failedTargets,
+        failureKind: result.failureKind,
+        fallbackReason: 'Execution inputs are unavailable.',
+        fix: 'Recollect current execution inputs.',
+        projectRootDir: fixture.rootDir,
+        task: 'checker:typecheck',
+        title: 'Execution admission rejected',
+      });
+      expect(issues).toHaveLength(2);
+      for (const issue of issues) {
+        expect(issue).toMatchObject({
+          code: 'LIMINA_CHECKER_TYPECHECK_ADMISSION_REJECTED',
+          task: 'checker:typecheck',
+        });
+        expect(issue.evidence?.some((item) => item.label === 'exit code')).toBe(
+          false,
+        );
+      }
+      expect(result.targetOutcomes).toHaveLength(2);
+      expect(new Set(result.targetOutcomes!.map((item) => item.id)).size).toBe(
+        2,
       );
+      expect(
+        result.targetOutcomes!.every(
+          (item) => item.status === 'admission-rejected',
+        ),
+      ).toBe(true);
       expect(
         progress.events.filter((event) => event.startsWith('plan:')),
       ).toHaveLength(2);

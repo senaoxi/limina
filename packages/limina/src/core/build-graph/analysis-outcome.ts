@@ -5,6 +5,7 @@ import {
 import type { NativeCollectionStatus } from '../../domain/analysis/native-collection';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { candidateAdmission } from './analysis-admission';
+import { bindCurrentCompilationContexts } from './compilation-prerequisite';
 import { retainNativeAnalysis } from './native-analysis-evidence';
 import type { DependencyAnalysisResult } from './types';
 
@@ -35,6 +36,14 @@ export function finishAnalysisOutcome(
   governance: AnalysisOutcome['governance'],
 ): void {
   retainCollectedEvidence(analysis, caches);
+  if (caches.nativeObservations !== undefined)
+    bindCurrentCompilationContexts(
+      analysis.candidate,
+      caches.nativeObservations
+        .values()
+        .flatMap((snapshot) => snapshot.contexts)
+        .toArray(),
+    );
   const core = collectionSummary(analysis, caches);
   const graphTransaction = transactionSummary(analysis, caches, governance);
   const statuses = coreStatuses(analysis, core);

@@ -1057,10 +1057,38 @@ describe('production graph snapshots and publication', () => {
     'missing-native-proof',
     'missing-core-work',
     'foreign-candidate',
+    'missing-generated-reference',
+    'extra-generated-reference',
+    'redirected-generated-reference',
+    'consistent-reference-removal',
   ] as const)(
     'rejects ownership %s in a valid storage envelope and restores the recollected result',
     (corruption) => {
       const f = fixture();
+      if (corruption.includes('reference')) {
+        const rootConfig = JSON.parse(
+          readFileSync(f.file('tsconfig.json'), 'utf8'),
+        );
+        rootConfig.liminaOptions = {
+          implicitRefs: [
+            { path: './provider/tsconfig.json', reason: 'runtime input' },
+          ],
+        };
+        f.write('tsconfig.json', JSON.stringify(rootConfig));
+        f.write(
+          'provider/tsconfig.json',
+          JSON.stringify({
+            compilerOptions: { noLib: true, types: [], module: 'NodeNext' },
+            files: ['index.ts'],
+          }),
+        );
+        f.write('provider/index.ts', 'export const provider = 1;');
+        f.write(
+          'limina.config.mjs',
+          'export default {scope:{checkers:{tsc:{include:["tsconfig.json", "provider/tsconfig.json"]}}}};',
+        );
+      }
+
       const run = 'console.log(JSON.stringify(await runCache()));';
       const first = f.execute<GraphRunResult>(run);
       const warm = f.execute<GraphRunResult>(run);
@@ -1082,6 +1110,46 @@ describe('production graph snapshots and publication', () => {
       const fact = data.ownershipPlan.dependencyFacts[0]!;
       expect(fact.nativeEvidence).toBeDefined();
       switch (corruption) {
+        case 'missing-generated-reference':
+        case 'extra-generated-reference':
+        case 'redirected-generated-reference':
+        case 'consistent-reference-removal': {
+          const [file, content] = [...data.generatedFiles].find(
+            ([file, text]) =>
+              file.endsWith('.dts.json') &&
+              JSON.parse(text).references?.length > 0,
+          )!;
+          const generated = JSON.parse(content);
+          const previous = generated.references[0];
+          if (corruption === 'extra-generated-reference')
+            generated.references.push({ path: './foreign.dts.json' });
+          else if (corruption === 'redirected-generated-reference')
+            generated.references[0] = { path: './foreign.dts.json' };
+          else generated.references = [];
+          data.generatedFiles = new Map(data.generatedFiles).set(
+            file,
+            JSON.stringify(generated),
+          );
+          if (corruption === 'consistent-reference-removal') {
+            const unit = data.governedSources
+              .values()
+              .flatMap((units) => units.values())
+              .find(
+                (source) =>
+                  'dtsConfigPath' in source.buildProjection &&
+                  source.buildProjection.dtsConfigPath === file,
+              )!;
+            unit.declarationReferences.clear();
+            data.dependencyAnalysis.candidate = {
+              ...data.dependencyAnalysis.candidate!,
+              references: data.dependencyAnalysis.candidate!.references.filter(
+                (pair) => pair.from !== unit.configPath,
+              ),
+            };
+            expect(previous).toBeDefined();
+          }
+          break;
+        }
         case 'foreign-target': {
           fact.physicalTargetPath = f.file('foreign.ts');
           break;

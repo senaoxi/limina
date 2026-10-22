@@ -1,18 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { candidateAdmission } from '../core/build-graph/analysis-admission';
+import {
+  candidateAdmission,
+  type CandidateBuildPlan,
+} from '../core/build-graph/analysis-admission';
 import { retainAnalysisFailure } from '../core/build-graph/analysis-failure';
 import { finishAnalysisOutcome } from '../core/build-graph/analysis-outcome';
+import {
+  bindCurrentCompilationContexts,
+  bindExecutionCompilationProjection,
+  projections,
+} from '../core/build-graph/compilation-projection';
 import {
   beginCoreCollection,
   coreCollectionRun,
   recordCoreWork,
 } from '../core/build-graph/core-collection-run';
+import { retainNativeAnalysis } from '../core/build-graph/native-analysis-evidence';
+import { analyzeProjectDependencies } from '../core/build-graph/prepare';
 import type { DependencyAnalysisResult } from '../core/build-graph/types';
 import { createProjectDependencyCaches } from '../core/project-dependencies/cache';
+import { createNativeDependencyContext } from '../core/typescript-semantic/native-context-factory';
+import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
 import {
   type CoreWorkItem,
   summarizeCoreCollection,
 } from '../domain/analysis/core-collection';
+import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
+import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 const item: CoreWorkItem = {
   id: 'a',
@@ -150,3 +166,232 @@ it('retains a usable candidate outside an actual failure scope', () => {
   expect(result.outcome!.core.dispatch).toBe('completed');
   expect(result.outcome!.buildAdmission.state).toBe('admitted');
 });
+
+it.each([
+  { noResolve: false, hasRawReference: false },
+  { noResolve: true, hasRawReference: false },
+  { noResolve: false, hasRawReference: true },
+])(
+  'rebinds Native declaration prerequisites (noResolve=$noResolve, rawReference=$hasRawReference)',
+  async ({ noResolve, hasRawReference }) => {
+    const fixture = await createSemanticRepairFixture({
+      'package.json': JSON.stringify({
+        name: 'admission-contract',
+        private: true,
+        type: 'module',
+      }),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+      'limina.config.mjs': 'export default {};',
+      'tsconfig.json': JSON.stringify({
+        files: [],
+        references: [
+          { path: './tsconfig.a.json' },
+          { path: './tsconfig.b.json' },
+        ],
+      }),
+      'tsconfig.a.json': JSON.stringify({
+        compilerOptions: {
+          module: 'NodeNext',
+          types: [],
+          noEmit: true,
+          noResolve,
+        },
+        files: ['a.ts'],
+        liminaOptions: {
+          implicitRefs: [
+            {
+              path: './tsconfig.b.json',
+              reason: 'explicit candidate relation',
+            },
+          ],
+        },
+      }),
+      'tsconfig.b.json': JSON.stringify({
+        compilerOptions: { module: 'NodeNext', types: [], noEmit: true },
+        files: ['b.ts'],
+      }),
+      'a.ts': 'import { b } from "./b.js"; export const a = b;',
+      'b.ts': 'export const b = 1;',
+    });
+    try {
+      const config = withFixtureGovernanceRoot({
+        rootDir: fixture.root,
+        configPath: fixture.path('limina.config.mjs'),
+        scope: { checkers: { tsc: { include: ['tsconfig.json'] } } },
+      });
+      const evidence = await analyzeProjectDependencies(config, {
+        artifactNamespace: createLiminaArtifactNamespace({
+          rootDir: fixture.root,
+          generation: 0,
+        }),
+      });
+      if (hasRawReference) bindSatisfiedNativeContext(evidence, fixture);
+      const original = JSON.stringify(evidence.nativeEvidence);
+      const pair = {
+        from: fixture.path('tsconfig.a.json'),
+        to: fixture.path('tsconfig.b.json'),
+      };
+      const assess = (
+        references: (typeof pair)[],
+        schedules: (typeof pair)[],
+      ) =>
+        candidateAdmission(
+          {
+            ...evidence,
+            candidate: Object.assign(evidence.candidate!, {
+              references,
+              schedules,
+            }),
+          },
+          evidence.outcome!,
+        ).state;
+      expect(assess([pair], [])).toBe('admitted');
+      const expectedSummary = noResolve
+        ? 'unknown'
+        : hasRawReference
+          ? 'already-satisfied'
+          : 'required';
+      const locked = evidence.nativeEvidence!.flatMap(({ snapshot }) =>
+        snapshot.obligations.filter((obligation) =>
+          snapshot.contexts.some(
+            (context) =>
+              context.id === obligation.consumerContextId &&
+              context.authority.phase === 'locked',
+          ),
+        ),
+      );
+      expect(
+        locked.some(
+          (obligation) =>
+            obligation.consumerConfigId === pair.from &&
+            summarizeCompilationObligation(obligation) === expectedSummary,
+        ),
+      ).toBe(true);
+      assertRelationIdentity(evidence, pair);
+
+      expect(assess([], [pair])).toBe(noResolve ? 'unavailable' : 'denied');
+      expect(assess([], [])).toBe(noResolve ? 'unavailable' : 'denied');
+      expect(JSON.stringify(evidence.nativeEvidence)).toBe(original);
+      expect(
+        candidateAdmission(
+          {
+            ...evidence,
+            candidate: {
+              configPaths: [pair.to],
+              references: [],
+              schedules: [],
+            },
+          },
+          evidence.outcome!,
+        ).state,
+      ).toBe('admitted');
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+function bindSatisfiedNativeContext(
+  evidence: DependencyAnalysisResult,
+  fixture: Awaited<ReturnType<typeof createSemanticRepairFixture>>,
+): void {
+  // The public source-config reader rejects handwritten references. Exercise
+  // the internal admission contract with a real referenced Native Program.
+  const configPath = fixture.path('tsconfig.a.json');
+  const parsed = fixture.parse('tsconfig.a.json');
+  const coverage = evidence.nativeEvidence!.flatMap(
+    ({ snapshot }) => snapshot.coverageIndexes,
+  )[0]!;
+  const context = createNativeDependencyContext({
+    configPath,
+    fileNames: parsed.fileNames,
+    options: { ...parsed.options, composite: true },
+    projectReferences: [{ path: fixture.path('tsconfig.b.json') }],
+    compilationObligationScope: 'generated-declaration-project-v1',
+    analysisBinding: { phase: 'locked', checker: 'tsc' },
+    workspaceSourceBoundary: createWorkspaceSourceBoundary(
+      parsed.fileNames,
+      undefined,
+      coverage,
+    ),
+  });
+  try {
+    const current = projections.get(evidence.candidate!)!.contexts;
+    const snapshot = context.nativeEvidence!;
+    expect(
+      snapshot.obligations.some(
+        (obligation) =>
+          summarizeCompilationObligation(obligation) === 'already-satisfied',
+      ),
+    ).toBe(true);
+    evidence.nativeEvidence = evidence.nativeEvidence!.filter(
+      ({ snapshot: original }) =>
+        original.contexts.every((item) => item.inputs.config !== configPath),
+    );
+    retainNativeAnalysis(evidence, snapshot);
+    bindCurrentCompilationContexts(evidence.candidate, [
+      ...current.filter((item) => item.inputs.config !== configPath),
+      ...snapshot.contexts,
+    ]);
+  } finally {
+    context.dispose();
+  }
+}
+
+function assertRelationIdentity(
+  evidence: DependencyAnalysisResult,
+  pair: { from: string; to: string },
+): void {
+  const original = evidence.candidate!;
+  const projection = projections.get(original)!;
+  const source = projection.sources.find(
+    (unit) => unit.configPath === pair.from,
+  )!;
+  const provider = projection.sources.find(
+    (unit) => unit.configPath === pair.to,
+  )!;
+  if (
+    !('dtsConfigPath' in source.buildProjection) ||
+    !('dtsConfigPath' in provider.buildProjection)
+  )
+    throw new Error('Expected real declaration projection');
+  const reference = {
+    kind: 'declaration',
+    from: {
+      sourceConfigPath: pair.from,
+      checkerName: source.primaryCheckerName,
+    },
+    to: { sourceConfigPath: pair.to, checkerName: provider.primaryCheckerName },
+    fromConfigPath: source.buildProjection.dtsConfigPath,
+    toConfigPath: provider.buildProjection.dtsConfigPath,
+  };
+  const assess = (candidate: CandidateBuildPlan) =>
+    candidateAdmission({ ...evidence, candidate }, evidence.outcome!).state;
+  const serialized = JSON.stringify(original);
+  expect(assess(JSON.parse(serialized))).not.toBe('admitted');
+  for (const replacement of [
+    reference,
+    { ...reference, kind: 'framework-schedule' },
+    { ...reference, to: { ...reference.to, checkerName: 'wrong-checker' } },
+    { ...reference, toConfigPath: source.buildProjection.dtsConfigPath },
+  ]) {
+    const candidate = { ...original, references: [pair], schedules: [pair] };
+    bindExecutionCompilationProjection(original, candidate, {
+      sources: projection.sources,
+      references: [replacement],
+      consumers: [reference.from],
+    });
+    expect(assess(candidate) === 'admitted').toBe(replacement === reference);
+  }
+  const current = projection.contexts;
+  bindCurrentCompilationContexts(
+    original,
+    current.map((context) => ({
+      ...context,
+      epoch: `${context.epoch}-replaced`,
+    })),
+  );
+  expect(assess(original)).not.toBe('admitted');
+  bindCurrentCompilationContexts(original, current);
+  expect(assess(original)).toBe('admitted');
+}

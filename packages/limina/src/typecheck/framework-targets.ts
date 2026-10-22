@@ -34,7 +34,9 @@ const frameworkRequirements = {
   readonly CheckerDependencyRequirement[]
 >;
 
-function frameworkCheckerName(family: FrameworkFamily): FrameworkCheckerName {
+export function frameworkCheckerName(
+  family: FrameworkFamily,
+): FrameworkCheckerName {
   return family === 'svelte' ? 'svelte-check' : 'astro';
 }
 

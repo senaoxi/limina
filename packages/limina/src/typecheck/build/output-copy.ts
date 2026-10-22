@@ -106,11 +106,11 @@ function getValidatedAuthority(options: {
   return capability.authority;
 }
 
-function createCopyPlan(options: {
+export function createCopyPlan(options: {
   contexts: readonly GeneratedOutputDeclarationCopyContext[];
   projectRootDir: string;
   workspaceContext: ValidatedWorkspaceContext;
-}) {
+}): ReturnType<typeof mergeOutputDeclarationCopyPlans> {
   return mergeOutputDeclarationCopyPlans(
     options.contexts.map((context) =>
       createOutputDeclarationCopyPlan({
@@ -220,6 +220,10 @@ export async function runOutputDeclarationCopyPostBuild(options: {
   projectRootDir: string;
   report?: CheckIssueReportOptions;
   workspaceContext: ValidatedWorkspaceContext;
+  authorizeCopy?: (
+    plan: ReturnType<typeof createCopyPlan>,
+    action: () => Promise<string | null>,
+  ) => Promise<string | null>;
 }): Promise<string | null> {
   const contexts = collectOutputDeclarationCopyContexts(
     options.buildTargetDescriptors,
@@ -239,9 +243,13 @@ export async function runOutputDeclarationCopyPostBuild(options: {
       projectRootDir: options.projectRootDir,
     }),
   });
-  return executeCopyPlan({
-    plan,
-    projectRootDir: options.projectRootDir,
-    report: options.report,
-  });
+  const execute = () =>
+    executeCopyPlan({
+      plan,
+      projectRootDir: options.projectRootDir,
+      report: options.report,
+    });
+  return options.authorizeCopy === undefined
+    ? execute()
+    : options.authorizeCopy(plan, execute);
 }

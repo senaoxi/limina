@@ -5,8 +5,14 @@ import type { TaskProgressItem } from '../../execution/progress';
 import type { LiminaFlowTask } from '../../flow';
 import { TypecheckLogger } from '../../logger';
 import type { LiminaPreflightManager } from '../../preflight';
+import { ExecutionAdmission } from '../admission/execution-admission';
+import { proveExecutionPrerequisites } from '../admission/execution-prerequisites';
+import {
+  admissionFailureTargets,
+  executionFailureKind,
+} from '../admission/reporting';
 import { runBuildTargets } from '../build/plan';
-import { ManagedCheckerMutationCoordinator } from '../managed/coordinator';
+import { copySuccessfulBuildTarget } from '../managed-build-copy';
 import {
   collectFailedCheckerTargets,
   completeCheckerTargetTask,
@@ -17,6 +23,7 @@ import {
   shouldLogCheckReport,
 } from '../runner-shared';
 import type {
+  CheckerFailureKind,
   CheckerFailureTarget,
   RunCheckerBuildOptions,
 } from '../runner-types';
@@ -27,17 +34,17 @@ import {
   type TypecheckTarget,
   type TypecheckTargetResult,
 } from '../targets';
-
+import { executeAuthorizedBuild } from './managed-execution';
 type CheckerFlowTask = LiminaFlowTask | TaskProgressItem;
-
 export interface CheckerBuildExecutionResult {
+  admission: ExecutionAdmission;
+  failureKind?: CheckerFailureKind;
   failedResults: TypecheckTargetResult[];
   failedTargets: CheckerFailureTarget[];
   passed: boolean;
   results: TypecheckTargetResult[];
   targetOutcomes: CheckerTargetOutcome[];
 }
-
 function startProgressTarget(options: {
   target: TypecheckTarget;
   tasks: ReadonlyMap<CheckerTargetId, CheckerFlowTask>;
@@ -45,7 +52,6 @@ function startProgressTarget(options: {
   const task = options.tasks.get(options.target.id);
   if (task !== undefined) (task as TaskProgressItem).start();
 }
-
 function startFlowTarget(options: {
   flowDepth: number;
   label: string;
@@ -71,7 +77,6 @@ function startFlowTarget(options: {
     ),
   );
 }
-
 function startTarget(options: {
   flowDepth: number;
   label: string;
@@ -86,7 +91,6 @@ function startTarget(options: {
   }
   startFlowTarget(options);
 }
-
 function completeTarget(options: {
   result: TypecheckTargetResult;
   target: TypecheckTarget;
@@ -95,7 +99,6 @@ function completeTarget(options: {
   const task = options.tasks.get(options.target.id);
   if (task !== undefined) completeCheckerTargetTask(task, options.result);
 }
-
 function createTargetOutcomes(options: {
   results: readonly TypecheckTargetResult[];
   targets: readonly TypecheckTarget[];
@@ -108,7 +111,6 @@ function createTargetOutcomes(options: {
     return target === undefined ? [] : [toCheckerTargetOutcome(target, result)];
   });
 }
-
 export async function executeCheckerBuildTargets(options: {
   allCheckers: readonly ResolvedCheckerConfig[];
   config: RunCheckerBuildOptions['config'];
@@ -130,38 +132,123 @@ export async function executeCheckerBuildTargets(options: {
       targets: options.targets,
     }),
   );
-  const mutationCoordinator = await ManagedCheckerMutationCoordinator.create({
-    artifactNamespace: options.preflight.artifactNamespace,
-    checkers: options.allCheckers,
-    config: options.config,
-    generatedGraph: options.generatedGraph,
-    targets: options.targets,
-    workspaceContext: options.workspaceContext,
-  });
-  const results = await runBuildTargets(
+  const admission = new ExecutionAdmission(
+    options.preflight,
+    options.generatedGraph,
+    options.targets,
+  );
+  const runner = resolveTypecheckRunner(options.runnerOptions);
+  const deliveries = new Map<
+    CheckerTargetId,
+    Awaited<ReturnType<typeof copySuccessfulBuildTarget>>
+  >();
+  const prerequisites = await proveExecutionPrerequisites(options, admission);
+  const completions = await runBuildTargets(
     [...options.targets],
     options.generatedGraph.dependencyEdges,
-    resolveTypecheckRunner(options.runnerOptions),
+    runner,
     {
-      beforeLayerRun: (targets) => mutationCoordinator.beforeLayerRun(targets),
-      beforeTargetRun: (target) => mutationCoordinator.beforeTargetRun(target),
+      executionPrerequisites: prerequisites,
+      isDeliveryComplete: (id) => {
+        const delivery = deliveries.get(id);
+        return (
+          delivery === undefined ||
+          (delivery.state === 'executed' && delivery.value === null)
+        );
+      },
+      executeTarget: async (target) => {
+        const result = await executeAuthorizedBuild(options, admission, target);
+        if (result.status === 0 && options.watch !== true)
+          deliveries.set(
+            target.id,
+            await copySuccessfulBuildTarget(
+              {
+                admission,
+                preflight: options.preflight,
+                request: options.runnerOptions,
+                projectRootDir: options.projectRootDir,
+                flowDepth: options.flowDepth,
+              },
+              target,
+            ),
+          );
+        return result;
+      },
       config: options.config,
       onTargetResult: (target, result) =>
         completeTarget({ result, target, tasks }),
+      onTargetOutcome: (target, result) => {
+        if (typeof result.status !== 'number') tasks.get(target.id)?.fail();
+      },
       onTargetStart: (target) => startTarget({ ...options, target, tasks }),
       watch: options.watch,
     },
   );
+  return summarizeBuildExecution({
+    admission,
+    targets: options.targets,
+    completions,
+    deliveries,
+  });
+}
+function summarizeBuildExecution(input: {
+  admission: ExecutionAdmission;
+  targets: readonly TypecheckTarget[];
+  completions: Awaited<ReturnType<typeof runBuildTargets>>;
+  deliveries: ReadonlyMap<
+    CheckerTargetId,
+    Awaited<ReturnType<typeof copySuccessfulBuildTarget>>
+  >;
+}): CheckerBuildExecutionResult {
+  const { completions, deliveries, admission } = input;
+  const results = completions.filter(
+    (result): result is TypecheckTargetResult =>
+      typeof result.status === 'number',
+  );
+  const refused = completions.filter(
+    (result) => typeof result.status !== 'number',
+  );
+  const copyRefusals = deliveries
+    .values()
+    .flatMap((copy) => (copy.state === 'refused' ? [copy.rejection] : []))
+    .toArray();
+  refused.push(...copyRefusals);
+  const copyErrors = [...deliveries].flatMap(([id, copy]) =>
+    copy.state === 'executed' && copy.value !== null
+      ? [
+          {
+            id,
+            configPath: input.targets.find((target) => target.id === id)!
+              .configPath,
+            message: copy.value,
+          },
+        ]
+      : [],
+  );
   const failedResults = results.filter((result) => result.status !== 0);
   return {
+    admission,
+    failureKind: executionFailureKind(failedResults, [
+      ...refused,
+      ...copyErrors,
+    ]),
     failedResults,
-    failedTargets: collectFailedCheckerTargets(options.targets, failedResults),
-    passed: failedResults.length === 0,
+    failedTargets: [
+      ...collectFailedCheckerTargets(input.targets, failedResults),
+      ...copyErrors,
+      ...admissionFailureTargets(input.targets, refused),
+    ],
+    passed:
+      failedResults.length === 0 &&
+      refused.length === 0 &&
+      copyErrors.length === 0,
     results,
-    targetOutcomes: createTargetOutcomes({ results, targets: options.targets }),
+    targetOutcomes: [
+      ...createTargetOutcomes({ results, targets: input.targets }),
+      ...refused,
+    ],
   };
 }
-
 function isReportCheckerBuildFailure(options: {
   execution: CheckerBuildExecutionResult;
   projectRootDir: string;
@@ -181,7 +268,6 @@ function isReportCheckerBuildFailure(options: {
   );
   return true;
 }
-
 function shouldReportCheckerBuildSuccess(options: {
   report: RunCheckerBuildOptions['report'];
   runnerOptions: RunCheckerBuildOptions;
@@ -191,7 +277,6 @@ function shouldReportCheckerBuildSuccess(options: {
     options.runnerOptions.flow?.interactive !== true
   );
 }
-
 export function reportCheckerBuildExecution(options: {
   execution: CheckerBuildExecutionResult;
   projectRootDir: string;

@@ -36,17 +36,21 @@ export function getDtsProjectsForSourcePath(options: {
   return options.dtsProjectsBySourcePath.get(options.sourceConfigPath) ?? [];
 }
 
-export function isBuildCapableProject(project: SourceProject): boolean {
+export function isBuildCapableProject(
+  project: Pick<SourceProject, 'context'>,
+): boolean {
   const preset = project.context.checkerPresets[0];
   return Boolean(preset) && isBuildCapablePreset(preset);
 }
 
-export function getSourceProjectPreset(project: SourceProject): string {
+export function getSourceProjectPreset(
+  project: Pick<SourceProject, 'context'>,
+): string {
   return project.context.checkerPresets[0] ?? 'unknown';
 }
 
 export function getSourceProjectBuildEngine(
-  project: SourceProject,
+  project: Pick<SourceProject, 'context'>,
 ): CheckerBuildEngine {
   const preset = project.context.checkerPresets[0];
   return preset ? getCheckerBuildEngine(preset) : 'unknown';

@@ -6,6 +6,7 @@ import type { CheckIssueReportOptions } from '../check-reporting/human';
 import type { TaskProgressReporter } from '../execution/progress';
 import type { LiminaFlowReporter } from '../flow';
 import type { LiminaPreflightManager } from '../preflight';
+import type { ExecutionAdmissionRejection } from './admission/types';
 import type {
   CheckerTargetId,
   CheckerTargetOutcome,
@@ -36,12 +37,14 @@ export interface CheckerFailureTarget {
   blockedByTarget?: readonly CheckerTargetId[];
   checkerName?: string;
   configPath: string;
-  exitCode: number;
+  exitCode?: number;
+  admission?: ExecutionAdmissionRejection;
   id?: CheckerTargetId;
   message?: string;
 }
 
 export type CheckerFailureKind =
+  | 'execution-admission'
   | 'peer-dependency'
   | 'process'
   | 'target-selection';
@@ -78,6 +81,8 @@ export interface RunBuildOptions {
 }
 
 export interface RunBuildResult {
+  targetResults?: TypecheckTargetResult[];
+  targetOutcomes?: CheckerTargetOutcome[];
   failedTargets: CheckerFailureTarget[];
   failureKind?: CheckerFailureKind;
   passed: boolean;
@@ -105,6 +110,7 @@ export interface RunCheckerTypecheckOptions {
 }
 
 export interface RunCheckerTypecheckResult {
+  targetOutcomes?: CheckerTargetOutcome[];
   checkerNames?: string[];
   failedTargets: CheckerFailureTarget[];
   disabled: boolean;

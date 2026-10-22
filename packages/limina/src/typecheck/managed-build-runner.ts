@@ -1,12 +1,11 @@
-import { withMaterializedPlanReadLease } from '../core/build-graph/materialization-read-lease';
 import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import type { LiminaPreflightManager } from '../preflight';
-import { runOutputDeclarationCopyPostBuild } from './build/output-copy';
-import { collectBuildTargetProviderClosure } from './build/provider-closure';
-import type { ResolvedBuildTarget } from './build/target-resolution';
+import type {
+  BuildTargetDescriptor,
+  ResolvedBuildTarget,
+} from './build/target-resolution';
 import { executeCheckerBuildTargets } from './checker/build-execution';
 import {
-  createCopyFailure,
   createManagedExecutionFailure,
   createManagedPeerFailure,
   createManagedSuccess,
@@ -26,7 +25,7 @@ import {
 
 function createBuildTargets(options: {
   context: ManagedBuildContext;
-  descriptors: ReturnType<typeof collectBuildTargetProviderClosure>;
+  descriptors: BuildTargetDescriptor[];
 }): TypecheckTarget[] {
   return options.descriptors.map(
     ({ buildModule, checker, sourceConfigPath }) => ({
@@ -44,39 +43,19 @@ function createBuildTargets(options: {
   );
 }
 
-async function runPostBuildCopy(options: {
-  context: ManagedBuildContext;
-  descriptors: ReturnType<typeof collectBuildTargetProviderClosure>;
-}): Promise<string | null> {
-  if (options.context.options.watch === true) return null;
-  return runOutputDeclarationCopyPostBuild({
-    buildTargetDescriptors: options.descriptors,
-    flow: options.context.options.flow,
-    flowDepth: options.context.flowDepth,
-    projectRootDir: options.context.projectRootDir,
-    report: options.context.options.report,
-    workspaceContext: options.context.workspaceContext,
-  });
-}
-
 async function completeManagedBuild(options: {
   context: ManagedBuildContext;
-  descriptors: ReturnType<typeof collectBuildTargetProviderClosure>;
+  descriptors: BuildTargetDescriptor[];
   execution: Awaited<ReturnType<typeof executeCheckerBuildTargets>>;
   rootConfigPaths: string[];
   targetCount: number;
+  targets: readonly TypecheckTarget[];
 }): Promise<RunBuildResult> {
   reportManagedFailure({
     context: options.context,
     execution: options.execution,
   });
-  if (!options.execution.passed) {
-    return createManagedExecutionFailure(options);
-  }
-  const copyProblem = await runPostBuildCopy(options);
-  if (copyProblem !== null) {
-    return createCopyFailure({ ...options, problem: copyProblem });
-  }
+  if (!options.execution.passed) return createManagedExecutionFailure(options);
   reportManagedSuccess({
     context: options.context,
     targetCount: options.targetCount,
@@ -103,7 +82,7 @@ function createContext(options: {
 
 function getManagedPeerProblems(options: {
   context: ManagedBuildContext;
-  descriptors: ReturnType<typeof collectBuildTargetProviderClosure>;
+  descriptors: BuildTargetDescriptor[];
 }): string[] {
   return collectCheckerPeerDependencyProblems({
     checkers: options.descriptors.map(({ checker }) => checker),
@@ -123,11 +102,7 @@ export async function runManagedBuild(options: {
   const context = createContext(options);
   const selectionFailure = validateManagedSelection(context);
   if (selectionFailure !== null) return selectionFailure;
-  const descriptors = collectBuildTargetProviderClosure({
-    allCheckers: options.target.allCheckers,
-    generatedGraph: options.target.generatedGraph,
-    initialTargets: options.target.checkerTargets,
-  });
+  const descriptors = [...options.target.checkerTargets];
   const peerFailure = createManagedPeerFailure({
     context,
     problems: getManagedPeerProblems({ context, descriptors }),
@@ -143,29 +118,25 @@ export async function runManagedBuild(options: {
     rootConfigPaths,
     targetCount: targets.length,
   });
-  const execution = await withMaterializedPlanReadLease(
-    options.preflight.artifactNamespace,
-    options.target.generatedGraph.artifactPlan,
-    () =>
-      executeCheckerBuildTargets({
-        allCheckers: options.target.allCheckers,
-        config: options.request.config,
-        flowDepth: context.flowDepth,
-        generatedGraph: options.target.generatedGraph,
-        label: 'build',
-        preflight: options.preflight,
-        projectRootDir: options.projectRootDir,
-        runnerOptions: toCheckerBuildOptions(options.request),
-        targets,
-        watch: options.request.watch,
-        workspaceContext: options.workspaceContext,
-      }),
-  );
+  const execution = await executeCheckerBuildTargets({
+    allCheckers: options.target.allCheckers,
+    config: options.request.config,
+    flowDepth: context.flowDepth,
+    generatedGraph: options.target.generatedGraph,
+    label: 'build',
+    preflight: options.preflight,
+    projectRootDir: options.projectRootDir,
+    runnerOptions: toCheckerBuildOptions(options.request),
+    targets,
+    watch: options.request.watch,
+    workspaceContext: context.workspaceContext,
+  });
   return completeManagedBuild({
     context,
     descriptors,
     execution,
     rootConfigPaths,
     targetCount: targets.length,
+    targets,
   });
 }

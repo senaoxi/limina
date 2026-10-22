@@ -301,7 +301,7 @@ describe('runBuildTargets duration reporting', () => {
     });
 
     expect(results).toHaveLength(1);
-    expect(results[0]!.durationMs).toBe(123);
+    expect(results[0]).toMatchObject({ durationMs: 123, status: 0 });
   });
 
   it('falls back to pool wall-clock measurement when the runner reports no duration', async () => {
@@ -320,7 +320,10 @@ describe('runBuildTargets duration reporting', () => {
     });
 
     expect(results).toHaveLength(1);
-    expect(results[0]!.durationMs).toBeGreaterThanOrEqual(35);
+    const result = results[0]!;
+    if (typeof result.status !== 'number')
+      throw new Error('Checker did not execute.');
+    expect(result.durationMs).toBeGreaterThanOrEqual(35);
   });
 });
 
@@ -361,6 +364,58 @@ describe('runBuildTargets provider blocking', () => {
     };
   }
 
+  it('does not turn a source schedule or declaration ordering edge into a process prerequisite', async () => {
+    const provider = createBuildTarget('provider');
+    const consumer = createBuildTarget('consumer');
+    for (const relation of [
+      edge('consumer', 'provider'),
+      schedulingEdge('consumer', 'provider'),
+    ]) {
+      const calls: string[] = [];
+      const results = await runBuildTargets(
+        [consumer, provider],
+        [relation],
+        async (target) => {
+          calls.push(target.id);
+          return {
+            configPath: target.configPath,
+            status: target.id === provider.id ? 1 : 0,
+          };
+        },
+        { config: createPoolConfig() },
+      );
+      expect(calls).toEqual([provider.id, consumer.id]);
+      expect(results.find((item) => item.id === consumer.id)).toMatchObject({
+        status: 0,
+      });
+    }
+  });
+
+  it('does not inherit a failed schedule sibling through a successful hard prerequisite', async () => {
+    const first = createBuildTarget('first');
+    const second = createBuildTarget('second');
+    const consumer = createBuildTarget('consumer');
+    const results = await runBuildTargets(
+      [first, second, consumer],
+      [
+        schedulingEdge('first', 'second'),
+        schedulingEdge('second', 'first'),
+        edge('consumer', 'first'),
+      ],
+      async (target) => ({
+        configPath: target.configPath,
+        status: target.id === second.id ? 1 : 0,
+      }),
+      {
+        config: createPoolConfig(),
+        executionPrerequisites: [edge('consumer', 'first')],
+      },
+    );
+    expect(results.find((item) => item.id === consumer.id)).toMatchObject({
+      status: 0,
+    });
+  });
+
   it('blocks direct and transitive consumers by root provider id', async () => {
     const provider = createBuildTarget('provider');
     const consumer = createBuildTarget('consumer');
@@ -377,19 +432,26 @@ describe('runBuildTargets provider blocking', () => {
           status: target.id === provider.id ? 1 : 0,
         };
       },
-      { config: createPoolConfig() },
+      {
+        config: createPoolConfig(),
+        executionPrerequisites: [
+          edge('consumer', 'provider'),
+          edge('transitive', 'consumer'),
+        ],
+      },
     );
 
     expect(calls).toContain(provider.id);
     expect(calls).toContain(unrelated.id);
     expect(calls).not.toContain(consumer.id);
     expect(calls).not.toContain(transitive.id);
-    expect(
-      results.find((result) => result.id === consumer.id)?.blockedBy,
-    ).toEqual([provider.id]);
-    expect(
-      results.find((result) => result.id === transitive.id)?.blockedBy,
-    ).toEqual([provider.id]);
+    expect(results.find((result) => result.id === consumer.id)).toMatchObject({
+      status: 'blocked',
+      blockedBy: [provider.id],
+    });
+    expect(results.find((result) => result.id === transitive.id)).toMatchObject(
+      { status: 'blocked', blockedBy: [provider.id] },
+    );
   });
 
   it('does not add provider completion gating in watch mode', async () => {
@@ -482,12 +544,18 @@ describe('runBuildTargets provider blocking', () => {
         configPath: target.configPath,
         status: target.id === consumer.id ? 0 : 1,
       }),
-      { config: createPoolConfig() },
+      {
+        config: createPoolConfig(),
+        executionPrerequisites: [
+          edge('consumer', 'first'),
+          edge('consumer', 'second'),
+        ],
+      },
     );
 
     expect(results.find((result) => result.id === consumer.id)).toMatchObject({
       blockedBy: [first.id, second.id],
-      status: 1,
+      status: 'blocked',
     });
   });
 
@@ -506,7 +574,10 @@ describe('runBuildTargets provider blocking', () => {
         configPath: target.configPath,
         status: target.id === first.id ? 1 : 0,
       }),
-      { config: createPoolConfig() },
+      {
+        config: createPoolConfig(),
+        executionPrerequisites: [edge('consumer', 'first')],
+      },
     );
 
     expect(results.find((result) => result.id === second.id)).toMatchObject({
@@ -533,7 +604,13 @@ describe('runBuildTargets provider blocking', () => {
           status: target.id === first.id || target.id === second.id ? 1 : 0,
         };
       },
-      { config: createPoolConfig() },
+      {
+        config: createPoolConfig(),
+        executionPrerequisites: [
+          edge('consumer', 'first'),
+          edge('consumer', 'second'),
+        ],
+      },
     );
 
     expect(calls).toContain(unrelated.id);
@@ -543,34 +620,7 @@ describe('runBuildTargets provider blocking', () => {
     });
   });
 
-  it('holds a provider layer at an awaited boundary barrier before any target starts', async () => {
-    const first = createBuildTarget('first');
-    const second = createBuildTarget('second');
-    const runner = vi.fn(async (target: TypecheckTarget) => ({
-      configPath: target.configPath,
-      status: 0,
-    }));
-    const onTargetStart = vi.fn();
-    const beforeLayerRun = vi.fn(async () => {
-      throw new Error('unsafe layer boundary');
-    });
-
-    const results = await runBuildTargets([first, second], [], runner, {
-      beforeLayerRun,
-      config: createPoolConfig(),
-      onTargetStart,
-    });
-
-    expect(beforeLayerRun).toHaveBeenCalledOnce();
-    expect(runner).not.toHaveBeenCalled();
-    expect(onTargetStart).not.toHaveBeenCalled();
-    expect(results).toEqual([
-      expect.objectContaining({ id: first.id, status: 1 }),
-      expect.objectContaining({ id: second.id, status: 1 }),
-    ]);
-  });
-
-  it('keeps completed provider results and blocks later consumers after layer drift', async () => {
+  it('keeps completed process results and propagates only explicit prerequisite refusals', async () => {
     const provider = createBuildTarget('provider');
     const consumer = createBuildTarget('consumer');
     const transitive = createBuildTarget('transitive');
@@ -584,11 +634,32 @@ describe('runBuildTargets provider blocking', () => {
         return { configPath: target.configPath, status: 0 };
       },
       {
-        beforeLayerRun: async (targets) => {
-          if (targets.some((target) => target.id === consumer.id)) {
-            throw new Error('provider-layer mutation boundary drifted');
-          }
+        executeTarget: async (target) => {
+          if (target.id === consumer.id)
+            return {
+              status: 'admission-rejected',
+              id: target.id,
+              stage: 'mutation',
+              decision: 'unavailable',
+              diagnostics: [
+                {
+                  code: 'LIMINA_EXECUTION_INPUT_UNAVAILABLE',
+                  message: 'input changed',
+                },
+              ],
+            };
+          calls.push(target.id);
+          return {
+            id: target.id,
+            configPath: target.configPath,
+            status: 0,
+            durationMs: 0,
+          };
         },
+        executionPrerequisites: [
+          edge('consumer', 'provider'),
+          edge('transitive', 'consumer'),
+        ],
         config: createPoolConfig(),
         onTargetStart: (target) => {
           started.push(target.id);
@@ -597,46 +668,18 @@ describe('runBuildTargets provider blocking', () => {
     );
 
     expect(calls).toEqual([provider.id]);
-    expect(started).toEqual([provider.id]);
+    expect(started).toEqual([provider.id, consumer.id]);
     expect(results.find((result) => result.id === provider.id)).toMatchObject({
       status: 0,
     });
     expect(results.find((result) => result.id === consumer.id)).toMatchObject({
-      status: 1,
+      status: 'admission-rejected',
     });
     expect(results.find((result) => result.id === transitive.id)).toMatchObject(
       {
         blockedBy: [consumer.id],
-        status: 1,
+        status: 'blocked',
       },
     );
-  });
-
-  it('runs target-local recheck before start reporting and runner invocation', async () => {
-    const target = createBuildTarget('target');
-    const events: string[] = [];
-    const runner = vi.fn(async () => {
-      events.push('runner');
-      return { configPath: target.configPath, status: 0 };
-    });
-    const results = await runBuildTargets([target], [], runner, {
-      beforeLayerRun: async () => {
-        events.push('layer');
-      },
-      beforeTargetRun: async () => {
-        events.push('target-recheck');
-        throw new Error('final output became a symlink');
-      },
-      config: createPoolConfig(),
-      onTargetStart: () => {
-        events.push('start');
-      },
-    });
-
-    expect(events).toEqual(['layer', 'target-recheck']);
-    expect(runner).not.toHaveBeenCalled();
-    expect(results).toEqual([
-      expect.objectContaining({ id: target.id, status: 1 }),
-    ]);
   });
 });

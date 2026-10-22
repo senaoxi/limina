@@ -7,6 +7,18 @@ import {
 export const checkerPackageProofIssueRules: readonly LiminaCheckIssueRuleDefinition[] =
   [
     defineIssueRule({
+      code: C.checkerBuildAdmissionRejected,
+      description:
+        'Managed Checker build admission refused a target or output stage before its side effects.',
+      task: 'checker:build',
+    }),
+    defineIssueRule({
+      code: C.checkerTypecheckAdmissionRejected,
+      description:
+        'Managed Checker typecheck admission refused a target before launch.',
+      task: 'checker:typecheck',
+    }),
+    defineIssueRule({
       code: C.checkerBuildFailed,
       description: 'Checker build execution failed for one or more targets.',
       task: 'checker:build',

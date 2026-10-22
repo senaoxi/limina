@@ -245,25 +245,14 @@ export function createManagedExecutionFailure(options: {
   rootConfigPaths: string[];
 }): RunBuildResult {
   return {
+    targetResults: options.execution.results,
+    targetOutcomes: options.execution.targetOutcomes,
     failedTargets: options.execution.failedTargets,
+    failureKind: options.execution.failureKind,
+    problems: options.execution.failedTargets.flatMap((target) =>
+      target.message === undefined ? [] : [target.message],
+    ),
     passed: false,
-    projectRootDir: options.context.projectRootDir,
-    rootConfigPaths: options.rootConfigPaths,
-    sourceConfigPath: options.context.target.sourceConfigPath,
-  };
-}
-
-export function createCopyFailure(options: {
-  context: ManagedBuildContext;
-  execution: CheckerBuildExecutionResult;
-  problem: string;
-  rootConfigPaths: string[];
-}): RunBuildResult {
-  return {
-    failedTargets: options.execution.failedTargets,
-    failureKind: 'process',
-    passed: false,
-    problems: [options.problem],
     projectRootDir: options.context.projectRootDir,
     rootConfigPaths: options.rootConfigPaths,
     sourceConfigPath: options.context.target.sourceConfigPath,
@@ -276,6 +265,8 @@ export function createManagedSuccess(options: {
   rootConfigPaths: string[];
 }): RunBuildResult {
   return {
+    targetResults: options.execution.results,
+    targetOutcomes: options.execution.targetOutcomes,
     failedTargets: options.execution.failedTargets,
     passed: true,
     projectRootDir: options.context.projectRootDir,

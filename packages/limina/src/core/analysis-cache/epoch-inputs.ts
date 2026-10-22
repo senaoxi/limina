@@ -11,6 +11,7 @@ import {
   replaySynchronousDiscoveryRead,
 } from './discovery-reads';
 import { analysisHash } from './identity';
+import { isAffectedByOutput, isManagedChange } from './managed-output-reads';
 
 interface Observation {
   version: string;
@@ -77,14 +78,43 @@ export class EpochInputs {
       operation,
     );
   }
-  async assertStable(): Promise<void> {
+  select(paths: ReadonlySet<string>): EpochInputs {
+    const selected = new EpochInputs();
+    for (const [key, value] of this.#reads)
+      if (paths.has(value.input.path)) selected.#reads.set(key, value);
+    return selected;
+  }
+  append(inputs: EpochInputs): void {
+    for (const [key, value] of inputs.#reads) {
+      if (!isSameObservation(this.#reads.get(key), value))
+        throw new AnalysisInputDriftError(value.input.path);
+      this.#reads.set(key, value);
+    }
+  }
+  get paths(): ReadonlySet<string> {
+    return new Set(this.#reads.values().map((value) => value.input.path));
+  }
+  affectedOutputs(outputs: ReadonlySet<string>): Set<string> {
+    return new Set(
+      [...outputs].filter((file) =>
+        this.#reads
+          .values()
+          .some((value) => isAffectedByOutput(value.input, file)),
+      ),
+    );
+  }
+  async assertStable(outputs?: ReadonlySet<string>): Promise<void> {
     for (const prior of this.#reads.values()) {
+      const value = await prior.input.read();
       const current = observation({
         ...prior.input,
-        value: await prior.input.read(),
+        value,
       });
-      if (!isSameVersion(prior, current))
-        throw new AnalysisInputDriftError(prior.input.path);
+      const isStable = [
+        isSameVersion(prior, current),
+        isManagedChange(prior.input, value, outputs),
+      ].some(Boolean);
+      if (!isStable) throw new AnalysisInputDriftError(prior.input.path);
     }
   }
   snapshot(): DiscoveryRecord[] | undefined {

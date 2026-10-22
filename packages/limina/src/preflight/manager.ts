@@ -19,7 +19,6 @@ import {
 import type { PackageEntrySelectionPlan } from '../package-check/entry/selection';
 import type { AnalysisCacheController } from './analysis-cache';
 import { PreflightGenerationCache } from './cache';
-import type { ConfigObservation } from './config-observation';
 import { registerPreflightGenerationAdvancer } from './generation';
 import { ensurePreflightGraphMaterialized } from './materialization';
 import * as queries from './queries';
@@ -33,7 +32,6 @@ export class LiminaPreflightManager {
   readonly #generatedGraphProvider:
     | (() => Promise<GeneratedTsconfigGraphResult>)
     | undefined;
-
   readonly #metrics: AnalysisMetricsRecorder;
   readonly #profilingMetrics: AnalysisMetricsRecorder | undefined;
   readonly #signal: AbortSignal;
@@ -41,8 +39,8 @@ export class LiminaPreflightManager {
   #generation = 0;
   #providerGeneration = 0;
   readonly #usesCustomProviders: boolean;
-  readonly #analysisCache: AnalysisCacheController | undefined;
-  readonly #configuration: ConfigObservation | undefined;
+  #analysisCache: AnalysisCacheController | undefined;
+  readonly #configuration: { assertStable(): void };
   #disposed = false;
   artifactNamespace: LiminaArtifactNamespace;
   readonly config: ResolvedLiminaConfig;
@@ -60,7 +58,7 @@ export class LiminaPreflightManager {
       options,
       this.artifactNamespace,
     );
-    this.#configuration = setup.observeUncachedConfig(
+    this.#configuration = setup.observeExecutionConfig(
       options,
       this.#analysisCache,
     );
@@ -74,7 +72,6 @@ export class LiminaPreflightManager {
       this.#replaceProviderGeneration(true),
     );
   }
-
   #ensureCheckerRouteSnapshot(): Promise<CheckerRoutes.CheckerRouteSnapshotCollection> {
     this.#cache.checkerRouteSnapshot ??= queries.loadCheckerRouteSnapshot(
       this.config,
@@ -83,24 +80,21 @@ export class LiminaPreflightManager {
     );
     return this.#cache.checkerRouteSnapshot;
   }
-
   #assertDefaultProvidersCanAdvance(): void {
     if (!this.#usesCustomProviders) return;
     throw new Error(
       'Custom analysis providers support generation 0 only and cannot advance.',
     );
   }
-
   #refreshProviderGenerationForMaterialization(): void {
     this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
   }
-
   #replaceProviderGeneration(
     isAdvance: boolean,
     slot?: PreflightGenerationCache['materializationSlot'],
   ): void {
     this.#assertActive();
-    this.#configuration?.assertStable();
+    this.#configuration.assertStable();
     this.#assertDefaultProvidersCanAdvance();
     this.#disposeProviders();
     const analysisCache = this.#refreshAnalysis();
@@ -119,20 +113,16 @@ export class LiminaPreflightManager {
     );
     this.run = this.#createRun();
   }
-
   #disposeProviders(): void {
     this.providers.dispose?.();
   }
-
   #assertActive(): void {
     if (this.#disposed) throw new Error('Preflight manager has been disposed.');
   }
-
   #refreshAnalysis() {
     this.#analysisCache?.refresh();
     return this.#analysisCache?.cache;
   }
-
   #createRun(): AnalysisRun {
     return setup.createPreflightRun({
       generation: this.#generation,
@@ -142,32 +132,65 @@ export class LiminaPreflightManager {
       signal: this.#signal,
     });
   }
-
   #retryAnalysis(): void {
     const pending = this.#cache.generatedGraph;
     this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
     this.#cache.generatedGraph = pending;
   }
-
   get profilingMetrics(): AnalysisMetricsRecorder | undefined {
     return this.#profilingMetrics;
   }
-
+  async refreshAfterManagedOutputs(): Promise<MaterializationReceipt> {
+    this.assertExecutionConfigurationStable();
+    this.#assertDefaultProvidersCanAdvance();
+    const pending = new LiminaPreflightManager(
+      setup.managedRefreshOptions(
+        {
+          config: this.config,
+          metrics: this.#profilingMetrics,
+          signal: this.#signal,
+        },
+        this.#providerGeneration + 1,
+      ),
+    );
+    pending.#generation = this.#generation;
+    pending.#providerGeneration = this.#providerGeneration + 1;
+    pending.run = pending.#createRun();
+    try {
+      const receipt = await pending.ensureGeneratedArtifactsMaterialized();
+      this.assertExecutionConfigurationStable();
+      // Publish one execution view only after its graph and artifacts are ready.
+      this.#disposeProviders();
+      this.#cache = pending.#cache;
+      this.providers = pending.providers;
+      this.artifactNamespace = pending.artifactNamespace;
+      this.#providerGeneration = pending.#providerGeneration;
+      this.run = pending.run;
+      // A handoff is recollected independently; the preceding epoch cannot publish it.
+      this.#analysisCache = undefined;
+      return receipt;
+    } catch (error) {
+      pending.dispose();
+      throw error;
+    }
+  }
+  assertExecutionConfigurationStable(): void {
+    this.#assertActive();
+    this.#signal.throwIfAborted();
+    this.#configuration.assertStable();
+  }
   async publishAnalysisCache(): Promise<void> {
     this.#signal.throwIfAborted();
-    this.#configuration?.assertStable();
+    this.#configuration.assertStable();
     await this.#analysisCache?.publish();
   }
-
   dispose(): void {
     if (this.#disposed) {
       return;
     }
-
     this.#disposed = true;
     this.providers.dispose?.();
   }
-
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
     this.#cache.generatedGraph ??= queries.loadAnalyzedGraph({
       cache: this.#analysisCache,
@@ -178,13 +201,11 @@ export class LiminaPreflightManager {
     });
     return this.#cache.generatedGraph;
   }
-
   ensureWorkspaceValidated(): Promise<ValidatedWorkspace.ValidatedWorkspaceContext> {
     this.#cache.validatedWorkspaceContext ??=
       this.providers.workspace.getValidatedContext();
     return this.#cache.validatedWorkspaceContext;
   }
-
   ensureGeneratedArtifactsMaterialized(): Promise<MaterializationReceipt> {
     return ensurePreflightGraphMaterialized({
       getCurrentSlot: () => this.#cache.materializationSlot,
@@ -194,39 +215,32 @@ export class LiminaPreflightManager {
       source: this,
     });
   }
-
   ensureWorkspacePackages(): Promise<Workspace.WorkspacePackage[]> {
     this.#cache.workspacePackages ??= queries.loadWorkspacePackages(
       this.ensureWorkspaceValidated(),
     );
     return this.#cache.workspacePackages;
   }
-
   ensureRawWorkspacePackages(): Promise<Workspace.WorkspacePackage[]> {
     this.#cache.rawWorkspacePackages ??=
       this.providers.workspace.getRawPackages();
     return this.#cache.rawWorkspacePackages;
   }
-
   ensurePackageOwners(): Promise<Workspace.PackageOwner[]> {
     this.#cache.packageOwners ??= this.providers.workspace.getPackageOwners();
     return this.#cache.packageOwners;
   }
-
   ensureImporters(): Promise<Workspace.ImporterInfo[]> {
     this.#cache.importers ??= this.providers.workspace.getImporters();
     return this.#cache.importers;
   }
-
   ensureWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex> {
     this.#cache.workspaceLookup ??= this.providers.workspace.getLookupIndex();
     return this.#cache.workspaceLookup;
   }
-
   ensureWorkspacePathIndex(): Promise<ValidatedWorkspace.WorkspaceRegionPathIndex> {
     return this.providers.workspace.getPathIndex();
   }
-
   ensureWorkspaceDependencyDeclarations(): Promise<
     WorkspaceDependencyDeclaration[]
   > {
@@ -234,13 +248,11 @@ export class LiminaPreflightManager {
       this.providers.workspace.getWorkspaceDependencyDeclarations();
     return this.#cache.workspaceDependencies;
   }
-
   ensureWorkspaceRegionBoundaries(): Promise<WorkspaceRegionBoundary[]> {
     this.#cache.workspaceRegionBoundaries ??=
       this.providers.workspace.getRegionBoundaries();
     return this.#cache.workspaceRegionBoundaries;
   }
-
   async ensureSourceGraphProjectExtensions(): Promise<CheckerRoutes.CollectSourceGraphProjectExtensionsResult> {
     this.#cache.sourceGraphProjectExtensions ??=
       queries.loadSourceGraphProjectExtensions(
@@ -252,7 +264,6 @@ export class LiminaPreflightManager {
       );
     return this.#cache.sourceGraphProjectExtensions;
   }
-
   async ensureGraphProjectRoutes(): Promise<CheckerRoutes.CollectCheckerGraphProjectRoutesResult> {
     this.#cache.graphProjectRoutes ??= queries.loadGraphProjectRoutes(
       this.config,
@@ -260,7 +271,6 @@ export class LiminaPreflightManager {
     );
     return this.#cache.graphProjectRoutes;
   }
-
   async ensureCheckerEntryProjectRoutes(): Promise<CheckerRoutes.CollectCheckerGraphProjectRoutesResult> {
     this.#cache.checkerEntryProjectRoutes ??=
       queries.loadCheckerEntryProjectRoutes(
@@ -269,7 +279,6 @@ export class LiminaPreflightManager {
       );
     return this.#cache.checkerEntryProjectRoutes;
   }
-
   ensureExpectedSourceFiles(): Promise<Set<string>> {
     this.#cache.expectedSourceFiles ??= queries.loadExpectedSourceFiles(
       this.config,
@@ -280,13 +289,11 @@ export class LiminaPreflightManager {
     );
     return this.#cache.expectedSourceFiles;
   }
-
   async ensurePackageEntrySelectionPlan(
     options: PackageEntryPlanOptions,
   ): Promise<PackageEntrySelectionPlan> {
     return queries.loadPackageEntrySelectionPlan(this, options);
   }
-
   get importAnalysis(): ImportAnalysisContext {
     return this.providers.imports.context;
   }

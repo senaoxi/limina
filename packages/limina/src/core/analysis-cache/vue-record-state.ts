@@ -7,6 +7,7 @@ import { observeTypeEnvironment } from './installation-environment';
 import type { NativeAnalysisCache } from './native-cache';
 import { retainData } from './snapshot-records';
 import type { VueContextRecord, VueQueryRecord } from './vue-contracts';
+import { bindVueExecutionInputs } from './vue-execution-inputs';
 import { VUE_ANALYSIS_ADAPTER, vueDataIdentity } from './vue-identity';
 import { VueInputTrace } from './vue-inputs';
 import { observeVueTools } from './vue-toolchain-inputs';
@@ -49,6 +50,11 @@ export class VueRecordState {
     this.trace = new VueInputTrace(cache.inputs, identity);
     this.queries = { ...previous?.queries };
     if (previous !== undefined) this.#inherit(previous);
+    bindVueExecutionInputs(
+      identity,
+      cache.inputs,
+      this.trace.dependencies.values(),
+    );
   }
 
   #inherit(previous: VueContextRecord): void {

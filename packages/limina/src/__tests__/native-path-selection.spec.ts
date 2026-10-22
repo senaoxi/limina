@@ -317,11 +317,7 @@ describe('path selection survives physical truncation', () => {
               obligation.requestIds.includes(ghost!.id),
             )!.existence.state,
           ).toBe('unknown');
-          assertPathAdmission(
-            adapter.snapshot,
-            project.configPath,
-            'unavailable',
-          );
+          assertPathAdmission(adapter.snapshot, project.configPath, 'denied');
           assertPathAdmission(
             adapter.snapshot,
             fixture.path('tsconfig.ghost.json'),
@@ -374,7 +370,7 @@ function compilerWithoutReferenceMap(): typeof ts {
 function assertPathAdmission(
   snapshot: NativeEvidenceSnapshot,
   candidate: string,
-  state: 'unavailable' | 'admitted',
+  state: 'unavailable' | 'denied' | 'admitted',
 ): void {
   const caches = createProjectDependencyCaches();
   const references = snapshot.obligations
@@ -402,6 +398,9 @@ function assertPathAdmission(
     diagnostics: [],
     candidate: { configPaths, references, schedules: [] },
   };
+  // Endpoints alone do not bind a current Checker/config projection. A mixture
+  // with required obligations is denied even while the raw unknown survives.
+  const original = JSON.stringify(snapshot);
   retainNativeAnalysis(analysis, snapshot);
   finishAnalysisOutcome(analysis, caches, {
     scope: 'generated-graph',
@@ -410,4 +409,11 @@ function assertPathAdmission(
   });
   expect(analysis.outcome!.execution).toBe('completed');
   expect(analysis.outcome!.buildAdmission.state).toBe(state);
+  expect(JSON.stringify(snapshot)).toBe(original);
+  if (state === 'denied')
+    expect(analysis.outcome!.buildAdmission.reasons).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Unsatisfied compilation obligation:'),
+      ]),
+    );
 }

@@ -8,6 +8,7 @@ import path from 'node:path';
 import type ts from 'typescript';
 import { createVueOverlaySystem } from '../../checker/vue-semantic-identity';
 import { createUnsupportedVueToolchainCompatibilityError } from '../../checker/vue-semantic-toolchain';
+import { observeVueExecutionSystem } from '../analysis-cache/vue-execution-inputs';
 import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
@@ -184,7 +185,7 @@ export class VueSemanticContext {
       tsModule: this.tsModule,
       virtualFiles: identity.virtualFiles,
     });
-    this.sys = analysisTrace === undefined ? sys : analysisTrace.system(sys);
+    this.sys = observeVueExecutionSystem(identity, sys, analysisTrace);
     const plugin = identity.toolchain.languageCore.createVueLanguagePlugin(
       this.tsModule,
       identity.options,

@@ -1,6 +1,7 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
+import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
 import {
   getResolutionOrigin,
   resolveModuleWithOrigin,
@@ -20,7 +21,10 @@ function getVirtualSource(
 export function createSvelteResolutionHost(
   tsModule: typeof ts,
 ): ts.ModuleResolutionHost {
-  const host = tsModule.sys;
+  const host = {
+    ...observedResolutionHost(tsModule, tsModule.sys.getCurrentDirectory()),
+    getCurrentDirectory: tsModule.sys.getCurrentDirectory,
+  };
   return {
     ...host,
     fileExists: (fileName) =>

@@ -38,6 +38,10 @@ function stripAnsi(value: string): string {
   return value.replaceAll(ANSI_PATTERN, '');
 }
 
+function unwrapReport(value: string): string {
+  return value.replaceAll(/\s*│\s*/gu, ' ').replaceAll(/\s+/gu, ' ');
+}
+
 async function captureIssueInventory(options: {
   cwd?: string;
   flags: CheckFlags;
@@ -1618,7 +1622,9 @@ export default {scope: {checkers: {
         rootDir,
       });
 
-      expect(output).toContain('outside its authenticated authority');
+      expect(unwrapReport(output)).toContain(
+        'outside its authenticated authority',
+      );
       await expect(
         readFile(path.join(rootDir, 'tsc-args.txt')),
       ).rejects.toMatchObject({
@@ -1773,7 +1779,7 @@ export default {scope: {checkers: {
           rootDir,
         });
 
-        expect(output).toContain('symbolic link or junction');
+        expect(unwrapReport(output)).toContain('symbolic link or junction');
         await expect(
           readFile(path.join(rootDir, 'tsc-args.txt')),
         ).rejects.toMatchObject({
@@ -1807,7 +1813,7 @@ export default {scope: {checkers: {
           rootDir,
         });
 
-        expect(output).toContain('symbolic link or junction');
+        expect(unwrapReport(output)).toContain('symbolic link or junction');
         await expect(
           readFile(path.join(rootDir, 'tsc-args.txt')),
         ).rejects.toMatchObject({
@@ -1840,7 +1846,7 @@ export default {scope: {checkers: {
         rootDir,
       });
 
-      expect(output).toContain('symbolic link or junction');
+      expect(unwrapReport(output)).toContain('symbolic link or junction');
       await expect(
         readFile(path.join(rootDir, 'tsc-args.txt')),
       ).rejects.toMatchObject({

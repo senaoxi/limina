@@ -32,6 +32,52 @@ function expectCold(run: VueCacheRun) {
 // Each case starts multiple real compiler processes. Keep room for Windows
 // startup and cold analysis while retaining the warm/forced-cold controls.
 describe('persistent Vue and mixed graph analysis', () => {
+  it.each(['graph-hit', 'graph-fallback'] as const)(
+    'replays restored declaration inputs before Vue execution after %s',
+    (mode) => {
+      const f = fixture();
+      f.write('vue/dist/input.d.ts', 'export declare const value:number;');
+      f.write(
+        'vue/src/index.ts',
+        'import {value} from "../dist/input.js"; export const result:number=value;',
+      );
+      expectCold(f.run());
+      if (mode === 'graph-fallback') {
+        const snapshot = f.snapshot();
+        const record = Object.values(snapshot.graphs)[0]!;
+        const data = snapshotCodec.decodeData(record.data) as StoredGraphData;
+        const [entry, content] = [...data.generatedFiles].find(([file]) =>
+          file.endsWith('/checkers/vue-tsc/tsconfig.build.json'),
+        )!;
+        data.generatedFiles = new Map(data.generatedFiles).set(
+          entry,
+          JSON.stringify({ ...JSON.parse(content), references: [] }),
+        );
+        record.data = snapshotCodec.encodeData(data);
+        f.writeSnapshot(snapshot);
+      }
+      const warm = f.run({
+        executionDrift: {
+          path: f.path('vue/dist/input.d.ts'),
+          content: 'export declare const value:string;',
+        },
+      });
+      if (mode === 'graph-hit') expectRestored(warm);
+      else {
+        expect(warm.passed).toBe(true);
+        expect(warm.vuePrograms).toBe(0);
+        expect(cacheMetric(warm, 'restoredVueContexts')).toBeGreaterThan(0);
+        expect(cacheMetric(warm, 'graphHits')).toBe(0);
+        expect(cacheMetric(warm, 'graphBuilds')).toBeGreaterThan(0);
+      }
+      expect(warm.execution).toEqual({
+        before: 0,
+        after: 'admission-rejected',
+        starts: 1,
+      });
+    },
+  );
+
   it('restores before analysis Programs, rebinds current runtime identities and materializes missing artifacts', () => {
     const f = fixture();
     const cold = f.run();

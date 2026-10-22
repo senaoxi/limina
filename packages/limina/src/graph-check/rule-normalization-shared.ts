@@ -11,7 +11,9 @@ export interface NormalizationState extends NormalizedGraphRules {
   config: ResolvedLiminaConfig;
   findings: GraphFinding[];
   include: GraphRuleKindSelection | undefined;
-  projectPathAliases: Map<string, string> | undefined;
+  projectPathAliases:
+    | ReadonlyMap<string, string | readonly string[]>
+    | undefined;
   projectPathSet: Set<string>;
 }
 

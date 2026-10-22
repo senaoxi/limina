@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { ExecutionAdmissionRejection } from './admission/types';
 
 import type { CheckerDependencyRequirement } from '#checkers';
 import type { CheckerExecutionKind } from '#config/runner';
@@ -57,6 +58,7 @@ export type TypecheckRunnerResult = Omit<
   Partial<Pick<TypecheckTargetResult, 'durationMs' | 'id'>>;
 
 export type CheckerTargetOutcome =
+  | ExecutionAdmissionRejection
   | {
       durationMs: number;
       id: CheckerTargetId;
@@ -117,3 +119,8 @@ export function toCheckerTargetOutcome(
     ? createCompletedOutcome(result)
     : { blockedBy: result.blockedBy, id: result.id, status: 'blocked' };
 }
+
+export type BuildTargetCompletion =
+  | TypecheckTargetResult
+  | ExecutionAdmissionRejection
+  | Extract<CheckerTargetOutcome, { status: 'blocked' }>;

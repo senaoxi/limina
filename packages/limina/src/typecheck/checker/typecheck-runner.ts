@@ -1,15 +1,15 @@
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
-import { withMaterializedPlanReadLease } from '../../core/build-graph/materialization-read-lease';
 import { resolveCheckerTypecheckConcurrency } from '../../execution/config';
 import { runPool } from '../../execution/pool';
 import type { TaskProgressItem } from '../../execution/progress';
 import type { LiminaFlowTask } from '../../flow';
 import { TypecheckLogger } from '../../logger';
 import { resolvePreflight } from '../../preflight';
+import { ExecutionAdmission } from '../admission/execution-admission';
+import { rejectedBeforeLaunch } from '../admission/reporting';
 import {
-  collectFailedCheckerTargets,
   completeCheckerTargetTask,
   createPlannedCheckerTargetTasks,
   getCheckerTargetFlowLabel,
@@ -20,19 +20,20 @@ import type {
   RunCheckerTypecheckOptions,
   RunCheckerTypecheckResult,
 } from '../runner-types';
+import type { BuildTargetCompletion } from '../target-types';
 import {
   type CheckerTargetId,
   createCheckerTarget,
   createFrameworkCheckerTargets,
   getExecutionCheckers,
-  runTargetWithMeasuredDuration,
   type TypecheckTarget,
   type TypecheckTargetResult,
 } from '../targets';
+import { executeAuthorizedTypecheck } from './typecheck-execution';
 import { collectTypecheckPeerFailure } from './typecheck-preflight';
 import {
   createNoTypecheckCheckerResult,
-  reportTypecheckResult,
+  createTypecheckExecutionResult,
 } from './typecheck-reporting';
 
 type CheckerFlowTask = LiminaFlowTask | TaskProgressItem;
@@ -176,9 +177,10 @@ function normalizeTargetError(
 }
 
 async function executeTypecheckTargets(options: {
+  admission: ExecutionAdmission;
   context: CheckerTypecheckContext;
   targets: readonly TypecheckTarget[];
-}): Promise<TypecheckTargetResult[]> {
+}): Promise<BuildTargetCompletion[]> {
   const tasks: Map<CheckerTargetId, CheckerFlowTask> = new Map(
     createPlannedCheckerTargetTasks({
       prefix: 'checker typecheck',
@@ -188,20 +190,31 @@ async function executeTypecheckTargets(options: {
     }),
   );
   const runner = resolveTypecheckRunner(options.context.options);
-  return runPool<TypecheckTarget, TypecheckTargetResult>({
+  return runPool<TypecheckTarget, BuildTargetCompletion>({
     concurrency: resolveCheckerTypecheckConcurrency({
       config: options.context.options.config,
       itemCount: options.targets.length,
     }),
     items: options.targets,
     onError: normalizeTargetError,
-    onResult: (target, result) => completeTargetTask({ result, target, tasks }),
+    onResult: (target, result) => {
+      if (typeof result.status === 'number')
+        completeTargetTask({ result, target, tasks });
+      else tasks.get(target.id)?.fail();
+    },
     run: async (target) => {
-      startTargetTask({ context: options.context, target, tasks });
-      return runTargetWithMeasuredDuration(
-        runner,
+      try {
+        startTargetTask({ context: options.context, target, tasks });
+      } catch (error) {
+        return rejectedBeforeLaunch(target, error);
+      }
+      return executeAuthorizedTypecheck(
+        {
+          admission: options.admission,
+          signal: options.context.options.signal,
+        },
         target,
-        options.context.options.signal,
+        runner,
       );
     },
   });
@@ -234,25 +247,23 @@ async function runConfiguredTypecheck(
     context,
     generatedGraph: receipt.graph,
   });
-  return withMaterializedPlanReadLease(
-    preflight.artifactNamespace,
-    receipt.graph.artifactPlan,
-    async () => {
-      if (targets.length === 0) {
-        return createNoTypecheckCheckerResult({
-          flowDepth: context.flowDepth,
-          projectRootDir: context.projectRootDir,
-          request: context.options,
-        });
-      }
-      return runMaterializedTypecheck(context, targets);
-    },
+  if (targets.length === 0)
+    return createNoTypecheckCheckerResult({
+      flowDepth: context.flowDepth,
+      projectRootDir: context.projectRootDir,
+      request: context.options,
+    });
+  return runMaterializedTypecheck(
+    context,
+    targets,
+    new ExecutionAdmission(preflight, receipt.graph, targets),
   );
 }
 
 async function runMaterializedTypecheck(
   context: CheckerTypecheckContext,
   targets: TypecheckTarget[],
+  admission: ExecutionAdmission,
 ): Promise<RunCheckerTypecheckResult> {
   const peerFailure = collectTypecheckPeerFailure({
     checkerPackageResolver: context.options.checkerPackageResolver,
@@ -264,22 +275,18 @@ async function runMaterializedTypecheck(
   });
   if (peerFailure !== undefined) return peerFailure;
   logTypecheckStart({ context, targets });
-  const results = await executeTypecheckTargets({ context, targets });
-  const failedResults = results.filter((result) => result.status !== 0);
-  reportTypecheckResult({
-    failedResults,
-    projectRootDir: context.projectRootDir,
-    request: context.options,
-    targetCount: targets.length,
+  const completions = await executeTypecheckTargets({
+    context,
+    targets,
+    admission,
   });
-  return {
-    disabled: false,
-    failedTargets: collectFailedCheckerTargets(targets, failedResults),
-    passed: failedResults.length === 0,
+  return createTypecheckExecutionResult({
+    completions,
+    targets,
+    request: context.options,
     projectRootDir: context.projectRootDir,
     rootConfigPaths: context.rootConfigPaths,
-    targetResults: results,
-  };
+  });
 }
 
 export async function runCheckerTypecheckImpl(

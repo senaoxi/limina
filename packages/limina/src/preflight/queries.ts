@@ -99,7 +99,7 @@ export async function loadPackageEntrySelectionPlan(
 }
 
 async function analyzeWithoutCache<T>(
-  observation: ConfigObservation | undefined,
+  observation: Pick<ConfigObservation, 'assertStable'> | undefined,
   analyze: () => Promise<T>,
 ): Promise<T> {
   observation?.assertStable();
@@ -110,7 +110,7 @@ async function analyzeWithoutCache<T>(
 
 export function loadAnalyzedGraph(options: {
   cache: AnalysisCacheController | undefined;
-  configObservation?: ConfigObservation;
+  configObservation?: Pick<ConfigObservation, 'assertStable'>;
   source: Pick<
     LiminaPreflightManager,
     'ensureWorkspaceValidated' | 'providers'

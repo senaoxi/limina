@@ -185,6 +185,7 @@ interface LeafClosureState {
   leafPaths: Set<string>;
   queue: string[];
   seen: Set<string>;
+  references: { from: string; to: string }[];
 }
 
 function addConfigDependencies(
@@ -216,7 +217,7 @@ function visitConfig(
   const proof = parseConfigWithDependencyProof(configPath);
   addConfigDependencies(state, proof.configDependencies);
   if (classifications.has(configPath)) state.leafPaths.add(configPath);
-  enqueueReferences(state, proof.parsed.projectReferences);
+  recordReferences(state, configPath, proof.parsed.projectReferences);
 }
 
 export function collectTargetLeafConfigs(options: {
@@ -224,6 +225,8 @@ export function collectTargetLeafConfigs(options: {
   rootConfigPath: string;
 }): {
   dependencies: ConfigDependencyIdentity[];
+  configPaths: string[];
+  references: { from: string; to: string }[];
   leafPaths: string[];
 } {
   const state: LeafClosureState = {
@@ -231,6 +234,7 @@ export function collectTargetLeafConfigs(options: {
     leafPaths: new Set(),
     queue: [normalizeAbsolutePath(options.rootConfigPath)],
     seen: new Set(),
+    references: [],
   };
   while (state.queue.length > 0) {
     const configPath = state.queue.shift();
@@ -239,10 +243,30 @@ export function collectTargetLeafConfigs(options: {
     }
   }
   return {
+    configPaths: [...state.seen],
+    references: state.references,
     dependencies: state.dependencies
       .values()
       .toArray()
       .sort((left, right) => compareCodeUnits(left.path, right.path)),
     leafPaths: [...state.leafPaths].sort(compareCodeUnits),
   };
+}
+
+function recordReferences(
+  state: LeafClosureState,
+  configPath: string,
+  references: readonly ts.ProjectReference[] | undefined,
+): void {
+  const resolved = (references ?? []).map((reference) => ({
+    ...reference,
+    path: ts.resolveProjectReferencePath(reference),
+  }));
+  state.references.push(
+    ...resolved.map((reference) => ({
+      from: configPath,
+      to: normalizeAbsolutePath(reference.path),
+    })),
+  );
+  enqueueReferences(state, resolved);
 }

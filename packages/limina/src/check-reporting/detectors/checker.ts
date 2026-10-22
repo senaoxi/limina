@@ -3,6 +3,28 @@ import { FALLBACK_CONTRACT_TEST, FAULT_FIXTURE_TEST } from './shared';
 import type { PartialDetectorCoverageRegistry } from './types';
 
 export const CHECKER_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
+  [LIMINA_CHECK_ISSUE_CODES.checkerBuildAdmissionRejected]: {
+    kind: 'fixture',
+    producers: [
+      'packages/limina/src/commands/checker-failure-issues.ts#createCheckerFailureIssues',
+    ],
+    task: 'checker:build',
+    tests: [
+      'packages/limina/fixtures/detectors/checker/admission-denied-reference/case.mts',
+      'packages/limina/integration/tests/detector-fixtures-core.spec.ts',
+      'packages/limina/src/__tests__/execution-admission.spec.ts',
+    ],
+  },
+  [LIMINA_CHECK_ISSUE_CODES.checkerTypecheckAdmissionRejected]: {
+    kind: 'unit',
+    producers: [
+      'packages/limina/src/commands/checker-failure-issues.ts#createCheckerFailureIssues',
+    ],
+    reason:
+      'The framework runner test supplies a graph without current execution observations and exercises pre-launch refusal and reporting; missing runtime receipts cannot be represented by a static filesystem fixture.',
+    task: 'checker:typecheck',
+    tests: ['packages/limina/src/__tests__/framework-targets.spec.ts'],
+  },
   [LIMINA_CHECK_ISSUE_CODES.checkerBuildFailed]: {
     kind: 'fault-injection',
     producers: [

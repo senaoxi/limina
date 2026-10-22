@@ -1,6 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedDependencyEdge } from '#core/build-graph/runner';
 import type {
+  BuildTargetCompletion,
   CheckerTargetId,
   TypecheckRunner,
   TypecheckTarget,
@@ -10,8 +11,13 @@ import type { BuildDependencyPlan } from './dependency-plan';
 import { createBuildDependencyPlan } from './dependency-plan';
 
 export interface RunBuildTargetsOptions {
-  beforeLayerRun?: (targets: readonly TypecheckTarget[]) => Promise<void>;
-  beforeTargetRun?: (target: TypecheckTarget) => Promise<void>;
+  executionPrerequisites?: GeneratedDependencyEdge[];
+  isDeliveryComplete?: (id: CheckerTargetId) => boolean;
+  executeTarget?: (target: TypecheckTarget) => Promise<BuildTargetCompletion>;
+  onTargetOutcome?: (
+    target: TypecheckTarget,
+    result: BuildTargetCompletion,
+  ) => void;
   config: ResolvedLiminaConfig;
   onTargetResult?: (
     target: TypecheckTarget,
@@ -30,9 +36,8 @@ export type RunBuildTargetsArguments = [
 
 export interface BuildRunState {
   buildPlan: BuildDependencyPlan;
-  failureRootsByComponentIndex: Map<number, readonly CheckerTargetId[]>;
   options: RunBuildTargetsOptions;
-  resultsByTargetId: Map<CheckerTargetId, TypecheckTargetResult>;
+  resultsByTargetId: Map<CheckerTargetId, BuildTargetCompletion>;
   runner: TypecheckRunner;
   stableRoots: (roots: Iterable<CheckerTargetId>) => CheckerTargetId[];
 }
@@ -54,10 +59,15 @@ function resolveBuildPlan(options: {
   dependencyEdges: GeneratedDependencyEdge[];
   targets: TypecheckTarget[];
   watch: boolean | undefined;
+  executionPrerequisites?: GeneratedDependencyEdge[];
 }): BuildDependencyPlan {
   return options.watch === true
     ? createWatchBuildPlan(options.targets)
-    : createBuildDependencyPlan(options.targets, options.dependencyEdges);
+    : createBuildDependencyPlan(
+        options.targets,
+        options.dependencyEdges,
+        options.executionPrerequisites,
+      );
 }
 
 function getTargetOrder(
@@ -91,103 +101,73 @@ export function getComponentTargets(
   return targets === undefined ? [] : targets;
 }
 
-function getComponentDependencies(
-  buildPlan: BuildDependencyPlan,
-  componentIndex: number,
-): readonly number[] {
-  const dependencies =
-    buildPlan.dependenciesByComponentIndex.get(componentIndex);
-  return dependencies === undefined ? [] : [...dependencies];
-}
-
 function collectUpstreamRoots(
   state: BuildRunState,
-  componentIndex: number,
+  target: TypecheckTarget,
 ): CheckerTargetId[] {
-  const roots = getComponentDependencies(
-    state.buildPlan,
-    componentIndex,
-  ).flatMap(
-    (dependencyIndex) =>
-      state.failureRootsByComponentIndex.get(dependencyIndex) ?? [],
+  const prerequisites =
+    state.buildPlan.executionDependenciesByTargetId?.get(target.id) ?? [];
+  return state.stableRoots(
+    prerequisites.flatMap((id) =>
+      state.options.isDeliveryComplete?.(id) === false
+        ? [id]
+        : failureRoots(state.resultsByTargetId.get(id)),
+    ),
   );
-  return state.stableRoots(roots);
+}
+function failureRoots(
+  result: BuildTargetCompletion | undefined,
+): readonly CheckerTargetId[] {
+  return result === undefined ? [] : failedRoots(result);
+}
+function failedRoots(
+  result: BuildTargetCompletion,
+): readonly CheckerTargetId[] {
+  if (result.status === 0) return [];
+  return result.status === 'blocked' ? result.blockedBy : [result.id];
 }
 
 export function emitTargetResult(
   options: RunBuildTargetsOptions,
   target: TypecheckTarget,
-  result: TypecheckTargetResult,
+  result: BuildTargetCompletion,
 ): void {
-  if (options.onTargetResult !== undefined) {
-    options.onTargetResult(target, result);
-  }
+  emitNonProcessOutcome(options, target, result);
+  if (typeof result.status !== 'number') return;
+  options.onTargetResult?.(target, result);
 }
 
 function createBlockedResult(
   target: TypecheckTarget,
   blockedBy: readonly CheckerTargetId[],
-): TypecheckTargetResult {
-  return {
-    blockedBy,
-    configPath: target.configPath,
-    durationMs: 0,
-    id: target.id,
-    status: 1,
-  };
+): BuildTargetCompletion {
+  return { blockedBy, id: target.id, status: 'blocked' };
 }
 
-function blockComponent(options: {
-  componentIndex: number;
-  componentTargets: readonly TypecheckTarget[];
-  state: BuildRunState;
-  upstreamRoots: readonly CheckerTargetId[];
-}): void {
-  options.state.failureRootsByComponentIndex.set(
-    options.componentIndex,
-    options.upstreamRoots,
-  );
-
-  for (const target of options.componentTargets) {
-    const result = createBlockedResult(target, options.upstreamRoots);
-    options.state.resultsByTargetId.set(target.id, result);
-    emitTargetResult(options.state.options, target, result);
+function classifyTarget(
+  state: BuildRunState,
+  target: TypecheckTarget,
+  layer: RunnableLayer,
+): void {
+  const roots = collectUpstreamRoots(state, target);
+  if (roots.length === 0 || state.options.watch === true) {
+    layer.targets.push(target);
+    return;
   }
+  const result = createBlockedResult(target, roots);
+  state.resultsByTargetId.set(target.id, result);
+  emitTargetResult(state.options, target, result);
 }
-
-function isRunnableComponent(
-  upstreamRoots: readonly CheckerTargetId[],
-  watch: boolean | undefined,
-): boolean {
-  return [upstreamRoots.length === 0, watch === true].some(Boolean);
-}
-
 function classifyComponent(options: {
   componentIndex: number;
   runnableLayer: RunnableLayer;
   state: BuildRunState;
 }): void {
-  const componentTargets = getComponentTargets(
+  for (const target of getComponentTargets(
     options.state.buildPlan,
     options.componentIndex,
-  );
-  const upstreamRoots = collectUpstreamRoots(
-    options.state,
-    options.componentIndex,
-  );
-
-  if (isRunnableComponent(upstreamRoots, options.state.options.watch)) {
-    options.runnableLayer.componentIndexes.push(options.componentIndex);
-    options.runnableLayer.targets.push(...componentTargets);
-    return;
-  }
-
-  blockComponent({
-    componentIndex: options.componentIndex,
-    componentTargets,
-    state: options.state,
-    upstreamRoots,
-  });
+  ))
+    classifyTarget(options.state, target, options.runnableLayer);
 }
 
 export function createRunnableLayer(
@@ -231,11 +211,19 @@ export function createBuildRunState(options: {
       dependencyEdges: options.dependencyEdges,
       targets: options.targets,
       watch: options.runOptions.watch,
+      executionPrerequisites: options.runOptions.executionPrerequisites,
     }),
-    failureRootsByComponentIndex: new Map(),
     options: options.runOptions,
     resultsByTargetId: new Map(),
     runner: options.runner,
     stableRoots: createStableRootSorter(options.targets),
   };
+}
+
+function emitNonProcessOutcome(
+  options: RunBuildTargetsOptions,
+  target: TypecheckTarget,
+  result: BuildTargetCompletion,
+): void {
+  options.onTargetOutcome?.(target, result);
 }
