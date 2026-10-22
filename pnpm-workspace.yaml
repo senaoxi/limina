@@ -17,6 +17,11 @@ auditConfig:
     - GHSA-4w7w-66w2-5vf9
     - GHSA-fx2h-pf6j-xcff
     - GHSA-v6wh-96g9-6wx3
+    - GHSA-587h-7wmj-h5pm
+    - GHSA-698v-4r3x-3vcv
+    - GHSA-r825-w8mm-5pxw
+    - GHSA-rq7h-c2jc-7f22
+    - GHSA-9jrq-w75r-8gcw
 
     # Intentionally keep Svelte 4.0.0 as the minimum-version compatibility
     # fixture. Raising it would reduce the Svelte 4 compatibility range tested.
@@ -142,7 +147,7 @@ catalogs:
   test:
     execa: 9.6.1
     globals: ^17.12.0
-    vitest: 4.1.11
+    vitest: 4.1.12
     astro-v7-current: npm:astro@7.3.2
     astro-v7-min: npm:astro@7.0.0
     svelte-check-v4-min: npm:svelte-check@4.0.0
