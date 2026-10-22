@@ -33,6 +33,7 @@ export {
   checkerTargetId,
   createCheckerTargetId,
   toCheckerTargetOutcome,
+  type BuildTargetCompletion,
   type CheckerTargetId,
   type CheckerTargetOutcome,
   type TypecheckRunner,

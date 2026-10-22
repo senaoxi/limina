@@ -122,11 +122,9 @@ function createTargetReason(
   target: CheckerFailureTarget,
   message: string | undefined,
 ): string {
-  const checkerReason =
-    target.checkerName === undefined
-      ? 'Checker target failed.'
-      : `Checker "${target.checkerName}" failed.`;
-  const reasons = [checkerReason, `Exit code: ${target.exitCode}.`];
+  const reasons = [targetReason(target)];
+  if (target.exitCode !== undefined)
+    reasons.push(`Exit code: ${target.exitCode}.`);
 
   if (message !== undefined) {
     reasons.push(`Error: ${message}.`);
@@ -140,7 +138,10 @@ function createTargetEvidence(
   message: string | undefined,
 ): LiminaCheckIssue['evidence'] {
   const evidence: NonNullable<LiminaCheckIssue['evidence']> = [
-    { label: 'exit code', value: String(target.exitCode) },
+    ...createAdmissionEvidence(target),
+    ...(target.exitCode === undefined
+      ? []
+      : [{ label: 'exit code', value: String(target.exitCode) }]),
   ];
 
   if (message !== undefined) {
@@ -150,6 +151,25 @@ function createTargetEvidence(
   return evidence;
 }
 
+function createAdmissionEvidence(
+  target: CheckerFailureTarget,
+): NonNullable<LiminaCheckIssue['evidence']> {
+  const admission = target.admission;
+  return admission === undefined
+    ? []
+    : [
+        { label: 'execution decision', value: admission.decision },
+        { label: 'execution stage', value: admission.stage },
+        { label: 'execution target', value: admission.id },
+        {
+          label: 'execution diagnostics',
+          lines: admission.diagnostics.map(
+            (item) => `${item.code}: ${item.message}`,
+          ),
+        },
+      ];
+}
+
 function createTargetFailureIssue(
   target: CheckerFailureTarget,
   options: CheckerFailureIssueOptions,
@@ -157,7 +177,10 @@ function createTargetFailureIssue(
   const message = getTargetMessage(target, options.hideExecutionDetails);
   return createTaskFailureIssue({
     checkerName: target.checkerName,
-    code: getDefaultFailureCode(options.task),
+    code:
+      target.admission === undefined
+        ? getDefaultFailureCode(options.task)
+        : admissionIssueCode(options.task),
     evidence: createTargetEvidence(target, message),
     filePath: target.configPath,
     fix: options.fix,
@@ -187,7 +210,51 @@ export function createCheckerFailureIssues(
 ): LiminaCheckIssue[] {
   return options.failedTargets.length === 0
     ? createFallbackFailureIssues(options)
-    : options.failedTargets.map((target) =>
-        createTargetFailureIssue(target, options),
-      );
+    : options.failedTargets.flatMap((target) => {
+        const findings = admissionFindings(target);
+        return findings.length === 0
+          ? [createTargetFailureIssue(target, options)]
+          : findings.map((finding) =>
+              createTaskFailureIssue({
+                checkerName: target.checkerName,
+                code: admissionIssueCode(options.task),
+                filePath: finding.filePath,
+                reason: finding.presentation.reason,
+                detailLines: finding.presentation.detailLines,
+                evidence: [
+                  ...finding.evidence,
+                  { label: 'governance diagnostic', value: finding.code },
+                  { label: 'execution stage', value: target.admission!.stage },
+                ],
+                locations: finding.locations,
+                rootDir: options.projectRootDir,
+                task: options.task,
+                title: 'Execution admission rejected',
+                fix: options.fix,
+              }),
+            );
+      });
+}
+
+function targetReason(target: CheckerFailureTarget): string {
+  if (target.admission !== undefined)
+    return `Execution admission ${target.admission.decision} (${target.admission.stage}).`;
+  return target.checkerName === undefined
+    ? 'Checker target failed.'
+    : `Checker "${target.checkerName}" failed.`;
+}
+
+function admissionFindings(target: CheckerFailureTarget) {
+  const diagnostics = target.admission?.diagnostics ?? [];
+  return diagnostics.flatMap((item) =>
+    item.finding === undefined ? [] : [item.finding],
+  );
+}
+
+function admissionIssueCode(
+  task: CheckerFailureIssueOptions['task'],
+): LiminaWritableCheckIssueCode {
+  return task === 'checker:build'
+    ? LIMINA_CHECK_ISSUE_CODES.checkerBuildAdmissionRejected
+    : LIMINA_CHECK_ISSUE_CODES.checkerTypecheckAdmissionRejected;
 }

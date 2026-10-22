@@ -162,10 +162,10 @@ export function parseCachedGraph(value: unknown): StoredGraphData | undefined {
   const result = graph.safeParse(value);
   if (!result.success) return undefined;
   const stored = result.data as unknown as StoredGraphData;
-  return admittedCachedGraph(stored);
+  return stored;
 }
 
-function admittedCachedGraph(
+export function admittedCachedGraph(
   stored: StoredGraphData,
 ): StoredGraphData | undefined {
   const analysis = stored.dependencyAnalysis;

@@ -146,18 +146,23 @@ async function executeRawTarget(options: {
   target: TypecheckTarget;
 }): Promise<TypecheckTargetResult[]> {
   const tasks = new Map<CheckerTargetId, LiminaFlowTask>();
-  return runBuildTargets(
-    [options.target],
-    [],
-    resolveTypecheckRunner(options.context.options),
-    {
-      config: options.context.options.config,
-      onTargetResult: (target, result) =>
-        completeRawTargetTask({ result, target, tasks }),
-      onTargetStart: (target) =>
-        startRawTargetTask({ context: options.context, target, tasks }),
-      watch: options.context.options.watch,
-    },
+  return (
+    await runBuildTargets(
+      [options.target],
+      [],
+      resolveTypecheckRunner(options.context.options),
+      {
+        config: options.context.options.config,
+        onTargetResult: (target, result) =>
+          completeRawTargetTask({ result, target, tasks }),
+        onTargetStart: (target) =>
+          startRawTargetTask({ context: options.context, target, tasks }),
+        watch: options.context.options.watch,
+      },
+    )
+  ).filter(
+    (result): result is TypecheckTargetResult =>
+      typeof result.status === 'number',
   );
 }
 

@@ -34,9 +34,6 @@ function declaredFileDependencies(
   return typeof cache === 'object' ? cache.dependencies : undefined;
 }
 
-/**
-Observe the actual loader, including imports executed by a config factory.
-*/
 export async function observeConfigLoad<T extends LiminaConfig>(
   path: string,
   load: (entryURL: string) => Promise<T>,
@@ -47,7 +44,11 @@ export async function observeConfigLoad<T extends LiminaConfig>(
     namespace?: string;
     hasTransforms?: boolean;
   } = {},
-): Promise<{ value: T; inputs: ReadonlyMap<string, string | null> }> {
+): Promise<{
+  value: T;
+  inputs: ReadonlyMap<string, string | null>;
+  evidence: ConfigLoadEvidence;
+}> {
   const observationStart = performance.now();
   const evidence = new ConfigLoadEvidence(
     options.loader ?? 'native',
@@ -124,7 +125,7 @@ export async function observeConfigLoad<T extends LiminaConfig>(
     evidence.assertStable();
     evidence.metrics.observationMs =
       performance.now() - observationStart - evidence.metrics.evaluationMs;
-    return { value, inputs: evidence.inputs };
+    return { value, inputs: evidence.inputs, evidence };
   } finally {
     hook.deregister();
     activeObservations.delete(evidence);

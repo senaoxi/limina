@@ -6,6 +6,7 @@ import type {
   VueQueryKind,
   VueQueryResults,
 } from '../analysis-cache/vue-contracts';
+import { retainVueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
 import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import type { TypeEvidenceMetricsRecorder } from '../type-evidence/cache';
 import { VueSemanticContext } from './context-handle';
@@ -105,6 +106,7 @@ export class VueSemanticContextManager {
     const trace = this.analysisCache?.vue.trace(identity);
     const reusable = getReusableContext(identity, trace);
     if (reusable !== null) {
+      retainVueExecutionInputs(reusable.identity, identity);
       processWideVueContextSlot.owners.add(this);
       return reusable;
     }

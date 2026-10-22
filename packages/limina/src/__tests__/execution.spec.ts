@@ -48,6 +48,7 @@ import type { LiminaCheckIssue } from '../source-check/snapshot';
 import { getCheckAttemptPaths } from '../source-check/snapshot/check-attempt-io';
 import { queryLatestCheckAttempt } from '../source-check/snapshot/check-attempt-query';
 import { createCheckerTargetId } from '../typecheck/targets';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
 const execFileAsync = promisify(execFile);
@@ -98,9 +99,9 @@ async function withTemporaryRoot<T>(
 
 function createPreflight(rootDirectory: string): LiminaPreflightManager {
   return new LiminaPreflightManager({
-    config: {
-      ...createConfig({ tasks: 4 }, rootDirectory),
-    },
+    config: withFixtureGovernanceRoot(
+      createConfig({ tasks: 4 }, rootDirectory),
+    ),
     generatedGraphProvider: async () =>
       ({ artifactPlan: { changes: [] } }) as never,
   });

@@ -101,11 +101,14 @@ function addDeniedDependencyReference(
   } satisfies GraphAccessDeniedFinding);
 }
 
-function addDeniedProjectReference(
-  context: DeniedReferenceContext,
+export function createDeniedProjectReferenceFinding(
+  context: Pick<
+    DeniedReferenceContext,
+    'config' | 'projectCheckerNamesByPath'
+  > & { project: Pick<ProjectInfo, 'configPath' | 'labels'> },
   referencePath: string,
   rule: GraphRuleReferenceDeny,
-): void {
+): GraphAccessDeniedFinding {
   const projectPath = context.project.configPath;
   const detailLines = [
     'Denied graph access:',
@@ -116,7 +119,7 @@ function addDeniedProjectReference(
     `  reason: ${rule.reason}`,
   ];
 
-  context.findings.push({
+  return {
     checkerName: getProjectCheckerName(
       context.projectCheckerNamesByPath,
       projectPath,
@@ -143,7 +146,7 @@ function addDeniedProjectReference(
       title: 'Denied graph access',
     },
     task: 'graph:check',
-  } satisfies GraphAccessDeniedFinding);
+  };
 }
 
 function addDeniedProjectReferenceIfNeeded(
@@ -156,7 +159,9 @@ function addDeniedProjectReferenceIfNeeded(
     referencePath,
   );
   if (rule) {
-    addDeniedProjectReference(context, referencePath, rule);
+    context.findings.push(
+      createDeniedProjectReferenceFinding(context, referencePath, rule),
+    );
   }
 }
 

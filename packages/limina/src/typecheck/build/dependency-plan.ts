@@ -1,6 +1,6 @@
 import type { GeneratedDependencyEdge } from '#core/build-graph/runner';
 import { collectStronglyConnectedComponents } from '#utils/strongly-connected-components';
-import type { TypecheckTarget } from '../targets';
+import type { CheckerTargetId, TypecheckTarget } from '../targets';
 import { assertNoDeclarationCycles } from './declaration-cycle';
 import {
   createComponentDependencies,
@@ -10,6 +10,7 @@ import { createComponentLayers } from './dependency-layers';
 
 export interface BuildDependencyPlan {
   components: TypecheckTarget[][];
+  executionDependenciesByTargetId?: Map<CheckerTargetId, CheckerTargetId[]>;
   dependenciesByComponentIndex: Map<number, Set<number>>;
   layers: number[][];
 }
@@ -40,20 +41,20 @@ function isDependencyEdgeMatchesConsumer(
   edge: GeneratedDependencyEdge,
   target: TypecheckTarget,
 ): boolean {
-  return (
-    target.checkerName === edge.fromChecker &&
-    isSourceConfigMatches(target.sourceConfigPath, edge.fromConfigPath)
-  );
+  return 'consumerTargetId' in edge
+    ? edge.consumerTargetId === target.id
+    : target.checkerName === edge.fromChecker &&
+        isSourceConfigMatches(target.sourceConfigPath, edge.fromConfigPath);
 }
 
 function isDependencyEdgeMatchesProvider(
   edge: GeneratedDependencyEdge,
   target: TypecheckTarget,
 ): boolean {
-  return (
-    target.checkerName === edge.toChecker &&
-    isSourceConfigMatches(target.sourceConfigPath, edge.toConfigPath)
-  );
+  return 'providerTargetId' in edge
+    ? edge.providerTargetId === target.id
+    : target.checkerName === edge.toChecker &&
+        isSourceConfigMatches(target.sourceConfigPath, edge.toConfigPath);
 }
 
 function getProviderDependencyKey(
@@ -176,13 +177,15 @@ function createTargetDependencyContext(
 export function createBuildDependencyPlan(
   targets: TypecheckTarget[],
   dependencyEdges: GeneratedDependencyEdge[],
+  executionPrerequisites: GeneratedDependencyEdge[] = [],
 ): BuildDependencyPlan {
   const context = createTargetDependencyContext(targets);
 
-  for (const edge of dependencyEdges) {
+  for (const edge of [...dependencyEdges, ...executionPrerequisites]) {
     addEdgeDependencies(edge, context);
   }
 
+  const execution = executionDependencies(targets, executionPrerequisites);
   const orderedKeys = targets.map(getBuildTargetDependencyKey);
   const components = collectStronglyConnectedComponents(
     orderedKeys,
@@ -204,10 +207,39 @@ export function createBuildDependencyPlan(
 
   return {
     components: resolveComponentTargets({ components, targetByKey }),
+    executionDependenciesByTargetId: targetPrerequisites(
+      execution,
+      targetByKey,
+    ),
     dependenciesByComponentIndex,
     layers: createComponentLayers({
       componentCount: components.length,
       dependenciesByComponentIndex,
     }),
   };
+}
+
+function executionDependencies(
+  targets: TypecheckTarget[],
+  edges: GeneratedDependencyEdge[],
+): TargetDependencyContext {
+  const context = createTargetDependencyContext(targets);
+  for (const edge of edges) addEdgeDependencies(edge, context);
+  return context;
+}
+
+function targetPrerequisites(
+  context: TargetDependencyContext,
+  targets: ReadonlyMap<string, TypecheckTarget>,
+): Map<CheckerTargetId, CheckerTargetId[]> {
+  return new Map(
+    context.targets.map((target) => [
+      target.id,
+      [
+        ...(context.dependenciesByTargetKey.get(
+          getBuildTargetDependencyKey(target),
+        ) ?? []),
+      ].map((key) => targets.get(key)!.id),
+    ]),
+  );
 }

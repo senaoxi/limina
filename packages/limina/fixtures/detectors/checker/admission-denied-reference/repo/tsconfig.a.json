@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "types": [],
+    "strict": true,
+    "noEmit": true
+  },
+  "files": ["a.ts"],
+  "liminaOptions": {
+    "graphRules": ["consumer"],
+    "implicitRefs": [
+      {
+        "path": "./tsconfig.b.json",
+        "reason": "Runtime startup prerequisite"
+      }
+    ]
+  }
+}

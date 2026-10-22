@@ -3,6 +3,7 @@ import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/colle
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type { ArtifactPlan } from '../../domain/artifacts/plan';
+import { retainFrameworkExecutionInputs } from '../analysis-cache/framework-execution-inputs';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import {
   resolveGeneratedKnipPackageConfigs,
@@ -166,7 +167,7 @@ function cloneOutputDeclarationCopies(
 }
 
 function cloneGovernedSource(unit: GovernedSourceUnit): GovernedSourceUnit {
-  return {
+  const published = {
     ...unit,
     buildProjection: { ...unit.buildProjection },
     context: {
@@ -181,6 +182,8 @@ function cloneGovernedSource(unit: GovernedSourceUnit): GovernedSourceUnit {
     })),
     ownedFileNames: [...unit.ownedFileNames],
   };
+  retainFrameworkExecutionInputs(unit, published);
+  return published;
 }
 
 function createGovernedSourceMap(

@@ -30,6 +30,7 @@ function addEmptyLabelFinding(state: NormalizationState): void {
 }
 
 function normalizeRule(options: {
+  denyReferencesOnly?: boolean;
   rawLabel: string;
   rawRule: unknown;
   state: NormalizationState;
@@ -41,6 +42,26 @@ function normalizeRule(options: {
   }
   const rule = getRuleRecord(options);
   if (rule === null) {
+    return;
+  }
+  normalizeSelectedRule(options, label, rule);
+}
+function normalizeSelectedRule(
+  options: Parameters<typeof normalizeRule>[0],
+  label: string,
+  rule: Record<string, unknown>,
+): void {
+  if (options.denyReferencesOnly === true) {
+    normalizeDenySection(
+      label,
+      getRuleSection({
+        label,
+        rawRule: rule,
+        section: 'deny',
+        state: options.state,
+      }),
+      options.state,
+    );
     return;
   }
   addUnknownFields({
@@ -70,7 +91,9 @@ function createNormalizationState(options: {
   config: ResolvedLiminaConfig;
   findings: GraphFinding[];
   include: GraphRuleKindSelection | undefined;
-  projectPathAliases: Map<string, string> | undefined;
+  projectPathAliases:
+    | ReadonlyMap<string, string | readonly string[]>
+    | undefined;
   projectPaths: string[];
 }): NormalizationState {
   return {
@@ -94,11 +117,13 @@ function toNormalizedRules(state: NormalizationState): NormalizedGraphRules {
 }
 
 export function normalizeGraphRules(options: {
+  selectedLabels?: ReadonlySet<string>;
+  denyReferencesOnly?: boolean;
   config: ResolvedLiminaConfig;
   include?: GraphRuleKindSelection;
   packages: WorkspacePackage[];
   findings: GraphFinding[];
-  projectPathAliases?: Map<string, string>;
+  projectPathAliases?: ReadonlyMap<string, string | readonly string[]>;
   projectPaths: string[];
 }): NormalizedGraphRules {
   const state = createNormalizationState({
@@ -110,7 +135,20 @@ export function normalizeGraphRules(options: {
   });
   const records = getRulesRecord(options.config, options.findings);
   for (const [rawLabel, rawRule] of Object.entries(records)) {
-    normalizeRule({ rawLabel, rawRule, state });
+    if (isUnselectedLabel(options.selectedLabels, rawLabel)) continue;
+    normalizeRule({
+      rawLabel,
+      rawRule,
+      state,
+      denyReferencesOnly: options.denyReferencesOnly,
+    });
   }
   return toNormalizedRules(state);
+}
+
+function isUnselectedLabel(
+  selected: ReadonlySet<string> | undefined,
+  label: string,
+): boolean {
+  return selected !== undefined && !selected.has(label.trim());
 }
