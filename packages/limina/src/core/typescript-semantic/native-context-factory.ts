@@ -2,6 +2,7 @@ import ts from 'typescript';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import { captureBoundedContext } from '../analysis-cache/bounded-context-capture';
 import { EpochInputs } from '../analysis-cache/epoch-inputs';
+import { retainContextExecutionInputs } from '../analysis-cache/execution-inputs';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type {
   TypeScriptSemanticDependencyContext,
@@ -30,6 +31,11 @@ export function createNativeDependencyContext(
       cache,
       discovery: reads.snapshot(),
     });
+  retainContextExecutionInputs(
+    context.nativeEvidence,
+    project.configPath,
+    reads,
+  );
   return context;
 }
 

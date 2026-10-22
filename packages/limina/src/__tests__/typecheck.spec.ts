@@ -1694,7 +1694,20 @@ describe('runBuild', () => {
           cwd: fixture.rootDir,
           runner: passingRunner(calls),
         }),
-      ).rejects.toThrow('cannot be proven inside the configured emit root');
+      ).resolves.toMatchObject({
+        passed: false,
+        failureKind: 'execution-admission',
+        failedTargets: [
+          expect.objectContaining({
+            admission: expect.objectContaining({
+              status: 'admission-rejected',
+            }),
+            message: expect.stringContaining(
+              'cannot be proven inside the configured emit root',
+            ),
+          }),
+        ],
+      });
       expect(calls).toHaveLength(0);
     } finally {
       await fixture.cleanup();
@@ -2082,10 +2095,24 @@ describe('runBuild', () => {
       });
 
       expect(result.passed).toBe(false);
-      expect(result.failureKind).toBe('process');
+      expect(result.failureKind).toBe('execution-admission');
+      expect(result.targetResults).toEqual([
+        expect.objectContaining({ status: 0 }),
+      ]);
+      expect(result.targetOutcomes).toEqual([
+        expect.objectContaining({ status: 'passed' }),
+        expect.objectContaining({
+          status: 'admission-rejected',
+          stage: 'output-copy',
+          decision: 'unavailable',
+        }),
+      ]);
       expect(result.problems?.join('\n')).toContain(
         'Output declaration copy conflict',
       );
+      expect(
+        await readFile(fixture.path('packages/pkg/dist/foo.d.ts'), 'utf8'),
+      ).toBe('declare const emittedValue: 1;\n');
       expect(errorSpy.mock.calls.join('\n')).toContain(
         'Output declaration copy conflict',
       );
@@ -2250,7 +2277,18 @@ describe('runBuild', () => {
           cwd: fixture.rootDir,
           runner: passingRunner(calls),
         }),
-      ).rejects.toThrow('symbolic link or junction');
+      ).resolves.toMatchObject({
+        passed: false,
+        failureKind: 'execution-admission',
+        failedTargets: [
+          expect.objectContaining({
+            admission: expect.objectContaining({
+              status: 'admission-rejected',
+            }),
+            message: expect.stringContaining('symbolic link or junction'),
+          }),
+        ],
+      });
       expect(calls).toHaveLength(0);
       expect(
         existsSync(path.join(fixture.rootDir, 'packages/pkg/dist/lib')),
@@ -3241,14 +3279,11 @@ describe('runBuild', () => {
     }
   });
 
-  it('starts all managed targets concurrently in watch mode', async () => {
+  it('keeps a selected watch entry responsible for its referenced projects', async () => {
     const calls: TypecheckTarget[] = [];
     const delayed = delayedRunner({
       calls,
-      // Use a long delay so the two watch-mode runners are guaranteed to
-      // overlap even when beforeTargetRun (recheckMutationBoundary) takes
-      // non-trivial time on slower CI environments or newer Node versions.
-      delayMs: () => 500,
+      delayMs: () => 10,
     });
     const fixture = await createFixture({
       'packages/app/src/index.ts':
@@ -3309,23 +3344,14 @@ describe('runBuild', () => {
         calls
           .map((target) => target.command)
           .sort((left, right) => Number(left > right) - Number(left < right)),
-      ).toEqual([process.execPath, process.execPath]);
-      expect(delayed.getMaxActive()).toBe(2);
+      ).toEqual([process.execPath]);
+      expect(delayed.getMaxActive()).toBe(1);
       expect(calls.map((target) => target.args)).toEqual(
         expect.arrayContaining([
           [
             tscEntry,
             '-b',
             '.limina/tsconfig/checkers/tsc/outputs/projects/packages/app/tsconfig.output.json',
-            '--pretty',
-            'false',
-            '--watch',
-            '--preserveWatchOutput',
-          ],
-          [
-            tscEntry,
-            '-b',
-            '.limina/tsconfig/checkers/tsc/outputs/projects/packages/theme/tsconfig.output.json',
             '--pretty',
             'false',
             '--watch',
@@ -3465,7 +3491,10 @@ describe('checker targets after materialization', () => {
             }),
           );
         }
-        await second.ensureGeneratedArtifactsMaterialized();
+        const replacement = await second.ensureGeneratedArtifactsMaterialized();
+        expect(replacement.graph.artifactPlan.desiredRevision).not.toBe(
+          receipt.graph.artifactPlan.desiredRevision,
+        );
         vi.spyOn(
           first,
           'ensureGeneratedArtifactsMaterialized',
@@ -3486,9 +3515,25 @@ describe('checker targets after materialization', () => {
                   configPath: fixture.path('packages/app/tsconfig.json'),
                 }),
               });
-        await expect(pending).rejects.toThrow(
-          'revision changed after materialization',
-        );
+        const rejected = await pending;
+        expect(rejected).toMatchObject({
+          passed: false,
+          failureKind: 'execution-admission',
+          failedTargets: expect.any(Array),
+        });
+        expect(rejected.targetResults).toEqual([]);
+        expect(rejected.targetOutcomes).toEqual([
+          expect.objectContaining({
+            status: 'admission-rejected',
+            stage: 'mutation',
+            decision: 'unavailable',
+            diagnostics: [
+              expect.objectContaining({
+                code: 'LIMINA_EXECUTION_INPUT_UNAVAILABLE',
+              }),
+            ],
+          }),
+        ]);
         expect(calls).toHaveLength(0);
         expect(existsSync(fixture.path('packages/app/dist'))).toBe(false);
       } finally {
@@ -3568,7 +3613,11 @@ describe('checker targets after materialization', () => {
         expect(result.disabled).toBe(change === 'empty');
         const expected =
           change === 'empty' ? [] : change === 'add' ? ['a', 'b'] : ['a'];
-        expect(calls.map((target) => target.sourceConfigPath)).toEqual(
+        expect(
+          calls
+            .map((target) => target.sourceConfigPath)
+            .toSorted((a, b) => String(a).localeCompare(String(b))),
+        ).toEqual(
           expected.map((name) =>
             fixture.path(`packages/${name}/tsconfig.json`),
           ),
@@ -3619,7 +3668,20 @@ describe('checker targets after materialization', () => {
           preflight: first,
           runner: passingRunner(calls),
         }),
-      ).rejects.toThrow('revision changed after materialization');
+      ).resolves.toMatchObject({
+        passed: false,
+        failureKind: 'execution-admission',
+        failedTargets: [
+          expect.objectContaining({
+            admission: expect.objectContaining({
+              status: 'admission-rejected',
+            }),
+            message: expect.stringContaining(
+              'revision changed after materialization',
+            ),
+          }),
+        ],
+      });
       expect(calls).toHaveLength(0);
     } finally {
       first.dispose();

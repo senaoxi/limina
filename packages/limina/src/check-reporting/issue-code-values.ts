@@ -1,4 +1,7 @@
 export const LIMINA_CHECK_ISSUE_CODES = {
+  checkerBuildAdmissionRejected: 'LIMINA_CHECKER_BUILD_ADMISSION_REJECTED',
+  checkerTypecheckAdmissionRejected:
+    'LIMINA_CHECKER_TYPECHECK_ADMISSION_REJECTED',
   checkerBuildFailed: 'LIMINA_CHECKER_BUILD_FAILED',
   checkerPeerDependencyMissing: 'LIMINA_CHECKER_PEER_DEPENDENCY_MISSING',
   checkerTargetSelectionFailed: 'LIMINA_CHECKER_TARGET_SELECTION_FAILED',

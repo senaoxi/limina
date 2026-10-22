@@ -1,4 +1,5 @@
 import { isSourceKnipEnabled, type ResolvedLiminaInputs } from '#config/runner';
+import { completeFrameworkExecutionInputs } from '../analysis-cache/framework-execution-inputs';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
 import { captureGeneratedGraph } from './analysis-cache';
@@ -7,6 +8,7 @@ import { assertGeneratedGraphAdmission } from './candidate-build-plan';
 import { coreCollectionRun } from './core-collection-run';
 import { finalizeGeneratedGraph } from './finalize-generated-graph';
 import { prepareGeneratedKnipPackageConfigs } from './generated-knip';
+import { hasBoundGeneratedReferences } from './generated-reference-binding';
 import { observeOutputProjections } from './observe-output-projections';
 import type { createGeneratedGraphPreparationState } from './prepare-state';
 import type {
@@ -64,6 +66,9 @@ export async function finishPreparedGraph(input: {
     generatedKnip,
     state,
   });
+  assertReferenceBinding(result, config);
+  await completeFrameworkExecutionInputs(result, config);
+  result.dependencyAnalysis = state.dependencyAnalysis;
   result.sourceConfigCoverage = projectDependencyCaches.sourceConfigCoverage;
   capturePreparedGraph({
     config,
@@ -110,4 +115,12 @@ function capturePreparedGraph(input: {
       result: input.result,
       analysis: input.analysis,
     });
+}
+
+function assertReferenceBinding(
+  graph: GeneratedTsconfigGraphResult,
+  config: ResolvedLiminaInputs,
+): void {
+  if (!hasBoundGeneratedReferences(graph, config))
+    throw new Error('Generated reference binding is inconsistent.');
 }

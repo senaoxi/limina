@@ -4,6 +4,7 @@ import {
   type ConfigModuleEvidence,
   getConfigBindings,
 } from '../config/input-observation';
+import { invocationDataVersion } from '../config/invocation-data';
 import { assertConfigRequestBindings } from '../config/load-evidence';
 import type { ConfigModuleSnapshot } from '../core/analysis-cache/contracts';
 import { pathBinding } from '../core/analysis-cache/directory-fingerprint';
@@ -22,12 +23,14 @@ Invocation validity is independent of persistent cache read/write policy.
 */
 export class ConfigObservation {
   readonly #config: ResolvedLiminaConfig;
+  readonly #executionVersion: string | undefined;
   readonly #inputs: Map<string, string | null>;
   readonly #bindings: Map<string, string>;
   readonly #evidence: ConfigModuleEvidence;
   #snapshot: ConfigModuleSnapshot | undefined;
   constructor(config: ResolvedLiminaConfig) {
     this.#config = config;
+    this.#executionVersion = executionConfigVersion(config);
     assertGovernanceBinding(config);
     this.#inputs = configInputs(config);
     const loaded = getConfigBindings(config);
@@ -51,6 +54,7 @@ export class ConfigObservation {
     return this.#snapshot;
   }
   assertStable(): void {
+    assertExecutionConfigVersion(this.#config, this.#executionVersion);
     assertGovernanceBinding(this.#config);
     for (const [file, text] of this.#inputs)
       assertInputStable(
@@ -99,4 +103,24 @@ function currentBytes(file: string): Buffer | undefined {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   }
+}
+
+function executionConfigVersion(
+  config: ResolvedLiminaConfig,
+): string | undefined {
+  return invocationDataVersion({
+    rootDir: config.rootDir,
+    configPath: config.configPath,
+    graph: config.graph,
+    scope: config.scope,
+  });
+}
+function assertExecutionConfigVersion(
+  config: ResolvedLiminaConfig,
+  expected: string | undefined,
+): void {
+  if (expected === undefined || executionConfigVersion(config) !== expected)
+    throw new Error(
+      'Execution governance configuration changed or cannot be qualified.',
+    );
 }

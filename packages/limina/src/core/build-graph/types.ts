@@ -80,8 +80,8 @@ export interface GeneratedOutputDeclarationCopyContext {
   rootDir: string;
   sourceConfigPath: string;
 }
-
 export interface GeneratedTsconfigGraphResult {
+  dependencyAnalysis?: DependencyAnalysisResult;
   sourceConfigCoverage?: SourceConfigCoverageIndex;
   outputProjections?: OutputProjectionReceipt[];
   typeInputProjections?: TypeInputProjectionReceipt[];

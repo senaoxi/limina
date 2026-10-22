@@ -247,30 +247,54 @@ function getCommandIdentity(options: {
 }
 
 export function getCheckerImplementationFingerprint(options: {
-  checker: ResolvedCheckerConfig;
+  checker: Pick<ResolvedCheckerConfig, 'name'>;
   projectRootDir: string;
   target: TypecheckTarget;
 }): string {
-  const adapter = getCheckerAdapter(options.checker.name);
-  if (adapter === null) {
-    throw new ManagedCheckerEmitBoundaryError(
-      `Unable to identify checker implementation for ${options.checker.name}.`,
-    );
-  }
-  const packageNames = [
-    ...adapter.dependencies.externalCheckerPackages,
-    ...adapter.dependencies.liminaRuntimePackages,
-  ];
+  const packageNames = implementationPackages(options);
+  const root = options.target.dependencyRootDir ?? options.projectRootDir;
   return hashValue({
-    commandIdentity: getCommandIdentity(options),
+    commandIdentity: getCommandIdentity({ ...options, projectRootDir: root }),
     packageIdentities: packageNames.map((packageName) =>
       getPackageIdentity({
         packageName,
-        projectRootDir: options.projectRootDir,
+        projectRootDir: root,
       }),
     ),
     preset: options.checker.name,
     projectionCompiler: getCompilerIdentity(),
     projectionCompilerVersion: ts.version,
   });
+}
+
+function implementationPackages(
+  options: Parameters<typeof getCheckerImplementationFingerprint>[0],
+): readonly string[] {
+  return options.target.checkerFamily === undefined
+    ? buildImplementationPackages(options.checker)
+    : frameworkImplementationPackages(options.target);
+}
+function buildImplementationPackages(
+  checker: Pick<ResolvedCheckerConfig, 'name'>,
+): readonly string[] {
+  const adapter = getCheckerAdapter(checker.name);
+  if (adapter === null)
+    throw new ManagedCheckerEmitBoundaryError(
+      `Unable to identify checker implementation for ${checker.name}.`,
+    );
+  return [
+    ...adapter.dependencies.externalCheckerPackages,
+    ...adapter.dependencies.liminaRuntimePackages,
+  ];
+}
+function frameworkImplementationPackages(
+  target: TypecheckTarget,
+): readonly string[] {
+  if (target.dependencyRequirements === undefined)
+    throw new ManagedCheckerEmitBoundaryError(
+      'Framework Checker requirements are unavailable.',
+    );
+  return target.dependencyRequirements.map(
+    (requirement) => requirement.packageName,
+  );
 }

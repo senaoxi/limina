@@ -117,7 +117,14 @@ export class ManagedCheckerMutationCoordinator {
     });
   }
 
-  async beforeLayerRun(targets: readonly TypecheckTarget[]): Promise<void> {
+  projectedOutputPaths(target: TypecheckTarget): readonly string[] {
+    return this.#initialProofs.get(target.id)?.projectedOutputPaths ?? [];
+  }
+
+  async beforeLayerRun(
+    targets: readonly TypecheckTarget[],
+    authorize?: () => Promise<void>,
+  ): Promise<void> {
     const layerProofs: ProvenManagedCheckerMutationContext[] = [];
     for (const target of targets) {
       const current = await this.#prove(target);
@@ -132,6 +139,7 @@ export class ManagedCheckerMutationCoordinator {
     await preflightMutationBoundary(
       layerProofs.flatMap((proof) => proof.mutationTargets),
     );
+    await authorize?.();
     await invalidateStaleBuildInfo(layerProofs);
     await this.#captureLayerSnapshots(layerProofs);
   }

@@ -1,65 +1,24 @@
 import { resolveCheckerBuildConcurrency } from '../../execution/config';
 import { runPool } from '../../execution/pool';
+import { rejectedBeforeLaunch } from '../admission/reporting';
 import type {
+  BuildTargetCompletion,
   CheckerTargetId,
   TypecheckTarget,
-  TypecheckTargetResult,
 } from '../targets';
 import { runTargetWithMeasuredDuration } from '../targets';
-import type {
-  BuildRunState,
-  RunBuildTargetsArguments,
-  RunnableLayer,
-} from './target-state';
+import type { BuildRunState, RunBuildTargetsArguments } from './target-state';
 import {
   createBuildRunState,
   createFailedTargetResult,
   createRunnableLayer,
   emitTargetResult,
-  getComponentTargets,
 } from './target-state';
 
 export type {
   RunBuildTargetsArguments as RunBuildTargetsArgs,
   RunBuildTargetsOptions,
 } from './target-state';
-
-function createLayerFailureResults(options: {
-  error: unknown;
-  state: BuildRunState;
-  targets: readonly TypecheckTarget[];
-}): TypecheckTargetResult[] {
-  return options.targets.map((target) => {
-    const result = createFailedTargetResult(target, options.error);
-    emitTargetResult(options.state.options, target, result);
-    return result;
-  });
-}
-
-function shouldRunBeforeLayer(
-  state: BuildRunState,
-  targets: readonly TypecheckTarget[],
-): boolean {
-  return [targets.length > 0, state.options.beforeLayerRun !== undefined].every(
-    Boolean,
-  );
-}
-
-async function runBeforeLayer(
-  state: BuildRunState,
-  targets: readonly TypecheckTarget[],
-): Promise<TypecheckTargetResult[]> {
-  if (!shouldRunBeforeLayer(state, targets)) {
-    return [];
-  }
-
-  try {
-    await state.options.beforeLayerRun!(targets);
-    return [];
-  } catch (error) {
-    return createLayerFailureResults({ error, state, targets });
-  }
-}
 
 function resolveLayerConcurrency(
   state: BuildRunState,
@@ -76,78 +35,42 @@ function resolveLayerConcurrency(
 async function beforeTargetRun(
   state: BuildRunState,
   target: TypecheckTarget,
-): Promise<void> {
-  if (state.options.beforeTargetRun !== undefined) {
-    await state.options.beforeTargetRun(target);
-  }
-
-  if (state.options.onTargetStart !== undefined) {
-    state.options.onTargetStart(target);
+): Promise<BuildTargetCompletion | undefined> {
+  try {
+    state.options.onTargetStart?.(target);
+    return undefined;
+  } catch (error) {
+    return rejectedBeforeLaunch(target, error);
   }
 }
 
 async function runRunnableTargets(
   state: BuildRunState,
   targets: readonly TypecheckTarget[],
-): Promise<TypecheckTargetResult[]> {
-  return runPool<TypecheckTarget, TypecheckTargetResult>({
+): Promise<BuildTargetCompletion[]> {
+  if (targets.length === 0) return [];
+  return runPool<TypecheckTarget, BuildTargetCompletion>({
     concurrency: resolveLayerConcurrency(state, targets),
     items: [...targets],
     onError: createFailedTargetResult,
-    onResult: state.options.onTargetResult,
+    onResult: (target, result) =>
+      emitTargetResult(state.options, target, result),
     run: async (target) => {
-      await beforeTargetRun(state, target);
-      return runTargetWithMeasuredDuration(state.runner, target);
+      const refusal = await beforeTargetRun(state, target);
+      if (refusal !== undefined) return refusal;
+      return state.options.executeTarget === undefined
+        ? runTargetWithMeasuredDuration(state.runner, target)
+        : state.options.executeTarget(target);
     },
   });
 }
 
-function shouldRunTargets(
-  targets: readonly TypecheckTarget[],
-  layerResults: readonly TypecheckTargetResult[],
-): boolean {
-  return [targets.length > 0, layerResults.length === 0].every(Boolean);
-}
-
-async function executeRunnableLayer(
-  state: BuildRunState,
-  runnableLayer: RunnableLayer,
-): Promise<TypecheckTargetResult[]> {
-  const layerResults = await runBeforeLayer(state, runnableLayer.targets);
-
-  return shouldRunTargets(runnableLayer.targets, layerResults)
-    ? runRunnableTargets(state, runnableLayer.targets)
-    : layerResults;
-}
-
 function recordLayerResults(
   state: BuildRunState,
-  layerResults: readonly TypecheckTargetResult[],
+  layerResults: readonly BuildTargetCompletion[],
 ): void {
   for (const result of layerResults) {
     state.resultsByTargetId.set(result.id, result);
-  }
-}
-
-function isFailedTarget(
-  resultsByTargetId: ReadonlyMap<CheckerTargetId, TypecheckTargetResult>,
-  target: TypecheckTarget,
-): boolean {
-  return resultsByTargetId.get(target.id)?.status !== 0;
-}
-
-function updateComponentFailureRoots(
-  state: BuildRunState,
-  componentIndexes: readonly number[],
-): void {
-  for (const componentIndex of componentIndexes) {
-    const failedRoots = getComponentTargets(state.buildPlan, componentIndex)
-      .filter((target) => isFailedTarget(state.resultsByTargetId, target))
-      .map((target) => target.id);
-    state.failureRootsByComponentIndex.set(
-      componentIndex,
-      state.stableRoots(failedRoots),
-    );
   }
 }
 
@@ -156,15 +79,14 @@ async function executeLayer(
   layer: readonly number[],
 ): Promise<void> {
   const runnableLayer = createRunnableLayer(state, layer);
-  const layerResults = await executeRunnableLayer(state, runnableLayer);
+  const layerResults = await runRunnableTargets(state, runnableLayer.targets);
   recordLayerResults(state, layerResults);
-  updateComponentFailureRoots(state, runnableLayer.componentIndexes);
 }
 
 function requireTargetResult(
-  resultsByTargetId: ReadonlyMap<CheckerTargetId, TypecheckTargetResult>,
+  resultsByTargetId: ReadonlyMap<CheckerTargetId, BuildTargetCompletion>,
   target: TypecheckTarget,
-): TypecheckTargetResult {
+): BuildTargetCompletion {
   const result = resultsByTargetId.get(target.id);
 
   if (result === undefined) {
@@ -176,7 +98,7 @@ function requireTargetResult(
 
 export async function executeBuildTargets(
   ...arguments_: RunBuildTargetsArguments
-): Promise<TypecheckTargetResult[]> {
+): Promise<BuildTargetCompletion[]> {
   const [targets, dependencyEdges, runner, options] = arguments_;
   const state = createBuildRunState({
     dependencyEdges,

@@ -1,4 +1,3 @@
-import type { CheckerBuildEngine } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
@@ -32,84 +31,60 @@ export function formatProviderCandidateLines(
   );
 }
 
-function collectProviderProjects(options: {
-  consumerProject: SourceProject;
+type ProviderIdentity = Pick<
+  SourceProject,
+  'checkerName' | 'context' | 'ownedFileNames'
+>;
+
+export function selectProviderIdentity<T extends ProviderIdentity>(options: {
+  consumerProject: ProviderIdentity;
   providerSourceFilePaths: readonly string[];
-  targetProjects: SourceProject[];
-}): SourceProject[] {
-  return options.targetProjects
-    .filter(
-      (project) => project.checkerName !== options.consumerProject.checkerName,
-    )
-    .filter((project) =>
-      options.providerSourceFilePaths.some((fileName) =>
-        project.ownedFileNames.includes(fileName),
+  targetProjects: readonly T[];
+}):
+  | { kind: 'selected'; project: T; reason: string }
+  | { kind: 'missing' | 'ambiguous'; candidates: T[]; reason: string } {
+  const candidates = options.targetProjects.filter(
+    (project) =>
+      project.checkerName !== options.consumerProject.checkerName &&
+      isBuildCapableProject(project) &&
+      options.providerSourceFilePaths.some((file) =>
+        project.ownedFileNames.includes(file),
       ),
-    )
-    .filter(isBuildCapableProject)
-    .sort(
-      (left, right) =>
-        compareCodeUnits(left.checkerName, right.checkerName) ||
-        compareCodeUnits(left.configPath, right.configPath),
-    );
-}
-
-function groupProjectsByEngine(
-  projects: SourceProject[],
-): Map<CheckerBuildEngine, SourceProject[]> {
-  return Map.groupBy(projects, getSourceProjectBuildEngine);
-}
-
-function selectSameEngineProvider(options: {
-  providerProjects: SourceProject[];
-  sameEngineProjects: SourceProject[];
-}): ProviderSelectionResult | null {
-  if (options.sameEngineProjects.length === 1) {
+  );
+  if (candidates.length === 1)
     return {
       kind: 'selected',
-      project: options.sameEngineProjects[0]!,
-      reason:
-        'exactly one build-capable provider checker matches the consumer build engine.',
-    };
-  }
-  if (options.sameEngineProjects.length > 1) {
-    return {
-      candidates: options.providerProjects,
-      kind: 'ambiguous',
-      reason:
-        'multiple build-capable provider checkers match the consumer build engine.',
-    };
-  }
-  return null;
-}
-
-function getProjectsForEngine(
-  projectsByEngine: ReadonlyMap<CheckerBuildEngine, SourceProject[]>,
-  engine: CheckerBuildEngine,
-): SourceProject[] {
-  return projectsByEngine.get(engine) ?? [];
-}
-
-function selectByProviderCount(
-  providerProjects: SourceProject[],
-): ProviderSelectionResult | null {
-  if (providerProjects.length === 0) {
-    return {
-      candidates: [],
-      kind: 'missing',
-      reason:
-        'no other build-capable checker owns the resolved provider source file.',
-    };
-  }
-  if (providerProjects.length === 1) {
-    return {
-      kind: 'selected',
-      project: providerProjects[0]!,
+      project: candidates[0]!,
       reason:
         'exactly one build-capable checker owns the resolved provider source file.',
     };
-  }
-  return null;
+  const sameEngine = candidates.filter(
+    (project) =>
+      getSourceProjectBuildEngine(project) ===
+      getSourceProjectBuildEngine(options.consumerProject),
+  );
+  if (sameEngine.length === 1)
+    return {
+      kind: 'selected',
+      project: sameEngine[0]!,
+      reason:
+        'exactly one build-capable provider checker matches the consumer build engine.',
+    };
+  return unselectedProvider(candidates);
+}
+function unselectedProvider<T>(candidates: T[]): {
+  kind: 'missing' | 'ambiguous';
+  candidates: T[];
+  reason: string;
+} {
+  return {
+    kind: candidates.length === 0 ? 'missing' : 'ambiguous',
+    candidates,
+    reason:
+      candidates.length === 0
+        ? 'no other build-capable checker owns the resolved provider source file.'
+        : 'multiple different checker identities own the resolved provider source file.',
+  };
 }
 
 export function selectProviderProject(options: {
@@ -117,24 +92,7 @@ export function selectProviderProject(options: {
   providerSourceFilePaths: readonly string[];
   targetProjects: SourceProject[];
 }): ProviderSelectionResult {
-  const providerProjects = collectProviderProjects(options);
-  const selection = selectByProviderCount(providerProjects);
-  if (selection) return selection;
-  const projectsByEngine = groupProjectsByEngine(providerProjects);
-  const consumerEngine = getSourceProjectBuildEngine(options.consumerProject);
-  const sameEngine = selectSameEngineProvider({
-    providerProjects,
-    sameEngineProjects: getProjectsForEngine(projectsByEngine, consumerEngine),
-  });
-  if (sameEngine) {
-    return sameEngine;
-  }
-  return {
-    candidates: providerProjects,
-    kind: 'ambiguous',
-    reason:
-      'multiple different checker identities own the resolved provider source file.',
-  };
+  return selectProviderIdentity(options);
 }
 
 function isOutputBuildOwner(project: SourceProject): boolean {

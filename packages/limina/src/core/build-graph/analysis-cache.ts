@@ -3,9 +3,11 @@ import { invocationDataVersion } from '../../config/invocation-data';
 import { assertArtifactPathLexicallyContained } from '../../domain/artifacts/namespace';
 import { createRevisionedArtifactPlan } from '../../domain/artifacts/plan';
 import { decodeData } from '../analysis-cache/data-codec';
+import { bindRestoredGraphExecutionInputs } from '../analysis-cache/execution-inputs';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
 import {
+  admittedCachedGraph,
   type CachedGraphData,
   parseCachedGraph,
   type StoredGraphData,
@@ -13,6 +15,9 @@ import {
 import { restoreGraphContexts, storeGraphContexts } from './analysis-cache-vue';
 import { removeStaleGeneratedFiles } from './artifact-ledger';
 import { writeGeneratedContent } from './artifact-writer';
+import { rebindCachedCompilation } from './cached-candidate-binding';
+import { hasBoundCachedReferences } from './cached-reference-reconstruction';
+import { hasBoundGeneratedReferences } from './generated-reference-binding';
 import { readMaterializationStateSnapshot } from './materialization-state';
 import { hasBoundNativeGraph } from './native-cache-binding';
 import { isValidOutputProjection } from './output-projection';
@@ -24,9 +29,7 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-
-const key = 'generated-graph-coverage-bounded-v3';
-
+const key = 'generated-graph-coverage-bounded-v4';
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
@@ -101,8 +104,35 @@ function decodeBoundGraph(
   >,
 ): CachedGraphData | undefined {
   const stored = decodeGraph(record.data);
-  if (stored === undefined) return undefined;
-  if (!isValidBoundGraph(stored, options.cache)) return undefined;
+  return isRestorableGraph(stored, options)
+    ? bindAndRestoreGraph(options, { stored, record })
+    : undefined;
+}
+function isRestorableGraph(
+  stored: StoredGraphData | undefined,
+  options: GraphRestoreInput,
+): stored is StoredGraphData {
+  return (
+    stored !== undefined &&
+    [
+      hasBoundGeneratedReferences(stored, options.config),
+      isValidBoundGraph(stored, options.cache),
+    ].every(Boolean)
+  );
+}
+function bindAndRestoreGraph(
+  options: GraphRestoreInput,
+  input: {
+    stored: StoredGraphData;
+    record: NonNullable<
+      Awaited<ReturnType<NativeAnalysisCache['restoreGraphRecord']>>
+    >;
+  },
+): CachedGraphData | undefined {
+  const { stored, record } = input;
+  rebindCachedCompilation(stored, options.cache);
+  if (!hasBoundCachedReferences(stored, options.config)) return undefined;
+  if (admittedCachedGraph(stored) === undefined) return undefined;
   return restoreGraphContexts({
     cache: options.cache,
     data: stored,
@@ -187,9 +217,10 @@ async function rebindArtifacts(
       ownedPaths: [...context.expectedFiles],
     },
   );
-  return { ...data, changed: context.changed, artifactPlan };
+  const graph = { ...data, changed: context.changed, artifactPlan };
+  await bindRestoredGraphExecutionInputs(graph, options.cache);
+  return graph;
 }
-
 export function captureGeneratedGraph(options: {
   cache: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
@@ -249,7 +280,6 @@ function captureGraphData(
     value: stored,
   });
 }
-
 function hasValidProjections(
   stored: NonNullable<ReturnType<typeof decodeGraph>>,
   cache: NativeAnalysisCache,
@@ -263,7 +293,6 @@ function hasValidProjections(
     )
   );
 }
-
 function restoredGeneration(options: GraphRestoreInput): number {
   return options.generation ?? 0;
 }

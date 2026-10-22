@@ -1,6 +1,12 @@
 import { compareCodeUnits } from '#utils/collections';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { StoredGraphData } from './analysis-cache-schema';
+import { projectedReferences } from './candidate-build-plan';
+import {
+  bindCompilationProjection,
+  bindCurrentCompilationContexts,
+} from './compilation-prerequisite';
 
 /**
 A cached summary cannot change which projects and edges it admits.
@@ -12,10 +18,12 @@ export function hasBoundCandidate(graph: StoredGraphData): boolean {
     .values()
     .flatMap((sources) => sources.keys().toArray())
     .toArray();
-  const references = graph.dependencyEdges.map((edge) => ({
-    from: edge.fromConfigPath,
-    to: edge.toConfigPath,
-  }));
+  const references = projectedReferences(
+    graph.governedSources
+      .values()
+      .flatMap((sources) => sources.values())
+      .toArray(),
+  );
   return [
     hasSameSet(candidate.configPaths, configs),
     candidate.schedules.length === 0,
@@ -40,5 +48,24 @@ function hasSameSet(
     [...new Set(values)].sort(compareCodeUnits);
   return (
     nativeFingerprint(canonical(left)) === nativeFingerprint(canonical(right))
+  );
+}
+
+export function rebindCachedCompilation(
+  stored: StoredGraphData,
+  cache: NativeAnalysisCache,
+): void {
+  bindCompilationProjection(
+    stored.dependencyAnalysis.candidate!,
+    stored.governedSources
+      .values()
+      .flatMap((units) => units.values())
+      .toArray(),
+  );
+  bindCurrentCompilationContexts(
+    stored.dependencyAnalysis.candidate!,
+    Object.values(cache.contexts).flatMap(
+      (record) => record.native?.snapshot.contexts ?? [],
+    ),
   );
 }

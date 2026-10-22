@@ -5,7 +5,6 @@ import {
   createAnalysisRun,
   createNoopMetricsRecorder,
 } from '../application/analysis/analysis-run';
-import { getConfigInputs } from '../config/input-observation';
 import type { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import {
   createLiminaArtifactNamespace,
@@ -13,6 +12,7 @@ import {
 } from '../domain/artifacts/namespace';
 import { identifier } from '../domain/shared/identifiers';
 import { AnalysisCacheController } from './analysis-cache';
+import { AnalysisToolObservation } from './analysis-cache-tools';
 import { ConfigObservation } from './config-observation';
 import type { LiminaPreflightManagerOptions } from './types';
 
@@ -82,7 +82,6 @@ export function observeUncachedConfig(
   cache: AnalysisCacheController | undefined,
 ): ConfigObservation | undefined {
   if (cache !== undefined) return undefined;
-  if (getConfigInputs(options.config) === undefined) return undefined;
   const observation = new ConfigObservation(options.config);
   observation.snapshot();
   return observation;
@@ -103,4 +102,49 @@ export function createPreflightRun(options: {
       `${options.rootDir}:${options.generation}:${options.providerGeneration}`,
     ),
   });
+}
+
+export function observeUncachedTools(
+  options: LiminaPreflightManagerOptions,
+  cache: AnalysisCacheController | undefined,
+): AnalysisToolObservation | undefined {
+  return cache === undefined
+    ? new AnalysisToolObservation(options.config.configPath)
+    : undefined;
+}
+
+export function managedRefreshOptions(
+  options: LiminaPreflightManagerOptions,
+  generation: number,
+): LiminaPreflightManagerOptions {
+  const namespace = createLiminaArtifactNamespace({
+    generation,
+    rootDir: options.config.rootDir,
+  });
+  return {
+    ...options,
+    providers: createAnalysisProviders(
+      options.config,
+      namespace,
+      options.metrics,
+    ),
+  };
+}
+
+export function observeExecutionConfig(
+  options: LiminaPreflightManagerOptions,
+  cache: AnalysisCacheController | undefined,
+): { assertStable(): void } {
+  const config = observeUncachedConfig(options, cache);
+  const tools = observeUncachedTools(options, cache);
+  const checks = [
+    () => cache?.assertConfigurationStable(),
+    () => config?.assertStable(),
+    () => tools?.assertStable(),
+  ];
+  return {
+    assertStable() {
+      for (const check of checks) check();
+    },
+  };
 }

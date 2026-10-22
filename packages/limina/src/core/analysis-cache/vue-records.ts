@@ -11,6 +11,10 @@ import type {
   VueQueryKind,
   VueQueryResults,
 } from './vue-contracts';
+import {
+  bindVueExecutionInputs,
+  retainVueExecutionInputs,
+} from './vue-execution-inputs';
 import { isVueAnalysisSupported } from './vue-identity';
 import type { VueInputTrace } from './vue-inputs';
 import { VueAnalysisMemo } from './vue-memo';
@@ -46,6 +50,7 @@ export class VueAnalysisRecords {
   readonly #expected = new Set<string>();
   readonly #eligibility = new WeakMap<VueProjectSemanticIdentity, boolean>();
   readonly #identities = new Map<string, VueProjectSemanticIdentity>();
+  readonly #executionIdentities = new WeakSet<VueProjectSemanticIdentity>();
   readonly #memo = new VueAnalysisMemo();
   #unsupported = false;
   readonly records: Record<string, VueContextRecord> = {};
@@ -71,11 +76,19 @@ export class VueAnalysisRecords {
 
   #state(identity: VueProjectSemanticIdentity): VueRecordState {
     const id = this.#memo.contextId(identity);
-    let state = this.#states.get(id);
+    let state = this.#existingState(identity);
     if (state === undefined) {
       state = new VueRecordState(identity, this.cache, this.#restore(identity));
       this.#states.set(id, state);
     }
+    return state;
+  }
+
+  #existingState(
+    identity: VueProjectSemanticIdentity,
+  ): VueRecordState | undefined {
+    const state = this.#states.get(this.#memo.contextId(identity));
+    if (state !== undefined) retainVueExecutionInputs(state.identity, identity);
     return state;
   }
 
@@ -86,9 +99,20 @@ export class VueAnalysisRecords {
   #restore(identity: VueProjectSemanticIdentity): VueContextRecord | undefined {
     if (this.cache.inputs.domainDirty) return undefined;
     const id = this.#memo.contextId(identity);
-    return this.#qualified.has(id)
+    const record = this.#qualified.has(id)
       ? this.records[id]
       : this.#validate(identity, id);
+    this.#bindExecutionInputs(identity, record);
+    return record;
+  }
+
+  #bindExecutionInputs(
+    identity: VueProjectSemanticIdentity,
+    record: VueContextRecord | undefined,
+  ): void {
+    if (record === undefined || this.#executionIdentities.has(identity)) return;
+    bindVueExecutionInputs(identity, this.cache.inputs, record.dependencies);
+    this.#executionIdentities.add(identity);
   }
 
   #validate(
@@ -142,10 +166,7 @@ export class VueAnalysisRecords {
   #context(
     identity: VueProjectSemanticIdentity,
   ): VueRecordState | VueContextRecord | undefined {
-    return (
-      this.#states.get(this.#memo.contextId(identity)) ??
-      this.#restore(identity)
-    );
+    return this.#existingState(identity) ?? this.#restore(identity);
   }
 
   #read<K extends VueQueryKind>(

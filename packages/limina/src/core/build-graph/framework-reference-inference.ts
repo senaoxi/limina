@@ -1,12 +1,14 @@
 import { isBuildCapablePreset } from '#checkers';
 import type { formatImportRecordLocation } from '#core/import-graph/context';
 import { uniqueCodeUnitSortedStrings } from '#utils/collections';
+import { collectFrameworkExecutionInputs } from '../analysis-cache/framework-execution-inputs';
 import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
   collectProjectDependencies,
   createSourceProjectSemanticContext,
   type ProjectDependency,
 } from '../project-dependencies/runner';
+import { shouldUseDeclarationProvider } from './compilation-prerequisite';
 import {
   addAmbiguousFrameworkSourceOwnerProblem,
   addMissingFrameworkBuildOwnerProblem,
@@ -126,16 +128,6 @@ function resolveLegacyFrameworkTarget(
     : { resolution, targetConfigPath: targetConfigPath! };
 }
 
-function shouldRecordDeclarationProviderImport(
-  source: GovernedSourceUnit,
-  resolution: OwnedResolution,
-): boolean {
-  return (
-    isBuildCapablePreset(source.primaryCheckerName) &&
-    !isFrameworkFile(resolution.filePath)
-  );
-}
-
 function recordFrameworkSchedulingDependency(
   importOptions: FrameworkImportOptions,
   target: FrameworkImportTarget,
@@ -165,7 +157,7 @@ function processFrameworkImport(options: FrameworkImportOptions): void {
   const target = resolveFrameworkImportTarget(options);
   if (target === null) return;
   if (
-    shouldRecordDeclarationProviderImport(options.source, target.resolution)
+    shouldUseDeclarationProvider(options.source, target.resolution.filePath)
   ) {
     processDeclarationProviderImport({
       ...options,
@@ -263,17 +255,25 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
   const frameworkFiles = new Set(
     getFrameworkSourceFileNames(options.source, project),
   );
-  const collection = collectProjectDependencies({
-    compilationObligationScope: 'generated-declaration-project-v1',
-    caches: options.context.projectDependencyCaches,
-    context: createSourceProjectSemanticContext({
-      authority: options.source.semanticAuthority,
-      project,
+  const collection = collectFrameworkExecutionInputs(
+    {
       source: options.source,
-      workspaceSourceBoundary: options.context.workspaceSourceBoundary,
-    }),
-    importAnalysis: options.context.importAnalysis,
-  });
+      project,
+      analysis: options.context.importAnalysis,
+    },
+    () =>
+      collectProjectDependencies({
+        compilationObligationScope: 'generated-declaration-project-v1',
+        caches: options.context.projectDependencyCaches,
+        context: createSourceProjectSemanticContext({
+          authority: options.source.semanticAuthority,
+          project,
+          source: options.source,
+          workspaceSourceBoundary: options.context.workspaceSourceBoundary,
+        }),
+        importAnalysis: options.context.importAnalysis,
+      }),
+  );
   processFrameworkDependencies({
     base: options,
     dependencies: effectiveReferenceInputs(collection),

@@ -1,4 +1,6 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
+import { EpochInputs } from '../analysis-cache/epoch-inputs';
+import { retainGraphExecutionInputs } from '../analysis-cache/execution-inputs';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
 import {
   type ValidatedWorkspaceContext,
@@ -157,7 +159,7 @@ async function restorePreparedGraph(
     preparation: options,
   });
 }
-export async function prepareGeneratedTsconfigGraph(
+async function prepareCurrentGraph(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<GeneratedTsconfigGraphResult> {
@@ -264,4 +266,16 @@ function returnFailedGraph(
 ): DependencyAnalysisResult {
   if (isAnalysisOnly) return analysis;
   throw createGraphPreparationError(error, analysis);
+}
+
+export async function prepareGeneratedTsconfigGraph(
+  config: ResolvedLiminaInputs,
+  options: PrepareGeneratedTsconfigGraphOptions,
+): Promise<GeneratedTsconfigGraphResult> {
+  const inputs = new EpochInputs();
+  const graph = await inputs.collect(() =>
+    prepareCurrentGraph(config, options),
+  );
+  retainGraphExecutionInputs(graph, inputs);
+  return graph;
 }

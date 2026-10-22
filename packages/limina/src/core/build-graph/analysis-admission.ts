@@ -2,6 +2,8 @@ import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-eviden
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { AnalysisOutcome } from './analysis-outcome';
+import { compilationRelationFor } from './compilation-prerequisite';
+import { hasProjectedCompilationReference } from './compilation-reference';
 import type { DependencyAnalysisResult } from './types';
 
 export interface CandidateBuildPlan {
@@ -49,10 +51,13 @@ function assessCandidate(
 ): Admission {
   const configs = new Set(candidate.configPaths);
   const unknown = workGaps(configs, outcome);
-  const denied: string[] = [];
-  const evidenceEntries = nativeEntries(analysis);
-  for (const evidence of evidenceEntries)
-    assessRelations(evidence.snapshot, candidate, { unknown, denied });
+  const compilation = assessCompilationPrerequisites(
+    analysis,
+    candidate,
+    configs,
+  );
+  const denied = compilation.denied;
+  unknown.push(...compilation.unknown);
   return denied.length > 0
     ? admission('denied', denied)
     : uncertainAdmission(unknown);
@@ -92,9 +97,9 @@ function isCompleted(entry: Prerequisites['core']['entries'][number]): boolean {
 function assessRelations(
   snapshot: NativeEvidenceSnapshot,
   candidate: CandidateBuildPlan,
-  result: { unknown: string[]; denied: string[] },
+  result: { unknown: string[]; denied: string[]; configs: ReadonlySet<string> },
 ): void {
-  const configs = new Set(candidate.configPaths);
+  const configs = result.configs;
   const applicable = snapshot.obligations.filter((obligation) =>
     isCandidateObligation(snapshot, obligation, configs),
   );
@@ -111,17 +116,17 @@ function assessObligation(
 ): void {
   const { snapshot, candidate, result } = input;
   const state = summarizeCompilationObligation(obligation);
-  if (state === 'required')
-    assessRequired(candidate, obligation, result.denied);
+  if (['required', 'already-satisfied'].includes(state))
+    assessRequired({ snapshot, candidate }, obligation, result.denied);
   else if (state === 'unknown')
     assessUnknown({ snapshot, candidate }, obligation, result.unknown);
 }
 function assessRequired(
-  candidate: CandidateBuildPlan,
+  input: { snapshot: NativeEvidenceSnapshot; candidate: CandidateBuildPlan },
   obligation: NativeCompilationObligation,
   denied: string[],
 ): void {
-  if (!hasReference(candidate, obligation))
+  if (!hasReference(input.snapshot, input.candidate, obligation))
     denied.push(`Unsatisfied compilation obligation: ${obligation.id}`);
 }
 function assessUnknown(
@@ -130,7 +135,7 @@ function assessUnknown(
   unknown: string[],
 ): void {
   const { snapshot, candidate } = input;
-  if (hasReference(candidate, obligation)) return;
+  if (hasReference(snapshot, candidate, obligation)) return;
   if (hasCandidateImpact(snapshot, obligation))
     unknown.push(`Unproved necessary compilation relation: ${obligation.id}`);
 }
@@ -150,18 +155,26 @@ function isCandidateObligation(
 }
 
 function hasReference(
+  snapshot: NativeEvidenceSnapshot,
   candidate: CandidateBuildPlan,
   obligation: NativeCompilationObligation,
 ): boolean {
-  return (
-    obligation.targetConfigId !== null &&
-    candidate.configPaths.includes(obligation.targetConfigId) &&
-    [...candidate.references, ...candidate.schedules].some(
+  const relation = compilationRelationFor(snapshot, obligation, candidate);
+  if (relation === undefined) return false;
+  const pairs =
+    relation === 'declaration-reference'
+      ? candidate.references
+      : candidate.schedules;
+  return [
+    hasProjectedCompilationReference(snapshot, obligation, candidate),
+    obligation.targetConfigId !== null,
+    candidate.configPaths.includes(obligation.targetConfigId!),
+    pairs.some(
       (pair) =>
         pair.from === obligation.consumerConfigId &&
         pair.to === obligation.targetConfigId,
-    )
-  );
+    ),
+  ].every(Boolean);
 }
 
 function hasCandidateImpact(
@@ -214,4 +227,15 @@ export class CandidateAdmissionUnavailable extends Error {
     super(reasons.join('\n\n'));
     this.name = 'CandidateAdmissionUnavailable';
   }
+}
+
+export function assessCompilationPrerequisites(
+  analysis: DependencyAnalysisResult,
+  candidate: CandidateBuildPlan,
+  configs: ReadonlySet<string>,
+): { unknown: string[]; denied: string[] } {
+  const result = { unknown: [] as string[], denied: [] as string[], configs };
+  for (const evidence of nativeEntries(analysis))
+    assessRelations(evidence.snapshot, candidate, result);
+  return result;
 }
