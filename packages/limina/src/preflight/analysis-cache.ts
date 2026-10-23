@@ -168,9 +168,9 @@ export class AnalysisCacheController {
   async publish(): Promise<void> {
     this.assertConfigurationStable();
     if (!this.#analyzed) return;
-    await this.cache.epoch.assertStable();
-    this.cache.inputs.assertStable();
     if (!this.#canPublish) {
+      await this.cache.epoch.assertStable();
+      this.cache.inputs.assertStable();
       this.#reportMetrics();
       return;
     }
