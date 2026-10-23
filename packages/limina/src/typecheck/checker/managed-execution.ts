@@ -1,4 +1,5 @@
 import type { ExecutionAdmission } from '../admission/execution-admission';
+import type { ProducerPreparation } from '../admission/execution-prerequisites';
 import { ManagedCheckerMutationCoordinator } from '../managed/coordinator';
 import { resolveTypecheckRunner } from '../runner-shared';
 import type { BuildTargetCompletion, TypecheckTarget } from '../target-types';
@@ -6,7 +7,9 @@ import { runTargetWithMeasuredDuration } from '../targets';
 import type { executeCheckerBuildTargets } from './build-execution';
 
 export async function executeAuthorizedBuild(
-  options: Parameters<typeof executeCheckerBuildTargets>[0],
+  options: Parameters<typeof executeCheckerBuildTargets>[0] & {
+    preparation?: ProducerPreparation;
+  },
   admission: ExecutionAdmission,
   target: TypecheckTarget,
 ): Promise<BuildTargetCompletion> {
@@ -25,7 +28,12 @@ export async function executeAuthorizedBuild(
     return await admission.withManagedWrites(
       target,
       async () => {
-        initial = await prepare();
+        // Only the initial proof is handed off. A refreshed graph needs a new
+        // baseline, and layer/target checks still re-prove the live outputs.
+        initial =
+          options.preparation?.graph === admission.graph
+            ? options.preparation.coordinator
+            : await prepare();
         return new Set(initial.projectedOutputPaths(target));
       },
       async (recordWrites, releaseAtLaunch) => {
@@ -33,19 +41,11 @@ export async function executeAuthorizedBuild(
           target,
           'mutation',
           async (permit) => {
-            const coordinator = await prepare();
-            if (
-              JSON.stringify(coordinator.projectedOutputPaths(target)) !==
-              JSON.stringify(initial.projectedOutputPaths(target))
-            )
-              throw new Error(
-                'Managed output projection changed during input handoff.',
-              );
-            await coordinator.beforeLayerRun([target], async () => {
+            await initial.beforeLayerRun([target], async () => {
               await admission.assertPermit(permit, target, 'mutation');
               recordWrites();
             });
-            await coordinator.beforeTargetRun(target);
+            await initial.beforeTargetRun(target);
           },
         );
         if (mutation.state === 'refused') return mutation.rejection;

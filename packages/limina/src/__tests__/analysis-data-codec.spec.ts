@@ -3,6 +3,7 @@ import {
   type DataNode,
   decodeData,
   encodeData,
+  validateData,
 } from '../core/analysis-cache/data-codec';
 
 it.each<{ name: string; value: unknown; encoded: DataNode }>([
@@ -28,6 +29,7 @@ it.each<{ name: string; value: unknown; encoded: DataNode }>([
   const result = encodeData(value);
   expect(result).toStrictEqual(encoded);
   expect(decodeData(encoded)).toBe(value);
+  expect(() => validateData(encoded)).not.toThrow();
   result.pop();
   expect(encodeData(value)).toStrictEqual(encoded);
 });
@@ -42,4 +44,53 @@ it.each([
   { name: 'bigint', value: 1n },
 ])('rejects unsupported $name data', ({ value }) => {
   expect(() => encodeData(value)).toThrow('Executable data.');
+});
+
+it('validates nested containers while decoding retains their kinds and order', () => {
+  const value = new Map([
+    ['set', new Set<unknown>([undefined, null, { values: [false, 0, ''] }])],
+    ['empty', new Set()],
+  ]);
+  const encoded = encodeData(value);
+  expect(() => validateData(encoded)).not.toThrow();
+  expect(decodeData(encoded)).toStrictEqual(value);
+});
+
+it.each([
+  { name: 'unknown tag', node: ['unknown'] },
+  { name: 'wrong arity', node: ['null', 1] },
+  { name: 'wrong scalar', node: ['number', '1'] },
+  { name: 'non-finite child', node: ['set', [['number', Infinity]]] },
+  { name: 'non-array entries', node: ['array', {}] },
+  { name: 'non-node child', node: ['array', [null]] },
+  { name: 'non-string key', node: ['map', [[1, ['null']]]] },
+  { name: 'wrong entry arity', node: ['object', [['a', ['null'], 1]]] },
+  {
+    name: 'duplicate map key',
+    node: [
+      'map',
+      [
+        ['a', ['null']],
+        ['a', ['string', 'different']],
+      ],
+    ],
+  },
+  {
+    name: 'nested duplicate object key',
+    node: [
+      'array',
+      [
+        [
+          'object',
+          [
+            ['a', ['null']],
+            ['a', ['null']],
+          ],
+        ],
+      ],
+    ],
+  },
+])('rejects $name in both validation and decoding', ({ node }) => {
+  expect(() => validateData(node)).toThrow();
+  expect(() => decodeData(node)).toThrow();
 });

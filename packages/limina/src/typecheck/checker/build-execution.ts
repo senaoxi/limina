@@ -23,8 +23,7 @@ import {
   shouldLogCheckReport,
 } from '../runner-shared';
 import type {
-  CheckerFailureKind,
-  CheckerFailureTarget,
+  CheckerBuildExecutionResult,
   RunCheckerBuildOptions,
 } from '../runner-types';
 import {
@@ -36,15 +35,7 @@ import {
 } from '../targets';
 import { executeAuthorizedBuild } from './managed-execution';
 type CheckerFlowTask = LiminaFlowTask | TaskProgressItem;
-export interface CheckerBuildExecutionResult {
-  admission: ExecutionAdmission;
-  failureKind?: CheckerFailureKind;
-  failedResults: TypecheckTargetResult[];
-  failedTargets: CheckerFailureTarget[];
-  passed: boolean;
-  results: TypecheckTargetResult[];
-  targetOutcomes: CheckerTargetOutcome[];
-}
+export type { CheckerBuildExecutionResult } from '../runner-types';
 function startProgressTarget(options: {
   target: TypecheckTarget;
   tasks: ReadonlyMap<CheckerTargetId, CheckerFlowTask>;
@@ -148,7 +139,7 @@ export async function executeCheckerBuildTargets(options: {
     options.generatedGraph.dependencyEdges,
     runner,
     {
-      executionPrerequisites: prerequisites,
+      executionPrerequisites: prerequisites.dependencies,
       isDeliveryComplete: (id) => {
         const delivery = deliveries.get(id);
         return (
@@ -157,7 +148,11 @@ export async function executeCheckerBuildTargets(options: {
         );
       },
       executeTarget: async (target) => {
-        const result = await executeAuthorizedBuild(options, admission, target);
+        const result = await executeAuthorizedBuild(
+          { ...options, preparation: prerequisites.preparations.get(target) },
+          admission,
+          target,
+        );
         if (result.status === 0 && options.watch !== true)
           deliveries.set(
             target.id,
