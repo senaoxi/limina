@@ -135,16 +135,19 @@ export class ExecutionAdmission {
     if ((await this.preflight.ensureGeneratedGraph()) !== this.graph)
       throw new Error('Execution graph changed.');
   }
-  async #check(target: TypecheckTarget): Promise<Refusal | undefined> {
-    const closure = await this.#currentInputs(target);
+  async #check(
+    target: TypecheckTarget,
+    shouldRefresh = false,
+  ): Promise<Refusal | undefined> {
+    const closure = await this.#currentInputs(target, shouldRefresh);
     return (
       this.#govern(closure.governed) ??
       executionCompilationDiagnostics(this.graph, closure)
     );
   }
-  async #currentInputs(target: TypecheckTarget) {
+  async #currentInputs(target: TypecheckTarget, shouldRefresh = false) {
     await this.#assertSelection(target);
-    await this.#inputs.validate(target);
+    await this.#inputs.validate(target, shouldRefresh);
     const closure = collectExecutionReferenceClosure(
       this.graph,
       target,
@@ -210,7 +213,7 @@ export class ExecutionAdmission {
   ): Promise<void> {
     try {
       assertExecutionPermit(permit, this.#permitBinding(target, authorization));
-      const refusal = await this.#check(target);
+      const refusal = await this.#check(target, true);
       assertNoRefusal(refusal);
       assertExecutionPermit(permit, this.#permitBinding(target, authorization));
     } catch (error) {
@@ -221,6 +224,9 @@ export class ExecutionAdmission {
   }
   get graph(): GeneratedTsconfigGraphResult {
     return this.#inputs.graph;
+  }
+  withReadOnlyValidation<T>(action: () => Promise<T>): Promise<T> {
+    return this.#inputs.withReadOnlyValidation(action);
   }
   /**
   Read-only capability proof survives governance refusal; it grants no mutation or launch permit.
