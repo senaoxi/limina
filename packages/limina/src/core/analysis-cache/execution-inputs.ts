@@ -91,8 +91,9 @@ function assertObservedConfigs(
   inputs: EpochInputs,
   configs: ReadonlySet<string>,
 ): void {
+  const paths = inputs.paths;
   for (const config of configs)
-    if (!inputs.paths.has(config))
+    if (!paths.has(config))
       throw new Error(`Unobserved execution config: ${config}`);
 }
 function selectedContextInputs(

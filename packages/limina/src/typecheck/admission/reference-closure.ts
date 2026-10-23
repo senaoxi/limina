@@ -123,6 +123,7 @@ interface ClosureContext {
   graph: GeneratedTsconfigGraphResult;
   config: ResolvedLiminaConfig;
   identities: Map<string, MappedProject>;
+  aliases: Map<string, string[]>;
   result: ExecutionReferenceClosure;
 }
 export function collectExecutionReferenceClosure(
@@ -154,6 +155,7 @@ function nativeClosure(options: {
   const context = {
     ...options,
     identities: projectIdentities(options.graph),
+    aliases: referenceAliases(options.graph),
     result,
   };
   for (const file of physical.configPaths) addConfigInputs(context, file);
@@ -229,9 +231,8 @@ function recordReference(
   if (![from.isLeaf, to.isLeaf].every(Boolean)) return;
   const fromDts = declarationConfig(context.graph, from);
   const toDts = declarationConfig(context.graph, to);
-  const aliases = referenceAliases(context.graph);
   context.result.governed.push({
-    aliases,
+    aliases: context.aliases,
     reference: {
       checkerName: from.checkerName,
       from: fromDts,

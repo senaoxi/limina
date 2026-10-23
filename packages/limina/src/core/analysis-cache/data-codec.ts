@@ -103,5 +103,12 @@ function encodeContainer(value: unknown, stack: Set<object>): DataNode {
   }
 }
 export function decodeData(node: unknown): unknown {
-  return decodeNode(node);
+  return decodeNode(node, true);
+}
+
+/**
+Validate the same wire grammar without retaining a discarded graph copy.
+*/
+export function validateData(node: unknown): void {
+  decodeNode(node, false);
 }

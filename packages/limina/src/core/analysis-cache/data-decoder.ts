@@ -1,4 +1,5 @@
-const decoders: Record<string, (node: unknown[]) => unknown> = {
+type Decoder = (node: unknown[], shouldDecode: boolean) => unknown;
+const decoders: Record<string, Decoder> = {
   undefined: (node) => {
     requireArity(node, 1);
   },
@@ -13,10 +14,19 @@ const decoders: Record<string, (node: unknown[]) => unknown> = {
     if (!Number.isFinite(value)) throw new Error('Non-finite data.');
     return value;
   },
-  array: (node) => requireEntries(node).map(decodeNode),
-  set: (node) => new Set(requireEntries(node).map(decodeNode)),
-  object: (node) => Object.fromEntries(decodeEntries(node)),
-  map: (node) => new Map(decodeEntries(node)),
+  array: decodeSequence,
+  set: (node, shouldDecode) => {
+    const entries = decodeSequence(node, shouldDecode);
+    return shouldDecode ? new Set(entries) : undefined;
+  },
+  object: (node, shouldDecode) => {
+    const entries = decodeEntries(node, shouldDecode);
+    return shouldDecode ? Object.fromEntries(entries) : undefined;
+  },
+  map: (node, shouldDecode) => {
+    const entries = decodeEntries(node, shouldDecode);
+    return shouldDecode ? new Map(entries) : undefined;
+  },
 };
 function requireArity(node: unknown[], arity: number): void {
   if (node.length !== arity) throw new Error('Invalid data arity.');
@@ -31,21 +41,45 @@ function requireEntries(node: unknown[]): unknown[] {
   if (!Array.isArray(node[1])) throw new Error('Invalid data entries.');
   return node[1];
 }
-function decodeEntry(entry: unknown): [string, unknown] {
+function requireEntry(entry: unknown): [string, unknown] {
   if (!Array.isArray(entry)) throw new Error('Invalid data entry.');
   requireArity(entry, 2);
   if (typeof entry[0] !== 'string') throw new Error('Invalid data key.');
-  return [entry[0], decodeNode(entry[1])];
+  return entry as [string, unknown];
 }
-function decodeEntries(node: unknown[]): [string, unknown][] {
-  const entries = requireEntries(node).map(decodeEntry);
-  const keys = new Set(entries.map(([key]) => key));
-  if (keys.size !== entries.length) throw new Error('Duplicate data key.');
+function decodeSequence(node: unknown[], shouldDecode: boolean): unknown[] {
+  const entries: unknown[] = [];
+  for (const entry of requireEntries(node)) {
+    const value = decodeNode(entry, shouldDecode);
+    if (shouldDecode) entries.push(value);
+  }
   return entries;
 }
-export function decodeNode(node: unknown): unknown {
+function decodeEntries(
+  node: unknown[],
+  shouldDecode: boolean,
+): [string, unknown][] {
+  const entries: [string, unknown][] = [];
+  const keys = new Set<string>();
+  for (const entry of requireEntries(node)) {
+    const [key, child] = requireUniqueEntry(entry, keys);
+    const value = decodeNode(child, shouldDecode);
+    if (shouldDecode) entries.push([key, value]);
+  }
+  return entries;
+}
+function requireUniqueEntry(
+  entry: unknown,
+  keys: Set<string>,
+): [string, unknown] {
+  const [key, child] = requireEntry(entry);
+  if (keys.has(key)) throw new Error('Duplicate data key.');
+  keys.add(key);
+  return [key, child];
+}
+export function decodeNode(node: unknown, shouldDecode: boolean): unknown {
   if (!Array.isArray(node)) throw new Error('Invalid data node.');
   const decode = decoders[String(node[0])];
   if (decode === undefined) throw new Error('Invalid data tag.');
-  return decode(node);
+  return decode(node, shouldDecode);
 }

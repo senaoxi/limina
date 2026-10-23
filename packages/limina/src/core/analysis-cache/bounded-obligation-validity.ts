@@ -1,8 +1,5 @@
 import type { NativeEvidenceContext } from '../../domain/analysis/native-context';
-import {
-  deriveNativeCoverage,
-  type NativeCoverage,
-} from '../../domain/analysis/native-coverage';
+import type { NativeCoverage } from '../../domain/analysis/native-coverage';
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { BoundedEvidenceIndex } from './bounded-evidence-index';
@@ -54,21 +51,16 @@ function hasBoundTarget(
     [
       obligation.targetConfigId === null,
       (record.project.projectReferences ?? []).length > 0,
-    ].some(Boolean) || hasCoveredTarget(record, obligation, index)
+    ].some(Boolean) || hasCoveredTarget(obligation, index)
   );
 }
 function hasCoveredTarget(
-  record: NativeContextRecord,
   obligation: NativeCompilationObligation,
   index: BoundedEvidenceIndex,
 ): boolean {
-  const snapshot = record.native!.snapshot;
   const resolution = index.resolutions.get(obligation.requestIds[0]!);
   if (resolution?.target == null) return false;
-  const coverage = deriveNativeCoverage(
-    snapshot.coverageIndexes[0]!,
-    resolution.target,
-  );
+  const coverage = index.coverage(resolution.target);
   return hasMatchingTargetConfig(coverage, obligation.targetConfigId);
 }
 function hasMatchingTargetConfig(

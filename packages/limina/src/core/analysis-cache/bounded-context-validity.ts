@@ -1,6 +1,5 @@
 import { nativeCollectionStatus } from '../../domain/analysis/native-collection';
 import type { NativeEvidenceContext } from '../../domain/analysis/native-context';
-import { deriveNativeCoverage } from '../../domain/analysis/native-coverage';
 import type { NativeResolution } from '../../domain/analysis/native-evidence';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
@@ -143,14 +142,13 @@ function hasValidBoundedFacts(
     return (
       importer !== undefined &&
       Object.values(importer.facts).every((fact) =>
-        hasValidBoundedFact(record, fact, index),
+        hasValidBoundedFact(fact, index),
       )
     );
   });
 }
 
 function hasValidBoundedFact(
-  record: NativeContextRecord,
   fact: NativeDependencyFact,
   index: BoundedEvidenceIndex,
 ): boolean {
@@ -160,7 +158,6 @@ function hasValidBoundedFact(
   const resolution = index.resolutions.get(evidence.requestId);
   if ([request, resolution].includes(undefined)) return false;
   return hasMatchingFactEvidence(
-    record,
     {
       evidence,
       request: request!,
@@ -172,7 +169,6 @@ function hasValidBoundedFact(
 }
 
 function hasMatchingFactEvidence(
-  record: NativeContextRecord,
   input: {
     evidence: NonNullable<NativeDependencyFact['nativeEvidence']>;
     request: NonNullable<
@@ -185,12 +181,7 @@ function hasMatchingFactEvidence(
 ): boolean {
   const { evidence, request, resolution, fact } = input;
   const expectedCoverage =
-    resolution.target === null
-      ? null
-      : deriveNativeCoverage(
-          record.native!.snapshot.coverageIndexes[0]!,
-          resolution.target,
-        );
+    resolution.target === null ? null : index.coverage(resolution.target);
   return [
     nativeFingerprint(request.origin) === nativeFingerprint(evidence.origin),
     hasMatchingResolvedTarget(resolution, fact),

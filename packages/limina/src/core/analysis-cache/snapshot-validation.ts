@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { hasValidBoundedContext } from './bounded-context-validity';
 import type { AnalysisSnapshot, InputDependency } from './contracts';
-import { decodeData } from './data-codec';
+import { validateData } from './data-codec';
 import { analysisHash } from './identity';
 import { hasBrokenInstallationCoverage } from './installation-lock-coverage';
 import { hasResolutionReceipt } from './resolution-queries';
@@ -107,7 +107,7 @@ function isGraphValid(
   graph: AnalysisSnapshot['graphs'][string],
 ): boolean {
   try {
-    decodeData(graph.data);
+    validateData(graph.data);
   } catch {
     return false;
   }

@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { occurrenceKey } from '../core/analysis-cache/semantic-state';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
+import { validatedSnapshot } from '../core/analysis-cache/snapshot-validation';
 import {
   createTypeScriptDependencyContext,
   createWorkspaceSourceBoundary,
@@ -30,6 +31,41 @@ afterEach(() => {
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
+
+it.each(['member-version', 'target-identity'] as const)(
+  'requalifies changed coverage after validating a restored DTO (%s)',
+  (change) => {
+    const f = fixture();
+    f.write(
+      'a.ts',
+      'import { value } from "./value"; export { value } from "./value";',
+    );
+    f.write('value.ts', 'export const value = 1;');
+    const project = f.project(['a.ts', 'value.ts']);
+    const first = collect(project);
+    const snapshot = structuredClone(first.cache.snapshot());
+    expect(validatedSnapshot(snapshot)).toBe(snapshot);
+    const native = Object.values(snapshot.contexts).find(
+      (record) => record.native!.snapshot.resolutions.length > 0,
+    )!.native!;
+    if (change === 'member-version') {
+      const config = native.snapshot.coverageIndexes[0]!.configurations.find(
+        (entry) => entry.state === 'enumerated',
+      )!;
+      if (config.state !== 'enumerated')
+        throw new Error('Missing fixture members.');
+      Object.assign(config.members[0]!.physical, { inputVersion: 'stale' });
+    } else {
+      Object.assign(native.snapshot.resolutions[0]!.target!.physical, {
+        canonicalId: 'different-file',
+      });
+    }
+    expect(validatedSnapshot(snapshot)).toBeUndefined();
+    const cache = new NativeAnalysisCache('test', snapshot, 'config');
+    expect(cache.restoreContext(project)).toBeUndefined();
+    expect(cache.metrics.restoredContexts ?? 0).toBe(0);
+  },
+);
 
 function fixture() {
   const temporary = mkdtempSync(path.join(tmpdir(), 'limina-programless-'));
