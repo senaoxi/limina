@@ -1,7 +1,28 @@
+import { compareCodeUnits } from '#utils/collections';
 import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
 import { frameworkCheckerName } from '../framework-targets';
 import { getCheckerImplementationFingerprint } from '../managed/identity';
 import type { TypecheckTarget } from '../targets';
+import type { ExecutionReferenceClosure } from './reference-closure';
+
+export function captureExecutionBinding(options: {
+  target: TypecheckTarget;
+  graph: GeneratedTsconfigGraphResult;
+  projectRootDir: string;
+  closure: ExecutionReferenceClosure;
+  authority?: object;
+}): string {
+  const { target, graph, projectRootDir, closure, authority } = options;
+  return JSON.stringify([
+    captureTarget(target, graph, projectRootDir),
+    graph.artifactPlan.desiredRevision,
+    closure.references,
+    [...closure.inputs].sort(compareCodeUnits),
+    [...(closure.observations?.paths ?? [])].sort(compareCodeUnits),
+    authority,
+  ]);
+}
+
 export function captureTarget(
   target: TypecheckTarget,
   graph: GeneratedTsconfigGraphResult,

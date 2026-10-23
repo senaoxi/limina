@@ -1,4 +1,3 @@
-import { compareCodeUnits } from '#utils/collections';
 import { readFileSync } from 'node:fs';
 import { withMaterializedPlanReadLease } from '../../core/build-graph/materialization-read-lease';
 import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
@@ -18,19 +17,24 @@ import {
   executionInputCoordinator,
   type ExecutionInputCoordinator,
 } from './input-coordinator';
-import { collectExecutionReferenceClosure } from './reference-closure';
-import { assertTargetIdentity, captureTarget } from './target-identity';
+import {
+  collectExecutionReferenceClosure,
+  type ExecutionReferenceClosure,
+} from './reference-closure';
+import {
+  assertTargetIdentity,
+  captureExecutionBinding,
+  captureTarget,
+} from './target-identity';
 import type {
   AuthorizedResult,
   ExecutionAdmissionDiagnostic,
+  ExecutionAdmissionRejection,
   ExecutionPermit,
   ExecutionStage,
 } from './types';
 
-interface Refusal {
-  decision: 'denied' | 'unavailable';
-  diagnostics: ExecutionAdmissionDiagnostic[];
-}
+type Refusal = Pick<ExecutionAdmissionRejection, 'decision' | 'diagnostics'>;
 function normalizeAuthorization(authorization: PermitAuthority): {
   stage: ExecutionStage;
   authority?: object;
@@ -138,21 +142,21 @@ export class ExecutionAdmission {
   async #check(
     target: TypecheckTarget,
     shouldRefresh = false,
-  ): Promise<Refusal | undefined> {
+  ): Promise<{
+    closure: ExecutionReferenceClosure;
+    refusal: Refusal | undefined;
+  }> {
     const closure = await this.#currentInputs(target, shouldRefresh);
-    return (
-      this.#govern(closure.governed) ??
-      executionCompilationDiagnostics(this.graph, closure)
-    );
+    return {
+      closure,
+      refusal:
+        this.#govern(closure.governed) ??
+        executionCompilationDiagnostics(this.graph, closure),
+    };
   }
   async #currentInputs(target: TypecheckTarget, shouldRefresh = false) {
     await this.#assertSelection(target);
-    await this.#inputs.validate(target, shouldRefresh);
-    const closure = collectExecutionReferenceClosure(
-      this.graph,
-      target,
-      this.preflight.config,
-    );
+    const closure = await this.#inputs.validate(target, shouldRefresh);
     for (const file of closure.inputs)
       assertMaterializedInput(this.graph, file);
     return closure;
@@ -177,6 +181,11 @@ export class ExecutionAdmission {
   #permitBinding(
     target: TypecheckTarget,
     authorization: PermitAuthority,
+    closure = collectExecutionReferenceClosure(
+      this.graph,
+      target,
+      this.preflight.config,
+    ),
   ): PermitBinding {
     const { stage, authority } = normalizeAuthorization(authorization);
     return {
@@ -188,23 +197,14 @@ export class ExecutionAdmission {
       providers: this.preflight.providers,
       namespace: this.preflight.artifactNamespace,
       snapshot: this.preflight.run.snapshotToken,
-      binding: this.#binding(target, authority),
+      binding: captureExecutionBinding({
+        target,
+        graph: this.graph,
+        projectRootDir: this.preflight.config.rootDir,
+        closure,
+        authority,
+      }),
     };
-  }
-  #binding(target: TypecheckTarget, authority?: object): string {
-    const closure = collectExecutionReferenceClosure(
-      this.graph,
-      target,
-      this.preflight.config,
-    );
-    return JSON.stringify([
-      captureTarget(target, this.graph, this.preflight.config.rootDir),
-      this.graph.artifactPlan.desiredRevision,
-      closure.references,
-      [...closure.inputs].sort(compareCodeUnits),
-      [...(closure.observations?.paths ?? [])].sort(compareCodeUnits),
-      authority,
-    ]);
   }
   async assertPermit(
     permit: ExecutionPermit,
@@ -213,9 +213,12 @@ export class ExecutionAdmission {
   ): Promise<void> {
     try {
       assertExecutionPermit(permit, this.#permitBinding(target, authorization));
-      const refusal = await this.#check(target, true);
+      const { closure, refusal } = await this.#check(target, true);
       assertNoRefusal(refusal);
-      assertExecutionPermit(permit, this.#permitBinding(target, authorization));
+      assertExecutionPermit(
+        permit,
+        this.#permitBinding(target, authorization, closure),
+      );
     } catch (error) {
       throw new InvalidExecutionPermit(
         error instanceof Error ? error.message : String(error),
@@ -262,13 +265,13 @@ export class ExecutionAdmission {
         this.preflight.artifactNamespace,
         this.graph.artifactPlan,
         async () => {
-          const refusal = await this.#check(target);
+          const { closure, refusal } = await this.#check(target);
           if (refusal !== undefined) return refused(target, stage, refusal);
           isStarted = true;
           return {
             state: 'executed',
             value: await withExecutionPermit(
-              this.#permitBinding(target, authorization),
+              this.#permitBinding(target, authorization, closure),
               action,
             ),
           };

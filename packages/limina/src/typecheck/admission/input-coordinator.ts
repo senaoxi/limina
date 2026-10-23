@@ -7,29 +7,21 @@ import {
 import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
 import type { LiminaPreflightManager } from '../../preflight';
 import type { TypecheckTarget } from '../targets';
+import {
+  hasConflict,
+  type Reservation,
+  resolveOutputs,
+} from './input-reservation';
 import { ExecutionInputValidation } from './input-validation';
 import {
   observeManagedOutput,
   protectedInputPaths,
 } from './output-observation';
-import { collectExecutionReferenceClosure } from './reference-closure';
+import {
+  collectExecutionReferenceClosure,
+  type ExecutionReferenceClosure,
+} from './reference-closure';
 
-interface Reservation {
-  reads: ExecutionInputScope;
-  writes: ReadonlySet<string>;
-}
-async function resolveOutputs(
-  outputs: ReadonlySet<string> | (() => Promise<ReadonlySet<string>>),
-): Promise<ReadonlySet<string>> {
-  return typeof outputs === 'function' ? await outputs() : outputs;
-}
-function hasConflict(active: Reservation, pending: Reservation): boolean {
-  return [
-    pending.reads.affectedOutputs(active.writes).size > 0,
-    active.reads.affectedOutputs(pending.writes).size > 0,
-    !pending.writes.isDisjointFrom(active.writes),
-  ].some(Boolean);
-}
 /**
 Invocation-local reservations coordinate existing input proofs and managed output producers.
 */
@@ -60,20 +52,24 @@ export class ExecutionInputCoordinator {
     this.#original = graph;
     this.#snapshot = preflight.run.snapshotToken;
   }
-  #scope(target: TypecheckTarget, graph = this.#graph): ExecutionInputScope {
+  #scope(target: TypecheckTarget, graph = this.#graph) {
     const closure = collectExecutionReferenceClosure(
       graph,
       target,
       this.#preflight.config,
     );
-    return graphExecutionInputScope(graph, closure.configs, {
-      paths: closure.inputs,
-      observations: closure.observations,
-    });
+    return {
+      closure,
+      inputs: graphExecutionInputScope(graph, closure.configs, {
+        paths: closure.inputs,
+        observations: closure.observations,
+      }),
+    };
   }
   #baseline(target: TypecheckTarget): ExecutionInputScope {
     const scope =
-      this.#baselines.get(target.id) ?? this.#scope(target, this.#original);
+      this.#baselines.get(target.id) ??
+      this.#scope(target, this.#original).inputs;
     this.#baselines.set(target.id, scope);
     return scope;
   }
@@ -112,7 +108,8 @@ export class ExecutionInputCoordinator {
     const baseline = this.#baseline(target);
     const replay = this.#validation.read();
     await baseline.assertStable(this.#writes, replay);
-    if (await isExecutionScopeStable(this.#scope(target), replay)) return;
+    if (await isExecutionScopeStable(this.#scope(target).inputs, replay))
+      return;
     await this.#handoff(target, baseline);
   }
   async #handoff(
@@ -127,7 +124,7 @@ export class ExecutionInputCoordinator {
     await this.#assertOutputObservations(affected);
     this.#refresh ??= this.#refreshOnce();
     await this.#refresh;
-    await this.#scope(target).assertStable();
+    await this.#scope(target).inputs.assertStable();
   }
   async #assertOutputObservations(
     affected: ReadonlySet<string>,
@@ -181,7 +178,7 @@ export class ExecutionInputCoordinator {
     outputs: ReadonlySet<string> | (() => Promise<ReadonlySet<string>>),
   ): Promise<boolean> {
     const current: Reservation = {
-      reads: this.#scope(target),
+      reads: this.#scope(target).inputs,
       writes: new Set(),
     };
     if (this.#hasConflict(current)) return false;
@@ -243,10 +240,12 @@ export class ExecutionInputCoordinator {
   async validate(
     target: TypecheckTarget,
     shouldRefresh = false,
-  ): Promise<void> {
+  ): Promise<ExecutionReferenceClosure> {
     const replay = this.#validation.read(shouldRefresh);
     await this.#baseline(target).assertStable(this.#writes, replay);
-    await this.#scope(target).assertStable(undefined, replay);
+    const { closure, inputs } = this.#scope(target);
+    await inputs.assertStable(undefined, replay);
+    return closure;
   }
   async withManagedWrites<T>(
     target: TypecheckTarget,

@@ -1,4 +1,7 @@
-import type { GeneratedDependencyEdge } from '#core/build-graph/runner';
+import type {
+  GeneratedDependencyEdge,
+  GeneratedTsconfigGraphResult,
+} from '#core/build-graph/runner';
 import {
   collectOutputDeclarationCopyContexts,
   createCopyPlan,
@@ -12,40 +15,56 @@ import { missingExecutionInputs } from './missing-execution-inputs';
 
 type BuildOptions = Parameters<typeof executeCheckerBuildTargets>[0];
 type Outputs = ReadonlyMap<TypecheckTarget, ReadonlySet<string>>;
+export interface ProducerPreparation {
+  graph: GeneratedTsconfigGraphResult;
+  coordinator: ManagedCheckerMutationCoordinator;
+}
+interface ProducerProof {
+  outputs: ReadonlySet<string>;
+  preparation: ProducerPreparation;
+}
+interface ExecutionPrerequisites {
+  dependencies: GeneratedDependencyEdge[];
+  preparations: ReadonlyMap<TypecheckTarget, ProducerPreparation>;
+}
 async function proveProducer(
   options: BuildOptions,
   admission: ExecutionAdmission,
   target: TypecheckTarget,
-): Promise<ReadonlySet<string> | undefined> {
+): Promise<ProducerProof> {
   return admission.withTargetEvidence(target, async () => {
+    const graph = admission.graph;
     const coordinator = await ManagedCheckerMutationCoordinator.create({
       artifactNamespace: options.preflight.artifactNamespace,
       checkers: options.allCheckers,
       config: options.config,
-      generatedGraph: admission.graph,
+      generatedGraph: graph,
       targets: [target],
       workspaceContext: options.workspaceContext,
     });
     const copies = createCopyPlan({
       contexts: collectOutputDeclarationCopyContexts(
-        coveredOutputDescriptors(admission.graph, target),
+        coveredOutputDescriptors(graph, target),
       ),
       projectRootDir: options.projectRootDir,
       workspaceContext: options.workspaceContext,
     });
     if (copies.problems.some((problem) => problem.severity === 'error'))
       throw new Error('Producer copy mapping is unavailable.');
-    return new Set([
-      ...coordinator.projectedOutputPaths(target),
-      ...copies.entries.map((entry) => entry.targetPath),
-    ]);
+    return {
+      preparation: { graph, coordinator },
+      outputs: new Set([
+        ...coordinator.projectedOutputPaths(target),
+        ...copies.entries.map((entry) => entry.targetPath),
+      ]),
+    };
   });
 }
 async function producerOutputs(
   options: BuildOptions,
   admission: ExecutionAdmission,
-): Promise<Outputs> {
-  const outputs = new Map<TypecheckTarget, ReadonlySet<string>>();
+): Promise<Map<TypecheckTarget, ProducerProof>> {
+  const outputs = new Map<TypecheckTarget, ProducerProof>();
   for (const target of options.targets) {
     const proof = await optionalProducerProof(options, admission, target);
     if (proof !== undefined) outputs.set(target, proof);
@@ -56,7 +75,7 @@ async function optionalProducerProof(
   options: BuildOptions,
   admission: ExecutionAdmission,
   target: TypecheckTarget,
-): Promise<ReadonlySet<string> | undefined> {
+): Promise<ProducerProof | undefined> {
   try {
     return await proveProducer(options, admission, target);
   } catch {
@@ -121,7 +140,7 @@ Only missing inputs, actual capabilities and selected producers establish hard d
 export function proveExecutionPrerequisites(
   options: BuildOptions,
   admission: ExecutionAdmission,
-): Promise<GeneratedDependencyEdge[]> {
+): Promise<ExecutionPrerequisites> {
   return admission.withReadOnlyValidation(() =>
     collectPrerequisites(options, admission),
   );
@@ -129,14 +148,22 @@ export function proveExecutionPrerequisites(
 async function collectPrerequisites(
   options: BuildOptions,
   admission: ExecutionAdmission,
-): Promise<GeneratedDependencyEdge[]> {
-  const outputs = await producerOutputs(options, admission);
+): Promise<ExecutionPrerequisites> {
+  const producers = await producerOutputs(options, admission);
+  const outputs: Outputs = new Map(
+    [...producers].map(([target, proof]) => [target, proof.outputs]),
+  );
   const prerequisites: GeneratedDependencyEdge[] = [];
   for (const consumer of options.targets)
     prerequisites.push(
       ...(await consumerPrerequisites(admission, outputs, consumer)),
     );
-  return prerequisites;
+  return {
+    dependencies: prerequisites,
+    preparations: new Map(
+      [...producers].map(([target, proof]) => [target, proof.preparation]),
+    ),
+  };
 }
 
 function canSupplyOwnInput(
