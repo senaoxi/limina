@@ -6,13 +6,27 @@ This page covers daily checks, focused feedback, and pre-publish checks after ad
 
 ### Local Development
 
-For a complete default check, run:
+To run the core workflow and configured governance, run:
 
 ```sh
 pnpm exec limina check
 ```
 
-It combines graph, source, and coverage checks with type-checker execution. To shorten feedback for a particular kind of change, use the corresponding standalone command:
+The default `limina check` always schedules `checker:build` and `checker:typecheck`. It adds `graph:check`, `source:check`, and `proof:check` only when the corresponding top-level domain is configured with valid explicit fields. `scope` selects inputs and Checkers; it does not enable these governance tasks. `package.entries` and `release` do not add default tasks.
+
+To enable all three governance domains, use:
+
+```ts
+export default {
+  graph: { rules: {} },
+  source: { knip: false },
+  proof: { allowlist: [] },
+};
+```
+
+Set `source.knip: true` to add Knip analysis. `false` retains source ownership, tsconfig governance, import boundaries, and package dependency authorization.
+
+With these domains configured, it combines graph, source, and coverage checks with type-checker execution. To shorten feedback for a particular kind of change, use the corresponding standalone command:
 
 | Current task                                    | Command                              |
 | ----------------------------------------------- | ------------------------------------ |
@@ -22,7 +36,7 @@ It combines graph, source, and coverage checks with type-checker execution. To s
 | Run the internal declaration build              | `pnpm exec limina checker build`     |
 | Run Astro / Svelte type checks                  | `pnpm exec limina checker typecheck` |
 
-Each focused command covers only its own relationships. After changing TypeScript configs, package boundaries, or checking rules, run the complete default check again to cover other affected relationships.
+Each focused command covers only its own relationships. After changing TypeScript configs, package boundaries, or checking rules, run the default check again with the affected governance domains explicitly enabled.
 
 To inspect artifact consumption, export the dependency graph:
 

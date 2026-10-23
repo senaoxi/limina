@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { scopeConfigShapeSchema } from './checkers';
+import { validateGraphConfig, validateProofConfig } from './graph-proof';
 import {
   executionConfigShapeSchema,
   releaseConfigShapeSchema,
@@ -80,6 +81,13 @@ function validateSourceConfig(
     addConfigIssue(context, ['source'], 'source config must be an object.');
     return;
   }
+  validateSourceFields(value, context);
+}
+
+function validateSourceFields(
+  value: Record<string, unknown>,
+  context: ConfigValidationContext,
+): void {
   addUnknownFieldIssues({
     allowed: sourceConfigKeys,
     ctx: context,
@@ -87,6 +95,12 @@ function validateSourceConfig(
     path: ['source'],
     value,
   });
+  if (Object.keys(value).every((key) => !sourceConfigKeys.has(key)))
+    addConfigIssue(
+      context,
+      ['source'],
+      'source config must declare knip, declarations, or importAuthority.',
+    );
   validateSourceImportAuthorityConfig(value.importAuthority, context);
   validateSourceDeclarationsConfig(value.declarations, context);
   validateSourceKnipConfig(value.knip, context);
@@ -97,7 +111,9 @@ export const liminaConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
     // A rejecting field catches non-enumerable legacy declarations too.
     configDependencies: z.never().optional(),
     scope: scopeConfigShapeSchema.optional(),
+    graph: z.unknown().optional(),
     source: z.unknown().optional(),
+    proof: z.unknown().optional(),
     release: releaseConfigShapeSchema.optional(),
     cache: cacheConfigShapeSchema.optional(),
     concurrency: executionConfigShapeSchema.optional(),
@@ -110,5 +126,9 @@ export const liminaConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
       path: [],
       value: config,
     });
+    if (Object.hasOwn(config, 'graph'))
+      validateGraphConfig(config.graph, context);
     validateSourceConfig(config.source, context);
+    if (Object.hasOwn(config, 'proof'))
+      validateProofConfig(config.proof, context);
   });

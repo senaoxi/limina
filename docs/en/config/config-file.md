@@ -10,6 +10,28 @@ export default defineConfig({});
 
 A config module can export an object, a `Promise`, or a function that receives `{ command, mode }`. `defineConfig` provides type hints and preserves its input; Limina handles loading and validation. See the [configuration overview](./index.md) for each field's responsibility.
 
+## Default governance and migration {#default-governance}
+
+The default `limina check` always schedules `checker:build` and `checker:typecheck`. It adds `graph:check`, `source:check`, and `proof:check` only when the corresponding top-level domain is configured with valid explicit fields. `scope` selects inputs and Checkers; it does not enable these governance tasks. `package.entries` and `release` do not add default tasks.
+
+To enable all three governance domains, use:
+
+```ts
+export default {
+  graph: { rules: {} },
+  source: { knip: false },
+  proof: { allowlist: [] },
+};
+```
+
+Set `source.knip: true` to add Knip analysis. `false` retains source ownership, tsconfig governance, import boundaries, and package dependency authorization.
+
+An exported `{}` runs the core workflow and the two Checker tasks. Restore the previous five-task default by explicitly configuring the three domains above; no pipeline is required. Empty domains (`graph: {}`, `source: {}`, `proof: {}`), unknown fields, non-object domain values, and explicit `undefined` are configuration errors. Omit a field to use its default. `graph.rules` and `proof.allowlist` are required when their domains are present; empty collections are valid. Source requires at least one of `knip`, `declarations`, or `importAuthority`. The latter wrappers require `ambient` and `allow` respectively; `ambient: []` and `allow: {}` are valid. Knip object form requires `root` or `workspaces`, so `knip: {}` is invalid. Unknown nested fields and invalid element types fail at loading; workspace-dependent rule, owner, path, and coverage diagnostics remain domain checks.
+
+Config factories and Promises are evaluated before validation and task selection. For dynamic omission, use conditional object spreads rather than `source: undefined`. Domains must be own data properties; non-enumerable top-level domains are supported. Their nested fields must be enumerable data properties on plain objects or arrays. Accessors, Proxies, inherited fields and cycles are rejected; compute dynamic values inside the factory. Validation preserves `false` and empty collections without filling defaults or stripping fields. The existing Knip `Symbol.toStringTag` string marker is metadata and cannot activate an otherwise empty object.
+
+Unselected governance tasks are absent from the current run, with no fabricated `passed`, `disabled`, or `skipped` status. A planned framework check without targets remains `disabled`. `check --issues` reads the saved invocation; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, `proof check`, and explicitly declared pipeline steps still run without their top-level domain.
+
 ## Config Discovery and Governance Root {#governance-root}
 
 Limina selects the config module first. Without `--config`, it searches upward from the current working directory, checking `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, and `limina.config.js` in that order in each directory. It then finds the nearest `package.json` above the selected config's directory to establish the governance root. If that nearest manifest is unreadable, not a regular file, invalid JSON, or not an object at the top level, loading fails there instead of skipping it.

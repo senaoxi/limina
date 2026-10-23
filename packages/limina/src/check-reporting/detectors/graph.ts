@@ -47,7 +47,7 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     ],
     task: 'graph:check',
     tests: [
-      'packages/limina/fixtures/detectors/graph/config-invalid-rule/case.mts',
+      'packages/limina/fixtures/detectors/graph/config-empty-label/case.mts',
       'packages/limina/integration/tests/detector-fixtures.spec.ts',
       'packages/limina/src/__tests__/graph-findings.spec.ts',
       'packages/limina/src/__tests__/graph.spec.ts',

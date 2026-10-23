@@ -2,6 +2,8 @@
 
 `proof.allowlist` 为留在源码治理范围内、却有意没有检查器或生成图覆盖的具体文件记录例外。它只影响覆盖证明，不改变检查器输入、不隐藏类型诊断，也不授予跨包导入权限。
 
+使用 `proof: { allowlist: [] }` 可启用没有例外的完整基础 Proof Check。配置 `proof` 时必须声明 `allowlist`；`proof: {}` 和 `coverage` 字段均无效。省略 `proof` 会省略默认任务，独立 `limina proof check` 及显式流水线步骤仍检查覆盖关系。
+
 ```ts
 import { defineConfig } from 'limina';
 

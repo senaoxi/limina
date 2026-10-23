@@ -1,12 +1,26 @@
+import { z } from 'zod';
 import {
   addConfigIssue,
   addUnknownFieldIssues,
   type ConfigValidationContext,
   isPlainConfigRecord,
+  validateGovernanceShape,
 } from './shared';
 
 const knipPath = ['source', 'knip'] as const;
 const knipConfigKeys = new Set(['root', 'workspaces']);
+
+const entryShape = z.strictObject({
+  files: z.array(z.string()),
+  reason: z.string(),
+});
+const dependencyShape = z.strictObject({ dep: z.string(), reason: z.string() });
+const fileShape = z.strictObject({ file: z.string(), reason: z.string() });
+const workspaceShape = z.strictObject({
+  entry: z.array(entryShape).optional(),
+  ignoreDependencies: z.array(dependencyShape).optional(),
+  ignoreFiles: z.array(fileShape).optional(),
+});
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (!isPlainConfigRecord(value)) return false;
@@ -43,6 +57,35 @@ function validateKnipObject(
     return;
   }
   validateKnipOwnerObjects(value, context);
+  validateRootShape(value.root, context);
+  validateWorkspaceShapes(value.workspaces, context);
+}
+
+function validateRootShape(
+  value: unknown,
+  context: ConfigValidationContext,
+): void {
+  if (isPlainRecord(value))
+    validateGovernanceShape({
+      value,
+      path: [...knipPath, 'root'],
+      schema: workspaceShape,
+      context,
+    });
+}
+
+function validateWorkspaceShapes(
+  value: unknown,
+  context: ConfigValidationContext,
+): void {
+  if (isPlainRecord(value))
+    for (const [name, owner] of Object.entries(value))
+      validateGovernanceShape({
+        value: owner,
+        path: [...knipPath, 'workspaces', name],
+        schema: workspaceShape,
+        context,
+      });
 }
 
 function knipOwnerObjectMessage(field: string): string {

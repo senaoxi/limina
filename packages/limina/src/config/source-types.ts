@@ -19,10 +19,16 @@ export interface SourceKnipWorkspaceConfig {
   ignoreFiles?: SourceKnipIgnoredFileConfig[];
 }
 
-export interface SourceKnipCheckConfig {
+interface SourceKnipOptions {
   root?: SourceKnipWorkspaceConfig;
   workspaces?: Record<string, SourceKnipWorkspaceConfig>;
 }
+
+export type SourceKnipCheckConfig = SourceKnipOptions &
+  (
+    | { root: SourceKnipWorkspaceConfig }
+    | { workspaces: Record<string, SourceKnipWorkspaceConfig> }
+  );
 
 export interface SourceImportAuthorityWorkspaceRootGrant {
   include?: string[];
@@ -31,7 +37,7 @@ export interface SourceImportAuthorityWorkspaceRootGrant {
 }
 
 export interface SourceImportAuthorityConfig {
-  allow?: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
+  allow: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
 }
 
 export interface SourceAmbientDeclarationConfig {
@@ -42,14 +48,21 @@ export interface SourceAmbientDeclarationConfig {
 }
 
 export interface SourceDeclarationsConfig {
-  ambient?: SourceAmbientDeclarationConfig[];
+  ambient: SourceAmbientDeclarationConfig[];
 }
 
-export interface SourceCheckConfig {
+interface SourceCheckOptions {
   declarations?: SourceDeclarationsConfig;
   importAuthority?: SourceImportAuthorityConfig;
   knip?: boolean | SourceKnipCheckConfig;
 }
+
+export type SourceCheckConfig = SourceCheckOptions &
+  (
+    | { declarations: SourceDeclarationsConfig }
+    | { importAuthority: SourceImportAuthorityConfig }
+    | { knip: boolean | SourceKnipCheckConfig }
+  );
 
 export interface SourceBoundaryConfig {
   exclude?: string[];

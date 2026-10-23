@@ -18,13 +18,15 @@ const builtInTaskNames = new Set<string>([
   'source:check',
 ]);
 
-export const defaultCheckPipeline: PipelineStep[] = [
-  'graph:check',
-  'source:check',
-  'proof:check',
-  'checker:build',
-  'checker:typecheck',
-];
+export function getDefaultCheckSteps(
+  config: ResolvedLiminaConfig,
+): PipelineStep[] {
+  const domains = ['graph', 'source', 'proof'] as const;
+  const steps = domains
+    .filter((domain) => Object.hasOwn(config, domain))
+    .map((domain) => `${domain}:check` as const);
+  return [...steps, 'checker:build', 'checker:typecheck'];
+}
 
 export function isBuiltinTaskName(value: string): value is BuiltinTaskName {
   return builtInTaskNames.has(value);

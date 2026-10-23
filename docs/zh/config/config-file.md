@@ -10,6 +10,28 @@ export default defineConfig({});
 
 配置模块可以导出对象、`Promise`，或接收 `{ command, mode }` 的函数。`defineConfig` 提供类型提示并保留传入值；实际加载和格式检查由 Limina 完成。各字段的职责见[配置概览](./index.md)。
 
+## 默认治理与迁移 {#default-governance}
+
+默认 `limina check` 始终计划 `checker:build` 和 `checker:typecheck`；只有对应顶层域含有合法显式字段时，才加入 `graph:check`、`source:check` 和 `proof:check`。`scope` 选择输入和 Checker，不启用这些治理任务；`package.entries` 和 `release` 也不增加默认任务。
+
+要启用三个治理域，可配置：
+
+```ts
+export default {
+  graph: { rules: {} },
+  source: { knip: false },
+  proof: { allowlist: [] },
+};
+```
+
+将 `source.knip` 设为 `true` 可增加 Knip 分析。`false` 保留源码归属、tsconfig 治理、导入边界及包依赖授权检查。
+
+导出 `{}` 会运行核心工作流及两个 Checker 任务。显式声明上述三个域即可恢复此前五任务的默认覆盖，无需创建流水线。空域（`graph: {}`、`source: {}`、`proof: {}`）、未知字段、非对象域值以及显式 `undefined` 均为配置错误；需要缺省时应省略字段。配置 Graph、Proof 时分别必须声明 `rules`、`allowlist`，允许空集合。Source 至少声明 `knip`、`declarations`、`importAuthority` 之一；后两个包装分别要求 `ambient` 和 `allow`，允许 `ambient: []`、`allow: {}`。Knip 对象必须声明 `root` 或 `workspaces`，因此 `knip: {}` 无效。嵌套未知字段及错误元素类型在加载时失败；依赖工作区事实的规则、owner、路径和覆盖诊断仍属于领域检查。
+
+配置函数及 Promise 在校验和任务选择前执行并等待完成。动态缺省应使用条件展开，不应返回 `source: undefined`。治理域必须是自有数据属性，支持非枚举的顶层域；域内字段须为普通对象或数组上的可枚举数据属性。拒绝 accessor、Proxy、继承字段与循环结构；动态值应在配置函数内计算。验证保留 `false` 和空集合，不补默认值、不剥离字段。既有 Knip `Symbol.toStringTag` 字符串标记仅为元数据，不能使空对象有效。
+
+未选中的治理任务不会出现在本次记录中，也不会生成 `passed`、`disabled` 或 `skipped` 状态。已计划但没有目标的框架检查仍为 `disabled`。`check --issues` 读取保存的调用；新 attempt 发布前的配置错误不会把上一条历史记录变成本次成功。独立的 `graph check`、`source check`、`proof check` 及流水线中显式声明的步骤仍可在缺少顶层域时执行。
+
 ## 配置发现与治理根 {#治理根}
 
 Limina 先选择配置模块。未指定 `--config` 时，从当前工作目录向上逐目录查找，每个目录依次检查 `limina.config.mts`、`limina.config.mjs`、`limina.config.ts`、`limina.config.js`。随后从所选配置的目录寻找最近的 `package.json`，由它固定治理根。最近清单不可读、不是普通文件、JSON 格式错误或顶层不是对象时，在该位置失败，不跳过它。

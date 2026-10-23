@@ -101,15 +101,15 @@ Review the migration result before running checks. Migration only establishes in
 pnpm exec limina check
 ```
 
-The default pipeline includes:
+The default workflow always schedules both Checker tasks. Graph, Source, and Proof are included only when their corresponding top-level domain is configured. `scope`, `package.entries`, and `release` do not enable extra default tasks.
 
-| Task                | Main responsibility                                                         |
-| ------------------- | --------------------------------------------------------------------------- |
-| `graph:check`       | Declaration references, actual imports, and configured graph rules          |
-| `source:check`      | Source ownership, package import authorization, and enabled source analysis |
-| `proof:check`       | Coverage of source expected to be checked                                   |
-| `checker:build`     | Declaration builds with `tsc`, `tsgo`, and `vue-tsc`                        |
-| `checker:typecheck` | Type checking for Astro and Svelte source configs                           |
+| Task                | Main responsibility                                                                                      |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `graph:check`       | When `graph` is configured: Declaration references, actual imports, and configured graph rules           |
+| `source:check`      | When `source` is configured: Source ownership, package import authorization, and enabled source analysis |
+| `proof:check`       | When `proof` is configured: Coverage of source expected to be checked                                    |
+| `checker:build`     | Declaration builds with `tsc`, `tsgo`, and `vue-tsc`                                                     |
+| `checker:typecheck` | Type checking for Astro and Svelte source configs                                                        |
 
 This is report order; tasks may run concurrently when concurrency limits and resource locks allow it. The command generates checker configs under `.limina/` as needed and runs the actual checkers. It does not build every package's production artifacts or include package and release checks.
 
@@ -122,6 +122,18 @@ pnpm exec limina check --issues
 ```
 
 `--issues` reads saved results without rerunning checks. An incomplete attempt or an unavailable record does not mean zero issues. See [Troubleshooting](./troubleshooting.md#identify-the-failing-task) for narrowing the scope and handling different failures.
+
+To enable all three governance domains, use:
+
+```ts
+export default {
+  graph: { rules: {} },
+  source: { knip: false },
+  proof: { allowlist: [] },
+};
+```
+
+Set `source.knip: true` to add Knip analysis. `false` retains source ownership, tsconfig governance, import boundaries, and package dependency authorization.
 
 ## Governance Root
 

@@ -2,6 +2,8 @@
 
 Pipelines store shared team steps in configuration and run them in order through `limina check <name>`. The `publish` example below performs pre-publish checks only. It assumes the project has `pnpm build` and `pnpm test` scripts and has configured the `package.entries` to check:
 
+Named pipelines execute every declared step in order, regardless of automatic default governance selection. Omitting `graph`, `source`, or `proof` does not remove explicitly declared checks.
+
 ```js
 import { defineConfig } from 'limina';
 

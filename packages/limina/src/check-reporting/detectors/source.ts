@@ -99,7 +99,7 @@ export const SOURCE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     ],
     task: 'source:check',
     tests: [
-      'packages/limina/fixtures/detectors/source/knip-config-workspaces-invalid/case.mts',
+      'packages/limina/fixtures/detectors/source/knip-config-unknown-owner/case.mts',
       'packages/limina/integration/tests/detector-fixtures.spec.ts',
       'packages/limina/src/__tests__/source-findings.spec.ts',
       'packages/limina/src/__tests__/source.spec.ts',

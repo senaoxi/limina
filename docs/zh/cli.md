@@ -158,15 +158,21 @@ pnpm exec limina check ci --force
 pnpm exec limina check --package @scope/pkg
 ```
 
-不带 `pipeline` 时，默认检查组合为：
+默认 `limina check` 始终计划 `checker:build` 和 `checker:typecheck`；只有对应顶层域含有合法显式字段时，才加入 `graph:check`、`source:check` 和 `proof:check`。`scope` 选择输入和 Checker，不启用这些治理任务；`package.entries` 和 `release` 也不增加默认任务。
 
-```txt
-graph:check
-source:check
-proof:check
-checker:build
-checker:typecheck
+要启用三个治理域，可配置：
+
+```ts
+export default {
+  graph: { rules: {} },
+  source: { knip: false },
+  proof: { allowlist: [] },
+};
 ```
+
+将 `source.knip` 设为 `true` 可增加 Knip 分析。`false` 保留源码归属、tsconfig 治理、导入边界及包依赖授权检查。
+
+未选中的治理任务不会出现在本次记录中，也不会生成 `passed`、`disabled` 或 `skipped` 状态。已计划但没有目标的框架检查仍为 `disabled`。`check --issues` 读取保存的调用；新 attempt 发布前的配置错误不会把上一条历史记录变成本次成功。独立的 `graph check`、`source check`、`proof check` 及流水线中显式声明的步骤仍可在缺少顶层域时执行。
 
 默认组合中的任务按可用资源独立调度。命名流水线来自配置中的 `pipelines`，通过 `limina check <name>` 运行，步骤按配置顺序执行。流水线步骤可以是内置任务，也可以是外部命令；外部命令支持对象形式配置 `command`、`args`、`cwd` 和 `env`。
 

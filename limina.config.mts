@@ -42,7 +42,9 @@ export default defineConfig({
     },
     regions: { extendNestedPackageScopes: true },
   },
+  graph: { rules: {} },
   source: { knip: true },
+  proof: { allowlist: [] },
   package: {
     entries: [
       {
