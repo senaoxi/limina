@@ -117,7 +117,6 @@ export class AnalysisCacheStore {
     cache: NativeAnalysisCache,
     assertCurrent: () => void | Promise<void>,
   ): Promise<void> {
-    if (!this.#hasBaseline) return;
     const { namespace, configPath } = this.#options;
     await assertArtifactPathOperationSafe(namespace, this.path);
     const lease = await acquireCrossProcessWriteLease(
@@ -180,6 +179,7 @@ export class AnalysisCacheStore {
 
   #canPublish(cache: NativeAnalysisCache): boolean {
     return [
+      this.#hasBaseline,
       this.#options.configVersion !== undefined,
       cache.configVersion === this.#options.configVersion,
     ].every(Boolean);
@@ -214,10 +214,15 @@ export class AnalysisCacheStore {
 
   async publish(
     cache: NativeAnalysisCache,
-    assertCurrent: () => void | Promise<void> = () =>
-      cache.inputs.assertStable(),
+    assertCurrent: () => void | Promise<void> = () => {
+      // Direct callers have no additional invocation observations.
+    },
   ): Promise<void> {
-    if (!this.#canPublish(cache)) return;
+    if (!this.#canPublish(cache)) {
+      await assertCurrent();
+      cache.inputs.assertStable();
+      return;
+    }
     await this.#publishQualified(cache, assertCurrent);
   }
 }

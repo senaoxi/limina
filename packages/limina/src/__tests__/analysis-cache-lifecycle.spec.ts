@@ -465,6 +465,29 @@ it('does not replay a completed command or execution task when graph analysis re
   }
 });
 
+it('validates changed publication once per write boundary', async () => {
+  const f = fixture();
+  const input = f.path('input');
+  writeFileSync(input, 'stable');
+  const controller = new AnalysisCacheController(f.config, f.namespace);
+  let reads = 0;
+  await controller.analyze({
+    refresh: () => controller.refresh(),
+    analyze: async () => {
+      readAnalysisInput(input, () => {
+        reads += 1;
+        return readFileSync(input, 'utf8');
+      });
+    },
+  });
+  reads = 0;
+  await controller.publish();
+  expect(reads).toBe(2);
+  writeFileSync(input, 'drift');
+  await expect(controller.publish()).rejects.toThrow('Analysis input changed');
+  writeFileSync(input, 'stable');
+});
+
 it('rejects drift after temporary snapshot serialization and before atomic replacement', async () => {
   const f = fixture();
   const store = new AnalysisCacheStore({
