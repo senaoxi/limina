@@ -118,6 +118,8 @@ Clean 调用仍先校验全部旧输入，再由[失效传播](../../../packages
 
 [Store](../../../packages/limina/src/preflight/analysis-cache-store.ts)写入 `cache/analysis-v2/<config-key>/index.liminainfo`，并在 `scopes/<scope-key>/` 下存放内容寻址的 `.liminainfo` 块。Index 包含 schema 10 header、必需的 `configVersion`／`configModules` 及块摘要／长度。[分区](../../../packages/limina/src/core/analysis-cache/snapshot-shards.ts)按实际项目配置路径组织 native context、project、importer、query 和 Vue context；source 与生成的 declaration config 保持独立。完整中性 `files` facts、inputs、graph／contribution 记录及没有保留 context owner 的记录进入 shared 存储。分组清单从完整记录形状派生，新增记录种类不会被独立分区列表静默遗漏。每块拥有独立 receipt 字典。[Payload](../../../packages/limina/src/core/analysis-cache/record-payload.ts)对完整 JSON scope 数据使用 Node Brotli，并限制声明的解压长度。JSON 保持原有 undefined 字段／数组槽处理。缺失或损坏的块、无效 receipt、截断 payload 和不一致的模型覆盖均使整个模型冷回退，不信任部分图。
 
+[Bounded 证据关联](../../../packages/limina/src/core/analysis-cache/bounded-evidence-index.ts)在每次资格校验内建立 request、resolution 和 obligation 查询表，并只计算一次预期 context 指纹。重复标识、缺失成员、context 来源、Coverage 与 obligation 证明仍受检查。局部索引不授予可变 DTO 持久资格，也不跨恢复边界复用。
+
 恢复在读取任何旧块前先校验小型 index。Identity／schema／配置版本／模块证据不匹配以及 force 均跳过全部旧 scope 块。合格恢复仍加载全部引用块并验证完整模型，之后才采用普通输入；这不是按 consumer 延迟恢复。当前 provider／ownership 身份、输出回执、query 覆盖和全部原有输入／新鲜度检查继续有效。存储 scope 不授予合并语义上下文的权限。
 
 发布保留授权 namespace、跨进程 lease、输入／配置／epoch 检查及精确物理 index 基线。[块 I/O](../../../packages/limina/src/preflight/analysis-cache-blocks.ts)先验证内容再复用，先写块，最后完成漂移与基线检查后才原子替换 index。中断发布后旧 index 仍可用；旧 writer 不能替换较新 index。未变化块保留字节与 mtime。严格 clean 发布仍检查输入，不 clone 或序列化模型。Provider 刷新不更新 writer 基线。旧 `analysis-v1` 数据既不导入也不删除；发布不回收不可达块，独立 GC 必须保护持有旧 index 的 reader。活跃引用字节与总保留存储量须分别报告。存储 I/O 失败可省略更新；观测、漂移和权限失败继续传播，包括携带 filesystem code 的错误。

@@ -7,6 +7,7 @@ import { effectiveCompilerOptions } from '../typescript-semantic/compiler-option
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { NATIVE_PROGRAM_ADAPTER } from '../typescript-semantic/native-program-api';
+import { BoundedEvidenceIndex } from './bounded-evidence-index';
 import { hasCompleteBoundedInventory } from './bounded-inventory-validity';
 import { hasBoundObligations } from './bounded-obligation-validity';
 import { hasBoundCompilerObservations } from './bounded-observation-validity';
@@ -36,28 +37,36 @@ function hasQualifiedBoundedInventory(
   importers: Record<string, ImporterRecord>,
   binding: { project: ProjectRecord | undefined; contextId: string },
 ): boolean {
+  const index = new BoundedEvidenceIndex(record.native!.snapshot);
   return (
-    hasValidBoundedProof(record) &&
+    hasValidBoundedProof(record, index) &&
     hasBoundCompilerObservations(record, importers) &&
     [
       hasCompleteBoundedInventory({ record, importers, ...binding }),
-      hasValidBoundedFacts(record, importers),
+      hasValidBoundedFacts(record, importers, index),
     ].every(Boolean)
   );
 }
 
-function hasValidBoundedProof(record: NativeContextRecord): boolean {
+function hasValidBoundedProof(
+  record: NativeContextRecord,
+  index: BoundedEvidenceIndex,
+): boolean {
   const snapshot = record.native!.snapshot;
   return (
     [snapshot.contexts.length, snapshot.coverageIndexes.length].every(
       (length) => length === 1,
-    ) && hasConsistentBoundedProof(record)
+    ) && hasConsistentBoundedProof(record, index)
   );
 }
 
-function hasConsistentBoundedProof(record: NativeContextRecord): boolean {
+function hasConsistentBoundedProof(
+  record: NativeContextRecord,
+  index: BoundedEvidenceIndex,
+): boolean {
   const snapshot = record.native!.snapshot;
   const context = snapshot.contexts[0]!;
+  const contextFingerprint = nativeFingerprint(context);
   return [
     record.project.admissionMode === 'coverage-bounded',
     hasBoundPathSelections(snapshot),
@@ -75,10 +84,9 @@ function hasConsistentBoundedProof(record: NativeContextRecord): boolean {
     snapshot.requests.every(
       (request) =>
         request.consumerContextId === context.id &&
-        nativeFingerprint(request.origin.context) ===
-          nativeFingerprint(context),
+        nativeFingerprint(request.origin.context) === contextFingerprint,
     ),
-    hasBoundObligations(record, context),
+    hasBoundObligations(record, context, index),
   ].every(Boolean);
 }
 
@@ -127,6 +135,7 @@ function hasMatchingProjectInputs(
 function hasValidBoundedFacts(
   record: NativeContextRecord,
   importers: Record<string, ImporterRecord>,
+  index: BoundedEvidenceIndex,
 ): boolean {
   return Object.values(record.sources).every((source) => {
     if (source === null) return false;
@@ -134,7 +143,7 @@ function hasValidBoundedFacts(
     return (
       importer !== undefined &&
       Object.values(importer.facts).every((fact) =>
-        hasValidBoundedFact(record, fact),
+        hasValidBoundedFact(record, fact, index),
       )
     );
   });
@@ -143,23 +152,23 @@ function hasValidBoundedFacts(
 function hasValidBoundedFact(
   record: NativeContextRecord,
   fact: NativeDependencyFact,
+  index: BoundedEvidenceIndex,
 ): boolean {
   const evidence = fact.nativeEvidence;
   if (evidence === undefined) return false;
-  const snapshot = record.native!.snapshot;
-  const request = snapshot.requests.find(
-    (entry) => entry.id === evidence.requestId,
-  );
-  const resolution = snapshot.resolutions.find(
-    (entry) => entry.requestId === evidence.requestId,
-  );
+  const request = index.requests.get(evidence.requestId);
+  const resolution = index.resolutions.get(evidence.requestId);
   if ([request, resolution].includes(undefined)) return false;
-  return hasMatchingFactEvidence(record, {
-    evidence,
-    request: request!,
-    resolution: resolution!,
-    fact,
-  });
+  return hasMatchingFactEvidence(
+    record,
+    {
+      evidence,
+      request: request!,
+      resolution: resolution!,
+      fact,
+    },
+    index,
+  );
 }
 
 function hasMatchingFactEvidence(
@@ -172,6 +181,7 @@ function hasMatchingFactEvidence(
     resolution: NativeResolution;
     fact: NativeDependencyFact;
   },
+  index: BoundedEvidenceIndex,
 ): boolean {
   const { evidence, request, resolution, fact } = input;
   const expectedCoverage =
@@ -186,7 +196,7 @@ function hasMatchingFactEvidence(
     hasMatchingResolvedTarget(resolution, fact),
     nativeFingerprint(evidence.coverage) ===
       nativeFingerprint(expectedCoverage),
-    hasMatchingObligation(record, evidence),
+    hasMatchingObligation(index, evidence),
     hasProvenReferenceRequirement(fact),
   ].every(Boolean);
 }
@@ -223,12 +233,9 @@ function hasMatchingResolvedTarget(
 }
 
 function hasMatchingObligation(
-  record: NativeContextRecord,
+  index: BoundedEvidenceIndex,
   evidence: NonNullable<NativeDependencyFact['nativeEvidence']>,
 ): boolean {
-  const expected =
-    record.native!.snapshot.obligations.find((entry) =>
-      entry.requestIds.includes(evidence.requestId),
-    ) ?? null;
+  const expected = index.obligations.get(evidence.requestId) ?? null;
   return nativeFingerprint(expected) === nativeFingerprint(evidence.obligation);
 }
