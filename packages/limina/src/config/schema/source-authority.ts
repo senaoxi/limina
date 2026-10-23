@@ -5,6 +5,7 @@ import {
   isNonEmptyString,
   isPlainConfigRecord,
   isValidateStringArrayField,
+  requireConfigField,
   validateRelativeSelectors,
 } from './shared';
 
@@ -183,5 +184,19 @@ export function validateSourceImportAuthorityConfig(
     );
     return;
   }
+  addUnknownFieldIssues({
+    allowed: new Set(['allow']),
+    ctx: context,
+    message: 'unknown source import authority config field.',
+    path: [...authorityPath],
+    value,
+  });
+  requireConfigField({
+    value,
+    field: 'allow',
+    path: [...authorityPath],
+    context,
+    message: 'importAuthority must declare allow; use allow: {} for no grants.',
+  });
   validateAllowMap(value.allow, context);
 }

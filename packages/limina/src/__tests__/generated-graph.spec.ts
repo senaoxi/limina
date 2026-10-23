@@ -225,7 +225,7 @@ async function createFixture(
           },
         },
       },
-      source: options.source,
+      ...(options.source !== undefined && { source: options.source }),
     }),
     rootDir: rootDirectory,
   };

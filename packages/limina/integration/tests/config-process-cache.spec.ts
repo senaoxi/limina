@@ -257,6 +257,32 @@ function expectCache(
 }
 
 it.each(['native', 'tsx'])(
+  'invalidates %s analysis when a factory changes governance without changing scope',
+  async (loader) => {
+    const f = fixture('mjs');
+    f.write(
+      f.entry,
+      `import config from './helper.mjs';
+export default async ({ mode }) => ({ ...config, ...({
+  graph: { graph: { rules: {} } },
+  source: { source: { knip: false } },
+  proof: { proof: { allowlist: [] } },
+}[mode] ?? {}) });`,
+    );
+    const versions = new Set<string>();
+    for (const mode of ['minimal', 'graph', 'source', 'proof', 'minimal']) {
+      const options = { args: ['--mode', mode] };
+      const cold = await check(f, loader, options);
+      expectCache(cold, false);
+      expect(cold.snapshot.header.configVersion).not.toBeNull();
+      versions.add(cold.snapshot.header.configVersion!);
+      expectCache(await check(f, loader, options), true);
+    }
+    expect(versions.size).toBe(4);
+  },
+);
+
+it.each(['native', 'tsx'])(
   'uses the actual %s variable-import closure across processes',
   async (loader) => {
     const f = fixture('mjs');
