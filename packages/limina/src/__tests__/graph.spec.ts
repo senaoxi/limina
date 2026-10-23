@@ -157,7 +157,7 @@ async function createFixture(
       configPath: path.join(rootDirectory, 'limina.config.mjs'),
       rootDir: rootDirectory,
       scope: { checkers },
-      graph,
+      ...(graph !== undefined && { graph }),
     }),
     rootDir: rootDirectory,
     path: createFixturePathResolver(rootDirectory),
@@ -2554,10 +2554,7 @@ describe('runGraphCheck graph rules', () => {
     },
   ])(
     'rejects neutral unknown graph $structure fields',
-    async ({ field, graph, reason }) => {
-      const errorSpy = vi
-        .spyOn(GraphLogger, 'error')
-        .mockImplementation(() => {});
+    async ({ field, graph }) => {
       const fixture = await createFixture(
         createLocalBoundaryFiles({
           limina: 'runtime',
@@ -2567,13 +2564,8 @@ describe('runGraphCheck graph rules', () => {
       );
 
       try {
-        await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
-        const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
-
-        expect(errors).toContain(field);
-        expect(errors).toContain(reason);
+        await expect(isRunGraphCheck(fixture.config)).rejects.toThrow(field);
       } finally {
-        errorSpy.mockRestore();
         await fixture.cleanup();
       }
     },
@@ -2967,9 +2959,6 @@ describe('runGraphCheck graph rules', () => {
   });
 
   it('rejects removed deny.workspaceDeps graph rule config', async () => {
-    const errorSpy = vi
-      .spyOn(GraphLogger, 'error')
-      .mockImplementation(() => {});
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: 'export const value = 1;\n',
@@ -2991,21 +2980,15 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
-      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
-
-      expect(errors).toContain('graph.rules.runtime.deny.workspaceDeps');
-      expect(errors).toContain('unknown graph rule deny field');
+      await expect(isRunGraphCheck(fixture.config)).rejects.toThrow(
+        'graph.rules.runtime.deny.workspaceDeps',
+      );
     } finally {
-      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
 
   it('rejects removed deny.nodeBuiltins graph rule config', async () => {
-    const errorSpy = vi
-      .spyOn(GraphLogger, 'error')
-      .mockImplementation(() => {});
     const fixture = await createFixture(
       createLocalBoundaryFiles({
         limina: 'runtime',
@@ -3028,13 +3011,10 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
-      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
-
-      expect(errors).toContain('graph.rules.runtime.deny.nodeBuiltins');
-      expect(errors).toContain('unknown graph rule deny field');
+      await expect(isRunGraphCheck(fixture.config)).rejects.toThrow(
+        'graph.rules.runtime.deny.nodeBuiltins',
+      );
     } finally {
-      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });

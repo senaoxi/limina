@@ -101,15 +101,15 @@ pnpm exec limina-migrate
 pnpm exec limina check
 ```
 
-默认流水线包括以下任务：
+默认 `limina check` 始终计划 `checker:build` 和 `checker:typecheck`；只有对应顶层域含有合法显式字段时，才加入 `graph:check`、`source:check` 和 `proof:check`。`scope` 选择输入和 Checker，不启用这些治理任务；`package.entries` 和 `release` 也不增加默认任务。
 
-| 任务                | 主要检查内容                           |
-| ------------------- | -------------------------------------- |
-| `graph:check`       | 声明引用、实际导入与已配置的图规则     |
-| `source:check`      | 源码归属、包导入授权及已启用的源码分析 |
-| `proof:check`       | 期望检查的源码是否获得覆盖             |
-| `checker:build`     | `tsc`、`tsgo`、`vue-tsc` 的声明构建    |
-| `checker:typecheck` | Astro、Svelte 源码配置的类型检查       |
+| 任务                | 主要检查内容                                             |
+| ------------------- | -------------------------------------------------------- |
+| `graph:check`       | 配置 `graph` 时：声明引用、实际导入与已配置的图规则      |
+| `source:check`      | 配置 `source` 时：源码归属、包导入授权及已启用的源码分析 |
+| `proof:check`       | 配置 `proof` 时：期望检查的源码是否获得覆盖              |
+| `checker:build`     | `tsc`、`tsgo`、`vue-tsc` 的声明构建                      |
+| `checker:typecheck` | Astro、Svelte 源码配置的类型检查                         |
 
 这里的排列是报告顺序，任务可在并发额度和资源锁允许时并发执行。命令会按需生成 `.limina/` 下的检查器配置并运行真实检查器；它不构建所有包的生产产物，也不包含包检查或发布检查。
 
@@ -122,6 +122,18 @@ pnpm exec limina check --issues
 ```
 
 `--issues` 读取保存的结果，不重新运行检查。若对应尝试未完成或记录不可用，不能把它理解为零问题。按任务缩小范围以及各类失败的处理入口见[故障排查](./troubleshooting.md#先定位失败任务)。
+
+要启用三个治理域，可配置：
+
+```ts
+export default {
+  graph: { rules: {} },
+  source: { knip: false },
+  proof: { allowlist: [] },
+};
+```
+
+将 `source.knip` 设为 `true` 可增加 Knip 分析。`false` 保留源码归属、tsconfig 治理、导入边界及包依赖授权检查。
 
 ## 治理根
 

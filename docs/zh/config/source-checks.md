@@ -2,6 +2,8 @@
 
 `source` 配置源码导入授权、环境声明角色和可选的源码使用分析。`source check` 默认按源码所属包及其依赖声明检查导入；不必先填写空的 `allow` 或 `knip` 对象。
 
+合法的顶层 `source` 启用默认 Source Check。`source: { knip: false }` 执行适用的全部基础检查，仅跳过 Knip；`source: { knip: true }` 还会执行 Knip。缺少 `source` 时不计划默认 Source 任务，独立 `limina source check` 仍执行基础治理。空的 `source`、`declarations`、`importAuthority` 包装无效；可用 `declarations: { ambient: [] }`、`importAuthority: { allow: {} }` 显式声明空集合。
+
 | 字段                          | 用途                                   | 未配置时                   |
 | ----------------------------- | -------------------------------------- | -------------------------- |
 | `source.importAuthority`      | 为指定源码授予使用治理根依赖声明的权限 | 裸包依赖须由源码所属包声明 |
@@ -56,7 +58,7 @@ export default defineConfig({
 
 ```ts
 interface SourceImportAuthorityConfig {
-  allow?: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
+  allow: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
 }
 
 interface SourceImportAuthorityWorkspaceRootGrant {
@@ -85,7 +87,7 @@ interface SourceAmbientDeclarationConfig {
 }
 
 interface SourceDeclarationsConfig {
-  ambient?: SourceAmbientDeclarationConfig[];
+  ambient: SourceAmbientDeclarationConfig[];
 }
 ```
 
@@ -146,10 +148,9 @@ interface SourceKnipWorkspaceConfig {
   ignoreFiles?: SourceKnipIgnoredFileConfig[];
 }
 
-interface SourceKnipCheckConfig {
-  root?: SourceKnipWorkspaceConfig;
-  workspaces?: Record<string, SourceKnipWorkspaceConfig>;
-}
+type SourceKnipCheckConfig =
+  | { root: SourceKnipWorkspaceConfig; workspaces?: Record<string, SourceKnipWorkspaceConfig> }
+  | { root?: SourceKnipWorkspaceConfig; workspaces: Record<string, SourceKnipWorkspaceConfig> };
 ```
 
 `source.knip` 只接受 `true`、`false` 或上面的对象形式。空对象、`null`、数组、标量、未知字段，以及不是对象的 `root` 或 `workspaces` 值，都会被判定为无效配置。
