@@ -124,6 +124,8 @@ Clean 调用仍先校验全部旧输入，再由[失效传播](../../../packages
 
 发布保留授权 namespace、跨进程 lease、输入／配置／epoch 检查及精确物理 index 基线。[块 I/O](../../../packages/limina/src/preflight/analysis-cache-blocks.ts)先验证内容再复用，先写块，最后完成漂移与基线检查后才原子替换 index。中断发布后旧 index 仍可用；旧 writer 不能替换较新 index。未变化块保留字节与 mtime。严格 clean 发布仍检查输入，不 clone 或序列化模型。Provider 刷新不更新 writer 基线。旧 `analysis-v1` 数据既不导入也不删除；发布不回收不可达块，独立 GC 必须保护持有旧 index 的 reader。活跃引用字节与总保留存储量须分别报告。存储 I/O 失败可省略更新；观测、漂移和权限失败继续传播，包括携带 filesystem code 的错误。
 
+未变化模型的发布只校验一次输入。模型变化时，在取得写锁后和原子替换 index 前分别检查当前输入；controller 不再在这些检查之前增加重复扫描。只读、无发布资格和缺少物理基线的分支即使不发布，也继续校验本次调用的输入。[生命周期回归](../../../packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts)保留晚期漂移拒绝和存储错误边界。
+
 实现复用 Node compression／crypto、既有 DTO codec、namespace、原子 writer 和 lease owner，不新增依赖或第二套语义权威。[存储回归](../../../packages/limina/src/__tests__/analysis-cache-shards.spec.ts)、[Native context 恢复](../../../packages/limina/src/__tests__/native-context-incremental.spec.ts)、native／Vue 恢复及配置／进程测试保护各自边界。存储体积减少本身不能证明完整命令延迟或峰值 RSS 改善。公开配置变化仍执行 namespace 级有效版本失效和[分析实现身份](../../../packages/limina/src/core/analysis-cache/contracts.ts)检查，不清理其他 namespace 或 checker 缓存。配置目录相对 dependencies、模块观测、missing／link 失效及 invocation 漂移规则不变。
 
 Force 读取保留精确物理基线，不解码、校验或恢复旧模型。旧模型 revision 不可用于 unchanged 发布快捷路径，因此具备资格的冷分析结果继续经过与普通发布相同的 lease、输入／配置稳定性检查、基线比较及原子替换。Force 不绕过 `configuration-version-unknown`，也不为可执行配置授予持久化资格。
