@@ -2,6 +2,8 @@
 
 图规则把项目边界写成可检查的约束。先在 `graph.rules` 定义标签对应的规则，再在源码 `tsconfig` 的 `liminaOptions.graphRules` 中使用标签；只有使用该标签的配置才受这组规则约束。
 
+使用 `graph: { rules: {} }` 可启用没有附加规则的基础 Graph Check。配置 `graph` 时必须声明 `rules`，`graph: {}` 无效。省略 `graph` 只移除默认治理任务；核心图分析、物化及执行准入仍运行，即使流水线只含 Checker，适用的 `deny.refs` 也必须在编译器执行前通过准入。
+
 ```js
 import { defineConfig } from 'limina';
 
@@ -96,7 +98,7 @@ packages/app/
 }
 ```
 
-运行 `pnpm exec limina graph check` 时，Limina 会把源码提供者关系与 `graph.rules.runtime-client.deny.refs` 对比，同时检查实际项目引用。引用推断会从生成配置中省略被禁止的导入推导引用；省略引用不会让该源码导入合规。
+运行 `pnpm exec limina graph check` 时，Limina 会把源码提供者关系与 `graph.rules.runtime-client.deny.refs` 对比，同时检查实际项目引用。Core 保留依赖证据与编译义务；执行准入拒绝适用的禁止引用，缺少治理任务不代表获得许可。
 
 需要 Node 叶子配置的客户端导入会被报告为图访问遭拒，并显示配置中的 `reason`。应处理源码关系或规则，而不是修改生成文件。
 

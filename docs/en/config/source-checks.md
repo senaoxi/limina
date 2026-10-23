@@ -2,6 +2,8 @@
 
 `source` configures source import authorization, ambient declaration roles, and optional source-usage analysis. By default, `source check` checks imports against the source-owning package and its dependency declarations. Empty `allow` or `knip` objects are not needed to enable that check.
 
+A valid top-level `source` enables the default Source Check. `source: { knip: false }` runs all applicable base checks and skips only Knip; `source: { knip: true }` also runs Knip. An absent `source` omits the default task, while `limina source check` still runs base governance. Empty `source`, `declarations`, or `importAuthority` wrappers are invalid. Use `declarations: { ambient: [] }` or `importAuthority: { allow: {} }` for explicit empty collections.
+
 | Field                         | Purpose                                                                      | When omitted                                                            |
 | ----------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `source.importAuthority`      | Grant selected source access to dependencies declared by the governance root | Bare package dependencies must be declared by the source-owning package |
@@ -56,7 +58,7 @@ export default defineConfig({
 
 ```ts
 interface SourceImportAuthorityConfig {
-  allow?: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
+  allow: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
 }
 
 interface SourceImportAuthorityWorkspaceRootGrant {
@@ -85,7 +87,7 @@ interface SourceAmbientDeclarationConfig {
 }
 
 interface SourceDeclarationsConfig {
-  ambient?: SourceAmbientDeclarationConfig[];
+  ambient: SourceAmbientDeclarationConfig[];
 }
 ```
 
@@ -146,10 +148,9 @@ interface SourceKnipWorkspaceConfig {
   ignoreFiles?: SourceKnipIgnoredFileConfig[];
 }
 
-interface SourceKnipCheckConfig {
-  root?: SourceKnipWorkspaceConfig;
-  workspaces?: Record<string, SourceKnipWorkspaceConfig>;
-}
+type SourceKnipCheckConfig =
+  | { root: SourceKnipWorkspaceConfig; workspaces?: Record<string, SourceKnipWorkspaceConfig> }
+  | { root?: SourceKnipWorkspaceConfig; workspaces: Record<string, SourceKnipWorkspaceConfig> };
 ```
 
 `source.knip` accepts only `true`, `false`, or the object form above. An empty object, `null`, arrays, scalars, unknown fields, and a non-object `root` or `workspaces` value are invalid configuration.

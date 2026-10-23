@@ -5,6 +5,7 @@ import {
   isNonEmptyString,
   isPlainConfigRecord,
   isValidateStringArrayField,
+  requireConfigField,
   validateRelativeSelectors,
 } from './shared';
 
@@ -158,6 +159,14 @@ export function validateSourceDeclarationsConfig(
     message: 'unknown source declarations config field.',
     path: [...declarationsPath],
     value,
+  });
+  requireConfigField({
+    value,
+    field: 'ambient',
+    path: [...declarationsPath],
+    context,
+    message:
+      'declarations must declare ambient; use ambient: [] for no exceptions.',
   });
   validateAmbientRules(value.ambient, context);
 }

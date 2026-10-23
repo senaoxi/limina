@@ -2387,9 +2387,11 @@ export default {scope: {checkers: {
                 },
               },
             },
+            graph: { rules: {} },
             source: {
               knip: true,
             },
+            proof: { allowlist: [] },
           },
           null,
           2,
