@@ -118,7 +118,15 @@ async function consumerPrerequisites(
 /**
 Only missing inputs, actual capabilities and selected producers establish hard dependencies; ordering never does.
 */
-export async function proveExecutionPrerequisites(
+export function proveExecutionPrerequisites(
+  options: BuildOptions,
+  admission: ExecutionAdmission,
+): Promise<GeneratedDependencyEdge[]> {
+  return admission.withReadOnlyValidation(() =>
+    collectPrerequisites(options, admission),
+  );
+}
+async function collectPrerequisites(
   options: BuildOptions,
   admission: ExecutionAdmission,
 ): Promise<GeneratedDependencyEdge[]> {

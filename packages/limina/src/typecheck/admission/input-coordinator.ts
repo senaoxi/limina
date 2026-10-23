@@ -2,10 +2,12 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   type ExecutionInputScope,
   graphExecutionInputScope,
+  isExecutionScopeStable,
 } from '../../core/analysis-cache/execution-inputs';
 import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
 import type { LiminaPreflightManager } from '../../preflight';
 import type { TypecheckTarget } from '../targets';
+import { ExecutionInputValidation } from './input-validation';
 import {
   observeManagedOutput,
   protectedInputPaths,
@@ -16,26 +18,17 @@ interface Reservation {
   reads: ExecutionInputScope;
   writes: ReadonlySet<string>;
 }
-function hasIntersection(
-  left: ReadonlySet<string>,
-  right: ReadonlySet<string>,
-): boolean {
-  return !left.isDisjointFrom(right);
+async function resolveOutputs(
+  outputs: ReadonlySet<string> | (() => Promise<ReadonlySet<string>>),
+): Promise<ReadonlySet<string>> {
+  return typeof outputs === 'function' ? await outputs() : outputs;
 }
 function hasConflict(active: Reservation, pending: Reservation): boolean {
   return [
     pending.reads.affectedOutputs(active.writes).size > 0,
     active.reads.affectedOutputs(pending.writes).size > 0,
-    hasIntersection(pending.writes, active.writes),
+    !pending.writes.isDisjointFrom(active.writes),
   ].some(Boolean);
-}
-async function isStable(scope: ExecutionInputScope): Promise<boolean> {
-  try {
-    await scope.assertStable();
-    return true;
-  } catch {
-    return false;
-  }
 }
 /**
 Invocation-local reservations coordinate existing input proofs and managed output producers.
@@ -57,6 +50,7 @@ export class ExecutionInputCoordinator {
   #refreshedBatch = 0;
   #refresh: Promise<void> | undefined;
   readonly #reservation = new AsyncLocalStorage<Reservation>();
+  readonly #validation = new ExecutionInputValidation();
   constructor(
     preflight: LiminaPreflightManager,
     graph: GeneratedTsconfigGraphResult,
@@ -104,6 +98,7 @@ export class ExecutionInputCoordinator {
     this.#refreshedBatch = this.#writeBatch;
     this.#graph = (await this.#preflight.refreshAfterManagedOutputs()).graph;
     this.#snapshot = this.#preflight.run.snapshotToken;
+    this.#validation.invalidate();
   }
   async #refreshOnce(): Promise<void> {
     try {
@@ -115,8 +110,9 @@ export class ExecutionInputCoordinator {
   }
   async #refreshInputs(target: TypecheckTarget): Promise<void> {
     const baseline = this.#baseline(target);
-    await baseline.assertStable(this.#writes);
-    if (await isStable(this.#scope(target))) return;
+    const replay = this.#validation.read();
+    await baseline.assertStable(this.#writes, replay);
+    if (await isExecutionScopeStable(this.#scope(target), replay)) return;
     await this.#handoff(target, baseline);
   }
   async #handoff(
@@ -223,7 +219,9 @@ export class ExecutionInputCoordinator {
       this.#writes.add(file);
       this.#outputObservations.set(file, observeManagedOutput(file));
     }
-    if (outputs.size > 0) this.#writeBatch += 1;
+    if (outputs.size === 0) return;
+    this.#writeBatch += 1;
+    this.#validation.invalidate();
   }
   #completeWrites(outputs: ReadonlySet<string>, hasWritten: boolean): void {
     if (hasWritten) this.#recordWrites(outputs);
@@ -239,9 +237,16 @@ export class ExecutionInputCoordinator {
     if (this.#snapshot !== this.#preflight.run.snapshotToken)
       throw new Error('Execution preflight lifecycle changed.');
   }
-  async validate(target: TypecheckTarget): Promise<void> {
-    await this.#baseline(target).assertStable(this.#writes);
-    await this.#scope(target).assertStable();
+  withReadOnlyValidation<T>(action: () => Promise<T>): Promise<T> {
+    return this.#validation.run(action);
+  }
+  async validate(
+    target: TypecheckTarget,
+    shouldRefresh = false,
+  ): Promise<void> {
+    const replay = this.#validation.read(shouldRefresh);
+    await this.#baseline(target).assertStable(this.#writes, replay);
+    await this.#scope(target).assertStable(undefined, replay);
   }
   async withManagedWrites<T>(
     target: TypecheckTarget,
@@ -289,10 +294,4 @@ export function executionInputCoordinator(
   const current = new ExecutionInputCoordinator(preflight, graph);
   coordinators.set(preflight, current);
   return current;
-}
-
-async function resolveOutputs(
-  outputs: ReadonlySet<string> | (() => Promise<ReadonlySet<string>>),
-): Promise<ReadonlySet<string>> {
-  return typeof outputs === 'function' ? outputs() : outputs;
 }
