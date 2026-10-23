@@ -3,21 +3,25 @@ import { LIMINA_CHECK_ISSUE_CODES } from '../../../../src/check-reporting/codes'
 
 export default defineDetectorFixture({
   command: ['check', 'detector'],
+  copyPolicy: {
+    excludedNames: [],
+    includeBuildInfoFiles: false,
+    includeOutputDirectories: false,
+  },
   expected: {
     additionalCodes: [],
     exitCode: 1,
     issues: [
       {
-        code: LIMINA_CHECK_ISSUE_CODES.sourceKnipConfigInvalid,
-        packageName: '@fixture/source-knip-config',
-        scope: 'source.knip.workspaces["@fixture/source-knip-config"]',
-        task: 'source:check',
+        code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+        filePath: 'limina.config.mts',
+        task: 'graph:check',
       },
     ],
-    primaryCode: LIMINA_CHECK_ISSUE_CODES.sourceKnipConfigInvalid,
+    primaryCode: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
   },
-  id: 'source/knip-config-workspaces-invalid',
+  id: 'graph/config-empty-label',
   kind: 'filesystem',
   setup: [],
-  tools: ['typescript'],
+  tools: [],
 });

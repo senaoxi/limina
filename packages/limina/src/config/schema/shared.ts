@@ -1,4 +1,5 @@
 import path from 'pathe';
+import type { z } from 'zod';
 
 export interface ConfigValidationContext {
   addIssue(issue: {
@@ -141,4 +142,51 @@ export function addUnknownFieldIssues(options: {
     if (options.allowed.has(key)) continue;
     addConfigIssue(options.ctx, [...options.path, key], options.message);
   }
+}
+
+export function validateGovernanceShape(options: {
+  value: unknown;
+  path: PropertyKey[];
+  schema: z.ZodType;
+  context: ConfigValidationContext;
+}): void {
+  const result = options.schema.safeParse(options.value);
+  if (result.success) return;
+  for (const issue of result.error.issues)
+    addGovernanceShapeIssue(options, issue);
+}
+
+function addGovernanceShapeIssue(
+  options: Parameters<typeof validateGovernanceShape>[0],
+  issue: z.core.$ZodIssue,
+): void {
+  if (issue.code !== 'unrecognized_keys') {
+    addConfigIssue(
+      options.context,
+      [...options.path, ...issue.path],
+      issue.message,
+    );
+    return;
+  }
+  for (const key of issue.keys)
+    addConfigIssue(
+      options.context,
+      [...options.path, ...issue.path, key],
+      'unknown governance config field.',
+    );
+}
+
+export function requireConfigField(options: {
+  value: Record<string, unknown>;
+  field: string;
+  path: PropertyKey[];
+  context: ConfigValidationContext;
+  message: string;
+}): void {
+  if (!Object.hasOwn(options.value, options.field))
+    addConfigIssue(
+      options.context,
+      [...options.path, options.field],
+      options.message,
+    );
 }

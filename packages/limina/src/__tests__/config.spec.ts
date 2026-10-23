@@ -10,7 +10,7 @@ import {
 } from '#config/runner';
 import { prepareGeneratedTsconfigGraph } from '#core/build-graph/runner';
 import { collectGraphProjectRoutes } from '#core/tsconfig/actions';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -485,8 +485,7 @@ describe('source.knip configuration contract', () => {
     {
       name: 'undefined workspaces',
       value: { workspaces: undefined },
-      error:
-        'source.knip.workspaces must be an object keyed by workspace package name',
+      error: 'explicit undefined is not supported',
     },
     {
       name: 'array workspaces',
@@ -3382,5 +3381,186 @@ describe('configuration structure', () => {
     [{ scope: { source: { exclude: [] } } }, 'field: scope.source.exclude'],
   ])('reports invalid settings at their public path: %j', (value, message) => {
     expect(() => validateLiminaConfig(value as LiminaConfig)).toThrow(message);
+  });
+});
+
+describe('configuration-driven default governance', () => {
+  it.each([
+    {},
+    { graph: { rules: {} } },
+    { proof: { allowlist: [] } },
+    { source: { knip: false } },
+    { source: { knip: true } },
+    { source: { knip: { root: {} } } },
+    { source: { knip: { workspaces: {} } } },
+    { source: { declarations: { ambient: [] } } },
+    { source: { importAuthority: { allow: {} } } },
+  ])('accepts explicit empty collections and false: %j', (config) => {
+    expect(() => validateLiminaConfig(config)).not.toThrow();
+    expect(defineConfig(config)).toBe(config);
+  });
+
+  it.each([
+    ...['graph', 'source', 'proof'].flatMap((domain) =>
+      [undefined, null, false, [], 1, 'enabled', {}, { unknown: true }].map(
+        (value) => ({ config: { [domain]: value }, field: domain }),
+      ),
+    ),
+    { config: { graph: { rules: undefined } }, field: 'graph.rules' },
+    { config: { graph: { rules: [] } }, field: 'graph.rules' },
+    {
+      config: { graph: { rules: { app: { experimental: true } } } },
+      field: 'experimental',
+    },
+    { config: { proof: { allowlist: undefined } }, field: 'proof.allowlist' },
+    { config: { proof: { allowlist: {} } }, field: 'proof.allowlist' },
+    {
+      config: { proof: { allowlist: [{ file: 1, reason: 'test' }] } },
+      field: 'file',
+    },
+    { config: { proof: { allowlist: [], coverage: true } }, field: 'coverage' },
+    { config: { source: { knip: undefined } }, field: 'source.knip' },
+    {
+      config: { source: { knip: false, declarations: undefined } },
+      field: 'declarations',
+    },
+    { config: { source: { declarations: {} } }, field: 'ambient' },
+    { config: { source: { importAuthority: {} } }, field: 'allow' },
+    {
+      config: {
+        source: { importAuthority: { allow: {}, experimental: true } },
+      },
+      field: 'experimental',
+    },
+    { config: { source: { knip: { workspaces: { app: [] } } } }, field: 'app' },
+    {
+      config: {
+        source: {
+          knip: { root: { entry: [{ files: [], reason: undefined }] } },
+        },
+      },
+      field: 'reason',
+    },
+  ])('rejects malformed governance at $field: $config', ({ config, field }) => {
+    expect(() => validateLiminaConfig(config as never)).toThrow(field);
+  });
+
+  it('rejects executable or inherited governance without reading getters or proxies', () => {
+    let reads = 0;
+    const accessor = {
+      get knip() {
+        reads++;
+        throw new Error('getter executed');
+      },
+    };
+    const proxy = new Proxy(
+      {},
+      {
+        get() {
+          reads++;
+          throw new Error('proxy executed');
+        },
+      },
+    );
+    for (const config of [
+      Object.defineProperty({}, 'source', {
+        get() {
+          reads++;
+          return { knip: true };
+        },
+      }),
+      { source: accessor },
+      { graph: proxy },
+      Object.create(proxy),
+      Object.create({ source: { knip: true } }),
+      { source: Object.create({ knip: true }) },
+    ])
+      expect(() => validateLiminaConfig(config)).toThrow(/data|inherited/u);
+    expect(reads).toBe(0);
+  });
+
+  it('rejects hidden nested rules and validates hidden top-level domains', () => {
+    const config = Object.defineProperty({}, 'graph', { value: { rules: {} } });
+    expect(() => validateLiminaConfig(config)).not.toThrow();
+    const invalid = withFixtureGovernanceRoot({
+      rootDir: process.cwd(),
+      configPath: path.join(process.cwd(), 'limina.config.mts'),
+    });
+    Object.defineProperty(invalid, 'graph', { value: {} });
+    expect(() => getActiveCheckers(invalid)).toThrow('graph.rules');
+    const rules = Object.defineProperty({}, 'app', {
+      value: { deny: { refs: [] } },
+    });
+    expect(() => validateLiminaConfig({ graph: { rules } })).toThrow(
+      'enumerable',
+    );
+  });
+
+  it.each(['native', 'tsx'] as const)(
+    'preserves factory results and explicit fields with %s',
+    async (configLoader) => {
+      const root = await mkdtemp(
+        path.join(tmpdir(), 'limina-governance-config-'),
+      );
+      try {
+        await writeWorkspaceMetadata(root);
+        const configPath = path.join(root, 'limina.config.mts');
+        await writeText(
+          configPath,
+          `
+import { appendFileSync } from 'node:fs';
+export default async ({ mode }: { mode: string }) => {
+  appendFileSync(new URL('./calls.txt', import.meta.url), mode + '\\n');
+  const config = mode === 'minimal' ? {} : { graph: { rules: {} }, proof: { allowlist: [] } };
+  return mode === 'minimal' ? config : Object.defineProperty(config, 'source', { value: { knip: false } });
+};
+`,
+        );
+        const config = await loadConfig({
+          configPath,
+          cwd: root,
+          configLoader,
+          mode: 'full',
+        });
+        expect(config.graph).toEqual({ rules: {} });
+        expect(config.proof).toEqual({ allowlist: [] });
+        expect(config.source).toEqual({ knip: false });
+        expect(
+          Object.getOwnPropertyDescriptor(config, 'source')?.enumerable,
+        ).toBe(false);
+        expect(() => getActiveCheckers(config)).not.toThrow();
+        expect(await readFile(path.join(root, 'calls.txt'), 'utf8')).toBe(
+          'full\n',
+        );
+        const minimal = await loadConfig({
+          configPath,
+          cwd: root,
+          configLoader,
+          mode: 'minimal',
+        });
+        expect(Object.hasOwn(minimal, 'source')).toBe(false);
+        expect(Object.hasOwn(minimal, 'graph')).toBe(false);
+        expect(Object.hasOwn(minimal, 'proof')).toBe(false);
+        expect(await readFile(path.join(root, 'calls.txt'), 'utf8')).toBe(
+          'full\nminimal\n',
+        );
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('keeps defineConfig identity while public types reject empty domains', () => {
+    // @ts-expect-error A configured graph must explicitly declare its rules.
+    const graph = defineConfig({ graph: {} });
+    // @ts-expect-error A configured proof must explicitly declare its allowlist.
+    const proof = defineConfig({ proof: {} });
+    // @ts-expect-error A configured source must declare a supported field.
+    const source = defineConfig({ source: {} });
+    expect([graph, proof, source]).toEqual([
+      { graph: {} },
+      { proof: {} },
+      { source: {} },
+    ]);
   });
 });

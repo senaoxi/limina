@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'pathe';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { createDefaultExecutionPlan } from '../pipeline/plan';
 
 interface Step {
   if?: string;
@@ -71,7 +72,6 @@ describe('Limina CI validation contract', () => {
       'gates:check',
       'format:check',
       'lint:check',
-      'typecheck',
       'check',
       'lint:packages',
     ])
@@ -81,6 +81,18 @@ describe('Limina CI validation contract', () => {
       configPath: path.join(root, 'limina.config.mts'),
       cwd: root,
     });
+    expect(quality).not.toContain('pnpm run typecheck');
+    expect(
+      createDefaultExecutionPlan(config)
+        .tasks.filter((task) => task.kind === 'task')
+        .map((task) => task.issueTask),
+    ).toEqual([
+      'graph:check',
+      'source:check',
+      'proof:check',
+      'checker:build',
+      'checker:typecheck',
+    ]);
     for (const [script, pipeline, tool, requiredFlag, forbiddenFlag] of [
       ['format:check', 'format', 'prettier', '--check', '--write'],
       ['lint:check', 'lint', 'eslint', '--config', '--fix'],
