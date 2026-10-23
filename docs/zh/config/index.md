@@ -2,6 +2,8 @@
 
 治理边界放在 `scope`。各类检查、`pipelines`、`concurrency` 和 `cache` 直接使用顶层字段，便于查找和理解。所有字段均可省略；`defineConfig({})` 使用全部默认行为。
 
+默认 `limina check` 始终计划 `checker:build` 和 `checker:typecheck`；只有对应顶层域含有合法显式字段时，才加入 `graph:check`、`source:check` 和 `proof:check`。`scope` 选择输入和 Checker，不启用这些治理任务；`package.entries` 和 `release` 也不增加默认任务。
+
 | 配置域                                           | 职责                                                                         |
 | ------------------------------------------------ | ---------------------------------------------------------------------------- |
 | `scope`                                          | `regions` 决定治理区域，`source` 选择源码，`checkers` 指定检查器入口及归属。 |

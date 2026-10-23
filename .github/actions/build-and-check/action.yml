@@ -17,8 +17,6 @@ runs:
     - shell: bash
       run: pnpm run lint:check
     - shell: bash
-      run: pnpm run typecheck
-    - shell: bash
       run: pnpm run check
     - shell: bash
       run: pnpm run lint:packages

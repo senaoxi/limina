@@ -2,6 +2,8 @@
 
 Graph rules express project boundaries as checkable constraints. Define a label's rules in `graph.rules`, then apply the label through `liminaOptions.graphRules` in a source tsconfig. Only configs using that label are governed by those rules.
 
+Use `graph: { rules: {} }` to enable base Graph Check without additional rules. `rules` is required when `graph` is present; `graph: {}` is invalid. Omitting `graph` removes only the default governance task. Core graph analysis, materialization and execution admission still run; applicable `deny.refs` constraints are enforced before compiler execution even in a checker-only pipeline.
+
 ```js
 import { defineConfig } from 'limina';
 
@@ -96,7 +98,7 @@ The client source config is labeled `runtime-client`:
 }
 ```
 
-When `pnpm exec limina graph check` runs, Limina compares the source provider relationship with `graph.rules.runtime-client.deny.refs`, as well as checking actual project references. Reference inference omits a denied import-derived reference from the generated config; that omission does not make the source import valid.
+When `pnpm exec limina graph check` runs, Limina compares the source provider relationship with `graph.rules.runtime-client.deny.refs`, as well as checking actual project references. Core retains dependency evidence and compilation obligations; execution admission rejects applicable forbidden references rather than treating a missing governance task as permission.
 
 A client import that requires the Node leaf is reported as denied graph access with the configured `reason`. Resolve the source relationship or the policy rather than editing generated files.
 

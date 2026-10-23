@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,6 +12,77 @@ import {
   runNodeScript,
   runPnpm,
 } from './helpers';
+
+async function assertDefaultCheckWorkflow(
+  fixture: ConsumerFixture,
+): Promise<void> {
+  const cwd = path.join(fixture.fixtureDir, 'default-workflow');
+  await mkdir(path.join(cwd, 'src'), { recursive: true });
+  await writeFile(
+    path.join(cwd, 'package.json'),
+    '{"name":"default-workflow","private":true,"type":"module"}',
+  );
+  await writeFile(path.join(cwd, 'src/index.ts'), 'export const value = 1;\n');
+  await writeFile(
+    path.join(cwd, 'tsconfig.json'),
+    JSON.stringify({
+      compilerOptions: {
+        composite: true,
+        types: [],
+        target: 'ES2022',
+        module: 'NodeNext',
+      },
+      include: ['src/**/*.ts'],
+    }),
+  );
+  const config = path.join(cwd, 'limina.config.mjs');
+  for (const isFull of [true, false]) {
+    await writeFile(
+      config,
+      `export default ${JSON.stringify(
+        isFull
+          ? {
+              scope: { source: { include: ['src/**/*.ts'] } },
+              graph: { rules: {} },
+              source: { knip: false },
+              proof: { allowlist: [] },
+            }
+          : {},
+      )};`,
+    );
+    await runPnpm(['exec', 'limina', 'check'], { cwd });
+    const query = await runPnpm(
+      ['exec', 'limina', 'check', '--issues', '--format', 'json'],
+      { cwd },
+    );
+    const result = JSON.parse(query.stdout) as {
+      run: { tasks: { kind: string; label: string; state: string }[] };
+    };
+    expect(
+      result.run.tasks
+        .filter((task) => task.kind === 'task')
+        .map((task) => [task.label, task.state]),
+    ).toEqual([
+      ...(isFull
+        ? [
+            ['graph:check', 'passed'],
+            ['source:check', 'passed'],
+            ['proof:check', 'passed'],
+          ]
+        : []),
+      ['checker:build', 'passed'],
+      ['checker:typecheck', 'disabled'],
+    ]);
+  }
+  for (const command of ['graph', 'source'])
+    await runPnpm(['exec', 'limina', command, 'check'], { cwd });
+  // The standalone proof still runs without a proof domain; exclude the config module from source coverage.
+  await writeFile(
+    config,
+    'export default { scope: { source: { include: ["src/**/*.ts"] } } };',
+  );
+  await runPnpm(['exec', 'limina', 'proof', 'check'], { cwd });
+}
 
 describe('limina published package smoke', () => {
   it('checks the Astro semantic graph with the lowest supported check version and TypeScript 5', async () => {
@@ -184,6 +255,7 @@ describe('limina published package smoke', () => {
       });
 
       expect(exportsResult.stdout).toContain('limina exports ok');
+      await assertDefaultCheckWorkflow(fixture);
 
       const sourceCheckResult = await runPnpm(
         [

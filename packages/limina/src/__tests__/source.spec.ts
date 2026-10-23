@@ -94,7 +94,9 @@ async function createFixture(
     Object.hasOwn(options, 'sourceBoundary');
   const graph = hasOptionsShape
     ? (options as { graph?: GraphConfig }).graph
-    : (options as GraphConfig);
+    : Object.hasOwn(options, 'rules')
+      ? (options as GraphConfig)
+      : undefined;
   const source = hasOptionsShape
     ? (options as { source?: SourceCheckConfig }).source
     : undefined;
@@ -124,8 +126,8 @@ async function createFixture(
         source: sourceBoundary,
         regions,
       },
-      graph,
-      source,
+      ...(graph !== undefined && { graph }),
+      ...(source !== undefined && { source }),
     }),
     path: createFixturePathResolver(rootDirectory),
     rootDir: rootDirectory,
@@ -991,7 +993,7 @@ export default kebabCase;
     },
   );
 
-  it('rejects external bare imports that are not declared by the source owner', async () => {
+  it('reports base source authorization violations with knip disabled', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
@@ -999,10 +1001,19 @@ export default kebabCase;
       createPackageFixture({
         source: "import { z } from 'zod';\nexport const schema = z.string();\n",
       }),
+      { source: { knip: false } },
     );
+    const resolveKnipCliPath = vi.fn(() => {
+      throw new Error('Knip must stay disabled');
+    });
+    const knipRunner = vi.fn(async () => '{"issues":[]}');
 
     try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(
+        isRunSourceCheck(fixture.config, { resolveKnipCliPath, knipRunner }),
+      ).resolves.toBe(false);
+      expect(resolveKnipCliPath).not.toHaveBeenCalled();
+      expect(knipRunner).not.toHaveBeenCalled();
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('Unauthorized bare package import');
@@ -3568,9 +3579,6 @@ packages:
   });
 
   it('does not merge raw source.knip dependency ignore arrays', async () => {
-    const errorSpy = vi
-      .spyOn(SourceLogger, 'error')
-      .mockImplementation(() => {});
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: 'export const value = 1;\n',
@@ -3589,14 +3597,10 @@ packages:
     );
 
     try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
-      const errors = errorSpy.mock.calls.join('\n');
-
-      expect(errors).toContain(
-        'ignoreDependencies entries must be objects with non-empty dep and reason fields',
+      await expect(isRunSourceCheck(fixture.config)).rejects.toThrow(
+        'source.knip.workspaces["@example/app"].ignoreDependencies[0]',
       );
     } finally {
-      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -3835,6 +3839,8 @@ packages:
     );
 
     try {
+      await expect(isRunSourceCheck(fixture.config)).rejects.toThrow('.reason');
+      ignore![0]!.reason = '';
       await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
@@ -3864,7 +3870,10 @@ packages:
     );
 
     try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
+      const result = isRunSourceCheck(fixture.config);
+      await expect(result).rejects.toThrow(
+        'source.knip.workspaces["@example/app"]',
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -3980,7 +3989,7 @@ packages:
     }
   });
 
-  it('ignores raw source.knip fields instead of passing them through to Knip', async () => {
+  it('rejects raw source.knip fields before Knip execution', async () => {
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: 'export const value = 1;\n',
@@ -3999,7 +4008,10 @@ packages:
     );
 
     try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
+      const result = isRunSourceCheck(fixture.config);
+      await expect(result).rejects.toThrow(
+        'source.knip.workspaces["@example/app"].project',
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -5073,6 +5085,8 @@ packages:
     );
 
     try {
+      await expect(isRunSourceCheck(fixture.config)).rejects.toThrow('.reason');
+      entries![0]!.reason = '';
       await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
@@ -5093,9 +5107,6 @@ packages:
   });
 
   it('rejects removed workspace tsConfig configs as unknown fields', async () => {
-    const errorSpy = vi
-      .spyOn(SourceLogger, 'error')
-      .mockImplementation(() => {});
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: "export { internalValue } from '@example/internal';\n",
@@ -5117,29 +5128,19 @@ packages:
     );
 
     try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
-      const errors = errorSpy.mock.calls.join('\n');
-
-      expect(errors).toContain('Invalid source Knip workspace config  1 issue');
-      expect(errors).toContain('package: @example/app');
-      expect(errors).toContain('package: @example/internal');
-      expect(errors).toContain(
+      const result = isRunSourceCheck(fixture.config);
+      await expect(result).rejects.toThrow(
         'source.knip.workspaces["@example/app"].tsConfig',
       );
-      expect(errors).toContain(
+      await expect(result).rejects.toThrow(
         'source.knip.workspaces["@example/internal"].tsConfig',
       );
-      expect(errors).toContain('unknown source Knip workspace config field');
     } finally {
-      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
 
   it('rejects neutral unknown source Knip workspace config fields', async () => {
-    const errorSpy = vi
-      .spyOn(SourceLogger, 'error')
-      .mockImplementation(() => {});
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: "export { internalValue } from '@example/internal';\n",
@@ -5158,15 +5159,11 @@ packages:
     );
 
     try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
-      const errors = errorSpy.mock.calls.join('\n');
-
-      expect(errors).toContain(
+      const result = isRunSourceCheck(fixture.config);
+      await expect(result).rejects.toThrow(
         'source.knip.workspaces["@example/app"].experimental',
       );
-      expect(errors).toContain('unknown source Knip workspace config field');
     } finally {
-      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -5209,6 +5206,8 @@ packages:
     );
 
     try {
+      await expect(isRunSourceCheck(fixture.config)).rejects.toThrow('.reason');
+      ignore![0]!.reason = '';
       await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 

@@ -59,11 +59,9 @@ function toUserConfig(config: LiminaConfig): LiminaConfig {
     'governanceRoot',
     'virtualFiles',
   ]);
-  const userConfig = Object.fromEntries(
-    Object.keys(config)
-      .filter((key) => !internalFields.has(key))
-      .map((key) => [key, (config as Record<string, unknown>)[key]]),
-  );
+  const properties = Object.getOwnPropertyDescriptors(config);
+  for (const key of internalFields) delete properties[key];
+  const userConfig = Object.defineProperties({}, properties);
   return userConfig as LiminaConfig;
 }
 

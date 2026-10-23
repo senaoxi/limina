@@ -2,6 +2,8 @@
 
 `proof.allowlist` records exceptions for specific files that remain within the source governance boundary but intentionally have no checker or generated-graph coverage. It affects only coverage proof: it does not change checker inputs, hide type diagnostics, or authorize cross-package imports.
 
+Use `proof: { allowlist: [] }` to enable full base Proof Check without exceptions. `allowlist` is required when `proof` is present; `proof: {}` and a `coverage` field are invalid. Omitting `proof` omits the default task; standalone `limina proof check` and explicit pipeline steps still check coverage.
+
 ```ts
 import { defineConfig } from 'limina';
 

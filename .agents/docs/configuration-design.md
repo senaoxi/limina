@@ -40,6 +40,16 @@ The current [public type](../../packages/limina/src/config/root-types.ts) and [c
 
 Public grouping need not mirror internal providers, analysis phases, or cache epochs. Conversely, moving a public option must not change its authority or consumers: [package output declarations](../../packages/limina/src/core/workspace/validated/outputs/collection.ts), for example, affect workspace output boundaries even though they are configured under `package`. Preserve path bases, default behavior, checker ownership, pipeline order, and cache validity unless a separate behavior change is explicitly intended.
 
+## Configuration-driven default check
+
+A valid own top-level `graph`, `source`, or `proof` declaration opts its governance task into the independent default plan. `scope` remains input and Checker authority. Both Checker tasks, workspace validation, Core analysis, graph materialization and execution admission remain mandatory. Explicit pipelines and standalone checks retain their existing contracts; package/release do not join the default.
+
+Use `graph: { rules: {} }` and `proof: { allowlist: [] }` for base governance without additional rules or exceptions. This reuses meaningful existing fields rather than introducing a Proof coverage switch. Source subcapabilities remain independent: `source: { knip: false }` retains base governance. Empty domains, unknown fields and explicit undefined are rejected. Native property validation precedes Zod shape validation so non-enumerable top-level domains survive, while accessors, Proxies, inherited and hidden nested fields cannot make selection differ from consumption. Dynamic computation belongs in the config factory; no transforms or defaults replace returned values.
+
+Existing Zod and Node property descriptors provide the required mechanism without a dependency or workflow abstraction. Structural Graph/Knip failures now belong to configuration loading; workspace-dependent semantic diagnostics stay with their domain. The preserved invalid inputs in `fixtures/config-errors` and replacement semantic detector fixtures guard that boundary.
+
+Evidence: [configuration tests](../../packages/limina/src/__tests__/config.spec.ts), [default workflow CLI tests](../../packages/limina/integration/tests/default-check-workflow.spec.ts), [cache process tests](../../packages/limina/integration/tests/config-process-cache.spec.ts).
+
 ## Reviewing a new option or regrouping
 
 Before extending the configuration, answer three questions:

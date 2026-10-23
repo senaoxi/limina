@@ -28,7 +28,7 @@ export interface GraphRule {
 }
 
 export interface GraphConfig {
-  rules?: Record<string, GraphRule>;
+  rules: Record<string, GraphRule>;
 }
 
 export interface ProofAllowlistEntry {
@@ -37,5 +37,5 @@ export interface ProofAllowlistEntry {
 }
 
 export interface ProofConfig {
-  allowlist?: ProofAllowlistEntry[];
+  allowlist: ProofAllowlistEntry[];
 }

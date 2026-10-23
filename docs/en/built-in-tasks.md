@@ -8,13 +8,9 @@ See the [CLI reference](./cli.md) for commands and options, and [pipeline config
 
 ## Default Check {#understand-the-default-check-first}
 
-When `limina check` is run without a pipeline name, it runs the shared `workspace:validate` preparation, materializes the generated graph needed by this check, and schedules five default tasks:
+The default `limina check` always schedules `checker:build` and `checker:typecheck`. It adds `graph:check`, `source:check`, and `proof:check` only when the corresponding top-level domain is configured with valid explicit fields. `scope` selects inputs and Checkers; it does not enable these governance tasks. `package.entries` and `release` do not add default tasks.
 
-1. `graph:check`
-2. `source:check`
-3. `proof:check`
-4. `checker:build`
-5. `checker:typecheck`
+The report order is Graph, Source, Proof, Checker Build, then Framework Typecheck, omitting unselected governance tasks. Workspace validation, core analysis, graph materialization and execution admission remain mandatory internal work.
 
 This order is the display and recording order for results. It does not mean the default check runs these tasks serially. The default check schedules them as independent tasks; when the concurrency budget and resource locks allow it, they may run concurrently. A failed task fails the current check; other default tasks can continue.
 
@@ -47,20 +43,22 @@ Besides built-in tasks, pipeline steps may be external commands. A completed bui
 
 ## Task Overview
 
-| Task                | Default check | Main concern                                                                                            | What it does                                                                                                   |
-| ------------------- | ------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `graph:prepare`     | No            | Generates the engineering graph, declaration build configs, and related generated files under `.limina` | Materializes the generated graph; not the same as checking whether the graph satisfies rules                   |
-| `graph:check`       | Yes           | Project references, workspace imports, export resolution, and graph rules                               | Checks whether the `TypeScript` project reference graph is consistent with source imports and configured rules |
-| `source:check`      | Yes           | Source ownership, package boundaries, dependency declarations, and `Knip`-backed source usage analysis  | Checks whether source dependency relationships can be explained by package ownership and manifests             |
-| `proof:check`       | Yes           | Source coverage, `tsconfig` roles, and framework projections                                            | Checks whether source and framework capabilities enter one consistent, executable check scope                  |
-| `checker:build`     | Yes           | Build-capable checkers                                                                                  | Calls build mode of underlying checkers, usually emitting declaration files and build info                     |
-| `checker:typecheck` | Yes           | Framework-owned type-config leaves                                                                      | Calls `astro` or `svelte-check` once per owned leaf without declaration output                                 |
-| `package:check`     | No            | Built package artifacts                                                                                 | Runs package-shape, type-resolution, and artifact import-boundary checks on `outDir` artifacts                 |
-| `release:check`     | No            | Release-phase artifact consistency                                                                      | Supplemental pre-release checks; not a publishing system or security guarantee                                 |
+| Task                | Default check  | Main concern                                                                                            | What it does                                                                                                   |
+| ------------------- | -------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `graph:prepare`     | No             | Generates the engineering graph, declaration build configs, and related generated files under `.limina` | Materializes the generated graph; not the same as checking whether the graph satisfies rules                   |
+| `graph:check`       | Valid `graph`  | Project references, workspace imports, export resolution, and graph rules                               | Checks whether the `TypeScript` project reference graph is consistent with source imports and configured rules |
+| `source:check`      | Valid `source` | Source ownership, package boundaries, dependency declarations, and `Knip`-backed source usage analysis  | Checks whether source dependency relationships can be explained by package ownership and manifests             |
+| `proof:check`       | Valid `proof`  | Source coverage, `tsconfig` roles, and framework projections                                            | Checks whether source and framework capabilities enter one consistent, executable check scope                  |
+| `checker:build`     | Yes            | Build-capable checkers                                                                                  | Calls build mode of underlying checkers, usually emitting declaration files and build info                     |
+| `checker:typecheck` | Yes            | Framework-owned type-config leaves                                                                      | Calls `astro` or `svelte-check` once per owned leaf without declaration output                                 |
+| `package:check`     | No             | Built package artifacts                                                                                 | Runs package-shape, type-resolution, and artifact import-boundary checks on `outDir` artifacts                 |
+| `release:check`     | No             | Release-phase artifact consistency                                                                      | Supplemental pre-release checks; not a publishing system or security guarantee                                 |
 
 External commands separate consecutive built-in tasks into segments. Each segment reuses the validated workspace context of the current analysis generation. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives a shared `graph:materialize` preparation before its built-in tasks. Failed required preparation records dependent tasks as `blocked`. A workspace issue can still be persisted in `.limina/check/last-run.json`; a secondary snapshot-write failure does not replace the original validation error.
 
 ### Task Status
+
+Unselected governance tasks are absent from the current run, with no fabricated `passed`, `disabled`, or `skipped` status. A planned framework check without targets remains `disabled`. `check --issues` reads the saved invocation; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, `proof check`, and explicitly declared pipeline steps still run without their top-level domain.
 
 | Status     | Meaning                                                                             |
 | ---------- | ----------------------------------------------------------------------------------- |
