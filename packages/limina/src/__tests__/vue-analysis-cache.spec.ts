@@ -2,6 +2,7 @@ import { readFileSync, rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as snapshotCodec from '../core/analysis-cache/data-codec';
 import type { StoredGraphData } from '../core/build-graph/analysis-cache-schema';
+import { hasBoundCandidate } from '../core/build-graph/cached-candidate-binding';
 import {
   cacheMetric,
   createVueCacheFixture,
@@ -29,9 +30,102 @@ function expectCold(run: VueCacheRun) {
   expect(cacheMetric(run, 'graphBuilds')).toBeGreaterThan(0);
 }
 
+function crossProjectFixture() {
+  const f = fixture();
+  f.write(
+    'limina.config.mjs',
+    `export default {scope:{source:{include:['vue/src/**/*.{ts,vue}','vue/provider/*.ts','native/src/**/*.ts']},checkers:{'vue-tsc':{include:['vue/tsconfig.json','vue/provider/tsconfig.json']},tsc:{include:['native/tsconfig.json']}}}};`,
+  );
+  f.write('vue/provider/index.ts', 'export const shared = 1;');
+  f.write(
+    'vue/provider/tsconfig.json',
+    JSON.stringify({
+      compilerOptions: {
+        composite: true,
+        declaration: true,
+        types: [],
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        outDir: 'dist',
+      },
+      include: ['index.ts'],
+    }),
+  );
+  f.write(
+    'vue/src/Widget.vue',
+    `<script setup lang="ts">import { shared } from '../provider/index.js';</script><template>{{shared}}</template>`,
+  );
+  return f;
+}
+
 // Each case starts multiple real compiler processes. Keep room for Windows
 // startup and cold analysis while retaining the warm/forced-cold controls.
 describe('persistent Vue and mixed graph analysis', () => {
+  it('restores cross-project Vue declaration references and removes them after the last import changes', () => {
+    const f = crossProjectFixture();
+    const cold = f.run();
+    expectCold(cold);
+    const stored = () =>
+      snapshotCodec.decodeData(
+        Object.values(f.snapshot().graphs)[0]!.data,
+      ) as StoredGraphData;
+    const references = () =>
+      stored().governedSources.get('vue-tsc')!.get(f.path('vue/tsconfig.json'))!
+        .declarationReferences;
+    const provider = stored()
+      .sourceToDts.get('vue-tsc')!
+      .get(f.path('vue/provider/tsconfig.json'))!;
+    expect(references()).toEqual(new Set([provider]));
+    const warm = f.run();
+    expectRestored(warm);
+    expect(warm.graph).toEqual(cold.graph);
+    f.write('vue/src/Widget.vue', '<template>local</template>');
+    expectCold(f.run());
+    expect(references()).toEqual(new Set());
+    expectRestored(f.run());
+  });
+
+  it.each([false, true])(
+    'rejects erased Vue references without trusting cached admission (erase roots=%s)',
+    (eraseRoots) => {
+      const f = crossProjectFixture();
+      const cold = f.run();
+      expectCold(cold);
+      expectRestored(f.run());
+      const snapshot = f.snapshot();
+      const record = Object.values(snapshot.graphs)[0]!;
+      const data = snapshotCodec.decodeData(record.data) as StoredGraphData;
+      const sourcePath = f.path('vue/tsconfig.json');
+      const source = data.governedSources.get('vue-tsc')!.get(sourcePath)!;
+      expect(source.declarationReferences.size).toBe(1);
+      source.declarationReferences.clear();
+      if (eraseRoots) source.declarationFileNames = [];
+      const declaration = data.sourceToDts.get('vue-tsc')!.get(sourcePath)!;
+      const generated = JSON.parse(data.generatedFiles.get(declaration)!);
+      data.generatedFiles = new Map(data.generatedFiles).set(
+        declaration,
+        JSON.stringify({ ...generated, references: [] }),
+      );
+      data.dependencyAnalysis.candidate = {
+        ...data.dependencyAnalysis.candidate!,
+        references: data.dependencyAnalysis.candidate!.references.filter(
+          (reference) => reference.from !== sourcePath,
+        ),
+      };
+      expect(hasBoundCandidate(data)).toBe(true);
+      record.data = snapshotCodec.encodeData(data);
+      f.writeSnapshot(snapshot);
+      const rebuilt = f.run();
+      expect(rebuilt.passed).toBe(true);
+      expect(rebuilt.vuePrograms).toBe(0);
+      expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
+      expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
+      expect(rebuilt.graph).toEqual(cold.graph);
+      expectRestored(f.run());
+    },
+  );
+
   it.each(['graph-hit', 'graph-fallback'] as const)(
     'replays restored declaration inputs before Vue execution after %s',
     (mode) => {
