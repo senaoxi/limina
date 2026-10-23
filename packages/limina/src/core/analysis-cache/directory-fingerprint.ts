@@ -1,5 +1,6 @@
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   lstatSync,
   readdirSync,
@@ -10,6 +11,20 @@ import {
 import path from 'pathe';
 import { AnalysisInputDriftError } from './contracts';
 import { analysisHash } from './identity';
+
+type LinkBindings = [string, string][];
+const ancestorBindings = new AsyncLocalStorage<Map<string, LinkBindings>>();
+
+/**
+Ancestor link observations live for one input replay, never across effects.
+*/
+export class PathBindingReplay {
+  readonly #ancestors = new Map<string, LinkBindings>();
+
+  run<T>(operation: () => T): T {
+    return ancestorBindings.run(this.#ancestors, operation);
+  }
+}
 
 function optionalLstat(file: string): Stats | undefined {
   try {
@@ -45,14 +60,27 @@ function inventoryEntry(relative: string, stat: Stats): unknown {
   return [relative, entryKind(stat), stat.isFile() ? stat.mtimeMs : null];
 }
 function linkBindings(file: string): [string, string][] {
-  const links: [string, string][] = [];
-  let cursor = normalizeAbsolutePath(file);
-  while (true) {
-    recordLink(cursor, links);
-    const parent = path.dirname(cursor);
-    if (parent === cursor) return links;
-    cursor = parent;
-  }
+  const cursor = normalizeAbsolutePath(file);
+  const links: LinkBindings = [];
+  recordLink(cursor, links);
+  const parent = path.dirname(cursor);
+  return parent === cursor ? links : [...links, ...parentBindings(parent)];
+}
+function parentBindings(file: string): LinkBindings {
+  const bindings = ancestorBindings.getStore();
+  if (bindings === undefined) return collectParentBindings(file);
+  const previous = bindings.get(file);
+  if (previous !== undefined) return previous;
+  const links = collectParentBindings(file);
+  bindings.set(file, links);
+  return links;
+}
+function collectParentBindings(file: string): LinkBindings {
+  const links: LinkBindings = [];
+  recordLink(file, links);
+  const parent = path.dirname(file);
+  if (parent !== file) links.push(...parentBindings(parent));
+  return links;
 }
 function physicalBinding(file: string): [string, string | null] {
   const stat = optionalLstat(file);

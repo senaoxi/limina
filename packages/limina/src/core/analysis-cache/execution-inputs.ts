@@ -3,7 +3,7 @@ import type {
   DependencyAnalysisResult,
   GeneratedTsconfigGraphResult,
 } from '../build-graph/types';
-import { EpochInputs } from './epoch-inputs';
+import { EpochInputReplay, EpochInputs } from './epoch-inputs';
 import type { NativeAnalysisCache } from './native-cache';
 
 interface ContextReads {
@@ -30,7 +30,22 @@ export function retainGraphExecutionInputs(
 export interface ExecutionInputScope {
   readonly paths: ReadonlySet<string>;
   affectedOutputs(outputs: ReadonlySet<string>): ReadonlySet<string>;
-  assertStable(except?: ReadonlySet<string>): Promise<void>;
+  assertStable(
+    except?: ReadonlySet<string>,
+    replay?: EpochInputReplay,
+  ): Promise<void>;
+}
+
+export async function isExecutionScopeStable(
+  scope: ExecutionInputScope,
+  replay: EpochInputReplay,
+): Promise<boolean> {
+  try {
+    await scope.assertStable(undefined, replay);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -58,7 +73,8 @@ export function graphExecutionInputScope(
     paths: allPaths,
     affectedOutputs: (outputs) =>
       new Set(selected.flatMap((input) => [...input.affectedOutputs(outputs)])),
-    assertStable: (except) => validateSelected(selected, except),
+    assertStable: (except, replay) =>
+      validateSelected(selected, except, replay),
   };
 }
 function requireGraphInputs(
@@ -99,8 +115,9 @@ function selectedContext(
 async function validateSelected(
   inputs: readonly EpochInputs[],
   except?: ReadonlySet<string>,
+  replay = new EpochInputReplay(),
 ): Promise<void> {
-  for (const input of inputs) await input.assertStable(except);
+  for (const input of inputs) await input.assertStable(except, replay);
 }
 export async function bindRestoredGraphExecutionInputs(
   graph: GeneratedTsconfigGraphResult,

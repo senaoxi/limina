@@ -147,6 +147,41 @@ describe('glob discovery freshness', () => {
   });
 });
 
+describe('replayed input freshness', () => {
+  it.each(['synchronous', 'asynchronous'] as const)(
+    'retains %s replay observations and rejects changes and conflicting live inputs',
+    async (mode) => {
+      const f = fixture();
+      const file = f.path('input.ts');
+      writeFileSync(file, 'export const value = 1;');
+      const original = new EpochInputs();
+      const observe = (epoch: EpochInputs) =>
+        epoch.run(() =>
+          readAnalysisInput(file, () => readFileSync(file, 'utf8')),
+        );
+      observe(original);
+      const saved = original.snapshot()!;
+      const canReplay = async (epoch: EpochInputs) =>
+        mode === 'synchronous'
+          ? epoch.validateSynchronous(saved)
+          : epoch.validate(saved);
+      const restored = new EpochInputs();
+      expect(await canReplay(restored)).toBe(true);
+      writeFileSync(file, 'export const value = 2;');
+      await expect(restored.assertStable()).rejects.toThrow(
+        'Analysis input changed during analysis',
+      );
+      expect(await canReplay(new EpochInputs())).toBe(false);
+      const conflicting = new EpochInputs();
+      observe(conflicting);
+      writeFileSync(file, 'export const value = 1;');
+      await expect(canReplay(conflicting)).rejects.toThrow(
+        'Analysis input changed during analysis',
+      );
+    },
+  );
+});
+
 describe('analysis transaction and publication', () => {
   it.each([
     ...([true, false, 'read-only'] as const).flatMap((analysisCache) =>

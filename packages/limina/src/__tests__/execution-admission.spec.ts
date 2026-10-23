@@ -1,5 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readFile,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -678,3 +685,50 @@ it('authenticates permit identity, scope and callback lifetime before consumptio
     await input.f.cleanup();
   }
 });
+
+it.each(['mutation', 'launch'] as const)(
+  'rejects same-mtime source drift at %s after shared read-only evidence',
+  async (stage) => {
+    const input = await fixture(true, false);
+    const admission = new ExecutionAdmission(
+      input.preflight,
+      input.graph,
+      input.targets,
+    );
+    const target = input.targets[0]!;
+    const file = input.f.path('a.ts');
+    const contents = await readFile(file, 'utf8');
+    const before = await stat(file);
+    let effects = 0;
+    try {
+      const allowed = await admission.withAuthorizedTarget(
+        target,
+        stage,
+        async (permit) => {
+          await admission.assertPermit(permit, target, stage);
+          effects += 1;
+        },
+      );
+      expect(allowed.state).toBe('executed');
+      await admission.withReadOnlyValidation(async () => {
+        await admission.withTargetEvidence(target, async () => {});
+        await admission.withTargetEvidence(target, async () => {});
+        const result = await admission.withAuthorizedTarget(
+          target,
+          stage,
+          async (permit) => {
+            await writeFile(file, `${contents}\n// changed`);
+            await utimes(file, before.atime, before.mtime);
+            await admission.assertPermit(permit, target, stage);
+            effects += 1;
+          },
+        );
+        expect(result.state).toBe('refused');
+      });
+      expect(effects).toBe(1);
+    } finally {
+      input.preflight.dispose();
+      await input.f.cleanup();
+    }
+  },
+);
