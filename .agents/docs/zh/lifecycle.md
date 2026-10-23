@@ -102,6 +102,8 @@ checker 的 `.tsbuildinfo` 等构建缓存和 check-result query 保留各自合
 
 Vue 适配器共用上述输入、配置、lock coverage、epoch 和发布门。Schema 10 保存中立文件事实、收集方式、完整 Vue context／query receipt、图中的 context 引用，以及分别校验的类型入口／输出投影证明；旧快照冷回退，不迁移或删除。[Vue 输入观测](../../../packages/limina/src/core/analysis-cache/vue-inputs.ts)包装物理 compiler host。Volar 的虚拟声明 realpath 回退记录物理缺失状态和路径绑定，不将虚拟文件视为真实存在。构造 Volar project host 时不修改解析所得的 options 对象。Clean 混合图将 Vue identity 绑定至当前 provider generation，并创建新的 artifact plan，无需取得 Vue Program 或重新推导图。资格与不支持的 provider 边界见[语义有效性](./semantics.md#持久化-importer-有效性)。
 
+Vue 完整图恢复先重新绑定已合格的 context，再通过[生产者共用的引用投影](../../../packages/limina/src/core/build-graph/cached-vue-references.ts)核对声明引用。该校验复用有效 Vue query facts，保留声明闭包、资源观察、implicitRefs 和 provider 选择语义。根文件来自当前解析配置；缓存根文件、图边和 admission 不授予资格，也不把缺少 Native required relation 当作没有 Vue 引用。引用重建是恢复验证的一部分，不重做整个 ownership／图构建。跨项目导入移除会重新分析并删除最后一条引用；互相一致但擦除了合法引用的缓存候选仍被拒绝。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护这些正反例。
+
 Vue 输出 context 具有独立 identity 及观察输入／查询回执；DTO 记录保留源配置路径和有效输出选项。恢复时使用当前工具链重新解析源配置、重建输出 identity，并在接受输出投影前校验其自身输入、选项及 roots。生成配置是否存在不构成 identity 权威，源 context 不能满足输出回执。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)覆盖无分析 Program 的新进程恢复、生成配置缺失、输出 target 失效，以及回执错误绑定源 context 的负例。不支持的自定义插件和虚拟输入继续采用既有冷回退。
 
 Discovery glob 回执比较返回路径 membership 的排序副本，不修改 reader 结果或 pattern 顺序。异步枚举顺序本身不能制造调用漂移或拒绝持久化图恢复；成员增删、路径绑定和全部非 glob 值继续精确校验。[生命周期回归](../../../packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts)覆盖乱序 live observation、glob 回执重放、真实 membership 变化和有序非 glob 读取。

@@ -13,6 +13,7 @@ interface Reconstruction {
   graph: StoredGraphData;
   config: ResolvedLiminaInputs;
   sources: readonly GovernedSourceUnit[];
+  vueReferences: ReadonlyMap<string, ReadonlySet<string>>;
 }
 function implicitTargets(
   input: Reconstruction,
@@ -78,6 +79,8 @@ function hasBoundLeaf(
   source: GovernedSourceUnit,
 ): boolean {
   if (!('dtsConfigPath' in source.buildProjection)) return true;
+  if (source.semanticAuthority.family === 'vue')
+    return hasVueReferences(input, source);
   const native = nativeEvidence(input.graph).flatMap(({ snapshot }) =>
     requiredRelations(snapshot, source),
   );
@@ -85,17 +88,31 @@ function hasBoundLeaf(
     ...implicitTargets(input, source),
     ...native.map((relation) => nativeProvider(input, source, relation)),
   ]);
+  return hasSameReferences(source, expected);
+}
+function hasVueReferences(
+  input: Reconstruction,
+  source: GovernedSourceUnit,
+): boolean {
+  const expected = input.vueReferences.get(source.configPath);
+  return expected !== undefined && hasSameReferences(source, expected);
+}
+function hasSameReferences(
+  source: GovernedSourceUnit,
+  expected: ReadonlySet<string>,
+): boolean {
   return (
     expected.size === source.declarationReferences.size &&
     expected.isSubsetOf(source.declarationReferences)
   );
 }
 /**
-Reconstruct cached leaf references from current implicitRefs and qualified Native facts, never from cached admission.
+Reconstruct cached leaf references from current implicitRefs and qualified semantic facts, never from cached admission.
 */
 export function hasBoundCachedReferences(
   graph: StoredGraphData,
   config: ResolvedLiminaInputs,
+  vueReferences: ReadonlyMap<string, ReadonlySet<string>>,
 ): boolean {
   const sources = graph.governedSources
     .values()
@@ -104,7 +121,7 @@ export function hasBoundCachedReferences(
   try {
     return (
       sources.every((source) =>
-        hasBoundLeaf({ graph, config, sources }, source),
+        hasBoundLeaf({ graph, config, sources, vueReferences }, source),
       ) && hasBoundGeneratedReferences(graph, config)
     );
   } catch {
