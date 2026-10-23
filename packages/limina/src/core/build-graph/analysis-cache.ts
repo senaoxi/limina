@@ -7,16 +7,14 @@ import { bindRestoredGraphExecutionInputs } from '../analysis-cache/execution-in
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
 import {
-  admittedCachedGraph,
   type CachedGraphData,
   parseCachedGraph,
   type StoredGraphData,
 } from './analysis-cache-schema';
-import { restoreGraphContexts, storeGraphContexts } from './analysis-cache-vue';
+import { storeGraphContexts } from './analysis-cache-vue';
 import { removeStaleGeneratedFiles } from './artifact-ledger';
 import { writeGeneratedContent } from './artifact-writer';
-import { rebindCachedCompilation } from './cached-candidate-binding';
-import { hasBoundCachedReferences } from './cached-reference-reconstruction';
+import { bindCachedGraph } from './cached-graph-binding';
 import { hasBoundGeneratedReferences } from './generated-reference-binding';
 import { readMaterializationStateSnapshot } from './materialization-state';
 import { hasBoundNativeGraph } from './native-cache-binding';
@@ -130,12 +128,9 @@ function bindAndRestoreGraph(
   },
 ): CachedGraphData | undefined {
   const { stored, record } = input;
-  rebindCachedCompilation(stored, options.cache);
-  if (!hasBoundCachedReferences(stored, options.config)) return undefined;
-  if (admittedCachedGraph(stored) === undefined) return undefined;
-  return restoreGraphContexts({
-    cache: options.cache,
-    data: stored,
+  return bindCachedGraph({
+    ...options,
+    stored,
     contextIds: record.vueContextIds,
     generation: restoredGeneration(options),
   });
