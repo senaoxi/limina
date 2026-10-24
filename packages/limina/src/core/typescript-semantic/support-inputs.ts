@@ -3,7 +3,10 @@ import type ts from 'typescript';
 import { collectTypeScriptSourceFileImports } from '../import-analysis/typescript-imports';
 import type { TypeScriptInclusionLedger } from './admission';
 import type { TypeScriptSemanticProject } from './contracts';
-import { getStandaloneModuleLocation } from './module-records';
+import {
+  findImportRecordLiterals,
+  isModuleImportRecord,
+} from './import-record';
 import { requestEligibility } from './request-eligibility';
 
 interface SupportInputOptions {
@@ -105,19 +108,24 @@ function moduleLiterals(
   options: SupportInputOptions,
   file: ts.SourceFile,
 ): ts.StringLiteralLike[] {
-  return collectTypeScriptSourceFileImports({
+  const records = collectTypeScriptSourceFileImports({
     filePath: file.fileName,
     sourceFile: file,
     tsModule: options.tsModule,
-  }).flatMap((importRecord) => {
-    if (!requestEligibility(file, importRecord, options.tsModule).expansion)
-      return [];
-    const location = getStandaloneModuleLocation({
-      importRecord,
-      getSourceFile: () => file,
-      tsModule: options.tsModule,
-    });
-    return location === null ? [] : [location.literal];
+  }).filter(
+    (record) =>
+      isModuleImportRecord(record) &&
+      requestEligibility(file, record, options.tsModule).expansion,
+  );
+  if (records.length === 0) return [];
+  const literals = findImportRecordLiterals({
+    records,
+    sourceFile: file,
+    tsModule: options.tsModule,
+  });
+  return records.flatMap((record) => {
+    const literal = literals.get(record);
+    return literal == null ? [] : [literal];
   });
 }
 function resolveModules(

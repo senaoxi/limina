@@ -9,7 +9,7 @@ import { stripVTControlCharacters } from 'node:util';
 import path from 'pathe';
 import type { MigrationRecord } from './declarations';
 import type { FrozenMigrationPlan } from './planner';
-import { MigrationPlanningError } from './progress';
+import { MigrationPlanningError } from './planner';
 import { migrationInputSource } from './scope';
 import type { RunMigrationOptions, RunMigrationResult } from './types';
 import type { MigrationDiskVerification } from './verification';

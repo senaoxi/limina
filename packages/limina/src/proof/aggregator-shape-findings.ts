@@ -1,8 +1,8 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { toRelativePath } from '#utils/path';
+import { formatUnknownValue } from '#utils/values';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
-import { formatUnknownValue } from './config-values';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
