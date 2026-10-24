@@ -6,6 +6,8 @@ The private [`@limina/gates`](../../packages/gates/package.json) workspace owns 
 
 ## Ownership and bootstrap
 
+The private [Astro fixture reader](../../packages/gates/src/test-support/astro-toolchain.mjs) is shared validation support through the explicit `@limina/gates/test-support/astro-toolchain` export. It consumes a caller-supplied package resolver rather than importing either product. Its ESM implementation runs directly; bootstrap emits its declarations for typed consumers without joining their source checker components. The [toolchain policy](./technology-stack.md#astro-test-baseline-and-compatibility-floor) owns baseline selection and minimum-version maintenance.
+
 The [license data](./license-policy.md) has one Markdown owner. [Marked parsing](../../packages/gates/src/licenses.ts) is shared by the build-time [bundle guard](../../packages/gates/src/license-policy.ts) and [configuration comparison](../../packages/gates/src/repo.ts); YAML parsing uses the existing `yaml` package. The staged checker parses index content directly rather than importing a cached working-tree list.
 
 The [commit rules](../../packages/gates/src/commit/config.mjs), [message entry](../../packages/gates/src/commit/message.ts), [privacy scanner](../../packages/gates/src/privacy/index.ts), [release modules](../../packages/gates/src/release/release.ts) and [ESLint configuration](../../packages/gates/src/eslint/general.ts) live in the same private package. Third-party engines, catalogs and release-age/security controls retain their existing versions and authority. External service checks and audit/report steps remain in their owning workflows.

@@ -1,6 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { normalizeAbsolutePath } from '#utils/path';
+import { readAstroTestToolchain } from '@limina/gates/test-support/astro-toolchain';
 import { existsSync, readFileSync } from 'node:fs';
 import {
   mkdir,
@@ -2051,9 +2052,7 @@ describe('runProofCheck dts config semantics', () => {
       'packages/app/.astro/types.d.ts': 'declare module "astro:content" {}\n',
       'packages/app/package.json': JSON.stringify({
         devDependencies: {
-          '@astrojs/check': '0.9.10',
-          astro: '7.3.2',
-          typescript: '6.0.3',
+          ...readAstroTestToolchain(requireFromTest).dependencies,
         },
         name: '@fixture/app',
         private: true,
@@ -2065,7 +2064,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       for (const [installedName, packageName] of [
-        ['astro-v7-current', 'astro'],
+        ['astro', 'astro'],
         ['@astrojs/check', '@astrojs/check'],
       ] as const) {
         const targetPath = path.join(

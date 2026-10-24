@@ -6,6 +6,8 @@
 
 ## 依赖与安全
 
+[Astro 测试基线与兼容性下限策略](./technology-stack.md#astro-测试基线与兼容性下限)负责基线升级与冻结的最低版本 fixture。Checker 分组匹配依赖名，使 npm 别名继续遵循预期的自动化策略。
+
 [Renovate](../../../.github/renovate.json)提出需审查的 catalog／lockfile 更新，不 automerge。排除 peer／engine 契约和独立 fixtures。Checker 家族、package-manager 变化及 major 更新需 dashboard approval；Vite 5 保持既有版本线。不引入第二套更新 bot 或旧 postinstall 自举。
 
 提交校验使用 `@commitlint/cli` 与 `@commitlint/config-conventional` 21.2.3 提供共享解析器、规则引擎、配置和诊断，使用 Husky 9.1.7 安装与执行钩子。仓库特有的排版规则保留在 [commitlint 配置](../../../commitlint.config.mjs)中。这些私有门禁包与根钩子安装开发依赖归属 [catalogs](../../../pnpm-workspace.yaml)，不进入两个产品产物。2026-10-04 的[准入审查](./dependency-admission.md)发现 registry metadata、带标签源码与分发包中的 MIT 许可证一致，所选版本均未废弃，维护者与受维护的发布来源可识别，Node 下限兼容仓库要求（commitlint 为 `>=22.12.0`，Husky 为 `>=18`）。npm 在 9 月 27 日至 10 月 3 日的下载量为两个 commitlint 包各约 1290 万、Husky 约 4410 万，近期七天窗口总量呈上升趋势。来源为 [CLI registry](https://registry.npmjs.org/@commitlint/cli)、[conventional-config registry](https://registry.npmjs.org/@commitlint/config-conventional)、[Husky registry](https://registry.npmjs.org/husky)及其 npm 下载 API。未新增依赖准入、release-age、trust 或 audit 例外。

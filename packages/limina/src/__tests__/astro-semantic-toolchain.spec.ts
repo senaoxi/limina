@@ -1,6 +1,10 @@
 import { createAstroSemanticProject } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
+  type AstroTestPackage,
+  readAstroTestToolchain,
+} from '@limina/gates/test-support/astro-toolchain';
+import {
   mkdir,
   mkdtemp,
   realpath,
@@ -63,8 +67,7 @@ async function linkInstalledPackage(options: {
 }
 
 async function createInstalledToolchainFixture(options: {
-  astroInstalledName: string;
-  astroVersion: string;
+  astroInstalledName: AstroTestPackage;
 }): Promise<{ cleanup: () => Promise<void>; rootDir: string }> {
   const temporaryDirectory = await mkdtemp(
     path.join(tmpdir(), 'limina-installed-astro-toolchain-'),
@@ -73,11 +76,10 @@ async function createInstalledToolchainFixture(options: {
   await writeText(
     path.join(rootDirectory, 'package.json'),
     manifest({
-      dependencies: {
-        '@astrojs/check': '0.9.10',
-        astro: options.astroVersion,
-        typescript: '6.0.3',
-      },
+      dependencies: readAstroTestToolchain(
+        requireFromTest,
+        options.astroInstalledName,
+      ).dependencies,
       name: 'installed-toolchain-fixture',
       version: '1.0.0',
     }),
@@ -107,8 +109,7 @@ async function createInstalledToolchainFixture(options: {
 
 async function createScriptReadFixture() {
   const fixture = await createInstalledToolchainFixture({
-    astroInstalledName: 'astro-v7-current',
-    astroVersion: '7.3.2',
+    astroInstalledName: 'astro',
   });
   const file = createFixturePathResolver(fixture.rootDir);
   const project = (analysisGeneration: number) =>
@@ -393,8 +394,7 @@ async function createToolchainFixture(
 describe('Astro semantic toolchain', () => {
   it('retains package-import Astro facts and scheduling edges through source checking', async () => {
     const fixture = await createInstalledToolchainFixture({
-      astroInstalledName: 'astro-v7-current',
-      astroVersion: '7.3.2',
+      astroInstalledName: 'astro',
     });
     const fixturePath = createFixturePathResolver(fixture.rootDir);
     const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
@@ -412,11 +412,7 @@ describe('Astro semantic toolchain', () => {
           name: 'installed-toolchain-fixture',
           type: 'module',
           imports: { '#component': './src/Component.astro' },
-          dependencies: {
-            astro: '7.3.2',
-            '@astrojs/check': '0.9.10',
-            typescript: '6.0.3',
-          },
+          dependencies: readAstroTestToolchain(requireFromTest).dependencies,
         }),
       );
       await writeText(
@@ -519,15 +515,11 @@ describe('Astro semantic toolchain', () => {
     }
   });
 
-  it.each([
-    ['astro-v7-min', '7.0.0'],
-    ['astro-v7-current', '7.3.2'],
-  ])(
-    'loads the real %s owner chain as a supported Astro %s fixture',
-    async (astroInstalledName, astroVersion) => {
+  it.each(['astro-v7-min', 'astro'] as const)(
+    'loads the real %s owner chain as a supported Astro fixture',
+    async (astroInstalledName) => {
       const fixture = await createInstalledToolchainFixture({
         astroInstalledName,
-        astroVersion,
       });
       try {
         const toolchain = resolveAstroSemanticToolchain(fixture.rootDir);
@@ -536,7 +528,8 @@ describe('Astro semantic toolchain', () => {
           kind: 'supported',
         });
         expect(toolchain.versions).toMatchObject({
-          astro: astroVersion,
+          astro: readAstroTestToolchain(requireFromTest, astroInstalledName)
+            .dependencies.astro,
           check: '0.9.10',
           compiler: '2.13.1',
           languageCore: '2.4.28',

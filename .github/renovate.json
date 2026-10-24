@@ -28,7 +28,7 @@
     },
     {
       "description": "Checker upgrades require review against exact supported tuples and peer contracts",
-      "matchPackageNames": [
+      "matchDepNames": [
         "typescript",
         "vue-tsc",
         "@typescript/native-preview",
@@ -36,13 +36,26 @@
         "@astrojs/check",
         "svelte2tsx",
         "svelte-check",
-        "astro-v7-current",
+        "astro",
         "astro-v7-min",
         "svelte-v4-min",
         "svelte-check-v4-min"
       ],
       "groupName": "checker compatibility toolchain",
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Keep the Astro compatibility floor frozen until the supported minimum changes",
+      "matchManagers": ["npm"],
+      "matchDepNames": ["astro-v7-min"],
+      "enabled": false
+    },
+    {
+      "description": "Review exact Astro baseline upgrades within the supported major",
+      "matchManagers": ["npm"],
+      "matchDepNames": ["astro"],
+      "allowedVersions": ">=7.0.0 <8.0.0",
+      "rangeStrategy": "pin"
     },
     {
       "matchPackageNames": ["vite"],

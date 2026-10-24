@@ -6,6 +6,7 @@ import {
 } from '#core/import-graph/context';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { readAstroTestToolchain } from '@limina/gates/test-support/astro-toolchain';
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import {
@@ -113,7 +114,7 @@ async function linkAstroToolchain(rootDirectory: string): Promise<void> {
       rootDir: rootDirectory,
     }),
     linkInstalledPackage({
-      installedName: 'astro-v7-current',
+      installedName: 'astro',
       packageName: 'astro',
       rootDir: rootDirectory,
     }),
@@ -166,9 +167,7 @@ async function createFixture(
       {
         dependencies: hasAstro
           ? {
-              '@astrojs/check': '0.9.10',
-              astro: '7.3.2',
-              typescript: '6.0.3',
+              ...readAstroTestToolchain(requireFromTest).dependencies,
             }
           : undefined,
         name: 'root',
@@ -1706,9 +1705,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       {
         'packages/app/package.json': json({
           dependencies: {
-            '@astrojs/check': '0.9.10',
-            astro: '7.3.2',
-            typescript: '6.0.3',
+            ...readAstroTestToolchain(requireFromTest).dependencies,
           },
           name: '@fixture/app',
           private: true,
@@ -8636,9 +8633,7 @@ describe('reference graph repair compiler differentials', () => {
           dependencies:
             framework === 'astro'
               ? {
-                  '@astrojs/check': '0.9.10',
-                  astro: '7.3.2',
-                  typescript: '6.0.3',
+                  ...readAstroTestToolchain(requireFromTest).dependencies,
                 }
               : { svelte: '4.0.0', svelte2tsx: '0.7.61', typescript: '6.0.3' },
         }),

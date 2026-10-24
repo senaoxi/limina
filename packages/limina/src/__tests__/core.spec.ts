@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
+import { readAstroTestToolchain } from '@limina/gates/test-support/astro-toolchain';
 import { existsSync, readFileSync } from 'node:fs';
 import {
   mkdir,
@@ -114,7 +115,7 @@ async function linkFrameworkToolchains(
       rootDir: packageRootDirectory,
     }),
     linkInstalledPackage({
-      installedName: 'astro-v7-current',
+      installedName: 'astro',
       packageName: 'astro',
       rootDir: packageRootDirectory,
     }),
@@ -182,10 +183,8 @@ async function createCoreFixture(): Promise<{
     path.join(rootDirectory, 'packages/a/package.json'),
     stringifyJson({
       dependencies: {
-        '@astrojs/check': '0.9.10',
-        astro: '7.3.2',
+        ...readAstroTestToolchain(requireFromTest).dependencies,
         svelte: '4.0.0',
-        typescript: '6.0.3',
       },
       name: '@fixture/a',
       version: '1.0.0',

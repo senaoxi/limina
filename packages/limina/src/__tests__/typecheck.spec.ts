@@ -1,5 +1,6 @@
 import type { CheckerPackageResolver } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { readAstroTestToolchain } from '@limina/gates/test-support/astro-toolchain';
 import { existsSync, readFileSync } from 'node:fs';
 import {
   mkdir,
@@ -113,7 +114,7 @@ async function linkAstroToolchain(rootDirectory: string): Promise<void> {
       rootDir: rootDirectory,
     }),
     linkInstalledPackage({
-      installedName: 'astro-v7-current',
+      installedName: 'astro',
       packageName: 'astro',
       rootDir: rootDirectory,
     }),
@@ -159,9 +160,7 @@ async function createFixture(files: Record<string, string>): Promise<{
           hasAstro || hasSvelte
             ? {
                 ...(hasAstro && {
-                  '@astrojs/check': '0.9.10',
-                  astro: '7.3.2',
-                  typescript: '6.0.3',
+                  ...readAstroTestToolchain(requireFromTest).dependencies,
                 }),
                 ...(hasSvelte && { svelte: '4.0.0' }),
               }

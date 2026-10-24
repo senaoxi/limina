@@ -17,7 +17,7 @@ import { collectTypeScriptSourceTextImports } from '../core/import-analysis/type
 import { toPortablePath } from './helpers/path';
 
 describe('workspace export resolver proof', () => {
-  it.each(['astro-v7-min', 'astro-v7-current'])(
+  it.each(['astro-v7-min', 'astro'])(
     'retains actual Astro resolver authority (%s)',
     async (astroPackage) => {
       const directoryTemporaryPath = await mkdtemp(
