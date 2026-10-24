@@ -374,7 +374,7 @@ describe('persistent native analysis facts', () => {
     );
   });
 
-  it('withdraws and restores non-root ambient contributors when their only reference changes', () => {
+  it('withdraws and restores incoming requests without loading a foreign ambient declaration', () => {
     const { file, write } = fixture();
     write('a.ts', '/// <reference path="./ambient.d.ts" />\nexport {};');
     write('b.ts', "import { x } from 'ambient-only'; export { x };");
@@ -387,7 +387,12 @@ describe('persistent native analysis facts', () => {
       ['a.ts', 'b.ts'].map((name) => file(name)),
     );
     let result = analyze(input);
-    expect(result.members).toContain(file('ambient.d.ts'));
+    expect(result.members).not.toContain(file('ambient.d.ts'));
+    expect(
+      result.evidence.requests.some(
+        (request) => request.specifier === './ambient.d.ts',
+      ),
+    ).toBe(true);
     expect(
       result.facts.find(({ record }) => record.filePath === file('b.ts'))!.fact
         .resolution.target,
@@ -400,7 +405,12 @@ describe('persistent native analysis facts', () => {
     write('a.ts', '/// <reference path="./ambient.d.ts" />\nexport {};');
     result = analyze(input, result.cache);
     expectCold(result, input);
-    expect(result.members).toContain(file('ambient.d.ts'));
+    expect(result.members).not.toContain(file('ambient.d.ts'));
+    expect(
+      result.evidence.requests.some(
+        (request) => request.specifier === './ambient.d.ts',
+      ),
+    ).toBe(true);
     expect(
       result.facts.find(({ record }) => record.filePath === file('b.ts'))!.fact
         .resolution.target,
@@ -488,7 +498,7 @@ describe('manifest and Program environment transitions', () => {
     }
   });
 
-  it('retains alternative ambient paths and removes an unreachable cycle before reuse', () => {
+  it('retains alternative incoming paths without entering a foreign declaration cycle', () => {
     const { file, write } = fixture();
     const reference = '/// <reference path="./env.d.ts" />\nexport {};';
     write('a.ts', reference);
@@ -513,8 +523,13 @@ describe('manifest and Program environment transitions', () => {
       write(source, text);
       result = analyze(input, result.cache);
       expectCold(result, input);
-      expect(result.members.includes(file('env.d.ts'))).toBe(present);
-      expect(result.members.includes(file('cycle.d.ts'))).toBe(present);
+      expect(result.members).not.toContain(file('env.d.ts'));
+      expect(
+        result.evidence.requests.some(
+          (request) => request.specifier === './env.d.ts',
+        ),
+      ).toBe(present);
+      expect(result.members).not.toContain(file('cycle.d.ts'));
     }
   });
 
@@ -729,9 +744,11 @@ it('compares augmentation membership and environment order before reusing facts'
       .map((name) => `/// <reference path="./${name}" />`)
       .join('\n')}\nexport {};`;
   write('loader.ts', references(['one.d.ts', 'two.d.ts']));
-  const input = project(file('tsconfig.json'), [
+  let input = project(file('tsconfig.json'), [
     file('a.ts'),
     file('loader.ts'),
+    file('one.d.ts'),
+    file('two.d.ts'),
   ]);
   let result = analyze(input);
   for (const names of [
@@ -740,6 +757,10 @@ it('compares augmentation membership and environment order before reusing facts'
     ['one.d.ts', 'two.d.ts'],
   ]) {
     write('loader.ts', references(names));
+    input = project(
+      file('tsconfig.json'),
+      ['a.ts', 'loader.ts', ...names].map((name) => file(name)),
+    );
     result = analyze(input, result.cache);
     expectCold(result, input);
     expect(result.cache.metrics.factHits).toBe(0);

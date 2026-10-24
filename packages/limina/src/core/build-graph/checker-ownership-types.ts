@@ -1,5 +1,6 @@
 import type { CheckerName } from '#config/runner';
 import type { ImportRecord } from '#core/import-analysis/runner';
+import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
 import type { NativeEvidenceOrigin } from '../../domain/analysis/native-context';
 import type { NativeCoverage } from '../../domain/analysis/native-coverage';
 import type {
@@ -97,6 +98,7 @@ export interface PhysicalFrameworkCandidate {
 }
 
 export interface CheckerOwnershipPlan {
+  declarationContexts?: DeclarationContextDecision[];
   dependencyFactPhase?: 'selection' | 'locked';
   ownershipSelectionFacts?: readonly CheckerDependencyFact[];
   dependencyFacts: CheckerDependencyFact[];

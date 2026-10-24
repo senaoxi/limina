@@ -5,6 +5,7 @@ import {
   nativeOriginSchema,
 } from '../analysis-cache/native-proof-schema';
 import { checker, stringMap, text, texts } from './cached-data-schema';
+import { declarationContextSchema } from './cached-declaration-schema';
 export const authority: z.ZodType<unknown> = z.object({
   kind: z.literal('locked'),
   family: z.enum(['typescript', 'vue']),
@@ -120,6 +121,7 @@ const typeConfig = z.object({
   semanticAuthority: pendingAuthority,
 });
 export const ownershipSchema: z.ZodType<unknown> = z.object({
+  declarationContexts: z.array(declarationContextSchema).optional(),
   dependencyFactPhase: z.enum(['selection', 'locked']).optional(),
   ownershipSelectionFacts: z.array(dependencyFact).optional(),
   dependencyFacts: z.array(dependencyFact),

@@ -11,6 +11,10 @@ import {
   text,
   texts,
 } from './cached-data-schema';
+import {
+  declarationContextSchema,
+  declarationValidationSchema,
+} from './cached-declaration-schema';
 import { jsonRecords, manifestSchema } from './cached-manifest-schema';
 import { analysisOutcomeSchema } from './cached-outcome-schema';
 import { authority, ownershipSchema } from './cached-ownership-schema';
@@ -96,6 +100,8 @@ const relation = z.object({
 });
 const candidateReference = z.object({ from: text, to: text });
 const dependencyAnalysis = z.object({
+  declarationContexts: z.array(declarationContextSchema).optional(),
+  declarationValidation: declarationValidationSchema.optional(),
   candidate: z
     .object({
       configPaths: texts,

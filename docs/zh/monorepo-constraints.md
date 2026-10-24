@@ -150,12 +150,12 @@ import { createClient } from '@acme/core';
 
 解析结果与项目引用的关系如下：
 
-| `TypeScript` 类型解析结果     | Limina 对项目引用的处理                                 |
-| ----------------------------- | ------------------------------------------------------- |
-| `.d.ts` / `.d.mts` / `.d.cts` | 视为声明文件消费，不生成 `TypeScript` 项目引用          |
-| 当前源码叶子配置内的源码      | 视为当前范围内部关系，不生成 `TypeScript` 项目引用      |
-| 另一个 Limina 管辖的源码文件  | 可能生成到目标声明构建配置的项目引用                    |
-| `TypeScript` 无法解析         | 不用 `Oxc` 补判项目引用，输出诊断或交给相关检查暴露问题 |
+| `TypeScript` 类型解析结果     | Limina 对项目引用的处理                                      |
+| ----------------------------- | ------------------------------------------------------------ |
+| `.d.ts` / `.d.mts` / `.d.cts` | 受管源码声明选择配置上下文；生成产物和第三方声明保留消费边界 |
+| 当前源码叶子配置内的源码      | 视为当前范围内部关系，不生成 `TypeScript` 项目引用           |
+| 另一个 Limina 管辖的源码文件  | 可能生成到目标声明构建配置的项目引用                         |
+| `TypeScript` 无法解析         | 不用 `Oxc` 补判项目引用，输出诊断或交给相关检查暴露问题      |
 
 如果确实存在静态分析看不到的声明构建关系，例如代码生成后的连接，可以使用 `liminaOptions.implicitRefs` 显式声明，并写清原因。
 
@@ -176,6 +176,28 @@ import { createClient } from '@acme/core';
 ```
 
 `implicitRefs` 将静态分析看不到、但实际存在的关系加入声明构建图。这些关系仍须满足图规则，不能通过 `implicitRefs` 允许违规。
+
+## 选择声明的配置上下文
+
+消费者使用受管 `.d.ts`、`.d.mts` 或 `.d.cts` 时，如果当前完整 Coverage 唯一，Limina 自动选择该源配置，即使项目只有声明也生成引用。多个配置合法覆盖同一声明时，外部消费者分支等待显式选择：
+
+```json
+{
+  "liminaOptions": {
+    "declarationContexts": [{ "file": "../shared/api.d.ts", "config": "../types/tsconfig.json" }]
+  }
+}
+```
+
+两个路径都相对消费者的 ordinary source tsconfig。指定准确的声明文件和当前确实覆盖它的受管源配置，不支持 glob。项目自己的声明 roots 保持本地角色，共享 roots 也一样。此选项不建立全仓唯一 owner，implicitRefs 也不能选择声明上下文。
+
+选定项目独立分析自己的声明依赖。Limina 验证实际生成引用闭包，拒绝竞争声明映射与引用环，不通过排序解决选择冲突。已消费上下文处于待选择或 unavailable 时，相关生成候选和 Checker 准入被阻止；未使用的共享声明不会造成全局失败。
+
+本能力要求合格的原生 tsc 执行，以及能够提供声明输入关联的 TypeScript 版本。TypeScript 5.9.0–5.9.2 缺少该关联，应使用具备能力的受支持版本。其他 Checker 与 command override 当前不能兑现此合同。选定 owner 不能通过 skipLibCheck/noCheck，或实际适用的 skipDefaultLibCheck 跳过声明检查。既有 outputs 与 Checker 身份规则继续适用。
+
+References 可以为 A 消费的声明选择模块解析选项，但 A 仍使用自己的 TypeChecker。B 的独立检查是另一项责任；增量构建可以复用此前检查，不保证每次重新运行。
+
+框架 Checker 对自己的声明 roots 保留既有检查能力；新增跨项目委派才要求新的原生资格。
 
 ## 图规则要落到真实导入上
 

@@ -27,6 +27,7 @@ export function outputSemanticProject(
 ): TypeScriptSemanticProject {
   return {
     configPath: project.outputConfigPath,
+    sourceConfigPath: project.configPath,
     options: outputOptions(project),
     fileNames: project.fileNames,
     projectReferences: [...project.outputReferences].map((path) => ({ path })),

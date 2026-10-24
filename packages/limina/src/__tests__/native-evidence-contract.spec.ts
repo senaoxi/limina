@@ -313,7 +313,7 @@ describe('source config coverage proof', () => {
 });
 
 describe('coverage-driven frontier contract', () => {
-  it('expands a declaration with proven unique or ambiguous coverage', () => {
+  it('expands local declaration roots with unique or shared coverage', () => {
     for (const configs of [
       [config('A'), config('B', [])],
       [config('A'), config('B')],
@@ -321,7 +321,7 @@ describe('coverage-driven frontier contract', () => {
       const coverage = observeCoverage(configs, file());
       expect(
         decideNativeFrontier({
-          root: false,
+          root: true,
           kind: 'declaration',
           consumerConfigId: 'A',
           coverage,
@@ -330,7 +330,7 @@ describe('coverage-driven frontier contract', () => {
     }
   });
 
-  it('allows two current confirmed members to establish declaration coverage before discovery closes', () => {
+  it('allows local declaration input analysis before discovery closes', () => {
     const current = index([config('A'), config('B')]);
     const coverage = deriveNativeCoverage(
       { ...current, universe: { ...current.universe, discovery: 'open' } },
@@ -340,7 +340,7 @@ describe('coverage-driven frontier contract', () => {
     expect(coverage.completeness).toBe('incomplete');
     expect(
       decideNativeFrontier({
-        root: false,
+        root: true,
         kind: 'declaration',
         consumerConfigId: 'A',
         coverage,
@@ -348,7 +348,7 @@ describe('coverage-driven frontier contract', () => {
     ).toEqual({ action: 'expand', basis: 'covered-declaration' });
   });
 
-  it('expands declarations with one current member despite unrelated coverage gaps', () => {
+  it('expands local declaration inputs despite unrelated coverage gaps', () => {
     const failed: SourceConfigEnumeration = {
       configId: 'B',
       inputVersion: 'v1',
@@ -370,7 +370,7 @@ describe('coverage-driven frontier contract', () => {
       expect(coverage.members.map((member) => member.configId)).toEqual(['A']);
       expect(
         decideNativeFrontier({
-          root: false,
+          root: true,
           kind: 'declaration',
           consumerConfigId: 'A',
           coverage,
@@ -811,7 +811,7 @@ describe('pending/locked consumption eligibility', () => {
 
 function snapshot(): NativeEvidenceSnapshot {
   return {
-    version: 3,
+    version: 4,
     run: 'completed',
     contexts: [pending()],
     coverageIndexes: [],

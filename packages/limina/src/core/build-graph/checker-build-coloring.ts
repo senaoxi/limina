@@ -237,6 +237,21 @@ export function colorBuildCheckerComponents(options: {
   const problems: string[] = [];
   addSolutionEdges({ discovery: options.discovery, graph });
   addDependencyEdges({ ...options, graph });
+  const declarationContexts = options.discovery.plan.declarationContexts ?? [];
+  for (const decision of declarationContexts) {
+    if (decision.selection.state !== 'selected') continue;
+    const from = decision.consumerConfig;
+    const to = decision.selection.config;
+    if (graph.adjacency.has(from) && graph.adjacency.has(to))
+      addEdge({
+        graph,
+        edge: {
+          from,
+          to,
+          reason: `declaration context: ${decision.file.lexicalPath}`,
+        },
+      });
+  }
   addImplicitReferenceEdges({ ...options, graph, problems });
   colorAllBuildComponents({ ...options, ...graph, problems });
   return problems;

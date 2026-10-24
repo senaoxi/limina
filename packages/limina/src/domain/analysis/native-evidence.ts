@@ -1,6 +1,6 @@
 /**
  * Native DTO contract. A snapshot records evidence; it never authorizes
- * execution. Version 3 retains pre-load path selection receipts.
+ * execution. Version 4 adds declaration context boundaries and source configuration binding.
  */
 import type {
   NativeEvidenceContext,
@@ -13,7 +13,7 @@ import type {
 } from './native-coverage';
 import type { NativeCompilationObligation } from './native-obligation';
 
-export const NATIVE_EVIDENCE_VERSION = 3;
+export const NATIVE_EVIDENCE_VERSION = 4;
 
 export interface NativeRequest {
   readonly id: string;
@@ -73,6 +73,7 @@ export type NativeStopReason =
   | 'coverage-unavailable'
   | 'ambiguous-implementation'
   | 'foreign-implementation'
+  | 'declaration-context-boundary'
   | 'same-owner-non-root'
   | 'unresolved'
   | 'observation-unavailable'
@@ -114,17 +115,24 @@ export function decideNativeFrontier(
 ): NativeFrontierDecision {
   if (isImplementationRoot(input)) return { action: 'expand', basis: 'root' };
   return input.kind === 'declaration'
-    ? declarationFrontier(input.coverage)
+    ? declarationFrontier(input)
     : implementationFrontier(input);
 }
 
-function declarationFrontier(coverage: NativeCoverage): NativeFrontierDecision {
-  // Positive current membership and exhaustive uniqueness are independent.
-  // deriveNativeCoverage excludes stale/unverified/conflicting member proofs.
-  const isCovered = coverage.members.length > 0;
-  return isCovered
+function declarationFrontier(
+  input: NativeFrontierInput,
+): NativeFrontierDecision {
+  const { coverage } = input;
+  if (coverage.members.length === 0)
+    return { action: 'stop', reason: uncoveredStop(coverage) };
+  const isLocal =
+    input.root &&
+    coverage.members.some(
+      (member) => member.configId === input.consumerConfigId,
+    );
+  return isLocal
     ? { action: 'expand', basis: 'covered-declaration' }
-    : { action: 'stop', reason: uncoveredStop(coverage) };
+    : { action: 'stop', reason: 'declaration-context-boundary' };
 }
 
 function implementationFrontier(
