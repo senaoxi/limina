@@ -100,6 +100,13 @@ describe('limina published package smoke', () => {
         manifest,
         tarballPath: packedDistribution.tarballPath,
       });
+      const consumerManifest = JSON.parse(
+        await readFile(path.join(fixture.fixtureDir, 'package.json'), 'utf8'),
+      ) as { packageManager: string };
+      const repoManifest = JSON.parse(
+        await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+      ) as { packageManager: string };
+      expect(consumerManifest.packageManager).toBe(repoManifest.packageManager);
       const rootRequire = createRequire(
         path.join(fixture.fixtureDir, 'package.json'),
       );

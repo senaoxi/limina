@@ -14,6 +14,18 @@ pnpm 12 使用原生可执行文件，发布包中的 Node wrapper 继续作为 
 
 CI 保留 Linux、macOS 和 Windows 的测试、构建与 smoke 职责，以及独立 Vue semantic matrix。required status 拒绝被跳过的验证任务。所有 Logaria 消费者均通过 dev catalog 使用 registry 0.0.4。setup action 使用 `pnpm install --frozen-lockfile` 安装锁定的依赖，不需要构建 Logaria 源码。Corepack 可用时继续使用；否则通过 npm 安装既有 `packageManager` 固定版本，覆盖不附带 Corepack 的 Node 发行版。2026-09-30 的替换证据和远程／平台限制保留在归档的 Logaria 报告中；[迁移历史](./migration.md#历史证据)说明如何从 Git 获取。历史证据不证明当前 checkout 已通过验收。
 
+## Astro 测试基线与兼容性下限
+
+test catalog 的 `astro` 条目选择经审查的 Astro 7 基线；`astro-v7-min` 继续固定为 7.0.0 兼容性下限。两者均为 Limina 的开发依赖。基线改用规范包名不改变其发布包版本或产物。生产发现仍从所属消费者 leaf 解析 `astro`；测试命名不改变 semantic admission，也不允许 workspace-root fallback。
+
+共享的 [Astro 测试工具链读取器](../../../packages/gates/src/test-support/astro-toolchain.mjs)从 catalog 与 lockfile 选定、由调用方持有的冻结安装中读取精确版本。实际安装的单元测试 fixture 与[打包消费者 smoke](../../../smoke/helpers.ts)通过私有 `@limina/gates/test-support/astro-toolchain` 导出选择基线依赖版本；smoke 还从实际 owner 读取并固定 check 所属的 Language Server、compiler 与 Volar 实例。Astro smoke 的 root 与 leaf 默认使用相同 TypeScript 基线，显式低版本案例继续保留其覆盖值。临时 manifest 尚不存在时，消费者创建流程沿用调用脚本的 pnpm 可执行文件，包括 pnpm 12 原生入口。
+
+读取器是可直接执行的 ESM，类型声明由 bootstrap 生成。调用方传入 fixture owner 的 `NodeRequire`；门禁包不导入产品，也不从自身包解析 fixture 依赖。保留明确的 workspace 导出：跨包相对导入违反 source ownership，共享 TypeScript 实现源码会连接 smoke 的 tsgo 与仓库的 vue-tsc 声明组件，同名手写声明则会让配置发现忽略 JavaScript root。不得在 fixture 安装配置中重复基线补丁版本或 semantic tuple。合成 admission tuple，以及显式的最低 check／TypeScript 5 smoke 输入，继续作为独立边界案例，不自动跟随基线。
+
+[Renovate](../../../.github/renovate.json)通过 `matchDepNames` 匹配 checker 依赖名，包括别名。它禁用 `astro-v7-min` 更新，并将规范包名 `astro` 基线限制为 checker compatibility 分组内经审查的精确 `>=7.0.0 <8.0.0` 更新。Dashboard approval、禁止 automerge、release-age 与 trust 要求继续生效。升级基线必须重新生成 lockfile、冻结安装依赖，并针对已准入的完整 checker tuple 运行两个 Astro 版本及打包消费者 smoke。新的 Astro major 需要独立兼容性变更。仅在明确调整支持下限、其独立下限断言及相关 admission contract 时提高最低版本 fixture；不得通过常规依赖维护提高它。
+
+这些是仓库测试维护策略，不是额外的产品支持保证。[语义 owner](./semantics.md#locked-resolution-与-framework-preparation)定义工具链 authority 与受支持 tuple 的边界。本地验证不证明 Windows／Linux 或远程 CI 验收。
+
 ## ESLint 10 迁移
 
 仓库自动化、安全报告、CI 复用及带门禁的外部工作流由[基建记录](./infrastructure.md)负责。根工具仅增加已在 catalog 中的 YAML parser，不改变依赖版本或 task runner。

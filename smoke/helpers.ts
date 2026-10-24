@@ -1,3 +1,4 @@
+import { readAstroTestToolchain } from '@limina/gates/test-support/astro-toolchain';
 import { execa } from 'execa';
 import { existsSync, readFileSync } from 'node:fs';
 import {
@@ -10,6 +11,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { env as inheritedEnvironment } from 'node:process';
@@ -169,6 +171,9 @@ export async function assertPackageModuleClosure(
 export const PACKAGE_ROOT_DIR = fileURLToPath(
   new URL('../packages/limina/', import.meta.url),
 );
+const astroTestRequire = createRequire(
+  path.join(PACKAGE_ROOT_DIR, 'package.json'),
+);
 export const DIST_DIR = path.join(PACKAGE_ROOT_DIR, 'dist');
 export const RELEASE_FIXTURE_PACKAGE_NAME = '@limina-smoke/release-fixture';
 const REQUIRED_DIST_FILES = [
@@ -229,6 +234,18 @@ function resolvePnpmCommand(environment: NodeJS.ProcessEnv): {
       command: process.execPath,
       argsPrefix: [npmExecPath],
     };
+  }
+
+  // pnpm 12 exposes its native executable here. Preserve that version before
+  // the consumer manifest exists instead of falling back to a global shim.
+  if (
+    npmExecPath &&
+    existsSync(npmExecPath) &&
+    ['pnpm', 'pnpm.exe', 'pnpm.native', 'pnpm.native.exe'].includes(
+      npmExecFileName ?? '',
+    )
+  ) {
+    return { command: npmExecPath, argsPrefix: [] };
   }
 
   // Corepack sets COREPACK_ROOT before handing off to pnpm. Nx preserves that
@@ -580,11 +597,9 @@ async function writeConsumerFiles(
       ...(options.astroSemanticFixture
         ? [
             'overrides:',
-            "  '@astrojs/check>@astrojs/language-server': 2.16.13",
-            "  '@astrojs/language-server>@astrojs/compiler': 2.13.1",
-            "  '@astrojs/language-server>@volar/language-core': 2.4.28",
-            "  '@astrojs/language-server>@volar/kit': 2.4.28",
-            "  '@volar/kit>@volar/typescript': 2.4.28",
+            ...Object.entries(
+              readAstroTestToolchain(astroTestRequire).overrides,
+            ).map(([selector, version]) => `  '${selector}': ${version}`),
           ]
         : []),
       '',
@@ -778,9 +793,13 @@ export async function installConsumerDependencies(options: {
   tarballPath: string;
   typeScriptVersion?: string;
 }): Promise<void> {
+  const baseline = options.astroSemanticFixture
+    ? readAstroTestToolchain(astroTestRequire).dependencies
+    : undefined;
   const typescriptRange =
     options.typeScriptVersion ??
     options.astroToolchain?.typeScriptVersion ??
+    baseline?.typescript ??
     getPeerDependencyRange(options.manifest, 'typescript');
   const knipRange = getPeerDependencyRange(options.manifest, 'knip');
 
@@ -801,7 +820,7 @@ export async function installConsumerDependencies(options: {
     },
   );
 
-  if (options.astroSemanticFixture) {
+  if (baseline) {
     await runPnpm(
       [
         '--filter',
@@ -810,9 +829,9 @@ export async function installConsumerDependencies(options: {
         '--save-dev',
         '--prefer-offline',
         '--ignore-scripts',
-        'astro@7.3.2',
-        `@astrojs/check@${options.astroToolchain?.checkVersion ?? '0.9.10'}`,
-        `typescript@${options.astroToolchain?.typeScriptVersion ?? '6.0.3'}`,
+        `astro@${baseline.astro}`,
+        `@astrojs/check@${options.astroToolchain?.checkVersion ?? baseline['@astrojs/check']}`,
+        `typescript@${options.astroToolchain?.typeScriptVersion ?? baseline.typescript}`,
       ],
       {
         cwd: options.fixtureDir,

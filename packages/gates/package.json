@@ -42,6 +42,11 @@
     "yaml": "catalog:dev"
   },
   "exports": {
+    "./test-support/astro-toolchain": {
+      "source": "./src/test-support/astro-toolchain.mjs",
+      "types": "./dist/test-support/astro-toolchain.d.mts",
+      "default": "./src/test-support/astro-toolchain.mjs"
+    },
     "./eslint": {
       "source": "./src/eslint/general.ts",
       "types": "./dist/eslint/general.d.ts",

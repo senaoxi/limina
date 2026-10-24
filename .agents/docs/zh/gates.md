@@ -6,6 +6,8 @@
 
 ## 归属与自举
 
+私有 [Astro fixture 读取器](../../../packages/gates/src/test-support/astro-toolchain.mjs)通过明确的 `@limina/gates/test-support/astro-toolchain` 导出提供共享验证支持。它消费调用方传入的包 resolver，不导入任一产品。其 ESM 实现直接运行；bootstrap 为 typed consumer 生成声明，不连接它们的源码 checker 组件。[工具链策略](./technology-stack.md#astro-测试基线与兼容性下限)负责基线选择和最低版本维护。
+
 [许可证数据](./license-policy.md)只有一个 Markdown owner。[Marked 解析](../../../packages/gates/src/licenses.ts)由构建时的 [bundle 守卫](../../../packages/gates/src/license-policy.ts)与[配置比较](../../../packages/gates/src/repo.ts)共享；YAML 解析使用已接入的 `yaml` 包。暂存区检查器直接解析 index 内容，不导入缓存的工作区列表。
 
 [提交规则](../../../packages/gates/src/commit/config.mjs)、[消息入口](../../../packages/gates/src/commit/message.ts)、[隐私扫描器](../../../packages/gates/src/privacy/index.ts)、[发布模块](../../../packages/gates/src/release/release.ts)与 [ESLint 配置](../../../packages/gates/src/eslint/general.ts)位于同一个私有包中。第三方引擎、catalog 与 release-age／security 控制保留既有版本和 authority。外部服务检查及 audit／报告步骤仍由对应 workflow 持有。
