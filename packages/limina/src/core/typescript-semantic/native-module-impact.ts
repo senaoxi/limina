@@ -1,5 +1,6 @@
 import type ts from 'typescript';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import { hasCompilerRoot } from './compiler-membership';
 import {
   nativeCompilerApi,
   type NativeObservedProgram,
@@ -46,7 +47,7 @@ function noResolveAbsence(input: RequestInput): NativeModuleImpact | undefined {
 function rootAbsence(input: RequestInput): NativeModuleImpact | undefined {
   const target = moduleTarget(input.observation);
   if (target === undefined) return undefined;
-  return input.program.getRootFileNames().includes(target)
+  return hasCompilerRoot(input.program, target)
     ? { state: 'absent', rule: 'consumer-root-has-no-cross-unit-obligation' }
     : undefined;
 }

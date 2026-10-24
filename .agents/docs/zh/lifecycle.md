@@ -55,6 +55,8 @@ Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以�
 
 `limina check` 是一次性命令，不承诺观察执行期间由编辑器、用户或外部进程造成的文件修改、删除、创建或修改后恢复。有界分析可以复用首次读取结果；这既不是冻结文件系统，也不是整次命令的原子快照。既有输入／配置漂移检查、发布前校验与错误传播在检测到变化时仍然生效。Memo 命中不会额外读取、stat 或 hash，以恢复对外部编辑的偶然可见性。
 
+[物理文件回执](../../../packages/limina/src/utils/physical-file-identity.ts)绑定 canonical path、设备/inode、大小、修改时间与当前字节的摘要。元数据变更时间不能代表语义变化：另一个 pnpm 安装可能为同一 store 文件新增或移除硬链接，而输入本身没有变化。内容摘要仍拒绝恢复修改时间后的等长字节修改；文件替换与路径绑定检查保持独立。每次物理身份重放都会重新读取字节，不跨 invocation 缓存摘要。[生命周期回归](../../../packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts)覆盖硬链接创建／移除、实时及持久化回执重放、同 mtime 的字节修改与内容恢复。
+
 [Epoch 重放](../../../packages/limina/src/core/analysis-cache/epoch-inputs.ts)对每次重放的读值及其当前物理绑定计算一次 observation。回执比较与紧接的登记使用同一个 observation，之间没有 await 或用户回调。登记仍拒绝与已有 observation 的冲突。独立重放与最终稳定性边界都会重新读取并校验输入。执行前置检查只可在[受管执行准入](#受管-checker-的执行准入)定义的明确只读阶段内复用 observation；副作用始终要求重新校验。[生命周期回归](../../../packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts)覆盖同步／异步重放、后续内容变化及已有观测冲突。此修改仅消除单次校验步骤内的重复计算，不增加保留状态，也不改变持久化回执身份。
 
 | 复用输入                              | Owner 与首次读取                                                                                                                                                                                                                                               | 有效期终点                                                                                                                                                                    |
@@ -208,6 +210,10 @@ Holder 发布的 rename 返回 `EEXIST` 或 `ENOTEMPTY` 时已经证明发生争
 独占 declaration publication 在写入、同步和回读前捕获新空文件的 identity。失败时保留该 identity 供回滚；未完成内容必须仍为预期字节的前缀，且 device/inode/mode/link count 相同。已验证文件保留完整 content-hash 检查。每个 parent directory 在创建下一级前单独加入事务 ledger，后续失败不能丢失此前的清理 ownership。无法读取 identity 或外部替换不会授予删除 authority。[Publication 失败守卫](../../../packages/limina/src/__tests__/output-publication-failures.spec.ts)注入 partial write、sync/readback 失败、目录失败和替换，并检查重试与用户文件保留。
 
 ## 受管 Checker 的执行准入
+
+[Checker 实现身份](../../../packages/limina/src/typecheck/managed/identity.ts)保留可执行文件／包的字节、权限和物理／路径绑定，不纳入只读硬链接数量。并发 pnpm 安装可能改变这些数量，但所选工具没有变化。配置依赖回执和 mutation boundary 保留既有硬链接检查。[受管 mutation 回归](../../../packages/limina/src/__tests__/managed-mutation.spec.ts)允许实现别名创建／移除，拒绝命令／清单字节变化，并继续拒绝配置硬链接漂移。
+
+[框架配置发现](../../../packages/limina/src/core/analysis-cache/framework-config-inputs.ts)先规范化 glob 与祖先查找得到的路径，再对 invocation 内的加载去重。Windows 分隔符差异或 dot segment 别名可能使同一个 CommonJS 模块加载两次，并将第二次求值误拒为预加载。去重保留原始字节、解析绑定和后续漂移拒绝。[准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts)覆盖别名发现、初次正常启动及之后的配置导入漂移。
 
 物化与执行各自拥有独立准入。诊断候选可以物化，同时适用的 `deny.refs` 阻止受管 Checker target 执行。[Execution Admission](../../../packages/limina/src/typecheck/admission/execution-admission.ts) 由受管 build 和独立的框架 typecheck pool 共用，在物化 revision lease 与当前输入证明下检查 mutation、launch、output-copy 边界。它不调用完整 `graph:check`，不改变 Core 完成状态，不删除关系，也不保证 Checker 最终成功。
 

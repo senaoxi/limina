@@ -10,7 +10,8 @@ import {
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import ts from 'typescript';
+import { describe, expect, it, vi } from 'vitest';
 import { createCheckerFailureIssues } from '../commands/checker-failure-issues';
 import { loadConfig } from '../config/loader';
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
@@ -99,6 +100,19 @@ it.each(['transitive', 'unrelated', 'new-config', 'config-import'])(
     const { f, preflight } = await frameworkInputFixture(
       change === 'config-import',
     );
+    const readDirectory = ts.sys.readDirectory;
+    const discovery =
+      change === 'config-import'
+        ? vi
+            .spyOn(ts.sys, 'readDirectory')
+            .mockImplementation((...arguments_) => {
+              const files = readDirectory(...arguments_);
+              // Glob discovery and ancestor lookup can spell the same CJS file differently.
+              return files.some((file) => file.endsWith('svelte.config.cjs'))
+                ? [...files, `${f.path('a')}/../a/svelte.config.cjs`]
+                : files;
+            })
+        : undefined;
     try {
       const graph = (await preflight.ensureGeneratedArtifactsMaterialized())
         .graph;
@@ -146,6 +160,7 @@ it.each(['transitive', 'unrelated', 'new-config', 'config-import'])(
       );
     } finally {
       preflight.dispose();
+      discovery?.mockRestore();
       await f.cleanup();
     }
   },

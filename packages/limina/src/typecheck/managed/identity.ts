@@ -167,6 +167,15 @@ export function captureConfigDependencyIdentity(
     : captureNonSymlinkIdentity({ base, logicalPath, stats });
 }
 
+function captureImplementationIdentity(dependencyPath: string): unknown {
+  // pnpm can add or remove read-only aliases without changing executable code.
+  return {
+    ...captureConfigDependencyIdentity(dependencyPath),
+    nlink: undefined,
+    targetNlink: undefined,
+  };
+}
+
 function getErrorCode(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;
   return 'code' in error ? String(error.code) : undefined;
@@ -208,7 +217,7 @@ function getPackageIdentity(options: {
     };
   }
   return {
-    identity: captureConfigDependencyIdentity(manifestPath),
+    identity: captureImplementationIdentity(manifestPath),
     packageName: options.packageName,
   };
 }
@@ -237,7 +246,7 @@ function getCommandIdentity(options: {
   target: TypecheckTarget;
 }): unknown {
   try {
-    return captureConfigDependencyIdentity(getCommandPath(options));
+    return captureImplementationIdentity(getCommandPath(options));
   } catch (error) {
     if (isMissingPathError(error)) {
       return { command: options.target.command, resolution: 'path-search' };

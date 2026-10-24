@@ -1,12 +1,17 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
+  cp,
+  link,
   mkdir,
   mkdtemp,
+  readFile,
   realpath,
   rm,
   symlink,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -21,6 +26,7 @@ import {
 } from '../typecheck/targets';
 import { normalizeAbsolutePath } from '../utils/path';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
+import { createFixturePathResolver } from './helpers/path';
 
 async function writeText(filePath: string, content: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -31,6 +37,7 @@ async function createFixture(): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
   rootDir: string;
+  path: ReturnType<typeof createFixturePathResolver>;
   sourceConfigPath: string;
 }> {
   const temporaryDirectory = await mkdtemp(
@@ -103,12 +110,14 @@ async function createFixture(): Promise<{
       },
     }),
     rootDir: rootDirectory,
+    path: createFixturePathResolver(rootDirectory),
     sourceConfigPath,
   };
 }
 
 async function prepareManagedTarget(
   fixture: Awaited<ReturnType<typeof createFixture>>,
+  commandOverride?: string,
 ): Promise<{
   coordinator: ManagedCheckerMutationCoordinator;
   manager: LiminaPreflightManager;
@@ -126,6 +135,7 @@ async function prepareManagedTarget(
   }
   const target = createCheckerTarget({
     checker,
+    commandOverride,
     configPath: buildModule.path,
     executionKind: 'build',
     projectRootDir: fixture.rootDir,
@@ -143,6 +153,57 @@ async function prepareManagedTarget(
 }
 
 describe('managed checker mutation proof', () => {
+  it('keeps read-only checker aliases stable while rejecting implementation and config drift', async () => {
+    const fixture = await createFixture();
+    let manager: LiminaPreflightManager | undefined;
+    try {
+      const require = createRequire(import.meta.url);
+      await cp(
+        path.dirname(require.resolve('typescript/package.json')),
+        fixture.path('node_modules/typescript'),
+        { recursive: true },
+      );
+      const manifest = fixture.path('node_modules/typescript/package.json');
+      const command = fixture.path('node_modules/.bin/tsc');
+      await mkdir(fixture.path('node_modules/.bin'), { recursive: true });
+      await link(fixture.path('node_modules/typescript/bin/tsc'), command);
+      const prepared = await prepareManagedTarget(fixture, command);
+      manager = prepared.manager;
+      const { coordinator, target } = prepared;
+      const manifestAlias = fixture.path('second-installation-manifest.json');
+      const commandAlias = fixture.path('second-installation-tsc');
+      await link(manifest, manifestAlias);
+      await link(command, commandAlias);
+      await expect(
+        coordinator.beforeLayerRun([target]),
+      ).resolves.toBeUndefined();
+      await unlink(manifestAlias);
+      await unlink(commandAlias);
+      await expect(
+        coordinator.beforeTargetRun(target),
+      ).resolves.toBeUndefined();
+
+      for (const file of [manifest, command]) {
+        const original = await readFile(file, 'utf8');
+        await writeFile(file, `${original}\n`);
+        await expect(coordinator.beforeTargetRun(target)).rejects.toThrow(
+          'Managed checker emit proof drifted',
+        );
+        await writeFile(file, original);
+        await expect(
+          coordinator.beforeTargetRun(target),
+        ).resolves.toBeUndefined();
+      }
+      await link(fixture.sourceConfigPath, fixture.path('shared-config.json'));
+      await expect(coordinator.beforeTargetRun(target)).rejects.toThrow(
+        'Managed checker emit proof drifted',
+      );
+    } finally {
+      manager?.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   it('projects JS, declaration, map, and exact tsbuildinfo outputs from effective config', async () => {
     const fixture = await createFixture();
     try {

@@ -222,6 +222,7 @@ packageExtensions:
 
 patchedDependencies:
   '@vueuse/core': patches/@vueuse__core@12.8.2.patch
+  vercel@65.2.0: patches/vercel@65.2.0.patch
   vite@5.4.21: patches/vite@5.4.21.patch
   vitepress: patches/vitepress@1.6.4.patch
 

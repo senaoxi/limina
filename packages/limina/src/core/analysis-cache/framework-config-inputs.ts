@@ -1,4 +1,5 @@
 import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
+import { normalizeAbsolutePath } from '#utils/path';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import ts from 'typescript';
@@ -84,7 +85,7 @@ function configFiles(
     const file = nearestConfig(current);
     if (file !== undefined) files.add(file);
   }
-  return files;
+  return new Set([...files].map(normalizeAbsolutePath));
 }
 /**
 Svelte's executable configuration belongs only to targets which consume it.

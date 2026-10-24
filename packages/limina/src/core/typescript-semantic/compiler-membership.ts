@@ -1,3 +1,4 @@
+import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type { CompilerMembership } from '../dependency-semantics';
 
@@ -13,6 +14,16 @@ function hasExternalInput(program: ts.Program, target: string): boolean {
   const file = program.getSourceFile(target);
   return file !== undefined && program.isSourceFileFromExternalLibrary(file);
 }
+
+export function hasCompilerRoot(
+  program: Pick<ts.Program, 'getRootFileNames'>,
+  target: string,
+): boolean {
+  const roots = program.getRootFileNames();
+  if (roots.includes(target)) return true;
+  const normalized = normalizeAbsolutePath(target);
+  return roots.some((root) => normalizeAbsolutePath(root) === normalized);
+}
 /**
  * Admission alone does not cover an implementation compilation obligation.
  */
@@ -21,7 +32,7 @@ export function observeCompilerMembership(
   target: string,
 ): CompilerMembership {
   return [
-    program.getRootFileNames().includes(target),
+    hasCompilerRoot(program, target),
     hasOriginalReferenceInput(program, target),
     hasExternalInput(program, target),
   ].some(Boolean)

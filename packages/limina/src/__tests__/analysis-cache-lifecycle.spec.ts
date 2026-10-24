@@ -3,11 +3,15 @@ import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
 import { resolveExistingFilePath } from '#utils/module-resolution';
 import { execFileSync } from 'node:child_process';
 import {
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
+  unlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -22,6 +26,7 @@ import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import type { GeneratedTsconfigGraphResult } from '../core/build-graph/types';
+import { observeNativeFileIdentity } from '../core/typescript-semantic/native-file-identity';
 import { readJsonFile } from '../core/workspace/package-manifest';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
@@ -148,6 +153,57 @@ describe('glob discovery freshness', () => {
 });
 
 describe('replayed input freshness', () => {
+  it('keeps physical identity receipts stable when installations add or remove hardlinks', async () => {
+    const f = fixture();
+    const file = f.path('lib.d.ts');
+    const installed = f.path('installed.d.ts');
+    writeFileSync(file, 'declare const value: string;');
+    const epoch = new EpochInputs();
+    const initial = epoch.run(() => observeNativeFileIdentity(file, 'fixed'));
+    const saved = epoch.snapshot()!;
+
+    linkSync(file, installed);
+    await expect(epoch.assertStable()).resolves.toBeUndefined();
+    expect(epoch.run(() => observeNativeFileIdentity(file, 'fixed'))).toEqual(
+      initial,
+    );
+    await expect(new EpochInputs().validate(saved)).resolves.toBe(true);
+    expect(new EpochInputs().validateSynchronous(saved)).toBe(true);
+
+    unlinkSync(installed);
+    await expect(epoch.assertStable()).resolves.toBeUndefined();
+    await expect(new EpochInputs().validate(saved)).resolves.toBe(true);
+  });
+
+  it('rejects physical input byte edits with unchanged size and mtime and accepts restored bytes', async () => {
+    const f = fixture();
+    const file = f.path('lib.d.ts');
+    const modified = new Date('2020-01-01T00:00:00Z');
+    writeFileSync(file, 'declare const first: string;');
+    utimesSync(file, modified, modified);
+    const initial = statSync(file, { bigint: true });
+    const epoch = new EpochInputs();
+    epoch.run(() => observeNativeFileIdentity(file, 'fixed'));
+    const saved = epoch.snapshot()!;
+
+    writeFileSync(file, 'declare const other: string;');
+    utimesSync(file, modified, modified);
+    const changed = statSync(file, { bigint: true });
+    expect(changed.ino).toBe(initial.ino);
+    expect(changed.size).toBe(initial.size);
+    expect(changed.mtimeNs).toBe(initial.mtimeNs);
+    await expect(epoch.assertStable()).rejects.toThrow(
+      'Analysis input changed during analysis',
+    );
+    await expect(new EpochInputs().validate(saved)).resolves.toBe(false);
+    expect(new EpochInputs().validateSynchronous(saved)).toBe(false);
+
+    writeFileSync(file, 'declare const first: string;');
+    utimesSync(file, modified, modified);
+    await expect(epoch.assertStable()).resolves.toBeUndefined();
+    await expect(new EpochInputs().validate(saved)).resolves.toBe(true);
+  });
+
   it.each(['synchronous', 'asynchronous'] as const)(
     'retains %s replay observations and rejects changes and conflicting live inputs',
     async (mode) => {

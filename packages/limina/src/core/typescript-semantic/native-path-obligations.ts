@@ -1,6 +1,7 @@
 import type ts from 'typescript';
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import { hasCompilerRoot } from './compiler-membership';
 import {
   type NativeModuleImpact,
   nativeTargetEligibility,
@@ -82,7 +83,7 @@ function rootOrImplementationImpact(
   input: PathObligationInput,
   target: string,
 ): NativeModuleImpact {
-  if (input.program.getRootFileNames().includes(target))
+  if (hasCompilerRoot(input.program, target))
     return {
       state: 'absent',
       rule: 'consumer-root-has-no-cross-unit-obligation',

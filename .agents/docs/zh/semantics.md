@@ -28,6 +28,8 @@
 
 **编译准入：**[类型化前提](../../../packages/limina/src/core/build-graph/compilation-prerequisite.ts) 将原始 request 连接到各自的 resolution target，以及生产者登记的当前 locked context 内经过验证、完整且唯一的 Coverage，而不是用旧 origin 与自身比较。反序列化或未绑定候选没有运行期投影资格。证据资格与义务存在性证明分离：required-only 依赖写入器保留原合同，Admission 可以对必要 unknown 取得资格。投影依据已选 source 的语义／框架能力及 producer 共用的声明／源码选择规则，不依据候选恰好具有哪条边。required、already-satisfied、必要 unknown 使用同一身份和关系种类检查。引用身份包含 source config、Checker、实际生成配置与当前投影；原本 already-satisfied 的义务也适用。声明义务需要 declaration reference，同端点 framework schedule 不能替代它。正确引用可以消除候选风险，但不改写原始 unknown。Svelte/Astro 的源码消费能力不意味着必须启动 provider Checker 进程。执行阶段针对实际引用重新检查选定作用域；生命周期和失败规则由[执行准入](./lifecycle.md#受管-checker-的执行准入)拥有。[准入测试](../../../packages/limina/src/__tests__/analysis-completion.spec.ts) 使用真实 required、unknown 和 already-satisfied Native 证据，执行当前 context 与带类型引用的替换，并保留原始状态。
 
+[编译器 root 成员判断](../../../packages/limina/src/core/typescript-semantic/compiler-membership.ts)先规范化编译器 roots 与解析目标的 lexical 写法，再应用 consumer-root absence。分隔符和 dot segment 的差异不会创建另一个编译单元。这不改变编译器 roots、Coverage、物理别名资格或加载权限。[TypeEvidence 回归](../../../packages/limina/src/__tests__/type-evidence.spec.ts)保留别名写法的 root，同时让解析返回规范化目标；[Native path 回归](../../../packages/limina/src/__tests__/native-path-selection.spec.ts)继续保留独立的非 root 义务。
+
 ## 从 ownership 候选到 locked context
 
 [checker-ownership-resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先 discovery、root evidence、dependency facts 与 requirements convergence，再 freeze semantic authority，最后进行 Vue promotion、build coloring 与 finalization。[semantic-authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 只接受 explicit、config、root-file、dependency 作为语义锁证据；build-closure、fallback、solution-constraint、vue-promotion 不重写语义。

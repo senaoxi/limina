@@ -1,4 +1,5 @@
-import { realpathSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { normalizeAbsolutePath } from './path';
 
 export type PhysicalFileIdentity =
@@ -8,7 +9,7 @@ export type PhysicalFileIdentity =
       canonicalId: string;
       size: string;
       mtime: string;
-      ctime: string;
+      contentHash: string;
     }
   | { state: 'unavailable'; reason: string };
 
@@ -27,7 +28,10 @@ export function readPhysicalFileIdentity(file: string): PhysicalFileIdentity {
       canonicalId: `${stat.dev}:${stat.ino}`,
       size: String(stat.size),
       mtime: String(stat.mtimeNs),
-      ctime: String(stat.ctimeNs),
+      // Other installations can change ctime by adding/removing hardlinks.
+      contentHash: createHash('sha256')
+        .update(readFileSync(canonicalPath))
+        .digest('hex'),
     };
   } catch (error) {
     return { state: 'unavailable', reason: identityFailure(error) };

@@ -150,7 +150,8 @@ describe('TypeScript resource type evidence', () => {
       const project = createProject({
         fileNames: [
           indexPath,
-          fooPath,
+          // Compiler roots may retain a spelling different from resolution.
+          `${fixture.rootDir}/src/../src/foo.ts`,
           ...(ambient ? [path.join(fixture.rootDir, 'src/assets.d.ts')] : []),
         ],
         rootDir: fixture.rootDir,
