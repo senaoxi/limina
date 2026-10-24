@@ -2,7 +2,7 @@
 
 [English](../technology-stack.md) | [简体中文](./technology-stack.md)
 
-工具版本由清单和 lockfile 负责。当前工具链使用 pnpm 12.10.1、TypeScript 6.0.3、Rolldown 1.2.10 和 Vitest 4.1.12。Node 范围为 `^22.22.3 || ^24.15.0 || >=26.0`，代码保持 ESM。依赖使用 pnpm catalog、严格 peer、禁用自动 peer 与 hoist、1,440 分钟 release-age 以及既有 trust 策略。保留三份可达 patch 和 manifest-utils 扩展。`verifyDepsBeforeRun: error` 要求显式执行安装以同步依赖。已检入的 release-age 例外仅适用于 `logaria@0.0.4`；其余迁移与发布门禁仍然有效。
+工具版本由清单和 lockfile 负责。当前工具链使用 pnpm 12.10.1、TypeScript 6.0.3、Rolldown 1.2.10 和 Vitest 4.1.12。Node 范围为 `^22.22.3 || ^24.15.0 || >=26.0`，代码保持 ESM。依赖使用 pnpm catalog、严格 peer、禁用自动 peer 与 hoist、1,440 分钟 release-age 以及既有 trust 策略。保留四份可达 patch 和 manifest-utils 扩展。`verifyDepsBeforeRun: error` 要求显式执行安装以同步依赖。已检入的 release-age 例外仅适用于 `logaria@0.0.4`；其余迁移与发布门禁仍然有效。
 
 仓库命令与必需检查遵循开发工作流的[设置与构建](./development-workflow.md#设置与构建)及[验证与交付](./development-workflow.md#验证与交付)章节。私有工具构建后，Rolldown 生成 JavaScript、声明、发布清单和许可证。
 
