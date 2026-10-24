@@ -8,10 +8,12 @@ import {
   stringifyDependencyGraph,
 } from '../dependency-graph/runner';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
-import { runReferenceCompletenessPhase } from './completeness-phase';
-import { runProjectReferencePhase } from './reference-phase';
+import {
+  runGraphRoutePhase,
+  runProjectReferencePhase,
+  runReferenceCompletenessPhase,
+} from './phases';
 import { isFinishGraphCheck } from './result-reporting';
-import { runGraphRoutePhase } from './route-phase';
 import { createGraphCheckState } from './run-state';
 import type {
   RunGraphCheckImplOptions,

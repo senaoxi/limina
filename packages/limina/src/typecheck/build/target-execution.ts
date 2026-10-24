@@ -15,10 +15,7 @@ import {
   emitTargetResult,
 } from './target-state';
 
-export type {
-  RunBuildTargetsArguments as RunBuildTargetsArgs,
-  RunBuildTargetsOptions,
-} from './target-state';
+export type { RunBuildTargetsOptions } from './target-state';
 
 function resolveLayerConcurrency(
   state: BuildRunState,
@@ -96,7 +93,7 @@ function requireTargetResult(
   return result;
 }
 
-export async function executeBuildTargets(
+export async function runBuildTargets(
   ...arguments_: RunBuildTargetsArguments
 ): Promise<BuildTargetCompletion[]> {
   const [targets, dependencyEdges, runner, options] = arguments_;
