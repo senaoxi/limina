@@ -26,7 +26,7 @@ import {
 import { collectDependencyGraph } from '../dependency-graph/runner';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
-import { addTypecheckParityProblems } from '../graph-check/dts-options';
+import { addTypecheckParityProblems } from '../graph-check/dts-typecheck-parity';
 import type { GraphFinding } from '../graph-check/findings';
 import { GraphLogger } from '../logger';
 import { LiminaPreflightManager } from '../preflight';

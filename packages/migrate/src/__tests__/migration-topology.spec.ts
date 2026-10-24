@@ -16,7 +16,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
-import { runMigration } from '../migration';
+import { runMigration } from '../migration/command';
 import type { RunMigrationOptions } from '../migration/types';
 import { createFixturePathResolver } from './helpers/path';
 

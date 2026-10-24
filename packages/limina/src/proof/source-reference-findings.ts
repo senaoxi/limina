@@ -1,10 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { isOrdinarySourceTypecheckConfigPath } from '#core/tsconfig/actions';
 import { toRelativePath } from '#utils/path';
+import { isPlainRecord } from '#utils/values';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import { readProofConfig } from './config-reader';
-import { isPlainRecord } from './config-values';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,

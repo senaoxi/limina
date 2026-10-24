@@ -20,7 +20,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { createMigrationCli } from '../cli';
-import { runMigration } from '../migration';
+import { runMigration } from '../migration/command';
 import {
   createFixturePathResolver,
   toPortablePaths,

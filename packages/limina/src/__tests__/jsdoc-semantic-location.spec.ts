@@ -7,7 +7,10 @@ import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { observeFrameworkTypeEvidence } from '../core/framework-semantic/provider-observation';
 import { collectTypeScriptSourceFileImports } from '../core/import-analysis/typescript-imports';
-import { findImportRecordLiteral } from '../core/typescript-semantic/import-record';
+import {
+  findImportRecordLiteral,
+  findImportRecordLiterals,
+} from '../core/typescript-semantic/import-record';
 import { nativeContextInputs } from '../core/typescript-semantic/native-context-inputs';
 import { NativeObservationAdapter } from '../core/typescript-semantic/native-observation-adapter';
 import { nativeProgramSource } from '../core/typescript-semantic/native-program-api';
@@ -91,6 +94,64 @@ const original =
   "/** @param {import('node:test').TestContext} context */\nexport function fixture(context) { context.after(() => {}); }\n";
 
 describe('JSDoc occurrence location and actual Program observation', () => {
+  it('locates a batch of repeated imports with linear AST work and fresh mutable nodes', () => {
+    const text = Array.from({ length: 128 }, () => "import './same.js';").join(
+      '\n',
+    );
+    const sourceFile = ts.createSourceFile(
+      '/virtual/entry.ts',
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const records = collectTypeScriptSourceFileImports({
+      filePath: sourceFile.fileName,
+      sourceFile,
+    });
+    const forEachChild = vi.fn(ts.forEachChild);
+    const tsModule = { ...ts, forEachChild } as typeof ts;
+    const batch = findImportRecordLiterals({ records, sourceFile, tsModule });
+    expect(batch.values().toArray()).toEqual(
+      sourceFile.statements.map(
+        (statement) => (statement as ts.ImportDeclaration).moduleSpecifier,
+      ),
+    );
+    // Work may scale with syntax size, never with syntax size times occurrence count.
+    expect(forEachChild.mock.calls.length).toBeLessThan(128 * 8);
+    const literal = (sourceFile.statements[0] as ts.ImportDeclaration)
+      .moduleSpecifier as ts.StringLiteral;
+    literal.text = './changed.js';
+    expect(
+      findImportRecordLiterals({ records, sourceFile, tsModule }).get(
+        records[0]!,
+      ),
+    ).toBeNull();
+  });
+
+  it('rejects ambiguous parsed nodes sharing a specifier and exact range', () => {
+    const sourceFile = ts.createSourceFile(
+      '/virtual/entry.ts',
+      "import './same.js';\nimport './same.js';",
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const records = collectTypeScriptSourceFileImports({
+      filePath: sourceFile.fileName,
+      sourceFile,
+    });
+    const [first, second] = sourceFile.statements.map(
+      (statement) =>
+        (statement as ts.ImportDeclaration).moduleSpecifier as ts.StringLiteral,
+    );
+    ts.setTextRange(second!, first!);
+    const batch = findImportRecordLiterals({
+      records,
+      sourceFile,
+      tsModule: ts,
+    });
+    expect(batch.values().toArray()).toEqual([null, null]);
+  });
+
   it('round 1: locates the original node:test sample and observes its actual ambient symbol', async () => {
     const f = await vueFixture(
       { 'entry.mjs': original },
@@ -147,6 +208,23 @@ describe('JSDoc occurrence location and actual Program observation', () => {
     const source = f.context.program.getSourceFile(f.path('entry.mjs'))!;
     const inventory = nativeProgramSource(source).imports;
     expect(inventory).toHaveLength(4);
+    const batch = findImportRecordLiterals({
+      records,
+      sourceFile: source,
+      tsModule: ts,
+    });
+    expect(batch.values().toArray()).toEqual(inventory);
+    const misplaced = {
+      ...records[0]!,
+      locator: { ...records[0]!.locator, sourceStart: 0 },
+    };
+    expect(
+      findImportRecordLiterals({
+        records: [misplaced],
+        sourceFile: source,
+        tsModule: ts,
+      }).get(misplaced),
+    ).toBeNull();
     for (const record of records) {
       const literal = findImportRecordLiteral({
         importRecord: record,

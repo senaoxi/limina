@@ -59,12 +59,13 @@ Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以�
 
 | 复用输入                              | Owner 与首次读取                                                                                                                                                                                                                                               | 有效期终点                                                                                                                                                                    |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Consumer 的图规则标签，包括空数组     | [依赖着色](../../../packages/limina/src/core/build-graph/checker-build-coloring.ts) 为每次依赖边 pass 创建 lazy map，键为 consumer 配置的既有路径。原 reader 继续处理 overlay、错误及标签过滤／去重／trim 顺序。每条 fact 仍执行 deny、ownership 与建边判断。  | Pass 返回或失败即结束；后续 pass 重新读取规则，readonly 标签不与其他阶段共享。                                                                                                |
 | 成功读取的 Vue 脚本文本，包括空字符串 | [VueSemanticContext](../../../packages/limina/src/core/vue-semantic/context-handle.ts) 在 ScriptSnapshot 旁持有按路径索引的文本 map。首次读取使用原 overlay system；同步过程仍更新／注册脚本并生成虚拟代码。**不缓存缺失结果**，读取抛错直接传播，不添加条目。 | 实际 context dispose 时清空 map。进程级 slot 可以有多个 manager owner；释放一个 owner 不会清空仍由其他 owner 持有的 context。Identity 替换或最后一个 owner 释放时才 dispose。 |
 
 内部变化仍属于支持范围。生成配置经过既有 artifact／overlay 路径准备；checker 声明构建保留独立 host。Materialization replan 和分析重试即使不推进 analysis generation，也会替换 providers 及其 project-config cache。Provider generation 参与 Vue identity，因此新输入视图不能沿用旧 active context 的 memo。最后一个 owner 释放后，即使 identity 相同，也从新文本开始。Virtual overlay、config/options 和工具链身份继续保持既有隔离；该文本 memo 不新增进程全局表或持久字段。独立的 Vue 持久化适配器记录分析 DTO 和输入 receipt，不保存这份运行期文本 memo。漂移检查与持久输入观测保留原有校验规则。
 
-[Graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖 consumer 隔离、空标签与失败后的新 pass；[Vue 回归](../../../packages/limina/src/__tests__/vue-semantic.spec.ts)覆盖成功／空文本读取、缺失／错误重试与最后一个 owner 释放；[preflight 回归](../../../packages/limina/src/__tests__/preflight.spec.ts)覆盖真实 provider-only replan 和物化输入。后续独立命令按既有持久缓存失效规则读取当前输入；这些局部 memo 不新增跨命令新鲜度或速度保证。
+[Vue 回归](../../../packages/limina/src/__tests__/vue-semantic.spec.ts)覆盖成功／空文本读取、缺失／错误重试与最后一个 owner 释放；[preflight 回归](../../../packages/limina/src/__tests__/preflight.spec.ts)覆盖真实 provider-only replan 和物化输入。后续独立命令按既有持久缓存失效规则读取当前输入；这份局部文本 memo 不新增跨命令新鲜度或速度保证。
+
+[Astro 脚本同步](../../../packages/limina/src/core/astro-semantic/context.ts)复用 context 所属成功 snapshot 中的文本，包括空文本。Volar 会在重复请求时同步已注册脚本；再次读取会在有界 Program 准备期间重复执行文件系统和输入绑定工作。首次读取，包括 context 构造期间的读取，仍通过既有 analysis-input 回调记录观测。Memo 命中不额外读取或检查绑定；已记录的回调仍在独立稳定性边界重新读取。缺失和抛错读取保持可重试。Generation／context 替换及 dispose 会丢弃 snapshot；不增加进程全局或持久文本缓存。[真实工具链回归](../../../packages/limina/src/__tests__/astro-semantic-toolchain.spec.ts)覆盖真实 Volar 下的重复读取、Astro 虚拟脚本、空文本、缺失／错误重试、后续漂移拒绝，以及替换或释放后的新文本读取。
 
 Vue 声明闭包投影仅在一次[支撑贡献收集](../../../packages/limina/src/core/project-dependencies/support-contributions.ts)内保留 occurrence 到 dependency 的索引。每条追加依赖沿用既有 occurrence identity，只入索引一次；重复 identity 保留首个匹配项。声明支撑收集仍先解析并追加依赖，再执行查询；缺失 fact 保持既有 incomplete 或 unresolved 结果。索引随本次收集结束而释放，不跨配置、provider 或调用共享。[项目依赖回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)保护首项顺序、不同 occurrence 位置及独立收集；[图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖 Vue 声明遍历中追加的依赖。
 
@@ -122,7 +123,7 @@ Clean 调用仍先校验全部旧输入，再由[失效传播](../../../packages
 
 [Bounded 证据关联](../../../packages/limina/src/core/analysis-cache/bounded-evidence-index.ts)在每次同步资格校验内建立 request、resolution 和 obligation 查询表，并只计算一次预期 context 指纹。同次校验中的 fact 与 obligation 共享按完整目标身份推导的 Coverage。重复标识、缺失成员、context 来源、Coverage 与 obligation 证明仍受检查。局部索引不授予可变 DTO 持久资格，也不跨恢复边界复用。[Native 恢复测试](../../../packages/limina/src/__tests__/native-context-incremental.spec.ts)在 DTO 校验成功后修改成员版本和解析目标身份，要求再次校验与采用均拒绝该数据。
 
-[带标签数据校验](../../../packages/limina/src/core/analysis-cache/data-decoder.ts)遍历与解码相同的语法，在完整模型校验时不构造随即丢弃的图副本。元组长度、标量类型、有限数字、嵌套条目和 object／map 重复键检查均保留。后续恢复仍独立解码图。[Codec 测试](../../../packages/limina/src/__tests__/analysis-data-codec.spec.ts)在两个入口比较合法嵌套值与畸形编码；该优化不跳过 schema 或语义资格校验。
+[带标签数据校验](../../../packages/limina/src/core/analysis-cache/data-codec.ts)遍历与解码相同的语法，在完整模型校验时不构造随即丢弃的图副本。元组长度、标量类型、有限数字、嵌套条目和 object／map 重复键检查均保留。后续恢复仍独立解码图。[Codec 测试](../../../packages/limina/src/__tests__/analysis-data-codec.spec.ts)在两个入口比较合法嵌套值与畸形编码；该优化不跳过 schema 或语义资格校验。
 
 恢复在读取任何旧块前先校验小型 index。Identity／schema／配置版本／模块证据不匹配以及 force 均跳过全部旧 scope 块。合格恢复仍加载全部引用块并验证完整模型，之后才采用普通输入；这不是按 consumer 延迟恢复。当前 provider／ownership 身份、输出回执、query 覆盖和全部原有输入／新鲜度检查继续有效。存储 scope 不授予合并语义上下文的权限。
 

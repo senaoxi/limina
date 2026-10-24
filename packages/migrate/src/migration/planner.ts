@@ -9,6 +9,7 @@ import {
   readInputTopology,
 } from 'limina/internal/core/build-graph/input-topology';
 import type { LiminaArtifactNamespace } from 'limina/internal/domain/artifacts/namespace';
+import { MigrationLogger } from 'limina/internal/logger';
 import path from 'pathe';
 import { MigrationInputError, type MigrationRecord } from './declarations';
 import { discover } from './discovery';
@@ -21,9 +22,43 @@ import {
   type MigrationPlanningState,
   planningView,
 } from './planning-state';
-import { MigrationPlanningError, planningPhase } from './progress';
 import { translateRelations } from './relation-plan';
 import type { MigrationWritePlanItem } from './transaction';
+
+export class MigrationPlanningError extends Error {
+  readonly records: MigrationRecord[];
+  constructor(cause: unknown, records: MigrationRecord[]) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.records = records;
+  }
+}
+
+async function planningPhase<T>(
+  state: MigrationPlanningState,
+  phase: string,
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  const started = performance.now();
+  let isComplete = false;
+  MigrationLogger.info(`migration phase: ${phase}`);
+  try {
+    const result = await operation();
+    isComplete = true;
+    return result;
+  } finally {
+    const elapsedMilliseconds = Math.round(performance.now() - started);
+    state.records.push({
+      configPath: configContextPath(state.config),
+      kind: 'planning-phase',
+      message: `${phase}: ${isComplete ? 'complete' : 'failed'}`,
+      details: { phase, complete: isComplete, elapsedMilliseconds },
+    });
+    MigrationLogger.info(
+      `migration phase ${phase}: ${isComplete ? 'complete' : 'failed'} (${elapsedMilliseconds}ms)`,
+    );
+  }
+}
+
 export interface FrozenMigrationPlan {
   inputs: ReadonlyMap<string, string>;
   groups: MigrationWritePlanItem[][];

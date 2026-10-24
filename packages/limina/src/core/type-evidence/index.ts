@@ -15,18 +15,13 @@ import {
   TypeEvidenceGenerationCache,
   type TypeEvidenceMetricsRecorder,
 } from './cache';
-import { resolveCoreTypeEvidence } from './native-evidence';
 import type { ResolveImportEvidenceOptions } from './resolution';
 import {
   createUnsupportedCheckerEvidence,
   resolveImportPair,
+  resolveManagedSource,
   resolveTypeScriptPreset,
 } from './resolution';
-import {
-  addAffectedConfig,
-  hasAffectedConfig,
-  recordMetric,
-} from './resource-metrics';
 import { resolveResourceProviderEvidence } from './resource-provider-resolution';
 import type {
   TypeEvidenceCoreOptions,
@@ -41,7 +36,6 @@ import {
   resolveVueTypeEvidenceCapability,
   type VueTypeEvidenceCapability,
 } from './vue-provider';
-import { addWorkspaceSourceBoundary } from './workspace-boundary';
 
 export * from './cache';
 export type { ResolveImportEvidenceOptions } from './resolution';
@@ -288,4 +282,69 @@ export class TypeEvidenceCore {
     }
     this.#providerKeysByConfigIdentity.delete(configIdentity);
   }
+}
+
+type ResourceMetricName =
+  | 'affected-source-config-count'
+  | 'resource-import-count'
+  | 'type-evidence-query';
+
+function recordMetric(
+  metrics: TypeEvidenceMetricsRecorder | undefined,
+  name: ResourceMetricName,
+): void {
+  if (metrics !== undefined) metrics.record({ name });
+}
+
+function hasAffectedConfig(
+  affectedConfigs: ReadonlySet<string> | undefined,
+  configIdentity: string,
+): boolean {
+  return affectedConfigs !== undefined && affectedConfigs.has(configIdentity);
+}
+
+function addAffectedConfig(
+  affectedConfigs: Set<string> | undefined,
+  configIdentity: string,
+): void {
+  if (affectedConfigs !== undefined) affectedConfigs.add(configIdentity);
+}
+
+function addWorkspaceSourceBoundary(options: {
+  input: ResolveImportEvidenceOptions;
+  provider: TypeEvidenceCoreOptions['workspaceSourceBoundaryProvider'];
+}): WorkspaceBoundedImportEvidenceOptions {
+  return {
+    ...options.input,
+    project: {
+      ...options.input.project,
+      workspaceSourceBoundary: options.provider(options.input.project),
+    },
+  };
+}
+
+function resolveCoreTypeEvidence(options: {
+  request: ResolveImportEvidenceOptions;
+  resolveProvider(): ImportResolutionEvidence;
+}): ImportResolutionEvidence {
+  return attributeNativeDeclarationEvidence({
+    evidence: options.resolveProvider(),
+    request: options.request,
+  });
+}
+
+function attributeNativeDeclarationEvidence(options: {
+  evidence: ImportResolutionEvidence;
+  request: ResolveImportEvidenceOptions;
+}): ImportResolutionEvidence {
+  const type = options.evidence.type;
+  if (type.kind !== 'concrete-declaration') return options.evidence;
+  const managedSource = resolveManagedSource({
+    checkerName: options.request.checkerName,
+    filePath: type.filePath,
+    lookup: options.request.managedOutputLookup,
+  });
+  return managedSource == null
+    ? options.evidence
+    : { ...options.evidence, type: { ...type, managedSource } };
 }

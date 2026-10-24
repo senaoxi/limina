@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, expect, it } from 'vitest';
-import { runMigration } from '../migration';
+import { runMigration } from '../migration/command';
 import { createFrozenMigrationPlan } from '../migration/planner';
 import {
   assertMigrationScopeUnchanged,
