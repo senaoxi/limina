@@ -5,6 +5,8 @@ const config: ViteUserConfig = defineConfig({
     environment: 'node',
     globals: true,
     include: ['src/**/__tests__/**/*.spec.ts'],
+    // Admission and ESLint suites each start substantial parser services.
+    maxWorkers: 2,
     testTimeout: 10_000,
     hookTimeout: 10_000,
     clearMocks: true,

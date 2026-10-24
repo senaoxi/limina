@@ -2,7 +2,7 @@
 
 [English](./technology-stack.md) | [简体中文](./zh/technology-stack.md)
 
-The manifests and lockfile own tool versions. The current toolchain uses pnpm 12.10.1, TypeScript 6.0.3, Rolldown 1.2.10 and Vitest 4.1.12. The supported Node range is `^22.22.3 || ^24.15.0 || >=26.0`; the code remains ESM. Dependencies use pnpm catalogs, strict peers, no automatic peers or hoisting, the 1,440-minute release-age policy and the existing trust policy. Three reachable patches and the manifest-utils extension remain. `verifyDepsBeforeRun: error` makes dependency synchronization an explicit install operation. The checked-in release-age exception applies only to `logaria@0.0.4`; it does not waive the remaining migration/publication gates.
+The manifests and lockfile own tool versions. The current toolchain uses pnpm 12.10.1, TypeScript 6.0.3, Rolldown 1.2.10 and Vitest 4.1.12. The supported Node range is `^22.22.3 || ^24.15.0 || >=26.0`; the code remains ESM. Dependencies use pnpm catalogs, strict peers, no automatic peers or hoisting, the 1,440-minute release-age policy and the existing trust policy. Four reachable patches and the manifest-utils extension remain. `verifyDepsBeforeRun: error` makes dependency synchronization an explicit install operation. The checked-in release-age exception applies only to `logaria@0.0.4`; it does not waive the remaining migration/publication gates.
 
 Follow the development workflow's [setup and builds](./development-workflow.md#setup-and-builds) and [validation and handoff](./development-workflow.md#validation-and-handoff) sections for repository commands and required checks. Rolldown generates JavaScript, declarations, the published manifest and licenses after the private tools are built.
 

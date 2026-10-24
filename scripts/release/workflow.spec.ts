@@ -55,6 +55,45 @@ for (const workflowFile of ['publish-npm.yml', 'deploy-docs.yml'])
     );
   });
 
+it('keeps docs deployment on patched Node and governed JavaScript builders', () => {
+  const workflow = parse(
+    readFileSync(
+      new URL('../../.github/workflows/deploy-docs.yml', import.meta.url),
+      'utf8',
+    ),
+  ) as {
+    jobs: {
+      deploy: {
+        steps: {
+          uses?: string;
+          run?: string;
+          with?: Record<string, string>;
+          env?: Record<string, string>;
+        }[];
+      };
+    };
+  };
+  const steps = workflow.jobs.deploy.steps;
+  const setup = steps.find(
+    (step) => step.uses === './.github/actions/setup-env',
+  );
+  assert.equal(setup?.with?.['node-version'], '24.22.1');
+  const deployment = steps.find((step) =>
+    step.run?.includes('exec vercel build'),
+  );
+  assert.ok(deployment);
+  assert.equal(deployment.env?.VERCEL_CLI_USE_NATIVE_BINARY, '0');
+  for (const variable of [
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'ALL_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'all_proxy',
+  ])
+    assert.equal(deployment.env?.[variable], '');
+});
+
 it(
   'requires successful main push workflows at the checked-out release SHA',
   { skip: process.platform === 'win32' },

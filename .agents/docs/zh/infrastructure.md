@@ -46,13 +46,25 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 共享 build action 调用根 `format:check` 与 `lint:check` 别名，分别通过 `limina check format` 和 `limina check lint` 执行只读 Prettier 和 ESLint 校验。[CI 守卫](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)解析实际配置的命令步骤，保护只读参数。两命令覆盖整个仓库；修改仍显式通过 `format:write` 与 `lint:fix` 执行，复用当前 `format` 和 `lint` 脚本。
 
-[CI](../../../.github/workflows/ci.yml)保留原生平台 build／test／smoke 和独立 Vue tuples。每条受支持的 Node 版本线都在 Linux 上执行 unit／integration／tooling 测试和独立 build／smoke 验证；Node 24 另有最新补丁的滚动测试。发布和文档部署固定使用 Node 24.15.0。Linux quality 复用同提交／平台的 package artifacts，其他环境独立构建／检查。显式 build 后使用 test:smoke，不重复构建。不引入路径过滤、Nx cache 或缓存 .limina 状态。CI Status 依赖全部验证任务，失败／取消／skipped 都失败。
+[CI](../../../.github/workflows/ci.yml)保留原生平台 build／test／smoke 和独立 Vue tuples。每条受支持的 Node 版本线都在 Linux 上执行 unit／integration／tooling 测试和独立 build／smoke 验证；Node 24 另有最新补丁的滚动测试。发布固定使用 Node 24.15.0；文档部署固定使用 Node 24.22.1。Linux quality 复用同提交／平台的 package artifacts，其他环境独立构建／检查。显式 build 后使用 test:smoke，不重复构建。不引入路径过滤、Nx cache 或缓存 .limina 状态。CI Status 依赖全部验证任务，失败／取消／skipped 都失败。
 
 完整矩阵的 Unit Tests 步骤通过 `VITEST_MAX_WORKERS` 将 Vitest 限制为两个 worker，为 CLI 子进程和框架宿主留出资源。隔离 CLI 夹具实际复制运行时源码，排除 `__tests__` 目录；依赖链接、编译器 shim 和仓库边界仍由夹具自身持有。测试选择、安全断言和超时保持不变。
 
 [License plugin](../../../packages/build-tools/src/license.ts)保留来自实际 bundler 输入的 bundled-dependencies.json，包含实际打包的开发依赖，拒绝缺失／冲突／禁止的 metadata。安全工作流为 `pnpm licenses list --prod --json` 显式选择 limina 和 limina-migrate；这份基于源码 manifest 的依赖报告不替代 bundle license 门禁。构建两个产品后，固定版本的 Anchore／Syft Action 扫描工作目录，在 .reports/sbom 生成 CycloneDX SBOM。扫描范围是目录，不是逐 tarball 依赖 inventory，也不保证消费者最终解析结果。原始审计数据与 Markdown 报告位于 .reports/security，许可证数据与报告位于 .reports/licenses。自制的包体积、SHA-512 和逐包 SBOM 报告已移除。
 
 仓库报告与管理的 .limina namespace 分开。产品不变量 I01–I12 及 guards 不变，不将 I10／I11 推广到任意报告／外部服务。Audit／license／SBOM 报告失败会使 Security 工作流失败。发布和部署分别要求原生依赖审计通过。发布还直接核对 tagged SHA 的完整 CI、Security 和 CodeQL workflows；合并时的 required checks 仍由仓库管理负责。
+
+## Vercel CLI 准入
+
+文档工作区固定 Vercel CLI 65.2.0。准入执行路径为 Node 24.22.1 上的 JavaScript CLI，使用 workspace 冻结依赖图。[部署 workflow](../../../.github/workflows/deploy-docs.yml) 在 Vercel 命令中设置 `VERCEL_CLI_USE_NATIVE_BINARY=0`，并清空 HTTP、HTTPS、ALL 的六个大小写代理变量。发布包代理 chunk 内嵌 Undici 5.29.0；这些变量会绕过 workspace override 激活它。此路径要求 runner 可以直连网络；用于依赖代理的环境前必须重新评估。[Workspace 配置](../../../pnpm-workspace.yaml)排除全部八个 `@vercel/vc-native-*` 可选分发包，因为原生内嵌依赖无法继承经过审阅的补丁或 overrides。移除排除项需要重新审查二进制、运行时、内嵌依赖与平台。产品 Node 支持范围保持不变。
+
+精确版本的 [Vercel 补丁](../../../patches/vercel@65.2.0.patch)将内嵌 Zod 4.1.11 的 chunk 替换为导出门面，将原有 226 个导出转发到已安装的 `zod` 和公开 `zod/v4/core` API。解析后的 Zod 4 下限为 4.6.7。普通 override 不会替换旧 bundle。补丁中作为删除行出现的上游源码保留其 [MIT 声明](../../../patches/vercel@65.2.0.patch.LICENSE)。补丁避免维护本地解析器；每次 CLI 升级都需审阅 chunk 标识和导出映射。上游内嵌安全实现后移除补丁。[产物回归测试](../../../packages/gates/src/__tests__/dependency-admission.spec.ts)直接执行已安装的 chunk，覆盖超限 array／set／map 的提前拒绝和合法输入对照，不只依赖锁文件。[Gates 测试池](../../../packages/gates/vitest.config.ts)将 worker 限为两个，避免锁文件／准入检查放大并发 ESLint project-service 启动开销；原有单用例超时保持不变。
+
+临时 `GHSA-mrhx-c7xc-m3w5` 排除接受的未修复 high 告警仅限 Zod 3.22.4，消费者为 `@vercel/backends@22.0.1`、`@vercel/express@22.0.1`、`@vercel/hono@22.0.1` 和 `@vercel/python-analysis@0.15.2`。pnpm 按 GHSA 全局排除，门禁测试另行拒绝新增 Zod 3 版本或消费者、workspace 直接依赖 Zod 3、产品通过已批准 builder 触达 Zod 3，以及低于 4.6.7 的 Zod 4，并在 Zod 3 消失后要求移除例外。依赖维护者在每次 Vercel／Zod 变更或 advisory 更新时负责重新评估。观察到的本地静态文档路径未加载 Zod 3；这既不修复告警，也不证明所有 CLI 命令安全。
+
+30 项 Vercel 相关精确 `trustPolicyExclude` 覆盖准入时被 `no-downgrade` 实际拒绝的版本。它们接受 provenance 降级，不豁免完整性或签名校验。Registry 签名、分发许可证及相关内嵌代码分别审阅。上游修复 provenance 或版本改变时逐项重新评估，不得替换为包名通配例外。Release-age、严格 peer 和脚本审批策略继续生效。兼容安全更新选择 tar 7.5.22、path-to-regexp 8.4.2，同时保留独立的 6.3.0 API，并选择 Ajv 的 fast-uri 3.1.9 和 Undici 7.30.1。产品 bundle 许可门禁和独立消费者检查继续适用；CLI 安装成本不能替代交付产物测量。
+
+2026-10-24 的本地基线为 macOS arm64、pnpm 12.10.1 和 Node 24.22.1，另有 Node 22.22.3 兼容性夹具。旧版 56.3.1 输出、有界解析器回归、显式工作目录选择和双语静态 HTTP 交付是不同的验证边界。本地证据不证明 Linux／Windows 执行、远程配置或凭据、`vercel pull`、部署上传、CDN 行为或生产网关。手动部署和发布门禁继续生效。
 
 ## 外部门禁与协作
 
