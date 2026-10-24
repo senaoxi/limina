@@ -16,10 +16,12 @@ export function nativeContextId(project: TypeScriptSemanticProject): string {
   return analysisHash({
     adapter: ANALYSIS_ADAPTER,
     config: normalizeAbsolutePath(project.configPath),
+    sourceConfig: project.sourceConfigPath,
     options: effectiveCompilerOptions(project.options),
     admission: project.admissionMode,
     binding: project.analysisBinding,
     compilationScope: project.compilationObligationScope,
     references: project.projectReferences,
+    declarationValidation: project.declarationContextValidation,
   });
 }

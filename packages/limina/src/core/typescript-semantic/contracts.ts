@@ -21,6 +21,14 @@ export type TypeScriptSemanticAdmissionMode =
   | 'coverage-bounded';
 
 export interface TypeScriptSemanticProject {
+  sourceConfigPath?: string;
+  /**
+  Candidate-only observation; never restored as source-analysis authority.
+  */
+  declarationContextValidation?: {
+    sourceConfig: string;
+    allowedDeclarations: readonly string[];
+  };
   compilationObligationScope?: 'generated-declaration-project-v1';
   analysisBinding?: { phase: 'pending' | 'locked'; checker: string };
   virtualFiles?: ReadonlyMap<string, string>;

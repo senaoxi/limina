@@ -46,9 +46,10 @@ export class NativeObservationAdapter {
     this.options = options;
     const { project, context, coverage } = options;
     this.frontier = new NativeProgramFrontier(
-      project.configPath,
+      project.sourceConfigPath ?? project.configPath,
       project.fileNames,
       coverage,
+      project.declarationContextValidation,
     );
     const { program, modules, requests, loads, configReads, failures } =
       createBoundedProgramClosure(options, compiler, this.frontier);

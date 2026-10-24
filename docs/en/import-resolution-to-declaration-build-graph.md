@@ -21,7 +21,7 @@ Limina first identifies the source leaf that owns this line, collects and resolv
 | Type evidence (`TypeEvidence`)                         | Do types come from checker source, a concrete declaration, an ambient declaration, or are they missing? | The type source can differ from the original resolution path                                                    |
 | Compiler relation requirement (`referenceRequirement`) | Is a compilation obligation proved, and is its reference structure satisfied?                           | Obligation, structure and output state are independent; valid projection and build admission are still required |
 
-Here, `Program` is the TypeScript program context the checker uses to analyze a set of files. A “declaration provider” is a managed source leaf that supplies declaration output for this build relationship.
+Here, `Program` is the TypeScript program context the checker uses to analyze a set of files. A “declaration provider” is a managed source leaf that supplies declaration output or the selected configuration context for a managed source declaration.
 
 ### Collect Dependencies with Source Provenance
 
@@ -78,9 +78,9 @@ Suppose the public entry of `core` has both type and runtime branches:
 
 When the checker selects `dist/index.d.ts`, the unselected default source branch creates no reference, and the declaration path does not identify its producer.
 
-Native checks Source Config Coverage for every reached declaration: whether the currently activated configuration universe was completely enumerated and whether membership and physical identity are current. Unique or confirmed multiple memberships permit expansion; uncovered or unavailable evidence is recorded and stops that branch. Relative imports, paths, package entries, standard libraries, third-party and Bundler outputs receive no automatic exemption. Declaration roots remain as configured; types/lib and original references are preserved.
+Native checks current Source Config Coverage for every reached declaration. A managed declaration outside the consumer's roots is physically withheld during source analysis. Complete unique Coverage selects its configuration; multiple covering configurations require `liminaOptions.declarationContexts`. Incomplete evidence cannot establish uniqueness. The selected project analyzes its own inputs independently; a shared declaration can be a local root in several projects. Uncovered declarations retain the existing boundary. This policy does not infer artifact producers or expand Coverage.
 
-`app → index.d.ts → helper.d.ts → feature.ts` continues only when both index and helper have available Coverage, then stops before scanning feature.ts internals. A reference to feature's project additionally needs independent compilation-obligation proof. Declaration membership alone does not identify a producer.
+For `app → index.d.ts → feature.ts`, selecting configuration B for index creates app→B from a declaration-context policy. B→feature's project still requires B's independent compilation-obligation proof. Final bounded validation checks the actual generated reference closure and declaration input mapping, including pure declarations without emitted output. Conflicting mappings are rejected regardless of reference order. The selected owner must check declarations; the consumer still has its own TypeChecker options. See [declaration contexts](./monorepo-constraints.md#choose-a-declaration-configuration-context) for configuration and current toolchain limits.
 
 Original reference structure and output state remain separate. Missing outputs do not erase a real reference, and an existing reference does not prove readiness. The producing workflow and final Checker own actual builds, diagnostics and output freshness.
 
@@ -90,7 +90,7 @@ Limina records two execution relationships separately:
 
 | Edge type              | Purpose                                                                           | Written to generated `references`?             |
 | ---------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `declaration-provider` | An upstream project supplies declarations before a downstream build consumes them | Yes; both ends must use the same build checker |
+| `declaration-provider` | An upstream project supplies declarations or their selected configuration context | Yes; both ends must use the same build checker |
 | `framework-schedule`   | Orders checking or building of supported framework targets                        | No; it may cross checker identities            |
 
 For example, when Astro source imports a Vue component and the Astro toolchain confirms the target, the relationship can schedule the target's Vue work before the consumer. It does not create a declaration project for the Astro leaf. Astro and Svelte checkers type-check per leaf without generating declarations. TypeScript code that needs independent declaration output should be split into a build-capable source config.
@@ -99,7 +99,7 @@ Pure framework-scheduling cycles can be handled as one scheduling component. Dec
 
 ### Why Checker Identity Propagates
 
-Before generated paths and execution targets are created, build-capable configs connected through proved compiler relationships, aggregator membership, or `implicitRefs`, and needing to share declaration caches, form a group. A single known checker identity propagates to the whole group. With no known identity, the ordinary TypeScript default is used. Multiple different identities cause graph preparation to fail. Successful declaration-provider edges record `cacheReuse: "reusable"`.
+Before generated paths and execution targets are created, build-capable configs connected through proved compiler relationships, declaration-context policies, aggregator membership, or `implicitRefs`, and needing to share declaration caches, form a group. A single known checker identity propagates to the whole group. With no known identity, the ordinary TypeScript default is used. Multiple different identities cause graph preparation to fail. Successful declaration-provider edges record `cacheReuse: "reusable"`.
 
 A known identity comes from ownership evidence such as named checker constraints or a confirmed framework. The ordinary TypeScript default is applied only if the whole group still has no known identity. An automatically discovered shared TypeScript leaf connected to a Vue leaf can therefore use `vue-tsc` with it. Explicitly fixing the shared leaf to `tsc` instead creates a conflict when the same group requires both `tsc` and `vue-tsc`.
 
@@ -121,7 +121,7 @@ See [Edges Invisible to Static Import Analysis](./why-import-is-not-references.m
 
 ## Why the Reference Graph Is Not Pruned
 
-**The current implementation does not analyze final `.d.ts` output to remove references.** The generated graph uses validated source compiler relationships and explicit `implicitRefs`, so it can be wider than the final declaration-file dependency graph.
+**The current implementation does not analyze final `.d.ts` output to remove references.** The generated graph uses validated source compiler relationships, declaration-context policies and explicit `implicitRefs`, so it can be wider than the final declaration-file dependency graph.
 
 For example, this import appears only in a function implementation:
 

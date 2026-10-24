@@ -24,6 +24,7 @@ export function createNativeObservationContext(options: {
     toolchain: options.toolchain,
     hostContract: NATIVE_PROGRAM_ADAPTER,
     config: project.configPath,
+    sourceConfig: project.sourceConfigPath ?? project.configPath,
     roots: nativeFingerprint(project.fileNames),
     options: nativeFingerprint(effectiveCompilerOptions(project.options)),
     rawReferences: nativeFingerprint(project.projectReferences ?? []),

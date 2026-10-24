@@ -159,8 +159,16 @@ const projectsRecord = z.object({
   environment: texts,
   references: z.json(),
 });
+const policyOccurrence = z.object({
+  filePath: text,
+  policy: z.literal('declaration-context'),
+  requestIds: texts,
+});
 const contributionsRecord = z.object({
-  occurrence: occurrenceSchema,
+  occurrence: z.union([occurrenceSchema, policyOccurrence]),
+  basis: z
+    .object({ kind: z.literal('declaration-context'), evidence: text })
+    .optional(),
   sourceVersion: text,
   fromChecker: text,
   toChecker: text,

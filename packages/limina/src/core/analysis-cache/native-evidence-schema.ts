@@ -107,6 +107,7 @@ const partition = z.union([
       'coverage-unavailable',
       'ambiguous-implementation',
       'foreign-implementation',
+      'declaration-context-boundary',
       'same-owner-non-root',
       'unresolved',
       'observation-unavailable',

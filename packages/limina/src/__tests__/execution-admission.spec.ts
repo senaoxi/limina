@@ -13,6 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createCheckerFailureIssues } from '../commands/checker-failure-issues';
 import { loadConfig } from '../config/loader';
+import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { identifier } from '../domain/shared/identifiers';
 import { LiminaPreflightManager } from '../preflight/manager';
 import { ExecutionAdmission } from '../typecheck/admission/execution-admission';
@@ -732,3 +733,54 @@ it.each(['mutation', 'launch'] as const)(
     }
   },
 );
+
+it('revokes declaration owner checking before launching a previously admitted target', async () => {
+  const f = await createSemanticRepairFixture({
+    'package.json': '{"name":"declaration-admission","private":true}',
+    'limina.config.mjs': 'export default {};',
+    'tsconfig.json':
+      '{"files":[],"references":[{"path":"./tsconfig.a.json"},{"path":"./tsconfig.b.json"}]}',
+    'tsconfig.a.json':
+      '{"compilerOptions":{"module":"ESNext","moduleResolution":"bundler","types":[]},"files":["a.ts"]}',
+    'tsconfig.b.json': '{"compilerOptions":{"types":[]},"files":["b.d.ts"]}',
+    'a.ts': 'import type { B } from "./b"; export type A = B;',
+    'b.d.ts': 'export interface B { value: string }',
+  });
+  const config = withFixtureGovernanceRoot({
+    rootDir: f.root,
+    configPath: f.path('limina.config.mjs'),
+    cache: false,
+    scope: { checkers: { tsc: { include: ['tsconfig.json'] } } },
+  });
+  const preflight = new LiminaPreflightManager({ config });
+  try {
+    const graph = (await preflight.ensureGeneratedArtifactsMaterialized())
+      .graph;
+    const target = createCheckerTarget({
+      checker: graph.checkers[0]!,
+      configPath: graph.sourceToBuild
+        .get('tsc')!
+        .get(f.path('tsconfig.a.json'))!.path,
+      executionKind: 'build',
+      projectRootDir: f.root,
+      sourceConfigPath: f.path('tsconfig.a.json'),
+    });
+    const admission = new ExecutionAdmission(preflight, graph, [target]);
+    let launches = 0;
+    const run = () =>
+      admission.withAuthorizedTarget(target, 'launch', async (permit) => {
+        await admission.assertPermit(permit, target, 'launch');
+        launches++;
+      });
+    expect((await run()).state).toBe('executed');
+    await writeFile(
+      f.path('tsconfig.b.json'),
+      '{"compilerOptions":{"types":[],"skipLibCheck":true},"files":["b.d.ts"]}',
+    );
+    await expect(run()).rejects.toBeInstanceOf(AnalysisInputDriftError);
+    expect(launches).toBe(1);
+  } finally {
+    preflight.dispose();
+    await f.cleanup();
+  }
+});

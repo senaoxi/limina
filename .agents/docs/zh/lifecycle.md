@@ -272,3 +272,9 @@ Finding producer 保留 typed semantic facts，issue projector 按域组成稳�
 ## 统一依赖观察的覆盖要求
 
 Resolution、preparation、显式 TypeEvidence、依赖观察及支持输入枚举具有独立查询覆盖；恢复一种查询不能满足另一种查询。Native 捕获完整性时不会在 dispose 为填满缓存强制补查证据。完整依赖快照包含合法非 Root 贡献，以及 requirement 所依赖的输入和查找观察。Vue 增加独立的 dependency-observation、support-inputs 查询；旧版依据路径生成正向证据的记录经适配器身份门禁冷回退。未决关系保留不完整状态，不能伪装完整，也不自动裁为违规。不新增 Astro/Svelte 持久化缓存。Native/Vue 清洁恢复必须保留 requirement、semantic authority 和关系类型，并且不创建 Program。
+
+## 声明上下文 receipt 与撤销
+
+Analysis adapter v20 和 generated-graph identity v5 拒绝旧政策语义。当前配置发现、Coverage、文件身份、显式选择、paths/extends/references 以及 Checker/工具链输入共同决定决策资格。正常 awaiting-selection 停止会替换已完成的贡献事务并撤销旧政策边，不能当成允许保留旧贡献的观察失败。
+
+恢复依据当前选择及已取得资格的源码观察重建政策引用，然后重新执行最终 bounded 候选验证；该 pass 暂不参加 Native context 持久复用。因此 Native 事实的 clean 恢复不意味着声明治理总计零 Program。候选 receipt 绑定实际声明/output 配置与委派请求；执行阶段在 mutation 和 launch 前复核选定引用闭包与合格原生构建命令，不持久化 permit。Owner 的跳过检查选项变化后不能继续使用旧 receipt。增量 Checker 成功不描述为本轮重新检查声明。

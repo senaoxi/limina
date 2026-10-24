@@ -1,6 +1,9 @@
 import { assessCompilationPrerequisites } from '../../core/build-graph/analysis-admission';
 import { bindExecutionCompilationProjection } from '../../core/build-graph/compilation-prerequisite';
+import { assessDeclarationContexts } from '../../core/build-graph/declaration-context-admission';
 import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
+import type { TypecheckTarget } from '../target-types';
+import { declarationExecutionGaps } from './declaration-contexts';
 import type { ExecutionReferenceClosure } from './reference-closure';
 import type { ExecutionAdmissionDiagnostic } from './types';
 
@@ -10,6 +13,7 @@ Reassess the selected invocation against live-qualified facts and actual referen
 export function executionCompilationDiagnostics(
   graph: GeneratedTsconfigGraphResult,
   closure: ExecutionReferenceClosure,
+  target?: TypecheckTarget,
 ):
   | {
       decision: 'denied' | 'unavailable';
@@ -43,6 +47,16 @@ export function executionCompilationDiagnostics(
     analysis,
     candidate,
     closure.configs,
+  );
+  const declarations = assessDeclarationContexts(
+    analysis,
+    candidate,
+    closure.configs,
+  );
+  result.denied.push(...declarations.denied);
+  result.unknown.push(
+    ...declarations.unknown,
+    ...declarationExecutionGaps(graph, closure, target),
   );
   return compilationRefusal(result);
 }

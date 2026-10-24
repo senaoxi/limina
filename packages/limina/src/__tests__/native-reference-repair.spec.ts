@@ -55,7 +55,7 @@ function context(
 
 describe('native reference repair independent Program evidence', () => {
   it.each(['relative', 'extends', 'included'])(
-    'retains explicit type environment contributions without promoting roots: %s',
+    'keeps explicit type requests while only local declaration roots contribute: %s',
     async (variant) => {
       const f = await fixture({
         'package.json': '{"type":"module"}',
@@ -91,6 +91,18 @@ describe('native reference repair independent Program evidence', () => {
         'provider/tsconfig.json',
       ]);
       try {
+        if (variant !== 'included') {
+          expect(bounded.getImportRecords(f.path('env.d.ts'))).toEqual([]);
+          expect(bounded.hasSourceFile(f.path('env.d.ts'))).toBe(false);
+          expect(bounded.nativeEvidence?.requests).toContainEqual(
+            expect.objectContaining({
+              channel: 'type-directive',
+              specifier: './env',
+            }),
+          );
+          expect(bounded.program.getRootFileNames()).toEqual(parsed.fileNames);
+          return;
+        }
         expect(bounded.getImportRecords(f.path('env.d.ts'))).toHaveLength(1);
         const fact = bounded.getDependencyFact(
           bounded.getImportRecords(f.path('env.d.ts'))[0]!,
@@ -300,7 +312,7 @@ describe('native reference repair independent Program evidence', () => {
   );
 
   it.each([false, true, 'workspace'] as const)(
-    'requires explicit Coverage for external declaration closure with lexical aliases: %s',
+    'retains lexical aliases while stopping external declaration closure: %s',
     async (preserveSymlinks) => {
       const f = await fixture({
         'package.json': '{"type":"module"}',
@@ -343,7 +355,7 @@ describe('native reference repair independent Program evidence', () => {
         expect(bounded.getImportRecords(f.path('main.ts'))).toHaveLength(2);
         expect(
           bounded.getSourceFile(f.path('external/inner.d.ts')) !== undefined,
-        ).toBe(preserveSymlinks === 'workspace');
+        ).toBe(false);
         const full = ts.createProgram({
           rootNames: parsed.fileNames,
           options: parsed.options,

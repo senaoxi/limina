@@ -7,6 +7,10 @@ import type {
 import type { ResolvedCheckerConfig } from '#config/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import type ts from 'typescript';
+import type {
+  DeclarationContextDecision,
+  DeclarationContextReceipt,
+} from '../../domain/analysis/declaration-context';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import type { ArtifactChange, ArtifactPlan } from '../../domain/artifacts/plan';
@@ -255,6 +259,12 @@ export interface SemanticSourceRelation {
 }
 
 export interface DependencyAnalysisResult {
+  declarationContexts?: DeclarationContextDecision[];
+  declarationValidation?: {
+    state: 'admitted' | 'denied' | 'unavailable';
+    diagnostics: string[];
+    receipts: DeclarationContextReceipt[];
+  };
   candidate?: CandidateBuildPlan;
   outcome?: AnalysisOutcome;
   nativeEvidence?: NativeAnalysisEvidence[];

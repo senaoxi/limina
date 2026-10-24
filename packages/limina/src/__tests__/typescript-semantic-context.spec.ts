@@ -194,7 +194,7 @@ describe('bounded TypeScript semantic context', () => {
     }
   });
 
-  it('admits transitive external declarations only through explicitly selected Source Config Coverage', async () => {
+  it('stops external declarations despite complete Coverage and retains their incoming target', async () => {
     const rootDirectory = await createFixture({
       'node_modules/pkg/index.d.ts': "export * from './internal';\n",
       'node_modules/pkg/internal.d.ts':
@@ -231,7 +231,15 @@ describe('bounded TypeScript semantic context', () => {
     });
 
     try {
-      expect(context.program.getSourceFile(internalFile)).toBeDefined();
+      expect(context.program.getSourceFile(internalFile)).toBeUndefined();
+      expect(
+        context.resolveImportRecord(findRecord(context, sourceFile, 'static'))
+          .target?.resolvedFileName,
+      ).toBe(
+        normalizeAbsolutePath(
+          path.join(rootDirectory, 'node_modules/pkg/index.d.ts'),
+        ),
+      );
     } finally {
       context.dispose();
     }
@@ -303,7 +311,7 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it.each([false, true])(
-    'preserves explicitly covered external declarations across preserveSymlinks=%s',
+    'stops explicitly covered external declarations across preserveSymlinks=%s',
     async (preserveSymlinks) => {
       const rootDirectory = await createFixture({
         'external/pkg/index.d.ts': 'export declare const value: true;\n',
@@ -338,7 +346,7 @@ describe('bounded TypeScript semantic context', () => {
         expect(target?.isExternalLibraryImport).toBe(true);
         expect(
           context.program.getSourceFile(target!.resolvedFileName),
-        ).toBeDefined();
+        ).toBeUndefined();
       } finally {
         context.dispose();
       }
@@ -612,15 +620,15 @@ describe('bounded TypeScript semantic context', () => {
       );
       expect(
         context.program.getSourceFile(pathResolution.target!.resolvedFileName),
-      ).toBeDefined();
+      ).toBeUndefined();
       expect(
         context.program.getSourceFile(typesResolution.target!.resolvedFileName),
-      ).toBeDefined();
+      ).toBeUndefined();
       expect(
         context.program.getSourceFile(
           path.join(rootDirectory, 'types/configured/index.d.ts'),
         ),
-      ).toBeDefined();
+      ).toBeUndefined();
       expect(
         context.nativeEvidence?.requests.filter(
           (request) => request.channel === 'module',

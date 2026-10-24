@@ -6,6 +6,7 @@ import { captureGeneratedGraph } from './analysis-cache';
 import { finishAnalysisOutcome } from './analysis-outcome';
 import { assertGeneratedGraphAdmission } from './candidate-build-plan';
 import { coreCollectionRun } from './core-collection-run';
+import { validateStagedDeclarationContexts } from './declaration-context-candidate';
 import { finalizeGeneratedGraph } from './finalize-generated-graph';
 import { prepareGeneratedKnipPackageConfigs } from './generated-knip';
 import { hasBoundGeneratedReferences } from './generated-reference-binding';
@@ -51,6 +52,7 @@ export async function finishPreparedGraph(input: {
     state,
   });
   observeOutputProjections(state, projectDependencyCaches);
+  validateStagedDeclarationContexts(state);
   const run = coreCollectionRun(projectDependencyCaches);
   if (run.transaction !== 'failed') run.transaction = 'completed';
   finishAnalysisOutcome(

@@ -334,7 +334,7 @@ For example:
 }
 ```
 
-If the importer resolves to `packages/b/dist/index.d.ts` under the current TypeScript configuration, this is existing declaration-file consumption. It does not need a TypeScript project reference to constrain the source declaration build of `packages/b`.
+If the importer resolves to an existing `packages/b/dist/index.d.ts` artifact outside managed source Coverage, that path does not identify the source producer or create a source reference. A declaration covered as a managed source input instead follows the [declaration-context policy](./monorepo-constraints.md#choose-a-declaration-configuration-context), including pure hand-written declarations.
 
 This approach fits scenarios where the declaration files of `packages/b` are maintained by a bundler, a declaration bundler, or hand-written declarations. It is not meant to hide a real source dependency that should be expressed through a source project reference.
 
@@ -346,16 +346,16 @@ When inferring a reference from an import, unresolved checker targets or ambiguo
 
 Common cases and their implications include:
 
-| Symptom                                                          | What it more likely indicates                                                         |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| TypeScript cannot resolve the import                             | The type entry, path alias, or tsconfig resolution configuration needs to be fixed    |
-| Consuming checker has no target for an observed workspace import | The checker cannot resolve the workspace entry under its current options              |
-| The import reaches another package’s internal source             | It may be bypassing the public entry                                                  |
-| The import resolves to `.d.ts`                                   | Existing declaration consumption; no reference is inferred back to the source project |
-| A source file is governed by multiple tsconfigs                  | File ownership is unclear                                                             |
-| A real edge is invisible to static imports                       | It needs to be declared explicitly through `implicitRefs`                             |
-| A generated reference violates graph rules                       | The source relationship exists, but the architecture rules do not allow it            |
-| Generated references form a cycle                                | Source relationships cross independently ordered declaration build boundaries         |
+| Symptom                                                          | What it more likely indicates                                                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| TypeScript cannot resolve the import                             | The type entry, path alias, or tsconfig resolution configuration needs to be fixed                             |
+| Consuming checker has no target for an observed workspace import | The checker cannot resolve the workspace entry under its current options                                       |
+| The import reaches another package’s internal source             | It may be bypassing the public entry                                                                           |
+| The import resolves to `.d.ts`                                   | Managed source declarations select a context; artifact paths do not identify a source producer                 |
+| A source file is governed by multiple tsconfigs                  | Implementation ownership needs resolution; shared declaration Coverage is legal and requires a consumer choice |
+| A real edge is invisible to static imports                       | It needs to be declared explicitly through `implicitRefs`                                                      |
+| A generated reference violates graph rules                       | The source relationship exists, but the architecture rules do not allow it                                     |
+| Generated references form a cycle                                | Source relationships cross independently ordered declaration build boundaries                                  |
 
 A generated declaration reference needs valid source ownership and permission under graph rules. Generated `references` affect TypeScript build order, incremental caches, and upstream declaration consumption, so their evidence and boundaries need to be checked.
 

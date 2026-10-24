@@ -240,22 +240,16 @@ describe('path selection survives physical truncation', () => {
           adapter.snapshot.resolutions.find((r) => r.requestId === request.id)
             ?.target?.lexicalPath,
         ).toBe(target);
-        const isGhostExpected =
-          isIndependent ||
-          [
-            'independent-root',
-            'redirect-unavailable',
-            'missing-high',
-            'redirect-missing',
-          ].includes(mode);
+        const isGhostExpected = [
+          'independent-root',
+          'redirect-unavailable',
+        ].includes(mode);
         const expectedSources = [
           ...new Set([
             ...roots.filter(
               (name) => mode !== 'root-uncovered' || name !== 'b.d.ts',
             ),
             ...(isGhostExpected ? ['b.d.ts'] : []),
-            ...(mode === 'external-chain' ? ['helper.d.ts'] : []),
-            ...(mode === 'redirect-covered' ? ['out/b.d.ts'] : []),
           ]),
         ]
           .map((name) => fixture.path(name))
@@ -312,16 +306,12 @@ describe('path selection survives physical truncation', () => {
           expect(oracle.isSourceFileFromExternalLibrary(declaration)).toBe(
             true,
           );
-          expect(
-            adapter.snapshot.obligations.find((obligation) =>
-              obligation.requestIds.includes(ghost!.id),
-            )!.existence.state,
-          ).toBe('unknown');
-          assertPathAdmission(adapter.snapshot, project.configPath, 'denied');
-          assertPathAdmission(
-            adapter.snapshot,
-            fixture.path('tsconfig.ghost.json'),
-            'admitted',
+          expect(ghost).toBeUndefined();
+          expect(adapter.snapshot.completeness).toContainEqual(
+            expect.objectContaining({
+              state: 'proven-stop',
+              stopReason: 'declaration-context-boundary',
+            }),
           );
         }
         if (mode === 'redirect-unavailable') {

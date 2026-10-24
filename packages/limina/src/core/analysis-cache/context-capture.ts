@@ -90,6 +90,7 @@ export function createContextRecord(
       }),
       admissionMode: project.admissionMode,
       analysisBinding: project.analysisBinding,
+      sourceConfigPath: project.sourceConfigPath,
     },
     environment,
     dependencies: dependencies.values().toArray(),

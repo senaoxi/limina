@@ -31,6 +31,19 @@
       "description": "Limina-specific options for this TypeScript project.",
       "additionalProperties": true,
       "properties": {
+        "declarationContexts": {
+          "type": "array",
+          "description": "Select the covering source tsconfig for an externally consumed managed declaration. Paths are relative to this source tsconfig; globs are not supported.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "config"],
+            "properties": {
+              "file": { "$ref": "#/definitions/nonEmptyString" },
+              "config": { "$ref": "#/definitions/nonEmptyString" }
+            }
+          }
+        },
         "implicitRefs": {
           "type": "array",
           "description": "Additional source tsconfig references that Limina should map into the generated declaration graph when static import analysis cannot prove an edge.",

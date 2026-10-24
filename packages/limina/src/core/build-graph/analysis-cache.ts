@@ -15,6 +15,7 @@ import { storeGraphContexts } from './analysis-cache-vue';
 import { removeStaleGeneratedFiles } from './artifact-ledger';
 import { writeGeneratedContent } from './artifact-writer';
 import { bindCachedGraph } from './cached-graph-binding';
+import { hasValidRestoredDeclarationContexts } from './declaration-context-candidate';
 import { hasBoundGeneratedReferences } from './generated-reference-binding';
 import { readMaterializationStateSnapshot } from './materialization-state';
 import { hasBoundNativeGraph } from './native-cache-binding';
@@ -27,7 +28,7 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-const key = 'generated-graph-coverage-bounded-v4';
+const key = 'generated-graph-coverage-bounded-v5';
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
@@ -153,7 +154,9 @@ export async function restoreGeneratedGraph(
     ...options,
     generation: options.preparation.projectConfigCache?.generation,
   });
-  return data === undefined ? undefined : rebindArtifacts(data, options);
+  return data === undefined || !hasValidRestoredDeclarationContexts(data)
+    ? undefined
+    : rebindArtifacts(data, options);
 }
 export async function restoreCachedDependencyAnalysis(
   config: ResolvedLiminaInputs,

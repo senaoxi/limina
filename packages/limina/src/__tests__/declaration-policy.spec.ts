@@ -150,7 +150,7 @@ describe('Coverage-bounded declaration traversal', () => {
       ['local', 'package'].map((route) => ({ covered, route })),
     ),
   )(
-    'expands declarations according to Coverage, with covered=$covered and route=$route',
+    'stops foreign declarations with covered=$covered and route=$route',
     async ({ covered, route }) => {
       const f = await fixture();
       f.write(
@@ -160,16 +160,14 @@ describe('Coverage-bounded declaration traversal', () => {
       const result = collect(f.project({ covered }));
       expect(result.evidence.failures).toEqual([]);
       expect(result.closure.incomplete).toEqual([]);
-      expect(result.members.includes(f.path('b/helper.d.ts'))).toBe(covered);
-      expect(result.closure.links[0]?.expansion).toBe(covered);
+      expect(result.members).not.toContain(f.path('b/helper.d.ts'));
+      expect(result.closure.links[0]?.expansion).toBe(false);
       expect(result.closure.links[0]?.stop).toBe(
-        covered ? undefined : 'uncovered',
+        covered ? 'declaration-context-boundary' : 'uncovered',
       );
       expect(result.members).not.toContain(f.path('c.ts'));
       expect(result.members).not.toContain(f.path('d.ts'));
-      expect(result.targets).toEqual(
-        covered && route === 'local' ? [f.path('c.ts')] : [],
-      );
+      expect(result.targets).toEqual([]);
       if (covered)
         expect(
           result.evidence.coverage.find(
@@ -198,7 +196,7 @@ describe('Coverage-bounded declaration traversal', () => {
       expect(projectNativeDeclarationClosure(context, project, lookup)).toEqual(
         ordinary,
       );
-      expect(ordinary.links[0]?.expansion).toBe(covered);
+      expect(ordinary.links[0]?.expansion).toBe(false);
       context.dispose();
     },
   );
@@ -287,7 +285,8 @@ describe('Coverage-bounded declaration traversal', () => {
       }
       expect(collect(project).closure.links[0]).toMatchObject({
         target: f.path('b/index.d.ts'),
-        expansion: true,
+        expansion: false,
+        stop: 'declaration-context-boundary',
       });
       expect(
         collect(f.project({ covered: false, options: project.options })).closure
@@ -352,11 +351,9 @@ describe('Coverage-bounded declaration traversal', () => {
       const result = collect(project);
       expect(result.closure.incomplete).toEqual([]);
       expect(result.members.includes(f.path('b/helper.d.ts'))).toBe(
-        kind !== 'augmentation',
+        ['root', 'noResolve'].includes(kind),
       );
-      expect(result.targets).toEqual(
-        ['augmentation', 'noResolve'].includes(kind) ? [] : [f.path('c.ts')],
-      );
+      expect(result.targets).toEqual(kind === 'root' ? [f.path('c.ts')] : []);
       expect(
         result.closure.entries
           .filter((entry) => entry.kind === 'root')
@@ -382,11 +379,15 @@ describe('Coverage-bounded declaration traversal', () => {
         files: ['b/index.d.ts', 'b/helper.d.ts', 'b/other.d.ts'],
       }),
     );
-    const result = collect(f.project());
+    const result = collect(
+      f.project({
+        roots: ['a.ts', 'b/index.d.ts', 'b/helper.d.ts', 'b/other.d.ts'],
+      }),
+    );
     expect(result.targets).toEqual([f.path('c.ts')]);
     expect(
       result.closure.links.filter(
-        (link) => link.target === f.path('b/helper.d.ts'),
+        (link) => link.entry === 0 && link.target === f.path('b/helper.d.ts'),
       ),
     ).toHaveLength(2);
     expect(result.members).not.toContain(f.path('d.ts'));
@@ -396,7 +397,7 @@ describe('Coverage-bounded declaration traversal', () => {
     expect(removed.members).toEqual([f.path('a.ts')]);
   });
 
-  it('restores the same evidence and revokes declaration expansion when the selected config is removed', async () => {
+  it('restores the stopped branch and refreshes Coverage when the selected config is removed', async () => {
     const f = await fixture();
     const first = collect(f.project());
     const warm = collect(f.project(), first.cache);

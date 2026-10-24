@@ -400,9 +400,11 @@ describe('bounded compiler context replacement and incremental inputs', () => {
           .some((diagnostic) => diagnostic.code === 6307),
       ).toBe(isLoaded && !input.noResolve && !input.skipLibCheck);
       const result = collect(project);
-      expect(result.members.includes(f.file('env.d.ts'))).toBe(isLoaded);
+      expect(result.members.includes(f.file('env.d.ts'))).toBe(
+        input.independent,
+      );
       expect(result.targets.includes(f.file('b.ts'))).toBe(
-        isLoaded && !input.noResolve,
+        input.independent && !input.noResolve,
       );
       expect(
         result.records.filter((record) => record.filePath === f.file('a.js')),
@@ -460,7 +462,7 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     expect(cache.metrics.semanticPrograms).toBe(2);
   });
 
-  it('recollects duplicate occurrence locations and prunes the last reachable declaration cycle', () => {
+  it('recollects incoming occurrences without loading an external declaration cycle', () => {
     const f = fixture();
     f.write('a.ts', 'import "./env"; export {};');
     f.write('second.ts', 'import "./env"; export {};');
@@ -482,7 +484,10 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     ]);
     f.write('a.ts', 'export {};');
     result = collect(project, result.cache);
-    expect(result.members).toContain(f.file('cycle.d.ts'));
+    expect(result.members).not.toContain(f.file('cycle.d.ts'));
+    expect(
+      result.records.some((record) => record.filePath === f.file('second.ts')),
+    ).toBe(true);
     f.write('second.ts', 'export {};');
     result = collect(project, result.cache);
     expect(result.members).not.toContain(f.file('cycle.d.ts'));
@@ -519,7 +524,10 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     );
     f.write('nested.d.ts', 'import "./b"; export {};');
     f.write('b.ts', 'export {};');
-    const project = f.project(['a.ts'], { allowJs: true, checkJs: true });
+    const project = f.project(['a.ts', 'env.d.ts'], {
+      allowJs: true,
+      checkJs: true,
+    });
     let result = collect(project);
     expect(result.targets).toEqual([f.file('helper.js')]);
     expect(result.members).not.toContain(f.file('nested.d.ts'));
@@ -559,7 +567,9 @@ describe('bounded compiler context replacement and incremental inputs', () => {
       );
       f.write('node_modules/choice/esm.d.ts', 'export interface Value {}');
       f.write('node_modules/choice/cjs.d.ts', 'export interface Value {}');
-      const result = collect(f.project(['a.ts']));
+      const result = collect(
+        f.project(['a.ts', 'node_modules/pkg/index.d.ts']),
+      );
       const request = result.records.findIndex(
         (record) => record.specifier === 'choice',
       );

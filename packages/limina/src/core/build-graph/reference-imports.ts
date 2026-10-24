@@ -6,6 +6,8 @@ import {
   createSourceProjectSemanticContext,
 } from '../project-dependencies/runner';
 import { retainDependencyFailure } from './analysis-failure';
+import { collectDeclarationContextDecisions } from './declaration-context-decisions';
+import { addDeclarationContextReferences } from './declaration-context-references';
 import { retainNativeAnalysis } from './native-analysis-evidence';
 import { recordNativeGovernanceProblems } from './native-governance';
 import type {
@@ -53,8 +55,31 @@ function addProjectDependencyFailures(options: {
   retainNativeAnalysis(options.context.analysis, collection.nativeEvidence);
   recordCollectionGovernance(options, collection.dependencies);
   addDependencyCollectionFailures(options.context, collection.failures);
-  const collect = () =>
+  const declaration = collectDeclarationContextDecisions({
+    config: options.context.config,
+    project: options.project,
+    snapshot: collection.nativeEvidence,
+    unsupportedDependencies:
+      options.project.semanticAuthority.family === 'typescript'
+        ? undefined
+        : collection.dependencies,
+    coverageIndex: options.context.projectDependencyCaches.sourceConfigCoverage,
+    isWorkspaceFile:
+      options.context.workspaceSourceBoundary.governance?.isWorkspaceFile,
+  });
+  options.context.problems.push(...declaration.problems);
+  if (options.context.analysis)
+    (options.context.analysis.declarationContexts ??= []).push(
+      ...declaration.decisions,
+    );
+  const collect = () => {
     processReferenceDependencies(options, effectiveReferenceInputs(collection));
+    addDeclarationContextReferences({
+      ...options,
+      decisions: declaration.decisions,
+      snapshot: collection.nativeEvidence,
+    });
+  };
   const cache = options.context.projectDependencyCaches.analysisCache;
   if (cache === undefined) collect();
   else

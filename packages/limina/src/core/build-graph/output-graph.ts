@@ -43,7 +43,7 @@ function formatMissingOutputDependencyProblem(options: {
     `  config: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
     `  referenced config: ${toRelativePath(options.config.rootDir, options.targetProject.configPath)}`,
     '  reason: this output-enabled source project has a Limina-generated project reference to another managed source project that does not declare liminaOptions.outputs.',
-    '  fix: add liminaOptions.outputs to the referenced source config, or move the dependency behind a declaration or artifact boundary.',
+    '  fix: add liminaOptions.outputs to the referenced source config, or move the dependency behind an unmanaged declaration or artifact boundary.',
   ].join('\n');
 }
 

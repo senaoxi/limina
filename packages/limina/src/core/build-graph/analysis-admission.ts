@@ -4,6 +4,7 @@ import { summarizeCompilationObligation } from '../../domain/analysis/native-obl
 import type { AnalysisOutcome } from './analysis-outcome';
 import { compilationRelationFor } from './compilation-prerequisite';
 import { hasProjectedCompilationReference } from './compilation-reference';
+import { assessDeclarationContexts } from './declaration-context-admission';
 import type { DependencyAnalysisResult } from './types';
 
 export interface CandidateBuildPlan {
@@ -56,8 +57,9 @@ function assessCandidate(
     candidate,
     configs,
   );
-  const denied = compilation.denied;
-  unknown.push(...compilation.unknown);
+  const declaration = assessDeclarationContexts(analysis, candidate, configs);
+  const denied = [...compilation.denied, ...declaration.denied];
+  unknown.push(...declaration.unknown, ...compilation.unknown);
   return denied.length > 0
     ? admission('denied', denied)
     : uncertainAdmission(unknown);

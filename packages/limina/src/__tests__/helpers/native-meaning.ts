@@ -68,6 +68,10 @@ export function graphMeaning(graph: { ownershipPlan: unknown }): unknown {
     ...graph,
     ownershipPlan: {
       ...plan,
+      declarationContexts: plan.declarationContexts?.map(
+        ({ contextId: _contextId, requestIds: _requestIds, ...decision }) =>
+          decision,
+      ),
       dependencyFacts: plan.dependencyFacts.map(ownershipFactMeaning),
       ownershipSelectionFacts:
         plan.ownershipSelectionFacts?.map(ownershipFactMeaning),

@@ -282,5 +282,8 @@ export function validateAndCompleteGeneratedGraph(
   options: Parameters<typeof analyzeAndCompleteGeneratedGraph>[0],
 ): void {
   analyzeAndCompleteGeneratedGraph(options);
-  assertGeneratedGraphAdmission(options);
+  assertGeneratedGraphAdmission({
+    ...options,
+    allowPendingDeclarationValidation: true,
+  });
 }

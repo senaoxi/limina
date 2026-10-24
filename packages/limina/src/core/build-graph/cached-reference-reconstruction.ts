@@ -1,10 +1,13 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { projectNativeReferences } from '../../domain/analysis/native-reference-projection';
+import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { StoredGraphData } from './analysis-cache-schema';
 import { projectCompilationPrerequisite } from './compilation-prerequisite';
 import { projectedProvider } from './compilation-reference';
+import { collectDeclarationContextDecisions } from './declaration-context-decisions';
 import { hasBoundGeneratedReferences } from './generated-reference-binding';
 import { readImplicitReferences } from './generated/config-readers';
 import type { GovernedSourceUnit } from './types';
@@ -86,6 +89,7 @@ function hasBoundLeaf(
   );
   const expected = new Set([
     ...implicitTargets(input, source),
+    ...policyTargets(input, source),
     ...native.map((relation) => nativeProvider(input, source, relation)),
   ]);
   return hasSameReferences(source, expected);
@@ -120,9 +124,13 @@ export function hasBoundCachedReferences(
     .toArray();
   try {
     return (
+      hasCurrentDeclarationDecisions(
+        inputForDecisions(graph, config, sources),
+      ) &&
       sources.every((source) =>
         hasBoundLeaf({ graph, config, sources, vueReferences }, source),
-      ) && hasBoundGeneratedReferences(graph, config)
+      ) &&
+      hasBoundGeneratedReferences(graph, config)
     );
   } catch {
     return false;
@@ -134,4 +142,60 @@ function requirePrerequisite(value: unknown): void {
 }
 function nativeEvidence(graph: StoredGraphData) {
   return graph.dependencyAnalysis.nativeEvidence ?? [];
+}
+
+function policyTargets(
+  input: Reconstruction,
+  source: GovernedSourceUnit,
+): string[] {
+  return (input.graph.dependencyAnalysis.declarationContexts ?? []).flatMap(
+    (decision) => {
+      if (
+        decision.consumerConfig !== source.configPath ||
+        decision.selection.state !== 'selected'
+      )
+        return [];
+      const target = input.graph.sourceToDts
+        .get(source.primaryCheckerName)
+        ?.get(decision.selection.config);
+      if (target === undefined)
+        throw new Error('Missing declaration context provider.');
+      return [target];
+    },
+  );
+}
+
+function inputForDecisions(
+  graph: StoredGraphData,
+  config: ResolvedLiminaInputs,
+  sources: readonly GovernedSourceUnit[],
+) {
+  return { graph, config, sources };
+}
+function hasCurrentDeclarationDecisions(
+  input: ReturnType<typeof inputForDecisions>,
+): boolean {
+  const expected = input.sources.flatMap((source) =>
+    nativeEvidence(input.graph).flatMap(({ snapshot }) => {
+      const current = collectDeclarationContextDecisions({
+        config: input.config,
+        project: {
+          configPath: source.configPath,
+          fileNames: source.declarationFileNames,
+        },
+        snapshot,
+      });
+      if (current.problems.length > 0)
+        throw new Error('Invalid declaration context choice.');
+      return current.decisions;
+    }),
+  );
+  const keys = (values: readonly unknown[]) =>
+    [...new Set(values.map(nativeFingerprint))].sort(compareCodeUnits);
+  return (
+    nativeFingerprint(keys(expected)) ===
+    nativeFingerprint(
+      keys(input.graph.dependencyAnalysis.declarationContexts ?? []),
+    )
+  );
 }

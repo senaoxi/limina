@@ -36,14 +36,14 @@
 
 ## I03 — Importer roots、支撑准入与解析相互独立
 
-- **Statement / Applies when**：Native roots、编译器请求、物理加载、Coverage 与治理 owner 是独立事实。非 root 实现记录 Coverage 后停止；每个声明至少具有一个当前已验证的 Coverage 成员才展开。
+- **Statement / Applies when**：Native roots、编译器请求、物理加载、Coverage 与治理 owner 是独立事实。非 root 实现记录 Coverage 后停止；本地声明 roots 具有当前源配置成员资格时展开；外部受管声明在创建 SourceFile 前停止，仅独立候选验证可授予后续加载资格。
 - **Problem**：手工补扫、目录豁免或抹掉真实 types/lib 会制造闭包；把 frontier stop 当失败会丢掉独立入口。
 - **Root cause**：解析、成员归属、加载和义务具有不同证明要求。
 - **Enforcement / Why it works**：[编译器 inventory](../../../packages/limina/src/core/typescript-semantic/native-program-inventory.ts)保留真实请求；[物理 frontier](../../../packages/limina/src/core/typescript-semantic/native-program-frontier.ts)在 SourceFile 创建之前执行 Coverage 决策；无完整 Program 生产回退。
-- **Concrete example**：A→env.d.ts→B.ts→C.ts 仅在 env 有覆盖时继续到 B，A 不扫描 B 的 C。JS shadowed require 按编译器实际观察保留，但不因此宣称其为有效 Node runtime 调用。`noResolve` 的解析命中不证明义务。
+- **Concrete example**：A→env.d.ts 是政策边界。选定的声明项目独立推导自己的 B.ts 义务，A 不扫描或继承该项目的闭包。JS shadowed require 按编译器实际观察保留，但不因此宣称其为有效 Node runtime 调用。`noResolve` 的解析命中不证明义务。
 - **Protected property**：范围内遍历完整、物理截断可解释、独立入口和贡献撤销正确。
 - **Evidence / Strength / Confidence**：[编译器观察](../../../packages/limina/src/__tests__/native-program-observation.spec.ts)、[声明边界](../../../packages/limina/src/__tests__/declaration-policy.spec.ts)、[Native 增量](../../../packages/limina/src/__tests__/native-context-incremental.spec.ts)和[缓存](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)分别保护观察、Coverage、可达性和恢复。
-- **Boundaries**：真实 types/lib/raw references 不删除；stdlib、第三方、Bundler 和 reference 输出不自动豁免。声明多成员可以展开，unavailable 即使有一个正成员仍停止。完整 Program 只用于 Oracle，实际诊断由最终 Checker 给出。
+- **Boundaries**：真实 types/lib/raw references 不删除；stdlib、第三方、Bundler 和 reference 输出不自动豁免。共享声明 roots 是合法独立输入；外部多 Coverage 需要选择，不完整 Coverage 不能证明唯一选择。完整 Program 只用于 Oracle，实际诊断由最终 Checker 给出。
 
 输出投影使用实际生成 options、roots、references 和独立 context，在全部生成配置暂存后观察。它不更改源码 context 的冻结事实；未满足投影能力不能获得成功发布资格。
 
@@ -76,10 +76,10 @@
 
 ## I06 — 声明、调度与 artifact attribution 不互相升级
 
-- **Statement / Applies when**：declaration-provider 可产生 generated TypeScript references；framework-schedule 只表达 source execution dependency；直接物理 declaration target 或真实原始 reference redirect 停止新增 source relation，不通过 TypeEvidence 推断生产者。
+- **Statement / Applies when**：declaration-provider 可产生 generated TypeScript references；framework-schedule 只表达 source execution dependency；生成声明产物与真实原始 reference redirect 保留消费边界。受管源码声明使用独立上下文政策，不通过 TypeEvidence 推断生产者。
 - **Problem**：把所有“依赖”画成一种边，会给 Astro/Svelte 制造不存在的 declaration project，或把已经产出的 `.d.ts` 重新连回 source 形成伪依赖。
 - **Root cause**：类型供给、源码编译需求、执行先后和输出归属需要不同消费者。
-- **Enforcement / Why it works**：[reference-recording](../../../packages/limina/src/core/build-graph/reference-recording.ts) 要求 normalized requirement；[framework inference](../../../packages/limina/src/core/build-graph/framework-reference-inference.ts) 仅接受符合条件的 source implementation；[framework edge](../../../packages/limina/src/core/build-graph/framework-dependency-edge.ts) 拒绝 declaration path。各 edge type 拥有不同字段和投影。
+- **Enforcement / Why it works**：[reference-recording](../../../packages/limina/src/core/build-graph/reference-recording.ts) 要求 normalized compiler/semantic requirement；declaration-context-references 提供单独标记的政策贡献；[framework inference](../../../packages/limina/src/core/build-graph/framework-reference-inference.ts) 仅接受符合条件的 source implementation；[framework edge](../../../packages/limina/src/core/build-graph/framework-dependency-edge.ts) 拒绝 declaration path。各 edge type 拥有不同字段和投影。
 - **Concrete example**：consumer 命中 managed output `.d.ts`，lookup 可解释它来自哪个输出，但不添加 sourceToBuild reference；Astro/Svelte source prerequisite 可以参与 schedule，却不生成 tsconfig references；框架调度由符合资格的实现需求及所属 Checker 能力决定，不由 ambient 类型或 Program membership 单独控制。missing declaration companion 不得 bootstrap Oxc 或提升 consumer checker。没有 checker target 的带 query 框架组件（如 `./Widget.svelte?x`）不得 bootstrap Oxc、给 consumer 染色或产生 edge。
 - **Protected property**：声明关系真实、构建职责分明、artifact 消费不重开源码边界。
 - **Evidence / Strength / Confidence**：[generated graph](../../../packages/limina/src/__tests__/generated-graph.spec.ts)、[dependency graph tests](../../../packages/limina/src/__tests__/dependency-graph.spec.ts)；**Strongly executable / Confirmed**。

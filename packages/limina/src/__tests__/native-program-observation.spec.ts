@@ -297,9 +297,9 @@ describe('compiler-owned Native Program observations', () => {
 
   it.each([
     { discovery: 'closed', owners: 0, expanded: false, state: 'uncovered' },
-    { discovery: 'open', owners: 1, expanded: true, state: 'unavailable' },
-    { discovery: 'closed', owners: 1, expanded: true, state: 'unique' },
-    { discovery: 'open', owners: 2, expanded: true, state: 'ambiguous' },
+    { discovery: 'open', owners: 1, expanded: false, state: 'unavailable' },
+    { discovery: 'closed', owners: 1, expanded: false, state: 'unique' },
+    { discovery: 'open', owners: 2, expanded: false, state: 'ambiguous' },
   ] as const)(
     'enforces the physical declaration frontier: $state',
     async ({ discovery, owners, expanded, state }) => {
@@ -508,7 +508,7 @@ describe('compiler-owned Native Program observations', () => {
     expect(attempt?.coverage.state).toBe('unavailable');
     expect(
       adapter.program.getSourceFile(fixture.path('env.d.ts')),
-    ).toBeDefined();
+    ).toBeUndefined();
   });
 
   it('rejects stale context inputs instead of relabeling observations', async () => {
@@ -1087,7 +1087,7 @@ describe('request-local compilation proofs and reference observations', () => {
     async ({ extension, noResolve }) => {
       const { adapter, fixture } = await setup(
         {
-          'tsconfig.json': config(['main.ts'], {
+          'tsconfig.json': config(['main.ts', 'types.d.ts'], {
             compilerOptions: {
               ...compilerOptions,
               noLib: true,

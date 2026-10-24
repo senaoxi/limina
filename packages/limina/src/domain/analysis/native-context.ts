@@ -11,6 +11,7 @@ export interface NativeContextInputs {
   readonly toolchain: string;
   readonly hostContract: string;
   readonly config: string;
+  readonly sourceConfig?: string;
   readonly roots: string;
   readonly options: string;
   readonly rawReferences: string;

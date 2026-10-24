@@ -11,7 +11,16 @@ import {
 } from './helpers';
 
 describe('packed Native compiler compatibility', () => {
-  it.each(['5.4.2', '5.5.2', '5.6.2', '5.7.2', '5.8.2', '5.9.2', '6.0.2'])(
+  it.each([
+    '5.4.2',
+    '5.5.2',
+    '5.6.2',
+    '5.7.2',
+    '5.8.2',
+    '5.9.2',
+    '5.9.3',
+    '6.0.2',
+  ])(
     'collects across processes and builds with TypeScript %s',
     async (version) => {
       const packed = await packLiminaDistribution();
@@ -56,6 +65,22 @@ describe('packed Native compiler compatibility', () => {
         });
         expect(invalid.exitCode).not.toBe(0);
         expect(invalid.stdout + invalid.stderr).toContain('TS2322');
+        await writeDeclarationContextFixture(fixture.fixtureDir);
+        const declaration = await runPnpm([...invocation, 'checker', 'build'], {
+          cwd: fixture.fixtureDir,
+          reject: false,
+        });
+        if (version === '5.9.2') {
+          expect(declaration.exitCode).not.toBe(0);
+          expect(declaration.stdout + declaration.stderr).toContain(
+            'cannot qualify declaration input mapping',
+          );
+        } else {
+          expect(
+            declaration.exitCode,
+            declaration.stdout + declaration.stderr,
+          ).toBe(0);
+        }
       } finally {
         await fixture?.cleanup();
         await packed.cleanup();
@@ -63,6 +88,52 @@ describe('packed Native compiler compatibility', () => {
     },
   );
 });
+
+async function writeDeclarationContextFixture(root: string): Promise<void> {
+  await writeFile(
+    path.join(root, 'app/src/peer.ts'),
+    'export const value = 1;\n',
+  );
+  await writeFile(
+    path.join(root, 'app/src/index.ts'),
+    'export {value} from "./bridge";\n',
+  );
+  await writeFile(
+    path.join(root, 'app/src/bridge.d.ts'),
+    'export {value} from "@context";\n',
+  );
+  const options = {
+    module: 'ESNext',
+    moduleResolution: 'bundler',
+    target: 'ES2022',
+    types: [],
+  };
+  await writeFile(
+    path.join(root, 'app/tsconfig.lib.json'),
+    JSON.stringify({
+      compilerOptions: { ...options, paths: { '@context': ['./missing.ts'] } },
+      files: ['src/index.ts'],
+    }),
+  );
+  await writeFile(
+    path.join(root, 'app/tsconfig.bridge.json'),
+    JSON.stringify({
+      compilerOptions: { ...options, paths: { '@context': ['./src/peer.ts'] } },
+      files: ['src/bridge.d.ts'],
+    }),
+  );
+  await writeFile(
+    path.join(root, 'app/tsconfig.json'),
+    JSON.stringify({
+      files: [],
+      references: [
+        './tsconfig.lib.json',
+        './tsconfig.peer.json',
+        './tsconfig.bridge.json',
+      ].map((path) => ({ path })),
+    }),
+  );
+}
 
 async function writeReferenceFixture(root: string): Promise<void> {
   const options = {

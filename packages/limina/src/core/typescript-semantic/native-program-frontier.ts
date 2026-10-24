@@ -10,6 +10,7 @@ import {
   type NativeFrontierDecision,
 } from '../../domain/analysis/native-evidence';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import type { TypeScriptSemanticProject } from './contracts';
 import { NativeIdentityObservations } from './native-identity-observations';
 
 export interface NativeSourceAttempt {
@@ -29,15 +30,18 @@ export class NativeProgramFrontier {
   readonly identities: NativeIdentityObservations;
   readonly configId: string;
   readonly index: SourceConfigCoverageIndex;
+  readonly validation?: TypeScriptSemanticProject['declarationContextValidation'];
 
   constructor(
     configId: string,
     roots: readonly string[],
     index: SourceConfigCoverageIndex,
+    validation?: TypeScriptSemanticProject['declarationContextValidation'],
   ) {
     this.identities = new NativeIdentityObservations(index.inputVersion);
     this.configId = configId;
     this.index = index;
+    this.validation = validation;
     this.#roots = new Set(roots.map(normalizeAbsolutePath));
   }
 
@@ -51,7 +55,7 @@ export class NativeProgramFrontier {
       file,
       coverage,
       decision: decideNativeFrontier({
-        consumerConfigId: this.configId,
+        consumerConfigId: this.validation?.sourceConfig ?? this.configId,
         root: this.#roots.has(file.lexicalPath),
         kind: isDeclarationFile(file.lexicalPath)
           ? 'declaration'
@@ -59,6 +63,12 @@ export class NativeProgramFrontier {
         coverage,
       }),
     };
+    if (
+      this.validation?.allowedDeclarations.includes(path) &&
+      isDeclarationFile(path) &&
+      coverage.members.length > 0
+    )
+      observation.decision = { action: 'expand', basis: 'covered-declaration' };
     this.#observations.set(path, observation);
     return observation;
   }

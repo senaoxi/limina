@@ -150,12 +150,12 @@ If the checker resolves this to an existing `.d.ts` file from `core`, this is de
 
 Resolution results affect references as follows:
 
-| TypeScript type resolution result                     | Limina project-reference handling                                                                          |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `.d.ts` / `.d.mts` / `.d.cts`                         | Treat as declaration-file consumption; do not generate a TypeScript project reference                      |
-| Source code inside the current source leaf config     | Treat as an internal relationship within the current scope; do not generate a TypeScript project reference |
-| Source file governed by another Limina-managed module | May generate a project reference to the target declaration build config                                    |
-| TypeScript cannot resolve it                          | Do not use Oxc to infer a project reference; emit diagnostics or let relevant checks surface the issue     |
+| TypeScript type resolution result                     | Limina project-reference handling                                                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `.d.ts` / `.d.mts` / `.d.cts`                         | Managed source declarations select a configuration context; generated and third-party declarations retain their consumption boundary |
+| Source code inside the current source leaf config     | Treat as an internal relationship within the current scope; do not generate a TypeScript project reference                           |
+| Source file governed by another Limina-managed module | May generate a project reference to the target declaration build config                                                              |
+| TypeScript cannot resolve it                          | Do not use Oxc to infer a project reference; emit diagnostics or let relevant checks surface the issue                               |
 
 If a real declaration-build relationship is invisible to static analysis, such as a connection created by code generation, declare it through `liminaOptions.implicitRefs` with a clear reason.
 
@@ -176,6 +176,28 @@ If a real declaration-build relationship is invisible to static analysis, such a
 ```
 
 `implicitRefs` adds real relationships that static analysis cannot observe to the declaration build graph. Those relationships remain subject to graph rules; `implicitRefs` does not authorize violations.
+
+## Choose a declaration configuration context
+
+An external consumer of a managed `.d.ts`, `.d.mts` or `.d.cts` uses its sole covering source config when Coverage is current and complete. Limina generates a reference even for a pure declaration project. With multiple covering configs, the consumer branch waits for an explicit choice:
+
+```json
+{
+  "liminaOptions": {
+    "declarationContexts": [{ "file": "../shared/api.d.ts", "config": "../types/tsconfig.json" }]
+  }
+}
+```
+
+Both paths are relative to the consuming ordinary source tsconfig. Use an exact declaration file and a currently covering managed source config; globs are unsupported. A project's own declaration roots remain local, including shared roots. This option does not assign a repository-wide owner, and implicitRefs does not select a declaration context.
+
+The selected project analyzes its own declaration dependencies. Limina validates the actual generated reference closure and rejects competing declaration mappings or reference cycles. It cannot resolve conflicts by sorting references. Pending or unavailable consumed contexts block the affected generated candidate and Checker admission; unused shared declarations do not cause global failure.
+
+This capability requires qualified native tsc execution and a TypeScript version that exposes declaration input association. TypeScript 5.9.0–5.9.2 lack that association; use a capable supported version. Other Checkers and command overrides are currently unavailable for this contract. The selected owner must not skip declaration checking with skipLibCheck/noCheck, or skipDefaultLibCheck where applicable. Existing outputs and Checker identity rules still apply.
+
+References can select module-resolution options for a declaration consumed by A; A still uses its own TypeChecker. B's independent checking is a separate responsibility. Incremental builds can reuse a previous check rather than run it again.
+
+Existing framework checking of its own declaration roots remains available; native qualification applies to the new cross-project delegation.
 
 ## Graph Rules Must Apply to Real Imports
 

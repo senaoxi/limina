@@ -1,6 +1,7 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
+import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
@@ -36,6 +37,7 @@ interface FactCollectionOptions {
 }
 
 interface ProjectFacts {
+  declarationContexts?: DeclarationContextDecision[];
   failures?: string[];
   facts: CheckerDependencyFact[];
   problems: string[];
@@ -85,6 +87,8 @@ function collectProjectFacts(options: {
 }
 
 function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
+  const declarationContexts: NonNullable<ProjectFacts['declarationContexts']> =
+    [];
   const failures: string[] = [];
   const facts: CheckerDependencyFact[] = [];
   const problems: string[] = [];
@@ -99,6 +103,7 @@ function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
       caches,
       project,
     });
+    declarationContexts.push(...(collected.declarationContexts ?? []));
     failures.push(...(collected.failures ?? []));
     facts.push(...collected.facts);
     problems.push(...collected.problems);
@@ -110,7 +115,7 @@ function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
       rootDir: options.config.rootDir,
     }),
   );
-  return { facts, problems, failures };
+  return { facts, problems, failures, declarationContexts };
 }
 
 function collectIndependentProjectFacts(
@@ -166,6 +171,9 @@ export async function collectCheckerDependencyFacts(options: {
       workspaceSourceBoundary,
     });
     retainFactPhase(options, collected.facts);
+    if (options.phase === 'locked')
+      options.discovery.plan.declarationContexts =
+        collected.declarationContexts;
     return collected.problems;
   } finally {
     core.dispose();

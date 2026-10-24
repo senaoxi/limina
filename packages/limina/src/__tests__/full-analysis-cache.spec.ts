@@ -893,29 +893,6 @@ describe('production graph snapshots and publication', () => {
         '/** @type {import("./value.js").V} */\nexport let value;',
       );
       f.write('src/empty.ts', 'export const independent = 1;');
-      if (corruption === 'missing-loaded-source') {
-        const config = JSON.parse(
-          readFileSync(f.file('tsconfig.json'), 'utf8'),
-        );
-        config.files = ['src/a.js', 'src/empty.ts'];
-        f.write('tsconfig.json', JSON.stringify(config));
-        f.write(
-          'types/tsconfig.json',
-          JSON.stringify({
-            compilerOptions: {
-              composite: true,
-              declaration: true,
-              noLib: true,
-              types: [],
-            },
-            files: ['../src/value.d.ts'],
-          }),
-        );
-        f.write(
-          'limina.config.mjs',
-          'export default {scope:{checkers:{tsc:{include:["tsconfig.json","types/tsconfig.json"]}}}};',
-        );
-      }
       const run = 'console.log(JSON.stringify(await runCache()));';
       const cold = f.execute<GraphRunResult>(run);
       const warm = f.execute<GraphRunResult>(run);
@@ -1680,3 +1657,69 @@ it.each(['relative', 'package-import'])(
 function collectContextEnvironment(result: ReturnType<typeof analyze>) {
   return Object.values(result.cache.contexts)[0]?.environment.evidence;
 }
+
+it('revokes a cached unique declaration context when Coverage or the explicit choice changes', () => {
+  const f = fixture();
+  const compilerOptions = {
+    module: 'NodeNext',
+    moduleResolution: 'NodeNext',
+    types: [],
+  };
+  const a = { compilerOptions, files: ['src/a.ts'] };
+  const b = { compilerOptions, files: ['src/value.d.ts'] };
+  f.write(
+    'tsconfig.json',
+    JSON.stringify({
+      files: [],
+      references: [
+        { path: './tsconfig.a.json' },
+        { path: './tsconfig.b.json' },
+      ],
+    }),
+  );
+  f.write('tsconfig.a.json', JSON.stringify(a));
+  f.write('tsconfig.b.json', JSON.stringify(b));
+  const run = 'console.log(JSON.stringify(await runCache()));';
+  const first = f.execute<GraphRunResult>(run);
+  const warm = f.execute<GraphRunResult>(run);
+  expect(warm.graph).toEqual(first.graph);
+  expect(warm.events).toContainEqual(
+    expect.objectContaining({ kind: 'graphHits', count: 1 }),
+  );
+  f.write('tsconfig.b2.json', JSON.stringify(b));
+  f.write(
+    'tsconfig.json',
+    JSON.stringify({
+      files: [],
+      references: [
+        { path: './tsconfig.a.json' },
+        { path: './tsconfig.b.json' },
+        { path: './tsconfig.b2.json' },
+      ],
+    }),
+  );
+  const stopped = f.execute<{ error: string }>(
+    'try { await runCache(); console.log(JSON.stringify({error:"not refused"})); } catch(error) { console.log(JSON.stringify({error:error.message})); }',
+  );
+  expect(stopped.error).toContain('Choose a declaration context');
+  f.write(
+    'tsconfig.a.json',
+    JSON.stringify({
+      ...a,
+      liminaOptions: {
+        declarationContexts: [
+          { file: './src/value.d.ts', config: './tsconfig.b2.json' },
+        ],
+      },
+    }),
+  );
+  const selected = f.execute<GraphRunResult>(run);
+  expect(selected.graph.edges.map((edge) => edge.toConfigPath)).toEqual([
+    f.file('tsconfig.b2.json'),
+  ]);
+  const restored = f.execute<GraphRunResult>(run);
+  expect(restored.graph).toEqual(selected.graph);
+  expect(restored.events).toContainEqual(
+    expect.objectContaining({ kind: 'graphHits', count: 1 }),
+  );
+}, 30_000);

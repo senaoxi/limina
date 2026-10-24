@@ -40,6 +40,7 @@ const binding = z.object({
 });
 const options = z.record(text, z.json());
 const project = z.object({
+  sourceConfigPath: text.optional(),
   configPath: text,
   fileNames: texts,
   options,

@@ -46,6 +46,9 @@ export function mergeNativeAnalysis(
   target: DependencyAnalysisResult,
   source: DependencyAnalysisResult,
 ): void {
+  (target.declarationContexts ??= []).push(
+    ...(source.declarationContexts ?? []),
+  );
   target.facts.push(...source.facts);
   target.diagnostics.push(...source.diagnostics);
   target.complete &&= source.complete;

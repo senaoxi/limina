@@ -151,7 +151,7 @@ export class ExecutionAdmission {
       closure,
       refusal:
         this.#govern(closure.governed) ??
-        executionCompilationDiagnostics(this.graph, closure),
+        executionCompilationDiagnostics(this.graph, closure, target),
     };
   }
   async #currentInputs(target: TypecheckTarget, shouldRefresh = false) {

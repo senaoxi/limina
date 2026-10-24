@@ -1,5 +1,6 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
+import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
@@ -17,6 +18,7 @@ import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
+import { collectDeclarationContextDecisions } from './declaration-context-decisions';
 
 function formatProjectDependencyFailure(options: {
   config: ResolvedLiminaInputs;
@@ -76,7 +78,12 @@ export function collectLockedProjectFacts(options: {
     >;
   };
   workspaceSourceBoundary: WorkspaceSourceBoundary;
-}): { facts: CheckerDependencyFact[]; problems: string[]; failures: string[] } {
+}): {
+  facts: CheckerDependencyFact[];
+  problems: string[];
+  failures: string[];
+  declarationContexts: DeclarationContextDecision[];
+} {
   const facts: CheckerDependencyFact[] = [];
   const collection = collectProjectDependencies({
     compilationObligationScope: 'generated-declaration-project-v1',
@@ -105,7 +112,19 @@ export function collectLockedProjectFacts(options: {
     }
     facts.push(createLockedDependencyFact(options.project, dependency));
   }
-  return { facts, problems: [], failures };
+  const declaration = collectDeclarationContextDecisions({
+    config: options.config,
+    project: options.project,
+    snapshot: collection.nativeEvidence,
+    isWorkspaceFile:
+      options.workspaceSourceBoundary.governance?.isWorkspaceFile,
+  });
+  return {
+    facts,
+    problems: declaration.problems,
+    failures,
+    declarationContexts: declaration.decisions,
+  };
 }
 
 function getSupportedEvidenceKind(

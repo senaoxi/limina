@@ -26,7 +26,7 @@ export class ReferenceContributions {
     this.#previous = previous;
   }
 
-  #version(occurrence: ImportRecord): string {
+  #version(occurrence: Pick<ImportRecord, 'filePath'>): string {
     return this.#inputs.observe(occurrence.filePath, 'content').expectedVersion;
   }
 

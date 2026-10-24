@@ -142,6 +142,7 @@ export class NativeAnalysisCache {
       tsModule === ts,
       tsModule.version === '6.0.3',
       this.#physicalProject(project),
+      project.declarationContextValidation === undefined,
       project.analysisBinding !== undefined,
     ].every(Boolean);
     if (!isSupported) {
