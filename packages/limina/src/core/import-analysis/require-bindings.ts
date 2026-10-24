@@ -98,21 +98,21 @@ function getLiteralArgument(
 }
 
 function collectCallRecord(options: {
-  bindings: PreparedRequireBindings;
+  bindings: () => PreparedRequireBindings;
   collection: RequireImportCollectionOptions;
   lineStarts: readonly number[];
   node: ts.CallExpression;
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
 }): CollectedImportRecord | null {
+  const argument = getLiteralArgument(options.node, options.tsModule);
+  if (argument === null) return null;
   const kind = getRequireCallKind({
-    bindings: options.bindings,
+    bindings: options.bindings(),
     node: options.node,
     tsModule: options.tsModule,
   });
-  if (kind === null) return null;
-  const argument = getLiteralArgument(options.node, options.tsModule);
-  return argument === null
+  return kind === null
     ? null
     : createRequireImportRecord(options, argument, kind);
 }
@@ -139,7 +139,7 @@ function createRequireImportRecord(
 }
 
 function collectRequireRecords(options: {
-  bindings: PreparedRequireBindings;
+  bindings: () => PreparedRequireBindings;
   collection: RequireImportCollectionOptions;
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
@@ -179,8 +179,10 @@ export function collectRequireImportsFromSourceFile(
   options: RequireImportCollectionOptions & { sourceFile: ts.SourceFile },
 ): CollectedImportRecord[] {
   const tsModule = options.tsModule ?? ts;
+  let bindings: PreparedRequireBindings | undefined;
   return collectRequireRecords({
-    bindings: prepareRequireBindings(options.sourceFile, tsModule),
+    bindings: () =>
+      (bindings ??= prepareRequireBindings(options.sourceFile, tsModule)),
     collection: options,
     sourceFile: options.sourceFile,
     tsModule,

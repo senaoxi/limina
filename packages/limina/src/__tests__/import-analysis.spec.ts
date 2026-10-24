@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import { collectRequireImportsFromSourceFile } from '../core/import-analysis/require-bindings';
 import {
   collectTypeScriptImports,
   collectTypeScriptSourceFileImports,
@@ -37,6 +38,29 @@ async function writeText(
 }
 
 describe('import analysis', () => {
+  it('does not prepare CommonJS scopes for a declaration tree without candidate calls', () => {
+    const sourceText = Array.from(
+      { length: 128 },
+      (_, index) => `export declare const value${index}: string;`,
+    ).join('\n');
+    const sourceFile = ts.createSourceFile(
+      '/virtual/types.d.ts',
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const forEachChild = vi.fn(ts.forEachChild);
+    const records = collectRequireImportsFromSourceFile({
+      filePath: sourceFile.fileName,
+      sourceFile,
+      sourceText,
+      scriptKind: ts.ScriptKind.TS,
+      tsModule: { ...ts, forEachChild } as typeof ts,
+    });
+    expect(records).toEqual([]);
+    expect(forEachChild.mock.calls.length).toBeLessThan(128 * 10);
+  });
+
   it.each(['ts', 'vue', 'astro', 'svelte'])(
     'reads the supplied mutable %s AST instead of memoizing its original text',
     (suffix) => {

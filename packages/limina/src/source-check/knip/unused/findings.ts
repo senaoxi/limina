@@ -1,7 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { CheckCounter } from '../../../check-reporting/stats';
 import type { WorkspaceDependencyDeclaration } from '../../../core/packages/authority';
-import { createWorkspaceDependencyKey } from '../../../core/packages/dependency-authority';
+import {
+  createWorkspaceDependencyKey as createPackageDependencyIssueKey,
+  createWorkspaceDependencyKey,
+} from '../../../core/packages/dependency-authority';
 import { projectToPackageOwnerPath } from '../../../core/workspace/owner-identity';
 import type { WorkspaceRegionPathIndex } from '../../../core/workspace/validated-context';
 import {
@@ -10,7 +13,6 @@ import {
 } from '../../findings';
 import type { KnipSourceIssues } from '../../knip';
 import type { SourceCheckIssue } from '../../report';
-import { createPackageDependencyIssueKey } from '../dependency-key';
 import { createOwnerSourceFileKey, type OwnerSourceModuleSet } from '../unused';
 import { formatSourceKnipWorkspaceField } from '../workspace-config';
 

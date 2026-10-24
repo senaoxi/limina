@@ -1,7 +1,7 @@
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import type { LiminaFlowTask } from '../flow';
 import { TypecheckLogger } from '../logger';
-import { runBuildTargets } from './build/plan';
+import { runBuildTargets } from './build/target-execution';
 import {
   createRawBuildChecker,
   type ResolvedBuildTarget,

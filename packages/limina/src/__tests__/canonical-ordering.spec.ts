@@ -16,8 +16,11 @@ import type {
   GeneratedTsconfigGraphManifest,
 } from '../core/build-graph/runner';
 import { findTargetProject } from '../core/import-graph/project-lookup';
-import { createNodes, sortEdges } from '../dependency-graph/model';
-import type { DependencyGraphEdge } from '../dependency-graph/types';
+import {
+  createNodes,
+  type DependencyGraphEdge,
+  sortEdges,
+} from '../dependency-graph/model';
 import { createMaterializationRevision } from '../domain/artifacts/plan';
 import {
   compareGovernanceIssues,

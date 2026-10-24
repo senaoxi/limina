@@ -1,3 +1,9 @@
+import {
+  applyEdits,
+  type FormattingOptions,
+  type ModificationOptions,
+  modify,
+} from 'jsonc-parser';
 import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
 import {
   createLiminaTsconfigSchemaPath,
@@ -5,16 +11,94 @@ import {
 } from 'limina/internal/core/tsconfig/actions';
 import { isPlainRecord } from 'limina/internal/utils/values';
 import path from 'pathe';
+import { deleteJsoncProperty } from './jsonc-delete';
 import {
   assertMigrationTextMatchesPlan,
   assertUnambiguousMigrationText,
 } from './jsonc-validation';
-import {
-  applyMigratedTsconfigText,
-  collectMigrationEdits,
-} from './text-transform';
 import type { MigrationWritePlanItem } from './transaction';
 import type { MigrationEffectiveConfig, MigrationTarget } from './types';
+
+function detectEol(content: string): string {
+  return content.includes('\r\n') ? '\r\n' : '\n';
+}
+
+function detectTabSize(indentation: string): number {
+  return indentation.includes('\t') ? 1 : indentation.length;
+}
+
+function detectFormattingOptions(content: string): FormattingOptions {
+  const indentation = /\r?\n([\t ]+)(?=")/u.exec(content)?.[1] ?? '  ';
+  return {
+    eol: detectEol(content),
+    insertSpaces: !indentation.includes('\t'),
+    tabSize: detectTabSize(indentation),
+  };
+}
+
+function applyJsoncModification(options: {
+  content: string;
+  modification?: Pick<ModificationOptions, 'getInsertionIndex'>;
+  path: readonly (number | string)[];
+  value: unknown;
+}): string {
+  if (options.value === undefined) {
+    return deleteJsoncProperty(options.content, options.path);
+  }
+  const edits = modify(options.content, [...options.path], options.value, {
+    formattingOptions: detectFormattingOptions(options.content),
+    ...options.modification,
+  });
+  return applyEdits(options.content, edits);
+}
+
+function collectMigrationEdits(
+  before: JsonObject,
+  after: JsonObject,
+  prefix: string[] = [],
+): { path: string[]; value: unknown }[] {
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])].flatMap(
+    (key) => {
+      const left = before[key];
+      const right = after[key];
+      if (JSON.stringify(left) === JSON.stringify(right)) return [];
+      const path = [...prefix, key];
+      return collectChangedValue(left, right, path);
+    },
+  );
+}
+
+function applyMigratedTsconfigText(options: {
+  configObject: JsonObject;
+  isLiminaSolution: boolean;
+  migratedConfig: JsonObject;
+  originalContent: string;
+}): string {
+  return collectMigrationEdits(
+    options.configObject,
+    options.migratedConfig,
+  ).reduce(
+    (content, edit) =>
+      applyJsoncModification({
+        content,
+        ...edit,
+        ...(edit.path[0] === '$schema' && {
+          modification: { getInsertionIndex: () => 0 },
+        }),
+      }),
+    options.originalContent,
+  );
+}
+
+function collectChangedValue(
+  left: unknown,
+  right: unknown,
+  path: string[],
+): { path: string[]; value: unknown }[] {
+  return isPlainRecord(left) && isPlainRecord(right)
+    ? collectMigrationEdits(left, right, path)
+    : [{ path, value: right }];
+}
 
 export function relativeConfigPath(configPath: string, target: string): string {
   const relative = path.relative(path.dirname(configPath), target) || '.';

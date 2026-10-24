@@ -6,7 +6,11 @@ import type {
 } from '#config/runner';
 import type { DependencyGraphView } from '../dependency-graph/runner';
 import type { SourceIssueReportOptions } from '../source-check/report';
-import type { SourceIssueSelectionFlags } from './types';
+import type {
+  BuildFlags,
+  CheckerFlags,
+  SourceIssueSelectionFlags,
+} from './types';
 
 export {
   assertHumanIssueInventoryLimit,
@@ -16,12 +20,56 @@ export {
   parseIssueInventoryLimit,
   resolveIssueInventoryPresentation,
 } from './issue-inventory';
-export {
-  getBuildWatchFlag,
-  getCheckerWatchFlag,
-  rejectUnknownBuildOptions,
-  rejectUnknownCheckerOptions,
-} from './option-validation';
+const CHECKER_OPTIONS = new Set([
+  '--',
+  'config',
+  'configLoader',
+  'mode',
+  'preset',
+  'w',
+  'watch',
+  'verbose',
+]);
+const BUILD_OPTIONS = new Set([
+  '--',
+  'config',
+  'configLoader',
+  'mode',
+  'preset',
+  'raw',
+  'verbose',
+  'w',
+  'watch',
+]);
+
+function getUnknownOption(
+  flags: object,
+  known: ReadonlySet<string>,
+): string | undefined {
+  return Object.keys(flags).find((option) => !known.has(option));
+}
+
+function rejectUnknownOptions(flags: object, known: ReadonlySet<string>): void {
+  const unknown = getUnknownOption(flags, known);
+  if (unknown === undefined) return;
+  throw new Error(`Unknown option: --${unknown}.`);
+}
+
+export function rejectUnknownCheckerOptions(flags: CheckerFlags): void {
+  rejectUnknownOptions(flags, CHECKER_OPTIONS);
+}
+
+export function rejectUnknownBuildOptions(flags: BuildFlags): void {
+  rejectUnknownOptions(flags, BUILD_OPTIONS);
+}
+
+export function getCheckerWatchFlag(flags: CheckerFlags): boolean | undefined {
+  return flags.watch === undefined ? flags.w : flags.watch;
+}
+
+export function getBuildWatchFlag(flags: BuildFlags): boolean | undefined {
+  return flags.watch === undefined ? flags.w : flags.watch;
+}
 
 const CONFIG_LOADERS = new Set<string>(['native', 'tsx']);
 const PACKAGE_TOOLS = new Set<string>(['all', 'publint', 'attw', 'boundary']);

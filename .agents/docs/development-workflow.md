@@ -10,6 +10,8 @@ Use the pnpm version pinned by [`packageManager`](../../package.json); the [tool
 
 The [root scripts](../../package.json) define build ordering. `pnpm run build:tools` compiles private gates before build tools; `pnpm run build` builds those tools and both products. `test` builds before unit, tooling and integration tests; `smoke` builds before packed-consumer tests. `docs:build` builds both languages at base `/` with local build/commit metadata.
 
+ESLint and release exports from `@limina/gates` load compiled output. After changing shared configuration or rules, rebuild tools from current source before inspecting effective ESLint configuration; product acceptance also requires the subsequent product build. Use the actual root config with representative production, declaration, test and script files. Final configuration inspection proves composition only; direct lint examples and the underlying tool checks complement Limina's own check orchestration and detect stale build output.
+
 ## Constraint discovery before implementation
 
 Machine checks are authoritative for enforceable constraints, but constraints that materially narrow the valid design space must be available before implementation. Before choosing an architecture or implementation path, read the applicable agent instructions and project context and identify constraints that affect ownership, dependency direction, public/internal boundaries, generated-source authority, compatibility, or required workflow.
@@ -24,6 +26,8 @@ Machine checks are authoritative for enforceable constraints, but constraints th
 Inspect Git status before edits and preserve unrelated staged, unstaged and untracked work. Record the intended files' baseline and recheck it before writing so concurrent changes are preserved. Do not hand-edit generated `dist`, `.limina`, declarations or caches. Preserve managed markers and generated content.
 
 Dependency versions belong in the [workspace catalogs](../../pnpm-workspace.yaml); generate lockfiles through pnpm. Before adding or replacing a third-party package, follow [dependency admission](./dependency-admission.md). Do not add reason-field governance exceptions; report the exact issue and alternatives for the user's decision.
+
+Review structure by [responsibility and lifetime](./architecture.md#implementation-cohesion-and-boundaries), not a file-count or line-count target. Before merging or moving implementation, trace static/type/dynamic imports, package mappings, build and process entries, resource-relative paths, test discovery and documentation consumers. Preserve runtime initialization, module state, error/Promise identity and owned-versus-borrowed cleanup. Keep independent capability boundaries even when their files are small; remove forwarding layers only when they add no contract. Behavior-preserving moves do not justify changing failure states, permissions, cache identity or invalidation.
 
 When changing tests, use [test-audit](../skills/test-audit/SKILL.md). Preserve fixture repository boundaries and deliberately invalid fixture contents; a lint or formatting fix must not erase the condition a fixture exercises.
 

@@ -12,13 +12,32 @@ import {
 } from '#utils/values';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
-import type { ImplicitReference } from './config-reader-types';
-import type {
-  ImplicitReferenceContext,
-  ImplicitReferenceEntriesResult,
-  ReferenceTargetValidationOptions,
-  ReferenceTargetValidator,
-} from './implicit-reference-types';
+
+export interface ImplicitReference {
+  path: string;
+  reason: string;
+  targetConfigPath: string;
+}
+
+interface ImplicitReferenceContext {
+  config: ResolvedLiminaInputs;
+  problems: string[];
+  sourceConfigPath: string;
+}
+
+type ImplicitReferenceEntriesResult =
+  | { kind: 'absent' | 'invalid' }
+  | { entries: unknown[]; kind: 'value' };
+
+interface ReferenceTargetValidationOptions {
+  rootDir: string;
+  sourceConfigPath: string;
+  targetConfigPath: string;
+}
+
+type ReferenceTargetValidator = (
+  options: ReferenceTargetValidationOptions,
+) => string | null;
 
 function getValueDetail(options: { value?: unknown }): string[] {
   return Object.hasOwn(options, 'value')

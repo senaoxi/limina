@@ -70,7 +70,7 @@ async function runMigrationAction(flags: MigrationFlags): Promise<void> {
     import('limina/internal/cli/flow'),
     import('limina/internal/cli/parse'),
   ]);
-  const { runMigration } = await import('./migration');
+  const { runMigration } = await import('./migration/command');
   const { discoverMigrationScope, confirmMigrationScope, loadMigrationScope } =
     await import('./migration/scope');
   clearCliScreen();

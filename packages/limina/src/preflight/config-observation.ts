@@ -9,14 +9,36 @@ import { assertConfigRequestBindings } from '../config/load-evidence';
 import type { ConfigModuleSnapshot } from '../core/analysis-cache/contracts';
 import { pathBinding } from '../core/analysis-cache/directory-fingerprint';
 import { analysisHash } from '../core/analysis-cache/identity';
+import { CliLogger } from '../logger';
 import {
   assertGovernanceBinding,
   configInputs,
   readConfigInput,
 } from './analysis-cache-identity';
-import { warnConfigModuleCoverage } from './config-module-diagnostics';
 import { configModuleEvidence } from './config-module-evidence';
 import { captureConfigModuleSnapshot } from './config-module-snapshot';
+
+function warn(
+  evidence: ConfigModuleEvidence,
+  key: string,
+  message: string,
+): void {
+  if (evidence.warned.has(key)) return;
+  evidence.warned.add(key);
+  CliLogger.warn(message);
+  evidence.metrics.warnings = (evidence.metrics.warnings ?? 0) + 1;
+}
+function warnConfigModuleCoverage(
+  evidence: ConfigModuleEvidence,
+  snapshot: ConfigModuleSnapshot,
+): void {
+  for (const reason of snapshot.otherUnknownReasons)
+    warn(
+      evidence,
+      reason,
+      `Configuration module coverage is incomplete (${reason}). Checking continues with a cold analysis cache.`,
+    );
+}
 
 /**
 Invocation validity is independent of persistent cache read/write policy.

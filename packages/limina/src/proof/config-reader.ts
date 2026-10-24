@@ -13,10 +13,10 @@ import {
 } from '#core/tsconfig/actions';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { isPlainRecord } from '#utils/values';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 import type ts from 'typescript';
-import { isPlainRecord } from './config-values';
 
 export interface ParsedProofConfig {
   fileNames: string[];

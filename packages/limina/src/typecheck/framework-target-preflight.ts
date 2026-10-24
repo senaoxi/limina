@@ -7,12 +7,24 @@ import type {
 } from '#checkers';
 import { normalizeSlashes, toRelativePath } from '#utils/path';
 import path from 'pathe';
+import { resolveLeafInstalledPackageDirectory } from '../core/packages/leaf-package-resolution';
 import {
   findUnsupportedExternalCheckers,
   type UnsupportedExternalChecker,
 } from './framework-external-checker-compatibility';
-import { resolveFrameworkPackageFromRoot } from './framework-package-resolution';
 import type { TypecheckTarget } from './target-types';
+
+function resolveFrameworkPackageFromRoot(options: {
+  packageName: string;
+  projectRootDir: string;
+}): string | undefined {
+  return (
+    resolveLeafInstalledPackageDirectory({
+      packageName: options.packageName,
+      packageRootDir: options.projectRootDir,
+    }) ?? undefined
+  );
+}
 
 type FrameworkFamily = NonNullable<TypecheckTarget['checkerFamily']>;
 

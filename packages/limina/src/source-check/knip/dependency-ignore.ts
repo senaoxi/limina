@@ -15,7 +15,7 @@ import {
 import type { SourceKnipWorkspaceConfigRecord } from './routing';
 import { addKnipConfigFinding } from './unused/finding';
 
-export { createPackageDependencyIssueKey } from './dependency-key';
+export { createWorkspaceDependencyKey as createPackageDependencyIssueKey } from '../../core/packages/dependency-authority';
 
 function addInvalidIgnore(options: {
   context: DependencyIgnoreContext;
