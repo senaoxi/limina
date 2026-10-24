@@ -11,7 +11,7 @@ import {
   admissionFailureTargets,
   executionFailureKind,
 } from '../admission/reporting';
-import { runBuildTargets } from '../build/plan';
+import { runBuildTargets } from '../build/target-execution';
 import { copySuccessfulBuildTarget } from '../managed-build-copy';
 import {
   collectFailedCheckerTargets,

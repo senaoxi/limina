@@ -51,44 +51,16 @@ export default defineConfig([
     },
   },
   {
-    files: liminaTestFilePatterns,
-    plugins: {
-      '@limina/portable-path': portablePathPlugin,
-    },
-    rules: {
-      ...baseTestFileRules,
-      '@limina/portable-path/portable-path-comparison': 'error',
-      'max-params': 'off',
-      'unicorn/better-regex': 'off',
-    },
-  },
-  {
-    name: 'Limina production readability budgets',
+    name: 'Limina cohesive production modules',
     files: ['packages/limina/src/**/*.ts', 'packages/migrate/src/**/*.ts'],
     ignores: testFilePatterns,
     rules: {
-      complexity: ['error', 3],
-      'max-depth': ['error', 3],
-      'max-lines-per-function': ['error', 100],
-      'max-lines': ['error', 300],
-      'max-params': ['error', 3],
-    },
-  },
-  {
-    name: 'Limina cohesive worker and graph algorithm budgets',
-    files: [
-      'packages/limina/src/execution/pool.ts',
-      'packages/limina/src/utils/strongly-connected-components.ts',
-    ],
-    rules: {
-      complexity: ['error', 8],
-    },
-  },
-  {
-    name: 'Limina cohesive terminal state machine budget',
-    files: ['packages/limina/src/flow/terminal-position.ts'],
-    rules: {
-      complexity: ['error', 20],
+      // Ownership and lifecycle boundaries govern splitting, not numeric size.
+      complexity: 'off',
+      'max-depth': 'off',
+      'max-lines-per-function': 'off',
+      'max-lines': 'off',
+      'max-params': 'off',
     },
   },
   {
@@ -120,6 +92,19 @@ export default defineConfig([
       'unicorn/prefer-single-call': 'off',
       'unicorn/prefer-ternary': 'off',
       'unicorn/switch-case-braces': 'off',
+    },
+  },
+  {
+    // Apply after tooling advice so script tests retain the test policy.
+    files: liminaTestFilePatterns,
+    plugins: {
+      '@limina/portable-path': portablePathPlugin,
+    },
+    rules: {
+      ...baseTestFileRules,
+      '@limina/portable-path/portable-path-comparison': 'error',
+      'max-params': 'off',
+      'unicorn/better-regex': 'off',
     },
   },
   {

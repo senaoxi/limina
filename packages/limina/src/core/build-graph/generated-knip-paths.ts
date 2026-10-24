@@ -9,7 +9,7 @@ import type {
   GeneratedKnipPackageConfig,
   GeneratedKnipPackageDiagnostic,
   PreparedGeneratedKnipPackageConfig,
-} from './generated-knip-types';
+} from './generated-knip';
 
 function isExternalPackageDirectory(relativeDirectory: string): boolean {
   return (

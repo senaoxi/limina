@@ -1,3 +1,4 @@
+import { createAstroSemanticProject } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   mkdir,
@@ -11,12 +12,15 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   resolveAstroSemanticAdapter,
   resolveAstroSemanticToolchain,
 } from '../checker/astro-semantic-toolchain';
 import { isRunSourceCheck } from '../commands/source';
+import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
+import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
+import { AstroSemanticContextManager } from '../core/astro-semantic/context';
 import { LiminaDependencyError } from '../dependency-contract';
 import { LiminaPreflightManager } from '../preflight/manager';
 import type { SourceCheckIssue } from '../source-check/report';
@@ -100,6 +104,153 @@ async function createInstalledToolchainFixture(options: {
     rootDir: rootDirectory,
   };
 }
+
+async function createScriptReadFixture() {
+  const fixture = await createInstalledToolchainFixture({
+    astroInstalledName: 'astro-v7-current',
+    astroVersion: '7.3.2',
+  });
+  const file = createFixturePathResolver(fixture.rootDir);
+  const project = (analysisGeneration: number) =>
+    createAstroSemanticProject({
+      analysisGeneration,
+      configPath: file('tsconfig.json'),
+      packageRootDir: fixture.rootDir,
+      projectFingerprint: 'script-reads',
+      readSnapshot: () => ({
+        checkerExtensions: ['.astro'],
+        compilerOptions: { types: [] },
+        configClosure: [],
+        fileNames: [file('src/Entry.astro')],
+        projectReferences: undefined,
+      }),
+    });
+  return { ...fixture, path: file, project };
+}
+
+describe('Astro context script reads', () => {
+  it('keeps first-read observations eligible for later drift rejection', async () => {
+    const fixture = await createScriptReadFixture();
+    const manager = new AstroSemanticContextManager();
+    try {
+      const file = fixture.path('src/Entry.astro');
+      await writeText(file, '<div>before</div>');
+      const inputs = new EpochInputs();
+      const context = inputs.run(() => manager.acquire(fixture.project(1)));
+      const uri = context.asUri(file);
+      const first = inputs.run(() => context.language.scripts.get(uri));
+      const snapshot = first?.snapshot;
+      expect(snapshot).toBeDefined();
+      await writeText(file, '<div>changed</div>');
+      expect(context.language.scripts.get(uri)?.snapshot).toBe(snapshot);
+      await expect(inputs.assertStable()).rejects.toThrow(
+        AnalysisInputDriftError,
+      );
+    } finally {
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('reuses successful text including empty scripts while keeping generated Astro scripts', async () => {
+    const fixture = await createScriptReadFixture();
+    const manager = new AstroSemanticContextManager();
+    try {
+      const files = {
+        'Entry.astro': '---\nconst value = 1;\n---\n<div>{value}</div>',
+        'value.ts': 'export const value = 1;',
+        'empty.ts': '',
+      };
+      for (const [name, text] of Object.entries(files))
+        await writeText(fixture.path('src', name), text);
+      const toolchain = resolveAstroSemanticToolchain(fixture.rootDir);
+      const reader = vi.spyOn(toolchain.tsModule.sys, 'readFile');
+      const context = manager.acquire(fixture.project(1));
+      for (const [name, text] of Object.entries(files)) {
+        const file = fixture.path('src', name);
+        const uri = context.asUri(file);
+        const first = context.language.scripts.get(uri);
+        expect(first?.snapshot.getText(0, text.length)).toBe(text);
+        expect(context.language.scripts.get(uri)?.snapshot).toBe(
+          first?.snapshot,
+        );
+        expect(
+          reader.mock.calls.filter(([name]) => name === file),
+        ).toHaveLength(1);
+      }
+      expect(
+        context.getServiceScripts(fixture.path('src/Entry.astro')),
+      ).not.toHaveLength(0);
+      const emptyUri = context.asUri(fixture.path('src/empty.ts'));
+      expect(context.language.scripts.get(emptyUri)?.snapshot.getLength()).toBe(
+        0,
+      );
+    } finally {
+      vi.restoreAllMocks();
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('retries missing and throwing reads instead of caching failed input', async () => {
+    const fixture = await createScriptReadFixture();
+    const manager = new AstroSemanticContextManager();
+    try {
+      const context = manager.acquire(fixture.project(1));
+      const reader = vi.spyOn(context.toolchain.tsModule.sys, 'readFile');
+      const file = fixture.path('src/later.ts');
+      const uri = context.asUri(file);
+      expect(context.language.scripts.get(uri)).toBeUndefined();
+      expect(context.language.scripts.get(uri)).toBeUndefined();
+      expect(reader.mock.calls.filter(([name]) => name === file)).toHaveLength(
+        2,
+      );
+      await writeText(file, 'export const value = 1;');
+      const failure = new Error('read failed');
+      reader.mockImplementationOnce(() => {
+        throw failure;
+      });
+      expect(() => context.language.scripts.get(uri)).toThrow(failure);
+      const source = context.language.scripts.get(uri);
+      expect(source?.snapshot.getText(0, 6)).toBe('export');
+    } finally {
+      vi.restoreAllMocks();
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('reads current text after generation replacement and disposal', async () => {
+    const fixture = await createScriptReadFixture();
+    const manager = new AstroSemanticContextManager();
+    const nextManager = new AstroSemanticContextManager();
+    try {
+      const file = fixture.path('src/Entry.astro');
+      await writeText(file, '<div>before</div>');
+      const first = manager.acquire(fixture.project(1));
+      const old = first.language.scripts.get(first.asUri(file))?.snapshot;
+      expect(old?.getText(0, old.getLength())).toContain('before');
+      await writeText(file, '<div>next generation</div>');
+      const next = manager.acquire(fixture.project(2));
+      expect(() => first.assertActive()).toThrow('disposed');
+      const updated = next.language.scripts.get(next.asUri(file))?.snapshot;
+      expect(updated?.getText(0, updated.getLength())).toContain(
+        'next generation',
+      );
+      manager.dispose();
+      await writeText(file, '<div>next owner</div>');
+      const independent = nextManager.acquire(fixture.project(2));
+      const current = independent.language.scripts.get(
+        independent.asUri(file),
+      )?.snapshot;
+      expect(current?.getText(0, current.getLength())).toContain('next owner');
+    } finally {
+      manager.dispose();
+      nextManager.dispose();
+      await fixture.cleanup();
+    }
+  });
+});
 
 function manifest(options: {
   dependencies?: Record<string, string>;

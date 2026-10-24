@@ -50,7 +50,7 @@ Locked [ProjectSemanticContext](../../../packages/limina/src/core/project-depend
 
 ## 声明入口治理
 
-[声明闭包投影](../../../packages/limina/src/core/typescript-semantic/native-closure-projection.ts)只消费已采集的物理有界事实，保留入口、最后 occurrence、支持关系与正常停止原因。它不重新执行包来源准入策略。相对导入、paths、package imports、公共包入口、托管输出和替换标准库均服从相同 Coverage 规则；解析来源只解释结果，不提供豁免。
+[声明闭包投影](../../../packages/limina/src/core/typescript-semantic/native-closure.ts)只消费已采集的物理有界事实，保留入口、最后 occurrence、支持关系与正常停止原因。它不重新执行包来源准入策略。相对导入、paths、package imports、公共包入口、托管输出和替换标准库均服从相同 Coverage 规则；解析来源只解释结果，不提供豁免。
 
 多成员声明可以继续展开；实现文件必须具有完整唯一性证明，且非 root 实现仍停止。无覆盖不自动产生治理违规。`noResolve` 的真实编译器行为限制加载，不能用解析成功补出编译义务；`skipLibCheck` 不授予输入删除权限。移除最后入口撤销不可达环；独立入口和菱形前驱保留各自来源。[声明回归](../../../packages/limina/src/__tests__/declaration-policy.spec.ts)覆盖包分支、配置入口、循环、别名改绑与独立 Oracle。
 
@@ -89,6 +89,8 @@ Graph Check 通过[独立 workspace Governance 消费者](../../../packages/limi
 TypeEvidence 是独立按需类型证明，不能创造或抹除编译义务；实际 Checker 负责纯类型诊断。完整 specifier（包括 query/fragment）保持身份，Oxc 不能修复 Native miss。Framework 的映射、能力和调度仍由各自适配器负责，不能把 runtime-use 升格为 Native reference。
 
 JSDoc 定位将既有 occurrence 绑定到真实解析 AST 节点，并覆盖所有相邻注释块；TypeScript 公开的 tag ownership helper 会遗漏部分编译器请求。[定位器](../../../packages/limina/src/core/typescript-semantic/source-file-literals.ts)保留精确 UTF-16 范围与节点身份，不发现新请求、不伪造 SourceFile，也不只凭 specifier 解析。框架类型查询将脱离 Program 的候选重新绑定到当前 Program，并要求其 inventory 包含同一个 JSDoc 字面量后才查询 Symbol。元数据缺失、范围不匹配或歧义仍为 scoped unavailable；已定位的编译器 miss 保持 missing，独立观察继续保留。[JSDoc 回归](../../../packages/limina/src/__tests__/jsdoc-semantic-location.spec.ts)覆盖原始 node:test 注解、重复 occurrence、@import、被忽略的文档、noResolve 和物理截断。缓存 adapter 身份使旧观察失效；不改变 roots、编译器选项、references 或发现权威。
+
+框架支持输入展开在一次解析源码批次中定位合格模块 occurrence，匹配 specifier 和精确范围，并拒绝歧义节点。索引只在本次展开内存在；可变 AST 与后续上下文重新读取。CommonJS 收集器在遇到首个字面量调用候选时才建立词法作用域图，仍保留全文件遮蔽、别名和重新赋值检查。这消除了重复 AST 工作，不改变准入、解析或发现权威。[Import 收集测试](../../../packages/limina/src/__tests__/import-analysis.spec.ts)与 [occurrence 回归](../../../packages/limina/src/__tests__/jsdoc-semantic-location.spec.ts)同时保留计算量边界和语义反例。
 
 ## Locked resolution 与 framework preparation
 

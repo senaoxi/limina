@@ -1,13 +1,15 @@
 export {
   assertAuthorityIdentityCurrent,
-  assertLogicalChainSafe,
   assertMutationAuthority,
   authenticateMutationAuthority,
   authorityFingerprint,
   captureTrustedBaseIdentity,
+} from './mutation/authority-base';
+export { assertLogicalChainSafe } from './mutation/authority-chain';
+export {
   createExplicitMutationAuthority,
   createMechanicalExactMutationAuthority,
-} from './mutation-authority';
+} from './mutation/authority-create';
 export {
   MutationBoundaryError,
   type DirectoryMutationIdentity,

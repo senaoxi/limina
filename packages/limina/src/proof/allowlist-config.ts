@@ -2,12 +2,12 @@ import path from 'pathe';
 
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
+import { formatUnknownValue, isPlainRecord } from '#utils/values';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type {
   AllowlistEntry,
   AllowlistEntryCollection,
 } from './allowlist-types';
-import { formatUnknownValue, isPlainRecord } from './config-values';
 import { createProofFinding, type ProofFindingForCode } from './findings';
 
 interface InvalidAllowlistConfigOptions {

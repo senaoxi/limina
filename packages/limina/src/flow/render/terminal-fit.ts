@@ -1,11 +1,21 @@
 import { advanceTerminalPosition } from '../terminal-position';
-import type {
-  FitRenderedLinesOptions,
-  TerminalFitPlan,
-} from './terminal-fit-types';
 import type { FlowTerminalDimensions } from './types';
 
-export type { FitRenderedLinesOptions } from './terminal-fit-types';
+export interface FitRenderedLinesOptions {
+  omittedLines?: boolean;
+}
+
+interface TerminalFitPlan {
+  availableBodyRows: number;
+  bodyLineCount: number;
+  columns: number;
+  ellipsisRows: number;
+  lastLine: string | undefined;
+  lineLimit: number;
+  preserveOutro: boolean;
+  reservedRows: number;
+  showOmissionMarker: boolean;
+}
 const DEFAULT_TERMINAL_COLUMNS = 80;
 const TERMINAL_FRAME_MARGIN_LINES = 1;
 const TERMINAL_FRAME_CONTEXT_LINES = 6;
