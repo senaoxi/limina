@@ -195,7 +195,7 @@ describe('bounded native provider evidence', () => {
     { admitted: false, declaration: false, expected: 'missing' },
     { admitted: true, declaration: false, expected: 'checker-source' },
     { admitted: true, declaration: false, script: true, expected: 'missing' },
-    { admitted: false, declaration: true, expected: 'concrete-declaration' },
+    { admitted: false, declaration: true, expected: 'missing' },
     { admitted: true, declaration: true, expected: 'concrete-declaration' },
     { admitted: true, declaration: true, ambient: true, expected: 'ambient' },
     { admitted: false, declaration: true, ambient: true, expected: 'ambient' },
@@ -212,9 +212,7 @@ describe('bounded native provider evidence', () => {
       expect(fact.resolution.target?.resolvedFileName).toBe(
         fixture.path(target),
       );
-      expect(fact.admission).toBe(
-        options.admitted || options.declaration ? 'admitted' : 'excluded',
-      );
+      expect(fact.admission).toBe(options.admitted ? 'admitted' : 'excluded');
       expect(explicitProviderEvidence(context, record).kind).toBe(
         options.expected,
       );

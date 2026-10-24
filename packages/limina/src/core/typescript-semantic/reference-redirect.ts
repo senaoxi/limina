@@ -90,10 +90,12 @@ function isReferenceNegativeQualified(
   );
 }
 function isUnmappedDeclaration(target: string, compiler: typeof ts): boolean {
-  // 5.9 intentionally omits declaration inputs from its source map; 6.0
+  // 5.9.0–5.9.2 omit declaration inputs from the source map; 5.9.3 and 6.0
   // records membership without outputDts. A completed lookup is not always
   // qualified to prove that a target's reference is missing.
-  return /^5\.9\./.test(compiler.version) && isDeclarationFile(target);
+  return (
+    /^5\.9\.[012](?:$|-)/.test(compiler.version) && isDeclarationFile(target)
+  );
 }
 function isJavaScriptReference(target: string, compiler: typeof ts): boolean {
   // Legacy project membership is qualified by the compiler's declaration/JSON

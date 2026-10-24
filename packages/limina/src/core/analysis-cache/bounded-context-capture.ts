@@ -73,6 +73,7 @@ function captureQualifiedBoundedContext(
       fileNames: [...input.project.fileNames],
       projectReferences: input.project.projectReferences,
       analysisBinding: input.project.analysisBinding,
+      sourceConfigPath: input.project.sourceConfigPath,
       admissionMode: 'coverage-bounded',
       compilationObligationScope: input.project.compilationObligationScope,
     },

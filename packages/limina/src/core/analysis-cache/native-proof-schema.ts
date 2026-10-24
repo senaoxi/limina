@@ -30,6 +30,7 @@ export const nativeContextProofSchema: z.ZodType<NativeEvidenceContext> =
       toolchain: text,
       hostContract: text,
       config: text,
+      sourceConfig: text.optional(),
       roots: text,
       options: text,
       rawReferences: text,

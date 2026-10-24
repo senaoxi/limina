@@ -2,6 +2,7 @@ import type { ResolvedLiminaInputs } from '#config/runner';
 import type { CandidateBuildPlan } from './analysis-admission';
 import { CandidateAdmissionUnavailable } from './analysis-admission';
 import { bindCompilationProjection } from './compilation-prerequisite';
+import { pendingDeclarationValidation } from './declaration-context-admission';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 import { createGeneratedGraphStructuredError } from './problems';
 import type { GovernedSourceUnit } from './types';
@@ -23,8 +24,15 @@ export function createCandidateBuildPlan(
 export function assertGeneratedGraphAdmission(options: {
   config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
+  allowPendingDeclarationValidation?: boolean;
 }): void {
   const admission = options.state.dependencyAnalysis.outcome!.buildAdmission;
+  if (
+    options.allowPendingDeclarationValidation &&
+    admission.state === 'unavailable' &&
+    admission.reasons.every((reason) => reason === pendingDeclarationValidation)
+  )
+    return;
   if (admission.state === 'unavailable')
     throw new CandidateAdmissionUnavailable(admission.reasons);
   if (admission.state !== 'admitted') {

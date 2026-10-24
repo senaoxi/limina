@@ -150,6 +150,7 @@ flowchart TB
 | solution-leaf equality       | solution terminal leaf closure                                                                                  | 参与 build identity equality；不要求先有 import occurrence                                   |
 | native occurrence resolution | TS 的 module/path/type/lib/JSX channels                                                                         | 只证明该 occurrence 的解释结果；admission 与 TypeEvidence 独立                               |
 | referenceRequirement         | Native 合格编译义务；framework 自身适配器判定                                                                   | 不能由解析、owner、加载尝试或 TypeEvidence 单独生成；不代表产物可用                          |
+| 声明上下文政策               | 完整唯一 Coverage 或按消费者指定的 file/config 选择                                                             | 独立于 NativeCompilationObligation，复用 declaration-provider 投影；需要最终映射和执行验证   |
 | `implicitRefs`               | 用户 liminaOptions 声明的 config relation                                                                       | 可生成 references，拥有自己的合法性约束；无需虚构 import evidence                            |
 | declaration-provider         | [reference-recording](../../../packages/limina/src/core/build-graph/reference-recording.ts)                     | 生成 TypeScript references、声明构建依赖；成功边 exact checker 相同且 reusable               |
 | framework-schedule           | [framework-reference-inference](../../../packages/limina/src/core/build-graph/framework-reference-inference.ts) | 证明的 source implementation 顺序；不生成 tsconfig reference，不赋予 declaration cache reuse |
@@ -159,7 +160,7 @@ flowchart TB
 
 生成引用的包依赖与 deny-dependency 检查通过两端项目原始的 `resolverConfigPath` 查找包。生成的 `.limina` 路径保留图与诊断身份，但不提供 package/importer 身份。此规则也覆盖没有源码 import 的 `implicitRefs`，并保留无名包检查。[Graph 回归测试](../../../packages/limina/src/__tests__/graph.spec.ts)覆盖已声明、未声明、禁止依赖与无名端点，并包含激活根包的控制组。
 
-声明目标 `.d.ts/.d.mts/.d.cts` 是 artifact 终点；存在 source 文件也不够，必须有合法 requirement。执行依赖计划同时看到声明边与调度边；dependency plan 先过滤相同 target 的自依赖；两个及以上 target 的 SCC 中含 declaration relation 被拒绝，纯 framework SCC 可以执行。准确 guard 见 [graph-validation](../../../packages/limina/src/core/build-graph/graph-validation.ts) 与 [declaration-cycle](../../../packages/limina/src/typecheck/build/declaration-cycle.ts)。
+生成声明产物保留 artifact 终点边界。受管源码声明 `.d.ts/.d.mts/.d.cts` 则具有独立的配置上下文政策决策；选定上下文可以在没有 Emit 义务时生成 declaration-provider 引用。文件存在不证明政策选择或编译器 requirement。执行依赖计划同时看到声明边与调度边；dependency plan 先过滤相同 target 的自依赖；两个及以上 target 的 SCC 中含 declaration relation 被拒绝，纯 framework SCC 可以执行。准确 guard 见 [graph-validation](../../../packages/limina/src/core/build-graph/graph-validation.ts) 与 [declaration-cycle](../../../packages/limina/src/typecheck/build/declaration-cycle.ts)。
 
 Occurrence 和关系证据在治理裁定前保留。[ReferenceContributions](../../../packages/limina/src/core/analysis-cache/contributions.ts)按 contextual importer 原子替换已完成投影，去重阶段观察并保留独立 occurrence。Deny 不删除原始边或让未知关系消失；原始 references、implicitRefs、solution 和 framework schedule 保留自身来源。计数不证明 owner、产物准备或执行准入。
 

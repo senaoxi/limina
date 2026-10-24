@@ -6,7 +6,7 @@
 
 ## 独立 Native Evidence 合同
 
-**当前实现：**[Native Evidence v3](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 10；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
+**当前实现：**[Native Evidence v4](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 10；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
 
 **Coverage 证明：**[索引合同](../../../packages/limina/src/domain/analysis/native-coverage.ts)要求先按已激活的 entry selection 与 solution traversal 建立全集，再了解哪些配置成功解析。Extends 输入、生成配置和声明产物不因此成为 owner。只有发现闭合、当前配置成员枚举完成且文件身份经过验证，才能证明零或一个成员。无法限定范围的解析失败使相关全集保持不完整；只有带证据的目标身份排除才能缩小影响。Lexical 与 canonical 成员匹配均要求目标和成员具有当前版本的已验证身份；过期或不可用的身份不能计入已确认成员。Lexical 命中不跳过 canonical 别名检查。两个已确认的不同成员即使在部分索引中也能证明 ambiguous；其余不完整证据为 unavailable。文件身份只证明等价，不增加作用域。
 
@@ -14,7 +14,7 @@
 
 **请求级证明：**`absent` 只否定当前请求的跨单元义务。编译器清单确认的 augmentation、有效的 module `noResolve`（包括解析观察不可用），以及已证明的消费者 root，均可独立证明 absence。解析、Coverage、归属和其他请求继续保留。`present` 还要求目标具备输入及 emit 资格、源码分类已取得资格，并符合现有 composite／生成声明项目编译作用域。Import 诊断、JSDoc 和每个来源的有效选项与 path 选择独立。共用 TS/JS 资格只识别受支持的 TS 与四种 JS 扩展名，并区分 `noEmitForJsFiles` 与 Program 成员资格。Module 输入许可使用有效 `allowJs`，已经合法选择的 path 不再被该 module 规则二次否定。已重定向的 JS path 如果尚未证明生产者的 emit 义务，保持 unknown，不借用消费者的 JS 抑制规则。`allowNonTsExtensions` 不赋予任意文件 JS 身份。JSON emit 仍未证明。`sourceFileMayBeEmitted` 只作为真实目标 SourceFile 的测试 Oracle，不证明请求引入目标，也不授予加载资格。TypeScript 5.4/5.5 缺少每个来源的 callback 选项 receipt 时保持不可用，不借用全局选项。
 
-**引用观察：**[编译器适配](../../../packages/limina/src/core/typescript-semantic/reference-redirect.ts)区分观察完成且无关联、有项目成员关联但无 `outputDts`、真实声明映射和经过审计的局部 API 不可用。候选 pending 时停止物理回退，直到现有 bounded pass 收敛。每轮将加载观察重新绑定到本轮 Program，最终编译器清单中的目标在发布前完成观察。[事实](../../../packages/limina/src/core/typescript-semantic/native-program-facts.ts)复用这些结果，不在冻结后调用 getter。没有声明路径的成员关联保留原始 reference，并可探测原始路径，绝不伪造 redirect。TypeScript 5.4 没有 JS reference 例外，5.5–5.8 使用编译器经过资格限制的项目成员谓词，5.9/6.0 使用实际 source map 结果；它们对声明输入的关联不必相同：5.9 省略声明输入，因此对这些目标的空查询不能证明引用结构缺失。解析 callback 的 redirect 是导入者的解析上下文，不是目标引用结构的证明。
+**引用观察：**[编译器适配](../../../packages/limina/src/core/typescript-semantic/reference-redirect.ts)区分观察完成且无关联、有项目成员关联但无 `outputDts`、真实声明映射和经过审计的局部 API 不可用。候选 pending 时停止物理回退，直到现有 bounded pass 收敛。每轮将加载观察重新绑定到本轮 Program，最终编译器清单中的目标在发布前完成观察。[事实](../../../packages/limina/src/core/typescript-semantic/native-program-facts.ts)复用这些结果，不在冻结后调用 getter。没有声明路径的成员关联保留原始 reference，并可探测原始路径，绝不伪造 redirect。TypeScript 5.4 没有 JS reference 例外，5.5–5.8 使用编译器经过资格限制的项目成员谓词，5.9/6.0 使用实际 source map 结果；它们对声明输入的关联不必相同：5.9.0–5.9.2 省略声明输入，5.9.3 恢复关联，因此对这些目标的空查询不能证明引用结构缺失。解析 callback 的 redirect 是导入者的解析上下文，不是目标引用结构的证明。
 
 **不确定与失败：**经过审计的 Reference Map API 缺失属于局部 unknown／选择停止，不产生 `NativeEvidenceFailure`。已存在的 getter 抛异常，则按既有 snapshot 合同记录真实失败：`run: unavailable`、traversal 不完整且不能完整恢复缓存。两种情况下均保留独立成立的 absence。解析不可用可以与 `not-required`、观察执行完成及编译关系未确定同时存在，absence 不会删除解析缺口。[结构投影](../../../packages/limina/src/core/typescript-semantic/native-obligation-projection.ts)可从已证明端点及有效 references 为空，或观察完成且无关联的 Map，证明 `unsatisfied`。只有成员关联时保持 `unknown`，真实且适用于当前消费的映射才可证明 `satisfied`。产物就绪状态不能反向修改这些结论。正确类型的候选引用可消除必要 unknown 的风险，但不改写原始证据；framework schedule 不能替代 declaration reference。
 
@@ -22,7 +22,7 @@
 
 **阶段资格：**[上下文合同](../../../packages/limina/src/domain/analysis/native-context.ts)保留实际 TypeScript 实现与版本、host、roots／options／raw references 指纹、源码与 Coverage 版本、工具链、epoch 和 collection 身份。Pending Native 观察可用于 baseline 分析及归属选择，框架候选只用于选择。锁定必须创建新 context 和 collection，TypeScript→TypeScript 锁定也适用。Locked 事实必须由已选语义族重新采集。输入、epoch、阶段、collection 或 locked selection evidence 变化撤销当前资格，不改变历史证据。归属歧义和重复锁定显式返回冲突；合同没有重试循环或最终执行 Checker 字段。这些是数据及生产者合同，不是对任意 JavaScript 伪造对象的身份认证。
 
-**物理边界：**[Bounded Host](../../../packages/limina/src/core/typescript-semantic/native-program-host.ts) 在创建 SourceFile 之前执行 Coverage 决策：实现 root 展开；至少具有一个当前已验证成员的声明展开，声明 root 也须满足此条件；所有非 root 实现记录归属后停止。没有当前已验证成员的声明正常停止。开放或部分全集不能证明实现归属唯一，却不撤销已确认的声明成员资格。Core 不增加标准库、第三方、原始 reference 产物或 Bundler 输出豁免，也不改变 `FileOwnerLookup` 的生产算法。完整 Program 不作为 Native 事实的回退，真实诊断与 emit 由最终 Checker 负责。执行观察可用 input-only Program 发现框架的传递消费，但不发布 Native 事实、义务、引用或执行 target。[合同](../../../packages/limina/src/__tests__/native-evidence-contract.spec.ts)和[编译器观察测试](../../../packages/limina/src/__tests__/native-program-observation.spec.ts)分别保护数据推导与物理加载边界。
+**物理边界：**Bounded Host 接纳真实实现 roots，以及具有当前源配置成员资格的声明 roots。共享声明仍分别作为各项目的独立输入。外部受管声明在创建 SourceFile 前物理截断，保留进入声明的请求与解析结果。生成上下文显式携带源配置身份。候选验证为已选择声明授予独立的 bounded 加载资格，其观察不回写源码分析事实，也不生成消费者的编译边。非 root 实现、未覆盖声明、第三方和生成产物边界保持不变。完整 Program 仍仅作测试 Oracle。
 
 **加载前 path 选择：**[选择 receipt](../../../packages/limina/src/core/typescript-semantic/native-path-selection.ts)在创建 SourceFile 前，按已适配编译器的候选顺序探测真实存在性与实际 reference map。Coverage 截断不能选择低优先级 `.tsx` 或 `.d.ts`。[加载资格](../../../packages/limina/src/core/typescript-semantic/native-program-loads.ts)要求真实 root，或来自已接纳源码的已选请求，同时满足 Coverage。被独立入口引入的备选声明保留自己的前驱。晚到资格与 reference map 发现使用 roots/options/references 相同的新 Bounded Program；不伪造 SourceFile、不扩大 roots、不回退完整 Program。redirect 产物真实缺失时允许编译器的正常回退，已存在但被截断时不允许。无法证明的 occurrence 保留 scoped unavailable。[Path 回归](../../../packages/limina/src/__tests__/native-path-selection.spec.ts)同时比较目标、完整 SourceFile 集合、后续请求与关系。 编译器的源码分类需要单独取得资格：备选声明被独立 external 入口合法加载时，仍可能继承被截断 path 回退产生的元数据。该源码及其已加载的非 root 后继保留原始观察，但受影响的 emit 义务保持 scoped unavailable；纯声明的无义务证明和独立 roots 仍可使用。
 
@@ -40,7 +40,7 @@ Locked [ProjectSemanticContext](../../../packages/limina/src/core/project-depend
 
 [依赖入口](../../../packages/limina/src/core/typescript-semantic/index.ts)只有一个 Native 发现权威：[按版本适配的 TypeScript 观察适配器](../../../packages/limina/src/core/typescript-semantic/native-observation-adapter.ts)。请求来自编译器实际 inventory，包括绕过 resolver callback 的自身 ambient 模块、重复 occurrence、JSX/helper 隐式导入、三斜线以及 types/lib。Host 保留原始解析、options、types、lib 和 raw references；普通收集不调用 TypeChecker、完整 semantic diagnostics 或 emit。明确的 TypeEvidence 请求有独立生命周期。
 
-[有效 roots](../../../packages/limina/src/core/typescript-semantic/effective-roots.ts)仍来自配置解析。A→B.ts→C.ts 在 A 的物理 frontier 停于 B，不能追加 A→C。A→index.d.ts→helper.d.ts→C.ts 只有每个到达声明都有可用 Coverage 才能继续；对 C 的编译边还要求独立义务证明。声明 membership 不标识生产者。
+[有效 roots](../../../packages/limina/src/core/typescript-semantic/effective-roots.ts)仍来自配置解析。A→B.ts→C.ts 在 A 中停于 B。对于 A→b.d.ts→C.ts，政策提供 A→B，B 独立观察到的实现编译义务提供 B→C。不能把 B 的闭包或此前按 A 的 paths 得到的解释展开为 A 的直接边。
 
 既有 TypeScript 支持范围保持为 5.4–5.9 和 6.0。窄适配层在 5.4/5.5 使用编译器回调的 redirect options，在 5.8 之前使用编译器的库映射及名称规范化器，在 5.9 之前使用成对的 reference redirect 方法；后续版本使用已暴露的 Program 方法。实际版本和实现始终属于 context 身份。[打包 Native smoke](../../../smoke/native-compiler.spec.ts)覆盖各次版本首个稳定版本的实际 peer；未来补丁和预发布仍须通过 API 资格检查，不能由这些样例证明。Native DTO 持久恢复保留既有的 6.0.3 能力边界；其他受支持版本重新采集 Bounded Program，不使用替代发现算法。
 
@@ -140,3 +140,13 @@ Vue 输出投影复用现有 `vue-tsc`／Vue Language Core／Volar provider 和�
 治理层的 source type leaf 不允许手写 `references`；[config reader](../../../packages/limina/src/core/build-graph/generated/config-reader-basics.ts) 拒绝该形状，solution 负责聚合，`implicitRefs` 记录明确动态/虚拟关系。底层 semantic context 支持 raw references，不等于治理层放宽 leaf shape。[generated-configs](../../../packages/limina/src/core/build-graph/generated-configs.ts) 将 declaration outDir/declarationDir 指向同一 managed dts root，防继承输出改写；`rewriteRelativeImportExtensions` 仅在 effective source 启用时覆盖，避免无条件引入旧 compiler 不认识的 option。支持的 solution 不带 outputs。
 
 Managed-output lookup 可解释明确管理的输出，但不能将声明消费升级为源码关系。Locked ownership 和 coloring 保留有资格的已解析实现需求，真实 reference redirect 不提升 consumer Checker。框架调度使用合法源码需求及既有 Checker 能力。修改这些边界时应联合检查 [I03–I07](./invariants.md)，包括实际生成配置构建，不能只看 Resolver 命中。
+
+## 受管声明的配置上下文
+
+[上下文决策](../../../packages/limina/src/core/build-graph/declaration-context-decisions.ts)将声明消费连接到当前 Coverage。完整且唯一的 Coverage 自动选择 B，不要求 Emit 资格。多个配置合法覆盖同一声明时，外部消费者通过 `liminaOptions.declarationContexts` 选择，否则保留 `awaiting-selection`；证据不完整时为 unavailable。本地 roots 保持本地角色，不生成 self-reference。file/config 路径相对消费者 ordinary source config，不支持 glob，也不继承全局 owner；implicitRefs 是独立的项目关系。
+
+[政策贡献](../../../packages/limina/src/core/build-graph/declaration-context-references.ts)复用 declaration-provider 边与 Checker 相等约束，不修改 NativeCompilationObligation。正常政策停止表示 bounded 观察完成，但候选必要条件未满足。未被消费的共享声明不会制造全局歧义错误。
+
+[候选验证](../../../packages/limina/src/core/build-graph/declaration-context-validation.ts)解析暂存的声明/output 配置，检查实际引用闭包与声明输入映射（包括没有 outputDts 的输入），将委派请求、mode、目标及 callback redirect 与 owner 的独立观察比较。实际可达的竞争映射与引用环不论排序如何都拒绝。Owner 必须允许检查声明；skipLibCheck/noCheck，或作用于默认库声明的 skipDefaultLibCheck，不能兑现合同。框架对自己的声明 roots 保留既有分析能力，新的资格门控用于跨项目委派。当前取得资格的 Checker 是原生 tsc；未取得资格的 Checker 与 command override 返回 unavailable。版本/API 能力缺失时不回退到消费者选项。
+
+B 的项目检查与 A 的模块解析重定向是两个承诺。A 保留自己的 TypeChecker 选项。增量构建可以复用此前检查；候选 receipt 证明配置/解析绑定，不表示本轮 Checker 已重新检查成功。Generated-graph、full-analysis-cache 和 execution-admission 回归分别保护这些边界。
