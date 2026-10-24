@@ -18,6 +18,6 @@ export type {
 } from './namespace-core';
 export {
   assertArtifactPathOperationSafe,
-  assertArtifactPlanPathsOperationSafe,
   ensureArtifactParentDirectory,
-} from './namespace-safety';
+} from './namespace-operation-safety';
+export { assertArtifactPlanPathsOperationSafe } from './namespace-plan-safety';

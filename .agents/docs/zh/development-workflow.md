@@ -10,6 +10,8 @@
 
 [根脚本](../../../package.json)定义构建顺序。`pnpm run build:tools` 先编译私有门禁包，再编译构建工具；`pnpm run build` 构建这些工具与两个产品。`test` 在单元、工具和 integration 测试前构建；`smoke` 在打包消费者测试前构建。`docs:build` 使用本地构建／提交信息，以 `/` 为 base 构建双语文档。
 
+`@limina/gates` 的 ESLint 与 release 导出加载编译产物。共享配置或规则变化后，先从当前源码重建工具，再检查 ESLint 生效配置；产品验收还需要后续产品构建。对代表性的生产、声明、测试和脚本文件使用实际根配置。最终配置检查仅证明组合结果；直接 lint 样例与底层工具检查补充 Limina 自身检查编排，并帮助发现旧构建产物。
+
 ## 实现前发现约束
 
 机器检查是可执行约束的权威判定，但会实质缩小有效设计空间的约束必须在实现前可见。选择架构或实现路径前，读取适用的 Agent 指令与项目上下文，并识别会影响 ownership、依赖方向、public/internal 边界、生成源码 authority、兼容性或必需 workflow 的约束。
@@ -24,6 +26,8 @@
 编辑前检查 Git 状态，保留无关的 staged、unstaged 与 untracked 工作。记录目标文件基线，写入前复核，避免覆盖并行修改。不得手工编辑生成的 `dist`、`.limina`、声明或缓存。保留受管理标记与生成内容。
 
 依赖版本放在 [workspace catalog](../../../pnpm-workspace.yaml) 中，lockfile 通过 pnpm 生成。新增或替换第三方包前遵循[依赖准入](./dependency-admission.md)。不得新增 reason-field 治理例外；报告具体 issue 与替代方案，由用户决定。
+
+按[职责与生命周期](./architecture.md#实现内聚与边界)审查结构，不设文件数量或行数目标。合并或移动实现前，追踪静态／类型／动态导入、包映射、构建与进程入口、相对资源路径、测试发现及文档消费者。保持运行时初始化、模块状态、错误／Promise 身份以及自有／借用资源清理。独立能力边界即使文件很小也应保留；仅在转发层不提供合同时移除。行为保持的移动不能成为改变失败状态、权限、缓存身份或失效条件的理由。
 
 修改测试时使用 [test-audit](../../skills/test-audit/SKILL.md)。保留 fixture 的仓库边界与刻意无效的内容；lint 或格式修复不能消除 fixture 所验证的条件。
 

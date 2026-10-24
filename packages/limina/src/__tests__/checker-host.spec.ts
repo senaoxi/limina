@@ -7,7 +7,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GeneratedDependencyEdge } from '../core/build-graph/runner';
-import { runBuildTargets } from '../typecheck/build/plan';
+import { runBuildTargets } from '../typecheck/build/target-execution';
 import {
   disposeCheckerProcessHostForTesting,
   resolveCheckerHostEntryForTesting,

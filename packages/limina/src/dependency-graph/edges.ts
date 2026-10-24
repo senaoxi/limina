@@ -1,28 +1,193 @@
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
-import type { WorkspacePackage } from '#core/workspace/actions';
-import { toRelativePath } from '#utils/path';
+import {
+  isNamedWorkspacePackage,
+  type NamedWorkspacePackage,
+  type WorkspacePackage,
+} from '#core/workspace/actions';
+import { isPathInsideDirectory, toRelativePath } from '#utils/path';
+import path from 'pathe';
+import type { ProjectDependency } from '../core/project-dependencies/contracts';
 import {
   collectRuntimeProjectDependencies,
   createParsedProjectSemanticContext,
-  type ProjectDependency,
 } from '../core/project-dependencies/runner';
 import {
   describeWorkspaceConsumptionFailure,
   getWorkspaceConsumptionFailure,
   type WorkspaceConsumption,
 } from '../core/project-dependencies/workspace-consumption';
-import type { DependencyGraphCollectionContext } from './collection-types';
 import {
-  classifyEdge,
-  isExternalPackageEdge,
-  isViewAllowsEdge,
-  type ResolvedImportPaths,
-  resolveImportPaths,
-  resolveTargetPackage,
-} from './edge-resolution';
-import { validateNamedPackages } from './edge-validation';
-import { addEdge, createPackageNodeId } from './model';
-import type { DependencyGraphEdgeKind } from './types';
+  addEdge,
+  createPackageNodeId,
+  type DependencyGraphEdgeKind,
+} from './model';
+import type { DependencyGraphCollectionContext } from './runner';
+
+interface ResolvedImportPaths {
+  graphResolvedFilePath: string;
+  resolvedFilePath: string;
+}
+
+function isMatchesOutputRoot(
+  context: DependencyGraphCollectionContext,
+  resolvedPath: string,
+): boolean {
+  const canonicalPath =
+    context.pathIndex.classifyPath(resolvedPath).canonicalPath;
+  return context.outputRoots.some((root) =>
+    isPathInsideDirectory(canonicalPath, root),
+  );
+}
+
+function hasSourceOwner(options: {
+  context: DependencyGraphCollectionContext;
+  paths: ResolvedImportPaths;
+}): boolean {
+  return (
+    options.context.fileOwnerLookup.has(options.paths.graphResolvedFilePath) ||
+    options.context.fileOwnerLookup.has(options.paths.resolvedFilePath)
+  );
+}
+
+function classifyEdge(options: {
+  context: DependencyGraphCollectionContext;
+  paths: ResolvedImportPaths;
+  targetPackage: WorkspacePackage;
+}): DependencyGraphEdgeKind | null {
+  if (hasSourceOwner(options)) return 'source';
+  return isMatchesOutputRoot(options.context, options.paths.resolvedFilePath)
+    ? 'artifact'
+    : null;
+}
+
+function isViewAllowsEdge(
+  context: DependencyGraphCollectionContext,
+  edgeKind: DependencyGraphEdgeKind,
+): boolean {
+  return context.view === 'all' || context.view === edgeKind;
+}
+
+function resolveImportPaths(options: {
+  projectDependency: ProjectDependency;
+}): ResolvedImportPaths {
+  return {
+    graphResolvedFilePath: options.projectDependency.resolvedFilePath,
+    resolvedFilePath: options.projectDependency.resolvedFilePath,
+  };
+}
+
+function findGraphResolvedPackage(
+  context: DependencyGraphCollectionContext,
+  graphResolvedFilePath: string,
+): WorkspacePackage | null {
+  return context.workspaceLookup.findPackageForFile(graphResolvedFilePath);
+}
+
+function resolveTargetPackage(options: {
+  context: DependencyGraphCollectionContext;
+  paths: ResolvedImportPaths;
+}): WorkspacePackage | null {
+  const graphPackage = findGraphResolvedPackage(
+    options.context,
+    options.paths.graphResolvedFilePath,
+  );
+  return (
+    graphPackage ??
+    options.context.workspaceLookup.findPackageForFile(
+      options.paths.resolvedFilePath,
+    )
+  );
+}
+
+function isExternalPackageEdge(
+  importerPackage: WorkspacePackage,
+  targetPackage: WorkspacePackage | null,
+): targetPackage is WorkspacePackage {
+  return (
+    targetPackage !== null &&
+    targetPackage.directory !== importerPackage.directory
+  );
+}
+
+function addNamelessGraphPackageProblem(options: {
+  context: DependencyGraphCollectionContext;
+  importRecord: ImportRecord;
+  packageRole: 'importer' | 'target';
+  resolvedFilePath: string;
+  workspacePackage: WorkspacePackage;
+}): void {
+  options.context.problems.push(
+    [
+      'Dependency graph package identity requires package.json name:',
+      `  package.json: ${toRelativePath(options.context.config.rootDir, path.join(options.workspacePackage.directory, 'package.json'))}`,
+      `  role: ${options.packageRole}`,
+      `  file: ${toRelativePath(options.context.config.rootDir, options.importRecord.filePath)}`,
+      `  imported specifier: ${options.importRecord.specifier}`,
+      `  resolved file: ${toRelativePath(options.context.config.rootDir, options.resolvedFilePath)}`,
+      '  reason: dependency graph nodes and edges are keyed by package name; nameless workspace packages can be source owners but cannot appear as dependency graph nodes.',
+      '  fix: add a non-empty package.json name when this workspace package should appear in the dependency graph.',
+    ].join('\n'),
+  );
+}
+
+function isValidateNamedPackage(options: {
+  context: DependencyGraphCollectionContext;
+  importRecord: ImportRecord;
+  packageRole: 'importer' | 'target';
+  resolvedFilePath: string;
+  workspacePackage: WorkspacePackage;
+}): options is typeof options & {
+  workspacePackage: NamedWorkspacePackage;
+} {
+  if (isNamedWorkspacePackage(options.workspacePackage)) {
+    return true;
+  }
+
+  addNamelessGraphPackageProblem(options);
+  return false;
+}
+
+interface NamedEdgePackages {
+  importerPackage: NamedWorkspacePackage;
+  targetPackage: NamedWorkspacePackage;
+}
+
+function validateNamedPackages(options: {
+  context: DependencyGraphCollectionContext;
+  importerPackage: WorkspacePackage;
+  importRecord: ImportRecord;
+  resolvedFilePath: string;
+  targetPackage: WorkspacePackage;
+}): NamedEdgePackages | null {
+  const importerOptions = {
+    context: options.context,
+    importRecord: options.importRecord,
+    packageRole: 'importer' as const,
+    resolvedFilePath: options.resolvedFilePath,
+    workspacePackage: options.importerPackage,
+  };
+
+  if (!isValidateNamedPackage(importerOptions)) {
+    return null;
+  }
+
+  const targetOptions = {
+    context: options.context,
+    importRecord: options.importRecord,
+    packageRole: 'target' as const,
+    resolvedFilePath: options.resolvedFilePath,
+    workspacePackage: options.targetPackage,
+  };
+
+  if (!isValidateNamedPackage(targetOptions)) {
+    return null;
+  }
+
+  return {
+    importerPackage: importerOptions.workspacePackage,
+    targetPackage: targetOptions.workspacePackage,
+  };
+}
 
 interface EdgeCandidate {
   edgeKind: DependencyGraphEdgeKind;

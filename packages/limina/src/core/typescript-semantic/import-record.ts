@@ -100,3 +100,38 @@ export function findEffectiveJsxImportSourceRecord(
 ): ImportRecord | undefined {
   return records.findLast((record) => record.kind === 'jsx-import-source');
 }
+
+/**
+ * One parsed-source batch; never retained across AST mutation or contexts.
+ */
+export function findImportRecordLiterals(options: {
+  records: readonly ImportRecord[];
+  sourceFile: ts.SourceFile;
+  tsModule: typeof ts;
+}): Map<ImportRecord, ts.StringLiteralLike | null> {
+  const indexed = new Map<string, ts.StringLiteralLike | null>();
+  const literals = findSourceFileLiterals({ ...options, matches: () => true });
+  for (const literal of literals) {
+    const key = literalKey(
+      literal.text,
+      literal.getStart(options.sourceFile),
+      literal.end,
+    );
+    indexed.set(key, indexed.has(key) ? null : literal);
+  }
+  return new Map(
+    options.records.map((record) => [
+      record,
+      indexed.get(
+        literalKey(
+          record.specifier,
+          record.locator.sourceStart,
+          record.locator.sourceEnd,
+        ),
+      ) ?? null,
+    ]),
+  );
+}
+function literalKey(text: string, start: number, end: number): string {
+  return JSON.stringify([text, start, end]);
+}

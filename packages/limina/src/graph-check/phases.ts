@@ -1,15 +1,52 @@
 import type { ProjectInfo } from '#core/import-graph/context';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
+import { createWorkspaceSourceBoundaryFromProjects } from '../core/typescript-semantic';
 import { addDeniedReferenceProblems } from './access-denied';
-import {
-  addDtsOptionProblems,
-  addTypecheckParityProblems,
-} from './dts-options';
+import { addDtsOptionProblems } from './dts-declaration-options';
+import { addTypecheckParityProblems } from './dts-typecheck-parity';
+import { collectExpectedReferences } from './expected-reference-collection';
 import { getProjectCheckerName } from './finding-utilities';
 import type { GraphConfigInvalidFinding, GraphFinding } from './findings';
+import { addReferenceCompletenessProblems } from './reference-completeness';
 import { addGeneratedReferenceCycleProblems } from './reference-cycles';
 import type { GraphCheckState } from './run-state';
 import { addWorkspaceReferenceDependencyProblems } from './workspace-reference-dependencies';
+
+function addGraphRouteDiagnostic(
+  state: GraphCheckState,
+  diagnostic: GraphCheckState['graphRoute']['diagnostics'][number],
+): void {
+  const filePath = diagnostic.filePath ?? state.config.configPath;
+
+  state.findings.push({
+    checkerName: diagnostic.checkerName,
+    code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+    evidence: [{ label: 'checker', value: diagnostic.checkerName }],
+    facts: {
+      configPath: state.config.configPath,
+      kind: 'route',
+    },
+    filePath,
+    locations: [{ filePath, label: 'checker graph route' }],
+    presentation: {
+      detailLines: diagnostic.detailLines,
+      reason: diagnostic.reason,
+      title: diagnostic.title,
+    },
+    task: 'graph:check',
+  } satisfies GraphConfigInvalidFinding);
+}
+
+export function runGraphRoutePhase(state: GraphCheckState): void {
+  state.checkItems.start('source graph routes');
+  for (const diagnostic of state.graphRoute.diagnostics) {
+    addGraphRouteDiagnostic(state, diagnostic);
+  }
+
+  state.checks.add(state.projectPaths.length);
+  state.checkItems.record('source graph routes');
+}
 
 function createLabelDiagnosticEvidence(
   diagnostic: NonNullable<ProjectInfo['labelDiagnostic']>,
@@ -119,4 +156,46 @@ export function runProjectReferencePhase(state: GraphCheckState): void {
     projects: state.projects,
   });
   state.checkItems.record('project references');
+}
+
+export function runReferenceCompletenessPhase(state: GraphCheckState): void {
+  state.checkItems.start('reference completeness');
+  const expectedReferencesByProjectPath = collectExpectedReferences({
+    config: state.config,
+    fileOwnerLookup: state.fileOwnerLookup,
+    generatedGraph: state.generatedGraph,
+    graphRules: state.graphRules,
+    importAnalysis: state.preflight.importAnalysis,
+    managedOutputLookup: state.managedOutputLookup,
+    packages: state.packages,
+    projectCheckerNamesByPath: state.projectCheckerNamesByPath,
+    projectDependencyCaches: state.preflight.providers.projectDependencies,
+    findings: state.findings,
+    projectPaths: state.projectPaths,
+    projects: state.projects,
+    projectsByPath: state.projectsByPath,
+    workspaceLookup: state.workspaceLookup,
+    workspaceSourceBoundary: createWorkspaceSourceBoundaryFromProjects(
+      state.projects,
+      {
+        membership: new FileOwnerLookup(state.projects),
+        isWorkspaceFile: (file) =>
+          state.workspaceLookup.findOwnerForFile(file) !== null,
+      },
+      state.generatedGraph.sourceConfigCoverage,
+    ),
+  });
+
+  addReferenceCompletenessProblems({
+    checks: state.checks,
+    config: state.config,
+    expectedReferencesByProjectPath,
+    findings: state.findings,
+    generatedGraph: state.generatedGraph,
+    graphRules: state.graphRules,
+    projectCheckerNamesByPath: state.projectCheckerNamesByPath,
+    projects: state.projects,
+    projectsByPath: state.projectsByPath,
+  });
+  state.checkItems.record('reference completeness');
 }

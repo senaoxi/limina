@@ -14,6 +14,16 @@
 
 门禁包的 TypeScript scope 与根／构建工具中的 typed consumer 使用同一个 build checker。集中模块后，这些 scope 之间形成声明关系；同一个内部声明 component 必须具有同一个 checker owner。修改 checker 路由时保持这一关系，不绕过 graph validation。
 
+## ESLint 结构策略
+
+[根 flat config](../../../eslint.config.mjs)依次组合编译后的共享[通用配置](../../../packages/gates/src/eslint/general.ts)、明确的[根 presets](../../../packages/gates/src/eslint/presets/root.ts)与仓库覆盖。两个产品的 `src/**/*.ts`（包括声明文件）显式关闭 `complexity`、`max-depth`、`max-lines`、`max-lines-per-function` 与 `max-params`。局部类型、自然参数和内聚状态分支不应仅为满足数字预算而引入转发文件或参数包，不再保留逐文件产品预算例外。
+
+仓库测试覆盖位于脚本／工具覆盖之后，即使工具测试同时匹配脚本 glob，也保留共享测试规则和 portable-path 断言守卫。脚本与工具的 warning 预算保留既有范围，并在配置指定时排除空行／纯注释行；它们不成为产品源码限制。当前 [lint pipeline](../../../limina.config.mts)显式传入根配置，未设置 `--max-warnings`；改变调用层 warning 策略时必须重新审查这些范围。既有 fixture 与生成输出忽略保持各自 authority。
+
+共享配置继续在相应范围内负责未使用代码、类型导入、错误与过期 disable 检查；[portable-path plugin](../../../packages/gates/src/eslint/plugins/portable-path-plugin/rules/portable-path-comparison-rule.ts)负责测试路径比较。此策略不引入新的 type-aware preset。包导入授权仍由[source checking](../../../packages/limina/src/source-check/source-import-validation.ts)负责，运行时相对导入循环及 scheduler／materialization 能力限制由[架构守卫](../../../packages/limina/src/__tests__/architecture-boundaries.spec.ts)负责，workspace-only export 删除由[发布 hook](../../../packages/limina/packagePlugin.ts)负责。规模规则不能替代这些检查。
+
+配置链变化后，遵循[当前源码自举与验收](./development-workflow.md#设置与构建)。检查代表文件的最终配置并实际运行允许／拒绝 lint 样例；仅计算配置不能证明 lint 通过。
+
 ## 提交与 CI 入口
 
 | 入口                                                        | 审查输入与行为                                                                                            |
@@ -32,6 +42,6 @@
 
 ## 回归归属
 
-[暂存区门禁测试](../../../packages/gates/src/commit/staged.spec.ts)执行真实的 Git 拒绝／接受提交，覆盖 index authority、损坏输入以及 HEAD／index／工作区保持不变。既有 [Git 钩子](../../../scripts/git/hooks.spec.ts)、[发布](../../../scripts/release/publication.spec.ts)、[Tag CLI](../../../scripts/release/check-tag-cli.spec.ts)、[Workflow](../../../scripts/release/workflow.spec.ts)和[隐私](../../../scripts/docs/privacy.spec.ts)测试保留进程与集成边界，并消费该包。包内 ESLint 测试保留已有 parser／规则回归。根 `test:tooling` 执行这两组测试。
+[暂存区门禁测试](../../../packages/gates/src/commit/staged.spec.ts)执行真实的 Git 拒绝／接受提交，覆盖 index authority、损坏输入以及 HEAD／index／工作区保持不变。既有 [Git 钩子](../../../scripts/git/hooks.spec.ts)、[发布](../../../scripts/release/publication.spec.ts)、[Tag CLI](../../../scripts/release/check-tag-cli.spec.ts)、[Workflow](../../../scripts/release/workflow.spec.ts)和[隐私](../../../scripts/docs/privacy.spec.ts)测试保留进程与集成边界，并消费该包。包内 ESLint 测试保留已有 parser／规则回归。[根配置测试](../../../packages/gates/src/eslint/__tests__/root-config.spec.ts)使用实际根配置，覆盖内聚产品代码、脚本／测试覆盖顺序、正确性检查、portable path 和既有排除范围。根 `test:tooling` 执行这些测试。
 
 Fixture 仓库在暂存基线前忽略已安装的 `node_modules`。Git 可能将 Windows 目录 junction 遍历为依赖文件，而 POSIX 目录符号链接本身也可能进入 index。暂存区门禁回归检查 Git 的实际 index 中不存在运行依赖，使提交只测试 fixture 自己持有的输入。真实钩子和暂存空白检查保持启用。

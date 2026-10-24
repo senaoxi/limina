@@ -120,11 +120,14 @@ export class AstroSemanticContext {
   }
   #syncScript(id: AstroUri): void {
     const fileName = normalizeAbsolutePath(id.fsPath);
-    const text = readAnalysisInput(
-      fileName,
-      () => this.toolchain.tsModule.sys.readFile(fileName),
-      'typescript-content',
-    );
+    // A context owns one input view; missing/throwing reads remain retryable.
+    const text =
+      this.#snapshots.get(fileName)?.text ??
+      readAnalysisInput(
+        fileName,
+        () => this.toolchain.tsModule.sys.readFile(fileName),
+        'typescript-content',
+      );
     if (text === undefined) {
       this.#deleteScript(id, fileName);
       return;

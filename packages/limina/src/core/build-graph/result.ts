@@ -8,7 +8,7 @@ import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import {
   resolveGeneratedKnipPackageConfigs,
   resolveGeneratedKnipPackageDiagnostics,
-} from './generated-knip';
+} from './generated-knip-paths';
 import type {
   GeneratedBuildModule,
   GeneratedBuildModuleManifest,

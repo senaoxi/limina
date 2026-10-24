@@ -1,12 +1,12 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type { JSONReport } from 'knip';
 import path from 'pathe';
+import { createWorkspaceDependencyKey as createPackageDependencyIssueKey } from '../../core/packages/dependency-authority';
 import {
   findPackageOwnerIdentity,
   type PackageOwnerIdentity,
 } from '../../core/workspace/owner-identity';
 import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
-import { createPackageDependencyIssueKey } from './dependency-key';
 import type {
   KnipUnusedSourceFileIssue,
   KnipUnusedWorkspaceDependencyIssue,
