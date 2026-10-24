@@ -59,6 +59,7 @@
     "oxc-resolver": "catalog:prod"
   },
   "devDependencies": {
+    "@limina/gates": "workspace:*",
     "ini": "catalog:dev",
     "@types/ini": "catalog:dev",
     "@types/picomatch": "catalog:dev",
@@ -91,7 +92,7 @@
     "@arethetypeswrong/core": "catalog:lint",
     "@astrojs/check": "catalog:dev",
     "svelte2tsx": "catalog:dev",
-    "astro-v7-current": "catalog:test",
+    "astro": "catalog:test",
     "astro-v7-min": "catalog:test",
     "svelte-check-v4-min": "catalog:test",
     "svelte-v4-min": "catalog:test",
