@@ -1485,6 +1485,7 @@ describe('runBuild', () => {
     }
   });
 
+  // Real Astro declaration graphs exceeded 30s on Windows CI (up to 93s).
   it('does not create a declaration build target for a framework-owned config', async () => {
     const calls: TypecheckTarget[] = [];
     const infoSpy = vi
@@ -1552,7 +1553,7 @@ describe('runBuild', () => {
       infoSpy.mockRestore();
       await fixture.cleanup();
     }
-  });
+  }, 120_000);
 
   it('proves safe TS, JS, JSON, source-map, and declaration-map outputs inside outDir', async () => {
     const calls: TypecheckTarget[] = [];
