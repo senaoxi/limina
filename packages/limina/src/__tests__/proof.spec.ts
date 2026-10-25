@@ -2043,6 +2043,7 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
+  // Real Astro declaration graphs exceeded 30s on Windows CI (up to 93s).
   it('reports Vue and Svelte files outside an explicit Astro owner observation set', async () => {
     const fixture = await createFixture({
       'packages/app/src/component.svelte': '<h1>Svelte</h1>\n',
@@ -2113,7 +2114,7 @@ describe('runProofCheck dts config semantics', () => {
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 120_000);
 
   it('expands source include default token exactly like omitted source include at runtime', async () => {
     const fixture = await createFixture(
