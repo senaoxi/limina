@@ -1,3 +1,4 @@
+import { PathBindingReplay } from '../analysis-cache/directory-fingerprint';
 import { managedOutputLookupIdentity } from '../import-graph/managed-output-provider';
 import {
   createTypeScriptDependencyContext,
@@ -293,10 +294,14 @@ function coldCollection(
 function collectVueDependencies(
   request: ProjectDependencyRequest,
 ): ProjectDependencyCollection {
-  const collection = createEmptyCollection();
-  for (const fileName of request.context.fileNames)
-    collectProjectDependencyFile({ collection, fileName, request });
-  collectVueSupportContributions(collection, request);
-  deduplicateFailures(collection);
-  return collection;
+  // The compiler collection is synchronous and read-only. Each collection gets
+  // fresh ancestors; leaf/content observations and later fences stay live.
+  return new PathBindingReplay().run(() => {
+    const collection = createEmptyCollection();
+    for (const fileName of request.context.fileNames)
+      collectProjectDependencyFile({ collection, fileName, request });
+    collectVueSupportContributions(collection, request);
+    deduplicateFailures(collection);
+    return collection;
+  });
 }

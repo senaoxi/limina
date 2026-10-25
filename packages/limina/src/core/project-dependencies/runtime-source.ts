@@ -2,6 +2,7 @@ import type {
   ProjectDependencyCollection,
   ProjectDependencyRequest,
 } from './contracts';
+import { getProjectSemanticCacheIdentity } from './identity';
 import { collectProjectDependencyFile } from './preparation';
 import { RuntimeSourceResolver } from './runtime-source-resolution';
 
@@ -33,8 +34,16 @@ export function collectRuntimeProjectDependencies(
         ? new RuntimeSourceResolver(input.context)
         : undefined,
   };
+  const semanticRequest = {
+    ...request,
+    projectSemanticCacheIdentity: getProjectSemanticCacheIdentity(request),
+  };
   for (const fileName of request.context.fileNames)
-    collectProjectDependencyFile({ collection, fileName, request });
+    collectProjectDependencyFile({
+      collection,
+      fileName,
+      request: semanticRequest,
+    });
   return {
     dependencies: collection.dependencies.map((dependency) => ({
       ...dependency,
