@@ -42,6 +42,7 @@ export interface ManagedLeafClassification {
 
 export interface ManagedBuildStateProof {
   readonly outputPaths: readonly string[];
+  readonly requiresFullCheck?: boolean;
   readonly tsBuildInfoPath?: string;
 }
 

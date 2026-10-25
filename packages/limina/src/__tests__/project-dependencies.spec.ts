@@ -1243,8 +1243,10 @@ describe('project dependency authority', () => {
     'packageRootDir',
     'conditions',
     'workspaceBoundary',
+    'virtualFiles',
+    'packageRoots',
   ] as const)(
-    'isolates dependency evidence when %s changes',
+    'isolates compiler and runtime evidence when %s changes',
     async (dimension) => {
       const temporaryDirectory = await mkdtemp(
         path.join(tmpdir(), 'limina-evidence-identity-'),
@@ -1280,6 +1282,18 @@ describe('project dependency authority', () => {
           };
           break;
         }
+        case 'virtualFiles': {
+          changed.virtualFiles = new Map([
+            [context.configPath, '{"compilerOptions":{"strict":true}}'],
+          ]);
+          break;
+        }
+        case 'packageRoots': {
+          changed.packageRootByFileName = new Map([
+            [sourceFile, fixturePath('nested')],
+          ]);
+          break;
+        }
         case 'workspaceBoundary': {
           changed.workspaceSourceBoundary = createWorkspaceSourceBoundary([
             sourceFile,
@@ -1289,30 +1303,37 @@ describe('project dependency authority', () => {
           break;
         }
       }
-      const caches = createProjectDependencyCaches();
-      const importAnalysis = createImportAnalysisContext();
-      const first = collectProjectDependencies({
-        context,
-        caches,
-        importAnalysis,
-      });
-      const second = collectProjectDependencies({
-        context: changed,
-        caches,
-        importAnalysis,
-      });
-      expect(first.observations[0]!.evidence.context.identity).not.toBe(
-        second.observations[0]!.evidence.context.identity,
-      );
-      if (dimension === 'workspaceBoundary')
-        expect(
-          first.observations[0]!.evidence.context
-            .workspaceSourceBoundaryIdentity,
-        ).not.toBe(
-          second.observations[0]!.evidence.context
-            .workspaceSourceBoundaryIdentity,
+      for (const collect of [
+        collectProjectDependencies,
+        collectRuntimeProjectDependencies,
+      ]) {
+        const caches = createProjectDependencyCaches();
+        const importAnalysis = createImportAnalysisContext();
+        const first = collect({
+          context,
+          caches,
+          importAnalysis,
+        });
+        const second = collect({
+          context: changed,
+          caches,
+          importAnalysis,
+        });
+        expect(first.observations[0]!.evidence.context.identity).not.toBe(
+          second.observations[0]!.evidence.context.identity,
         );
-      expect(caches.projectDependencyCache.size).toBe(2);
+        if (dimension === 'workspaceBoundary')
+          expect(
+            first.observations[0]!.evidence.context
+              .workspaceSourceBoundaryIdentity,
+          ).not.toBe(
+            second.observations[0]!.evidence.context
+              .workspaceSourceBoundaryIdentity,
+          );
+        expect(caches.projectDependencyCache.size).toBe(
+          collect === collectProjectDependencies ? 2 : 0,
+        );
+      }
     },
   );
 

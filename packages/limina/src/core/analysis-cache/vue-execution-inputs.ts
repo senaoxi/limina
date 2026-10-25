@@ -7,6 +7,7 @@ import {
   AnalysisInputDriftError,
   type InputDependency,
 } from './contracts';
+import { PathBindingReplay } from './directory-fingerprint';
 import { EpochInputs } from './epoch-inputs';
 import { analysisHash } from './identity';
 import { readInput } from './input-state';
@@ -120,9 +121,13 @@ export function bindVueExecutionInputs(
   dependencies: Iterable<InputDependency>,
 ): void {
   const scope = currentScope(identity);
-  scope.run(() => {
-    for (const dependency of dependencies) bindDependency(inputs, dependency);
-  });
+  // Reuse ancestor bindings only during this synchronous receipt-binding batch.
+  // Execution admission still replays these inputs in a fresh validation scope.
+  new PathBindingReplay().run(() =>
+    scope.run(() => {
+      for (const dependency of dependencies) bindDependency(inputs, dependency);
+    }),
+  );
 }
 function bindDependency(
   inputs: AnalysisInputs,

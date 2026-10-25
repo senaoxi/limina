@@ -1,3 +1,4 @@
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { compareCodeUnits } from '#utils/collections';
 import {
   type MutationBoundarySnapshot,
@@ -12,6 +13,36 @@ import {
   ManagedCheckerEmitBoundaryError,
   type ProvenManagedCheckerMutationContext,
 } from './types';
+
+/**
+ * An external source input has no consumer emit obligation, but its type can
+ * change without invalidating the compiler's solution-builder timestamp check.
+ * Until a separate incremental-input proof exists, rebuild that consumer. This
+ * grants no reference, producer, output authority or additional process target.
+ */
+export function sourceInputConsumers(
+  graph: GeneratedTsconfigGraphResult,
+): ReadonlySet<string> {
+  const consumers = new Set<string>();
+  const evidence = graph.dependencyAnalysis?.nativeEvidence ?? [];
+  for (const { snapshot } of evidence) {
+    const locked = new Set(
+      snapshot.contexts
+        .filter((context) => context.authority.phase === 'locked')
+        .map((context) => context.id),
+    );
+    for (const obligation of snapshot.obligations) {
+      if (
+        locked.has(obligation.consumerContextId) &&
+        obligation.existence.state === 'absent' &&
+        obligation.existence.proof.ruleOrObservation ===
+          'compiler-external-library-input-is-not-emitted-by-consumer'
+      )
+        consumers.add(obligation.consumerConfigId);
+    }
+  }
+  return consumers;
+}
 
 function hasMissingOutput(outputPaths: readonly string[]): boolean {
   return outputPaths.some((outputPath) => !existsSync(outputPath));
@@ -36,9 +67,12 @@ function findBuildInfoBoundaryTarget(options: {
 function isStaleBuildInfo(options: {
   buildInfoPath: string;
   outputPaths: readonly string[];
+  requiresFullCheck?: boolean;
 }): boolean {
   return (
-    existsSync(options.buildInfoPath) && hasMissingOutput(options.outputPaths)
+    existsSync(options.buildInfoPath) &&
+    (options.requiresFullCheck === true ||
+      hasMissingOutput(options.outputPaths))
   );
 }
 
@@ -50,6 +84,7 @@ function getStaleBuildInfoPath(
   return isStaleBuildInfo({
     buildInfoPath,
     outputPaths: buildState.outputPaths,
+    requiresFullCheck: buildState.requiresFullCheck,
   })
     ? buildInfoPath
     : undefined;

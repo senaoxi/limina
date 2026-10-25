@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import {
   mkdir,
   readFile,
+  rm,
   stat,
   symlink,
   utimes,
@@ -204,9 +205,14 @@ try {
   }
 });
 
-it.each(['disabled', 'cold'])(
-  'binds Vue execution to consumed declarations with %s caching',
-  async (cacheMode) => {
+it.each([
+  { cacheMode: 'disabled', change: 'content' },
+  { cacheMode: 'cold', change: 'content' },
+  { cacheMode: 'disabled', change: 'binding' },
+  { cacheMode: 'cold', change: 'binding' },
+])(
+  'rejects Vue declaration $change drift with $cacheMode caching',
+  async ({ cacheMode, change }) => {
     const f = await createSemanticRepairFixture({
       'package.json': '{"name":"vue-inputs","private":true,"type":"module"}',
       'pnpm-workspace.yaml': 'packages:\n - a\n - b\n - d\n',
@@ -219,9 +225,12 @@ it.each(['disabled', 'cold'])(
         '{"compilerOptions":{"module":"NodeNext","types":[],"strict":true},"files":["index.ts"]}',
       'a/index.ts':
         'import {value} from "../b/dist/index.js"; export const a:number=value;',
-      'b/dist/index.d.ts': 'export declare const value:number;',
+      'b/content/index.d.ts': 'export declare const value:number;',
       'd/unrelated.ts': 'export const unrelated=1;',
     });
+    for (const alias of ['first', 'second'])
+      await symlink(f.path('b/content'), f.path(`b/${alias}`), 'junction');
+    await symlink(f.path('b/first'), f.path('b/dist'), 'junction');
     const require = createRequire(import.meta.url);
     await mkdir(f.path('node_modules'), { recursive: true });
     for (const name of ['vue-tsc', 'typescript'])
@@ -252,10 +261,17 @@ it.each(['disabled', 'cold'])(
         });
       await writeFile(f.path('d/unrelated.ts'), 'export const unrelated=2;');
       expect((await run()).status).toBe(0);
-      await writeFile(
-        f.path('b/dist/index.d.ts'),
-        'export declare const value:string;',
-      );
+      if (change === 'content') {
+        await writeFile(
+          f.path('b/content/index.d.ts'),
+          'export declare const value:string;',
+        );
+      } else {
+        // The canonical file and its bytes stay equal; only the ancestor's
+        // physical binding changes after collection and the first admission.
+        await rm(f.path('b/dist'));
+        await symlink(f.path('b/second'), f.path('b/dist'), 'junction');
+      }
       expect((await run()).status).toBe('admission-rejected');
       expect(starts).toBe(1);
     } finally {
