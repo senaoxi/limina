@@ -80,6 +80,7 @@ export function nativeProjectRelations(options: {
   frontier: NativeProgramFrontier;
   obligations: readonly NativeCompilationObligation[];
 }): NativeProjectRelation[] {
+  const disabled = disabledModuleRequests(options.context, options.obligations);
   return [
     ...(options.program.getProjectReferences() ?? []).map((reference) => ({
       kind: 'explicit-reference' as const,
@@ -92,7 +93,7 @@ export function nativeProjectRelations(options: {
       ],
     })),
     ...options.entries.flatMap((entry) =>
-      targetRelations(entry, options.frontier),
+      targetRelations(entry, options.frontier, disabled),
     ),
     ...options.obligations.map((obligation) => ({
       kind: 'compiler-reference-obligation' as const,
@@ -101,13 +102,40 @@ export function nativeProjectRelations(options: {
   ];
 }
 
+/** A target hit is not input authority. Only the bound request's audited
+ * noResolve proof cancels its contribution, never another root or request. */
+function disabledModuleRequests(
+  context: NativeEvidenceContext,
+  obligations: readonly NativeCompilationObligation[],
+): ReadonlySet<string> {
+  const disabled = new Set<string>();
+  for (const obligation of obligations) {
+    if (
+      obligation.consumerContextId !== context.id ||
+      obligation.existence.state !== 'absent'
+    )
+      continue;
+    const proof = obligation.existence.proof;
+    if (
+      proof.contextId === context.id &&
+      proof.kind === 'audited-rule' &&
+      proof.ruleOrObservation === 'compiler-noResolve-disables-module-input' &&
+      obligation.requestIds.includes(proof.evidenceId)
+    )
+      disabled.add(proof.evidenceId);
+  }
+  return disabled;
+}
+
 function targetRelations(
   entry: NativeRequestResult,
   frontier: NativeProgramFrontier,
+  disabled: ReadonlySet<string>,
 ): NativeProjectRelation[] {
   const target = entry.resolution.target;
   if (target === null) return [];
-  if (isDeclarationFile(target.lexicalPath))
+  if (isDeclarationFile(target.lexicalPath)) {
+    if (disabled.has(entry.request.id)) return [];
     return [
       {
         kind: 'declaration-consumption',
@@ -116,6 +144,7 @@ function targetRelations(
         requestIds: [entry.request.id],
       },
     ];
+  }
   const coverage = frontier.inspect(target.lexicalPath).coverage;
   return coverage.members.map((member) => ({
     kind: 'resolved-project-use',

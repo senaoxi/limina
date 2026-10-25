@@ -30,6 +30,7 @@ import { LiminaStructuredError } from '../check-reporting/errors';
 import * as generatedConfigs from '../core/build-graph/generated-configs';
 import type { DependencyAnalysisResult } from '../core/build-graph/types';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
+import * as nativeFactory from '../core/typescript-semantic/native-semantic-factory';
 import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
@@ -9912,4 +9913,360 @@ describe('declaration context candidate legality', () => {
       await fixture.cleanup();
     }
   });
+});
+
+describe('declaration consumption responsibilities', () => {
+  it.each(['skipLibCheck', 'noCheck'] as const)(
+    'keeps local %s checking policy until the config is selected externally',
+    async (option) => {
+      const files = declarationPolicyFiles();
+      const a = JSON.parse(files['packages/a/tsconfig.json']!);
+      a.compilerOptions[option] = true;
+      a.files.push('local.d.ts');
+      files['packages/a/tsconfig.json'] = json(a);
+      files['packages/a/local.d.ts'] = files['packages/b/b.d.ts']!;
+      files['packages/a/a.ts'] =
+        'import type { Value } from "./local"; export type Result = Value;';
+      const fixture = await createFixture(files);
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(graph.dependencyEdges).toEqual([]);
+        expect(graph.dependencyAnalysis?.declarationContexts).toContainEqual(
+          expect.objectContaining({
+            selection: {
+              state: 'local',
+              config: fixture.path('packages/a/tsconfig.json'),
+            },
+          }),
+        );
+        await writeText(
+          fixture.path('packages/b/b.d.ts'),
+          'export type { Value } from "../a/local";',
+        );
+        await expect(
+          prepareGeneratedTsconfigGraph(fixture.config),
+        ).rejects.toThrow('owner must check declarations');
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'compares upstream private declaration requests only when loaded (consumed=%s)',
+    async (consumed) => {
+      const files = declarationPolicyFiles();
+      const b = JSON.parse(files['packages/b/tsconfig.json']!);
+      b.files = ['b.ts', 'private.d.ts', 'part.d.ts'];
+      files['packages/b/tsconfig.json'] = json(b);
+      delete files['packages/b/b.d.ts'];
+      files['packages/b/b.ts'] =
+        'import type { Private } from "./private"; const hidden: Private = {value:"x"}; export const value = 1;';
+      files['packages/b/private.d.ts'] =
+        'import type { Part } from "./part"; export type Private = Part;';
+      files['packages/b/part.d.ts'] = 'export interface Part { value: string }';
+      files['packages/a/a.ts'] =
+        `import { value } from "../b/b"; export const result = value;${
+          consumed
+            ? 'import type { Private } from "../b/private"; export type Result = Private;'
+            : ''
+        }`;
+      const fixture = await createFixture(files);
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const generated = graph.sourceToDts
+          .get('tsc')!
+          .get(fixture.path('packages/a/tsconfig.json'))!;
+        const receipt =
+          graph.dependencyAnalysis!.declarationValidation!.receipts.find(
+            (candidate) => candidate.generatedConfig === generated,
+          )!;
+        expect(receipt.mappings).toContainEqual(
+          expect.objectContaining({
+            file: fixture.path('packages/b/private.d.ts'),
+            loaded: consumed,
+          }),
+        );
+        expect(
+          receipt.requests.some(
+            (request) =>
+              request.file === fixture.path('packages/b/private.d.ts'),
+          ),
+        ).toBe(consumed);
+        expect(
+          new Set(graph.dependencyEdges.map((edge) => edge.toConfigPath)),
+        ).toEqual(new Set([fixture.path('packages/b/tsconfig.json')]));
+        await execFileAsync(
+          process.execPath,
+          [
+            requireFromTest.resolve('typescript/bin/tsc'),
+            '-b',
+            graph.checkerEntries.get('tsc')!,
+            '--pretty',
+            'false',
+          ],
+          { cwd: fixture.rootDir },
+        );
+        const parsed = ts.getParsedCommandLineOfConfigFile(
+          generated,
+          {},
+          {
+            ...ts.sys,
+            onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+              throw new Error(String(diagnostic.messageText));
+            },
+          },
+        )!;
+        const program = ts.createProgram({
+          rootNames: parsed.fileNames,
+          options: parsed.options,
+          projectReferences: parsed.projectReferences,
+        });
+        expect(
+          program.getSourceFile(fixture.path('packages/b/private.d.ts')) !==
+            undefined,
+        ).toBe(consumed);
+        expect(ts.getPreEmitDiagnostics(program)).toEqual([]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(['ambient', 'unresolved'] as const)(
+    'preserves completed %s request evidence without inventing a redirect',
+    async (state) => {
+      const files = declarationPolicyFiles(
+        `${
+          state === 'ambient'
+            ? 'declare module "ctx-base" { export interface Base { value: string } }\n'
+            : ''
+        }declare module "ctx-public" { import type { Base } from "ctx-base"; export type Public = Base; }`,
+      );
+      files['packages/a/a.ts'] =
+        'import "../b/b"; import type { Public } from "ctx-public"; export type Result = Public;';
+      const fixture = await createFixture(files);
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const generated = graph.sourceToDts
+          .get('tsc')!
+          .get(fixture.path('packages/a/tsconfig.json'))!;
+        const receipt =
+          graph.dependencyAnalysis!.declarationValidation!.receipts.find(
+            (candidate) => candidate.generatedConfig === generated,
+          )!;
+        const request = receipt.requests.find(
+          (item) => item.specifier === 'ctx-base',
+        )!;
+        expect(request).toMatchObject({ resolutionState: state, target: null });
+        expect(request.redirects).toEqual(
+          state === 'ambient'
+            ? []
+            : [
+                graph.sourceToDts
+                  .get('tsc')!
+                  .get(fixture.path('packages/b/tsconfig.json'))!,
+              ],
+        );
+        const parsed = ts.getParsedCommandLineOfConfigFile(
+          generated,
+          {},
+          {
+            ...ts.sys,
+            onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+              throw new Error(String(diagnostic.messageText));
+            },
+          },
+        )!;
+        const program = ts.createProgram({
+          rootNames: parsed.fileNames,
+          options: parsed.options,
+          projectReferences: parsed.projectReferences,
+        });
+        expect(
+          ts
+            .getPreEmitDiagnostics(program)
+            .some((diagnostic) => diagnostic.code === 2307),
+        ).toBe(state === 'unresolved');
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(['none', 'root', 'types', 'types-with-owner-import'] as const)(
+    'retains only independent declaration inputs under noResolve (%s)',
+    async (source) => {
+      const files = declarationPolicyFiles();
+      const a = JSON.parse(files['packages/a/tsconfig.json']!);
+      a.compilerOptions.noResolve = true;
+      a.compilerOptions.noUncheckedSideEffectImports = false;
+      if (source === 'root') a.files.push('../b/b.d.ts');
+      if (source.startsWith('types')) a.compilerOptions.types = ['../b/b'];
+      files['packages/a/tsconfig.json'] = json(a);
+      files['packages/a/a.ts'] = 'import "../b/b"; export const value = 1;';
+      if (source === 'types-with-owner-import') {
+        const b = JSON.parse(files['packages/b/tsconfig.json']!);
+        b.files.push('part.d.ts');
+        files['packages/b/tsconfig.json'] = json(b);
+        files['packages/b/b.d.ts'] = 'export type { Value } from "./part";';
+        files['packages/b/part.d.ts'] =
+          'export interface Value { value: string }';
+      }
+      const fixture = await createFixture(files);
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(graph.dependencyEdges).toHaveLength(
+          source.startsWith('types') ? 1 : 0,
+        );
+        const decisions = graph.dependencyAnalysis!.declarationContexts ?? [];
+        const consumer = decisions.filter(
+          (decision) =>
+            decision.consumerConfig ===
+            fixture.path('packages/a/tsconfig.json'),
+        );
+        if (source === 'none') expect(consumer).toEqual([]);
+        else expect(consumer).toHaveLength(1);
+        if (source === 'root')
+          expect(consumer[0]!.selection.state).toBe('local');
+        if (source.startsWith('types')) {
+          const snapshot = graph.dependencyAnalysis!.nativeEvidence!.find(
+            ({ snapshot }) =>
+              snapshot.contexts.some(
+                (context) => context.id === consumer[0]!.contextId,
+              ),
+          )!.snapshot;
+          expect(
+            consumer[0]!.requestIds.map(
+              (id) =>
+                snapshot.requests.find((request) => request.id === id)!.channel,
+            ),
+          ).toEqual(['type-directive']);
+          const receipt =
+            graph.dependencyAnalysis!.declarationValidation!.receipts.find(
+              (candidate) =>
+                candidate.sourceConfig ===
+                fixture.path('packages/a/tsconfig.json'),
+            )!;
+          expect(receipt.mappings).toContainEqual(
+            expect.objectContaining({
+              file: fixture.path('packages/b/b.d.ts'),
+              loaded: true,
+            }),
+          );
+          if (source === 'types-with-owner-import')
+            expect(receipt.requests).toContainEqual(
+              expect.objectContaining({
+                specifier: './part',
+                resolutionState: 'resolved',
+              }),
+            );
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+});
+
+describe('declaration candidate evidence failures', () => {
+  it.each([
+    ['target', 'Declaration request context differs'],
+    ['redirect', 'did not use the selected reference'],
+    ['unavailable', 'Unavailable declaration request'],
+    ['context', 'Unbound declaration request'],
+  ] as const)(
+    'refuses %s drift for a declaration actually consumed by A',
+    async (kind, diagnostic) => {
+      const files = declarationPolicyFiles(
+        'export type { Value } from "./part";',
+      );
+      const b = JSON.parse(files['packages/b/tsconfig.json']!);
+      b.files.push('part.d.ts');
+      files['packages/b/tsconfig.json'] = json(b);
+      files['packages/b/part.d.ts'] =
+        'export interface Value { value: string }';
+      const fixture = await createFixture(files);
+      const original = nativeFactory.createNativeSemanticContext;
+      const create = vi
+        .spyOn(nativeFactory, 'createNativeSemanticContext')
+        .mockImplementation((project, cache, metrics) => {
+          const context = original(project, cache, metrics);
+          if (
+            project.declarationContextValidation?.sourceConfig ===
+            fixture.path('packages/a/tsconfig.json')
+          ) {
+            const snapshot = context.nativeEvidence!;
+            const request = snapshot.requests.find(
+              (item) => item.specifier === './part',
+            )!;
+            Object.defineProperty(context, 'nativeEvidence', {
+              value: {
+                ...snapshot,
+                requests:
+                  kind === 'context'
+                    ? snapshot.requests.map((item) =>
+                        item.id === request.id
+                          ? { ...item, consumerContextId: 'unrelated-context' }
+                          : item,
+                      )
+                    : snapshot.requests,
+                resolutions: snapshot.resolutions.map((resolution) => {
+                  if (resolution.requestId !== request.id) return resolution;
+                  if (kind === 'unavailable')
+                    return { ...resolution, state: 'unavailable' };
+                  if (kind === 'redirect')
+                    return { ...resolution, rawRedirectEvidenceIds: [] };
+                  if (kind === 'target')
+                    return {
+                      ...resolution,
+                      target: {
+                        ...resolution.target!,
+                        lexicalPath: fixture.path('packages/b/wrong.d.ts'),
+                      },
+                    };
+                  return resolution;
+                }),
+              },
+            });
+          }
+          return context;
+        });
+      try {
+        await expect(
+          prepareGeneratedTsconfigGraph(fixture.config),
+        ).rejects.toThrow(diagnostic);
+      } finally {
+        create.mockRestore();
+        await fixture.cleanup();
+      }
+    },
+  );
+});
+
+it('retains competing-reference protection for a local declaration root with skipLibCheck', async () => {
+  const files = declarationPolicyFiles();
+  const a = JSON.parse(files['packages/a/tsconfig.json']!);
+  a.files.push('local.d.ts');
+  a.compilerOptions.skipLibCheck = true;
+  a.liminaOptions = {
+    implicitRefs: [
+      { path: '../b/tsconfig.json', reason: 'Required build ordering' },
+    ],
+  };
+  const b = JSON.parse(files['packages/b/tsconfig.json']!);
+  b.files = ['../a/local.d.ts'];
+  files['packages/a/tsconfig.json'] = json(a);
+  files['packages/b/tsconfig.json'] = json(b);
+  files['packages/a/local.d.ts'] = files['packages/b/b.d.ts']!;
+  files['packages/a/a.ts'] =
+    'import type { Value } from "./local"; export type Result = Value;';
+  const fixture = await createFixture(files);
+  try {
+    await expect(prepareGeneratedTsconfigGraph(fixture.config)).rejects.toThrow(
+      'Competing declaration input mappings',
+    );
+  } finally {
+    await fixture.cleanup();
+  }
 });

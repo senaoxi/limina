@@ -40,6 +40,8 @@ export function declarationExecutionGaps(
     closure.configs.has(config) &&
     receipts.some(
       (receipt) =>
+        receipt.version === 2 &&
+        receipt.contextId.length > 0 &&
         receipt.sourceConfig === config &&
         receipt.checker === 'tsc' &&
         receipt.compilerVersion === ts.version,

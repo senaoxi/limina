@@ -28,7 +28,7 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-const key = 'generated-graph-coverage-bounded-v5';
+const key = 'generated-graph-coverage-bounded-v6';
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
@@ -154,7 +154,11 @@ export async function restoreGeneratedGraph(
     ...options,
     generation: options.preparation.projectConfigCache?.generation,
   });
-  return data === undefined || !hasValidRestoredDeclarationContexts(data)
+  return data === undefined ||
+    !hasValidRestoredDeclarationContexts(
+      data,
+      options.preparation.projectDependencyCaches?.metrics,
+    )
     ? undefined
     : rebindArtifacts(data, options);
 }

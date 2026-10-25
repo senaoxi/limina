@@ -52,7 +52,7 @@ export async function finishPreparedGraph(input: {
     state,
   });
   observeOutputProjections(state, projectDependencyCaches);
-  validateStagedDeclarationContexts(state);
+  validateStagedDeclarationContexts(state, projectDependencyCaches.metrics);
   const run = coreCollectionRun(projectDependencyCaches);
   if (run.transaction !== 'failed') run.transaction = 'completed';
   finishAnalysisOutcome(

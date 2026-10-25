@@ -1,3 +1,4 @@
+import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import {
   type DeclarationValidationTarget,
   validateDeclarationContexts,
@@ -7,6 +8,7 @@ import type { GeneratedTsconfigGraphResult } from './types';
 
 export function validateStagedDeclarationContexts(
   state: GeneratedGraphPreparationState,
+  metrics?: AnalysisMetricsRecorder,
 ): void {
   const targets: DeclarationValidationTarget[] = [];
   for (const projects of state.projectsByChecker.values())
@@ -28,6 +30,8 @@ export function validateStagedDeclarationContexts(
     files: state.writeContext.files,
     coverage: state.sourceConfigCoverage,
     targets,
+    metrics,
+    phase: 'generation',
   });
 }
 
@@ -43,6 +47,7 @@ export function hasValidRestoredDeclarationContexts(
     | 'generatedFiles'
     | 'sourceConfigCoverage'
   >,
+  metrics?: AnalysisMetricsRecorder,
 ): boolean {
   const analysis = graph.dependencyAnalysis;
   if (analysis === undefined) return false;
@@ -59,6 +64,8 @@ export function hasValidRestoredDeclarationContexts(
     files: graph.generatedFiles,
     coverage: graph.sourceConfigCoverage,
     targets,
+    metrics,
+    phase: 'restore',
   });
   return (
     analysis.declarationValidation === undefined ||

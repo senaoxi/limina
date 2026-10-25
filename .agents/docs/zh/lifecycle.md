@@ -281,6 +281,6 @@ Resolution、preparation、显式 TypeEvidence、依赖观察及支持输入枚�
 
 ## 声明上下文 receipt 与撤销
 
-Analysis adapter v20 和 generated-graph identity v5 拒绝旧政策语义。当前配置发现、Coverage、文件身份、显式选择、paths/extends/references 以及 Checker/工具链输入共同决定决策资格。正常 awaiting-selection 停止会替换已完成的贡献事务并撤销旧政策边，不能当成允许保留旧贡献的观察失败。
+Analysis adapter v21、Native adapter v8 和 generated-graph identity v6 拒绝旧政策及请求加载语义；receipt version 2 拒绝旧声明观察，不进行转换。当前配置发现、Coverage、文件身份、显式选择、paths/extends/references 以及 Checker/工具链输入共同决定决策资格。正常 awaiting-selection 停止会替换已完成的贡献事务并撤销旧政策边，不能当成允许保留旧贡献的观察失败。
 
-恢复依据当前选择及已取得资格的源码观察重建政策引用，然后重新执行最终 bounded 候选验证；该 pass 暂不参加 Native context 持久复用。因此 Native 事实的 clean 恢复不意味着声明治理总计零 Program。候选 receipt 绑定实际声明/output 配置与委派请求；执行阶段在 mutation 和 launch 前复核选定引用闭包与合格原生构建命令，不持久化 permit。Owner 的跳过检查选项变化后不能继续使用旧 receipt。增量 Checker 成功不描述为本轮重新检查声明。
+恢复依据当前选择及已取得资格的源码观察重建政策引用，然后重新执行最终 bounded 候选验证；该 pass 暂不参加 Native context 持久复用。因此 Native 事实的 clean 恢复不意味着声明治理总计零 Program。候选 receipt 绑定观察 context、实际声明/output 配置、逐文件 loaded 状态及请求解析状态。冷生成和恢复候选记录 declaration-candidate context 次数/耗时及 bounded-program-create 事件，不进入源码分析缓存。semanticPrograms 缓存指标仍统计源码分析 context，不代表全部候选 Program 或收敛 pass。执行阶段在 mutation 和 launch 前复核选定引用闭包与合格原生构建命令，不持久化 permit。Owner 的跳过检查选项变化后不能继续使用旧 receipt。增量 Checker 成功不描述为本轮重新检查声明。

@@ -80,7 +80,7 @@ export function createBoundedProgramClosure(
     });
     // A newly discovered import can change physical loading. Register it in
     // the same convergence protocol as resolver callbacks, before freezing.
-    registerInventoryLoads(loads, modules);
+    registerInventoryLoads(loads, modules, program);
     isRepeat = loads.finishPass(program, revision);
     assertNativeObservationInputs(options, compiler);
   } while (isRepeat);
@@ -96,14 +96,23 @@ export function createBoundedProgramClosure(
 function registerInventoryLoads(
   loads: NativeProgramLoads,
   modules: readonly NativeModuleObservation[],
+  program: NativeObservedProgram,
 ): void {
-  for (const observation of modules) registerInventoryLoad(loads, observation);
+  for (const observation of modules)
+    registerInventoryLoad(loads, observation, program);
 }
 function registerInventoryLoad(
   loads: NativeProgramLoads,
   observation: NativeModuleObservation,
+  program: NativeObservedProgram,
 ): void {
-  if (observation.role === 'import') loads.resolved(moduleTarget(observation));
+  const options = program.getCompilerOptionsForFile(observation.source);
+  if (
+    options !== undefined &&
+    observation.role === 'import' &&
+    !options.noResolve
+  )
+    loads.resolved(moduleTarget(observation));
 }
 function moduleTarget(
   observation: NativeModuleObservation,

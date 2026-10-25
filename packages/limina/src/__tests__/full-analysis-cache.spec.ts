@@ -1723,3 +1723,125 @@ it('revokes a cached unique declaration context when Coverage or the explicit ch
     expect.objectContaining({ kind: 'graphHits', count: 1 }),
   );
 }, 30_000);
+
+it('counts restored declaration candidates and revokes the last independent types contribution', () => {
+  const f = fixture();
+  const compilerOptions = {
+    module: 'NodeNext',
+    moduleResolution: 'NodeNext',
+    types: [],
+  };
+  const a = {
+    compilerOptions: {
+      ...compilerOptions,
+      noResolve: true,
+      noUncheckedSideEffectImports: false,
+      types: ['./src/value'],
+    },
+    files: ['src/a.ts'],
+  };
+  f.write(
+    'tsconfig.json',
+    JSON.stringify({
+      files: [],
+      references: [
+        { path: './tsconfig.a.json' },
+        { path: './tsconfig.b.json' },
+      ],
+    }),
+  );
+  f.write('tsconfig.a.json', JSON.stringify(a));
+  f.write(
+    'tsconfig.b.json',
+    JSON.stringify({ compilerOptions, files: ['src/value.d.ts'] }),
+  );
+  f.write('src/a.ts', 'import "./value.js"; export const value = 1;');
+  const run = 'console.log(JSON.stringify(await runCache()));';
+  const first = f.execute<GraphRunResult>(run);
+  expect(first.graph.edges.map((edge) => edge.toConfigPath)).toEqual([
+    f.file('tsconfig.b.json'),
+  ]);
+  expect(first.events).toContainEqual(
+    expect.objectContaining({
+      name: 'declaration-candidate',
+      kind: 'generation',
+      count: 1,
+    }),
+  );
+  const warm = f.execute<GraphRunResult>(run);
+  expect(warm.graph).toEqual(first.graph);
+  expect(warm.events).toContainEqual(
+    expect.objectContaining({ kind: 'graphHits', count: 1 }),
+  );
+  expect(warm.events).toContainEqual(
+    expect.objectContaining({
+      name: 'declaration-candidate',
+      kind: 'restore',
+      count: 1,
+    }),
+  );
+  expect(warm.events).toContainEqual(
+    expect.objectContaining({ name: 'bounded-program-create', count: 1 }),
+  );
+  expect(
+    warm.events.find((event) => event.kind === 'semanticPrograms')?.count ?? 0,
+  ).toBe(0);
+  f.write('src/a.ts', 'export const value = 1;');
+  const typesOnly = f.execute<GraphRunResult>(run);
+  expect(typesOnly.graph.edges).toEqual(first.graph.edges);
+  a.compilerOptions.types = [];
+  f.write('tsconfig.a.json', JSON.stringify(a));
+  const removed = f.execute<GraphRunResult>(run);
+  expect(removed.graph.edges).toEqual([]);
+  const restored = f.execute<GraphRunResult>(run);
+  expect(restored.graph).toEqual(removed.graph);
+  expect(restored.events).toContainEqual(
+    expect.objectContaining({ kind: 'graphHits', count: 1 }),
+  );
+}, 30_000);
+
+it.each(['skipLibCheck', 'noCheck'] as const)(
+  'revokes a restored external owner after enabling %s',
+  (option) => {
+    const f = fixture();
+    const compilerOptions = {
+      module: 'NodeNext',
+      moduleResolution: 'NodeNext',
+      types: [],
+    };
+    f.write(
+      'tsconfig.json',
+      JSON.stringify({
+        files: [],
+        references: [
+          { path: './tsconfig.a.json' },
+          { path: './tsconfig.b.json' },
+        ],
+      }),
+    );
+    f.write(
+      'tsconfig.a.json',
+      JSON.stringify({ compilerOptions, files: ['src/a.ts'] }),
+    );
+    const b = { compilerOptions, files: ['src/value.d.ts'] };
+    f.write('tsconfig.b.json', JSON.stringify(b));
+    const run = 'console.log(JSON.stringify(await runCache()));';
+    f.execute<GraphRunResult>(run);
+    const warm = f.execute<GraphRunResult>(run);
+    expect(warm.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    f.write(
+      'tsconfig.b.json',
+      JSON.stringify({
+        ...b,
+        compilerOptions: { ...compilerOptions, [option]: true },
+      }),
+    );
+    const rejected = f.execute<{ error: string }>(
+      'try { await runCache(); console.log(JSON.stringify({error:"not refused"})); } catch(error) { console.log(JSON.stringify({error:error.message})); }',
+    );
+    expect(rejected.error).toContain('owner must check declarations');
+  },
+  30_000,
+);
