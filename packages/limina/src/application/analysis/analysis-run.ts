@@ -13,6 +13,7 @@ export type AnalysisMetricName =
   | 'syntax-cache-retained'
   | 'bounded-program-create'
   | 'bounded-first-typechecker'
+  | 'declaration-candidate'
   | 'artifact-mutation'
   | 'artifact-safety-immediate-recheck'
   | 'artifact-safety-lstat'

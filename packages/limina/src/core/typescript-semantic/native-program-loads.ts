@@ -147,7 +147,7 @@ export class NativeProgramLoads {
   }
 
   resolved(file: string | undefined): void {
-    if (file === undefined || this.project.options.noResolve) return;
+    if (file === undefined) return;
     const redirect = this.redirect(file);
     this.grantRedirect(file, redirect);
   }

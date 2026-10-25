@@ -143,10 +143,10 @@ Managed-output lookup 可解释明确管理的输出，但不能将声明消费�
 
 ## 受管声明的配置上下文
 
-[上下文决策](../../../packages/limina/src/core/build-graph/declaration-context-decisions.ts)将声明消费连接到当前 Coverage。完整且唯一的 Coverage 自动选择 B，不要求 Emit 资格。多个配置合法覆盖同一声明时，外部消费者通过 `liminaOptions.declarationContexts` 选择，否则保留 `awaiting-selection`；证据不完整时为 unavailable。本地 roots 保持本地角色，不生成 self-reference。file/config 路径相对消费者 ordinary source config，不支持 glob，也不继承全局 owner；implicitRefs 是独立的项目关系。
+[上下文决策](../../../packages/limina/src/core/build-graph/declaration-context-decisions.ts)将声明消费连接到当前 Coverage。完整且唯一的 Coverage 自动选择 B，不要求 Emit 资格。多个配置合法覆盖同一声明时，外部消费者通过 `liminaOptions.declarationContexts` 选择，否则保留 `awaiting-selection`；证据不完整时为 unavailable。本地 roots 保持本地角色，不生成 self-reference。绑定到请求的 noResolve 证明只排除该 module occurrence 的声明政策贡献；roots 和独立 types 请求保留各自的输入责任。解析命中、不产生 emit 义务与输入引入资格不能互相替代。Native module 加载授权使用源文件的有效选项；实际 configured/automatic types 请求保留独立授权路径。file/config 路径相对消费者 ordinary source config，不支持 glob，也不继承全局 owner；implicitRefs 是独立的项目关系。
 
 [政策贡献](../../../packages/limina/src/core/build-graph/declaration-context-references.ts)复用 declaration-provider 边与 Checker 相等约束，不修改 NativeCompilationObligation。正常政策停止表示 bounded 观察完成，但候选必要条件未满足。未被消费的共享声明不会制造全局歧义错误。
 
-[候选验证](../../../packages/limina/src/core/build-graph/declaration-context-validation.ts)解析暂存的声明/output 配置，检查实际引用闭包与声明输入映射（包括没有 outputDts 的输入），将委派请求、mode、目标及 callback redirect 与 owner 的独立观察比较。实际可达的竞争映射与引用环不论排序如何都拒绝。Owner 必须允许检查声明；skipLibCheck/noCheck，或作用于默认库声明的 skipDefaultLibCheck，不能兑现合同。框架对自己的声明 roots 保留既有分析能力，新的资格门控用于跨项目委派。当前取得资格的 Checker 是原生 tsc；未取得资格的 Checker 与 command override 返回 unavailable。版本/API 能力缺失时不回退到消费者选项。
+[候选验证](../../../packages/limina/src/core/build-graph/declaration-context-validation.ts)解析暂存的声明/output 配置，检查实际引用闭包与声明输入映射（包括没有 outputDts 的输入），将委派请求、mode、目标及 callback redirect 与 owner 的独立观察比较。引用闭包决定映射是否合法，不代表消费者 Program 实际加载的声明集合。仅对候选实际加载的声明比较委派请求；当前消费者自己的消费决策仍必须加载。完整的 own ambient inventory 证明不要求 resolver callback redirect。resolved 和已完成的 unresolved module/type 请求仍须证明使用选定上下文；unavailable 观察不能生成 admitted receipt。实际可达的竞争映射与引用环不论排序如何都拒绝。只有被外部选中的 provider 必须允许检查声明；skipLibCheck/noCheck，或作用于该 provider 自身观察到的默认库声明的 skipDefaultLibCheck，不能兑现这项责任。普通本地消费保留自身检查选项及 root 映射保护；同一配置兼任外部 provider 时仍承担严格责任。框架对自己的声明 roots 保留既有分析能力，新的资格门控用于跨项目委派。当前取得资格的 Checker 是原生 tsc；未取得资格的 Checker 与 command override 返回 unavailable。版本/API 能力缺失时不回退到消费者选项。
 
 B 的项目检查与 A 的模块解析重定向是两个承诺。A 保留自己的 TypeChecker 选项。增量构建可以复用此前检查；候选 receipt 证明配置/解析绑定，不表示本轮 Checker 已重新检查成功。Generated-graph、full-analysis-cache 和 execution-admission 回归分别保护这些边界。
