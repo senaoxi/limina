@@ -45,6 +45,8 @@ Native 建图按 context 创建物理截断 Program，不按 occurrence 创建�
 
 运行期 project dependency identity 包含 compiler options/conditions、源码文件、authority、extensions、package roots、workspace boundary 与 generation。Native fact cache 也以该 project identity 为键。证据快照在收集与缓存边界复制并冻结，不保留 live framework profile。只有已经观察到的 runtime evidence 才会被复制，克隆不会解析模块。[Project dependency 回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)覆盖上下文变化、修改尝试、原生 resource 及框架生成 observation。
 
+[Runtime/source 收集器](../../../packages/limina/src/core/project-dependencies/runtime-source.ts)在一次不可变收集请求内计算一次既有语义身份，并将其传入文件循环。Purpose、managed-output lookup、options、overlay、成员集合、package ownership、framework identity 与 generation 保持原有 key 语义。逐文件 Astro/Svelte context 替换仍清除并重算 key；没有通过全局 memo 将身份带入下一请求。Runtime observation 仍不产生 Native 编译义务或 reference input。[依赖回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)同时覆盖 compiler 与 runtime 收集器的上下文变化。
+
 Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以不可变 boundary 对象为键在 WeakMap 中记忆。原始 identity 包含完整路径清单；每个 occurrence/cache clone 都深拷贝该清单，会使内存随 workspace 大小与 import 数量的乘积增长，并曾在仓库验证中耗尽默认 4 GiB 堆。有界快照回归使用 10,000 个 workspace 路径；成员集合不同仍会同时改变 boundary 摘要和 project identity。WeakMap 不会延长已释放 boundary 的生命周期。
 
 [FileOwnerLookup](../../../packages/limina/src/core/build-graph/file-owner-lookup.ts) 的 lexical/canonical 索引与 realpath cache 限于当前 analysis/provider 生命周期。新 provider generation 与 replan 从各自 membership 输入新建索引，缺失或已重绑路径不借用旧 generation 的 owner。它不是 filesystem watcher，也不保证跨任意原地文件编辑的缓存有效性。
@@ -135,7 +137,7 @@ Clean 调用仍先校验全部旧输入，再由[失效传播](../../../packages
 
 Force 读取保留精确物理基线，不解码、校验或恢复旧模型。旧模型 revision 不可用于 unchanged 发布快捷路径，因此具备资格的冷分析结果继续经过与普通发布相同的 lease、输入／配置稳定性检查、基线比较及原子替换。Force 不绕过 `configuration-version-unknown`，也不为可执行配置授予持久化资格。
 
-修复信任边界之外的安装变化时，运行 `limina check --force`；指定配置时加上 `--config <path>`。它按当前项目状态刷新分析快照，后续普通 check 可恢复新模型。不删除快照、缓存目录、issue 结果或 checker `.tsbuildinfo`，也不要求强制 TypeScript checker 构建。store 仍根据解析后的绝对配置路径计算 key。
+修复信任边界之外的安装变化时，运行 `limina check --force`；指定配置时加上 `--config <path>`。它按当前项目状态刷新分析快照，后续普通 check 可恢复新模型。Force 开关本身不删除快照、缓存目录、issue 结果或 checker `.tsbuildinfo`，也不要求强制 TypeScript checker 构建。独立的受管构建状态失效规则仍在启动前执行。store 仍根据解析后的绝对配置路径计算 key。
 
 分析漂移最多以新 provider、TypeScript 项目配置解析和成员发现重试一次，继续使用本次冻结的 Limina 配置；事务仅包含分析／候选规划，不重放 checker、命令或产物写入。输出变化保留物化／replan receipt 协议。迟到 epoch 结果不能提交，旧的同 context 实例 dispose 不能释放替代实例。
 
@@ -175,6 +177,8 @@ Native 生产入口不再持有独立 SourceSyntaxFactsCache 或 Programless 扫
 
 [Source phases](../../../packages/limina/src/source-check/phases.ts) 分离只读准备、Knip 执行/清理和只读 ownership/authority/reporting。Runner 在**现有整体 task 资源声明**下顺序执行。公开 task 仍是 `source:check`，最终 source 结果只发布一次。Knip 失败或清理错误仍阻止后续阶段发布成功。Phase wall 观测不授权其他读取方在 Knip 临时入口可见时并发扫描，也不削弱 manifest、repository、generated-file 或跨进程 lease 约束。
 
+[Vue 依赖收集](../../../packages/limina/src/core/project-dependencies/provider.ts)与[已取得资格的 Vue 回执绑定](../../../packages/limina/src/core/analysis-cache/vue-execution-inputs.ts)各自为一次同步只读批次创建新的 `PathBindingReplay`。只复用祖先链接观察，叶节点 metadata、realpath、内容读取和回执比较继续实时执行。作用域在任何 await、物化、受管写入或进程启动前结束。准入与发布保留独立的新鲜校验。[准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts)在启用和禁用缓存时均拒绝后续内容变化，以及指向同一 canonical declaration 的祖先链接改指。此复用不是文件系统原子快照。
+
 ## Namespace、物理身份与 plan
 
 [namespace-core](../../../packages/limina/src/domain/artifacts/namespace-core.ts) 记录 logical root、canonical root、generation token，并通过内部 WeakSet 认证；[artifact plan](../../../packages/limina/src/domain/artifacts/plan.ts) 也认证并关联同一个 token。相同 root 与 numeric generation 的两个新 namespace 不能互换 plan。生产 graph 生成 revisioned plan；内部 unrevisioned plan 构造入口存在，不能把 base-revision 检查泛化到每个 API 输入。
@@ -210,6 +214,8 @@ Holder 发布的 rename 返回 `EEXIST` 或 `ENOTEMPTY` 时已经证明发生争
 ## 受管 Checker 的执行准入
 
 物化与执行各自拥有独立准入。诊断候选可以物化，同时适用的 `deny.refs` 阻止受管 Checker target 执行。[Execution Admission](../../../packages/limina/src/typecheck/admission/execution-admission.ts) 由受管 build 和独立的框架 typecheck pool 共用，在物化 revision lease 与当前输入证明下检查 mutation、launch、output-copy 边界。它不调用完整 `graph:check`，不改变 Core 完成状态，不删除关系，也不保证 Checker 最终成功。
+
+Native external-library implementation input 可以为消费者提供类型，却不建立消费者 emit 义务或生成 Project Reference。源码包变化后，编译器 solution builder 因而可能跳过未变化的消费者。[受管构建状态证明](../../../packages/limina/src/typecheck/managed/build-info.ts)保守地将带有该 locked Native absence proof 的消费者标记为完整检查。既有写入授权边界在启动前只删除这些消费者已认证的 build-info 文件，同时适用于内部声明和用户输出构建。该策略参与 mutation fingerprint；无关 leaf 保留增量状态及既有缺失输出恢复规则。不解析编译器私有 build-info 格式，不虚构 producer 或 reference，也不额外选择进程目标。即使输入未变，这些消费者也会重建；选择性复用需要独立的已消费输入证明。[独立进程回归](../../../packages/limina/integration/tests/source-package-incremental.spec.ts)覆盖公共类型变化、保留 mtime 的传递变化、analysis force、无关 leaf 复用及受管输出构建。
 
 [引用闭包](../../../packages/limina/src/typecheck/admission/reference-closure.ts) 从本次命令的实际配置开始。生成声明／输出配置的 alias 保留源配置与 Checker 身份。实际引用（包括传递 `implicitRefs`）决定可达性，依赖调度边不能替代它。solution 与 wrapper 只提供可达性，不满足声明义务，也不引入容器标签政策。框架源码命令使用自身 source config 和能力 context；schedule 不变成 Project Reference，也不选择额外进程。[纯引用治理](../../../packages/limina/src/graph-check/reference-governance.ts) 复用既有规则规范化、标签匹配、alias 与 finding，只裁定该执行范围内适用的 `deny.refs`。规则规范化认识所有合法 Checker 映射，匹配仍针对当前边；无关的合法跨 Checker 规则目标不是 unavailable 映射。
 

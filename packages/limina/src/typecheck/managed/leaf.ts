@@ -95,9 +95,13 @@ function createEffectiveOptionsFingerprint(
 function createBuildStateProof(options: {
   classification: ManagedLeafClassification;
   outputPaths: string[];
+  requiresFullCheck: boolean;
   tsBuildInfoFile: string | undefined;
 }): ManagedLeafMutationProof['buildStateProof'] {
-  if (options.classification.kind !== 'user-output') {
+  if (
+    options.classification.kind !== 'user-output' &&
+    !options.requiresFullCheck
+  ) {
     return { outputPaths: [] };
   }
   if (options.tsBuildInfoFile === undefined) {
@@ -105,6 +109,7 @@ function createBuildStateProof(options: {
   }
   return {
     outputPaths: options.outputPaths,
+    requiresFullCheck: options.requiresFullCheck,
     tsBuildInfoPath: options.tsBuildInfoFile,
   };
 }
@@ -115,12 +120,14 @@ function createLeafResult(options: {
   outputPaths: string[];
   preparation: LeafPreparation;
   projection: ManagedOutputProjection;
+  requiresFullCheck: boolean;
   tsBuildInfoFile: string | undefined;
 }): ManagedLeafMutationProof {
   return {
     buildStateProof: createBuildStateProof({
       classification: options.classification,
       outputPaths: options.outputPaths,
+      requiresFullCheck: options.requiresFullCheck,
       tsBuildInfoFile: options.tsBuildInfoFile,
     }),
     configDependencies: [...options.preparation.parsedProof.configDependencies],
@@ -143,6 +150,7 @@ export async function proveLeafMutation(options: {
   classification: ManagedLeafClassification;
   configPath: string;
   projectRootDir: string;
+  requiresFullCheck: boolean;
   workspaceContext: ValidatedWorkspaceContext;
 }): Promise<ManagedLeafMutationProof> {
   const preparation = prepareLeafProject(options);
@@ -195,6 +203,7 @@ export async function proveLeafMutation(options: {
     outputPaths,
     preparation,
     projection,
+    requiresFullCheck: options.requiresFullCheck,
     tsBuildInfoFile,
   });
 }
