@@ -342,95 +342,99 @@ describe('AnalysisProviderSet', () => {
     }
   });
 
-  it.each(['astro', 'svelte'] as const)(
-    'governs pure .%s sources across ownership, graph, proof, and package domains',
-    async (family) => {
-      const fixture = await createCoreFixture();
-      const fixturePath = createFixturePathResolver(fixture.rootDir);
-      const sourceConfigPath = fixturePath('packages/a/tsconfig.lib.json');
-      const sourceFilePath = fixturePath(`packages/a/src/App.${family}`);
-      fixture.config.scope = {
-        ...fixture.config.scope,
-        checkers: {
-          [family === 'astro' ? 'astro' : 'svelte-check']: {
-            include: ['packages/a/tsconfig.json'],
+  for (const family of ['astro', 'svelte'] as const) {
+    it(
+      `governs pure .${family} sources across ownership, graph, proof, and package domains`,
+      async () => {
+        const fixture = await createCoreFixture();
+        const fixturePath = createFixturePathResolver(fixture.rootDir);
+        const sourceConfigPath = fixturePath('packages/a/tsconfig.lib.json');
+        const sourceFilePath = fixturePath(`packages/a/src/App.${family}`);
+        fixture.config.scope = {
+          ...fixture.config.scope,
+          checkers: {
+            [family === 'astro' ? 'astro' : 'svelte-check']: {
+              include: ['packages/a/tsconfig.json'],
+            },
           },
-        },
-        source: { include: [`**/*.${family}`] },
-      };
-      await writeText(
-        sourceConfigPath,
-        stringifyJson({
-          compilerOptions: buildCompilerOptions,
-          include: [`src/**/*.${family}`],
-          liminaOptions: { graphRules: ['framework'] },
-        }),
-      );
-      await writeText(sourceFilePath, '<h1>Framework source</h1>\n');
-
-      try {
-        const graph = await fixture.core.buildGraph.getGraph();
-        const checkerName = family === 'astro' ? 'astro' : 'svelte-check';
-        const unit = graph.governedSources
-          .get(checkerName)
-          ?.get(sourceConfigPath);
-        const projection = unit?.buildProjection;
-        const projectedConfigPath =
-          projection === undefined
-            ? sourceConfigPath
-            : 'buildConfigPath' in projection
-              ? projection.buildConfigPath
-              : projection.kind === 'framework-checker'
-                ? sourceConfigPath
-                : projection.dtsConfigPath;
-        const sourceGraph =
-          await fixture.core.tsconfig.getSourceGraphProjects();
-        const sourceProject = sourceGraph.projects.find(
-          (project) => project.configPath === projectedConfigPath,
+          source: { include: [`**/*.${family}`] },
+        };
+        await writeText(
+          sourceConfigPath,
+          stringifyJson({
+            compilerOptions: buildCompilerOptions,
+            include: [`src/**/*.${family}`],
+            liminaOptions: { graphRules: ['framework'] },
+          }),
         );
-        const owner =
-          await fixture.core.tsconfig.findOwningProject(sourceFilePath);
-        const preflight = new LiminaPreflightManager({
-          config: fixture.config,
-          providers: fixture.core,
-        });
-        const sourceState = await createSourceCheckState(fixture.config, {
-          preflight,
-        });
-        const coverage = collectCoverage({
-          checkerTargets: [],
-          config: fixture.config,
-          generatedGraph: graph,
-          graphRoutes: [],
-          sourceFiles: new Set([sourceFilePath]),
-          virtualFiles: graph.generatedFiles,
-        });
-        const domain =
-          await fixture.core.packages.getPackageDomain('@fixture/a');
+        await writeText(sourceFilePath, '<h1>Framework source</h1>\n');
 
-        expect(unit?.ownedFileNames).toEqual([sourceFilePath]);
-        expect(sourceProject?.ownedFileNames).toEqual([sourceFilePath]);
-        expect(sourceProject?.labels).toEqual(['framework']);
-        expect(owner?.resolverConfigPath).toBe(sourceConfigPath);
-        expect(
-          sourceState.sourceProjectEntries.find(
-            (entry) => entry.project.configPath === projectedConfigPath,
-          )?.fileNames,
-        ).toEqual([sourceFilePath]);
-        expect(coverage.get(sourceFilePath)).toMatchObject([
-          {
-            checkerName,
-            projectPath: sourceConfigPath,
-            type: 'graph',
-          },
-        ]);
-        expect(domain.sourceConfigPaths).toContain(sourceConfigPath);
-        expect(domain.sourceModulePaths).toContain(sourceFilePath);
-      } finally {
-        await fixture.cleanup();
-      }
-    },
-  );
+        try {
+          const graph = await fixture.core.buildGraph.getGraph();
+          const checkerName = family === 'astro' ? 'astro' : 'svelte-check';
+          const unit = graph.governedSources
+            .get(checkerName)
+            ?.get(sourceConfigPath);
+          const projection = unit?.buildProjection;
+          const projectedConfigPath =
+            projection === undefined
+              ? sourceConfigPath
+              : 'buildConfigPath' in projection
+                ? projection.buildConfigPath
+                : projection.kind === 'framework-checker'
+                  ? sourceConfigPath
+                  : projection.dtsConfigPath;
+          const sourceGraph =
+            await fixture.core.tsconfig.getSourceGraphProjects();
+          const sourceProject = sourceGraph.projects.find(
+            (project) => project.configPath === projectedConfigPath,
+          );
+          const owner =
+            await fixture.core.tsconfig.findOwningProject(sourceFilePath);
+          const preflight = new LiminaPreflightManager({
+            config: fixture.config,
+            providers: fixture.core,
+          });
+          const sourceState = await createSourceCheckState(fixture.config, {
+            preflight,
+          });
+          const coverage = collectCoverage({
+            checkerTargets: [],
+            config: fixture.config,
+            generatedGraph: graph,
+            graphRoutes: [],
+            sourceFiles: new Set([sourceFilePath]),
+            virtualFiles: graph.generatedFiles,
+          });
+          const domain =
+            await fixture.core.packages.getPackageDomain('@fixture/a');
+
+          expect(unit?.ownedFileNames).toEqual([sourceFilePath]);
+          expect(sourceProject?.ownedFileNames).toEqual([sourceFilePath]);
+          expect(sourceProject?.labels).toEqual(['framework']);
+          expect(owner?.resolverConfigPath).toBe(sourceConfigPath);
+          expect(
+            sourceState.sourceProjectEntries.find(
+              (entry) => entry.project.configPath === projectedConfigPath,
+            )?.fileNames,
+          ).toEqual([sourceFilePath]);
+          expect(coverage.get(sourceFilePath)).toMatchObject([
+            {
+              checkerName,
+              projectPath: sourceConfigPath,
+              type: 'graph',
+            },
+          ]);
+          expect(domain.sourceConfigPaths).toContain(sourceConfigPath);
+          expect(domain.sourceModulePaths).toContain(sourceFilePath);
+        } finally {
+          await fixture.cleanup();
+        }
+      },
+      // Astro traverses the installed declaration graph; keep other cases bounded.
+      family === 'astro' ? 120_000 : 30_000,
+    );
+  }
 
   it('shares one workspace path and lookup index within a provider generation', async () => {
     const fixture = await createCoreFixture();

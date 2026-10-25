@@ -392,6 +392,7 @@ async function createToolchainFixture(
 }
 
 describe('Astro semantic toolchain', () => {
+  // Real Astro declaration graphs exceeded 30s on Windows CI (up to 93s).
   it('retains package-import Astro facts and scheduling edges through source checking', async () => {
     const fixture = await createInstalledToolchainFixture({
       astroInstalledName: 'astro',
@@ -513,7 +514,7 @@ describe('Astro semantic toolchain', () => {
       preflight?.dispose();
       await fixture.cleanup();
     }
-  });
+  }, 120_000);
 
   it.each(['astro-v7-min', 'astro'] as const)(
     'loads the real %s owner chain as a supported Astro fixture',

@@ -3575,6 +3575,7 @@ export default component;
     }
   });
 
+  // Real Astro declaration graphs exceeded 30s on Windows CI (up to 93s).
   it('records all cross-config imports from an Astro owner as scheduling edges', async () => {
     const fixture = await createFixture({
       'packages/a/src/App.astro': [
@@ -3664,8 +3665,9 @@ export default component;
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 120_000);
 
+  // Real Astro declaration graphs exceeded 30s on Windows CI (up to 93s).
   it('keeps Astro source authority while routing Astro, Svelte, Vue, and TypeScript targets through their owning policies', async () => {
     const fixture = await createFixture({
       'packages/a/src/App.astro': [
@@ -3779,7 +3781,7 @@ export default component;
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 120_000);
 
   it('deduplicates one Astro execution failure without reporting a governance violation', async () => {
     const fixture = await createFixture(
