@@ -1,4 +1,5 @@
 import type { NativeCoverage, NativeFileIdentity } from './native-coverage';
+import type { NativeResolution } from './native-evidence';
 
 /**
 Governance decisions never change the compiler's obligation assessment.
@@ -23,7 +24,8 @@ export interface DeclarationContextDecision {
 }
 
 export interface DeclarationContextReceipt {
-  readonly version: 1;
+  readonly version: 2;
+  readonly contextId: string;
   readonly generatedConfig: string;
   readonly sourceConfig: string;
   readonly checker: string;
@@ -34,6 +36,7 @@ export interface DeclarationContextReceipt {
     readonly file: string;
     readonly sourceConfig: string;
     readonly referenceConfig: string;
+    readonly loaded: boolean;
   }[];
   readonly requests: readonly {
     readonly file: string;
@@ -42,6 +45,7 @@ export interface DeclarationContextReceipt {
     readonly specifier: string;
     readonly mode: string | null;
     readonly target: string | null;
+    readonly resolutionState: NativeResolution['state'];
     readonly redirects: readonly string[];
   }[];
 }

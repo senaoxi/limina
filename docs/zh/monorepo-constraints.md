@@ -191,9 +191,11 @@ import { createClient } from '@acme/core';
 
 两个路径都相对消费者的 ordinary source tsconfig。指定准确的声明文件和当前确实覆盖它的受管源配置，不支持 glob。项目自己的声明 roots 保持本地角色，共享 roots 也一样。此选项不建立全仓唯一 owner，implicitRefs 也不能选择声明上下文。
 
-选定项目独立分析自己的声明依赖。Limina 验证实际生成引用闭包，拒绝竞争声明映射与引用环，不通过排序解决选择冲突。已消费上下文处于待选择或 unavailable 时，相关生成候选和 Checker 准入被阻止；未使用的共享声明不会造成全局失败。
+只有具备声明输入引入资格的请求才参与外部上下文选择。被 `noResolve` 抑制的 module import 不会仅因解析命中文件而生成政策引用；独立 roots 或 `types` 入口仍然有效。
 
-本能力要求合格的原生 tsc 执行，以及能够提供声明输入关联的 TypeScript 版本。TypeScript 5.9.0–5.9.2 缺少该关联，应使用具备能力的受支持版本。其他 Checker 与 command override 当前不能兑现此合同。选定 owner 不能通过 skipLibCheck/noCheck，或实际适用的 skipDefaultLibCheck 跳过声明检查。既有 outputs 与 Checker 身份规则继续适用。
+选定项目独立分析自己的声明依赖。Limina 验证实际生成引用闭包，拒绝竞争声明映射与引用环，不通过排序解决选择冲突。A 未加载的上游私有声明不参与 A 的请求一致性比较。TypeScript 不需要 resolver callback 时，own ambient module 仍保留编译器证明的上下文。已消费上下文处于待选择或 unavailable 时，相关生成候选和 Checker 准入被阻止；未使用的共享声明不会造成全局失败。
+
+本能力要求合格的原生 tsc 执行，以及能够提供声明输入关联的 TypeScript 版本。TypeScript 5.9.0–5.9.2 缺少该关联，应使用具备能力的受支持版本。其他 Checker 与 command override 当前不能兑现此合同。普通本地声明消费保留自身检查选项和映射保护。被选作外部 owner 的配置不能通过 skipLibCheck/noCheck，或实际适用的 skipDefaultLibCheck 跳过声明检查。既有 outputs 与 Checker 身份规则继续适用。
 
 References 可以为 A 消费的声明选择模块解析选项，但 A 仍使用自己的 TypeChecker。B 的独立检查是另一项责任；增量构建可以复用此前检查，不保证每次重新运行。
 

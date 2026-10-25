@@ -40,7 +40,7 @@
 - **Problem**：手工补扫、目录豁免或抹掉真实 types/lib 会制造闭包；把 frontier stop 当失败会丢掉独立入口。
 - **Root cause**：解析、成员归属、加载和义务具有不同证明要求。
 - **Enforcement / Why it works**：[编译器 inventory](../../../packages/limina/src/core/typescript-semantic/native-program-inventory.ts)保留真实请求；[物理 frontier](../../../packages/limina/src/core/typescript-semantic/native-program-frontier.ts)在 SourceFile 创建之前执行 Coverage 决策；无完整 Program 生产回退。
-- **Concrete example**：A→env.d.ts 是政策边界。选定的声明项目独立推导自己的 B.ts 义务，A 不扫描或继承该项目的闭包。JS shadowed require 按编译器实际观察保留，但不因此宣称其为有效 Node runtime 调用。`noResolve` 的解析命中不证明义务。
+- **Concrete example**：A→env.d.ts 是政策边界。选定的声明项目独立推导自己的 B.ts 义务，A 不扫描或继承该项目的闭包。JS shadowed require 按编译器实际观察保留，但不因此宣称其为有效 Node runtime 调用。`noResolve` 的解析命中不证明义务或声明政策消费；独立 types 请求仍可引入同一目标。
 - **Protected property**：范围内遍历完整、物理截断可解释、独立入口和贡献撤销正确。
 - **Evidence / Strength / Confidence**：[编译器观察](../../../packages/limina/src/__tests__/native-program-observation.spec.ts)、[声明边界](../../../packages/limina/src/__tests__/declaration-policy.spec.ts)、[Native 增量](../../../packages/limina/src/__tests__/native-context-incremental.spec.ts)和[缓存](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)分别保护观察、Coverage、可达性和恢复。
 - **Boundaries**：真实 types/lib/raw references 不删除；stdlib、第三方、Bundler 和 reference 输出不自动豁免。共享声明 roots 是合法独立输入；外部多 Coverage 需要选择，不完整 Coverage 不能证明唯一选择。完整 Program 只用于 Oracle，实际诊断由最终 Checker 给出。
@@ -86,6 +86,8 @@
 - **Boundaries**：raw references、solution closure、`implicitRefs` 各有独立 evidence，不要求全部 graph edges 都源自 import；exported dependency graph 也不是 task graph。
 
 **Native 与 runtime**：TS require/createRequire/require.resolve 可继续贡献 runtime/source/package 治理，但不自动形成 Native references 或 Checker coloring 关系。Deny 是独立裁定，不从原始关系或候选投影删除边；unknown relation 保留完整性缺口。原始显式 references 和 implicitRefs 不依赖伪造 import。
+
+声明映射检查保留完整可达引用闭包，请求一致性仅约束候选实际加载的声明。本地 roots 不继承外部 provider 的 skip 限制；被其他消费者选中时则承担该责任。Own ambient 证明与 resolved、unresolved、unavailable 请求保持区别。[声明治理回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖这些独立责任。
 
 ## I07 — 声明 component 使用 exact checker identity
 

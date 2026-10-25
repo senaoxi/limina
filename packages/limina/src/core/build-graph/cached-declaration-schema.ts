@@ -36,15 +36,18 @@ const request = z.object({
   specifier: text,
   mode: text.nullable(),
   target: text.nullable(),
+  resolutionState: z.enum(['ambient', 'resolved', 'unresolved', 'unavailable']),
   redirects: texts,
 });
 const mapping = z.object({
   file: text,
   sourceConfig: text,
   referenceConfig: text,
+  loaded: z.boolean(),
 });
 const receipt = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
+  contextId: text,
   generatedConfig: text,
   sourceConfig: text,
   checker: text,

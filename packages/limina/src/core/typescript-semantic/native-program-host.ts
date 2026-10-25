@@ -55,7 +55,8 @@ function attachModuleResolver(
         redirect,
         mode,
       );
-      input.loads.resolved(raw.resolvedModule?.resolvedFileName);
+      if (!sourceOptions.noResolve)
+        input.loads.resolved(raw.resolvedModule?.resolvedFileName);
       input.requests.moduleCallback({ source, literal, mode, raw, redirect });
       return raw;
     });

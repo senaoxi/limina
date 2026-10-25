@@ -1,6 +1,7 @@
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
+import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import type {
   DeclarationContextDecision,
   DeclarationContextReceipt,
@@ -31,6 +32,8 @@ export interface DeclarationValidationInput {
   files: ReadonlyMap<string, string>;
   coverage?: SourceConfigCoverageIndex;
   targets: readonly DeclarationValidationTarget[];
+  metrics?: AnalysisMetricsRecorder;
+  phase?: 'generation' | 'restore';
 }
 interface CandidateProject extends DeclarationValidationTarget {
   parsed: ts.ParsedCommandLine;
@@ -70,9 +73,19 @@ export function validateDeclarationContexts(
       );
       const localInputs = relevantDeclarationRoots(input, project, decisions);
       if (applicable.length === 0 && localInputs.length === 0) continue;
-      result.receipts.push(
-        validateProject(input, project, closure, applicable, localInputs),
-      );
+      const start = performance.now();
+      try {
+        result.receipts.push(
+          validateProject(input, project, closure, applicable, localInputs),
+        );
+      } finally {
+        input.metrics?.record({
+          name: 'declaration-candidate',
+          kind: input.phase ?? 'generation',
+          count: 1,
+          durationMs: performance.now() - start,
+        });
+      }
     }
     compareDelegatedRequests(result.receipts);
   } catch (error) {
@@ -202,7 +215,7 @@ function expectedContexts(
         `Conflicting declaration contexts: ${decision.file.lexicalPath}`,
       );
     expected.set(decision.file.lexicalPath, owner);
-    checkOwner(owner);
+    checkOwner(owner, selection.state === 'selected');
   }
   // A root may be remapped by references even without an import in that root.
   for (const file of localInputs) expected.set(file, project);
@@ -233,13 +246,13 @@ function expectedContexts(
   return expected;
 }
 
-function checkOwner(owner: CandidateProject): void {
+function checkOwner(owner: CandidateProject, isDelegated: boolean): void {
   if (owner.checker !== 'tsc')
     throw new UnavailableDeclarationContext(
       `Declaration context checking is not qualified for ${owner.checker}: ${owner.sourceConfig}`,
     );
   const options = owner.parsed.options;
-  if (options.skipLibCheck || options.noCheck)
+  if (isDelegated && (options.skipLibCheck || options.noCheck))
     throw new DeclarationContextConflict(
       `Declaration context owner must check declarations (skipLibCheck/noCheck): ${owner.sourceConfig}`,
     );
@@ -267,22 +280,26 @@ function validateProject(
     decisions,
     localInputs,
   );
-  const context = createNativeSemanticContext({
-    configPath: project.generatedConfig,
-    fileNames: project.parsed.fileNames,
-    options: project.parsed.options,
-    projectReferences: project.parsed.projectReferences,
-    virtualFiles: input.files,
-    declarationContextValidation: {
-      sourceConfig: project.sourceConfig,
-      allowedDeclarations: expected.keys().toArray(),
+  const context = createNativeSemanticContext(
+    {
+      configPath: project.generatedConfig,
+      fileNames: project.parsed.fileNames,
+      options: project.parsed.options,
+      projectReferences: project.parsed.projectReferences,
+      virtualFiles: input.files,
+      declarationContextValidation: {
+        sourceConfig: project.sourceConfig,
+        allowedDeclarations: expected.keys().toArray(),
+      },
+      workspaceSourceBoundary: createWorkspaceSourceBoundary(
+        closure.flatMap((member) => member.parsed.fileNames),
+        undefined,
+        input.coverage,
+      ),
     },
-    workspaceSourceBoundary: createWorkspaceSourceBoundary(
-      closure.flatMap((member) => member.parsed.fileNames),
-      undefined,
-      input.coverage,
-    ),
-  });
+    undefined,
+    input.metrics,
+  );
   try {
     const failure = context.nativeEvidence!.failures[0];
     if (failure !== undefined)
@@ -300,13 +317,15 @@ function validateProject(
           `Selected declaration was not loaded: ${decision.file.lexicalPath}`,
         );
     }
-    for (const [file, owner] of expected) {
+    for (const decision of decisions) {
       if (
-        owner.parsed.options.skipDefaultLibCheck &&
-        context.getSourceFile(file)?.hasNoDefaultLib
+        decision.selection.state === 'selected' &&
+        decision.selection.config === project.sourceConfig &&
+        project.parsed.options.skipDefaultLibCheck &&
+        context.getSourceFile(decision.file.lexicalPath)?.hasNoDefaultLib
       )
         throw new DeclarationContextConflict(
-          `Declaration context owner skips this default library: ${file}`,
+          `Declaration context owner skips this default library: ${decision.file.lexicalPath}`,
         );
     }
     const mappings = [...expected].map(([file, owner]) => {
@@ -327,10 +346,12 @@ function validateProject(
         file,
         sourceConfig: owner.sourceConfig,
         referenceConfig: actual,
+        loaded: context.getSourceFile(file) !== undefined,
       };
     });
     return {
-      version: 1,
+      version: 2,
+      contextId: context.nativeEvidence!.contexts[0]!.id,
       ...projectIdentity(project),
       compilerVersion: ts.version,
       inputFingerprint: nativeFingerprint(
@@ -369,6 +390,13 @@ function observedDeclarationRequests(
       !expected.has(request.entry.file.lexicalPath)
     )
       return [];
+    if (
+      snapshot.contexts.length !== 1 ||
+      request.consumerContextId !== snapshot.contexts[0]!.id
+    )
+      throw new UnavailableDeclarationContext(
+        `Unbound declaration request: ${request.specifier}`,
+      );
     const resolution = snapshot.resolutions.find(
       (item) => item.requestId === request.id,
     );
@@ -384,6 +412,7 @@ function observedDeclarationRequests(
         specifier: request.specifier,
         mode: request.resolutionMode,
         target: resolution.target?.lexicalPath ?? null,
+        resolutionState: resolution.state,
         redirects: resolution.rawRedirectEvidenceIds,
       },
     ];
@@ -394,7 +423,11 @@ function compareDelegatedRequests(
 ): void {
   for (const receipt of receipts)
     for (const mapping of receipt.mappings) {
-      if (mapping.referenceConfig === receipt.generatedConfig) continue;
+      if (
+        !mapping.loaded ||
+        mapping.referenceConfig === receipt.generatedConfig
+      )
+        continue;
       const owner = receipts.find(
         (candidate) => candidate.generatedConfig === mapping.referenceConfig,
       );
@@ -412,6 +445,7 @@ function compareDelegatedRequests(
           request.channel,
           request.specifier,
           request.mode,
+          request.resolutionState,
           request.target,
         ]);
       if (
@@ -422,6 +456,23 @@ function compareDelegatedRequests(
           `Declaration request context differs from its selected owner: ${mapping.file}`,
         );
       for (const request of consumer) {
+        // The inventory's own-ambient proof is independent of a resolver
+        // callback. A null target or an empty redirect alone proves nothing.
+        if (
+          request.resolutionState === 'ambient' &&
+          request.channel === 'module'
+        ) {
+          if (
+            request.target !== null ||
+            request.redirects.some(
+              (redirect) => redirect !== mapping.referenceConfig,
+            )
+          )
+            throw new DeclarationContextConflict(
+              `Conflicting ambient declaration context: ${mapping.file}`,
+            );
+          continue;
+        }
         if (
           ['module', 'type-directive'].includes(request.channel) &&
           !request.redirects.includes(mapping.referenceConfig)
