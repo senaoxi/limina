@@ -1,6 +1,7 @@
 import { createImportAnalysisContext } from '#core/import-analysis/runner';
 import type { ProjectInfo } from '#core/import-graph/context';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
@@ -8,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { TypeEvidenceCore } from '../core/type-evidence';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import { readFixtureSourceCoverage } from './helpers/native-coverage';
-import { toPortablePath } from './helpers/path';
+import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -18,11 +19,12 @@ async function writeText(filePath: string, text: string): Promise<void> {
 async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
   rootDir: string;
+  path: (...segments: string[]) => string;
 }> {
   const temporaryDirectory = await mkdtemp(
     path.join(tmpdir(), 'limina-type-evidence-'),
   );
-  const rootDirectory = await realpath(temporaryDirectory);
+  const rootDirectory = realpathSync.native(temporaryDirectory);
 
   const fixtureFiles = { 'tsconfig.json': '{}\n', ...files };
   for (const [relativePath, text] of Object.entries(fixtureFiles)) {
@@ -34,6 +36,7 @@ async function createFixture(files: Record<string, string>): Promise<{
       await rm(rootDirectory, { force: true, recursive: true });
     },
     rootDir: rootDirectory,
+    path: createFixturePathResolver(rootDirectory),
   };
 }
 
@@ -50,13 +53,15 @@ function createProject(options: {
   | 'options'
   | 'resolverConfigPath'
 > {
-  const configPath = path.join(options.rootDir, 'tsconfig.json');
+  const configPath = toPortablePath(
+    path.join(options.rootDir, 'tsconfig.json'),
+  );
 
   return {
     checkerPresets: ['tsc'],
     configPath,
     extensions: ['.ts', '.tsx', '.mts', '.cts'],
-    fileNames: options.fileNames,
+    fileNames: options.fileNames.map(toPortablePath),
     options: {
       allowArbitraryExtensions: true,
       configFilePath: configPath,

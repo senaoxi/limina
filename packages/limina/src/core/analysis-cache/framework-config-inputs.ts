@@ -1,6 +1,6 @@
 import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
+import path from 'pathe';
 import ts from 'typescript';
 import { observeConfigLoad } from '../../config/input-observation';
 import { loadConfigModule } from '../../config/loader-import';
@@ -66,6 +66,7 @@ function configFiles(
   const host = observedCompilerSystem(ts, source.configPath);
   const directory = path.dirname(source.configPath);
   // svelte-check eagerly loads nested configuration modules for the selected tsconfig.
+  // Match compiler discovery spelling so Windows does not load one CJS file twice.
   const files = new Set(
     host.readDirectory(
       directory,

@@ -39,6 +39,8 @@ Limina 绝对路径值是 canonical portable path，在所有平台使用 `/` �
 
 fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `realpathSync.native()` 规范化临时根目录，再创建 fixture path resolver。Windows 短文件名别名可能保留在 `realpathSync()` 的结果中，而 resolver 使用原生长路径。[Analysis-cache 回归](../../../packages/limina/src/__tests__/analysis-cache.spec.ts)在 exports 条件顺序变化前后保留目标路径精确相等断言。
 
+[语义修复 fixture](../../../packages/limina/src/__tests__/helpers/semantic-repair.ts)、[type-evidence fixture](../../../packages/limina/src/__tests__/type-evidence.spec.ts)和[打包消费者](../../../smoke/helpers.ts)也使用原生 realpath。直接构造 fixture project descriptor 时，须在创建编译器 Program 前将配置路径和 root 文件名规范化为 portable path；否则即使解析到同一源码，Windows 反斜杠仍会使精确 root membership 比较失效。保留请求的已证明 absence 断言，不接受 unknown evidence 来替代。
+
 将本地 CLI 入口传给子进程前，用 Node 的 `fileURLToPath()` 转换 file URL。URL 的 `pathname` 会保留 Windows 盘符 URL 的前导斜杠及百分号编码字符，因此不是原生文件系统路径。[配置模块缓存测试](../../../packages/limina/src/__tests__/config-module-cache.spec.ts)在发布 incomplete 快照后，保留真实 JSON／NDJSON 查询子进程。
 
 将本地 ESM preload 传给 `--import` 时，使用 `pathToFileURL(path).href`。否则 Windows 盘符路径会在 CLI 执行前触发 Node 不支持 URL scheme 的错误。[进程缓存 integration 回归](../../../packages/limina/integration/tests/config-process-cache.spec.ts)保留 `--require` 的原生路径与裸包 import，并断言配置求值或快照替换前的启动准入拒绝。

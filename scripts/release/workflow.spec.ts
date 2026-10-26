@@ -83,15 +83,52 @@ it('keeps docs deployment on patched Node and governed JavaScript builders', () 
   );
   assert.ok(deployment);
   assert.equal(deployment.env?.VERCEL_CLI_USE_NATIVE_BINARY, '0');
-  for (const variable of [
+  const proxies = [
     'HTTP_PROXY',
     'HTTPS_PROXY',
     'ALL_PROXY',
     'http_proxy',
     'https_proxy',
     'all_proxy',
-  ])
-    assert.equal(deployment.env?.[variable], '');
+  ];
+  // GitHub rejects env keys that differ only in case before creating jobs.
+  const names = Object.keys(deployment.env ?? {});
+  assert.equal(
+    new Set(names.map((name) => name.toLowerCase())).size,
+    names.length,
+  );
+  if (process.platform === 'win32') return;
+  const temporary = mkdtempSync(path.join(tmpdir(), 'limina docs proxy '));
+  try {
+    const stub = path.join(temporary, 'pnpm');
+    writeFileSync(
+      stub,
+      `#!/usr/bin/env node\nconsole.log(JSON.stringify(${JSON.stringify(proxies)}.map(name => process.env[name] ?? null)));\n`,
+    );
+    chmodSync(stub, 0o755);
+    const output = execFileSync('bash', ['-c', deployment.run!], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ...deployment.env,
+        ...Object.fromEntries(
+          proxies.map((name) => [name, 'https://proxy.invalid']),
+        ),
+        PATH: `${temporary}${path.delimiter}${process.env.PATH}`,
+        GITHUB_WORKSPACE: temporary,
+        VERCEL_TOKEN: 'fixture-token',
+      },
+    });
+    assert.deepEqual(
+      output
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line)),
+      Array.from({ length: 3 }, () => proxies.map(() => null)),
+    );
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 });
 
 it(

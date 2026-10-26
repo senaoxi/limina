@@ -1,11 +1,5 @@
-import {
-  mkdir,
-  mkdtemp,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
@@ -29,7 +23,7 @@ export async function createSemanticRepairFixture(
   const rootTemporaryPath = await mkdtemp(
     path.join(tmpdir(), 'limina-semantic-repair-'),
   );
-  const root = await realpath(rootTemporaryPath);
+  const root = realpathSync.native(rootTemporaryPath);
   const fixturePath = createFixturePathResolver(root);
   for (const [name, content] of Object.entries(files)) {
     const file = fixturePath(name);

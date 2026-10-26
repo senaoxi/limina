@@ -433,6 +433,7 @@ pnpmfileChecksum: sha256-vEL00cLOOXNEIWZiFVqpItBw3h//cPZY8/3lYCkk2Kg=
 
 patchedDependencies:
   '@vueuse/core': 6a05c078ab39e3f1210f336540cd3230be320b26307f9fdbea16a3a453a6b4c2
+  vercel@65.2.0: 97d7d54367a6c4cb640cdd595df5649e61901954da20359c2d88cd24bb99a943
   vite@5.4.21: 81ba500186ae82f86c658c8d9dc564b4a0f0445774e36538ee197ea92b9ee78a
   vitepress: ae56336e3fa10baaab04ac208146b4a00b0385bde11b766fc0d9bbfdc35184e3
 
@@ -515,7 +516,7 @@ importers:
         version: 6.0.3
       vercel:
         specifier: catalog:dev
-        version: 65.2.0(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)
+        version: 65.2.0(patch_hash=97d7d54367a6c4cb640cdd595df5649e61901954da20359c2d88cd24bb99a943)(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0)
       vitepress:
         specifier: catalog:frameworks
         version: 1.6.4(patch_hash=ae56336e3fa10baaab04ac208146b4a00b0385bde11b766fc0d9bbfdc35184e3)(@algolia/client-search@5.42.0)(@types/node@22.18.0)(change-case@5.4.4)(lightningcss@1.33.0)(postcss@8.5.28)(typescript@6.0.3)
@@ -13792,7 +13793,7 @@ snapshots:
 
   validate-npm-package-name@6.0.2: {}
 
-  vercel@65.2.0(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0):
+  vercel@65.2.0(patch_hash=97d7d54367a6c4cb640cdd595df5649e61901954da20359c2d88cd24bb99a943)(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(rollup@4.62.2)(supports-color@7.2.0):
     dependencies:
       '@vercel/backends': 22.0.1(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.3)(@vercel/build-utils@15.0.1)(rollup@4.62.2)(supports-color@7.2.0)
       '@vercel/blob': 2.8.0

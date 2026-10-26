@@ -52,14 +52,9 @@ jobs:
         env:
           # Keep builders in the governed pnpm graph and avoid bundled proxy code.
           VERCEL_CLI_USE_NATIVE_BINARY: "0"
-          HTTP_PROXY: ""
-          HTTPS_PROXY: ""
-          ALL_PROXY: ""
-          http_proxy: ""
-          https_proxy: ""
-          all_proxy: ""
         run: |
           set -euo pipefail
+          unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
           pnpm --dir docs exec vercel pull --cwd="$GITHUB_WORKSPACE" --yes --environment=production --token="$VERCEL_TOKEN"
           pnpm --dir docs exec vercel build --cwd="$GITHUB_WORKSPACE" --prod --token="$VERCEL_TOKEN"
           pnpm --dir docs exec vercel deploy --cwd="$GITHUB_WORKSPACE" --prebuilt --prod --yes --token="$VERCEL_TOKEN"
