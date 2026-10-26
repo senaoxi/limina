@@ -41,6 +41,8 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 [语义修复 fixture](../../../packages/limina/src/__tests__/helpers/semantic-repair.ts)、[type-evidence fixture](../../../packages/limina/src/__tests__/type-evidence.spec.ts)和[打包消费者](../../../smoke/helpers.ts)也使用原生 realpath。直接构造 fixture project descriptor 时，须在创建编译器 Program 前将配置路径和 root 文件名规范化为 portable path；否则即使解析到同一源码，Windows 反斜杠仍会使精确 root membership 比较失效。保留请求的已证明 absence 断言，不接受 unknown evidence 来替代。
 
+生产文件候选进入以路径为键的 Set 或 Map 前，必须具有一致的 portable 表示。[`eslint.config.mjs`](../../../eslint.config.mjs) 中限定范围的 `no-restricted-imports` 防止框架配置发现使用原生路径构造器；[配置测试](../../../packages/limina/src/__tests__/framework-config-inputs.spec.ts)通过真实 collector 验证混合分隔符。与宿主无关的词法回归应显式使用 `path.win32`／`path.posix` 输入及编译器 Host 大小写策略。Type-evidence suite 对两种路径形式和大小写策略构造真实 Program：root 保留已证明的 absence，已解析但缺少 composite scope 的非 root 仍为 unknown。这些测试不证明 Windows 文件系统、loader 或子进程行为。OS 边界的原生路径、模块标识符／file URL、词法比较键及物理身份证据是不同契约，不应统一 lowercase、realpath 或交给同一个 normalize 函数。
+
 将本地 CLI 入口传给子进程前，用 Node 的 `fileURLToPath()` 转换 file URL。URL 的 `pathname` 会保留 Windows 盘符 URL 的前导斜杠及百分号编码字符，因此不是原生文件系统路径。[配置模块缓存测试](../../../packages/limina/src/__tests__/config-module-cache.spec.ts)在发布 incomplete 快照后，保留真实 JSON／NDJSON 查询子进程。
 
 将本地 ESM preload 传给 `--import` 时，使用 `pathToFileURL(path).href`。否则 Windows 盘符路径会在 CLI 执行前触发 Node 不支持 URL scheme 的错误。[进程缓存 integration 回归](../../../packages/limina/integration/tests/config-process-cache.spec.ts)保留 `--require` 的原生路径与裸包 import，并断言配置求值或快照替换前的启动准入拒绝。

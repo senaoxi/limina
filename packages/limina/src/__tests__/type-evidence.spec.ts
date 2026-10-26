@@ -8,6 +8,14 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { TypeEvidenceCore } from '../core/type-evidence';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
+import { createNativeObservationContext } from '../core/typescript-semantic/native-observation-context';
+import {
+  nativeObservedProgram,
+  nativeProgramSource,
+} from '../core/typescript-semantic/native-program-api';
+import { NativeProgramFrontier } from '../core/typescript-semantic/native-program-frontier';
+import { createNativeModuleObligation } from '../core/typescript-semantic/native-program-obligations';
+import type { SourceConfigCoverageIndex } from '../domain/analysis/native-coverage';
 import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
@@ -89,6 +97,146 @@ function createCore(rootDirectory: string): TypeEvidenceCore {
       ),
   });
 }
+
+describe.each(['win32', 'posix'] as const)(
+  'portable root evidence (%s)',
+  (flavor) => {
+    it.each([true, false])(
+      'keeps root absence distinct from non-root uncertainty (case sensitive: %s)',
+      (caseSensitive) => {
+        const paths = path[flavor];
+        const base =
+          flavor === 'win32' ? 'C:/portable-fixture' : '/portable-fixture';
+        const key = (file: string) => {
+          const portable = toPortablePath(file);
+          return caseSensitive ? portable : portable.toLowerCase();
+        };
+        const files = new Map([
+          [
+            key(`${base}/src/main.ts`),
+            'import { value } from "./provider.js"; void value;',
+          ],
+          [key(`${base}/src/provider.ts`), 'export const value = 1;'],
+        ]);
+        const host: ts.CompilerHost = {
+          getSourceFile(file, language) {
+            const text = files.get(key(file));
+            return text === undefined
+              ? undefined
+              : ts.createSourceFile(file, text, language, true);
+          },
+          getDefaultLibFileName: () => `${base}/lib.d.ts`,
+          writeFile: () => {
+            throw new Error('The memory host must not emit files.');
+          },
+          getCurrentDirectory: () => base,
+          getDirectories: () => [],
+          fileExists: (file) => files.has(key(file)),
+          readFile: (file) => files.get(key(file)),
+          directoryExists: (file) =>
+            [base, `${base}/src`].some(
+              (directory) => key(directory) === key(file),
+            ),
+          getCanonicalFileName: (file) =>
+            caseSensitive ? file : file.toLowerCase(),
+          useCaseSensitiveFileNames: () => caseSensitive,
+          getNewLine: () => '\n',
+        };
+        const coverage: SourceConfigCoverageIndex = {
+          inputVersion: 'memory',
+          configurations: [],
+          universe: {
+            id: 'memory',
+            revision: 'memory',
+            scopeFingerprint: 'memory',
+            inputVersion: 'memory',
+            selectionEvidenceId: 'memory',
+            sourceConfigIds: [],
+            discovery: 'open',
+          },
+        };
+        for (const hasProviderRoot of [true, false]) {
+          const project = createProject({
+            rootDir: paths.normalize(base),
+            fileNames: [
+              paths.join(base, 'src/main.ts'),
+              ...(hasProviderRoot ? [paths.join(base, 'src/provider.ts')] : []),
+            ],
+          });
+          expect(project.configPath).toBe(`${base}/tsconfig.json`);
+          const program = nativeObservedProgram(
+            ts.createProgram({
+              rootNames: project.fileNames,
+              options: { ...project.options, noLib: true },
+              host,
+            }),
+            ts,
+            new Map(),
+          );
+          const source = program.getSourceFile(`${base}/src/main.ts`)!;
+          const literal = nativeProgramSource(source).imports[0]!;
+          const mode = program.getModeForUsageLocation(source, literal);
+          const raw = program.getResolvedModule(source, literal.text, mode);
+          expect(raw?.resolvedModule?.resolvedFileName).toBe(
+            `${base}/src/provider.ts`,
+          );
+          const context = createNativeObservationContext({
+            project: {
+              ...project,
+              workspaceSourceBoundary: createWorkspaceSourceBoundary(
+                project.fileNames,
+                undefined,
+                coverage,
+              ),
+            },
+            coverage,
+            epoch: 'memory',
+            collectionId: 'memory',
+            sourceVersion: 'memory',
+            typescriptVersion: ts.version,
+            typescriptImplementation: 'installed',
+            toolchain: 'memory',
+            authority: { phase: 'pending', baseline: 'typescript' },
+          });
+          const obligation = createNativeModuleObligation({
+            compiler: ts,
+            context,
+            program,
+            frontier: new NativeProgramFrontier(
+              project.configPath,
+              project.fileNames,
+              coverage,
+            ),
+            observation: {
+              source,
+              literal,
+              raw,
+              mode,
+              role: 'import',
+              requestId: 'memory-import',
+            },
+            references: new Map(),
+          });
+          if (hasProviderRoot) {
+            expect(obligation.existence).toMatchObject({
+              state: 'absent',
+              proof: {
+                ruleOrObservation: 'consumer-root-has-no-cross-unit-obligation',
+              },
+            });
+          } else {
+            expect(obligation.existence).toEqual({
+              state: 'unknown',
+              gapIds: [
+                'fixed-root-composite-compilation-scope-not-established',
+              ],
+            });
+          }
+        }
+      },
+    );
+  },
+);
 
 describe('TypeScript resource type evidence', () => {
   it.each([

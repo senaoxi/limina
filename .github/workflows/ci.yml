@@ -130,6 +130,10 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Atomic writer, path, shell, and migration transaction unit tests
         run: pnpm --filter limina run test:unit src/__tests__/atomic-writer.spec.ts src/__tests__/path-filters.spec.ts src/__tests__/shell-command.spec.ts src/__tests__/standalone-invocation-command.spec.ts src/__tests__/migration-forward.spec.ts && pnpm --filter limina-migrate run test:unit src/__tests__/migration-transaction.spec.ts
+      - name: Portable configuration and evidence regression
+        run: pnpm --filter limina run test:unit src/__tests__/path.spec.ts src/__tests__/framework-config-inputs.spec.ts src/__tests__/type-evidence.spec.ts
+      - name: Framework execution admission regression
+        run: pnpm --filter limina run test:unit src/__tests__/execution-admission.spec.ts -t "binds framework execution to consumed inputs|retains live CommonJS configuration proof through managed refresh in Node"
       - name: Build packed Limina
         run: pnpm run build
       - name: Standalone generated-command tarball round-trip

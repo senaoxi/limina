@@ -108,6 +108,21 @@ export default defineConfig([
     },
   },
   {
+    name: 'Portable framework configuration discovery',
+    files: [
+      'packages/limina/src/core/analysis-cache/framework-config-inputs.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['node:path', 'path', 'node:path/win32', 'path/win32'],
+          patterns: ['node:path/*', 'path/*'],
+        },
+      ],
+    },
+  },
+  {
     files: ['packages/build-tools/src/{package-plugin,path,logger}.ts'],
     rules: { 'no-restricted-syntax': 'off', 'no-console': 'off' },
   },
