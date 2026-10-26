@@ -6,6 +6,8 @@
 
 仓库命令与必需检查遵循开发工作流的[设置与构建](./development-workflow.md#设置与构建)及[验证与交付](./development-workflow.md#验证与交付)章节。私有工具构建后，Rolldown 生成 JavaScript、声明、发布清单和许可证。
 
+核心包构建随后通过 [`tsconfig.check.json`](../../../packages/limina/tsconfig.check.json)运行 `build:types:check`。这个独立、无输出的 TypeScript 项目检查生成的公开声明入口及 `dist` 下全部声明分块，启用 `skipLibCheck: false`、严格检查和精确可选属性。Node16 模块解析按 Node 规则检查 ESM 模块路径；ES2023 类型库与仓库目标一致。空 `types` 列表避免隐式开发环境全局类型，但不屏蔽声明显式导入的类型。公开入口是必需文件，因此即使其他声明分块存在，缺失构建入口仍会失败。不要继承源码配置：其中的 bundler 解析、Node 环境类型和跳过声明检查服务于源码构建。此产物检查保持在受管理的源码 solution 之外，避免源码发现阶段依赖分发文件。运行 `pnpm --filter limina run build:types:check` 可重新检查已有产物；根构建及调用它的 CI 会先重新生成产物，再执行检查。包边界检查与打包消费者测试继续负责依赖完整性和安装后的导出解析，此检查不替代它们。
+
 pnpm 12 使用原生可执行文件，发布包中的 Node wrapper 继续作为 Corepack 入口。根目录与文档 workspace 均固定为 12.10.1。pnpm 为包管理器包及各平台二进制生成独立的 lockfile 文档；产品依赖文档继续单独锁定。生成的 lockfile 排除在通用 Prettier 格式化之外，由 pnpm 管理其多文档序列化；frozen 安装和依赖安全门禁继续校验该文件。既有安装、peer、构建许可、release-age 与 trust 设置仍然生效。参见[安装指南](https://pnpm.io/installation)与 [12.10.1 发布记录](https://github.com/pnpm/pnpm/releases/tag/v12.10.1)。
 
 [独立 Vue 矩阵](../../../packages/limina/fixtures/vue-semantic-matrix/package.json)通过 `file:` 依赖安装 Limina 构建产物的 `dist` 清单。该清单变更时，还须刷新[独立矩阵 lockfile](../../../packages/limina/fixtures/vue-semantic-matrix/pnpm-lock.yaml)：先运行 `pnpm run build`，再运行 `pnpm --dir packages/limina/fixtures/vue-semantic-matrix install --lockfile-only --ignore-scripts`。pnpm 12 会在 frozen 安装时拒绝过期的本地依赖 metadata，此时语义检查尚未开始。保留精确 checker tuples 和 CI 的 frozen 安装。

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Check the published declarations without the source config's bundler
+  // resolution, ambient types, or skipLibCheck setting.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "types": [],
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": false,
+    "noEmit": true
+  },
+  // Require the public entry even if only other declaration chunks remain.
+  "files": ["dist/index.d.ts"],
+  "include": ["dist/**/*.d.ts", "dist/**/*.d.mts", "dist/**/*.d.cts"]
+}
