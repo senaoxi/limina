@@ -1,5 +1,6 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
+import type { JsonObject } from '#core/tsconfig/actions';
 import { compareCodeUnits } from '#utils/collections';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
@@ -14,14 +15,27 @@ import {
   createAutoFrameworkEvidence,
   type FrameworkIntentHint,
 } from './source-capabilities';
-import { collectCheckerSourceConfigModules } from './source-config-collection';
-import type { CollectAutoSourceConfigModulesOptions } from './source-config-collection-types';
-import type { SourceConfigDiscovery } from './source-config-discovery';
 import {
+  collectCheckerSourceConfigModules,
   collectCheckerSourceConfigs,
   createEmptySourceConfigCollection,
-} from './source-config-root-collection';
-import type { AutoScope } from './types';
+} from './source-config-collection';
+import type { SourceConfigDiscovery } from './source-config-discovery';
+import type { AutoScope, CheckerSourceConfigCollection } from './types';
+
+interface CollectAutoSourceConfigModulesOptions {
+  activatedRegions: WorkspaceRegionPathIndex;
+  collection: CheckerSourceConfigCollection;
+  config: ResolvedLiminaInputs;
+  discoveryExtensions: string[];
+  entryConfigPath: string;
+  problems: string[];
+  projectConfigCache?: CheckerProjectConfigCache;
+  sourceConfigInspector: (options: {
+    configObject: JsonObject;
+    sourceConfigPath: string;
+  }) => void;
+}
 
 function setAutoRootConfigPaths(scope: AutoScope): void {
   scope.collection.rootConfigPaths =

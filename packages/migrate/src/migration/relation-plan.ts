@@ -13,7 +13,7 @@ import {
 import type { LiminaArtifactNamespace } from 'limina/internal/domain/artifacts/namespace';
 import { formatErrorMessage } from 'limina/internal/logger';
 import { isPlainRecord } from 'limina/internal/utils/values';
-import { createMembershipState, reachableSources } from './membership-state';
+import { createMembershipState, reachableSources } from './membership';
 import type { MigrationPlanningState } from './planning-state';
 import { planningView } from './planning-state';
 import { relativeConfigPath } from './transform';
