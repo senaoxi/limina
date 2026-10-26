@@ -132,3 +132,25 @@ describe('repository ESLint composition', () => {
     }
   });
 });
+
+it('restricts native path builders only at the portable configuration boundary', async () => {
+  const file =
+    'packages/limina/src/core/analysis-cache/framework-config-inputs.ts';
+  const invalid = await lintSource(
+    "import path from 'node:path'; export const file = path.join('a', 'b');",
+    file,
+  );
+  expect(invalid.messages.map(({ ruleId }) => ruleId)).toContain(
+    'no-restricted-imports',
+  );
+  const valid = await lintSource(
+    "import path from 'pathe'; export const file = path.join('a', 'b');",
+    file,
+  );
+  expect(valid.messages).toEqual([]);
+  const native = await lintSource(
+    "import path from 'node:path'; export const file = path.join('a', 'b');",
+    'packages/limina/src/config/loader-import.ts',
+  );
+  expect(native.messages).toEqual([]);
+});
