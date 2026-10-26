@@ -47,7 +47,8 @@
     "#config/*": "./src/config/*.ts"
   },
   "scripts": {
-    "build": "rolldown --config rolldown.config.ts",
+    "build": "rolldown --config rolldown.config.ts && pnpm run build:types:check",
+    "build:types:check": "tsc --project tsconfig.check.json",
     "dev": "rolldown --config rolldown.config.ts --watch",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
