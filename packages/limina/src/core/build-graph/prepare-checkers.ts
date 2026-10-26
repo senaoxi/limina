@@ -8,7 +8,7 @@ import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import { getGeneratedCheckerEntryPath } from './generated/paths';
 import { createGovernedSourceUnit } from './governed-sources';
-import { collectCheckerSourceConfigs } from './source-config-root-collection';
+import { collectCheckerSourceConfigs } from './source-config-collection';
 import { createSolutionProject, createSourceProject } from './source-projects';
 import type {
   GovernedSourceUnit,

@@ -1,13 +1,67 @@
-import {
-  canStartTask,
-  findBlockedDependency,
-  isDependenciesSettled,
-} from './scheduler-readiness';
+import { resolveRootBlocker } from './execution-results';
 import { joinRunning, settleOneRunning } from './scheduler-settlement';
 import { finishSynthetic, startTask } from './scheduler-tasks';
 import type { SchedulerContext } from './scheduler-types';
 import { assertActiveGeneration } from './task-execution';
-import type { ExecutionTask } from './tasks';
+import type { ExecutionTask, TaskId } from './tasks';
+
+function getRequiredDependencies(task: ExecutionTask): readonly TaskId[] {
+  return task.requiresSuccessOf ?? [];
+}
+
+function getAllDependencies(task: ExecutionTask): Set<TaskId> {
+  return new Set([...(task.after ?? []), ...getRequiredDependencies(task)]);
+}
+
+function isDependenciesSettled(
+  task: ExecutionTask,
+  context: SchedulerContext,
+): boolean {
+  return [...getAllDependencies(task)].every((id) => context.outcomes.has(id));
+}
+
+type RootBlocker = ReturnType<typeof resolveRootBlocker>;
+const missingBlocker = new Map<string, RootBlocker>().get('missing');
+
+function getDependencyBlocker(options: {
+  context: SchedulerContext;
+  dependencyTask: ExecutionTask;
+}): RootBlocker {
+  const outcome = options.context.outcomes.get(options.dependencyTask.id);
+  return outcome === undefined
+    ? missingBlocker
+    : resolveRootBlocker(options.dependencyTask, outcome);
+}
+
+function isRequiredDependency(options: {
+  required: readonly TaskId[];
+  task: ExecutionTask;
+}): boolean {
+  return options.required.includes(options.task.id);
+}
+
+function findBlockedDependency(options: {
+  context: SchedulerContext;
+  task: ExecutionTask;
+}): RootBlocker {
+  const required = getRequiredDependencies(options.task);
+  const blockers = options.context.orderedTasks
+    .filter((task) => isRequiredDependency({ required, task }))
+    .map((dependencyTask) =>
+      getDependencyBlocker({ context: options.context, dependencyTask }),
+    );
+  return blockers.find((blocker) => blocker !== undefined);
+}
+
+function canStartTask(options: {
+  context: SchedulerContext;
+  task: ExecutionTask;
+}): boolean {
+  return (
+    !(options.context.running.size >= options.context.concurrency) &&
+    options.context.locks.canAcquire(options.task.resources)
+  );
+}
 
 type TaskAction =
   | 'blocked'

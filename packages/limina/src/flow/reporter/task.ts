@@ -1,16 +1,38 @@
-import { emitFlow } from './rendering';
+import {
+  emitFlow,
+  formatReporterFailure,
+  redrawInteractiveHistory,
+  replaceInteractiveHistoryLine,
+} from './rendering';
+import { isSendProcessSnapshot } from './state';
 import {
   resumeInteractiveRendering,
   suspendInteractiveRendering,
 } from './suspension';
-import { finishFailure, finishPass, finishSkip } from './task-finish';
-import type { FlowTaskState } from './task-types';
-import { beginTerminalTracking } from './tracking';
+import {
+  beginTerminalTracking,
+  clearInteractiveTaskBlock,
+  endTerminalTracking,
+} from './tracking';
 import type {
   FlowReporterState,
+  InteractiveEntryReference,
+  LiminaFlowFailureOptions,
   LiminaFlowMessageOptions,
   LiminaFlowTask,
 } from './types';
+
+interface FlowTaskState {
+  completed: boolean;
+  depth: number;
+  message: string;
+  paused: boolean;
+  persistedStart: InteractiveEntryReference | undefined;
+  processTransientTaskId: number | undefined;
+  shouldTrack: boolean;
+  startLine: number;
+  startTime: number;
+}
 
 function getTaskDepth(options: LiminaFlowMessageOptions): number {
   return options.depth === undefined ? 0 : options.depth;
@@ -141,6 +163,226 @@ function resumeTask(options: {
   if (options.taskState.completed || !options.taskState.paused) return;
   options.taskState.paused = false;
   resumeInteractiveRendering(options.reporterState);
+}
+
+type FinishedTaskStatus = 'fail' | 'pass' | 'skip';
+
+function getElapsedTime(options: {
+  finishOptions: LiminaFlowMessageOptions | undefined;
+  startTime: number;
+}): number {
+  return options.finishOptions?.elapsedTimeMs === undefined
+    ? performance.now() - options.startTime
+    : options.finishOptions.elapsedTimeMs;
+}
+
+function createTaskFinishOptions<T extends LiminaFlowMessageOptions>(options: {
+  depth: number;
+  finishOptions: T | undefined;
+  startTime: number;
+}): T & Required<Pick<LiminaFlowMessageOptions, 'depth' | 'elapsedTimeMs'>> {
+  return {
+    ...options.finishOptions,
+    depth: options.depth,
+    elapsedTimeMs: getElapsedTime(options),
+  } as T & Required<Pick<LiminaFlowMessageOptions, 'depth' | 'elapsedTimeMs'>>;
+}
+
+function finishTrackedTask(options: {
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): void {
+  if (!options.taskState.shouldTrack || options.taskState.completed) return;
+  options.taskState.completed = true;
+  endTerminalTracking(options.reporterState);
+}
+
+function canReplacePersistedStart(options: {
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): boolean {
+  return (
+    !options.taskState.shouldTrack &&
+    options.reporterState.interactive &&
+    options.taskState.persistedStart !== undefined
+  );
+}
+
+function replaceStart(options: {
+  message: string;
+  reporterState: FlowReporterState;
+  status: FinishedTaskStatus;
+  taskOptions: LiminaFlowMessageOptions;
+  taskState: FlowTaskState;
+}): void {
+  const reference = options.taskState.persistedStart;
+  if (reference === undefined) return;
+  replaceInteractiveHistoryLine({
+    message: options.message,
+    reference,
+    state: options.reporterState,
+    status: options.status,
+    taskOptions: options.taskOptions,
+  });
+  redrawInteractiveHistory(options.reporterState);
+}
+
+function emitCompletedTask(options: {
+  message: string;
+  persistInteractive: boolean;
+  reporterState: FlowReporterState;
+  status: FinishedTaskStatus;
+  taskOptions: LiminaFlowMessageOptions;
+  taskState: FlowTaskState;
+}): void {
+  if (canReplacePersistedStart(options)) {
+    replaceStart(options);
+  } else {
+    emitFlow(options.reporterState, {
+      meta: { persistInteractive: options.persistInteractive },
+      options: options.taskOptions,
+      rawMessage: options.message,
+      status: options.status,
+    });
+  }
+  finishTrackedTask(options);
+  options.taskState.completed = true;
+}
+
+function resolveTaskMessage(
+  message: string | undefined,
+  fallback: string,
+): string {
+  return message === undefined ? fallback : message;
+}
+
+function resolveFailureMessage(options: {
+  finishOptions: LiminaFlowFailureOptions | undefined;
+  message: string | undefined;
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): string {
+  const baseMessage = options.reporterState.statusOnly
+    ? options.taskState.message
+    : resolveTaskMessage(options.message, options.taskState.message);
+  return formatReporterFailure({
+    message: baseMessage,
+    options: options.finishOptions,
+    state: options.reporterState,
+  });
+}
+
+function finishFailure(options: {
+  finishOptions: LiminaFlowFailureOptions | undefined;
+  message: string | undefined;
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): void {
+  const taskOptions = createTaskFinishOptions({
+    depth: options.taskState.depth,
+    finishOptions: options.finishOptions,
+    startTime: options.taskState.startTime,
+  });
+  emitCompletedTask({
+    message: resolveFailureMessage(options),
+    persistInteractive: true,
+    reporterState: options.reporterState,
+    status: 'fail',
+    taskOptions,
+    taskState: options.taskState,
+  });
+}
+
+function shouldPersistPass(options: {
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): boolean {
+  return options.taskState.shouldTrack
+    ? options.reporterState.trackedTaskCount <= 1
+    : options.reporterState.trackedTaskCount === 0;
+}
+
+function removeTransientTask(options: {
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): void {
+  options.reporterState.processTransientHistory =
+    options.reporterState.processTransientHistory.filter(
+      (entry) => entry.taskId !== options.taskState.processTransientTaskId,
+    );
+  isSendProcessSnapshot(options.reporterState);
+}
+
+function shouldRedrawCollapsedHistory(options: {
+  persistInteractive: boolean;
+  taskState: FlowTaskState;
+}): boolean {
+  return options.persistInteractive && options.taskState.depth === 0;
+}
+
+function hasActiveProcessRenderer(state: FlowReporterState): boolean {
+  return state.processRenderer?.active === true;
+}
+
+function clearTrackedPass(options: {
+  persistInteractive: boolean;
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): void {
+  if (!options.taskState.shouldTrack) return;
+  if (hasActiveProcessRenderer(options.reporterState)) {
+    removeTransientTask(options);
+    return;
+  }
+  clearInteractiveTaskBlock({
+    redrawHistory: shouldRedrawCollapsedHistory(options),
+    startLine: options.taskState.startLine,
+    state: options.reporterState,
+  });
+}
+
+function finishPass(options: {
+  finishOptions: LiminaFlowMessageOptions | undefined;
+  message: string | undefined;
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): void {
+  const taskOptions = createTaskFinishOptions({
+    depth: options.taskState.depth,
+    finishOptions: options.finishOptions,
+    startTime: options.taskState.startTime,
+  });
+  const isPersistInteractive = shouldPersistPass(options);
+  clearTrackedPass({ ...options, persistInteractive: isPersistInteractive });
+  emitCompletedTask({
+    message: resolveTaskMessage(options.message, options.taskState.message),
+    persistInteractive: isPersistInteractive,
+    reporterState: options.reporterState,
+    status: 'pass',
+    taskOptions,
+    taskState: options.taskState,
+  });
+}
+
+function finishSkip(options: {
+  finishOptions: LiminaFlowMessageOptions | undefined;
+  message: string | undefined;
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): void {
+  const taskOptions = createTaskFinishOptions({
+    depth: options.taskState.depth,
+    finishOptions: options.finishOptions,
+    startTime: options.taskState.startTime,
+  });
+  emitCompletedTask({
+    message: resolveTaskMessage(options.message, options.taskState.message),
+    persistInteractive: options.reporterState.trackedTaskCount === 0,
+    reporterState: options.reporterState,
+    status: 'skip',
+    taskOptions,
+    taskState: options.taskState,
+  });
 }
 
 export function createFlowTask(options: {

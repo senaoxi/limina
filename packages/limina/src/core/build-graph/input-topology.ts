@@ -22,8 +22,10 @@ import {
   collectWorkspaceInputSnapshot,
 } from '../workspace/validated/create';
 import { readImplicitReferences } from './generated/config-readers';
-import { collectCheckerSourceConfigModules } from './source-config-collection';
-import { createEmptySourceConfigCollection } from './source-config-root-collection';
+import {
+  collectCheckerSourceConfigModules,
+  createEmptySourceConfigCollection,
+} from './source-config-collection';
 
 export interface InputTopologyDiagnostic {
   configPath: string;

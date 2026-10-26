@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { collectPackageExportEntries } from '../core/workspace/exports/entries';
+import { collectPackageExportEntries } from '../core/workspace/exports';
 
 describe('Node export pattern expansion', () => {
   it.each([
