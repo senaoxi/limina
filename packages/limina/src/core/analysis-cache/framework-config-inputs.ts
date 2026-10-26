@@ -1,4 +1,5 @@
 import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
+import { normalizeAbsolutePathIdentity } from '#utils/path';
 import { randomUUID } from 'node:crypto';
 import path from 'pathe';
 import ts from 'typescript';
@@ -68,12 +69,14 @@ function configFiles(
   // svelte-check eagerly loads nested configuration modules for the selected tsconfig.
   // Match compiler discovery spelling so Windows does not load one CJS file twice.
   const files = new Set(
-    host.readDirectory(
-      directory,
-      ['.js', '.cjs', '.mjs'],
-      ['**/node_modules/**', '**/.*/**'],
-      ['**/svelte.config.*'],
-    ),
+    host
+      .readDirectory(
+        directory,
+        ['.js', '.cjs', '.mjs'],
+        ['**/node_modules/**', '**/.*/**'],
+        ['**/svelte.config.*'],
+      )
+      .map(normalizeAbsolutePathIdentity),
   );
   const directories = new Set([
     directory,
@@ -83,7 +86,7 @@ function configFiles(
   ]);
   for (const current of directories) {
     const file = nearestConfig(current);
-    if (file !== undefined) files.add(file);
+    if (file !== undefined) files.add(normalizeAbsolutePathIdentity(file));
   }
   return files;
 }

@@ -48,6 +48,8 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 [CI](../../../.github/workflows/ci.yml)保留原生平台 build／test／smoke 和独立 Vue tuples。每条受支持的 Node 版本线都在 Linux 上执行 unit／integration／tooling 测试和独立 build／smoke 验证；Node 24 另有最新补丁的滚动测试。发布固定使用 Node 24.15.0；文档部署固定使用 Node 24.22.1。Linux quality 复用同提交／平台的 package artifacts，其他环境独立构建／检查。显式 build 后使用 test:smoke，不重复构建。不引入路径过滤、Nx cache 或缓存 .limina 状态。CI Status 依赖全部验证任务，失败／取消／skipped 都失败。
 
+既有 Windows focused job 还选择路径 helper、框架配置收集和 type-evidence 回归，随后执行两个 Svelte 执行准入用例，覆盖已消费输入及受管刷新间的实时 CommonJS 证明。[`ci-workflow.spec.ts`](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)保护这一选择。快速 job 补充完整平台 matrix；macOS 或 Linux 上的合成 Windows 路径不能替代原生 Windows loader、文件系统和进程验收。
+
 完整矩阵的 Unit Tests 步骤通过 `VITEST_MAX_WORKERS` 将 Vitest 限制为两个 worker，为 CLI 子进程和框架宿主留出资源。隔离 CLI 夹具实际复制运行时源码，排除 `__tests__` 目录；依赖链接、编译器 shim 和仓库边界仍由夹具自身持有。测试选择和安全断言保持不变。
 
 六个使用真实 Astro 声明图的跨领域用例各有 120 秒时限，分别覆盖 package imports、核心治理域、两类跨配置边、Proof 的观察集合以及 Build 目标选择。[Windows / Node 22.22.3 日志](https://github.com/senaoxi/limina/actions/runs/40097787173/job/120883562891)记录了 31.713–93.150 秒耗时，超出默认 30 秒预算。全局时限、两 worker 上限、原断言和 Svelte 核心治理用例的 30 秒时限保留。较大的有限时限适用于这些真实工具链用例，在所有平台一致执行；它不修复或证明 Windows 性能，也不替代修改后的原生 Windows CI 验收。

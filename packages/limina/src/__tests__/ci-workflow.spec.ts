@@ -236,3 +236,19 @@ describe('Limina CI validation contract', () => {
     expect(runner).not.toContain("new URL('../../bin/limina.js'");
   });
 });
+
+it('selects portable evidence and real framework admission in the Windows focused job', async () => {
+  const job = (await workflow()).jobs['limina-atomic-writer-windows'];
+  const commands = job.steps?.map((step) => step.run ?? '').join('\n');
+  for (const file of [
+    'path.spec.ts',
+    'framework-config-inputs.spec.ts',
+    'type-evidence.spec.ts',
+    'execution-admission.spec.ts',
+  ])
+    expect(commands).toContain(`src/__tests__/${file}`);
+  expect(commands).toContain('binds framework execution to consumed inputs');
+  expect(commands).toContain(
+    'retains live CommonJS configuration proof through managed refresh in Node',
+  );
+});

@@ -233,7 +233,7 @@ Native external-library implementation input 可以为消费者提供类型，�
 
 [准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts) 覆盖推断与传递 implicit 拒绝、独立 target、Core 证据不变及输入漂移。[交接回归](../../../packages/limina/src/__tests__/execution-input-handoff.spec.ts) 覆盖已在运行的 producer、新声明证据、独立工作，以及并发普通源码变化的拒绝。[Checker host 测试](../../../packages/limina/src/__tests__/checker-host.spec.ts) 区分调度与明确的失败前提。这些 guard 不证明任意第三方生成器合同或跨平台无竞态。
 
-Svelte 配置发现对编译器枚举与祖先查找使用同一种 portable path 表示。否则 Windows 原生分隔符会让同一个 CommonJS 入口出现两次，并在第二次加载时触发预加载模块保护。[执行准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts)保留初次准入、受管刷新后的复用，以及导入配置变更后的拒绝；不清除模块缓存，也不放宽加载证据要求。
+Svelte 配置发现对编译器枚举及祖先候选使用 `normalizeAbsolutePathIdentity`，在插入 Set 和查找加载 Map 前统一表示。既有加载 Map 仍负责受管刷新间的复用；持久缓存 schema 和物理等价策略不变。[Collector 回归](../../../packages/limina/src/__tests__/framework-config-inputs.spec.ts)对两种路径形式验证混合分隔符、独立配置、空发现、Map 复用及 unknown 加载证据的拒绝。否则 Windows 原生分隔符会让同一个 CommonJS 入口出现两次，并在第二次加载时触发预加载模块保护。[执行准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts)保留初次准入、受管刷新后的复用，以及导入配置变更后的拒绝；不清除模块缓存，也不放宽加载证据要求。
 
 ## Migration 是另一种事务
 
