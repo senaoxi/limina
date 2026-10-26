@@ -1,13 +1,12 @@
 import { readAstroTestToolchain } from '@limina/gates/test-support/astro-toolchain';
 import { execa } from 'execa';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import {
   access,
   mkdir,
   mkdtemp,
   readdir,
   readFile,
-  realpath,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -241,9 +240,14 @@ function resolvePnpmCommand(environment: NodeJS.ProcessEnv): {
   if (
     npmExecPath &&
     existsSync(npmExecPath) &&
-    ['pnpm', 'pnpm.exe', 'pnpm.native', 'pnpm.native.exe'].includes(
-      npmExecFileName ?? '',
-    )
+    [
+      'pnpm',
+      'pnpm.exe',
+      'pnpm.native',
+      'pnpm.native.exe',
+      'pnpm-native',
+      'pnpm-native.exe',
+    ].includes(npmExecFileName ?? '')
   ) {
     return { command: npmExecPath, argsPrefix: [] };
   }
@@ -547,6 +551,8 @@ async function createConsumerPackageManagerSettings(): Promise<string[]> {
   const lines: string[] = [
     'autoInstallPeers: false',
     'strictPeerDependencies: true',
+    // Keep concurrent consumers from sharing mutable inode metadata.
+    'packageImportMethod: copy',
   ];
 
   if (trustPolicy) {
@@ -862,7 +868,7 @@ export async function createConsumerFixture(options: {
   // pnpm's project and workspace roots so add and frozen install agree on
   // the lockfile importer without changing the special-character fixture.
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'limina-smoke-'));
-  const fixtureRoot = await realpath(temporaryRoot);
+  const fixtureRoot = realpathSync.native(temporaryRoot);
   const configFileName = options.configFileName ?? 'limina.config.mjs';
   const fixtureDirectory = path.join(
     fixtureRoot,
