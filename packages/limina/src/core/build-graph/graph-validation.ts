@@ -27,7 +27,7 @@ import { getCheckerProjects } from './prepare-state';
 import { createSourceProjectsByDtsPath } from './project-indexes';
 import { addOutputBuildOwnerCollisionProblems } from './provider-selection';
 import { inferProjectReferences } from './reference-inference';
-import { createEmptySourceConfigCollection } from './source-config-root-collection';
+import { createEmptySourceConfigCollection } from './source-config-collection';
 import { addActivatedRegionSourceProjectProblems } from './source-projects';
 import type { PrepareGeneratedTsconfigGraphOptions } from './types';
 function getAllProjects(

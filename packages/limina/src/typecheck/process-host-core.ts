@@ -7,24 +7,126 @@ import {
   createCancelledCheckerMeasurement,
   spawnAndMeasure,
 } from './host-protocol';
-import {
-  cancelPendingCheckerSpawn,
-  type CheckerHostDegradationListener,
-  configurePendingAbort,
-  createPendingCheckerSpawn,
-  drainPendingCheckerSpawns,
-  listenForPendingAbort,
-  type PendingCheckerSpawn,
-  removePendingAbortListener,
-  resolvePendingCheckerMeasurement,
-} from './process-host-pending';
-import {
-  isChildProcessRunning,
-  referenceChildProcess,
-  unrefChildProcess,
-} from './process-host-utilities';
 
-export type { CheckerHostDegradationListener } from './process-host-pending';
+export type CheckerHostDegradationListener = (reason: string) => void;
+
+interface PendingCheckerSpawn {
+  cancelledMeasurement?: CheckerHostSpawnMeasurement;
+  onDegraded?: CheckerHostDegradationListener;
+  removeAbortListener?: () => void;
+  resolve: (measurement: CheckerHostSpawnMeasurement) => void;
+  signal?: AbortSignal;
+  spec: CheckerHostSpawnSpec;
+}
+
+function removePendingAbortListener(entry: PendingCheckerSpawn): void {
+  if (entry.removeAbortListener !== undefined) entry.removeAbortListener();
+}
+
+function drainPendingCheckerSpawns(
+  pendingById: Map<number, PendingCheckerSpawn>,
+): PendingCheckerSpawn[] {
+  const pending = pendingById.values().toArray();
+  pendingById.clear();
+  for (const entry of pending) removePendingAbortListener(entry);
+  return pending;
+}
+
+function resolvePendingCheckerMeasurement(
+  pending: PendingCheckerSpawn,
+  message: Extract<CheckerHostResponse, { type: 'result' }>,
+): CheckerHostSpawnMeasurement {
+  return pending.cancelledMeasurement ?? createCheckerHostMeasurement(message);
+}
+
+function createPendingCheckerSpawn(options: {
+  onDegraded: CheckerHostDegradationListener | undefined;
+  resolve: (measurement: CheckerHostSpawnMeasurement) => void;
+  spec: CheckerHostSpawnSpec;
+}): PendingCheckerSpawn {
+  return {
+    onDegraded: options.onDegraded,
+    resolve: options.resolve,
+    spec: options.spec,
+  };
+}
+
+function cancelPendingCheckerSpawn(options: {
+  id: number;
+  pendingById: Map<number, PendingCheckerSpawn>;
+  sendCancel: () => void;
+  signal: AbortSignal;
+}): void {
+  const pending = options.pendingById.get(options.id);
+  if (pending === undefined || pending.cancelledMeasurement !== undefined)
+    return;
+  removePendingAbortListener(pending);
+  pending.removeAbortListener = undefined;
+  pending.cancelledMeasurement = createCancelledCheckerMeasurement(
+    options.signal,
+  );
+  options.sendCancel();
+}
+
+function configurePendingAbort(options: {
+  handleAbort: () => void;
+  pending: PendingCheckerSpawn;
+  signal: AbortSignal | undefined;
+}): void {
+  if (options.signal === undefined) return;
+  options.pending.removeAbortListener = () =>
+    options.signal!.removeEventListener('abort', options.handleAbort);
+  options.pending.signal = options.signal;
+}
+
+function listenForPendingAbort(options: {
+  handleAbort: () => void;
+  signal: AbortSignal | undefined;
+}): void {
+  if (options.signal === undefined) return;
+  options.signal.addEventListener('abort', options.handleAbort, { once: true });
+  if (options.signal.aborted) options.handleAbort();
+}
+
+type CheckerHostResult = Extract<CheckerHostResponse, { type: 'result' }>;
+
+function createCheckerHostMeasurement(
+  message: CheckerHostResult,
+): CheckerHostSpawnMeasurement {
+  const measurement: CheckerHostSpawnMeasurement = {
+    durationMs: message.durationMs,
+    status: message.status,
+  };
+
+  if (message.errorMessage === undefined) {
+    return measurement;
+  }
+
+  return {
+    ...measurement,
+    error: new Error(message.errorMessage),
+  };
+}
+
+function referenceChildProcess(child: ChildProcess): void {
+  child.ref();
+
+  if (child.channel) {
+    child.channel.ref();
+  }
+}
+
+function unrefChildProcess(child: ChildProcess): void {
+  child.unref();
+
+  if (child.channel) {
+    child.channel.unref();
+  }
+}
+
+function isChildProcessRunning(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null;
+}
 
 const state = {
   isDegradationNoticeSent: false,

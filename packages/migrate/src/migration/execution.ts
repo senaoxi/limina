@@ -1,18 +1,18 @@
 import {
+  ReplacementDriftError,
+  RetryableReplacementValidationIoError,
+  TerminalReplacementValidationError,
+} from 'limina/internal/check-reporting/atomic-writer';
+import {
   configContextPath,
   type ResolvedLiminaInputs,
 } from 'limina/internal/config/runner';
 import type { DependencyAnalysisResult } from 'limina/internal/core/build-graph/types';
 import type { LiminaArtifactNamespace } from 'limina/internal/domain/artifacts/namespace';
-import { MigrationLogger } from 'limina/internal/logger';
+import { formatErrorMessage, MigrationLogger } from 'limina/internal/logger';
 import { readFile } from 'node:fs/promises';
 import type { MigrationRecord } from './declarations';
-import {
-  createExecutionState,
-  executeGroups,
-  type MigrationExecutionState,
-  prepareGroups,
-} from './execution-groups';
+import { isExpectedInputFailure } from './discovery';
 import { collectMigrationWorktreeRoots } from './git';
 import {
   confirmDirtyWorkspaceChanges,
@@ -27,7 +27,13 @@ import {
   type MigrationConfigSource,
   migrationInputSource,
 } from './scope';
-import type { PreparedMigrationPlan } from './transaction';
+import {
+  executePreparedMigrationPlan,
+  MigrationTransactionError,
+  type MigrationTransactionExecutionResult,
+  type PreparedMigrationPlan,
+  prepareMigrationWritePlan,
+} from './transaction';
 import { assertUniquePhysicalTargets } from './transaction/cleanup';
 import type {
   RunMigrationImplResult,
@@ -39,6 +45,171 @@ import {
   verifyMigrationFromDisk,
 } from './verification';
 import { showWriteDecisions, showWritePlan } from './write-plan';
+
+interface MigrationExecutionState {
+  records: MigrationRecord[];
+  incompleteFiles: string[];
+  execution: MigrationTransactionExecutionResult;
+}
+
+function createExecutionState(
+  plan: FrozenMigrationPlan,
+): MigrationExecutionState {
+  return {
+    records: plan.records,
+    incompleteFiles: [],
+    execution: {
+      cleanupWarnings: [],
+      hardlinkRewrittenFiles: [],
+      hardlinkSkippedFiles: [],
+      modifiedFiles: [],
+      skippedFiles: [],
+    },
+  };
+}
+
+async function prepareGroup(options: {
+  group: FrozenMigrationPlan['groups'][number];
+  roots: string[];
+  state: MigrationExecutionState;
+}): Promise<PreparedMigrationPlan | undefined> {
+  try {
+    return await prepareMigrationWritePlan(options.roots, options.group);
+  } catch (error) {
+    if (!isRecoverablePreflight(error)) throw error;
+    const paths = options.group.map((item) => item.configPath);
+    options.state.incompleteFiles.push(...paths);
+    options.state.records.push({
+      configPath: paths[0]!,
+      kind: 'write-preflight-failed',
+      message: formatErrorMessage(error),
+      details: paths,
+    });
+    return undefined;
+  }
+}
+
+async function prepareGroups(options: {
+  plan: FrozenMigrationPlan;
+  roots: string[];
+  state: MigrationExecutionState;
+}): Promise<PreparedMigrationPlan[]> {
+  const prepared: PreparedMigrationPlan[] = [];
+  for (const group of options.plan.groups) {
+    const result = await prepareGroup({
+      group,
+      roots: options.roots,
+      state: options.state,
+    });
+    if (result) prepared.push(result);
+  }
+  return prepared;
+}
+
+function groupPaths(group: PreparedMigrationPlan): string[] {
+  return [
+    ...group.createSnapshots,
+    ...group.atomicSnapshots,
+    ...group.hardlinkSnapshots,
+  ].map((snapshot) => snapshot.item.configPath);
+}
+
+function skipGroup(
+  group: PreparedMigrationPlan,
+  state: MigrationExecutionState,
+): void {
+  const paths = groupPaths(group);
+  state.incompleteFiles.push(...paths);
+  state.execution.hardlinkSkippedFiles.push(
+    ...group.hardlinkSnapshots.map((snapshot) => snapshot.item.configPath),
+  );
+  state.execution.skippedFiles.push(...paths, ...group.skippedFiles);
+  state.records.push({
+    configPath: paths[0]!,
+    kind: 'write-group-skipped',
+    message: 'Hardlink policy skipped the entire consistency group.',
+    details: paths,
+  });
+}
+
+function recordCompleted(
+  completed: MigrationTransactionExecutionResult,
+  state: MigrationExecutionState,
+): void {
+  state.execution.cleanupWarnings.push(...completed.cleanupWarnings);
+  state.execution.hardlinkRewrittenFiles.push(
+    ...completed.hardlinkRewrittenFiles,
+  );
+  state.execution.hardlinkSkippedFiles.push(...completed.hardlinkSkippedFiles);
+  state.execution.modifiedFiles.push(...completed.modifiedFiles);
+  state.execution.skippedFiles.push(...completed.skippedFiles);
+  for (const file of completed.modifiedFiles)
+    state.records.push({
+      configPath: file,
+      kind: 'written',
+      message: 'Committed and verified.',
+    });
+}
+
+function recordRestored(
+  error: unknown,
+  group: PreparedMigrationPlan,
+  state: MigrationExecutionState,
+): void {
+  if (!(error instanceof MigrationTransactionError)) throw error;
+  if (error.rollbackFailures.length > 0) throw error;
+  const paths = groupPaths(group);
+  state.incompleteFiles.push(...paths);
+  state.records.push({
+    configPath: paths[0]!,
+    kind: 'write-group-restored',
+    message: error.message,
+    details: paths,
+  });
+}
+
+async function executeGroup(options: {
+  group: PreparedMigrationPlan;
+  hardlinkPolicy: 'skip' | 'rewrite';
+  state: MigrationExecutionState;
+}): Promise<void> {
+  try {
+    recordCompleted(
+      await executePreparedMigrationPlan(options.group, {
+        hardlinkPolicy: options.hardlinkPolicy,
+      }),
+      options.state,
+    );
+  } catch (error) {
+    recordRestored(error, options.group, options.state);
+  }
+}
+
+function shouldSkip(group: PreparedMigrationPlan, policy: string): boolean {
+  return policy === 'skip' && group.hardlinkSnapshots.length > 0;
+}
+
+async function executeGroups(options: {
+  prepared: PreparedMigrationPlan[];
+  hardlinkPolicy: 'skip' | 'rewrite';
+  state: MigrationExecutionState;
+}): Promise<void> {
+  for (const group of options.prepared) {
+    if (shouldSkip(group, options.hardlinkPolicy))
+      skipGroup(group, options.state);
+    else await executeGroup({ ...options, group });
+  }
+}
+
+function isRecoverablePreflight(error: unknown): boolean {
+  return (
+    [
+      ReplacementDriftError,
+      RetryableReplacementValidationIoError,
+      TerminalReplacementValidationError,
+    ].some((Type) => error instanceof Type) || isExpectedInputFailure(error)
+  );
+}
 
 async function assertPlanningInputsUnchanged(
   plan: FrozenMigrationPlan,
