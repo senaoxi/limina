@@ -110,14 +110,12 @@ it.each(['transitive', 'unrelated', 'new-config', 'config-import'])(
       expect(targets).toHaveLength(1);
       const admission = new ExecutionAdmission(preflight, graph, targets);
       const target = targets[0]!;
-      expect(
-        (
-          await executeAuthorizedTypecheck({ admission }, target, () => ({
-            configPath: target.configPath,
-            status: 0,
-          }))
-        ).status,
-      ).toBe(0);
+      const initial = await executeAuthorizedTypecheck(
+        { admission },
+        target,
+        () => ({ configPath: target.configPath, status: 0 }),
+      );
+      expect(initial.status, JSON.stringify(initial)).toBe(0);
       const file =
         change === 'config-import'
           ? 'settings.cjs'
@@ -189,13 +187,16 @@ try {
   const afterRefresh = await execute(refreshed);
   await writeFile(root + '/settings.cjs', 'module.exports = {compilerOptions:{dev:false}};');
   const changed = await execute(refreshed);
-  console.log(JSON.stringify({statuses: [afterRefresh.status, changed.status], starts}));
+console.log(JSON.stringify({statuses: [afterRefresh.status, changed.status], starts, afterRefresh}));
 } finally { manager.dispose(); }
 `,
       ],
       { encoding: 'utf8' },
     );
-    expect(JSON.parse(output.trim().split('\n').at(-1)!)).toEqual({
+    const { afterRefresh, ...result } = JSON.parse(
+      output.trim().split('\n').at(-1)!,
+    );
+    expect(result, JSON.stringify(afterRefresh)).toEqual({
       statuses: [0, 'admission-rejected'],
       starts: 1,
     });

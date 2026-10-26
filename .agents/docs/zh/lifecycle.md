@@ -233,6 +233,8 @@ Native external-library implementation input 可以为消费者提供类型，�
 
 [准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts) 覆盖推断与传递 implicit 拒绝、独立 target、Core 证据不变及输入漂移。[交接回归](../../../packages/limina/src/__tests__/execution-input-handoff.spec.ts) 覆盖已在运行的 producer、新声明证据、独立工作，以及并发普通源码变化的拒绝。[Checker host 测试](../../../packages/limina/src/__tests__/checker-host.spec.ts) 区分调度与明确的失败前提。这些 guard 不证明任意第三方生成器合同或跨平台无竞态。
 
+Svelte 配置发现对编译器枚举与祖先查找使用同一种 portable path 表示。否则 Windows 原生分隔符会让同一个 CommonJS 入口出现两次，并在第二次加载时触发预加载模块保护。[执行准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts)保留初次准入、受管刷新后的复用，以及导入配置变更后的拒绝；不清除模块缓存，也不放宽加载证据要求。
+
 ## Migration 是另一种事务
 
 `limina-migrate` 拥有迁移规划、事务和新进程校验。构建通过核心包的 export map，将 workspace `limina/internal/*` 模块直接解析到当前核心 `.ts` 源码，将已有 reader、provider、错误类、namespace 与物理守卫作为整体内联。构建拒绝分发路径中的核心模块和同一真实文件的重复实例，不再要求 migration 支持聚合模块。源码所有权仍在核心，verifier 和 renderer 构建进入 migrate 并从该安装位置解析。单次执行中的 authenticated token、错误 constructor、writer queue 与 semantic context 生产消费保持同一副本。I01 的 workspace 权限、I09 的 generation 身份和 I10 的物理写入边界保持原语义。分发细节归[仓库架构](./architecture.md#limina-边界)。
