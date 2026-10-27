@@ -25,7 +25,10 @@ export function createNativeSemanticContext(
       metrics,
     };
     cache?.recordProgram();
-    return { input, context: new NativeSemanticContext(input) };
+    return {
+      input,
+      context: new NativeSemanticContext(input, cache !== undefined),
+    };
   });
   if (cache?.supports(result.input.project, ts))
     captureBoundedContext({

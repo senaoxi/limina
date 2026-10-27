@@ -1,5 +1,8 @@
 import type { AnalysisReadDescriptor } from '#utils/analysis-input';
-import { readPhysicalFileIdentity } from '#utils/physical-file-identity';
+import {
+  readPhysicalFileBinding,
+  readPhysicalFileIdentity,
+} from '#utils/physical-file-identity';
 import { readFileSync } from 'node:fs';
 import { glob } from 'tinyglobby';
 import ts from 'typescript';
@@ -43,6 +46,8 @@ function readGlob(
   return glob(descriptor.patterns, options);
 }
 const readers = {
+  'file-binding': (descriptor: { path: string }) =>
+    readPhysicalFileBinding(descriptor.path),
   'file-identity': (descriptor: { path: string }) =>
     readPhysicalFileIdentity(descriptor.path),
   directory: (descriptor: { path: string }) =>

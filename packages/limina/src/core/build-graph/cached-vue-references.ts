@@ -1,6 +1,9 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
-import { createProjectDependencyCaches } from '../project-dependencies/runner';
+import {
+  createProjectDependencyCaches,
+  withProjectDependencyReplay,
+} from '../project-dependencies/runner';
 import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
   type ValidatedWorkspaceContext,
@@ -74,22 +77,25 @@ function collectReferences(
   },
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const contexts = new VueSemanticContextManager(undefined, input.cache);
+  const caches = createProjectDependencyCaches(input.cache);
   try {
-    const result = inferProjectReferences({
-      config: input.config,
-      activatedRegions: new WorkspaceRegionPathIndex(input.workspace),
-      governedSources: selected.vueSources,
-      ownerGovernedSources: selected.sources,
-      ownerProjects: selected.primary,
-      projects: selected.projects,
-      primaryProjects: selected.primary,
-      sourceToBuildByChecker: input.graph.sourceToBuild,
-      projectDependencyCaches: createProjectDependencyCaches(input.cache),
-      importAnalysisContext: resolveBuildGraphImportAnalysis({
+    const result = withProjectDependencyReplay(caches, () =>
+      inferProjectReferences({
         config: input.config,
-        vueSemanticContexts: contexts,
+        activatedRegions: new WorkspaceRegionPathIndex(input.workspace),
+        governedSources: selected.vueSources,
+        ownerGovernedSources: selected.sources,
+        ownerProjects: selected.primary,
+        projects: selected.projects,
+        primaryProjects: selected.primary,
+        sourceToBuildByChecker: input.graph.sourceToBuild,
+        projectDependencyCaches: caches,
+        importAnalysisContext: resolveBuildGraphImportAnalysis({
+          config: input.config,
+          vueSemanticContexts: contexts,
+        }),
       }),
-    });
+    );
     if (result.problems.length > 0)
       throw new Error('Vue reference reconstruction is incomplete.');
     return new Map(

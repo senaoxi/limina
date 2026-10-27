@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { hasValidBoundedContext } from './bounded-context-validity';
 import type { AnalysisSnapshot, InputDependency } from './contracts';
 import { validateData } from './data-codec';
@@ -6,7 +7,7 @@ import { analysisHash } from './identity';
 import { hasBrokenInstallationCoverage } from './installation-lock-coverage';
 import { hasResolutionReceipt } from './resolution-queries';
 import { occurrenceKey } from './semantic-state';
-import { decodeVueQuery } from './vue-schema';
+import { hasValidVueQuery } from './vue-schema';
 
 function hasBrokenInputs(
   snapshot: AnalysisSnapshot,
@@ -75,6 +76,19 @@ function hasBrokenContextSyntax(
   snapshot: AnalysisSnapshot,
   context: AnalysisSnapshot['contexts'][string],
 ): boolean {
+  if (context.native !== undefined) {
+    const { members, syntax } = context.native.inventory;
+    const files = new Set(syntax.map((entry) => entry.file));
+    return [
+      files.size !== syntax.length,
+      files.size !== members.length,
+      members.some((file) => !files.has(file)),
+      syntax.some(
+        ({ file, fingerprint }) =>
+          nativeFingerprint(snapshot.files[file]) !== fingerprint,
+      ),
+    ].some(Boolean);
+  }
   return (
     context.collection?.mode === 'programless' &&
     Object.entries(context.sources).some(([file, id]) =>
@@ -114,6 +128,21 @@ function isGraphValid(
   return (
     graph.contextIds.every((id) => snapshot.contexts[id] !== undefined) &&
     graph.vueContextIds.every((id) => snapshot.vueContexts[id]?.complete)
+  );
+}
+
+export function hasValidGraphRecords(
+  snapshot: AnalysisSnapshot,
+  graphs: AnalysisSnapshot['graphs'],
+): boolean {
+  const records = Object.values(graphs);
+  return (
+    !hasBrokenInputs(snapshot, records) &&
+    records.every(
+      (graph) =>
+        graph.queryIds.every((id) => snapshot.queries[id] !== undefined) &&
+        isGraphValid(snapshot, graph),
+    )
   );
 }
 export function validatedSnapshot(
@@ -175,8 +204,8 @@ function isVueRecordValid(
     analysisHash(context.identity) === id,
     context.queryIds.length === Object.keys(context.queries).length,
     context.queryIds.every((key) => context.queries[key] !== undefined),
-    Object.values(context.queries).every(
-      (query) => decodeVueQuery(query.kind, query.data) !== undefined,
+    Object.values(context.queries).every((query) =>
+      hasValidVueQuery(query.kind, query.data),
     ),
   ].every(Boolean);
 }

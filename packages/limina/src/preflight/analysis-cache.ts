@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { performance } from 'node:perf_hooks';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
 import { effectiveConfigVersion } from '../config/analysis-version';
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
@@ -30,7 +31,13 @@ export class AnalysisCacheController {
       force?: boolean;
     } = {},
   ) {
+    const toolStart = performance.now();
     this.#tools = new AnalysisToolObservation(config.configPath);
+    options.metrics?.record({
+      name: 'analysis-cache',
+      kind: 'tool-identity',
+      durationMs: performance.now() - toolStart,
+    });
     this.#canPublish = options.canPublish !== false;
     this.#force = options.force === true;
     const metrics = options.metrics;

@@ -52,8 +52,23 @@ function collectBoundedContext(
     metrics,
   };
   try {
+    if (cache !== undefined)
+      metrics?.record({
+        name: 'analysis-cache',
+        kind: 'context-rebuilt',
+        provider: 'typescript',
+        context: project.configPath,
+        count: 1,
+      });
     cache?.recordProgram();
-    return { input, context: new NativeDependencyContext(input) };
+    return {
+      input,
+      context: new NativeDependencyContext(
+        input,
+        undefined,
+        cache !== undefined,
+      ),
+    };
   } catch (error) {
     return { input, context: failedNativeDependencyContext(input, error) };
   }

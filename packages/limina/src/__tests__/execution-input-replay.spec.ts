@@ -1,9 +1,14 @@
 import { readAnalysisInput } from '#utils/analysis-input';
+import {
+  readPhysicalFileBinding,
+  readPhysicalFileIdentity,
+} from '#utils/physical-file-identity';
 import fs, {
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -82,6 +87,34 @@ it('does not transfer a managed-write exception to a strict scope in the same ro
   expect(f.reads() - before).toBe(1);
 });
 
+it('shares restoration observations while retaining each context receipt and later drift checks', async () => {
+  const f = fixture();
+  const records = f.scopes[0]!.snapshot()!;
+  const inputs = new EpochInputs();
+  const replay = new EpochInputReplay();
+  const read = vi.spyOn(fs, 'readFileSync');
+  syncBuiltinESMExports();
+  try {
+    expect(await inputs.validate(records, replay)).toBe(true);
+    const reads = read.mock.calls.length;
+    expect(inputs.validateSynchronous(records, replay)).toBe(true);
+    expect(read.mock.calls).toHaveLength(reads);
+    const altered = records.map((record) => ({
+      ...record,
+      version: 'omitted-input',
+    }));
+    expect(inputs.validateSynchronous(altered, replay)).toBe(false);
+    expect(inputs.selectRecords(altered)).toBeUndefined();
+    const selected = inputs.selectRecords(records)!;
+    expect(selected.paths.has(f.target)).toBe(true);
+    writeFileSync(f.target, 'export const value = 3;');
+    await expect(selected.assertStable()).rejects.toThrow(/changed|drift/u);
+  } finally {
+    read.mockRestore();
+    syncBuiltinESMExports();
+  }
+});
+
 it('shares sibling ancestor reads in one round and reads them again in the next', async () => {
   const f = fixture();
   const inputs = new EpochInputs();
@@ -90,19 +123,66 @@ it('shares sibling ancestor reads in one round and reads them again in the next'
       const file = f.file('view', `${index}.ts`);
       writeFileSync(file, 'export const value = 1;');
       readAnalysisInput(file, () => readFileSync(file, 'utf8'));
+      readAnalysisInput(
+        file,
+        () => readPhysicalFileBinding(file),
+        'file-binding',
+      );
+      readAnalysisInput(
+        file,
+        () => readPhysicalFileIdentity(file),
+        'file-identity',
+      );
     }
   });
   const probe = vi.spyOn(fs, 'lstatSync');
+  const canonical = vi.spyOn(fs.realpathSync, 'native');
   syncBuiltinESMExports();
   const ancestorReads = () =>
     probe.mock.calls.filter(([file]) => file === f.file('view')).length;
   try {
     await inputs.assertStable();
     expect(ancestorReads()).toBe(1);
+    if (process.platform !== 'win32')
+      expect(canonical.mock.calls.length).toBeLessThan(32);
     await inputs.assertStable();
     expect(ancestorReads()).toBe(2);
+    writeFileSync(f.file('replacement.ts'), 'export const value = 1;');
+    renameSync(f.file('replacement.ts'), f.file('view/0.ts'));
+    await expect(inputs.assertStable()).rejects.toThrow(/changed|drift/u);
   } finally {
     probe.mockRestore();
+    canonical.mockRestore();
     syncBuiltinESMExports();
   }
+});
+
+it('preserves native canonical spelling and missing-path results in a shared replay', async () => {
+  const f = fixture();
+  writeFileSync(f.file('a/é.ts'), 'export {};');
+  const paths = [
+    'view/value.ts',
+    'view/VALUE.ts',
+    'a/é.ts',
+    'a/é.ts',
+    'absent.ts',
+  ].map((name) => f.file(name));
+  paths.push(
+    `${f.file('view')}/`,
+    `${f.file('view')}/.`,
+    f.file('view'),
+    `${f.file('a/value.ts')}/../value.ts`,
+  );
+  const inputs = new EpochInputs();
+  inputs.run(() => {
+    for (const file of paths) {
+      readAnalysisInput(
+        file,
+        () => readPhysicalFileBinding(file),
+        'file-binding',
+      );
+    }
+  });
+  await expect(inputs.assertStable()).resolves.toBeUndefined();
+  expect(await new EpochInputs().validate(inputs.snapshot()!)).toBe(true);
 });

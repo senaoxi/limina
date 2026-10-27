@@ -19,6 +19,10 @@ import { hasValidRestoredDeclarationContexts } from './declaration-context-candi
 import { hasBoundGeneratedReferences } from './generated-reference-binding';
 import { readMaterializationStateSnapshot } from './materialization-state';
 import { hasBoundNativeGraph } from './native-cache-binding';
+import {
+  restoreNativeGraphViews,
+  storeNativeGraphViews,
+} from './native-graph-views';
 import { isValidOutputProjection } from './output-projection';
 import { isValidTypeInputProjection } from './type-input-projection';
 import type {
@@ -55,9 +59,14 @@ function versions(
     ? undefined
     : { workspaceVersion: workspaceVersion! };
 }
-function decodeGraph(data: unknown): StoredGraphData | undefined {
+function decodeGraph(
+  data: unknown,
+  cache: NativeAnalysisCache,
+): StoredGraphData | undefined {
   try {
-    return parseCachedGraph(decodeData(data));
+    return parseCachedGraph(
+      restoreNativeGraphViews(decodeData(data, true), cache),
+    );
   } catch {
     return undefined;
   }
@@ -85,6 +94,7 @@ async function readVersionedGraph(
   const record = await options.cache.restoreGraphRecord(
     key,
     version.workspaceVersion,
+    restoredGeneration(options),
   );
   if (record === undefined) return undefined;
   const data = decodeBoundGraph(options, record);
@@ -102,7 +112,7 @@ function decodeBoundGraph(
     Awaited<ReturnType<NativeAnalysisCache['restoreGraphRecord']>>
   >,
 ): CachedGraphData | undefined {
-  const stored = decodeGraph(record.data);
+  const stored = decodeGraph(record.data, options.cache);
   return isRestorableGraph(stored, options)
     ? bindAndRestoreGraph(options, { stored, record })
     : undefined;
@@ -279,7 +289,7 @@ function captureGraphData(
   }
   options.cache.captureGraphRecord(key, {
     ...version,
-    value: stored,
+    value: storeNativeGraphViews(stored, options.cache),
   });
 }
 function hasValidProjections(

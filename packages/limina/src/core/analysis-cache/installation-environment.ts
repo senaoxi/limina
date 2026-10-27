@@ -219,18 +219,15 @@ export function observeTypeEnvironment(
   return environmentRecord({ project, roots, observation }, result);
 }
 
-export function validateInstallationDomains(
+export function subscribeInstallationDomains(
   state: AnalysisSnapshot,
   inputs: AnalysisInputs,
 ): void {
-  const dependencies = [
+  const domains = [
     ...Object.values(state.contexts),
     ...Object.values(state.vueContexts),
-  ]
-    .flatMap((context) => context.environment.domains)
-    .flatMap((domain) => domain.dependencies);
-  if (dependencies.some((dependency) => !inputs.valid(dependency)))
-    inputs.domainDirty = true;
+  ].flatMap((context) => context.environment.domains);
+  for (const domain of domains) inputs.subscribeInstallationLocks(domain.locks);
 }
 
 function addMemberInstallations(

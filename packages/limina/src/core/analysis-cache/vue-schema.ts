@@ -9,6 +9,7 @@ import {
 import { dependencySchema } from './dependency-schema';
 import { typeEnvironmentSchema } from './environment-schema';
 import { occurrenceSchema } from './occurrence-schema';
+import { isDecodedRecord } from './record-table';
 import type { VueQueryKind, VueQueryResults } from './vue-contracts';
 import { VUE_ANALYSIS_ADAPTER } from './vue-identity';
 const redirectSchema = z.object({
@@ -103,6 +104,7 @@ const schemas = {
     target: target.nullable(),
   }),
 };
+const decoded = new WeakMap<object, Map<VueQueryKind, unknown>>();
 
 export function parseVueQuery<K extends VueQueryKind>(
   kind: K,
@@ -116,11 +118,34 @@ export function decodeVueQuery<K extends VueQueryKind>(
   kind: K,
   data: unknown,
 ): VueQueryResults[K] | undefined {
+  return structuredClone(qualifiedVueQuery(kind, data));
+}
+
+/**
+Validate private wire data once; callers continue receiving independent data.
+*/
+function qualifiedVueQuery<K extends VueQueryKind>(
+  kind: K,
+  data: unknown,
+): VueQueryResults[K] | undefined {
+  const isPrivateData = isDecodedRecord(data);
+  const prior = isPrivateData ? decoded.get(data) : undefined;
+  if (prior?.has(kind)) return prior.get(kind) as VueQueryResults[K];
   try {
-    return parseVueQuery(kind, decodeData(data));
+    const result = parseVueQuery(kind, decodeData(data, isPrivateData));
+    if (isPrivateData && result !== undefined) {
+      const entries = prior ?? new Map<VueQueryKind, unknown>();
+      entries.set(kind, result);
+      decoded.set(data, entries);
+    }
+    return result;
   } catch {
     return undefined;
   }
+}
+
+export function hasValidVueQuery(kind: VueQueryKind, data: unknown): boolean {
+  return qualifiedVueQuery(kind, data) !== undefined;
 }
 
 const querySchema = z.object({
@@ -132,7 +157,7 @@ const querySchema = z.object({
     'support-inputs',
     'type-environment-entries',
   ]),
-  data: z.json(),
+  data: z.unknown(),
 });
 const outputProjection = z.object({
   sourceConfigPath: text,

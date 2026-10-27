@@ -79,6 +79,7 @@ export type AnalysisMetricName =
   | 'validator';
 
 export interface AnalysisMetricMeasurement {
+  readonly context?: string;
   readonly count?: number;
   readonly durationMs?: number;
   readonly estimatedBytes?: number;

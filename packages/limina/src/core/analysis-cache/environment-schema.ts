@@ -56,6 +56,7 @@ const project = z.object({
 const boundaryEntry = z.tuple([text, z.boolean()]);
 const compilerInventory = z.object({
   members: texts,
+  syntax: z.array(z.object({ file: text, fingerprint: text })),
   occurrences: z.array(z.object({ requestId: text, fingerprint: text })),
   loads: z.array(z.object({ requestId: text, target: text, source: text })),
   roots: z.array(z.object({ root: text, source: text })),

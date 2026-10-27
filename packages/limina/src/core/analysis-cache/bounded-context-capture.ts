@@ -93,6 +93,11 @@ function captureQualifiedBoundedContext(
     input.cache.previous?.contexts[id],
     record,
   );
+  for (const witness of input.context.nativeInventory!.syntax) {
+    const facts = input.context.getFileDependencyFacts?.(witness.file);
+    if (facts !== undefined)
+      input.cache.retainSyntax(facts, witness.fingerprint);
+  }
   captureBoundedProject(input, id, members);
   input.cache.inputs.consume(record.dependencies);
   input.cache.increment('boundedEvidenceContexts');

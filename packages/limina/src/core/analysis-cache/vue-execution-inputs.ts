@@ -1,5 +1,5 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
-import { type AnalysisRead, observeAnalysisRead } from '#utils/analysis-input';
+import type { AnalysisRead } from '#utils/analysis-input';
 import ts from 'typescript';
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
 import {
@@ -8,7 +8,7 @@ import {
   type InputDependency,
 } from './contracts';
 import { PathBindingReplay } from './directory-fingerprint';
-import { EpochInputs } from './epoch-inputs';
+import { EpochInputReplay, EpochInputs } from './epoch-inputs';
 import { analysisHash } from './identity';
 import { readInput } from './input-state';
 import type { AnalysisInputs } from './inputs';
@@ -119,26 +119,26 @@ export function bindVueExecutionInputs(
   identity: VueProjectSemanticIdentity,
   inputs: AnalysisInputs,
   dependencies: Iterable<InputDependency>,
+  replay: EpochInputReplay = new EpochInputReplay(),
 ): void {
   const scope = currentScope(identity);
   // Reuse ancestor bindings only during this synchronous receipt-binding batch.
   // Execution admission still replays these inputs in a fresh validation scope.
-  new PathBindingReplay().run(() =>
-    scope.run(() => {
-      for (const dependency of dependencies) bindDependency(inputs, dependency);
-    }),
-  );
+  new PathBindingReplay().run(() => {
+    for (const dependency of dependencies)
+      scope.bind(dependencyObservation(inputs, dependency), replay);
+  });
 }
-function bindDependency(
+function dependencyObservation(
   inputs: AnalysisInputs,
   dependency: InputDependency,
-): void {
+): AnalysisRead {
   const input = inputs.records[dependency.inputId];
   if (input?.version !== dependency.expectedVersion)
     throw new Error('Vue execution input receipt is unbound.');
-  observeAnalysisRead({
+  return {
     path: input.path,
     key: dependency.inputId,
     ...dependencyRead(input, inputs),
-  });
+  };
 }

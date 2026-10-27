@@ -4,6 +4,10 @@ import type { NativeEvidenceSnapshot } from './native-evidence';
 // Object.freeze on a caller-owned compiler object is not a DTO proof.
 const published = new WeakSet<object>();
 
+export function isPublishedNativeData(value: unknown): value is object {
+  return value !== null && typeof value === 'object' && published.has(value);
+}
+
 function clonePrimitive(value: unknown): unknown {
   if (typeof value === 'number') return cloneNumber(value);
   if (['string', 'number', 'boolean'].includes(typeof value)) return value;

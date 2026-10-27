@@ -5,6 +5,7 @@ import type { AnalysisSnapshot, InputDependency } from './contracts';
 import { decodeData, encodeData } from './data-codec';
 import { shareValidatedDependency } from './dependency-schema';
 import { mapAnalysisRecords } from './record-payload';
+import { isDecodedRecord, ownDecodedRecord } from './record-table';
 
 const dependency = z.object({
   inputId: z.string(),
@@ -28,15 +29,37 @@ type Transform = (key: string, value: unknown) => unknown;
 interface VisitOptions {
   transform: Transform;
   shouldSortKeys?: boolean;
+  decoded?: WeakMap<object, object>;
 }
 function visit(value: unknown, options: VisitOptions): unknown {
-  if (Array.isArray(value)) return value.map((item) => visit(item, options));
-  return isPlainRecord(value) ? visitRecord(value, options) : value;
+  if (!Array.isArray(value) && !isPlainRecord(value)) return value;
+  const previous = options.decoded?.get(value);
+  if (previous !== undefined) return previous;
+  const result = Array.isArray(value)
+    ? value.map((item) => visit(item, options))
+    : visitRecord(value, options);
+  if (
+    isDecodedRecord(value) &&
+    !options.shouldSortKeys &&
+    hasSameEntries(value, result)
+  ) {
+    options.decoded?.set(value, value);
+    return value;
+  }
+  if (options.decoded !== undefined && isDecodedRecord(value)) {
+    ownDecodedRecord(result);
+    options.decoded.set(value, result);
+  }
+  return result;
+}
+function hasSameEntries(before: object, after: object): boolean {
+  const current = after as Record<string, unknown>;
+  return Object.entries(before).every(([key, value]) => current[key] === value);
 }
 function visitRecord(
   value: Record<string, unknown>,
   options: VisitOptions,
-): unknown {
+): Record<string, unknown> {
   const entries = Object.entries(value);
   if (options.shouldSortKeys)
     entries.sort(([left], [right]) => compareCodeUnits(left, right));
@@ -251,9 +274,11 @@ export function decodeAnalysisRecords(
     tables.dependencies = tables.dependencies.map(shareValidatedDependency);
   const records = { ...value };
   delete records.receiptEncoding;
+  const shared = new WeakMap<object, object>();
   const decoded = mapAnalysisRecords(records, (record) =>
     visit(record, {
       transform: (key, item) => decodeField(key, item, tables),
+      decoded: shouldShareValidated ? shared : undefined,
     }),
   );
   return decoded;

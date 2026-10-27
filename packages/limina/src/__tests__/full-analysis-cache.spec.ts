@@ -23,7 +23,6 @@ import {
   invocationDataVersion,
 } from '../config/invocation-data';
 import { getActiveCheckers } from '../config/runtime';
-import { decodeData, encodeData } from '../core/analysis-cache/data-codec';
 import { directoryFingerprint } from '../core/analysis-cache/directory-fingerprint';
 import { observeInstallationDomain } from '../core/analysis-cache/installation-domain';
 import { validateInstallationLock } from '../core/analysis-cache/installation-locks';
@@ -38,6 +37,9 @@ import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { LiminaPreflightManager } from '../preflight';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
 import {
+  analysisBlockPath,
+  decodeGraphProjection as decodeData,
+  encodeGraphProjection as encodeData,
   readStoredAnalysisSnapshot,
   writeStoredAnalysisSnapshot,
 } from './helpers/analysis-snapshot';
@@ -455,7 +457,8 @@ describe('R01 effective local metadata and installation trust', () => {
         expect(
           vi.mocked(validateInstallationLock).mock.calls.length,
         ).toBeGreaterThan(parses + 1);
-        expect(changed.cache.inputs.domainDirty).toBe(true);
+        expect(changed.cache.inputs.domainDirty).toBe(false);
+        expect(changed.cache.metrics.semanticPrograms).toBe(1);
         expect(changed.cache.metrics.factHits).toBe(0);
         expect(changed.facts.map(nativeFactMeaning)).toEqual(
           first.facts.map(nativeFactMeaning),
@@ -545,7 +548,7 @@ describe('R01 effective local metadata and installation trust', () => {
     expect(analyze(f.project(), touched.cache).restored).toBe(false);
   });
 
-  it('invalidates all configurations on a related lock change and records trusted installation evidence', () => {
+  it('rebuilds a subscribed context on a related lock change and records trusted installation evidence', () => {
     const f = fixture();
     f.write(
       'node_modules/@types/pkg/index.d.ts',
@@ -565,7 +568,8 @@ describe('R01 effective local metadata and installation trust', () => {
       '{"name":"fixture","lockfileVersion":3,"packages":{"":{}},"revision":2}',
     );
     const next = analyze(project, first.cache);
-    expect(next.cache.inputs.domainDirty).toBe(true);
+    expect(next.cache.inputs.domainDirty).toBe(false);
+    expect(next.cache.metrics.semanticPrograms).toBe(1);
     expect(next.cache.metrics.factHits).toBe(0);
     expect(next.restored).toBe(false);
     rmSync(f.file('package-lock.json'));
@@ -589,6 +593,28 @@ describe('R01 effective local metadata and installation trust', () => {
 });
 
 describe('R03 evaluation, own data and namespace validity', () => {
+  it('reuses graph facts after reevaluating scheduling concurrency in the same configuration module', () => {
+    const f = fixture();
+    f.write(
+      'limina.config.mjs',
+      `export default {
+      scope:{checkers:{tsc:{include:['tsconfig.json']}}},
+      concurrency:{checkerTypecheck:Number(process.env.LIMINA_TEST_CONCURRENCY ?? 1)}
+    };`,
+    );
+    const [first, changed] = f.execute<GraphRunResult[]>(`
+      process.env.LIMINA_TEST_CONCURRENCY='1'; const first=await runCache();
+      process.env.LIMINA_TEST_CONCURRENCY='2'; const changed=await runCache();
+      console.log(JSON.stringify([first,changed]));`);
+    expect(changed.graph).toEqual(first.graph);
+    expect(changed.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    expect(changed.events).toContainEqual(
+      expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
+    );
+  });
+
   it('rebuilds the entire analysis model on policy changes and restores equal configuration without publishing', async () => {
     const f = fixture();
     const project = JSON.parse(readFileSync(f.file('tsconfig.json'), 'utf8'));
@@ -852,6 +878,48 @@ interface GraphRunResult {
 }
 
 describe('production graph snapshots and publication', () => {
+  it('rebuilds a corrupt graph projection from qualified context facts and repairs the next invocation', () => {
+    const f = fixture();
+    const first = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache()));',
+    );
+    const control = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache()));',
+    );
+    expect(control.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    const store = new AnalysisCacheStore({
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
+      configPath: f.config.configPath,
+      identity: 'unused',
+    });
+    const index = JSON.parse(readFileSync(store.path, 'utf8'));
+    const block = index.storage.blocks.find(
+      (item: { kind: string }) => item.kind === 'graph',
+    );
+    expect(block).toBeDefined();
+    writeFileSync(analysisBlockPath(store.path, block), '{corrupt projection');
+    const repaired = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache()));',
+    );
+    expect(graphMeaning(repaired.graph)).toEqual(graphMeaning(first.graph));
+    expect(repaired.events).toContainEqual(
+      expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
+    );
+    expect(repaired.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
+    );
+    const next = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache()));',
+    );
+    expect(next.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+  });
   it.each([
     'missing-source',
     'missing-empty-source',
