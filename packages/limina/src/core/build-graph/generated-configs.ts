@@ -49,7 +49,11 @@ function createRelativeImportRewriteOverride(
   project: SourceProject,
 ): Record<string, unknown> {
   return project.options.rewriteRelativeImportExtensions === true
-    ? { rewriteRelativeImportExtensions: false }
+    ? {
+        // Rewriting implicitly permits TS extensions, even with explicit allow=false.
+        allowImportingTsExtensions: true,
+        rewriteRelativeImportExtensions: false,
+      }
     : {};
 }
 
