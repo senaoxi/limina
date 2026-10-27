@@ -96,6 +96,10 @@ JSDoc 定位将既有 occurrence 绑定到真实解析 AST 节点，并覆盖所
 
 ## Locked resolution 与 framework preparation
 
+Vue 的 compiler-purpose 发现枚举既有 Vue Program 的模块请求与输入指令，包括普通 TS/JS 支撑文件和实际 SFC service script。[编译器请求记录](../../../packages/limina/src/core/vue-semantic/compiler-requests.ts)保留 occurrence、role 与 resolution mode；面向 Program 的 Bounded Host 在屏蔽外部实现文件前观测解析。支撑准备和手动 runtime 解析不能填充该回执。编译器复用时保留跨 bounded pass 的观测；没有回执的 masked miss 保持 unknown。隐式 JSX 元数据只装饰已有编译器请求，不创造请求。
+
+[Vue 编译义务](../../../packages/limina/src/core/vue-semantic/compilation-obligation.ts)独立于 TypeEvidence 和 membership，区分 present、absent 与 unknown。有效 noResolve、augmentation、consumer roots、输入/emit 资格和真实 redirect 分别限定请求。框架目标必须具有实际 service script；consumer 的 root profiles 不代表外部目标能力。SFC 请求保留严格源码映射与候选一致性。普通 TS require 仅是运行时语法，而编译器收录的 JS require 不因词法遮蔽而丢失。缺少证明时不能退回 resolution-only 推导。[建图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖这些差分、import-equals、路径指令与隐式 JSX 输入；各框架 Program 和治理边界保持独立。
+
 [checker-resolution-provider](../../../packages/limina/src/core/import-analysis/checker-resolution-provider.ts) 的 locked routes 将 Oxc 设为 null。checker miss 保留 miss；runtime/resource 分类不能补一个 semantic target。此限制适用于该调用链，不能扩张成“Oxc 在 Limina 的所有分析中都不产生 evidence”。Astro pre-semantic eligibility 只跳过已知 virtual specifier、纯粹的显式非源码扩展名和 Oxc 识别出的 resource 目标；query 或 fragment 语法不是 skip authority，完整 specifier 会到达 Astro adapter，其结果照单接受。
 
 [PreparedDependencyFact](../../../packages/limina/src/core/framework-semantic/contracts.ts) 保留 occurrence、mapping、原始解析及结构 redirect 证据。Native 使用独立编译义务证明，框架保留自身适配器判定，完整 observed miss 不同于观察不可用。Pending 观察产生 dependency-semantics failure，不能发布完整图。不同 provider 必须有可归因的 Checker 结构；路径和扩展不能制造 positive TypeEvidence。

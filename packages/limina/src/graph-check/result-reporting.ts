@@ -86,3 +86,13 @@ export function isFinishGraphCheck(state: GraphCheckState): boolean {
     ? isReportGraphFailure(state)
     : isReportGraphSuccess(state);
 }
+
+export function isReportGraphPreparationFailure(
+  options: GraphCheckState['options'],
+  issues: LiminaCheckIssue[],
+): false {
+  options.onStats?.({ items: [], passed: 0, total: issues.length });
+  pushIssues(options.issues, issues);
+  logFailure(issues, options.report);
+  return false;
+}

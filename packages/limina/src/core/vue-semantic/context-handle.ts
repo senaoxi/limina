@@ -13,6 +13,7 @@ import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
+import { VueCompilerRequests } from './compiler-requests';
 import {
   createMeasuredProgram,
   getCachedSemanticSourceFile,
@@ -152,6 +153,8 @@ export class VueSemanticContext {
 
   #disposed = false;
 
+  readonly compilerRequests: VueCompilerRequests;
+
   readonly identity: VueProjectSemanticIdentity;
 
   readonly language: VolarLanguage;
@@ -181,6 +184,10 @@ export class VueSemanticContext {
     this.analysisTrace = analysisTrace;
     this.#onProgramCreated = onProgramCreated;
     this.tsModule = identity.toolchain.tsModule;
+    this.compilerRequests = new VueCompilerRequests(
+      this.tsModule,
+      identity.configPath,
+    );
     const sys = createVueOverlaySystem({
       tsModule: this.tsModule,
       virtualFiles: identity.virtualFiles,
@@ -218,6 +225,7 @@ export class VueSemanticContext {
     this.languageServiceHost = hostResult.languageServiceHost;
     this.#boundedHost = createBoundedLanguageServiceHost({
       host: this.languageServiceHost,
+      observeModule: (input) => this.compilerRequests.observe(input),
       tsModule: this.tsModule,
       project: {
         configPath: identity.configPath,

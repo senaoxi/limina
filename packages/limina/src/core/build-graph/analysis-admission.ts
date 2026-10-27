@@ -5,6 +5,7 @@ import type { AnalysisOutcome } from './analysis-outcome';
 import { compilationRelationFor } from './compilation-prerequisite';
 import { hasProjectedCompilationReference } from './compilation-reference';
 import { assessDeclarationContexts } from './declaration-context-admission';
+import { pendingReferenceValidation } from './reference-validation';
 import type { DependencyAnalysisResult } from './types';
 
 export interface CandidateBuildPlan {
@@ -59,6 +60,12 @@ function assessCandidate(
   );
   const declaration = assessDeclarationContexts(analysis, candidate, configs);
   const denied = [...compilation.denied, ...declaration.denied];
+  const references = analysis.referenceValidation;
+  if (references === undefined) unknown.push(pendingReferenceValidation);
+  else if (references.state === 'denied')
+    denied.push(...references.diagnostics);
+  else if (references.state === 'unavailable')
+    unknown.push(...references.diagnostics);
   unknown.push(...declaration.unknown, ...compilation.unknown);
   return denied.length > 0
     ? admission('denied', denied)

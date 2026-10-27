@@ -237,32 +237,42 @@ export function collectProjectDependencyRecord(
 ): void {
   const evidence = resolveDirectCheckerEvidence(options);
   if (isCollectNonDependency(options, evidence)) return;
+  const resolved = {
+    evidence,
+    resolvedFilePath: getDirectResolvedFilePath(options, evidence),
+  };
+  // Resource observations cannot create a project reference. Ask for an input
+  // proof only after the target qualifies for the existing dependency contract.
+  if (!isAdmittedDirectTarget(resolved)) {
+    addDirectObservation({ base: options, ...resolved });
+    return;
+  }
   const observed = observeDirectRequirement(options, evidence);
   if (isRecordedObservation(options, evidence, observed)) return;
-  recordResolvedDependency(options, evidence, observed);
+  recordResolvedDependency(
+    options,
+    evidence,
+    observed,
+    resolved.resolvedFilePath,
+  );
 }
 function recordResolvedDependency(
   options: CollectRecordOptions,
   evidence: CanonicalImportResolutionEvidence,
   observed: ReturnType<typeof observeDirectRequirement>,
+  resolvedFilePath: string,
 ): void {
   if (observed.decision.state !== 'decided') return;
   const { typeEvidence, decision } = observed;
-  const resolvedFilePath = getDirectResolvedFilePath(options, evidence);
-  const resolved = { evidence, resolvedFilePath };
-  if (isAdmittedDirectTarget(resolved)) {
-    options.collection.dependencies.push(
-      createDirectDependency({
-        ...options,
-        evidence,
-        resolvedFilePath: resolved.resolvedFilePath,
-        typeEvidence,
-        referenceRequirement: decision.value,
-      }),
-    );
-    return;
-  }
-  addDirectObservation({ base: options, evidence, resolvedFilePath });
+  options.collection.dependencies.push(
+    createDirectDependency({
+      ...options,
+      evidence,
+      resolvedFilePath,
+      typeEvidence,
+      referenceRequirement: decision.value,
+    }),
+  );
 }
 
 function isCollectNonDependency(

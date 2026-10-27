@@ -6,11 +6,11 @@ import type ts from 'typescript';
 import { occurrenceKey } from '../analysis-cache/semantic-state';
 import type { VueQueryResults } from '../analysis-cache/vue-contracts';
 import type { ImportAnalysisContext } from '../import-analysis/types';
-import { collectTypeScriptSourceFileImports } from '../import-analysis/typescript-imports';
 import {
   collectFrameworkEnvironmentEntries,
   collectTypeEnvironmentEntries,
 } from '../typescript-semantic/type-environment-entries';
+import { collectVueCompilerSource } from './compiler-source';
 import type { VueSemanticContextManager } from './context';
 import {
   observeVueGraphDependency,
@@ -30,10 +30,12 @@ function collectSupportFiles(
       kind: 'support-inputs',
       request: [],
       collect: () => {
-        const program = manager.acquire(identity).program;
-        return program
-          .getSourceFiles()
-          .map((file) => supportInput(file, identity.toolchain.tsModule));
+        const context = manager.acquire(identity);
+        const program = context.program;
+        return program.getSourceFiles().map((file) => ({
+          filePath: file.fileName,
+          records: collectVueCompilerSource(context, file.fileName)!,
+        }));
       },
     }) ?? []
   );
@@ -87,11 +89,24 @@ export function createVueDependencyObserver(
   manager: VueSemanticContextManager,
 ): Pick<
   ImportAnalysisContext,
+  | 'collectCheckerSourceRecords'
   | 'collectCheckerSupportInputs'
   | 'observeCheckerDependency'
   | 'collectCheckerTypeEnvironmentEntries'
 > {
   return {
+    collectCheckerSourceRecords: ({ context, filePath }) => {
+      const identity = context.vueSemanticIdentity;
+      return identity === undefined || context.semanticFamily !== 'vue'
+        ? undefined
+        : manager.query({
+            identity,
+            kind: 'compiler-source',
+            request: [filePath],
+            collect: () =>
+              collectVueCompilerSource(manager.acquire(identity), filePath),
+          });
+    },
     collectCheckerTypeEnvironmentEntries: (request) => {
       const identity = request.vueSemanticIdentity;
       if ([!identity, request.semanticFamily !== 'vue'].some(Boolean))
@@ -133,25 +148,5 @@ export function createVueDependencyObserver(
         ? unsupported(request.context.semanticFamily)
         : observeDependency(manager, identity, request);
     },
-  };
-}
-
-function supportInput(
-  sourceFile: ts.SourceFile,
-  tsModule: typeof ts,
-): VueQueryResults['support-inputs'][number] {
-  const records = collectTypeScriptSourceFileImports({
-    filePath: sourceFile.fileName,
-    sourceFile,
-    tsModule,
-  });
-  // JSDoc text in declarations is documentation, not a compiler dependency.
-  // JS support inputs retain their JSDoc queries and must obtain real evidence.
-  return {
-    filePath: sourceFile.fileName,
-    records: records.filter(
-      (record) =>
-        !(sourceFile.isDeclarationFile && record.kind === 'jsdoc-import'),
-    ),
   };
 }

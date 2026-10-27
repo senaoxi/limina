@@ -66,8 +66,13 @@ function hasFrameworkExtension(options: {
 }): boolean {
   const target = options.fact.target!;
   const normalized = target.resolvedFileName.toLowerCase();
-  return options.request.context.extensions.some((extension) =>
-    normalized.endsWith(extension.toLowerCase()),
+  // Vue discovery includes native JSON resources. That extension does not
+  // identify a framework service script or a declaration-producing project.
+  return (
+    !(options.fact.framework === 'vue' && normalized.endsWith('.json')) &&
+    options.request.context.extensions.some((extension) =>
+      normalized.endsWith(extension.toLowerCase()),
+    )
   );
 }
 
@@ -173,10 +178,14 @@ function addObservedTargetlessFact(
 export function collectPreparedProjectDependencyFact(
   options: CollectFactOptions,
 ): void {
-  collectDecidedFact(options);
+  if (isFrameworkProjectTarget(options)) collectDecidedFact(options);
+  else collectFactTarget(options, null);
 }
 function collectDecidedFact(options: CollectFactOptions): void {
-  const decision = decideReferenceRequirement(options.fact);
+  const decision = decideReferenceRequirement({
+    ...options.fact,
+    requireCompilationObligation: options.fact.framework === 'vue',
+  });
   if (isRecordPendingFact(options, decision)) return;
   if (decision.state === 'decided') collectFactTarget(options, decision.value);
 }

@@ -3,11 +3,10 @@ import {
   isDtsProjectConfig,
   type ProjectInfo,
 } from '#core/import-graph/context';
-import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
-import { collectStronglyConnectedComponents } from '#utils/strongly-connected-components';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
+import { collectReferenceCycles } from '../core/build-graph/reference-validation';
 import { getProjectCheckerName } from './finding-utilities';
 import type { GraphFinding, GraphReferenceCycleFinding } from './findings';
 
@@ -41,63 +40,6 @@ function createGeneratedReferenceGraph(
   }
 
   return graph;
-}
-
-function collectGeneratedReferenceComponents(
-  graph: Map<string, Set<string>>,
-): string[][] {
-  const configPaths = new Set(graph.keys());
-
-  for (const referencePaths of graph.values()) {
-    for (const referencePath of referencePaths) {
-      configPaths.add(referencePath);
-    }
-  }
-
-  return collectStronglyConnectedComponents(
-    [...configPaths].sort(
-      (left, right) => Number(left > right) - Number(left < right),
-    ),
-    (configPath) => graph.get(configPath) ?? [],
-  );
-}
-
-function getGeneratedReferenceCycleEdges(
-  graph: Map<string, Set<string>>,
-  members: string[],
-): GeneratedReferenceCycleEdge[] {
-  const memberPaths = new Set(members);
-
-  return members
-    .flatMap((from) =>
-      [...(graph.get(from) ?? [])]
-        .filter((to) => memberPaths.has(to))
-        .map((to) => ({ from, to })),
-    )
-    .sort(
-      (left, right) =>
-        compareCodeUnits(left.from, right.from) ||
-        compareCodeUnits(left.to, right.to),
-    );
-}
-
-function hasSelfReference(
-  graph: Map<string, Set<string>>,
-  member: string | undefined,
-): boolean {
-  if (!member) {
-    return false;
-  }
-
-  const references = graph.get(member);
-  return references !== undefined && references.has(member);
-}
-
-function isCycleComponent(
-  graph: Map<string, Set<string>>,
-  component: string[],
-): boolean {
-  return component.length > 1 || hasSelfReference(graph, component[0]);
 }
 
 function getSingleCheckerName(
@@ -176,18 +118,11 @@ export function addGeneratedReferenceCycleProblems(options: {
   const graph = createGeneratedReferenceGraph(options.projects);
 
   options.checks.add(graph.size);
-  for (const component of collectGeneratedReferenceComponents(graph)) {
-    if (!isCycleComponent(graph, component)) {
-      continue;
-    }
-
-    const members = [...component].sort(
-      (left, right) => Number(left > right) - Number(left < right),
-    );
+  for (const { members, edges } of collectReferenceCycles(graph)) {
     options.findings.push(
       createCycleFinding({
         config: options.config,
-        edges: getGeneratedReferenceCycleEdges(graph, members),
+        edges,
         members,
         projectCheckerNamesByPath: options.projectCheckerNamesByPath,
       }),

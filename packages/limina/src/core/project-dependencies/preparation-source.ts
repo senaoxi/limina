@@ -147,7 +147,7 @@ function collectSemanticSourceEvidence(
   options: FilePreparationOptions,
 ): SourceEvidence | null {
   const context = getNativeSemanticContext(options);
-  if (context === undefined) return null;
+  if (context === undefined) return collectVueSourceEvidence(options);
   const hasSourceFile = context.hasSourceFile(options.fileName);
   const diagnostics = createSemanticSourceDiagnostics(
     options.fileName,
@@ -163,6 +163,33 @@ function collectSemanticSourceEvidence(
       hasSourceFile,
     }),
   };
+}
+
+function collectVueSourceEvidence(
+  options: FilePreparationOptions,
+): SourceEvidence | null {
+  const { request, fileName } = options;
+  if (
+    request.purpose === 'runtime-source' ||
+    request.context.semanticAuthority.family !== 'vue' ||
+    !isTypeScriptSemanticSource(fileName)
+  )
+    return null;
+  const records = request.importAnalysis.collectCheckerSourceRecords?.({
+    context: {
+      checkerPresets: [],
+      extensions: [...request.context.extensions],
+      semanticFamily: 'vue',
+      vueSemanticIdentity: request.context.vueSemanticIdentity,
+    },
+    filePath: fileName,
+  });
+  const diagnostics =
+    records === undefined
+      ? [`Vue compiler request inventory unavailable: ${fileName}`]
+      : [];
+  addSourceDiagnostics({ base: options, diagnostics });
+  return { filePath: fileName, diagnostics, records: [...(records ?? [])] };
 }
 
 function getNativeSemanticContext(options: FilePreparationOptions) {
