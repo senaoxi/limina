@@ -11,6 +11,7 @@ import {
 } from './cache';
 import type {
   ProjectDependency,
+  ProjectDependencyCaches,
   ProjectDependencyCollection,
   ProjectDependencyObservation,
   ProjectDependencyRequest,
@@ -22,6 +23,28 @@ import {
   collectSupportContributions,
   collectVueSupportContributions,
 } from './support-contributions';
+
+const collectionReplays = new WeakMap<
+  ProjectDependencyCaches,
+  Map<string, ProjectDependencyCollection>
+>();
+
+/**
+Reuse owned collections only within one synchronous, read-only projection.
+*/
+export function withProjectDependencyReplay<T>(
+  caches: ProjectDependencyCaches,
+  collect: () => T,
+): T {
+  const isActive = collectionReplays.has(caches);
+  if (!isActive) collectionReplays.set(caches, new Map());
+  try {
+    return collect();
+  } finally {
+    if (!isActive) collectionReplays.delete(caches);
+  }
+}
+
 function createEmptyCollection(): ProjectDependencyCollection {
   return { dependencies: [], failures: [], observations: [] };
 }
@@ -43,8 +66,13 @@ function readCachedCollection(
   caches: NonNullable<ProjectDependencyRequest['caches']>,
   key: string,
 ): ProjectDependencyCollection | undefined {
-  if (caches.analysisCache !== undefined) return undefined;
-  const cached = caches.projectDependencyCache.get(key);
+  const records =
+    caches.analysisCache === undefined
+      ? caches.projectDependencyCache
+      : collectionReplays.get(caches);
+  const cached = records?.get(key);
+  if (cached !== undefined)
+    caches.analysisCache?.increment('collectionReplayHits');
   return cached === undefined
     ? undefined
     : cloneProjectDependencyCollection(cached);
@@ -65,10 +93,11 @@ function cacheCollection(options: {
     undefined
   )
     return;
-  options.request.caches?.projectDependencyCache.set(
-    options.cacheKey,
-    cloneProjectDependencyCollection(options.collection),
-  );
+  const caches = options.request.caches;
+  if (caches === undefined) return;
+  const retained = cloneProjectDependencyCollection(options.collection);
+  caches.projectDependencyCache.set(options.cacheKey, retained);
+  collectionReplays.get(caches)?.set(options.cacheKey, retained);
 }
 
 function deduplicateFailures(collection: ProjectDependencyCollection): void {

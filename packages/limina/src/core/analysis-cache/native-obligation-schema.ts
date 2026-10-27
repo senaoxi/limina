@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
+import { immutableNativeSchema } from './immutable-schema';
 import {
   nativeCoverageSchema,
   nativeOriginSchema,
@@ -49,22 +50,26 @@ const artifact = z.union([
   unknown,
 ]);
 export const nativeObligationSchema: z.ZodType<NativeCompilationObligation> =
-  z.object({
-    id: text,
-    requestIds: texts,
-    consumerContextId: text,
-    consumerConfigId: text,
-    rawReferenceFingerprint: text,
-    targetConfigId: text.nullable(),
-    existence,
-    structure,
-    artifact,
-  });
+  immutableNativeSchema(
+    z.object({
+      id: text,
+      requestIds: texts,
+      consumerContextId: text,
+      consumerConfigId: text,
+      rawReferenceFingerprint: text,
+      targetConfigId: text.nullable(),
+      existence,
+      structure,
+      artifact,
+    }),
+  );
 export const nativeFactEvidenceSchema: z.ZodType<
   NonNullable<NativeDependencyFact['nativeEvidence']>
-> = z.object({
-  requestId: text,
-  origin: nativeOriginSchema,
-  coverage: nativeCoverageSchema.nullable(),
-  obligation: nativeObligationSchema.nullable(),
-});
+> = immutableNativeSchema(
+  z.object({
+    requestId: text,
+    origin: nativeOriginSchema,
+    coverage: nativeCoverageSchema.nullable(),
+    obligation: nativeObligationSchema.nullable(),
+  }),
+);

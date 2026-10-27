@@ -140,9 +140,21 @@ flowchart TB
 
 符合条件的原生 clean 调用按[持久化分析合同](./lifecycle.md#原生持久化分析缓存)，先验证 namespace 级有效 `configVersion`，再在创建分析 Program 前验证普通 context/graph DTO，重新建立当前 artifact authority，并继续领域判定、结果发布与 checker 执行。native 命中本身不验证已变化的治理规则或磁盘物化；cold/dirty 路径仍执行上述阶段。
 
+缓存职责复用现有所有者；存储分区不会建立新的语义权威。
+
+| 职责            | 当前所有者与边界                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| GenerationIndex | [Store index](../../../packages/limina/src/preflight/analysis-cache-store.ts)：namespace、版本、块身份与原子发布                      |
+| InputLedger     | [Inputs](../../../packages/limina/src/core/analysis-cache/inputs.ts)：唯一观测与订阅，语义版本独立于 checkpoint                       |
+| ContextFacts    | [Context records](../../../packages/limina/src/core/analysis-cache/context-records.ts)：完整 Bounded-context 证据及独立完整性 receipt |
+| Contributions   | [Contribution records](../../../packages/limina/src/core/analysis-cache/contributions.ts)：来源 context、occurrence 与支持的关系      |
+| GraphProjection | [Graph records](../../../packages/limina/src/core/analysis-cache/graph-records.ts)：合格视图、生成内容及当前 artifact-plan 交接       |
+
+[存储生命周期](./lifecycle.md#原生持久化分析缓存)拥有解码与观测轮次；[持久语义有效性](./semantics.md#持久化-importer-有效性)拥有证明与 context 替换。
+
 ## Relation taxonomy
 
-[Native Evidence 合同](./semantics.md#独立-native-evidence-合同)将 `resolved-project-use`、`compiler-reference-obligation`、`declaration-consumption`、`explicit-reference`、`framework-schedule` 和 `runtime-use` 分开。Native 编译投影只消费合格 locked 义务；use relation 不因 owner 命中成为编译边，引用结构满足不证明产物就绪。Runtime source/package 治理拥有独立入口和请求目的。Schema 9 保留原始证据及各状态，`FileOwnerLookup` 算法不变。
+[Native Evidence 合同](./semantics.md#独立-native-evidence-合同)将 `resolved-project-use`、`compiler-reference-obligation`、`declaration-consumption`、`explicit-reference`、`framework-schedule` 和 `runtime-use` 分开。Native 编译投影只消费合格 locked 义务；use relation 不因 owner 命中成为编译边，引用结构满足不证明产物就绪。Runtime source/package 治理拥有独立入口和请求目的。Schema 11 保留原始证据及各状态，`FileOwnerLookup` 算法不变。
 
 | Relation                     | Producer / 意义                                                                                                 | 下游权限与边界                                                                               |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |

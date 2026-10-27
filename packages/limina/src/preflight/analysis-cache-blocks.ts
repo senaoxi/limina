@@ -86,7 +86,7 @@ export class AnalysisCacheBlocks {
       index: {
         header: snapshot.header,
         configModules: snapshot.configModules,
-        storage: { version: 1, blocks },
+        storage: { version: 3, blocks },
       },
       writtenBytes,
     };

@@ -1,10 +1,13 @@
 import ts from 'typescript';
+import type { ImportRecord } from '../import-analysis/records';
 import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
 } from '../typescript-semantic/contracts';
 import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
+import type { FileDependencyFacts } from '../typescript-semantic/file-dependency-facts';
+import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { emptyMetrics } from './cache-metrics';
 import { NativeContextRecords } from './context-records';
 import type {
@@ -19,12 +22,12 @@ import type {
   ResolutionRecord,
 } from './contracts';
 import { ReferenceContributions } from './contributions';
-import { EpochInputs } from './epoch-inputs';
+import { type EpochInputReplay, EpochInputs } from './epoch-inputs';
 import { CachedGraphRecords } from './graph-records';
 import { nativeContextId } from './identity';
 import { type FactRequest, ImporterFacts } from './importer-facts';
 import { AnalysisInputs } from './inputs';
-import { validateInstallationDomains } from './installation-environment';
+import { subscribeInstallationDomains } from './installation-environment';
 import { restoreInstallationLockCoverage } from './installation-lock-coverage';
 import { AnalysisInvalidation } from './invalidation';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
@@ -41,6 +44,7 @@ import {
 import { VueAnalysisRecords } from './vue-records';
 import { observePreviousVueBytes } from './vue-toolchain-inputs';
 export class NativeAnalysisCache {
+  readonly #syntaxProofs = new Map<string, string>();
   readonly #resolutions: ResolutionQueries;
   readonly #facts: ImporterFacts;
   readonly #contexts: NativeContextRecords;
@@ -82,13 +86,13 @@ export class NativeAnalysisCache {
     this.previous = config.previous;
     const state = this.previous ?? emptySnapshot(identity, this.configVersion);
     this.inputs = new AnalysisInputs(state.inputs, this.metrics);
+    subscribeInstallationDomains(state, this.inputs);
     observePreviousVueBytes(state, this.inputs);
     this.contributions = new ReferenceContributions(
       this.inputs,
       state.contributions,
     );
     this.inputs.validatePrevious();
-    validateInstallationDomains(state, this.inputs);
     this.invalidation = new AnalysisInvalidation(this.previous, this.inputs);
     this.#checkConsumerCoverage();
     restoreInstallationLockCoverage(state, this.inputs);
@@ -137,6 +141,29 @@ export class NativeAnalysisCache {
     return (project.virtualFiles?.size ?? 0) === 0;
   }
 
+  retainSyntax(facts: FileDependencyFacts, fingerprint: string): void {
+    if (nativeFingerprint(facts) !== fingerprint) return;
+    this.files[facts.filePath] = facts;
+    this.#syntaxProofs.set(facts.filePath, fingerprint);
+  }
+  readSourceSyntax(file: string): ImportRecord[] | undefined {
+    const facts = this.files[file];
+    if (facts === undefined || facts.compilerVersion !== ts.version)
+      return undefined;
+    if (this.#syntaxProofs.get(file) !== nativeFingerprint(facts))
+      return undefined;
+    if (
+      this.inputs.observe(file, 'content').expectedVersion !==
+      facts.sourceVersion
+    )
+      return undefined;
+    this.increment('sourceSyntaxHits');
+    return structuredClone(
+      facts.requests
+        .filter((request) => !request.externalModuleOnly)
+        .map((request) => request.occurrence),
+    );
+  }
   supports(project: TypeScriptSemanticProject, tsModule: typeof ts): boolean {
     const isSupported = [
       tsModule === ts,
@@ -213,8 +240,9 @@ export class NativeAnalysisCache {
   }
   restoreContext(
     project: TypeScriptSemanticProject,
+    replay?: EpochInputReplay,
   ): TypeScriptSemanticDependencyContext | undefined {
-    return this.#contexts.restore(project);
+    return this.#contexts.restore(project, replay);
   }
   restoreQuery(id: string, record: ResolutionRecord): void {
     this.#resolutions.restore(id, record);
@@ -270,8 +298,9 @@ export class NativeAnalysisCache {
   restoreGraphRecord(
     key: string,
     workspaceVersion: string,
+    generation = 0,
   ): Promise<GraphRecord | undefined> {
-    return this.#graphs.restore(key, workspaceVersion);
+    return this.#graphs.restore(key, workspaceVersion, generation);
   }
   captureGraphRecord(
     key: string,

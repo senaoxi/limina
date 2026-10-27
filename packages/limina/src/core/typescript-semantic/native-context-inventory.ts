@@ -1,11 +1,16 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
+import type { FileDependencyFacts } from './file-dependency-facts';
 import { nativeFingerprint } from './native-file-identity';
 import type { NativeObservationAdapter } from './native-observation-adapter';
 import type { NativeRequestRecord } from './native-program-records';
 
 export interface NativeContextInventory {
   readonly members: readonly string[];
+  readonly syntax: readonly {
+    readonly file: string;
+    readonly fingerprint: string;
+  }[];
   readonly occurrences: readonly {
     readonly requestId: string;
     readonly fingerprint: string;
@@ -28,11 +33,16 @@ export interface NativeContextInventory {
 export function captureNativeContextInventory(
   adapter: NativeObservationAdapter,
   entries: readonly NativeRequestRecord[],
+  syntax: ReadonlyMap<string, FileDependencyFacts>,
 ): NativeContextInventory {
   return freezeNativeData({
     members: adapter.program
       .getSourceFiles()
       .map((source) => normalizeAbsolutePath(source.fileName)),
+    syntax: [...syntax].map(([file, facts]) => ({
+      file,
+      fingerprint: nativeFingerprint(facts),
+    })),
     occurrences: entries.map(({ request, record }) => ({
       requestId: request.id,
       fingerprint: nativeFingerprint([request, record]),
