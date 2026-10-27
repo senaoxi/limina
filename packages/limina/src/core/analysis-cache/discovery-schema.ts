@@ -36,6 +36,7 @@ const glob = z.object({
 });
 const descriptor = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('file-identity'), path: text }),
+  z.object({ kind: z.literal('file-binding'), path: text }),
   z.object({ kind: z.literal('directory'), path: text }),
   z.object({ kind: z.literal('directories'), path: text }),
   z.object({ kind: z.literal('realpath'), path: text }),

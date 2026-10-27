@@ -1,6 +1,7 @@
 import type { VueSourceProfile } from '#checkers';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import { readFileSync } from 'node:fs';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { collectTypeScriptSourceTextImports } from '../import-analysis/typescript-imports';
 import { cloneSourceEvidence } from './cache';
 import type { SourceEvidence } from './contracts';
@@ -26,6 +27,7 @@ export function isTypeScriptSemanticSource(filePath: string): boolean {
 }
 
 interface CollectSourceEvidenceOptions {
+  analysisCache?: NativeAnalysisCache;
   cache?: Map<string, SourceEvidence>;
   cacheIdentity?: string;
   filePath: string;
@@ -81,6 +83,9 @@ function storeSourceEvidence(options: {
 function collectTypeScriptRecords(
   options: CollectSourceEvidenceOptions,
 ): SourceEvidence['records'] {
+  const cached = options.analysisCache?.readSourceSyntax(options.filePath);
+  if (cached !== undefined) return cached;
+  options.analysisCache?.increment('sourceSyntaxParses');
   return collectTypeScriptSourceTextImports({
     filePath: options.filePath,
     sourceText: readFileSync(options.filePath, 'utf8'),

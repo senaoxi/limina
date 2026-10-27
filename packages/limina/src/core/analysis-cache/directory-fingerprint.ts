@@ -1,5 +1,9 @@
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import {
+  PhysicalFileReplay,
+  resolvePhysicalPath,
+} from '#utils/physical-file-identity';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   lstatSync,
@@ -13,16 +17,32 @@ import { AnalysisInputDriftError } from './contracts';
 import { analysisHash } from './identity';
 
 type LinkBindings = [string, string][];
-const ancestorBindings = new AsyncLocalStorage<Map<string, LinkBindings>>();
+interface BindingRound {
+  ancestors: Map<string, LinkBindings>;
+  leaves?: Map<string, unknown>;
+}
+const bindingRounds = new AsyncLocalStorage<BindingRound>();
 
 /**
 Ancestor link observations live for one input replay, never across effects.
 */
 export class PathBindingReplay {
-  readonly #ancestors = new Map<string, LinkBindings>();
+  readonly #round: BindingRound;
+  readonly #physical: PhysicalFileReplay | undefined;
+
+  constructor(options: { reuseLeafBindings?: boolean } = {}) {
+    this.#round = {
+      ancestors: new Map(),
+      leaves: options.reuseLeafBindings ? new Map() : undefined,
+    };
+    this.#physical = options.reuseLeafBindings
+      ? new PhysicalFileReplay()
+      : undefined;
+  }
 
   run<T>(operation: () => T): T {
-    return ancestorBindings.run(this.#ancestors, operation);
+    const run = () => bindingRounds.run(this.#round, operation);
+    return this.#physical === undefined ? run() : this.#physical.run(run);
   }
 }
 
@@ -67,7 +87,7 @@ function linkBindings(file: string): [string, string][] {
   return parent === cursor ? links : [...links, ...parentBindings(parent)];
 }
 function parentBindings(file: string): LinkBindings {
-  const bindings = ancestorBindings.getStore();
+  const bindings = bindingRounds.getStore()?.ancestors;
   if (bindings === undefined) return collectParentBindings(file);
   const previous = bindings.get(file);
   if (previous !== undefined) return previous;
@@ -86,11 +106,11 @@ function physicalBinding(file: string): [string, string | null] {
   const stat = optionalLstat(file);
   return stat === undefined
     ? ['missing', null]
-    : [entryKind(stat), realBinding(file)];
+    : [entryKind(stat), realBinding(file, stat.isSymbolicLink())];
 }
-function realBinding(file: string): string | null {
+function realBinding(file: string, isLink: boolean): string | null {
   try {
-    return normalizeAbsolutePath(realpathSync.native(file));
+    return resolvePhysicalPath(file, isLink);
   } catch (error) {
     if (
       ['ENOENT', 'ENOTDIR'].includes(
@@ -102,7 +122,18 @@ function realBinding(file: string): string | null {
   }
 }
 export function pathBinding(file: string): unknown {
-  return [file, ...physicalBinding(file), linkBindings(file)];
+  const leaves = bindingRounds.getStore()?.leaves;
+  const previous = leaves?.get(file);
+  if (previous !== undefined) return previous;
+  const physical = physicalBinding(file);
+  const links = linkBindings(file);
+  const value = [file, ...physical, links];
+  if (leaves !== undefined) {
+    for (const link of links) Object.freeze(link);
+    Object.freeze(links);
+    leaves.set(file, Object.freeze(value));
+  }
+  return value;
 }
 class LocalInventory {
   readonly entries: unknown[] = [];

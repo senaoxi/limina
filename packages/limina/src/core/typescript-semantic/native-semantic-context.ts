@@ -23,9 +23,12 @@ export class NativeSemanticContext
   readonly #locations = new Map<string, ts.StringLiteralLike>();
   readonly #checker: TypeCheckerObservation;
 
-  constructor(options: NativeProgramObservationOptions) {
+  constructor(
+    options: NativeProgramObservationOptions,
+    shouldCaptureSyntax = false,
+  ) {
     const adapter = new NativeObservationAdapter(options);
-    super(options, adapter);
+    super(options, adapter, shouldCaptureSyntax);
     this.#program = adapter.program;
     this.#checker = new TypeCheckerObservation(options.metrics);
     const literals = new Map(

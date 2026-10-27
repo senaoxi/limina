@@ -17,6 +17,7 @@ import type {
   ResolutionRecord,
 } from './contracts';
 import { encodeData } from './data-codec';
+import type { EpochInputReplay } from './epoch-inputs';
 import { nativeContextId } from './identity';
 import {
   observeTypeEnvironment,
@@ -154,28 +155,30 @@ export class NativeContextRecords {
   #memoized(
     project: TypeScriptSemanticProject,
     identity: string,
+    replay?: EpochInputReplay,
   ): TypeScriptSemanticDependencyContext | undefined {
-    return this.#restored.get(identity) ?? this.#restoreNew(project, identity);
+    return (
+      this.#restored.get(identity) ??
+      this.#restoreNew(project, identity, replay)
+    );
   }
   #restoreNew(
     project: TypeScriptSemanticProject,
     identity: string,
+    replay?: EpochInputReplay,
   ): TypeScriptSemanticDependencyContext | undefined {
     const candidate = candidateFor(this.#cache, nativeContextId(project));
     if (candidate === undefined) return undefined;
-    const valid = [
+    const isValid =
+      hasValidInputs(this.#cache, candidate.record.dependencies) &&
+      isCurrentContextShape(project, candidate) &&
+      hasCurrentContextEnvironment(this.#cache, project, candidate, replay) &&
       hasValidBoundedContext(
         candidate.record,
         Object.fromEntries(candidate.importers),
         { project: candidate.state, contextId: nativeContextId(project) },
-      ),
-      isCurrentContextShape(project, candidate),
-      hasCurrentContextEnvironment(this.#cache, project, candidate),
-      hasValidInputs(this.#cache, candidate.record.dependencies),
-    ];
-    return valid.every(Boolean)
-      ? this.#adopt(project, identity, candidate)
-      : undefined;
+      );
+    return isValid ? this.#adopt(project, identity, candidate) : undefined;
   }
   #adopt(
     project: TypeScriptSemanticProject,
@@ -189,7 +192,7 @@ export class NativeContextRecords {
     const id = nativeContextId(project);
     cache.projects[id] = candidate.state;
     cache.contexts[id] = candidate.record;
-    adoptSyntax(cache, candidate.state.members);
+    adoptSyntax(cache, candidate.record);
     cache.inputs.consume(candidate.record.dependencies);
     cache.inputs.consumeNative();
     cache.increment('restoredContexts');
@@ -198,6 +201,7 @@ export class NativeContextRecords {
       identity,
       candidate.record,
       cache.importers,
+      cache.epoch,
     );
     this.#restored.set(identity, context);
     return context;
@@ -244,6 +248,7 @@ export class NativeContextRecords {
   }
   restore(
     project: TypeScriptSemanticProject,
+    replay?: EpochInputReplay,
   ): TypeScriptSemanticDependencyContext | undefined {
     const cache = this.#cache;
     if (
@@ -255,14 +260,18 @@ export class NativeContextRecords {
     )
       return undefined;
     const identity = createTypeScriptSemanticContextIdentity(project);
-    return this.#memoized(project, identity);
+    return this.#memoized(project, identity, replay);
   }
 }
 
-function adoptSyntax(cache: NativeAnalysisCache, files: string[]): void {
-  for (const file of files) {
-    const syntax = previousSyntax(cache, file);
-    if (syntax !== undefined) cache.files[file] = syntax;
+function adoptSyntax(
+  cache: NativeAnalysisCache,
+  record: NativeContextRecord,
+): void {
+  const witnesses = record.native?.inventory.syntax ?? [];
+  for (const witness of witnesses) {
+    const syntax = previousSyntax(cache, witness.file);
+    if (syntax !== undefined) cache.retainSyntax(syntax, witness.fingerprint);
   }
 }
 function previousSyntax(cache: NativeAnalysisCache, file: string) {

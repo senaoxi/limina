@@ -120,11 +120,8 @@ function isCurrentVueEnvironment(
     cache.inputs,
     { members: record.members, tsModule: identity.toolchain.tsModule },
   );
-  if (
-    analysisHash(environment.domains) !==
-    analysisHash(record.environment.domains)
-  )
-    cache.inputs.invalidateDomain(identity.configPath);
+  // Environment dependencies invalidate this Vue context and its owned queries.
+  // Another independently qualified installation keeps its own authority.
   return (
     environment.evidence !== 'unknown' &&
     analysisHash(environment) === analysisHash(record.environment)
