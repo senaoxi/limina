@@ -1,6 +1,7 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import type { ImportRecord } from '#core/import-analysis/runner';
 import type {
+  CompilationObligationProof,
   CompilerMembership,
   ProjectReferenceRedirect,
 } from '../dependency-semantics';
@@ -38,6 +39,7 @@ export interface FrameworkSemanticEvidence<Profile = unknown> {
 }
 
 export interface PreparedDependencyFact {
+  compilationObligation?: CompilationObligationProof;
   eligibility?: { governance: boolean; expansion: boolean };
   redirect?: ProjectReferenceRedirect;
   compilerMembership?: CompilerMembership;

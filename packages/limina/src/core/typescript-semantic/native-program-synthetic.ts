@@ -1,32 +1,36 @@
-import ts from 'typescript';
+import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
-import type { NativeObservationAdapter } from './native-observation-adapter';
 import { nativeCompilerApi } from './native-program-api';
-import type { NativeModuleObservation } from './native-program-requests';
 
 /**
 Decorate an existing compiler request; never synthesize a request ourselves.
 */
+interface SyntheticRequest {
+  compiler: typeof ts;
+  options: ts.CompilerOptions;
+  configPath: string;
+  source: ts.SourceFile;
+  literal: ts.StringLiteralLike;
+  mode: ts.ResolutionMode;
+}
 export function syntheticModuleMetadata(
-  adapter: NativeObservationAdapter,
-  module: NativeModuleObservation,
+  input: SyntheticRequest,
 ): Pick<ImportRecord, 'kind' | 'configurationSource'> {
-  const api = nativeCompilerApi(ts);
-  const options = adapter.program.getCompilerOptions();
+  const api = nativeCompilerApi(input.compiler);
+  const options = input.options;
   const runtime = api.getJSXRuntimeImport(
-    api.getJSXImplicitImportBase(options, module.source),
+    api.getJSXImplicitImportBase(options, input.source),
     options,
   );
-  return module.literal.text === runtime
-    ? jsxMetadata(adapter, module)
+  return input.literal.text === runtime
+    ? jsxMetadata(input)
     : { kind: 'environment-pragma' };
 }
 
 function jsxMetadata(
-  adapter: NativeObservationAdapter,
-  module: NativeModuleObservation,
+  input: SyntheticRequest,
 ): Pick<ImportRecord, 'kind' | 'configurationSource'> {
-  const source = module.source as ts.SourceFile & {
+  const source = input.source as ts.SourceFile & {
     pragmas?: ReadonlyMap<string, unknown>;
   };
   if (source.pragmas?.has('jsximportsource'))
@@ -34,9 +38,9 @@ function jsxMetadata(
   return {
     kind: 'jsx-import-source',
     configurationSource: {
-      configPath: adapter.options.project.configPath,
+      configPath: input.configPath,
       option: 'jsxImportSource',
-      resolutionMode: module.mode,
+      resolutionMode: input.mode,
     },
   };
 }

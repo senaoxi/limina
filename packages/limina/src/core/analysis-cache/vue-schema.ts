@@ -52,7 +52,23 @@ const evidence = z.discriminatedUnion('kind', [
     managedSource,
   }),
 ]);
+const compilerRequest = z.object({
+  fileName: text,
+  start: z.number(),
+  end: z.number(),
+  specifier: text,
+  mode: z.number().optional(),
+  role: z.enum(['import', 'augmentation', 'path-directive', 'type-directive']),
+  target: text.nullable(),
+});
+const compilationObligation = z.object({
+  state: z.enum(['present', 'absent', 'unknown']),
+  contextConfig: text,
+  reason: text,
+  requests: z.array(compilerRequest),
+});
 const fact = z.object({
+  compilationObligation,
   eligibility: requestEligibilitySchema.optional(),
   framework: z.literal('vue'),
   importRecord: occurrenceSchema,
@@ -75,12 +91,14 @@ const fact = z.object({
     .optional(),
 });
 const schemas = {
+  'compiler-source': z.array(occurrenceSchema),
   'type-environment-entries': z.array(declarationEntrySchema),
   'support-inputs': z.array(
     z.object({ filePath: text, records: z.array(occurrenceSchema) }),
   ),
   'dependency-observation': z.object({
     coverage: z.literal('complete'),
+    compilationObligation,
     redirect: redirectSchema.optional(),
   }),
   evidence,
@@ -150,6 +168,7 @@ export function hasValidVueQuery(kind: VueQueryKind, data: unknown): boolean {
 
 const querySchema = z.object({
   kind: z.enum([
+    'compiler-source',
     'preparation',
     'resolution',
     'evidence',

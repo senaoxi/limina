@@ -13,6 +13,7 @@ import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
 
 export interface VueQueryResults {
+  'compiler-source': ImportRecord[];
   'type-environment-entries': DeclarationEntry[];
   'support-inputs': { filePath: string; records: ImportRecord[] }[];
   'dependency-observation': VueDependencyObservation;
@@ -35,7 +36,7 @@ export interface VueQueryRecord {
   data: DataNode;
 }
 export interface VueContextRecord {
-  adapter: 'vue-3.2.4-v5';
+  adapter: 'vue-3.2.4-v6';
   project: Pick<VueProjectSemanticIdentity, 'configPath' | 'projectRootDir'> & {
     extensions: string[];
     outputProjection?: {

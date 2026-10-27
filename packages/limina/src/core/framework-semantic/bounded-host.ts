@@ -10,6 +10,12 @@ interface HostOptions {
   host: ts.LanguageServiceHost;
   project: TypeScriptSemanticProject;
   tsModule: typeof ts;
+  observeModule?: (input: {
+    source: ts.SourceFile;
+    literal: ts.StringLiteralLike;
+    options: ts.CompilerOptions;
+    result: ts.ResolvedModuleWithFailedLookupLocations;
+  }) => void;
 }
 interface BoundedHost {
   host: ts.LanguageServiceHost;
@@ -70,17 +76,24 @@ function maskModuleResult(options: {
 function wrapModuleResolver(
   resolver: ModuleResolver | undefined,
   admission: TypeScriptInclusionLedger,
+  observe: HostOptions['observeModule'],
 ): ModuleResolver | undefined {
   return resolver === undefined
     ? undefined
     : (...arguments_) =>
-        resolver(...arguments_).map((result) =>
-          maskModuleResult({
+        resolver(...arguments_).map((result, index) => {
+          observe?.({
+            source: arguments_[4],
+            literal: arguments_[0][index]!,
+            options: arguments_[3],
+            result,
+          });
+          return maskModuleResult({
             admission,
             result,
             containingFile: arguments_[1],
-          }),
-        );
+          });
+        });
 }
 function admitResolvedType(
   admission: TypeScriptInclusionLedger,
@@ -147,7 +160,11 @@ export function createBoundedLanguageServiceHost(
   const host: ts.LanguageServiceHost = Object.create(raw);
   const resolver = raw.resolveModuleNameLiterals?.bind(raw);
   host.getScriptSnapshot = (file) => readAdmittedSnapshot(raw, admission, file);
-  host.resolveModuleNameLiterals = wrapModuleResolver(resolver, admission);
+  host.resolveModuleNameLiterals = wrapModuleResolver(
+    resolver,
+    admission,
+    options.observeModule,
+  );
   installTypeResolver(raw, host, admission);
   return {
     host,

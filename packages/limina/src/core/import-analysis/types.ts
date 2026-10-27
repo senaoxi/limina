@@ -80,6 +80,10 @@ export type StandaloneInternalImportArguments = [
 ];
 
 export interface ImportAnalysisContext {
+  collectCheckerSourceRecords?: (options: {
+    context: ImportResolveContextFields;
+    filePath: string;
+  }) => readonly ImportRecord[] | undefined;
   collectCheckerTypeEnvironmentEntries?: (
     context: ImportResolveContextFields,
   ) => readonly DeclarationEntry[];

@@ -65,7 +65,7 @@
 
 ## I05 — TypeEvidence 不控制依赖存在性或引用投影
 
-- **Statement / Applies when**：TypeEvidence 仅证明类型供给。Native 编译边需要合格 locked 事实中的独立义务存在性证明；解析、owner、加载和 Symbol 都不能单独代替。
+- **Statement / Applies when**：TypeEvidence 仅证明类型供给。Native 与 Vue 编译边需要合格 locked 事实中的独立义务存在性证明；解析、owner、加载和 Symbol 都不能单独代替。
 - **Problem**：类型供给或 owner 命中被误用为编译关系，或者普通建图被迫创建 TypeChecker。
 - **Root cause**：类型可用性、runtime-use、project-use 与编译义务不是同一命题。
 - **Enforcement / Why it works**：[义务合同](../../../packages/limina/src/domain/analysis/native-obligation.ts)保留存在性、结构满足、产物可用性三维；[资格检查](../../../packages/limina/src/core/typescript-semantic/native-fact-qualification.ts)限定 locked 消费；Native 投影不用旧 source-semantic owner 推导。
@@ -90,6 +90,8 @@
 声明映射检查保留完整可达引用闭包，请求一致性仅约束候选实际加载的声明。本地 roots 不继承外部 provider 的 skip 限制；被其他消费者选中时则承担该责任。Own ambient 证明与 resolved、unresolved、unavailable 请求保持区别。[声明治理回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖这些独立责任。
 
 ## I07 — 声明 component 使用 exact checker identity
+
+最终序列化的 Project References 还必须无环，此要求独立于 Checker task 分组。[引用验证](../../../packages/limina/src/core/build-graph/reference-validation.ts)在冷生成或恢复后的物化前检查 declaration、implicit、solution、entry 与 output 关系。单个 Checker Target 不能掩盖 source-config 环；纯 scheduling SCC 保留既有执行语义。[序列化图测试](../../../packages/limina/src/__tests__/reference-validation.spec.ts)和[生产建图测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)保护该边界。
 
 - **Statement / Applies when**：成功的 declaration-provider 两端 exact checker identity 相同，`cacheReuse` 为 reusable；参与执行的 SCC 不能含内部 declaration relation，纯 framework scheduling SCC 可以执行。
 - **Problem**：不同 checker 的中间声明缓存不可仅因语义 family 相近而视作一个构建；禁止所有环又会错杀纯 framework 顺序分组。

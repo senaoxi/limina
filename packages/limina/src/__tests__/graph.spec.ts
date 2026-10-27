@@ -3488,51 +3488,58 @@ describe('runGraphCheck graph rules', () => {
     }
   });
 
-  it('denies graph refs imported from Vue scripts', async () => {
-    const fixture = await createFixture(
-      createVueWorkspacePackageFiles({
-        appReferences: ['../internal/tsconfig.lib.dts.json'],
-        appSource:
-          '<script setup lang="ts">\nimport { internalValue } from \'@example/internal\';\nconst value = internalValue;\n</script>\n',
-        limina: 'runtime',
-      }),
-      {
-        rules: {
-          runtime: {
-            deny: {
-              refs: [
-                {
-                  path: 'packages/internal/tsconfig.lib.json',
-                  reason: 'runtime Vue code must not depend on internal',
-                },
-              ],
+  it.each([
+    { specifier: '../../internal/src/index', passed: false },
+    { specifier: '@example/internal', passed: true },
+  ])(
+    'applies Vue deny.refs to compilation obligations for $specifier',
+    async ({ specifier, passed }) => {
+      const fixture = await createFixture(
+        createVueWorkspacePackageFiles({
+          appReferences: ['../internal/tsconfig.lib.dts.json'],
+          appSource: `<script setup lang="ts">\nimport { internalValue } from '${specifier}';\nconst value = internalValue;\n</script>\n`,
+          limina: 'runtime',
+        }),
+        {
+          rules: {
+            runtime: {
+              deny: {
+                refs: [
+                  {
+                    path: 'packages/internal/tsconfig.lib.json',
+                    reason: 'runtime Vue code must not depend on internal',
+                  },
+                ],
+              },
             },
           },
         },
-      },
-      {
-        'vue-tsc': {
-          include: [
-            'packages/app/tsconfig.json',
-            'packages/internal/tsconfig.json',
-          ],
+        {
+          'vue-tsc': {
+            include: [
+              'packages/app/tsconfig.json',
+              'packages/internal/tsconfig.json',
+            ],
+          },
         },
-      },
-    );
-
-    try {
-      await linkWorkspacePackage(
-        fixture.rootDir,
-        'packages/app',
-        'packages/internal',
-        '@example/internal',
       );
 
-      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+      try {
+        await linkWorkspacePackage(
+          fixture.rootDir,
+          'packages/app',
+          'packages/internal',
+          '@example/internal',
+        );
+
+        // A package source is an external-library input, not a consumer emit
+        // obligation. The relative import requires a real project reference.
+        await expect(isRunGraphCheck(fixture.config)).resolves.toBe(passed);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('allows cross-package relative imports from Vue scripts when declaration references are aligned', async () => {
     const fixture = await createFixture(

@@ -65,7 +65,7 @@ Output projection uses actual generated options, roots, references and an indepe
 
 ## I05 — TypeEvidence does not control dependency existence or reference projection
 
-- **Statement / Applies when**: TypeEvidence proves type provision only. Native compilation edges require independent obligation-existence proof in a qualified locked fact; resolution, owner, loading and Symbols are individually insufficient.
+- **Statement / Applies when**: TypeEvidence proves type provision only. Native and Vue compilation edges require independent obligation-existence proof in a qualified locked fact; resolution, owner, loading and Symbols are individually insufficient.
 - **Problem**: Type provision or ownership is mistaken for a compilation relationship, or ordinary graph discovery unnecessarily creates a TypeChecker.
 - **Root cause**: Type availability, runtime-use, project-use and compilation obligation are different propositions.
 - **Enforcement / Why it works**: [The obligation contract](../../packages/limina/src/domain/analysis/native-obligation.ts) preserves existence, structural satisfaction and output availability separately. [Qualification](../../packages/limina/src/core/typescript-semantic/native-fact-qualification.ts) limits locked consumption. Native projection does not use legacy source-semantic owner inference.
@@ -90,6 +90,8 @@ Output projection uses actual generated options, roots, references and an indepe
 Declaration mapping checks retain the full reachable reference closure, while request consistency applies only to declarations actually loaded by the candidate. Local roots do not inherit external-provider skip restrictions; being selected by another consumer does impose them. Own ambient evidence remains distinct from resolved, unresolved and unavailable requests. [Declaration governance regressions](../../packages/limina/src/__tests__/generated-graph.spec.ts) exercise these independent responsibilities.
 
 ## I07 — Declaration components use exact checker identity
+
+Final serialized Project References must also be acyclic, independently of checker task grouping. [Reference validation](../../packages/limina/src/core/build-graph/reference-validation.ts) checks declaration, implicit, solution, entry and output relationships before cold or restored materialization. A single Checker Target cannot hide a source-config cycle; scheduling-only SCCs retain their existing execution semantics. [Serialized graph tests](../../packages/limina/src/__tests__/reference-validation.spec.ts) and [production graph tests](../../packages/limina/src/__tests__/generated-graph.spec.ts) protect this boundary.
 
 - **Statement / Applies when**: The endpoints of a successful declaration-provider have the same exact checker identity and reusable `cacheReuse`. An SCC participating in execution cannot contain an internal declaration relation; a pure framework scheduling SCC may execute.
 - **Problem**: Intermediate declaration caches from different checkers cannot be treated as one build merely because their semantic families are similar. Conversely, banning all cycles would reject valid groups containing only framework ordering relations.
