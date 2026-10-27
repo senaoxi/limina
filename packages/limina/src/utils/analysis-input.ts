@@ -6,6 +6,7 @@ export type AnalysisReadDescriptor =
   | { kind: 'content'; path: string }
   | { kind: 'typescript-content'; path: string }
   | { kind: 'file-identity'; path: string }
+  | { kind: 'file-binding'; path: string }
   | {
       kind: 'ts-directory';
       arguments: [
@@ -77,6 +78,7 @@ export function readAnalysisInput<T>(
     | 'content'
     | 'file'
     | 'typescript-content'
+    | 'file-binding'
     | 'file-identity' = 'content',
 ): T {
   const value = read();

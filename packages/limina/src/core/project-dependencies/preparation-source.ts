@@ -127,6 +127,7 @@ export function collectFileSourceEvidence(
   const semanticSource = collectSemanticSourceEvidence(options);
   if (semanticSource !== null) return semanticSource;
   const source = collectSourceEvidence({
+    analysisCache: request.caches?.analysisCache,
     cache: request.caches?.sourceEvidenceCache,
     cacheIdentity: getProjectSemanticCacheIdentity(request),
     filePath: options.fileName,

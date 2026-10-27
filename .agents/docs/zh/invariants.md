@@ -128,7 +128,7 @@
 
 **恢复与执行重放守卫**：[Vue 完整图测试](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保留合法跨项目引用并拒绝一致伪造；[输入重放测试](../../../packages/limina/src/__tests__/execution-input-replay.spec.ts)只允许未变只读阶段内复用观察及同轮祖先绑定，保留真实副作用边界的新一轮内容／绑定漂移检查与每个作用域独立的输出例外。边界由[执行准入生命周期](./lifecycle.md#受管-checker-的执行准入)定义。
 
-**分片持久化**：Scope 文件是存储边界，不是独立语义权威。Root 门先于任何旧块读取；包含中性文件事实和有序回执的完整模型经校验后才能采用。先写块，再经过既有漂移、lease 与物理基线检查后原子发布 index。见[存储生命周期](./lifecycle.md#原生持久化分析缓存)和[存储守卫](../../../packages/limina/src/__tests__/analysis-cache-shards.spec.ts)。
+**分片持久化**：Scope 文件是存储边界，不是独立语义权威。Root 门先于任何旧块读取；包含中性文件事实和有序回执的必要事实闭包经校验后才能采用。延迟读取的图块在通过完整 schema 和关系检查前，显式保持 unloaded 或 unavailable；不可用投影可从合格事实重建，但不能被视为空的成功图。先写块，再经过既有漂移、lease 与物理基线检查后原子发布 index。见[存储生命周期](./lifecycle.md#原生持久化分析缓存)和[存储守卫](../../../packages/limina/src/__tests__/analysis-cache-shards.spec.ts)。
 
 **规划输入 identity**：Migration 配置 overlay 纳入 semantic/provider cache identity，并贯穿 parser、ownership 与 TypeScript host。原生 reference 清单与规范化 source 输入上的推导相分离。Outputs 试加入只在封闭 reader 内复用单次发现快照，重新验证候选输出与物理 authority；末次规划和磁盘消费重新发现。已读取的 manifest 与 workspace descriptor 也纳入写入前漂移检查。Migration bundle 将 provider、namespace、错误类和 writer 的生产消费作为整体内联；新进程 worker 使用同一内嵌源码版本重新读取磁盘，不借用规划 context。包版本元数据观察不成为 semantic evidence。构建源码来源守卫、配对发布守卫与打包消费者测试挑战旧 dist、self metadata 不一致及 worker 资源缺失。这是 generation 内的输入边界，不是持久 read-view runtime；见[迁移生命周期](./lifecycle.md#migration-是另一种事务)。
 

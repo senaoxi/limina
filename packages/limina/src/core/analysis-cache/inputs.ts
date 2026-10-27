@@ -8,6 +8,7 @@ import type {
   InputKind,
 } from './contracts';
 import { AnalysisInputDriftError } from './contracts';
+import { PathBindingReplay } from './directory-fingerprint';
 import { analysisHash } from './identity';
 import { hasChangedBytes, hasMtime, retainedInput } from './input-equality';
 import {
@@ -24,6 +25,7 @@ export class AnalysisInputs {
   readonly #observations = new Map<string, unknown>();
   readonly #dependencies = new Map<string, InputDependency>();
   readonly #consumed = new Map<string, string>();
+  readonly #installationLocks = new Set<string>();
   readonly records: Record<string, AnalysisInput> = {};
   domainDirty = false;
   readonly configInputs: Set<string> = new Set<string>();
@@ -169,7 +171,11 @@ export class AnalysisInputs {
   }
 
   #checkBytes(previous: AnalysisInput | undefined, input: AnalysisInput): void {
-    if (hasChangedBytes(previous, input)) this.invalidateDomain(input.path);
+    if (
+      hasChangedBytes(previous, input) &&
+      !this.#installationLocks.has(input.path)
+    )
+      this.invalidateDomain(input.path);
   }
 
   #dependency(inputId: string, expectedVersion: string): InputDependency {
@@ -180,6 +186,11 @@ export class AnalysisInputs {
     this.#dependencies.set(key, value);
     return value;
   }
+  subscribeInstallationLocks(locks: readonly string[]): void {
+    for (const lock of locks)
+      this.#installationLocks.add(normalizeAbsolutePath(lock));
+  }
+
   observe(filePath: string, kind: InputKind): InputDependency {
     const path = normalizeAbsolutePath(filePath);
     const inputId = JSON.stringify(['physical', kind, path]);
@@ -275,16 +286,20 @@ export class AnalysisInputs {
   }
 
   validatePrevious(): void {
-    for (const input of Object.values(this.previous))
-      this.observe(input.path, input.kind);
+    new PathBindingReplay().run(() => {
+      for (const input of Object.values(this.previous))
+        this.observe(input.path, input.kind);
+    });
   }
 
   assertStable(): void {
     if (this.#drift !== undefined)
       throw new AnalysisInputDriftError(this.#drift);
     this.#assertConsumedVersions();
-    for (const input of Object.values(this.records))
-      this.#assertInputStable(input);
+    new PathBindingReplay().run(() => {
+      for (const input of Object.values(this.records))
+        this.#assertInputStable(input);
+    });
   }
 
   structural(

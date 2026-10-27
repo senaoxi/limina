@@ -18,10 +18,15 @@ import {
   packAnalysisRecord,
   unpackAnalysisRecord,
 } from '../core/analysis-cache/record-payload';
+import {
+  packRecordTable,
+  unpackRecordTable,
+} from '../core/analysis-cache/record-table';
 import { emptySnapshot } from '../core/analysis-cache/snapshot-records';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import {
   analysisBlockDigest,
+  AnalysisBlockReader,
   type AnalysisSnapshotIndex,
   encodeAnalysisBlocks,
   readAnalysisBlocks,
@@ -40,11 +45,54 @@ afterEach(() => {
     rmSync(root, { recursive: true, force: true });
 });
 
+it('keeps unavailable projection blocks outside the context-fact read closure', () => {
+  const f = fixture();
+  const snapshot = records(f.file);
+  snapshot.graphs.fixture = {
+    workspaceVersion: 'fixture',
+    queryIds: [],
+    contextIds: ['source'],
+    vueContextIds: [],
+    dependencies: [],
+    discovery: [],
+    data: ['null'],
+  };
+  const encoded = [...encodeAnalysisBlocks(snapshot)];
+  const contents = new Map(
+    encoded.map((item) => [item.reference.digest, Buffer.from(item.text)]),
+  );
+  const index = {
+    header: snapshot.header,
+    configModules: snapshot.configModules,
+    storage: { version: 3, blocks: encoded.map((item) => item.reference) },
+  };
+  const control = new AnalysisBlockReader(
+    index,
+    (block) => contents.get(block.digest)!,
+  );
+  expect(control.graphs()).toEqual(snapshot.graphs);
+  const projection = encoded.find((item) => item.reference.kind === 'graph')!;
+  contents.delete(projection.reference.digest);
+  const reads: string[] = [];
+  const reader = new AnalysisBlockReader(index, (block) => {
+    reads.push(block.kind);
+    const bytes = contents.get(block.digest);
+    if (bytes === undefined) throw new Error('projection unavailable');
+    return bytes;
+  });
+  const facts = parseAnalysisSnapshot(reader.facts(), 'fixture');
+  expect(facts?.contexts).toEqual(snapshot.contexts);
+  expect(reads).not.toContain('graph');
+  expect(() => reader.graphs()).toThrow('projection unavailable');
+});
+
 it.each([
   'length',
   'receipt-block',
   'receipt-input',
   'expected-version',
+  'record-reference',
+  'shared-reference',
 ] as const)(
   'rejects %s corruption inside a correctly hashed scope envelope',
   (fault) => {
@@ -55,9 +103,24 @@ it.each([
       (block) => block.reference.scope === f.file('a', 'tsconfig.json'),
     )!;
     const block = JSON.parse(target.text);
+    const sharedBlock = encoded.find((item) => item.reference.kind === 'pool')!;
+    const sharedPayload = unpackAnalysisRecord(
+      JSON.parse(sharedBlock.text).payload,
+    );
+    const shared = unpackRecordTable(sharedPayload) as readonly unknown[];
     if (fault === 'length') block.payload.byteLength += 1;
-    else {
-      const payload = unpackAnalysisRecord(block.payload) as {
+    else if (fault === 'record-reference' || fault === 'shared-reference') {
+      const table = unpackAnalysisRecord(block.payload) as { root: number[] };
+      table.root = [
+        fault === 'record-reference'
+          ? Number.MAX_SAFE_INTEGER
+          : Number.MIN_SAFE_INTEGER,
+      ];
+      block.payload = packAnalysisRecord(table, 'json', 'brotli');
+    } else {
+      const payload = structuredClone(
+        unpackRecordTable(unpackAnalysisRecord(block.payload), shared),
+      ) as {
         queries: Record<string, { dependencies: unknown }>;
         receiptEncoding: {
           dependencies: { inputId: unknown; expectedVersion: string }[];
@@ -70,7 +133,11 @@ it.each([
       else if (fault === 'receipt-input')
         payload.receiptEncoding.dependencies[0]!.inputId = 1;
       else payload.receiptEncoding.dependencies[0]!.expectedVersion = 'stale';
-      block.payload = packAnalysisRecord(payload, 'json', 'brotli');
+      block.payload = packAnalysisRecord(
+        packRecordTable(payload),
+        'json',
+        'brotli',
+      );
     }
     target.text = JSON.stringify(block);
     target.reference.digest = analysisBlockDigest(target.text);
@@ -84,7 +151,7 @@ it.each([
           header: snapshot.header,
           configModules: snapshot.configModules,
           storage: {
-            version: 1,
+            version: 3,
             blocks: encoded.map((item) => item.reference),
           },
         },
@@ -188,6 +255,7 @@ it('keeps scope payloads independent and losslessly shares long receipt sequence
   const encoded = [...encodeAnalysisBlocks(snapshot)];
   expect(
     encoded
+      .filter((block) => block.reference.kind === 'facts')
       .map((block) => block.reference.scope)
       .filter((scope) => scope !== null)
       .sort(compareCodeUnits),
@@ -195,7 +263,7 @@ it('keeps scope payloads independent and losslessly shares long receipt sequence
   const index = {
     header: snapshot.header,
     configModules: snapshot.configModules,
-    storage: { version: 1, blocks: encoded.map((block) => block.reference) },
+    storage: { version: 3, blocks: encoded.map((block) => block.reference) },
   };
   const contents = new Map(
     encoded.map((block) => [block.reference.digest, Buffer.from(block.text)]),
@@ -274,7 +342,10 @@ it('publishes the index last and preserves shared block bytes on a forced refres
   await store.publish(f.cache());
   const before = readFileSync(store.path);
   const index = JSON.parse(before.toString()) as AnalysisSnapshotIndex;
-  const target = analysisBlockPath(store.path, index.storage.blocks[0]!);
+  const target = analysisBlockPath(
+    store.path,
+    index.storage.blocks.find((block) => block.scope === null)!,
+  );
   const bytes = readFileSync(target);
   const mtime = statSync(target).mtimeMs;
   const forced = new AnalysisCacheStore(f.options);

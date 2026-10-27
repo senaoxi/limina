@@ -1,14 +1,17 @@
 import { performance } from 'node:perf_hooks';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
+import { deferSnapshotGraphs } from '../core/analysis-cache/snapshot-graphs';
 import {
   parseAnalysisSnapshot,
   parseAnalysisSnapshotRoot,
+  parseGraphRecords,
 } from '../core/analysis-cache/snapshot-schema';
 import {
+  AnalysisBlockReader,
   type AnalysisBlockReference,
-  readAnalysisBlocks,
 } from '../core/analysis-cache/snapshot-shards';
+import { hasValidGraphRecords } from '../core/analysis-cache/snapshot-validation';
 import { compareConfigModules } from './config-module-comparison';
 import type { ConfigObservation } from './config-observation';
 interface DecodeOptions {
@@ -66,15 +69,33 @@ export class AnalysisSnapshotDecoder {
     if (this.#options.configVersion === undefined) return undefined;
     const start = performance.now();
     try {
-      return parseAnalysisSnapshot(
-        readAnalysisBlocks(value, this.#options.readBlock),
+      const blocks = new AnalysisBlockReader(value, this.#options.readBlock);
+      const snapshot = parseAnalysisSnapshot(
+        blocks.facts(),
         this.#options.identity,
         this.#options.configVersion,
       );
+      return snapshot === undefined
+        ? undefined
+        : deferSnapshotGraphs(snapshot, () => this.#graphs(blocks, snapshot));
     } catch {
       return undefined;
     } finally {
       this.#record('validation', start);
+    }
+  }
+  #graphs(
+    blocks: AnalysisBlockReader,
+    snapshot: AnalysisSnapshot,
+  ): AnalysisSnapshot['graphs'] {
+    const start = performance.now();
+    try {
+      const records = parseGraphRecords(blocks.graphs());
+      if (!hasValidGraphRecords(snapshot, records))
+        throw new Error('Unbound graph projection.');
+      return records;
+    } finally {
+      this.#record('projection-validation', start);
     }
   }
   decode(

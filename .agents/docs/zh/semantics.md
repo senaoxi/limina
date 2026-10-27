@@ -6,7 +6,7 @@
 
 ## 独立 Native Evidence 合同
 
-**当前实现：**[Native Evidence v4](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 10；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
+**当前实现：**[Native Evidence v4](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 11；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
 
 **Coverage 证明：**[索引合同](../../../packages/limina/src/domain/analysis/native-coverage.ts)要求先按已激活的 entry selection 与 solution traversal 建立全集，再了解哪些配置成功解析。Extends 输入、生成配置和声明产物不因此成为 owner。只有发现闭合、当前配置成员枚举完成且文件身份经过验证，才能证明零或一个成员。无法限定范围的解析失败使相关全集保持不完整；只有带证据的目标身份排除才能缩小影响。Lexical 与 canonical 成员匹配均要求目标和成员具有当前版本的已验证身份；过期或不可用的身份不能计入已确认成员。Lexical 命中不跳过 canonical 别名检查。两个已确认的不同成员即使在部分索引中也能证明 ambiguous；其余不完整证据为 unavailable。文件身份只证明等价，不增加作用域。
 
@@ -60,9 +60,11 @@ Checker 归属阶段的工具链／语义脚本失败保留为执行失败和受
 
 ## 持久化 importer 有效性
 
-[Bounded context capture](../../../packages/limina/src/core/analysis-cache/bounded-context-capture.ts)保存编译器完整 inventory、occurrence 事实和实际输入 receipt。Schema 10、Native adapter、领域版本和 collection mode 共同排除旧 Programless 成功图；旧缓存不转换、不删除。Roots/options/raw references、配置全集、当前 lexical/canonical 身份、正负解析探测、目录、manifest 条件与安装环境均参与恢复资格。相同 importer 文本不足以证明旧 context 有效。
+[Bounded context capture](../../../packages/limina/src/core/analysis-cache/bounded-context-capture.ts)保存编译器完整 inventory、occurrence 事实和实际输入 receipt。Schema 11、Native adapter、领域版本和 collection mode 共同排除旧 Programless 成功图；旧缓存不转换、不删除。Roots/options/raw references、配置全集、当前 lexical/canonical 身份、正负解析探测、目录、manifest 条件与安装环境均参与恢复资格。相同 importer 文本不足以证明旧 context 有效。
 
 [恢复绑定](../../../packages/limina/src/core/build-graph/native-cache-binding.ts)将图、已验证 context、原始快照与 locked ownership fact 绑定；缓存中的 summary 或 owner 字段不能自授资格。正常 Coverage stop 可完整恢复；执行失败、未知安装证据、残缺通道或伪造绑定触发冷采集。输入失效时原子替换 consumer 贡献，不把旧成功与新失败拼成完整图。纯 Native 完整命中不创建 Program；冷/变化 context 重新创建 Bounded Program，不承诺只解析变化文件。详见[生命周期](./lifecycle.md#原生持久化分析缓存)和[独立进程回归](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)。
+
+[归一化图视图](../../../packages/limina/src/core/build-graph/native-graph-views.ts)引用合格 context 的 Coverage、Native evidence 和 occurrence facts，不再持久化它们的独立副本。编译器产出的 inventory 仍是独立完整性见证，不从待检事实重新生成。有序 occurrence 引用保留重复次数与诊断位置。物理成员身份采用 lexical／canonical 路径与文件绑定，独立于源码内容；函数体变化使订阅 context 失效，不把所有重叠 Coverage 的成员身份伪装成变化。Bounded context 观测到的 declaration target 还保留独立、可重放的元数据 receipt，即使 frontier 在创建 SourceFile 前停止也如此。这在不改变 workspace 成员身份的同时，保留生产者输出刷新与执行准入漂移检查。[执行交接测试](../../../packages/limina/src/__tests__/execution-input-handoff.spec.ts)覆盖相关／无关输出变化，以及并发生产者／消费者交接。Context 替换仍一起更新依赖、事实与贡献。
 
 [双向缓存校验](../../../packages/limina/src/core/analysis-cache/bounded-inventory-validity.ts)要求实际 Program 成员与 source/importer 集合一致，并将具有源码 occurrence 的编译器请求与 occurrence/fact 一一对应。删除、孤立或重复记录不能借空集合取得完整性；配置级请求不强制产生源码 occurrence，合法无导入成员仍保留。原始请求与 resolution 也必须一一对应。存储解析和 [context adoption](../../../packages/limina/src/core/analysis-cache/context-records.ts) 使用同一校验，因此拒绝旧 graph 后不会复用缺失事实的上下文。Program 释放前会捕获并冻结编译器 inventory 回执：将每个原始 request 绑定到精确 occurrence（UTF-16 范围、kind、ordinal 和 synthetic 元数据），同时记录完整 SourceFile 集合、已接纳 roots 及实际加载别名。恢复时用回执校验消费投影，并将每个成功 load 反向关联到实际成员；两个同时截短的投影相等并不足够。Redirect 保留编译器实际返回的 SourceFile，不强制 lexical 路径相等。缺失回执或旧 adapter 身份必须冷采集；恢复不能从缓存投影重新生成回执。仅 graph 损坏时可以保留合法 context。校验只撤销缓存恢复资格，不把 scoped unavailable 改成执行失败，也不改写已完成 Core。损坏存储按既有完整模型策略冷回退；直接 context 恢复仍保留独立合法上下文。[真实 store 回归](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)覆盖有效 checksum 封装内的 source／occurrence／fact 损坏、重新采集、发布及下一进程恢复；这不证明正常生产者会自然生成该损坏状态。
 

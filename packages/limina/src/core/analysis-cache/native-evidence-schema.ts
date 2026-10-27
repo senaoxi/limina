@@ -9,6 +9,7 @@ import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
 import { projectNativeReferences } from '../../domain/analysis/native-reference-projection';
 import type { NativeAnalysisEvidence } from '../build-graph/native-analysis-evidence';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
+import { immutableNativeSchema } from './immutable-schema';
 import { nativeObligationSchema } from './native-obligation-schema';
 import {
   nativeContextProofSchema,
@@ -146,28 +147,28 @@ const failure = z.object({
   evidenceIds: texts,
   affected,
 });
-export const nativeEvidenceSchema: z.ZodType<NativeEvidenceSnapshot> = z.object(
-  {
-    version: z.literal(NATIVE_EVIDENCE_VERSION),
-    run: z.enum(['completed', 'unavailable', 'interrupted', 'failed']),
-    contexts: z.array(nativeContextProofSchema),
-    coverageIndexes: z.array(nativeCoverageIndexSchema),
-    coverage: z.array(nativeCoverageSchema),
-    requests: z.array(request),
-    traversal: z.array(
-      z.object({
-        requestId: text,
-        parentRequestIds: texts,
-        rootFileNames: texts,
-      }),
-    ),
-    resolutions: z.array(resolution),
-    relations: z.array(relation),
-    obligations: z.array(nativeObligationSchema),
-    completeness: z.array(partition),
-    failures: z.array(failure),
-  },
-);
+const nativeEvidenceSchemaShape = z.object({
+  version: z.literal(NATIVE_EVIDENCE_VERSION),
+  run: z.enum(['completed', 'unavailable', 'interrupted', 'failed']),
+  contexts: z.array(nativeContextProofSchema),
+  coverageIndexes: z.array(nativeCoverageIndexSchema),
+  coverage: z.array(nativeCoverageSchema),
+  requests: z.array(request),
+  traversal: z.array(
+    z.object({
+      requestId: text,
+      parentRequestIds: texts,
+      rootFileNames: texts,
+    }),
+  ),
+  resolutions: z.array(resolution),
+  relations: z.array(relation),
+  obligations: z.array(nativeObligationSchema),
+  completeness: z.array(partition),
+  failures: z.array(failure),
+});
+export const nativeEvidenceSchema: z.ZodType<NativeEvidenceSnapshot> =
+  immutableNativeSchema(nativeEvidenceSchemaShape);
 
 export const nativeCollectionStatusSchema: z.ZodType<NativeCollectionStatus> =
   z.object({

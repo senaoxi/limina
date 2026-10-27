@@ -1,16 +1,24 @@
 import { readAnalysisInput } from '#utils/analysis-input';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
-import { readPhysicalFileIdentity } from '#utils/physical-file-identity';
+import { readPhysicalFileBinding } from '#utils/physical-file-identity';
 import { createHash } from 'node:crypto';
 import type { NativeFileIdentity } from '../../domain/analysis/native-coverage';
+import { isPublishedNativeData } from '../../domain/analysis/native-evidence-freeze';
+
+const fingerprints = new WeakMap<object, string>();
 
 export function nativeFingerprint(value: unknown): string {
   // Schema decoding may change object insertion order; ordered roots/references
   // still retain array order. A proof identity must survive a JSON round trip.
-  return createHash('sha256')
+  const isImmutable = isPublishedNativeData(value);
+  const previous = isImmutable ? fingerprints.get(value) : undefined;
+  if (previous !== undefined) return previous;
+  const fingerprint = createHash('sha256')
     .update(JSON.stringify(value, canonicalFields))
     .digest('hex');
+  if (isImmutable) fingerprints.set(value, fingerprint);
+  return fingerprint;
 }
 
 function canonicalFields(_key: string, value: unknown): unknown {
@@ -41,8 +49,8 @@ export function observeNativeFileIdentity(
   const lexicalPath = normalizeAbsolutePath(fileName);
   const receipt = readAnalysisInput(
     lexicalPath,
-    () => readPhysicalFileIdentity(lexicalPath),
-    'file-identity',
+    () => readPhysicalFileBinding(lexicalPath),
+    'file-binding',
   );
   return {
     lexicalPath,
@@ -53,7 +61,14 @@ export function observeNativeFileIdentity(
             state: 'verified',
             canonicalId: receipt.canonicalId,
             inputVersion,
-            evidenceId: nativeFingerprint([lexicalPath, receipt]),
+            // Membership is a path/inode fact. Content and metadata remain
+            // independent replayed inputs, rather than changing the entire
+            // configuration universe after an unrelated source body edit.
+            evidenceId: nativeFingerprint([
+              lexicalPath,
+              receipt.canonicalPath,
+              receipt.canonicalId,
+            ]),
           },
   };
 }

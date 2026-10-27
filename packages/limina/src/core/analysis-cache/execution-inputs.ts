@@ -3,7 +3,8 @@ import type {
   DependencyAnalysisResult,
   GeneratedTsconfigGraphResult,
 } from '../build-graph/types';
-import { EpochInputReplay, EpochInputs } from './epoch-inputs';
+import type { EpochInputs } from './epoch-inputs';
+import { EpochInputReplay } from './epoch-inputs';
 import type { NativeAnalysisCache } from './native-cache';
 
 interface ContextReads {
@@ -140,9 +141,11 @@ async function bindContextInputs(
     (item) => contextIdentity(item) === snapshot.contexts[0]?.id,
   );
   const native = requireNativeRecord(record);
-  const inputs = new EpochInputs();
-  if (!(await inputs.validate(native.discovery)))
-    throw new Error('Execution context inputs changed during restore.');
+  const inputs = cache.epoch.selectRecords(native.discovery);
+  if (inputs === undefined)
+    throw new Error(
+      'Execution context inputs were not qualified during restore.',
+    );
   retainContextExecutionInputs(snapshot, record!.project.configPath, inputs);
 }
 function contextIdentity(

@@ -182,11 +182,16 @@ const graphRecord = z.object({
   contextIds: texts,
   vueContextIds: texts,
   dependencies: z.array(dependency),
-  data: z.json(),
+  // The data codec validates this closed grammar without expanding shared nodes.
+  data: z.unknown(),
   discovery: z.array(discoveryRecordSchema),
 });
+
+export function parseGraphRecords(value: unknown): AnalysisSnapshot['graphs'] {
+  return z.record(text, graphRecord).parse(value) as AnalysisSnapshot['graphs'];
+}
 const header = z.object({
-  schema: z.literal(10),
+  schema: z.literal(11),
   implementation: z.literal(ANALYSIS_ADAPTER),
   identity: text,
   configVersion: text,

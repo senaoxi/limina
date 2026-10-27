@@ -1,6 +1,7 @@
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import type { NativeContextRecord, ProjectRecord } from './contracts';
-import { analysisHash } from './identity';
+import type { EpochInputReplay } from './epoch-inputs';
+import { analysisHash, nativeContextId } from './identity';
 import { observeTypeEnvironment } from './installation-environment';
 import type { NativeAnalysisCache } from './native-cache';
 
@@ -13,9 +14,10 @@ export function hasCurrentContextEnvironment(
   cache: NativeAnalysisCache,
   project: TypeScriptSemanticProject,
   candidate: ContextEnvironment,
+  replay?: EpochInputReplay,
 ): boolean {
   return (
-    hasCurrentCompilerReads(cache, candidate.record) &&
+    hasCurrentCompilerReads(cache, candidate.record, replay) &&
     hasCurrentInstallationEnvironment(cache, project, candidate)
   );
 }
@@ -23,10 +25,11 @@ export function hasCurrentContextEnvironment(
 function hasCurrentCompilerReads(
   cache: NativeAnalysisCache,
   record: NativeContextRecord,
+  replay?: EpochInputReplay,
 ): boolean {
   return (
     record.native === undefined ||
-    cache.epoch.validateSynchronous(record.native.discovery)
+    cache.epoch.validateSynchronous(record.native.discovery, replay)
   );
 }
 
@@ -42,7 +45,7 @@ function hasCurrentInstallationEnvironment(
     analysisHash(current.domains) !==
     analysisHash(candidate.record.environment.domains)
   )
-    cache.inputs.invalidateDomain(project.configPath);
+    cache.invalidation.invalidateContext(nativeContextId(project));
   return (
     current.evidence !== 'unknown' &&
     analysisHash(current) === analysisHash(candidate.record.environment)

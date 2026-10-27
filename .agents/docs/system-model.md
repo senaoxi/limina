@@ -140,9 +140,21 @@ Arrows express dependencies, not universal serial execution. [Steps](../../packa
 
 For an eligible native clean invocation, the [persistent analysis contract](./lifecycle.md#persistent-native-analysis-cache) first validates the namespace-wide effective `configVersion`, then qualifies ordinary context/graph DTOs before creating analysis Programs. It rebuilds current artifact authority and continues domain judgments, result publication and checker execution. A native hit alone does not validate changed governance rules or disk materialization; cold/dirty paths still run the phases above.
 
+The cache responsibilities reuse existing owners; storage partitions do not create new semantic authorities.
+
+| Responsibility  | Current owner and boundary                                                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GenerationIndex | [Store index](../../packages/limina/src/preflight/analysis-cache-store.ts): namespace, versions, block identities and atomic publication                     |
+| InputLedger     | [Inputs](../../packages/limina/src/core/analysis-cache/inputs.ts): unique observations and subscriptions, with semantic versions separate from checkpoints   |
+| ContextFacts    | [Context records](../../packages/limina/src/core/analysis-cache/context-records.ts): complete Bounded-context evidence and independent completeness receipts |
+| Contributions   | [Contribution records](../../packages/limina/src/core/analysis-cache/contributions.ts): originating context, occurrence and supported relations              |
+| GraphProjection | [Graph records](../../packages/limina/src/core/analysis-cache/graph-records.ts): qualified views, generated content and current artifact-plan handoff        |
+
+The [storage lifecycle](./lifecycle.md#persistent-native-analysis-cache) owns decoding and observation rounds; [persistent semantic validity](./semantics.md#persistent-importer-validity) owns proof and context replacement.
+
 ## Relation taxonomy
 
-[The Native Evidence contract](./semantics.md#independent-native-evidence-contract) separates `resolved-project-use`, `compiler-reference-obligation`, `declaration-consumption`, `explicit-reference`, `framework-schedule` and `runtime-use`. Native compilation projection consumes only qualified locked obligations. An owner hit cannot turn a use into a compilation edge, and satisfied reference structure does not prove output readiness. Runtime source/package governance has an independent entry and request purpose. Schema 9 retains raw evidence and separate statuses; FileOwnerLookup's algorithm is unchanged.
+[The Native Evidence contract](./semantics.md#independent-native-evidence-contract) separates `resolved-project-use`, `compiler-reference-obligation`, `declaration-consumption`, `explicit-reference`, `framework-schedule` and `runtime-use`. Native compilation projection consumes only qualified locked obligations. An owner hit cannot turn a use into a compilation edge, and satisfied reference structure does not prove output readiness. Runtime source/package governance has an independent entry and request purpose. Schema 11 retains raw evidence and separate statuses; FileOwnerLookup's algorithm is unchanged.
 
 | Relation                     | Producer / meaning                                                                                           | Downstream permissions and boundaries                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |

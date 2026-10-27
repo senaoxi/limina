@@ -157,6 +157,83 @@ function collect(
 }
 
 describe('bounded compiler context replacement and incremental inputs', () => {
+  it('rebuilds only subscribers of an independently changed installation lock', () => {
+    const fixtures = [fixture(), fixture()];
+    const projects = fixtures.map((f) => {
+      f.write(
+        'package.json',
+        JSON.stringify({
+          name: 'isolated-domain',
+          private: true,
+          packageManager: 'npm@11.6.1',
+        }),
+      );
+      f.write(
+        'package-lock.json',
+        JSON.stringify({
+          name: 'isolated-domain',
+          lockfileVersion: 3,
+          packages: { '': {} },
+        }),
+      );
+      f.write('a.ts', 'export const value = 1;');
+      f.write(
+        'node_modules/@types/probe/index.d.ts',
+        'declare const probe: number;',
+      );
+      return f.project(['a.ts'], {
+        types: ['probe'],
+        typeRoots: [f.file('node_modules/@types')],
+      });
+    });
+    const run = (previous?: NativeAnalysisCache) => {
+      const snapshot =
+        previous === undefined
+          ? undefined
+          : parseAnalysisSnapshot(
+              roundTripAnalysisSnapshot(previous.snapshot()),
+              'domains',
+              'config',
+            );
+      if (previous !== undefined) expect(snapshot).toBeDefined();
+      const cache = new NativeAnalysisCache('domains', snapshot, 'config');
+      for (const project of projects) {
+        const context =
+          cache.restoreContext(project) ??
+          createTypeScriptDependencyContext(project, { analysisCache: cache });
+        const files = context.getContributionFileNames!();
+        for (const file of files)
+          for (const request of context.getImportRecords(file))
+            context.getDependencyFact(request);
+        if ('dispose' in context && typeof context.dispose === 'function')
+          context.dispose();
+      }
+      return cache;
+    };
+    const first = run();
+    expect(first.metrics.semanticPrograms).toBe(2);
+    expect(
+      Object.values(first.contexts).every(
+        (record) => record.environment.evidence === 'lockfile-trusted',
+      ),
+    ).toBe(true);
+    const warm = run(first);
+    expect(warm.metrics.semanticPrograms).toBe(0);
+    fixtures[0]!.write(
+      'package-lock.json',
+      JSON.stringify({
+        name: 'isolated-domain',
+        lockfileVersion: 3,
+        packages: { '': {} },
+        changed: true,
+      }),
+    );
+    const changed = run(warm);
+    expect(changed.metrics.semanticPrograms).toBe(1);
+    expect(changed.metrics.restoredContexts).toBe(1);
+    expect(run(changed).metrics.semanticPrograms).toBe(0);
+  });
+
   it('restores a compiler reference endpoint ahead of source Coverage ownership', () => {
     const f = fixture();
     f.write('a.ts', 'import type { Value } from "./b"; export type T = Value;');

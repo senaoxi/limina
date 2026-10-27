@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { AnalysisSnapshot, ConfigModuleSnapshot } from './contracts';
 import { ANALYSIS_ADAPTER } from './contracts';
 import type { NativeAnalysisCache } from './native-cache';
+import { availableSnapshotGraphs } from './snapshot-graphs';
 import {
   referencedSnapshotInputs,
   usedSnapshotQueries,
@@ -66,7 +67,7 @@ export function emptySnapshot(
 ): AnalysisSnapshot {
   return {
     header: {
-      schema: 10,
+      schema: 11,
       implementation: ANALYSIS_ADAPTER,
       identity,
       configVersion: configVersion ?? null,
@@ -106,7 +107,7 @@ export function matchingConfigSnapshot(
     configVersion !== undefined,
     previous.header.configVersion === configVersion,
     previous.header.identity === identity,
-    previous.header.schema === 10,
+    previous.header.schema === 11,
     hasCompleteConfigModules(previous),
     previous.header.implementation === ANALYSIS_ADAPTER,
   ];
@@ -116,7 +117,7 @@ export function matchingConfigSnapshot(
 export function newSnapshot(cache: NativeAnalysisCache): AnalysisSnapshot {
   return cloneAnalysisSnapshot({
     header: {
-      schema: 10,
+      schema: 11,
       implementation: ANALYSIS_ADAPTER,
       identity: cache.identity,
       configVersion: cache.configVersion ?? null,
@@ -209,7 +210,11 @@ function matchingModuleRecords(
     : undefined;
 }
 export function isUnchangedCache(cache: NativeAnalysisCache): boolean {
-  if (cache.previous === undefined) return false;
+  if (
+    cache.previous === undefined ||
+    availableSnapshotGraphs(cache.previous) === undefined
+  )
+    return false;
   const records = cache.snapshotRecords();
   return Object.entries(records).every(([key, value]) =>
     key === 'configModules'

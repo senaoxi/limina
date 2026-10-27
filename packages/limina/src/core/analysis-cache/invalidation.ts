@@ -19,6 +19,7 @@ function subscribe(
 Rebuilt from forward records; no second persistent source of truth.
 */
 export class AnalysisInvalidation {
+  readonly #snapshot: AnalysisSnapshot | undefined;
   readonly inputQueries: Map<string, Set<string>> = new Map<
     string,
     Set<string>
@@ -36,6 +37,7 @@ export class AnalysisInvalidation {
   readonly syntaxDirty: Set<string> = new Set<string>();
 
   constructor(snapshot: AnalysisSnapshot | undefined, inputs: AnalysisInputs) {
+    this.#snapshot = snapshot;
     if (snapshot === undefined) return;
     const changed = Object.entries(snapshot.inputs)
       .filter(
@@ -57,19 +59,27 @@ export class AnalysisInvalidation {
   }
 
   #indexEnvironments(snapshot: AnalysisSnapshot): void {
-    for (const [contextId, context] of Object.entries(snapshot.contexts))
-      this.#indexEnvironment(snapshot, contextId, context.sharedEnvironment);
+    for (const [id, importer] of Object.entries(snapshot.importers)) {
+      const context = snapshot.contexts[importer.contextId];
+      if (context === undefined) {
+        continue;
+      }
+
+      this.#subscribeEnvironment(id, context.sharedEnvironment);
+      this.#subscribeInputs(
+        this.semanticConsumers,
+        context.environment.dependencies,
+        id,
+      );
+      for (const query of importer.queryIds)
+        this.#subscribeInputs(
+          this.inputQueries,
+          context.environment.dependencies,
+          query,
+        );
+    }
   }
-  #indexEnvironment(
-    snapshot: AnalysisSnapshot,
-    contextId: string,
-    environment: AnalysisSnapshot['contexts'][string]['sharedEnvironment'],
-  ): void {
-    const consumers = Object.entries(snapshot.importers).filter(
-      ([, importer]) => importer.contextId === contextId,
-    );
-    for (const [id] of consumers) this.#subscribeEnvironment(id, environment);
-  }
+
   #subscribeEnvironment(
     id: string,
     environment: AnalysisSnapshot['contexts'][string]['sharedEnvironment'],
@@ -122,6 +132,14 @@ export class AnalysisInvalidation {
     this.resolutionDirty.add(query);
     for (const importer of subscribers(this.queryImporters, query))
       this.semanticDirty.add(importer);
+  }
+  invalidateContext(id: string): void {
+    const snapshot = this.#snapshot;
+    if (snapshot === undefined) return;
+    for (const [key, query] of Object.entries(snapshot.queries))
+      if (query.contextId === id) this.resolutionDirty.add(key);
+    for (const [key, importer] of Object.entries(snapshot.importers))
+      if (importer.contextId === id) this.semanticDirty.add(key);
   }
 }
 

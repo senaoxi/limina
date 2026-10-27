@@ -5,8 +5,10 @@ import type {
   ResolutionRecord,
 } from './contracts';
 import { type DataNode, encodeData } from './data-codec';
+import { EpochInputReplay } from './epoch-inputs';
 import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
+import { availableSnapshotGraphs } from './snapshot-graphs';
 import { isSameData } from './snapshot-records';
 function isCompleteContext(context: NativeContextRecord): boolean {
   return context.complete && hasCompleteContextInputs(context);
@@ -26,7 +28,7 @@ function previousGraph(
   cache: NativeAnalysisCache,
   key: string,
 ): GraphRecord | undefined {
-  return cache.graphs[key] ?? cache.previous?.graphs[key];
+  return cache.graphs[key] ?? availableSnapshotGraphs(cache.previous)?.[key];
 }
 function previousContext(
   cache: NativeAnalysisCache,
@@ -48,18 +50,25 @@ function isCurrentGraph(
 function isAllowed(allowed: Map<string, boolean>, file: string): boolean {
   return allowed.get(normalizeAbsolutePath(file)) ?? false;
 }
-function canRestoreContext(cache: NativeAnalysisCache, id: string): boolean {
+function canRestoreContext(
+  cache: NativeAnalysisCache,
+  id: string,
+  replay: EpochInputReplay,
+): boolean {
   const context = previousContext(cache, id);
   if (context === undefined) return false;
   const allowed = new Map(context.boundary);
   return (
-    cache.restoreContext({
-      ...context.project,
-      workspaceSourceBoundary: {
-        ...restoredNativeBoundary(context),
-        has: (file) => isAllowed(allowed, file),
+    cache.restoreContext(
+      {
+        ...context.project,
+        workspaceSourceBoundary: {
+          ...restoredNativeBoundary(context),
+          has: (file) => isAllowed(allowed, file),
+        },
       },
-    }) !== undefined
+      replay,
+    ) !== undefined
   );
 }
 function graphData(value: unknown): DataNode | undefined {
@@ -103,15 +112,21 @@ export class CachedGraphRecords {
   async #restoreQualified(
     key: string,
     record: GraphRecord,
+    generation: number,
   ): Promise<GraphRecord | undefined> {
-    const checks = [
-      await this.#cache.epoch.validate(record.discovery),
-      record.vueContextIds.every((id) => this.#cache.vue.restore(id)),
-      record.contextIds.every((id) => canRestoreContext(this.#cache, id)),
-      record.queryIds.every((id) => didRestoreGraphQuery(this.#cache, id)),
-      !this.#cache.inputs.domainDirty,
-    ];
-    if (!checks.every(Boolean)) return undefined;
+    const replay = new EpochInputReplay();
+    if (
+      !(await this.#cache.epoch.validate(record.discovery, replay)) ||
+      record.vueContextIds.some(
+        (id) => !this.#cache.vue.restore(id, replay, generation),
+      ) ||
+      record.contextIds.some(
+        (id) => !canRestoreContext(this.#cache, id, replay),
+      ) ||
+      record.queryIds.some((id) => !didRestoreGraphQuery(this.#cache, id)) ||
+      this.#cache.inputs.domainDirty
+    )
+      return undefined;
     this.#cache.inputs.consume(record.dependencies);
     this.#cache.contributions.restoreValidatedGraph();
     this.#cache.graphs[key] = record;
@@ -141,17 +156,18 @@ export class CachedGraphRecords {
     this.#retain(key, record);
   }
   #retain(key: string, record: GraphRecord): void {
-    const previous = this.#cache.previous?.graphs[key];
+    const previous = availableSnapshotGraphs(this.#cache.previous)?.[key];
     this.#cache.graphs[key] = isSameData(previous, record) ? previous! : record;
   }
   async restore(
     key: string,
     workspaceVersion: string,
+    generation = 0,
   ): Promise<GraphRecord | undefined> {
     const old = previousGraph(this.#cache, key);
     if (old === undefined) return undefined;
     return isCurrentGraph(this.#cache, old, workspaceVersion)
-      ? this.#restoreQualified(key, old)
+      ? this.#restoreQualified(key, old, generation)
       : undefined;
   }
   capture(key: string, options: Capture): void {
