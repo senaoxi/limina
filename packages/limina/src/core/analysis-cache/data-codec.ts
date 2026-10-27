@@ -1,6 +1,8 @@
 /*
 Plain data only. Tags preserve undefined and ordered Map/Set entries.
 */
+import { isDecodedRecord, ownDecodedRecord } from './record-table';
+
 export type DataNode =
   | ['undefined']
   | ['null']
@@ -12,7 +14,12 @@ export type DataNode =
   | ['object', [string, DataNode][]]
   | ['map', [string, DataNode][]];
 
-type Decoder = (node: unknown[], shouldDecode: boolean) => unknown;
+interface DecodeState {
+  retain: boolean;
+  shouldShare: boolean;
+  values: WeakMap<object, unknown>;
+}
+type Decoder = (node: unknown[], state: DecodeState) => unknown;
 const decoders: Record<string, Decoder> = {
   undefined: (node) => {
     requireArity(node, 1);
@@ -29,17 +36,17 @@ const decoders: Record<string, Decoder> = {
     return value;
   },
   array: decodeSequence,
-  set: (node, shouldDecode) => {
-    const entries = decodeSequence(node, shouldDecode);
-    return shouldDecode ? new Set(entries) : undefined;
+  set: (node, state) => {
+    const entries = decodeSequence(node, state);
+    return state.retain ? new Set(entries) : undefined;
   },
-  object: (node, shouldDecode) => {
-    const entries = decodeEntries(node, shouldDecode);
-    return shouldDecode ? Object.fromEntries(entries) : undefined;
+  object: (node, state) => {
+    const entries = decodeEntries(node, state);
+    return state.retain ? Object.fromEntries(entries) : undefined;
   },
-  map: (node, shouldDecode) => {
-    const entries = decodeEntries(node, shouldDecode);
-    return shouldDecode ? new Map(entries) : undefined;
+  map: (node, state) => {
+    const entries = decodeEntries(node, state);
+    return state.retain ? new Map(entries) : undefined;
   },
 };
 function requireArity(node: unknown[], arity: number): void {
@@ -61,24 +68,24 @@ function requireEntry(entry: unknown): [string, unknown] {
   if (typeof entry[0] !== 'string') throw new Error('Invalid data key.');
   return entry as [string, unknown];
 }
-function decodeSequence(node: unknown[], shouldDecode: boolean): unknown[] {
+function decodeSequence(node: unknown[], state: DecodeState): unknown[] {
   const entries: unknown[] = [];
   for (const entry of requireEntries(node)) {
-    const value = decodeNode(entry, shouldDecode);
-    if (shouldDecode) entries.push(value);
+    const value = decodeNode(entry, state);
+    if (state.retain) entries.push(value);
   }
   return entries;
 }
 function decodeEntries(
   node: unknown[],
-  shouldDecode: boolean,
+  state: DecodeState,
 ): [string, unknown][] {
   const entries: [string, unknown][] = [];
   const keys = new Set<string>();
   for (const entry of requireEntries(node)) {
     const [key, child] = requireUniqueEntry(entry, keys);
-    const value = decodeNode(child, shouldDecode);
-    if (shouldDecode) entries.push([key, value]);
+    const value = decodeNode(child, state);
+    if (state.retain) entries.push([key, value]);
   }
   return entries;
 }
@@ -91,11 +98,19 @@ function requireUniqueEntry(
   keys.add(key);
   return [key, child];
 }
-function decodeNode(node: unknown, shouldDecode: boolean): unknown {
+function decodeNode(node: unknown, state: DecodeState): unknown {
   if (!Array.isArray(node)) throw new Error('Invalid data node.');
+  const isShared =
+    isDecodedRecord(node) && (!state.retain || state.shouldShare);
+  if (isShared && state.values.has(node)) return state.values.get(node);
   const decode = decoders[String(node[0])];
   if (decode === undefined) throw new Error('Invalid data tag.');
-  return decode(node, shouldDecode);
+  const value = decode(node, state);
+  if (isShared) {
+    if (value !== null && typeof value === 'object') ownDecodedRecord(value);
+    state.values.set(node, value);
+  }
+  return value;
 }
 
 type Encoder = (value: object, stack: Set<object>) => DataNode;
@@ -186,13 +201,17 @@ function encodeContainer(value: unknown, stack: Set<object>): DataNode {
     stack.delete(object);
   }
 }
-export function decodeData(node: unknown): unknown {
-  return decodeNode(node, true);
+export function decodeData(node: unknown, shouldShare = false): unknown {
+  return decodeNode(node, { retain: true, shouldShare, values: new WeakMap() });
 }
 
 /**
 Validate the same wire grammar without retaining a discarded graph copy.
 */
 export function validateData(node: unknown): void {
-  decodeNode(node, false);
+  decodeNode(node, {
+    retain: false,
+    shouldShare: false,
+    values: new WeakMap(),
+  });
 }

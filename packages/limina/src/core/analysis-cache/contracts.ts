@@ -11,7 +11,7 @@ import type { TypeEnvironmentRecord } from './installation-environment';
 import type { VueContextRecord } from './vue-contracts';
 
 // Compiler occurrence/load receipts qualify restored projections.
-export const ANALYSIS_ADAPTER = 'typescript-5.4-6.0-coverage-bounded-v21';
+export const ANALYSIS_ADAPTER = 'typescript-5.4-6.0-coverage-bounded-v24';
 
 export interface InputDependency {
   inputId: string;
@@ -187,7 +187,7 @@ export interface ConfigModuleSnapshot {
 
 export interface AnalysisSnapshot {
   header: {
-    schema: 10;
+    schema: 11;
     implementation: string;
     identity: string;
     configVersion: string | null;

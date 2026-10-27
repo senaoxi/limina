@@ -1,8 +1,11 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import * as snapshotCodec from '../core/analysis-cache/data-codec';
 import type { StoredGraphData } from '../core/build-graph/analysis-cache-schema';
 import { hasBoundCandidate } from '../core/build-graph/cached-candidate-binding';
+import {
+  decodeGraphProjection,
+  encodeGraphProjection,
+} from './helpers/analysis-snapshot';
 import {
   cacheMetric,
   createVueCacheFixture,
@@ -10,6 +13,10 @@ import {
 } from './helpers/vue-analysis-cache';
 
 const fixtures: ReturnType<typeof createVueCacheFixture>[] = [];
+const snapshotCodec = {
+  decodeData: decodeGraphProjection,
+  encodeData: encodeGraphProjection,
+};
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup();
 });
@@ -79,6 +86,7 @@ describe('persistent Vue and mixed graph analysis', () => {
     expect(references()).toEqual(new Set([provider]));
     const warm = f.run();
     expectRestored(warm);
+    expect(cacheMetric(warm, 'collectionReplayHits')).toBeGreaterThan(0);
     expect(warm.graph).toEqual(cold.graph);
     f.write('vue/src/Widget.vue', '<template>local</template>');
     expectCold(f.run());
@@ -273,6 +281,19 @@ describe('persistent Vue and mixed graph analysis', () => {
     'invalidates changed %s inputs and warms the replacement',
     (input) => {
       const f = fixture();
+      if (input === 'lock') {
+        // The lock must cover an actual Vue type input, not merely coexist
+        // with a compiler installed in another physical installation domain.
+        f.write(
+          'node_modules/@types/fixture/index.d.ts',
+          'declare const installedFixture: number;',
+        );
+        const config = JSON.parse(
+          readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
+        );
+        config.compilerOptions.types = ['fixture'];
+        f.write('vue/tsconfig.json', JSON.stringify(config));
+      }
       expectCold(f.run());
       switch (input) {
         case 'source': {

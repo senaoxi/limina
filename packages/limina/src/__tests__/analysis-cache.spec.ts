@@ -800,6 +800,30 @@ it('keeps per-input timestamp checkpoints and reconciles text actually read by t
   expect(next.cache.metrics.semanticPrograms).toBe(1);
 });
 
+it.each(['content', 'bytes'] as const)(
+  'reobserves changed %s when its timestamp moves backwards',
+  (kind) => {
+    const f = fixture();
+    f.write('input.ts', 'export const value = 1;');
+    const first = new NativeAnalysisCache('fixture');
+    const before = first.inputs.observe(f.file('input.ts'), kind);
+    const mtime = statSync(f.file('input.ts')).mtimeMs;
+    f.write('input.ts', 'export const value = 2;');
+    utimesSync(
+      f.file('input.ts'),
+      (mtime - 60_000) / 1000,
+      (mtime - 60_000) / 1000,
+    );
+    const current = new AnalysisInputs(first.inputs.records, {
+      ...first.metrics,
+    });
+    expect(current.observe(f.file('input.ts'), kind).expectedVersion).not.toBe(
+      before.expectedVersion,
+    );
+    expect(current.metrics.reads).toBeGreaterThan(first.metrics.reads);
+  },
+);
+
 it.each(['a.ts', 'virtual.json'])(
   'does not persist facts for virtual input %s',
   (virtual) => {

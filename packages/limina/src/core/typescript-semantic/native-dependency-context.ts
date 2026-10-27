@@ -1,5 +1,6 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
+import { analysisHash } from '../analysis-cache/identity';
 import type { ImportRecord } from '../import-analysis/records';
 import type {
   TypeScriptSemanticDependencyContext,
@@ -7,6 +8,10 @@ import type {
 } from './contracts';
 import type { DeclarationEntry } from './declaration-closure';
 import type { NativeDependencyFact } from './dependency-fact';
+import {
+  extractFileDependencyFacts,
+  type FileDependencyFacts,
+} from './file-dependency-facts';
 import { createImportRecordIdentity } from './import-record';
 import {
   captureNativeContextInventory,
@@ -30,6 +35,7 @@ export class NativeDependencyContext
   readonly #facts: Map<string, NativeDependencyFact>;
   readonly #files: Set<string>;
   readonly #typeEntries: DeclarationEntry[];
+  readonly #syntax: ReadonlyMap<string, FileDependencyFacts>;
   readonly identity: string;
   readonly nativeEvidence: NativeEvidenceSnapshot;
   readonly nativeInventory: NativeContextInventory;
@@ -37,6 +43,7 @@ export class NativeDependencyContext
   constructor(
     options: NativeProgramObservationOptions,
     adapter: NativeObservationAdapter = new NativeObservationAdapter(options),
+    shouldCaptureSyntax = false,
   ) {
     this.identity = options.context.id;
     this.nativeEvidence = adapter.snapshot;
@@ -47,7 +54,12 @@ export class NativeDependencyContext
     );
     this.#typeEntries = typeEnvironmentEntries(adapter.snapshot);
     const entries = nativeProgramRecords(adapter);
-    this.nativeInventory = captureNativeContextInventory(adapter, entries);
+    this.#syntax = shouldCaptureSyntax ? sourceSyntax(adapter) : new Map();
+    this.nativeInventory = captureNativeContextInventory(
+      adapter,
+      entries,
+      this.#syntax,
+    );
     this.#facts = nativeProgramFacts(adapter, entries);
     this.#registerRecords(entries);
   }
@@ -65,6 +77,10 @@ export class NativeDependencyContext
     return structuredClone(
       this.#records.get(normalizeAbsolutePath(file)) ?? [],
     );
+  }
+
+  getFileDependencyFacts(file: string): FileDependencyFacts | undefined {
+    return structuredClone(this.#syntax.get(normalizeAbsolutePath(file)));
   }
 
   getDependencyFact(record: ImportRecord): NativeDependencyFact {
@@ -93,6 +109,24 @@ export class NativeDependencyContext
   dispose(): void {
     // No compiler, host or checker survives the constructor.
   }
+}
+
+function sourceSyntax(
+  adapter: NativeObservationAdapter,
+): ReadonlyMap<string, FileDependencyFacts> {
+  return new Map(
+    adapter.program.getSourceFiles().map((source) => {
+      const file = normalizeAbsolutePath(source.fileName);
+      return [
+        file,
+        extractFileDependencyFacts(
+          file,
+          source.text,
+          analysisHash(source.text),
+        ),
+      ];
+    }),
+  );
 }
 
 function typeEnvironmentEntries(

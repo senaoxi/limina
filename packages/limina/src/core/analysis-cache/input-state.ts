@@ -153,9 +153,9 @@ function canTrustTimestamp(
   previous: AnalysisInput | undefined,
   mtime: number,
 ): boolean {
-  if (previous?.observedMtime === undefined) return false;
-  const checkpoint = timestampCheckpoint(previous);
-  return mtime <= checkpoint;
+  return (
+    previous?.observedMtime !== undefined && mtime === previous.observedMtime
+  );
 }
 
 export function observedContent(options: {
@@ -190,10 +190,6 @@ function manifestText(options: {
   text: string;
 }): string | undefined {
   return options.path.endsWith('/package.json') ? options.text : undefined;
-}
-
-function timestampCheckpoint(previous: AnalysisInput): number {
-  return Math.max(previous.observedMtime ?? 0, previous.verifiedThrough ?? 0);
 }
 
 function entryVersion(entry: Dirent): unknown {
