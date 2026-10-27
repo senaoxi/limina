@@ -6,6 +6,8 @@ This record defines the repository-wide admission policy for evaluating third-pa
 
 This policy governs candidate selection and how dependencies are introduced. It does not automatically classify all existing dependencies as compliant or non-compliant without a separate review. Approval of a package does not automatically approve future versions, new use cases, or additional execution privileges.
 
+For manifest-field selection, bundling, public type delivery or optional loading, continue with [dependency placement and bundling](./dependency-placement.md). That record owns the delivery contract; this record retains admission gates and the shared decision review.
+
 The policy distinguishes hard admission gates from comparison signals. A candidate that clearly fails any applicable hard gate must not be introduced. When evidence required to decide a hard gate is missing, the candidate remains pending rather than passing by default. Comparison signals are used only among candidates that have passed all applicable hard gates.
 
 ## Evaluation Subject and Scope
@@ -190,7 +192,7 @@ Do not replace gate-by-gate judgment with an uncalibrated composite score. Highe
 
 Before admission, validate the actual release that would be adopted for installation, functionality, compatibility, and build behavior at a depth proportional to its risk, and retain relevant regression coverage. Reuse existing tests and CI capabilities rather than creating a separate process for every dependency.
 
-Declare the dependency in the workspace package that actually uses it and in the appropriate dependency field. Do not rely on undeclared transitive dependencies, and do not hide runtime requirements or consumer costs by incorrectly placing dependencies in `devDependencies`, `optionalDependencies`, or `peerDependencies`.
+Before selecting or changing a dependency declaration or delivery boundary, follow [dependency placement and bundling](./dependency-placement.md#introduction-and-acceptance) and include its delivery decision in this admission review.
 
 Commit the manifest, lockfile, required configuration, and tests that correspond to the introduction. Validation must follow the repository's established package manager, version policy, and reproducible-installation rules.
 
