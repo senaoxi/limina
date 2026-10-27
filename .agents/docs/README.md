@@ -24,6 +24,7 @@ Read the relevant paired records before edits. For architecture work, use the Li
 | Maintain the installable consumer skill and its installation entry  | [Distributable agent skill](./architecture.md#distributable-agent-skill) |
 | Change the documentation reading theme or sidebar                   | [Documentation sidebar](./architecture.md#documentation-sidebar)         |
 | Evaluate reuse for a requirement, or add/replace a dependency       | [Dependency admission](./dependency-admission.md)                        |
+| Choose dependency fields and bundled/external delivery              | [Dependency placement and bundling](./dependency-placement.md)           |
 | Maintain supported dependency licenses and bundled-code policy      | [Dependency license policy](./license-policy.md)                         |
 | Maintain repository gates and commit checks                         | [Repository gates](./gates.md)                                           |
 | Understand toolchain versions and compatibility policies            | [Toolchain and checks](./technology-stack.md)                            |
