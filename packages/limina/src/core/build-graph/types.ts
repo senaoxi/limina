@@ -33,6 +33,7 @@ import type {
   GeneratedKnipPackageDiagnostic,
 } from './generated-knip';
 import type { OutputOptions } from './generated/config-readers';
+import type { LibraryProjectionReceipt } from './library-projection';
 import type { GeneratedTsconfigGraphManifest } from './manifest-types';
 import type { NativeAnalysisEvidence } from './native-analysis-evidence';
 import type { OutputProjectionReceipt } from './output-projection';
@@ -89,6 +90,7 @@ export interface GeneratedTsconfigGraphResult {
   sourceConfigCoverage?: SourceConfigCoverageIndex;
   outputProjections?: OutputProjectionReceipt[];
   typeInputProjections?: TypeInputProjectionReceipt[];
+  libraryProjections?: LibraryProjectionReceipt[];
   artifactPlan: ArtifactPlan;
   changed: boolean;
   checkers: ResolvedCheckerConfig[];
@@ -123,6 +125,7 @@ export interface PrepareGeneratedTsconfigGraphOptions {
 export interface SourceProject {
   outputProjections?: OutputProjectionReceipt[];
   typeInputProjections?: TypeInputProjectionReceipt[];
+  libraryProjections?: LibraryProjectionReceipt[];
   virtualFiles?: ReadonlyMap<string, string>;
   checkerName: ResolvedCheckerConfig['name'];
   configPath: string;

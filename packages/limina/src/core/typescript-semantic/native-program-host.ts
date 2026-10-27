@@ -20,6 +20,7 @@ import {
   resolveModuleWithOrigin,
   resolveTypeWithOrigin,
 } from './resolution-origin';
+import { withVirtualResolutionFiles } from './virtual-resolution-host';
 
 interface HostInputs extends NativeHostFailures {
   loads: NativeProgramLoads;
@@ -210,12 +211,7 @@ function applyNativeVirtualInputs(
   files: ReadonlyMap<string, string> | undefined,
 ): void {
   if (files === undefined) return;
-  const read = host.readFile.bind(host);
-  const exists = host.fileExists.bind(host);
-  host.readFile = (file) =>
-    files.get(normalizeAbsolutePath(file)) ?? read(file);
-  host.fileExists = (file) =>
-    files.has(normalizeAbsolutePath(file)) || exists(file);
+  Object.assign(host, withVirtualResolutionFiles(host, files));
 }
 
 function observeSource(

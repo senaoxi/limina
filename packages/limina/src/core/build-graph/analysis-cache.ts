@@ -17,6 +17,7 @@ import { writeGeneratedContent } from './artifact-writer';
 import { bindCachedGraph } from './cached-graph-binding';
 import { hasValidRestoredDeclarationContexts } from './declaration-context-candidate';
 import { hasBoundGeneratedReferences } from './generated-reference-binding';
+import { hasValidLibraryProjections } from './library-projection';
 import { readMaterializationStateSnapshot } from './materialization-state';
 import { hasBoundNativeGraph } from './native-cache-binding';
 import {
@@ -298,8 +299,9 @@ function hasValidProjections(
 ): boolean {
   return (
     stored.typeInputProjections!.every((receipt) =>
-      isValidTypeInputProjection(receipt, cache),
+      isValidTypeInputProjection(receipt, cache, stored.generatedFiles),
     ) &&
+    hasValidLibraryProjections(stored, cache) &&
     stored.outputProjections!.every((receipt) =>
       isValidOutputProjection(receipt, cache),
     )

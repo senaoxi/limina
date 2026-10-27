@@ -110,5 +110,11 @@ export async function finalizeGeneratedGraph(options: {
         projects.flatMap((project) => project.typeInputProjections ?? []),
       )
       .toArray(),
+    libraryProjections: options.state.projectsByChecker
+      .values()
+      .flatMap((projects) =>
+        projects.flatMap((project) => project.libraryProjections ?? []),
+      )
+      .toArray(),
   };
 }
