@@ -24,6 +24,7 @@
 | 维护可安装的消费者技能及安装入口                           | [可分发的智能体技能](./architecture.md#可分发的智能体技能) |
 | 修改文档阅读主题或侧栏                                     | [文档侧栏](./architecture.md#文档侧栏)                     |
 | 评估需求的复用方案，或新增／替换第三方依赖                 | [依赖准入](./dependency-admission.md)                      |
+| 选择依赖字段及 bundled／external 交付方式                  | [依赖放置与打包](./dependency-placement.md)                |
 | 维护支持的依赖许可证与 bundled-code 策略                   | [依赖许可证策略](./license-policy.md)                      |
 | 维护仓库门禁与提交检查                                     | [仓库门禁](./gates.md)                                     |
 | 理解工具链版本与兼容策略                                   | [工具链与检查](./technology-stack.md)                      |

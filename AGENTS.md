@@ -11,7 +11,8 @@
 - **Repository edits, setup, builds or checks:** follow [the development workflow](.agents/docs/development-workflow.md).
 - **Behavior, contract or architecture changes:** start at [the Limina map](.agents/docs/limina.md) and follow [the architecture review workflow](.agents/docs/architecture-workflow.md).
 - **Tests or path behavior:** follow [the portable-path and test rules](.agents/docs/development-workflow.md#portable-paths-in-tests); use [test-audit](.agents/skills/test-audit/SKILL.md) when changing tests.
-- **Requirements and third-party dependencies:** before analyzing requirements or planning a custom implementation, check for suitable open-source packages and prefer adapting an eligible package. Follow [dependency admission](.agents/docs/dependency-admission.md) for evaluation constraints and before adding or replacing a package.
+- **Requirements or dependency changes:** follow [dependency admission](.agents/docs/dependency-admission.md) before requirements analysis, reuse selection or custom implementation.
+- **Dependency fields, bundling, public type dependencies or optional loading:** follow [dependency placement and bundling](.agents/docs/dependency-placement.md).
 - **PCR or saved technical audit results:** use [project-context-writing](.agents/skills/project-context-writing/SKILL.md) and follow [bilingual maintenance](.agents/docs/README.md#bilingual-publishing-and-maintenance) and [writing/privacy review](.agents/docs/README.md#writing-and-privacy-review).
 - **Local migration, publication or documentation deployment:** follow [the migration scope and gates](.agents/docs/migration.md).
 - **Commit messages or PR titles:** follow [the commit convention](.github/commit-convention.md).
