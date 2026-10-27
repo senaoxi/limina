@@ -9,6 +9,16 @@ interface LibraryApi {
   toFileNameLowerCase(name: string): string;
 }
 
+export function nativeLibraryFileNames(compiler: typeof ts): string[] {
+  const api = compiler as unknown as LibraryApi;
+  if (!(api.libMap instanceof Map))
+    throw new NativeObservationError(
+      'unsupported',
+      'Native library map unavailable.',
+    );
+  return [...new Set(api.libMap.values())];
+}
+
 export function nativeLibraryFileName(
   compiler: typeof ts,
   reference: ts.FileReference,

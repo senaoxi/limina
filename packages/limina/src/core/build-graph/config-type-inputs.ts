@@ -5,6 +5,7 @@ import { analysisHash } from '../analysis-cache/identity';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
+import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 
 export interface EffectiveTypeInput {
   name: string;
@@ -16,18 +17,22 @@ export function collectConfigTypeInputs(input: {
   configPath: string;
   options: ts.CompilerOptions;
   cache?: NativeAnalysisCache;
+  files?: ReadonlyMap<string, string>;
 }): EffectiveTypeInput[] {
   const { compiler, configPath, options, cache } = input;
   if (options.types?.length === 0) return [];
   const file = normalizeAbsolutePath(configPath);
   const effective = effectiveCompilerOptions(options);
-  const host = observedResolutionHost(compiler, file);
+  const host = withVirtualResolutionFiles(
+    observedResolutionHost(compiler, file),
+    input.files,
+  );
   const contextId = analysisHash(['config-type-directives', compiler.version]);
   const query = <T>(
     request: unknown,
     resolve: (host: ts.ModuleResolutionHost) => T,
   ): T =>
-    cache === undefined
+    cache === undefined || input.files?.size
       ? resolve(host)
       : cache.query({
           contextId,

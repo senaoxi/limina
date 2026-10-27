@@ -3,7 +3,7 @@ import type {
   ResolvedLiminaInputs,
 } from '#config/runner';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
-import { writeGeneratedJson } from './artifact-writer';
+import { writeGeneratedContent, writeGeneratedJson } from './artifact-writer';
 import {
   createCheckerBuildConfig,
   createGeneratedDtsConfig,
@@ -13,6 +13,7 @@ import {
 } from './generated-configs';
 import type { prepareGeneratedKnipPackageConfigs } from './generated-knip';
 import { assertDistinctGeneratedProjectPaths } from './generated/project-paths';
+import { libraryProjectionFiles } from './library-projection';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 
 type GeneratedKnipPreparation = ReturnType<
@@ -184,4 +185,15 @@ export async function writeGeneratedGraphConfigs(options: {
       }),
     ),
   );
+  for (const projects of options.state.projectsByChecker.values())
+    for (const project of projects) {
+      const receipts = project.libraryProjections ?? [];
+      for (const receipt of receipts)
+        for (const [filePath, content] of libraryProjectionFiles(receipt))
+          await writeGeneratedContent({
+            context: options.state.writeContext,
+            filePath,
+            content,
+          });
+    }
 }
