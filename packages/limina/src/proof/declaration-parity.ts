@@ -1,7 +1,9 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import path from 'pathe';
+import type ts from 'typescript';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import { canImportTsExtensions } from '../core/typescript-semantic/compiler-options';
 import { isRelativeTypeName } from '../core/typescript-semantic/effective-roots';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
@@ -130,9 +132,13 @@ function normalizeRelativeType(value: unknown, configPath: string): unknown {
 }
 function normalizeSemanticOption(
   optionName: string,
-  value: unknown,
+  options: ts.CompilerOptions,
   configPath: string,
 ): unknown {
+  if (optionName === 'allowImportingTsExtensions') {
+    return canImportTsExtensions(options);
+  }
+  const value = options[optionName];
   const normalized =
     optionName === 'types' && Array.isArray(value)
       ? value.map((typeName) => normalizeRelativeType(typeName, configPath))
@@ -204,14 +210,12 @@ function compareCompilerOption(options: {
 
   const declarationValue = normalizeSemanticOption(
     options.optionName,
-    (options.declaration.options as Record<string, unknown>)[
-      options.optionName
-    ],
+    options.declaration.options,
     options.declarationPath,
   );
   const companionValue = normalizeSemanticOption(
     options.optionName,
-    (options.companion.options as Record<string, unknown>)[options.optionName],
+    options.companion.options,
     options.companionPath,
   );
 
@@ -255,6 +259,8 @@ export function addDtsConfigSemanticFindings(options: {
   });
 
   const optionNames = new Set([
+    // Rewriting can change the effective permission without an explicit allow key.
+    'allowImportingTsExtensions',
     ...Object.keys(options.localConfig.options),
     ...Object.keys(options.dtsConfig.options),
   ]);
