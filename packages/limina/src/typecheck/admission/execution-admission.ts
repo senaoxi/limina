@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { assertExecutionLibraryProjections } from '../../core/build-graph/library-projection';
 import { withMaterializedPlanReadLease } from '../../core/build-graph/materialization-read-lease';
 import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
 import type { GraphFinding } from '../../graph-check/findings';
@@ -159,6 +160,7 @@ export class ExecutionAdmission {
     const closure = await this.#inputs.validate(target, shouldRefresh);
     for (const file of closure.inputs)
       assertMaterializedInput(this.graph, file);
+    assertExecutionLibraryProjections(this.graph, closure.inputs);
     return closure;
   }
   #govern(

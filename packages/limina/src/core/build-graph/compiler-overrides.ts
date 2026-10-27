@@ -2,6 +2,7 @@ import type { ResolvedLiminaInputs } from '#config/runner';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { collectTypeRootCandidates } from './generated/config-readers';
 import { createRelativePath } from './generated/paths';
+import { projectLibraryInputs } from './library-projection';
 import { projectTypeDirectiveNames } from './type-input-projection';
 import type { SourceProject } from './types';
 
@@ -36,10 +37,11 @@ export function createGeneratedCompilerOptionOverrides(options: {
   generatedConfigPath: string;
 }): Record<string, unknown> {
   const output = createGeneratedTypeRootOverrides(options);
+  const files = projectLibraryInputs(options);
   output.types = projectTypeDirectiveNames(
     options.project,
     options.generatedConfigPath,
-    { overrides: output, cache: options.cache },
+    { overrides: output, cache: options.cache, files },
   );
 
   return output;

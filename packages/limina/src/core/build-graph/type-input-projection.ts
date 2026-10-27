@@ -6,6 +6,7 @@ import {
   collectConfigTypeInputs,
   type EffectiveTypeInput,
 } from './config-type-inputs';
+import { libraryProjectionFiles } from './library-projection';
 import type { SourceProject } from './types';
 
 export interface TypeInputProjectionReceipt {
@@ -49,6 +50,7 @@ export function projectTypeDirectiveNames(
   projection: {
     overrides: Record<string, unknown>;
     cache?: NativeAnalysisCache;
+    files?: ReadonlyMap<string, string>;
   },
 ): string[] {
   const { overrides, cache } = projection;
@@ -68,6 +70,7 @@ export function projectTypeDirectiveNames(
     configPath: generatedConfig,
     options,
     cache,
+    files: projection.files,
   });
   return source.map((entry, index) =>
     shouldPinTypeInput(entry, generated[index]) ? entry.target! : entry.name,
@@ -100,6 +103,11 @@ export function proveTypeInputProjection(
     configPath: generatedConfig,
     options: generatedOptions,
     cache,
+    files: new Map(
+      (project.libraryProjections ?? [])
+        .filter((receipt) => receipt.generatedConfig === generatedConfig)
+        .flatMap((receipt) => [...libraryProjectionFiles(receipt)]),
+    ),
   });
   if (
     source.length !== generated.length ||
@@ -125,6 +133,7 @@ export function proveTypeInputProjection(
 export function isValidTypeInputProjection(
   receipt: TypeInputProjectionReceipt,
   cache: NativeAnalysisCache,
+  files?: ReadonlyMap<string, string>,
 ): boolean {
   if (
     ![
@@ -145,6 +154,7 @@ export function isValidTypeInputProjection(
     configPath: receipt.generatedConfig,
     options: receipt.generatedOptions,
     cache,
+    files,
   });
   return (
     JSON.stringify(source) === JSON.stringify(receipt.source) &&

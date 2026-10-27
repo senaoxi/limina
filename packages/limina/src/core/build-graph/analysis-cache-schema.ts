@@ -143,7 +143,25 @@ const typeInputProjection = z.object({
   source: effectiveTypeInputs,
   generated: effectiveTypeInputs,
 });
+const librarySelection = z.object({
+  fileName: text,
+  libraryName: text,
+  target: text,
+  replacement: z.boolean(),
+});
+const libraryProjection = z.object({
+  scope: z.literal('library-selection'),
+  version: z.literal(1),
+  compilerVersion: text,
+  checkerName: text,
+  sourceConfig: text,
+  generatedConfig: text,
+  libReplacement: z.boolean().optional(),
+  selections: z.array(librarySelection),
+  families: texts,
+});
 const graph = z.object({
+  libraryProjections: z.array(libraryProjection),
   sourceConfigCoverage: nativeCoverageIndexSchema.optional(),
   outputProjections: z.array(outputProjection),
   typeInputProjections: z.array(typeInputProjection),

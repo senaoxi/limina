@@ -4,6 +4,7 @@ import { EpochInputs } from '../../core/analysis-cache/epoch-inputs';
 import { frameworkExecutionInputs } from '../../core/analysis-cache/framework-execution-inputs';
 import { vueExecutionInputs } from '../../core/analysis-cache/vue-execution-inputs';
 import { readGraphRules } from '../../core/build-graph/generated/config-readers';
+import { libraryProjectionFiles } from '../../core/build-graph/library-projection';
 import type {
   GeneratedTsconfigGraphResult,
   GovernedSourceUnit,
@@ -159,6 +160,11 @@ function nativeClosure(options: {
     result,
   };
   for (const file of physical.configPaths) addConfigInputs(context, file);
+  const receipts = options.graph.libraryProjections ?? [];
+  for (const receipt of receipts)
+    if (physical.configPaths.includes(receipt.generatedConfig))
+      for (const file of libraryProjectionFiles(receipt).keys())
+        result.inputs.add(file);
   for (const edge of physical.references) addReference(context, edge);
   return result;
 }
