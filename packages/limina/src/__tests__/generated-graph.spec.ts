@@ -8581,6 +8581,154 @@ describe('reference graph repair compiler differentials', () => {
     30_000,
   );
 
+  async function createFrameworkRequirementFixture(
+    framework: string,
+    kind: string,
+  ) {
+    const files: Record<string, string> = {
+      'packages/a/package.json': json({
+        name: '@repair/a',
+        type: 'module',
+        dependencies:
+          framework === 'astro'
+            ? {
+                ...readAstroTestToolchain(requireFromTest).dependencies,
+              }
+            : { svelte: '4.0.0', svelte2tsx: '0.7.61', typescript: '6.0.3' },
+      }),
+      'packages/b/package.json': json({ name: '@repair/b', type: 'module' }),
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          types: [],
+        },
+        include: ['src/**/*'],
+      }),
+      'packages/b/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          types: [],
+        },
+        include: ['src/**/*'],
+      }),
+      [`packages/a/src/Entry.${framework}`]:
+        framework === 'svelte'
+          ? '<script lang="ts">import type { Value } from "../../b/src/value.js"; let value: Value = 1;</script><p>{value}</p>'
+          : '---\nimport type { Value } from "../../b/src/value.js"; const value: Value = 1;\n---\n<p>{value}</p>',
+      'packages/b/src/value.d.ts': 'export type Value = number;',
+    };
+    if (kind === 'ambient-membership') {
+      delete files['packages/b/src/value.d.ts'];
+      files['packages/b/src/value.ts'] =
+        'export type Value = { source: true };';
+      files[`packages/a/src/Entry.${framework}`] = '<p>Component</p>';
+      files['packages/a/src/index.ts'] =
+        "import type { Value } from 'dep'; export const value: Value = 1;";
+      files['packages/a/src/env.d.ts'] =
+        "declare module 'dep' { export type Value = number; }";
+      const config = JSON.parse(files['packages/a/tsconfig.json']!);
+      config.compilerOptions.paths = { dep: ['../b/src/value.ts'] };
+      files['packages/a/tsconfig.json'] = json(config);
+    }
+    if (kind.startsWith('support-')) {
+      delete files['packages/b/src/value.d.ts'];
+      files['packages/b/src/value.ts'] = 'export type Value = number;';
+      files['packages/a/src/env.d.ts'] =
+        kind === 'support-module'
+          ? 'import type { Value } from "../../b/src/value"; export type Support = Value;'
+          : '/// <reference path="../../b/src/value.ts" />\nexport type Support = number;';
+      files[`packages/a/src/Entry.${framework}`] =
+        framework === 'svelte'
+          ? '<script lang="ts">import type { Support } from "./env"; let value: Support = 1;</script><p>{value}</p>'
+          : '---\nimport type { Support } from "./env"; const value: Support = 1;\n---\n<p>{value}</p>';
+      const config = JSON.parse(files['packages/a/tsconfig.json']!);
+      delete config.include;
+      config.files = [`src/Entry.${framework}`];
+      files['packages/a/tsconfig.json'] = json(config);
+    }
+    if (kind.startsWith('support-public')) {
+      files['packages/bridge/package.json'] = json({
+        name: '@closure/bridge',
+        type: 'module',
+        types: './index.d.ts',
+      });
+      files['packages/bridge/index.d.ts'] =
+        'export type { Support } from "./helper";';
+      files['packages/bridge/helper.d.ts'] =
+        'export type { Value as Support } from "../b/src/value";';
+      files[`packages/a/src/Entry.${framework}`] = files[
+        `packages/a/src/Entry.${framework}`
+      ]!.replace('./env', '@closure/bridge');
+      if (kind === 'support-public-governed')
+        files['packages/bridge/tsconfig.json'] = json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            types: [],
+          },
+          files: ['index.d.ts'],
+        });
+      else if (kind === 'support-public-local') {
+        files['packages/a/src/env.d.ts'] =
+          'export type { Support } from "../../bridge/index";';
+        const config = JSON.parse(files['packages/a/tsconfig.json']!);
+        config.files.push('src/env.d.ts');
+        files['packages/a/tsconfig.json'] = json(config);
+      }
+    }
+    const fixture = await createFixture(files);
+    fixture.config.scope!.checkers = {
+      [framework === 'svelte' ? 'svelte-check' : 'astro']: {
+        include: ['packages/a/tsconfig.json'],
+      },
+      tsc: { include: ['packages/b/tsconfig.json'] },
+    };
+    try {
+      if (kind.startsWith('support-public')) {
+        await mkdir(fixture.path('node_modules/@closure'), {
+          recursive: true,
+        });
+        await symlink(
+          fixture.path('packages/bridge'),
+          fixture.path('node_modules/@closure/bridge'),
+          'junction',
+        );
+        if (kind === 'support-public-governed')
+          fixture.config.scope!.checkers!.tsc = {
+            include: [
+              'packages/b/tsconfig.json',
+              'packages/bridge/tsconfig.json',
+            ],
+          };
+      }
+      const leafRoot = path.join(fixture.rootDir, 'packages/a');
+      if (framework === 'astro') await linkAstroToolchain(leafRoot);
+      else {
+        await linkInstalledPackage({
+          installedName: 'svelte-v4-min',
+          packageName: 'svelte',
+          rootDir: leafRoot,
+        });
+        await linkInstalledPackage({
+          installedName: 'svelte2tsx',
+          packageName: 'svelte2tsx',
+          rootDir: leafRoot,
+        });
+        await linkInstalledPackage({
+          installedName: 'typescript',
+          packageName: 'typescript',
+          rootDir: leafRoot,
+        });
+      }
+      return fixture;
+    } catch (error) {
+      await fixture.cleanup();
+      throw error;
+    }
+  }
+
   it.each(
     ['svelte', 'astro'].flatMap((framework) =>
       [
@@ -8599,143 +8747,8 @@ describe('reference graph repair compiler differentials', () => {
   )(
     'governs $framework $kind evidence with its actual source requirement',
     async ({ framework, kind }) => {
-      const files: Record<string, string> = {
-        'packages/a/package.json': json({
-          name: '@repair/a',
-          type: 'module',
-          dependencies:
-            framework === 'astro'
-              ? {
-                  ...readAstroTestToolchain(requireFromTest).dependencies,
-                }
-              : { svelte: '4.0.0', svelte2tsx: '0.7.61', typescript: '6.0.3' },
-        }),
-        'packages/b/package.json': json({ name: '@repair/b', type: 'module' }),
-        'packages/a/tsconfig.json': json({
-          compilerOptions: {
-            module: 'ESNext',
-            moduleResolution: 'Bundler',
-            types: [],
-          },
-          include: ['src/**/*'],
-        }),
-        'packages/b/tsconfig.json': json({
-          compilerOptions: {
-            module: 'ESNext',
-            moduleResolution: 'Bundler',
-            types: [],
-          },
-          include: ['src/**/*'],
-        }),
-        [`packages/a/src/Entry.${framework}`]:
-          framework === 'svelte'
-            ? '<script lang="ts">import type { Value } from "../../b/src/value.js"; let value: Value = 1;</script><p>{value}</p>'
-            : '---\nimport type { Value } from "../../b/src/value.js"; const value: Value = 1;\n---\n<p>{value}</p>',
-        'packages/b/src/value.d.ts': 'export type Value = number;',
-      };
-      if (kind === 'ambient-membership') {
-        delete files['packages/b/src/value.d.ts'];
-        files['packages/b/src/value.ts'] =
-          'export type Value = { source: true };';
-        files[`packages/a/src/Entry.${framework}`] = '<p>Component</p>';
-        files['packages/a/src/index.ts'] =
-          "import type { Value } from 'dep'; export const value: Value = 1;";
-        files['packages/a/src/env.d.ts'] =
-          "declare module 'dep' { export type Value = number; }";
-        const config = JSON.parse(files['packages/a/tsconfig.json']!);
-        config.compilerOptions.paths = { dep: ['../b/src/value.ts'] };
-        files['packages/a/tsconfig.json'] = json(config);
-      }
-      if (kind.startsWith('support-')) {
-        delete files['packages/b/src/value.d.ts'];
-        files['packages/b/src/value.ts'] = 'export type Value = number;';
-        files['packages/a/src/env.d.ts'] =
-          kind === 'support-module'
-            ? 'import type { Value } from "../../b/src/value"; export type Support = Value;'
-            : '/// <reference path="../../b/src/value.ts" />\nexport type Support = number;';
-        files[`packages/a/src/Entry.${framework}`] =
-          framework === 'svelte'
-            ? '<script lang="ts">import type { Support } from "./env"; let value: Support = 1;</script><p>{value}</p>'
-            : '---\nimport type { Support } from "./env"; const value: Support = 1;\n---\n<p>{value}</p>';
-        const config = JSON.parse(files['packages/a/tsconfig.json']!);
-        delete config.include;
-        config.files = [`src/Entry.${framework}`];
-        files['packages/a/tsconfig.json'] = json(config);
-      }
-      if (kind.startsWith('support-public')) {
-        files['packages/bridge/package.json'] = json({
-          name: '@closure/bridge',
-          type: 'module',
-          types: './index.d.ts',
-        });
-        files['packages/bridge/index.d.ts'] =
-          'export type { Support } from "./helper";';
-        files['packages/bridge/helper.d.ts'] =
-          'export type { Value as Support } from "../b/src/value";';
-        files[`packages/a/src/Entry.${framework}`] = files[
-          `packages/a/src/Entry.${framework}`
-        ]!.replace('./env', '@closure/bridge');
-        if (kind === 'support-public-governed')
-          files['packages/bridge/tsconfig.json'] = json({
-            compilerOptions: {
-              module: 'ESNext',
-              moduleResolution: 'Bundler',
-              types: [],
-            },
-            files: ['index.d.ts'],
-          });
-        else if (kind === 'support-public-local') {
-          files['packages/a/src/env.d.ts'] =
-            'export type { Support } from "../../bridge/index";';
-          const config = JSON.parse(files['packages/a/tsconfig.json']!);
-          config.files.push('src/env.d.ts');
-          files['packages/a/tsconfig.json'] = json(config);
-        }
-      }
-      const fixture = await createFixture(files);
-      fixture.config.scope!.checkers = {
-        [framework === 'svelte' ? 'svelte-check' : 'astro']: {
-          include: ['packages/a/tsconfig.json'],
-        },
-        tsc: { include: ['packages/b/tsconfig.json'] },
-      };
+      const fixture = await createFrameworkRequirementFixture(framework, kind);
       try {
-        if (kind.startsWith('support-public')) {
-          await mkdir(fixture.path('node_modules/@closure'), {
-            recursive: true,
-          });
-          await symlink(
-            fixture.path('packages/bridge'),
-            fixture.path('node_modules/@closure/bridge'),
-            'junction',
-          );
-          if (kind === 'support-public-governed')
-            fixture.config.scope!.checkers!.tsc = {
-              include: [
-                'packages/b/tsconfig.json',
-                'packages/bridge/tsconfig.json',
-              ],
-            };
-        }
-        const leafRoot = path.join(fixture.rootDir, 'packages/a');
-        if (framework === 'astro') await linkAstroToolchain(leafRoot);
-        else {
-          await linkInstalledPackage({
-            installedName: 'svelte-v4-min',
-            packageName: 'svelte',
-            rootDir: leafRoot,
-          });
-          await linkInstalledPackage({
-            installedName: 'svelte2tsx',
-            packageName: 'svelte2tsx',
-            rootDir: leafRoot,
-          });
-          await linkInstalledPackage({
-            installedName: 'typescript',
-            packageName: 'typescript',
-            rootDir: leafRoot,
-          });
-        }
         const generated = await prepareGeneratedTsconfigGraph(fixture.config);
         if (kind === 'support-public' || kind === 'support-public-local')
           expect(generated.dependencyEdges).toEqual([]);
@@ -8774,20 +8787,35 @@ describe('reference graph repair compiler differentials', () => {
               }),
             }),
           );
-          const result = await execFileAsync(
-            process.execPath,
-            [
-              requireFromTest.resolve('typescript/bin/tsc'),
-              '-p',
-              path.join(leafRoot, 'tsconfig.json'),
-              '--noEmit',
-              '--pretty',
-              'false',
-            ],
-            { cwd: fixture.rootDir },
-          );
-          expect(result.stderr).toBe('');
         }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  // Keep the standalone compiler control within its own unchanged case budget.
+  it.each(['svelte', 'astro'])(
+    'compiles %s ambient membership independently of graph preparation',
+    async (framework) => {
+      const fixture = await createFrameworkRequirementFixture(
+        framework,
+        'ambient-membership',
+      );
+      try {
+        const result = await execFileAsync(
+          process.execPath,
+          [
+            requireFromTest.resolve('typescript/bin/tsc'),
+            '-p',
+            fixture.path('packages/a/tsconfig.json'),
+            '--noEmit',
+            '--pretty',
+            'false',
+          ],
+          { cwd: fixture.rootDir },
+        );
+        expect(result.stderr).toBe('');
       } finally {
         await fixture.cleanup();
       }
