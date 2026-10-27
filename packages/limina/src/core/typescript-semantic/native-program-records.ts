@@ -1,10 +1,10 @@
-import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
 import type { NativeRequest } from '../../domain/analysis/native-evidence';
 import type {
   ImportRecord,
   ImportRecordKind,
 } from '../import-analysis/records';
+import { compilerModuleRecord } from './compiler-module-record';
 import type { NativeObservationAdapter } from './native-observation-adapter';
 import type { NativeModuleObservation } from './native-program-requests';
 import { syntheticModuleMetadata } from './native-program-synthetic';
@@ -52,48 +52,16 @@ function moduleRecord(
   adapter: NativeObservationAdapter,
   module: NativeModuleObservation,
 ): ImportRecord {
-  const { literal, source } = module;
-  const start = literal.pos < 0 ? -1 : literal.getStart(source);
   return {
-    domain: 'typescript',
-    filePath: normalizeAbsolutePath(source.fileName),
-    kind: moduleKind(module),
-    line: moduleLine(source, start),
-    locator: { sourceStart: start, sourceEnd: literal.end, occurrence: 0 },
-    specifier: literal.text,
-    ...(start < 0 && syntheticModuleMetadata(adapter, module)),
+    ...compilerModuleRecord(module.source, module.literal, module.role, ts),
+    ...(module.literal.pos < 0 &&
+      syntheticModuleMetadata({
+        ...module,
+        compiler: ts,
+        options: adapter.program.getCompilerOptions(),
+        configPath: adapter.options.project.configPath,
+      })),
   };
-}
-
-function moduleLine(source: ts.SourceFile, start: number): number {
-  return start < 0 ? 1 : source.getLineAndCharacterOfPosition(start).line + 1;
-}
-
-function moduleKind(module: NativeModuleObservation): ImportRecordKind {
-  if (module.role === 'augmentation') return 'module-augmentation';
-  return module.literal.pos < 0
-    ? 'environment-pragma'
-    : literalKind(module.literal);
-}
-
-function literalKind(literal: ts.StringLiteralLike): ImportRecordKind {
-  const parent = literal.parent;
-  const kinds = new Map<number, ImportRecordKind>([
-    [ts.SyntaxKind.ImportDeclaration, 'static'],
-    [ts.SyntaxKind.ExportDeclaration, 'export'],
-    [ts.SyntaxKind.ExternalModuleReference, 'import-equals'],
-    [ts.SyntaxKind.LiteralType, 'import-type'],
-    [ts.SyntaxKind.JSDocImportTag, 'jsdoc-import'],
-  ]);
-  return ts.isCallExpression(parent)
-    ? callKind(parent)
-    : (kinds.get(parent.kind) ?? 'static');
-}
-
-function callKind(call: ts.CallExpression): ImportRecordKind {
-  return call.expression.kind === ts.SyntaxKind.ImportKeyword
-    ? 'dynamic'
-    : 'commonjs';
 }
 
 function directiveRecord(

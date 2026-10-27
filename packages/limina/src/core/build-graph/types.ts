@@ -37,6 +37,7 @@ import type { LibraryProjectionReceipt } from './library-projection';
 import type { GeneratedTsconfigGraphManifest } from './manifest-types';
 import type { NativeAnalysisEvidence } from './native-analysis-evidence';
 import type { OutputProjectionReceipt } from './output-projection';
+import type { ReferenceValidation } from './reference-validation';
 import type { AutoFrameworkEvidence } from './source-capabilities';
 import type { SourceConfigDiscovery } from './source-config-discovery';
 import type { TypeInputProjectionReceipt } from './type-input-projection';
@@ -262,6 +263,7 @@ export interface SemanticSourceRelation {
 }
 
 export interface DependencyAnalysisResult {
+  referenceValidation?: ReferenceValidation;
   declarationContexts?: DeclarationContextDecision[];
   declarationValidation?: {
     state: 'admitted' | 'denied' | 'unavailable';

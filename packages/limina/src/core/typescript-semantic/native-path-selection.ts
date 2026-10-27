@@ -15,7 +15,7 @@ export interface NativePathReceipt {
 }
 interface PathInput {
   compiler: typeof ts;
-  host: ts.CompilerHost;
+  host: Pick<ts.CompilerHost, 'fileExists' | 'getCanonicalFileName'>;
   options: ts.CompilerOptions;
   source: ts.SourceFile;
   reference: ts.FileReference;

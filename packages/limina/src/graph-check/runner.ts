@@ -2,6 +2,8 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'pathe';
+import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import { LiminaStructuredError } from '../check-reporting/errors';
 import {
   collectDependencyGraph,
   type DependencyGraphDocument,
@@ -13,7 +15,10 @@ import {
   runProjectReferencePhase,
   runReferenceCompletenessPhase,
 } from './phases';
-import { isFinishGraphCheck } from './result-reporting';
+import {
+  isFinishGraphCheck,
+  isReportGraphPreparationFailure,
+} from './result-reporting';
 import { createGraphCheckState } from './run-state';
 import type {
   RunGraphCheckImplOptions,
@@ -31,7 +36,19 @@ export async function isRunGraphCheckImpl(
   config: ResolvedLiminaConfig,
   options: RunGraphCheckImplOptions = {},
 ): Promise<boolean> {
-  const state = await createGraphCheckState(config, options);
+  let state;
+  try {
+    state = await createGraphCheckState(config, options);
+  } catch (error) {
+    if (
+      error instanceof LiminaStructuredError &&
+      error.issues.some(
+        (issue) => issue.code === LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
+      )
+    )
+      return isReportGraphPreparationFailure(options, error.issues);
+    throw error;
+  }
 
   runGraphRoutePhase(state);
   runProjectReferencePhase(state);

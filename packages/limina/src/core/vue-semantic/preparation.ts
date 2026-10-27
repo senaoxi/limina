@@ -4,6 +4,7 @@ import type {
 } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
+import type { CompilationObligationProof } from '../dependency-semantics';
 import type { FrameworkSemanticDependencyPreparation } from '../framework-semantic/contracts';
 import {
   mergePreparedDirectSourceRecords,
@@ -13,11 +14,13 @@ import { requiresReferenceStructure } from '../framework-semantic/prepared-type-
 import type { ImportRecord } from '../import-analysis/records';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import { getResolutionOrigin } from '../typescript-semantic/resolution-origin';
+import { vueCompilationObligation } from './compilation-obligation';
 import type { VueSemanticContext } from './context';
 import { getVueServiceScript } from './dependency';
 import { collectVueMappedCandidates, type VueCandidate } from './projection';
 
 interface ResolvedVueCandidate {
+  compilationObligation: CompilationObligationProof;
   candidate: VueCandidate;
   resolutionMode: string;
   target: ResolvedCheckerModuleName | null;
@@ -97,17 +100,26 @@ function resolveCandidates(options: {
   candidates: readonly VueCandidate[];
   context: VueSemanticContext;
 }): ResolvedVueCandidate[] {
-  const byLiteral = options.context.resolveModuleNameLiterals(
-    options.candidates.map((candidate) => candidate.literal),
-  );
-  return options.candidates.map((candidate) => ({
-    candidate,
-    resolutionMode: getResolutionMode({ candidate, context: options.context }),
-    target: createTarget({
-      context: options.context,
-      resolvedModule: byLiteral.get(candidate.literal)?.resolvedModule,
-    }),
-  }));
+  return options.candidates.map((candidate) => {
+    const requests = options.context.compilerRequests
+      .collect(options.context.program, candidate.containingSourceFile)
+      .filter((request) => request.literal === candidate.literal);
+    return {
+      candidate,
+      compilationObligation: vueCompilationObligation(
+        options.context,
+        requests,
+      ),
+      resolutionMode: getResolutionMode({
+        candidate,
+        context: options.context,
+      }),
+      target: createTarget({
+        context: options.context,
+        resolvedModule: requests[0]?.raw?.resolvedModule,
+      }),
+    };
+  });
 }
 
 function getStructuralProgram(
@@ -159,7 +171,7 @@ function getMaterializedService(options: {
     fileName: filePath,
   });
   if (service === null) return null;
-  const sourceFile = options.context.getSemanticSourceFile(filePath);
+  const sourceFile = options.context.program.getSourceFile(filePath);
   return sourceFile === undefined ? null : { filePath, service, sourceFile };
 }
 

@@ -18,6 +18,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseVueQuery } from '../core/analysis-cache/vue-schema';
+import type { CompilationObligationProof } from '../core/dependency-semantics';
 import type { PreparedDependencyFact } from '../core/framework-semantic/contracts';
 import { prepareResolvedFrameworkCandidates } from '../core/framework-semantic/prepared-dependency';
 import { createPreparedFact } from '../core/framework-semantic/prepared-type-evidence';
@@ -107,6 +108,31 @@ function createTarget(
   };
 }
 
+// Adapter-port fixture: request discovery is exercised with real Programs in
+// generated-graph.spec.ts; these tests isolate downstream fact consumption.
+function compilerProof(
+  record: ImportRecord,
+  target: string | null,
+): CompilationObligationProof {
+  return {
+    state:
+      target === null || /\.d\.[cm]?ts$/.test(target) ? 'absent' : 'present',
+    contextConfig: path.join(path.dirname(record.filePath), 'tsconfig.json'),
+    reason: 'fixture-compiler-input-proof',
+    requests: [
+      {
+        fileName: record.filePath,
+        start: record.locator.sourceStart,
+        end: record.locator.sourceEnd,
+        specifier: record.specifier,
+        mode: undefined,
+        role: 'import',
+        target,
+      },
+    ],
+  };
+}
+
 function createFact(options: {
   record: ImportRecord;
   semanticSpecifier?: string;
@@ -124,6 +150,10 @@ function createFact(options: {
         });
   const semanticSpecifier = options.semanticSpecifier ?? './target.js';
   return {
+    compilationObligation: compilerProof(
+      options.record,
+      target?.resolvedFileName ?? null,
+    ),
     framework: 'vue',
     importRecord: { ...options.record, specifier: semanticSpecifier },
     provenance: 'strict-source-map',
@@ -179,6 +209,44 @@ afterEach(async () => {
 });
 
 describe('project dependency authority', () => {
+  it.each(['missing', 'unknown', 'absent'] as const)(
+    'does not promote resolution alone when the Vue input proof is %s',
+    (state) => {
+      const file = createFixturePathResolver('/virtual/vue-input-proof');
+      const fact = createFact({
+        record: createRecord(file('App.vue'), './target'),
+        target: createTarget(file('target.ts')),
+      });
+      fact.compilationObligation =
+        state === 'missing'
+          ? undefined
+          : { ...fact.compilationObligation!, state };
+      const analysis = withPreparedFact(fact);
+      try {
+        const collection = collectProjectDependencies({
+          context: createSemanticContext({
+            family: 'vue',
+            fileName: file('App.vue'),
+            rootDir: file(),
+          }),
+          importAnalysis: analysis.context,
+        });
+        if (state === 'absent') {
+          expect(collection.failures).toEqual([]);
+          expect(collection.dependencies).toMatchObject([
+            { referenceRequirement: null },
+          ]);
+        } else {
+          expect(collection.dependencies).toEqual([]);
+          expect(collection.failures).toMatchObject([
+            { decision: { state: 'pending', need: 'compilation-obligation' } },
+          ]);
+        }
+      } finally {
+        analysis.context.dispose?.();
+      }
+    },
+  );
   it('keeps the first closure fact per occurrence within each Vue collection', () => {
     const fixturePath = createFixturePathResolver('/workspace/vue-occurrences');
     const sourceFile = fixturePath('App.vue');
@@ -712,6 +780,10 @@ describe('project dependency authority', () => {
         }),
         resolved: [
           {
+            compilationObligation: compilerProof(
+              record,
+              target.resolvedFileName,
+            ),
             target,
             resolutionMode: 'import',
             candidate: {
@@ -830,6 +902,11 @@ describe('project dependency authority', () => {
         program,
         tsModule: ts,
         resolved: {
+          compilationObligation: {
+            ...compilerProof(record, fixture.path('b/value.ts')),
+            state: 'absent',
+            reason: 'original-project-reference-satisfies-input',
+          },
           resolutionMode: 'import',
           target: createTarget(fixture.path('b/value.ts')),
           candidate: {
@@ -1045,6 +1122,10 @@ describe('project dependency authority', () => {
     expect(cloned.facts[0]).not.toBe(fact);
     expect(cloned.facts[0]!.target).not.toBe(fact.target);
     expect(cloned.facts[0]!.typeEvidence).not.toBe(fact.typeEvidence);
+    cloned.facts[0]!.compilationObligation!.requests[0]!.target = '/changed';
+    expect(fact.compilationObligation!.requests[0]!.target).toBe(
+      '/workspace/types.d.ts',
+    );
     expect(
       cloned.facts[0]!.typeEvidence?.kind === 'concrete-declaration'
         ? cloned.facts[0]!.typeEvidence.managedSource?.checkerNames
@@ -1100,7 +1181,13 @@ describe('project dependency authority', () => {
     const request = {
       caches,
       context,
-      importAnalysis: { ...base, resolveCheckerImportEvidence },
+      importAnalysis: {
+        ...base,
+        collectCheckerSourceRecords: () => [
+          createRecord(sourceFile, 'pkg/broken'),
+        ],
+        resolveCheckerImportEvidence,
+      },
     };
     try {
       const first = collectProjectDependencies(request);

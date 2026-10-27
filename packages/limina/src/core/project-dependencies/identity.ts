@@ -7,7 +7,7 @@ import type {
 } from './contracts';
 
 export const PROJECT_DEPENDENCY_ADAPTER_VERSION =
-  'native-and-framework-facts-v8-coverage';
+  'native-and-framework-facts-v9-obligations';
 
 const workspaceBoundarySnapshotIdentities = new WeakMap<
   ProjectSemanticContext['workspaceSourceBoundary'],

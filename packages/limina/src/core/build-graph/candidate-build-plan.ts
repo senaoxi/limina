@@ -5,6 +5,7 @@ import { bindCompilationProjection } from './compilation-prerequisite';
 import { pendingDeclarationValidation } from './declaration-context-admission';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 import { createGeneratedGraphStructuredError } from './problems';
+import { pendingReferenceValidation } from './reference-validation';
 import type { GovernedSourceUnit } from './types';
 export function createCandidateBuildPlan(
   sources: readonly GovernedSourceUnit[],
@@ -24,13 +25,17 @@ export function createCandidateBuildPlan(
 export function assertGeneratedGraphAdmission(options: {
   config: ResolvedLiminaInputs;
   state: GeneratedGraphPreparationState;
-  allowPendingDeclarationValidation?: boolean;
+  allowPendingFinalValidation?: boolean;
 }): void {
   const admission = options.state.dependencyAnalysis.outcome!.buildAdmission;
   if (
-    options.allowPendingDeclarationValidation &&
+    options.allowPendingFinalValidation &&
     admission.state === 'unavailable' &&
-    admission.reasons.every((reason) => reason === pendingDeclarationValidation)
+    admission.reasons.every((reason) =>
+      [pendingDeclarationValidation, pendingReferenceValidation].includes(
+        reason,
+      ),
+    )
   )
     return;
   if (admission.state === 'unavailable')

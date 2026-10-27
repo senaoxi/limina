@@ -10,6 +10,7 @@ import { restoreGraphContexts } from './analysis-cache-vue';
 import { rebindCachedCompilation } from './cached-candidate-binding';
 import { hasBoundCachedReferences } from './cached-reference-reconstruction';
 import { reconstructVueReferences } from './cached-vue-references';
+import { validateRestoredReferences } from './reference-validation';
 
 interface Binding {
   cache: NativeAnalysisCache;
@@ -36,6 +37,7 @@ function validateReferences(
 ): CachedGraphData | undefined {
   try {
     const references = reconstructVueReferences({ ...input, graph });
+    validateRestoredReferences(graph);
     const isValid = [
       hasBoundCachedReferences(graph, input.config, references),
       admittedCachedGraph(graph) !== undefined,

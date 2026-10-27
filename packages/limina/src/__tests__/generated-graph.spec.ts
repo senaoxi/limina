@@ -10315,3 +10315,209 @@ it('retains competing-reference protection for a local declaration root with ski
     await fixture.cleanup();
   }
 });
+
+describe('compiler requests and final reference admission', () => {
+  it.each([
+    {
+      name: 'TS runtime require',
+      extension: 'ts',
+      source: 'require("../b/b");',
+      references: 0,
+    },
+    {
+      name: 'TS dynamic import does not qualify require',
+      extension: 'ts',
+      source: 'require("../b/b"); void import("./local");',
+      references: 0,
+    },
+    {
+      name: 'JS require',
+      extension: 'js',
+      source: 'require("../b/b");',
+      references: 1,
+    },
+    {
+      name: 'JS shadowed require',
+      extension: 'js',
+      source:
+        '/** @param {(id: string) => unknown} require */\nfunction f(require) { require("../b/b"); }',
+      references: 1,
+    },
+    {
+      name: 'import equals',
+      extension: 'ts',
+      source: 'import b = require("../b/b"); void b;',
+      references: 1,
+      module: 'Preserve',
+    },
+    {
+      name: 'path directive',
+      extension: 'ts',
+      source: '/// <reference path="../b/b.ts" />',
+      references: 1,
+    },
+    {
+      name: 'noResolve path directive',
+      extension: 'ts',
+      source: '/// <reference path="../b/b.ts" />',
+      references: 0,
+      noResolve: true,
+    },
+    {
+      name: 'TS SFC require',
+      extension: 'vue',
+      language: 'ts',
+      source: 'require("../b/b.vue");',
+      references: 0,
+    },
+    {
+      name: 'JS SFC require',
+      extension: 'vue',
+      language: 'js',
+      source: 'require("../b/b.vue");',
+      references: 1,
+    },
+    {
+      name: 'SFC import',
+      extension: 'vue',
+      language: 'ts',
+      source: 'import B from "../b/b.vue";',
+      references: 1,
+    },
+    {
+      name: 'implicit JSX runtime',
+      extension: 'tsx',
+      source: 'export const view = <div />;',
+      jsx: 'react-jsx',
+      references: 1,
+    },
+    {
+      name: 'JSON resource outside compiler roots',
+      extension: 'ts',
+      source: 'import value from "../../metadata.json"; void value;',
+      references: 0,
+      resolveJsonModule: true,
+    },
+    {
+      name: 'SFC JSON resource outside compiler roots',
+      extension: 'vue',
+      language: 'ts',
+      source: 'import value from "../../metadata.json"; void value;',
+      references: 0,
+      resolveJsonModule: true,
+    },
+    {
+      name: 'static import',
+      extension: 'ts',
+      source: 'import "../b/b";',
+      references: 1,
+    },
+    {
+      name: 'noResolve input absence',
+      extension: 'ts',
+      source: 'import "../b/b";',
+      references: 0,
+      noResolve: true,
+    },
+  ])('uses Vue compiler obligations for $name', async (scenario) => {
+    const files: Record<string, string> = { 'metadata.json': '{"value":1}' };
+    for (const name of ['a', 'b']) {
+      files[`packages/${name}/tsconfig.json`] = json({
+        compilerOptions: {
+          composite: true,
+          module: scenario.module ?? 'ESNext',
+          moduleResolution: 'Bundler',
+          target: 'ES2022',
+          jsx: scenario.jsx,
+          jsxImportSource: scenario.jsx === undefined ? undefined : '../b',
+          types: [],
+          allowJs: scenario.extension === 'js' || scenario.language === 'js',
+          noResolve: scenario.noResolve,
+          resolveJsonModule: scenario.resolveJsonModule,
+        },
+        include: ['*'],
+      });
+      const code = `${name === 'a' ? scenario.source : ''}\nexport const ${name} = 1;`;
+      files[`packages/${name}/${name}.${scenario.extension}`] =
+        scenario.extension === 'vue'
+          ? `<script lang="${scenario.language}">${code}</script><template><div /></template>`
+          : code;
+      files[`packages/${name}/env.d.ts`] =
+        'declare function require(id: string): unknown;';
+      files[`packages/${name}/local.ts`] = 'export const local = 1;';
+    }
+    if (scenario.jsx !== undefined)
+      files['packages/b/jsx-runtime.ts'] =
+        'export namespace JSX { export interface IntrinsicElements { div: {} } } export const jsx = () => null; export const jsxs = jsx;';
+    const fixture = await createFixture(files);
+    fixture.config.scope!.checkers = {
+      'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+    };
+    try {
+      const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+      expect(
+        new Set(
+          graph.dependencyEdges.map((edge) =>
+            JSON.stringify([edge.fromConfigPath, edge.toConfigPath]),
+          ),
+        ).size,
+      ).toBe(scenario.references);
+      const generated = graph.sourceToDts
+        .get('vue-tsc')!
+        .get(fixture.path('packages/a/tsconfig.json'))!;
+      expect(
+        JSON.parse(await readFile(generated, 'utf8')).references,
+      ).toHaveLength(scenario.references);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each(['static', 'implicit'] as const)(
+    'rejects a final %s reference cycle before materialization',
+    async (kind) => {
+      const files: Record<string, string> = {};
+      for (const name of ['a', 'b']) {
+        const other = name === 'a' ? 'b' : 'a';
+        files[`packages/${name}/tsconfig.json`] = json({
+          compilerOptions: {
+            composite: true,
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            target: 'ES2022',
+            types: [],
+          },
+          include: ['*.ts'],
+          ...(kind === 'implicit' && {
+            liminaOptions: {
+              implicitRefs: [
+                {
+                  path: `../${other}/tsconfig.json`,
+                  reason: 'Fixture explicit relationship',
+                },
+              ],
+            },
+          }),
+        });
+        files[`packages/${name}/${name}.ts`] =
+          `${kind === 'static' ? `import "../${other}/${other}";` : ''} export const ${name} = 1;`;
+      }
+      const fixture = await createFixture(files);
+      try {
+        await expect(
+          prepareGeneratedTsconfigGraph(fixture.config),
+        ).rejects.toMatchObject({
+          issues: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'LIMINA_GRAPH_REFERENCE_CYCLE',
+              reason: 'TypeScript project references must be acyclic.',
+            }),
+          ]),
+        });
+        expect(existsSync(fixture.path('.limina/tsconfig'))).toBe(false);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+});

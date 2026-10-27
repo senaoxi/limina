@@ -12,6 +12,7 @@ import { prepareGeneratedKnipPackageConfigs } from './generated-knip';
 import { hasBoundGeneratedReferences } from './generated-reference-binding';
 import { observeOutputProjections } from './observe-output-projections';
 import type { createGeneratedGraphPreparationState } from './prepare-state';
+import { validateStagedReferences } from './reference-validation';
 import type {
   DependencyAnalysisResult,
   GeneratedTsconfigGraphResult,
@@ -51,6 +52,7 @@ export async function finishPreparedGraph(input: {
     generatedKnip,
     state,
   });
+  validateStagedReferences(state);
   observeOutputProjections(state, projectDependencyCaches);
   validateStagedDeclarationContexts(state, projectDependencyCaches.metrics);
   const run = coreCollectionRun(projectDependencyCaches);

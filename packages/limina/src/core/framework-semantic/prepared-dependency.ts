@@ -57,6 +57,8 @@ function semanticIdentity(fact: PreparedDependencyFact): string {
     targetIdentity(fact.target),
     fact.importRecord.kind,
     fact.redirect,
+    fact.compilationObligation?.state,
+    fact.compilationObligation?.reason,
   ]);
 }
 
@@ -165,6 +167,10 @@ function clonePreparedFact(
 ): PreparedDependencyFact {
   return {
     ...fact,
+    compilationObligation:
+      fact.compilationObligation === undefined
+        ? undefined
+        : structuredClone(fact.compilationObligation),
     importRecord: {
       ...fact.importRecord,
       locator: { ...fact.importRecord.locator },

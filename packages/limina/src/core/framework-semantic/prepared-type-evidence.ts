@@ -2,6 +2,7 @@ import type { ResolvedCheckerModuleName } from '#checkers';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
 import type ts from 'typescript';
+import type { CompilationObligationProof } from '../dependency-semantics';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { TypeEvidence } from '../type-evidence/cache';
@@ -14,6 +15,7 @@ import type {
 export { observeFrameworkTypeEvidence } from './provider-observation';
 
 export interface ResolvedFrameworkCandidate {
+  compilationObligation?: CompilationObligationProof;
   candidate: FrameworkSemanticCandidate<
     ts.SourceFile,
     ts.StringLiteralLike,
@@ -79,6 +81,7 @@ export function createPreparedFact(
   const { candidate, target } = options.resolved;
   const redirect = preparedRedirect(options);
   return {
+    compilationObligation: options.resolved.compilationObligation,
     eligibility: requestEligibility(
       candidate.containingSourceFile,
       candidate.sourceRecord,

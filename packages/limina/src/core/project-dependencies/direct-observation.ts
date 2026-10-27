@@ -61,6 +61,8 @@ function queryDirectRequirement(
     decision: decideReferenceRequirement({
       target: checkerTarget(evidence),
       ...observed,
+      requireCompilationObligation:
+        options.request.context.semanticAuthority.family === 'vue',
     }),
   };
 }

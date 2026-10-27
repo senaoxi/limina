@@ -87,6 +87,10 @@ export function cloneProjectDependencyPreparation(
     ),
     facts: preparation.facts.map((fact) => ({
       ...fact,
+      compilationObligation:
+        fact.compilationObligation === undefined
+          ? undefined
+          : structuredClone(fact.compilationObligation),
       importRecord: structuredClone(fact.importRecord),
       target: fact.target === null ? null : structuredClone(fact.target),
       typeEvidence: cloneTypeEvidence(fact.typeEvidence),

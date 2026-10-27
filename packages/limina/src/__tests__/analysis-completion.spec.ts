@@ -48,6 +48,7 @@ const analysis = (): DependencyAnalysisResult => ({
   complete: true,
   diagnostics: [],
   facts: [],
+  referenceValidation: { state: 'admitted', diagnostics: [] },
   candidate: { configPaths: ['A'], references: [], schedules: [] },
 });
 
@@ -231,6 +232,11 @@ it.each([
         }),
       });
       if (hasRawReference) bindSatisfiedNativeContext(evidence, fixture);
+      // This test isolates compilation prerequisites after final structure has
+      // passed. Analysis-only results must otherwise remain unavailable.
+      expect(evidence.referenceValidation).toBeUndefined();
+      expect(evidence.outcome!.buildAdmission.state).toBe('unavailable');
+      evidence.referenceValidation = { state: 'admitted', diagnostics: [] };
       const original = JSON.stringify(evidence.nativeEvidence);
       const pair = {
         from: fixture.path('tsconfig.a.json'),

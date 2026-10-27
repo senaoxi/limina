@@ -100,6 +100,12 @@ const relation = z.object({
 });
 const candidateReference = z.object({ from: text, to: text });
 const dependencyAnalysis = z.object({
+  referenceValidation: z
+    .object({
+      state: z.enum(['admitted', 'denied', 'unavailable']),
+      diagnostics: texts,
+    })
+    .optional(),
   declarationContexts: z.array(declarationContextSchema).optional(),
   declarationValidation: declarationValidationSchema.optional(),
   candidate: z

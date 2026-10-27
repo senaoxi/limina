@@ -3,12 +3,10 @@ import type {
   FrameworkSemanticCandidate,
   FrameworkSemanticDependencyPreparation,
 } from '../framework-semantic/contracts';
-import {
-  enumerateGeneratedSemanticDependencies,
-  type GeneratedSemanticDependency,
-} from '../framework-semantic/generated-dependencies';
+import type { GeneratedSemanticDependency } from '../framework-semantic/generated-dependencies';
 import { strictBackprojectVolarDependency } from '../framework-semantic/volar-backprojection';
 import type { ImportRecord } from '../import-analysis/records';
+import { collectVueCompilerSource } from './compiler-source';
 import type { VueSemanticContext } from './context';
 import type { VueServiceScriptPair } from './dependency';
 
@@ -145,11 +143,25 @@ export function collectVueMappedCandidates(options: {
     options.service.serviceScript.code,
     options.service.sourceScript,
   );
-  const dependencies = enumerateGeneratedSemanticDependencies({
-    generatedFilePath: options.sourceFile.fileName,
-    sourceFile: options.sourceFile,
-    tsModule: options.context.tsModule,
-  });
+  const dependencies: GeneratedSemanticDependency[] = [
+    ...options.context.compilerRequests.collect(
+      options.context.program,
+      options.sourceFile,
+    ),
+    ...(
+      collectVueCompilerSource(options.context, options.sourceFile.fileName) ??
+      []
+    )
+      .filter((record) =>
+        ['triple-slash-path', 'triple-slash-types'].includes(record.kind),
+      )
+      .map((record) => ({
+        record,
+        literal: null,
+        sourceFile: options.sourceFile,
+        generatedFilePath: options.sourceFile.fileName,
+      })),
+  ];
   const candidates: VueCandidate[] = [];
   for (const dependency of dependencies) {
     const failure = appendProjection(

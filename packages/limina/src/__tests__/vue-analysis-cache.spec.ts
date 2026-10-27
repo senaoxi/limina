@@ -407,3 +407,57 @@ describe('persistent Vue and mixed graph analysis', () => {
     expect(Object.keys(f.snapshot().graphs)).toHaveLength(0);
   });
 }, 60_000);
+
+it.each([
+  {
+    name: 'ordinary TS require',
+    file: 'index.ts',
+    source:
+      'declare function require(id: string): unknown; require("../provider/index"); export {};',
+    references: 0,
+  },
+  {
+    name: 'JS shadowed require',
+    file: 'index.js',
+    source:
+      '/** @param {(id: string) => unknown} require */ function f(require) { require("../provider/index"); } export {};',
+    references: 1,
+  },
+  {
+    name: 'noResolve import',
+    file: 'index.ts',
+    source: 'import "../provider/index"; export {};',
+    references: 0,
+    noResolve: true,
+  },
+])(
+  'restores Vue compiler obligations for $name without a new Program',
+  (scenario) => {
+    const f = crossProjectFixture();
+    f.write('vue/src/Widget.vue', '<template><div /></template>');
+    f.write(
+      'vue/tsconfig.json',
+      JSON.stringify({
+        compilerOptions: {
+          composite: true,
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          types: [],
+          allowJs: scenario.file.endsWith('.js'),
+          noResolve: scenario.noResolve,
+        },
+        files: [`src/${scenario.file}`],
+      }),
+    );
+    f.write(`vue/src/${scenario.file}`, scenario.source);
+    expectCold(f.run());
+    const stored = snapshotCodec.decodeData(
+      Object.values(f.snapshot().graphs)[0]!.data,
+    ) as StoredGraphData;
+    const unit = stored.governedSources
+      .get('vue-tsc')!
+      .get(f.path('vue/tsconfig.json'))!;
+    expect(unit.declarationReferences.size).toBe(scenario.references);
+    expectRestored(f.run());
+  },
+);

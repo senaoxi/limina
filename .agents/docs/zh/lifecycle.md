@@ -191,6 +191,10 @@ Generated config 身份相对 active workspace root 判定；更高目录里的 
 
 ## Generated artifacts 的发布与恢复
 
+[最终引用验证](../../../packages/limina/src/core/build-graph/reference-validation.ts)在 declaration、solution/wrapper、checker entry 与 output 引用全部写入后读取 staged tsconfig JSON。验证完成前，candidate admission 保持 unavailable。所有实际生成引用均参与，包括 implicitRefs；自引用和循环分量在创建 artifact plan 前被拒绝。Framework scheduling 不是 tsconfig reference。同一验证器在缓存准入和 artifact 重新绑定前读取恢复后的 JSON，不信任已存储的 admitted 标志。Graph Check 共享循环算法并保留 `LIMINA_GRAPH_REFERENCE_CYCLE`；prepare、check 和 build 在此结构边界停止，不删除必要边。既有物化事务和旧产物保留独立的所有权合同。
+
+Vue adapter v6、project-dependency adapter v9 与 generated-graph identity v7 排除此前 resolution-only requirement 和旧的最终准入声明。Compiler-source inventory 与 obligation query 参与合格 Vue replay；runtime syntax cache 不会升级成编译证明。Native context 格式不变。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保留合法恢复时不新建 Vue semantic Program 的行为，[序列化引用回归](../../../packages/limina/src/__tests__/reference-validation.spec.ts)用经过各类生成配置的循环挑战 admitted 声明。缓存被拒绝后退回当前分析；客观存在的源码引用环仍然无法准入。
+
 生成的声明目录与增量缓存路径在既有 checker 和目录分区内保留完整源配置文件名，包括 `tsconfig.` 和 `.json`，因此 `tsconfig.json` 与 `tsconfig.tsconfig.json` 不再共享路径。规划阶段拒绝不同源配置占用同一路径。重新生成会更新受管配置；过期清理只依据原有所有权清单，不递归删除未登记的编译缓存或用户文件。[Namespace 守卫](../../../packages/limina/src/__tests__/artifact-namespace.spec.ts)与[图重新生成测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖路径冲突、旧所有权清单和重复规划。
 
 [materializer](../../../packages/limina/src/core/build-graph/materializer.ts) 的生产路径：

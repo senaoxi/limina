@@ -284,6 +284,6 @@ export function validateAndCompleteGeneratedGraph(
   analyzeAndCompleteGeneratedGraph(options);
   assertGeneratedGraphAdmission({
     ...options,
-    allowPendingDeclarationValidation: true,
+    allowPendingFinalValidation: true,
   });
 }

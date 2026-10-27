@@ -386,6 +386,8 @@ function assertPathAdmission(
     complete: true,
     facts: [],
     diagnostics: [],
+    // Isolate path-input admission with the final graph prerequisite satisfied.
+    referenceValidation: { state: 'admitted', diagnostics: [] },
     candidate: { configPaths, references, schedules: [] },
   };
   // Endpoints alone do not bind a current Checker/config projection. A mixture

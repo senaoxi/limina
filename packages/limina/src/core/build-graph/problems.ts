@@ -41,6 +41,20 @@ const SPECIALIZED_ISSUE_FACTORIES: ReadonlyMap<
   SpecializedIssueFactory
 > = new Map([
   [
+    'Generated project reference cycle',
+    ({ config, lines }) =>
+      createTaskFailureIssue({
+        code: LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
+        title: 'Generated project reference cycle',
+        task: 'graph:check',
+        rootDir: config.rootDir,
+        detailLines: lines,
+        reason: 'TypeScript project references must be acyclic.',
+        fix: 'Merge coupled source scopes or extract a shared contract to break the compilation cycle.',
+        verifyCommands: ['limina graph prepare'],
+      }),
+  ],
+  [
     'Unsafe cross-engine declaration provider',
     createUnsafeCrossEngineProviderIssue,
   ],
