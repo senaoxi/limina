@@ -36,7 +36,7 @@ import {
 } from '../source-check/snapshot';
 import { prepareAndMaterializeGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
-import { toPortablePath } from './helpers/path';
+import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -1561,45 +1561,93 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
-  it('ignores relative import rewrite drift in declaration-only configs', async () => {
-    const fixture = await createFixture(
-      createPassingFiles({
-        'packages/pkg/tsconfig.json': JSON.stringify({
-          compilerOptions: {
-            allowImportingTsExtensions: true,
-            lib: ['ES2023'],
-            module: 'ESNext',
-            moduleResolution: 'bundler',
-            noEmit: true,
-            rewriteRelativeImportExtensions: true,
-            strict: true,
-            target: 'ES2023',
-            types: [],
-          },
-          include: ['src/**/*.ts'],
+  it.each([undefined, false, true])(
+    'preserves effective TS extension import permission in proof when the source allowance is %s',
+    async (allowImportingTsExtensions) => {
+      const fixture = await createFixture(
+        createPassingFiles({
+          'packages/pkg/tsconfig.json': JSON.stringify({
+            compilerOptions: {
+              allowImportingTsExtensions,
+              lib: ['ES2023'],
+              module: 'ESNext',
+              moduleResolution: 'bundler',
+              noEmit: true,
+              rewriteRelativeImportExtensions: true,
+              strict: true,
+              target: 'ES2023',
+              types: [],
+            },
+            include: ['src/**/*.ts'],
+          }),
+          'packages/pkg/tsconfig.lib.dts.json': JSON.stringify({
+            extends: './tsconfig.json',
+            compilerOptions: {
+              composite: true,
+              declaration: true,
+              emitDeclarationOnly: true,
+              noEmit: false,
+              outDir: './.tsbuild',
+              rewriteRelativeImportExtensions: false,
+              rootDir: 'src',
+              tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+            },
+          }),
         }),
-        'packages/pkg/tsconfig.lib.dts.json': JSON.stringify({
-          extends: './tsconfig.json',
-          compilerOptions: {
-            composite: true,
-            declaration: true,
-            emitDeclarationOnly: true,
-            noEmit: false,
-            outDir: './.tsbuild',
-            rewriteRelativeImportExtensions: false,
-            rootDir: 'src',
-            tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
-          },
-        }),
-      }),
-    );
+      );
 
-    try {
-      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+      try {
+        await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([
+    ['lost', true, undefined],
+    ['added', false, true],
+  ] as const)(
+    'reports effective TS extension import permission %s between companions',
+    async (_, sourceRewrite, declarationAllow) => {
+      const fixture = await createFixture(createPassingFiles());
+      const fixturePath = createFixturePathResolver(fixture.rootDir);
+      const preflight = new LiminaPreflightManager({ config: fixture.config });
+      try {
+        const findings: ProofFinding[] = [];
+        addDtsConfigSemanticFindings({
+          config: fixture.config,
+          dtsConfig: {
+            fileNames: [],
+            options: {
+              rewriteRelativeImportExtensions: false,
+              ...(declarationAllow !== undefined && {
+                allowImportingTsExtensions: declarationAllow,
+              }),
+            },
+          },
+          dtsConfigPath: fixturePath('packages/pkg/tsconfig.dts.json'),
+          findings,
+          localConfig: {
+            fileNames: [],
+            options: { rewriteRelativeImportExtensions: sourceRewrite },
+          },
+          localConfigPath: fixturePath('packages/pkg/tsconfig.json'),
+          workspaceLookup: await preflight.ensureWorkspaceLookupIndex(),
+        });
+        expect(findings).toHaveLength(1);
+        expect(findings[0]?.facts).toMatchObject({
+          kind: 'declaration-option-parity',
+          optionName: 'allowImportingTsExtensions',
+          expected: sourceRewrite,
+          actual: declarationAllow === true,
+        });
+      } finally {
+        preflight.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('ignores inert declaration-only compiler option extensions', async () => {
     const fixture = await createFixture(

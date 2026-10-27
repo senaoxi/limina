@@ -886,6 +886,61 @@ describe('runGraphCheck checker entry', () => {
     }
   });
 
+  it.each([
+    ['implicit allowance', true, undefined, true, 0],
+    ['explicit false with rewriting', true, false, true, 0],
+    ['permission lost', true, undefined, undefined, 1],
+    ['permission added', false, false, true, 1],
+  ] as const)(
+    'compares effective TS extension import permission: %s',
+    async (
+      _,
+      sourceRewrite,
+      sourceAllow,
+      declarationAllow,
+      expectedFindings,
+    ) => {
+      const fixture = await createFixture({
+        'app/src/index.ts': 'export const value = 1;\n',
+        'app/tsconfig.lib.dts.json': generatedDtsConfig({
+          compilerOptions: {
+            allowImportingTsExtensions: declarationAllow,
+            rewriteRelativeImportExtensions: false,
+          },
+          include: ['src/**/*.ts'],
+          sourceConfig: './tsconfig.lib.json',
+          tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+        }),
+        'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], {
+          allowImportingTsExtensions: sourceAllow,
+          rewriteRelativeImportExtensions: sourceRewrite,
+        }),
+      });
+
+      try {
+        const findings: GraphFinding[] = [];
+        addTypecheckParityProblems(
+          fixture.config,
+          parseProject(
+            fixture.config,
+            fixture.path('app/tsconfig.lib.dts.json'),
+          ),
+          findings,
+          createCheckCounter(),
+        );
+        expect(findings).toHaveLength(expectedFindings);
+        if (expectedFindings > 0) {
+          expect(findings[0]?.facts).toMatchObject({
+            kind: 'typecheck-parity',
+            optionName: 'allowImportingTsExtensions',
+          });
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('keeps compiler option target arrays order-sensitive', async () => {
     const fixture = await createFixture({
       'app/src/index.ts': 'export const value = 1;\n',
