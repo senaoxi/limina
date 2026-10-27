@@ -652,7 +652,7 @@ describe('compiler-owned Native Program observations', () => {
       'config-1',
     );
     expect(snapshot).toBeDefined();
-    expect(snapshot!.header.schema).toBe(10);
+    expect(snapshot!.header.schema).toBe(11);
     const warm = new NativeAnalysisCache(
       'bounded-fixture',
       snapshot,
@@ -708,6 +708,63 @@ describe('compiler-owned Native Program observations', () => {
       'config-1',
     );
     expect(changed.restoreContext(input)).toBeUndefined();
+  });
+
+  it('restores neutral syntax independently of Native request kinds and rejects erased syntax', async () => {
+    const { project, coverage, fixture } = await setup({
+      'tsconfig.json': config(['main.ts', 'dep.ts']),
+      'main.ts':
+        'import type { T } from "./dep.js";\nimport { value } from "./dep.js";\nconst other = require("./dep.js");\nexport { value };',
+      'dep.ts': 'export type T = string; export const value = 1;',
+    });
+    const input = {
+      ...project,
+      admissionMode: 'coverage-bounded' as const,
+      analysisBinding: { phase: 'locked' as const, checker: 'tsc' },
+      workspaceSourceBoundary: createWorkspaceSourceBoundary(
+        project.fileNames,
+        undefined,
+        coverage,
+      ),
+    };
+    const first = new NativeAnalysisCache(
+      'syntax-fixture',
+      undefined,
+      'config-1',
+    );
+    createNativeDependencyContext(input, first);
+    const snapshot = parseAnalysisSnapshot(
+      first.snapshot(),
+      'syntax-fixture',
+      'config-1',
+    );
+    expect(snapshot).toBeDefined();
+    const warm = new NativeAnalysisCache(
+      'syntax-fixture',
+      snapshot,
+      'config-1',
+    );
+    expect(warm.restoreContext(input)).toBeDefined();
+    expect(
+      warm.readSourceSyntax(fixture.path('main.ts'))?.map((record) => ({
+        kind: record.kind,
+        specifier: record.specifier,
+        line: record.line,
+        ordinal: record.locator.occurrence,
+      })),
+    ).toEqual([
+      { kind: 'import-type', specifier: './dep.js', line: 1, ordinal: 0 },
+      { kind: 'static', specifier: './dep.js', line: 2, ordinal: 0 },
+      { kind: 'commonjs', specifier: './dep.js', line: 3, ordinal: 0 },
+    ]);
+    expect(warm.metrics.semanticPrograms).toBe(0);
+    const erased = structuredClone(snapshot!);
+    erased.files[fixture.path('main.ts')]!.requests = [];
+    expect(
+      parseAnalysisSnapshot(erased, 'syntax-fixture', 'config-1'),
+    ).toBeUndefined();
+    warm.files[fixture.path('main.ts')]!.requests = [];
+    expect(warm.readSourceSyntax(fixture.path('main.ts'))).toBeUndefined();
   });
 
   it('retains independent context evidence after an input transaction fails', async () => {

@@ -71,15 +71,52 @@ One read-only validation round; never retain across mutation or launch.
 */
 export class EpochInputReplay {
   readonly #reads = new Map<string, Promise<Observation>>();
-  readonly #bindings = new PathBindingReplay();
+  readonly #observed = new Map<string, Observation>();
+  readonly #bindings = new PathBindingReplay({ reuseLeafBindings: true });
+
+  async #read(input: AnalysisRead): Promise<Observation> {
+    const key = JSON.stringify([input.key, input.path, input.descriptor]);
+    const value =
+      this.#observed.get(key) ??
+      (await this.#bindings.run(() => readObservation(input)));
+    this.#observed.set(key, value);
+    return value;
+  }
+
+  observe(input: AnalysisRead): Observation {
+    const key = JSON.stringify([input.key, input.path, input.descriptor]);
+    const previous = this.#observed.get(key);
+    if (previous !== undefined) {
+      if (previous.version !== analysisHash(observedValue(input)))
+        throw new AnalysisInputDriftError(input.path);
+      return previous;
+    }
+    const current = this.#bindings.run(() => observation(input));
+    this.#observed.set(key, current);
+    return current;
+  }
 
   read(input: AnalysisRead): Promise<Observation> {
     const key = JSON.stringify([input.key, input.path, input.descriptor]);
     let current = this.#reads.get(key);
     if (current === undefined) {
-      current = this.#bindings.run(() => readObservation(input));
+      current = this.#read(input);
       this.#reads.set(key, current);
     }
+    return current;
+  }
+
+  readSynchronous(record: DiscoveryRecord): Observation | undefined {
+    const descriptor = record.descriptor;
+    if (descriptor.kind === 'glob') return undefined;
+    const key = JSON.stringify([record.key, record.path, descriptor]);
+    const previous = this.#observed.get(key);
+    if (previous !== undefined) return previous;
+    const read = () => replaySynchronousDiscoveryRead(descriptor);
+    const current = this.#bindings.run(() =>
+      observation({ ...record, value: read(), read }),
+    );
+    this.#observed.set(key, current);
     return current;
   }
 }
@@ -97,18 +134,22 @@ export class EpochInputs {
       throw new AnalysisInputDriftError(input.path);
     this.#reads.set(input.key, next);
   }
-  #validateSynchronousRecord(record: DiscoveryRecord): boolean {
-    const descriptor = record.descriptor;
-    if (descriptor.kind === 'glob') return false;
-    const read = () => replaySynchronousDiscoveryRead(descriptor);
-    const input = { ...record, value: read(), read };
-    const next = observation(input);
-    if (!isSameVersion(record, next)) return false;
+  #validateSynchronousRecord(
+    record: DiscoveryRecord,
+    replay: EpochInputReplay,
+  ): boolean {
+    const next = replay.readSynchronous(record);
+    if (next === undefined || !isSameVersion(record, next)) return false;
     this.#recordObservation(next);
     return true;
   }
+  bind(input: AnalysisRead, replay: EpochInputReplay): void {
+    this.#recordObservation(replay.observe(input));
+  }
   run<T>(operation: () => T): T {
-    return withAnalysisReads((input) => this.#observe(input), operation);
+    return new PathBindingReplay().run(() =>
+      withAnalysisReads((input) => this.#observe(input), operation),
+    );
   }
   collect<T>(operation: () => T): T {
     return withAdditionalAnalysisReads(
@@ -120,6 +161,22 @@ export class EpochInputs {
     const selected = new EpochInputs();
     for (const [key, value] of this.#reads)
       if (paths.has(value.input.path)) selected.#reads.set(key, value);
+    return selected;
+  }
+  selectRecords(records: readonly DiscoveryRecord[]): EpochInputs | undefined {
+    const selected = new EpochInputs();
+    for (const record of records) {
+      const value = this.#reads.get(record.key);
+      if (
+        value === undefined ||
+        value.input.path !== record.path ||
+        analysisHash(value.input.descriptor) !==
+          analysisHash(record.descriptor) ||
+        !isSameVersion(record, value)
+      )
+        return undefined;
+      selected.#reads.set(record.key, value);
+    }
     return selected;
   }
   append(inputs: EpochInputs): void {
@@ -164,21 +221,24 @@ export class EpochInputs {
     }
     return result;
   }
-  async validate(records: readonly DiscoveryRecord[]): Promise<boolean> {
-    return new PathBindingReplay().run(async () => {
-      for (const record of records) {
-        const read = () => replayDiscoveryRead(record.descriptor);
-        const input = { ...record, value: await read(), read };
-        const next = observation(input);
-        if (!isSameVersion(record, next)) return false;
-        this.#recordObservation(next);
-      }
-      return true;
-    });
+  async validate(
+    records: readonly DiscoveryRecord[],
+    replay: EpochInputReplay = new EpochInputReplay(),
+  ): Promise<boolean> {
+    for (const record of records) {
+      const read = () => replayDiscoveryRead(record.descriptor);
+      const next = await replay.read({ ...record, value: undefined, read });
+      if (!isSameVersion(record, next)) return false;
+      this.#recordObservation(next);
+    }
+    return true;
   }
-  validateSynchronous(records: readonly DiscoveryRecord[]): boolean {
-    return new PathBindingReplay().run(() =>
-      records.every((record) => this.#validateSynchronousRecord(record)),
+  validateSynchronous(
+    records: readonly DiscoveryRecord[],
+    replay: EpochInputReplay = new EpochInputReplay(),
+  ): boolean {
+    return records.every((record) =>
+      this.#validateSynchronousRecord(record, replay),
     );
   }
 }

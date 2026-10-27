@@ -4,6 +4,7 @@ import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-eviden
 import type { ImportRecord } from '../import-analysis/records';
 import type { DeclarationEntry } from './declaration-closure';
 import type { NativeDependencyFact } from './dependency-fact';
+import type { FileDependencyFacts } from './file-dependency-facts';
 import type { NativeContextInventory } from './native-context-inventory';
 import type { WorkspaceSourceBoundary } from './workspace-source-boundary';
 
@@ -57,6 +58,7 @@ export interface TypeScriptSemanticDependencyContext
   extends TypeScriptSemanticResolutionContext {
   readonly nativeEvidence?: NativeEvidenceSnapshot;
   readonly nativeInventory?: NativeContextInventory;
+  getFileDependencyFacts?(fileName: string): FileDependencyFacts | undefined;
   getTypeEnvironmentEntries?(): readonly DeclarationEntry[];
   getContributionFileNames?(): readonly string[];
   getDependencyFact(importRecord: ImportRecord): NativeDependencyFact;

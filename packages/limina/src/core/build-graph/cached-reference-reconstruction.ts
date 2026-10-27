@@ -176,19 +176,25 @@ function hasCurrentDeclarationDecisions(
   input: ReturnType<typeof inputForDecisions>,
 ): boolean {
   const expected = input.sources.flatMap((source) =>
-    nativeEvidence(input.graph).flatMap(({ snapshot }) => {
-      const current = collectDeclarationContextDecisions({
-        config: input.config,
-        project: {
-          configPath: source.configPath,
-          fileNames: source.declarationFileNames,
-        },
-        snapshot,
-      });
-      if (current.problems.length > 0)
-        throw new Error('Invalid declaration context choice.');
-      return current.decisions;
-    }),
+    nativeEvidence(input.graph)
+      .filter(({ snapshot }) =>
+        snapshot.contexts.some(
+          (context) => context.inputs.config === source.configPath,
+        ),
+      )
+      .flatMap(({ snapshot }) => {
+        const current = collectDeclarationContextDecisions({
+          config: input.config,
+          project: {
+            configPath: source.configPath,
+            fileNames: source.declarationFileNames,
+          },
+          snapshot,
+        });
+        if (current.problems.length > 0)
+          throw new Error('Invalid declaration context choice.');
+        return current.decisions;
+      }),
   );
   const keys = (values: readonly unknown[]) =>
     [...new Set(values.map(nativeFingerprint))].sort(compareCodeUnits);

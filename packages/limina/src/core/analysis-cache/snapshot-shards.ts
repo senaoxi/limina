@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { AnalysisSnapshot } from './contracts';
 import { packAnalysisRecord, unpackAnalysisRecord } from './record-payload';
+import { packRecordTable, unpackRecordTable } from './record-table';
+import { packSharedRecordTables } from './shared-record-table';
 import {
   decodeAnalysisRecords,
   encodeAnalysisRecords,
@@ -14,20 +16,22 @@ type Group = keyof Records;
 const groups = Object.keys(emptyRecords()) as Group[];
 export interface AnalysisBlockReference {
   scope: string | null;
+  kind: 'facts' | 'graph' | 'pool';
   digest: string;
   bytes: number;
 }
 interface AnalysisBlockStorage {
-  version: 1;
+  version: 3;
   blocks: AnalysisBlockReference[];
 }
 const reference: z.ZodType<AnalysisBlockReference> = z.strictObject({
   scope: z.string().nullable(),
+  kind: z.enum(['facts', 'graph', 'pool']),
   digest: z.string().regex(/^[a-f0-9]{64}$/),
   bytes: z.number().int().positive(),
 });
 const storage: z.ZodType<AnalysisBlockStorage> = z.strictObject({
-  version: z.literal(1),
+  version: z.literal(3),
   blocks: z.array(reference).min(1),
 });
 export interface AnalysisSnapshotIndex {
@@ -63,7 +67,7 @@ function scopeReaders(
     inputs: shared,
     files: shared,
     contributions: shared,
-    graphs: shared,
+    graphs: (id) => `graph:${id}`,
     contexts: (id) => contextScope(snapshot, id),
     projects: (id) => contextScope(snapshot, id),
     vueContexts: (id) => snapshot.vueContexts[id]!.project.configPath,
@@ -102,21 +106,44 @@ function partition(snapshot: AnalysisSnapshot): Map<string | null, Records> {
 export function* encodeAnalysisBlocks(
   snapshot: AnalysisSnapshot,
 ): Generator<{ reference: AnalysisBlockReference; text: string }> {
-  for (const [scope, records] of partition(snapshot)) {
-    const payload = encodeAnalysisRecords(records);
-    const text = `${JSON.stringify({
-      scope,
-      payload: packAnalysisRecord(payload, 'json', 'brotli'),
-    })}\n`;
-    yield {
-      reference: {
+  const entries = [...partition(snapshot)];
+  const facts = entries.filter(
+    ([, records]) => Object.keys(records.graphs).length === 0,
+  );
+  const packed = packSharedRecordTables(
+    facts.map(([, records]) => encodeAnalysisRecords(records)),
+  );
+  yield encodeBlock('pool:context-facts-v1', 'pool', packed.shared);
+  for (const [index, [scope]] of facts.entries())
+    yield encodeBlock(scope, 'facts', packed.tables[index]);
+  for (const [scope, records] of entries)
+    if (Object.keys(records.graphs).length > 0)
+      yield encodeBlock(
         scope,
-        digest: analysisBlockDigest(text),
-        bytes: Buffer.byteLength(text),
-      },
-      text,
-    };
-  }
+        'graph',
+        packRecordTable(encodeAnalysisRecords(records)),
+      );
+}
+
+function encodeBlock(
+  scope: string | null,
+  kind: AnalysisBlockReference['kind'],
+  value: unknown,
+) {
+  const text = `${JSON.stringify({
+    scope,
+    kind,
+    payload: packAnalysisRecord(value, 'json', 'brotli'),
+  })}\n`;
+  return {
+    reference: {
+      scope,
+      kind,
+      digest: analysisBlockDigest(text),
+      bytes: Buffer.byteLength(text),
+    },
+    text,
+  };
 }
 
 function requireRecord(value: unknown): Record<string, unknown> {
@@ -142,10 +169,7 @@ function mergeRecords(target: Records, source: Record<string, unknown>): void {
     for (const [id, value] of entries) addRecord(target[group], id, value);
   }
 }
-function readBlock(
-  block: AnalysisBlockReference,
-  bytes: Buffer,
-): Record<string, unknown> {
+function readPayload(block: AnalysisBlockReference, bytes: Buffer): unknown {
   const matches = [
     bytes.length === block.bytes,
     analysisBlockDigest(bytes) === block.digest,
@@ -155,9 +179,26 @@ function readBlock(
   const parsed = requireRecord(JSON.parse(bytes.toString('utf8')));
   if (parsed.scope !== block.scope)
     throw new Error('Analysis block scope changed.');
-  return decodeAnalysisRecords(
-    requireRecord(unpackAnalysisRecord(parsed.payload)),
+  if (parsed.kind !== block.kind)
+    throw new Error('Analysis block category changed.');
+  return unpackAnalysisRecord(parsed.payload);
+}
+function readBlock(
+  block: AnalysisBlockReference,
+  bytes: Buffer,
+  shared: readonly unknown[],
+): Record<string, unknown> {
+  const table = requireRecord(
+    unpackRecordTable(readPayload(block, bytes), shared),
   );
+  const records = decodeAnalysisRecords(table);
+  for (const group of groups)
+    if (
+      (group === 'graphs') !== (block.kind === 'graph') &&
+      Object.keys(requireRecord(records[group])).length > 0
+    )
+      throw new Error('Analysis block contains facts outside its category.');
+  return records;
 }
 function addScope(scopes: Set<string | null>, scope: string | null): void {
   if (scopes.has(scope)) throw new Error('Duplicate analysis scope.');
@@ -170,14 +211,63 @@ export function readAnalysisBlocks(
   value: unknown,
   read: (reference: AnalysisBlockReference) => Buffer,
 ): unknown {
-  const root = requireRecord(value);
-  const index = storage.parse(root.storage);
-  const scopes = new Set<string | null>();
-  const records = emptyRecords();
-  for (const block of index.blocks) {
-    addScope(scopes, block.scope);
-    mergeRecords(records, readBlock(block, read(block)));
+  const blocks = new AnalysisBlockReader(value, read);
+  return { ...blocks.facts(), graphs: blocks.graphs() };
+}
+
+/**
+Separate unloaded projection bytes from a generation's qualified facts.
+*/
+export class AnalysisBlockReader {
+  readonly #root: Record<string, unknown>;
+  readonly #index: AnalysisBlockStorage;
+  readonly #read: (reference: AnalysisBlockReference) => Buffer;
+  #shared: readonly unknown[] | undefined;
+  constructor(
+    value: unknown,
+    read: (reference: AnalysisBlockReference) => Buffer,
+  ) {
+    this.#root = requireRecord(value);
+    this.#index = storage.parse(this.#root.storage);
+    this.#read = read;
+    const scopes = new Set<string | null>();
+    for (const block of this.#index.blocks) addScope(scopes, block.scope);
+    requireSharedScope(scopes);
+    if (
+      this.#index.blocks.every(
+        (block) => !(block.scope === null && block.kind === 'facts'),
+      )
+    )
+      throw new Error('Missing analysis input ledger.');
+    if (
+      this.#index.blocks.filter((block) => block.kind === 'pool').length !== 1
+    )
+      throw new Error('Missing or duplicate shared record pool.');
   }
-  requireSharedScope(scopes);
-  return { header: root.header, configModules: root.configModules, ...records };
+  #pool(): readonly unknown[] {
+    if (this.#shared !== undefined) return this.#shared;
+    const block = this.#index.blocks.find((item) => item.kind === 'pool')!;
+    const pool = unpackRecordTable(readPayload(block, this.#read(block)));
+    if (!Array.isArray(pool)) throw new Error('Invalid shared record pool.');
+    this.#shared = pool;
+    return pool;
+  }
+  #records(kind: 'facts' | 'graph'): Records {
+    const records = emptyRecords();
+    const shared = kind === 'facts' ? this.#pool() : [];
+    for (const block of this.#index.blocks)
+      if (block.kind === kind)
+        mergeRecords(records, readBlock(block, this.#read(block), shared));
+    return records;
+  }
+  facts(): Record<string, unknown> {
+    return {
+      header: this.#root.header,
+      configModules: this.#root.configModules,
+      ...this.#records('facts'),
+    };
+  }
+  graphs(): Records['graphs'] {
+    return this.#records('graph').graphs;
+  }
 }

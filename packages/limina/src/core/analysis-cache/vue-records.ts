@@ -2,6 +2,7 @@ import type { VueProjectSemanticIdentity } from '#checkers';
 import { createVueProjectSemanticIdentity } from '../../checker/vue-semantic-identity';
 import { createVueOutputIdentity } from '../vue-semantic/output-identity';
 import { encodeData } from './data-codec';
+import type { EpochInputReplay } from './epoch-inputs';
 import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
 import { QueryTrace } from './query-trace';
@@ -96,22 +97,31 @@ export class VueAnalysisRecords {
     return this.records[id] ?? this.cache.previous?.vueContexts[id];
   }
 
-  #restore(identity: VueProjectSemanticIdentity): VueContextRecord | undefined {
+  #restore(
+    identity: VueProjectSemanticIdentity,
+    replay?: EpochInputReplay,
+  ): VueContextRecord | undefined {
     if (this.cache.inputs.domainDirty) return undefined;
     const id = this.#memo.contextId(identity);
     const record = this.#qualified.has(id)
       ? this.records[id]
       : this.#validate(identity, id);
-    this.#bindExecutionInputs(identity, record);
+    this.#bindExecutionInputs(identity, record, replay);
     return record;
   }
 
   #bindExecutionInputs(
     identity: VueProjectSemanticIdentity,
     record: VueContextRecord | undefined,
+    replay?: EpochInputReplay,
   ): void {
     if (record === undefined || this.#executionIdentities.has(identity)) return;
-    bindVueExecutionInputs(identity, this.cache.inputs, record.dependencies);
+    bindVueExecutionInputs(
+      identity,
+      this.cache.inputs,
+      record.dependencies,
+      replay,
+    );
     this.#executionIdentities.add(identity);
   }
 
@@ -136,6 +146,7 @@ export class VueAnalysisRecords {
   #parseIdentity(
     id: string,
     generation: number,
+    replay?: EpochInputReplay,
   ): VueProjectSemanticIdentity | undefined {
     const record = this.#previous(id);
     if (record === undefined) return undefined;
@@ -143,7 +154,7 @@ export class VueAnalysisRecords {
     const identity = recordedIdentity(record, parsed.identity);
     const valid = [parsed.diagnostics.length === 0, this.supports(identity)];
     return valid.every(Boolean)
-      ? this.#bindIdentity(identity, id, generation)
+      ? this.#bindIdentity(identity, id, generation, replay)
       : undefined;
   }
 
@@ -151,11 +162,12 @@ export class VueAnalysisRecords {
     identity: VueProjectSemanticIdentity,
     id: string,
     generation: number,
+    replay?: EpochInputReplay,
   ): VueProjectSemanticIdentity | undefined {
     if (
       [
         this.#memo.contextId(identity) !== id,
-        this.#restore(identity) === undefined,
+        this.#restore(identity, replay) === undefined,
       ].some(Boolean)
     )
       return undefined;
@@ -216,14 +228,17 @@ export class VueAnalysisRecords {
   identity(
     id: string,
     generation: number,
+    replay?: EpochInputReplay,
   ): VueProjectSemanticIdentity | undefined {
     if (this.cache.inputs.domainDirty) return undefined;
     const key = `${id}:${generation}`;
-    return this.#identities.get(key) ?? this.#parseIdentity(id, generation);
+    return (
+      this.#identities.get(key) ?? this.#parseIdentity(id, generation, replay)
+    );
   }
 
-  restore(id: string): boolean {
-    return this.identity(id, 0) !== undefined;
+  restore(id: string, replay?: EpochInputReplay, generation = 0): boolean {
+    return this.identity(id, generation, replay) !== undefined;
   }
 
   query<K extends VueQueryKind>(
