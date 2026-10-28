@@ -178,6 +178,7 @@ export class CachedGraphRecords {
     if (
       ![
         discovery !== undefined,
+        !this.#cache.requiresSupplementalReassessment,
         isComplete,
         this.#cache.hasCompleteGraphContextCoverage(),
         this.#cache.vue.complete(),

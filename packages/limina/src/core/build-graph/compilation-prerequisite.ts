@@ -12,6 +12,10 @@ import type { NativeCompilationObligation } from '../../domain/analysis/native-o
 import { qualifiedNativeEvidenceTarget } from '../typescript-semantic/native-fact-qualification';
 import type { CandidateBuildPlan } from './analysis-admission';
 import { projectionConsumers, projections } from './compilation-projection';
+import {
+  isCurrentLockedSupplement,
+  type SupplementalAssessment,
+} from './pending-supplemental-assessment';
 import type { GovernedSourceUnit } from './types';
 export {
   bindCompilationProjection,
@@ -200,4 +204,32 @@ function relationConsumption(
   return relation === 'framework-schedule'
     ? 'source-input'
     : 'referenced-project';
+}
+
+export function projectSupplementalPrerequisite(
+  assessment: SupplementalAssessment,
+  candidate: CandidateBuildPlan,
+):
+  | Pick<
+      ProjectedCompilationPrerequisite,
+      'obligation' | 'targetIdentities' | 'requiredRelation'
+    >
+  | undefined {
+  const projection = projections.get(candidate);
+  if (
+    !projection?.supplements?.includes(assessment) ||
+    !isCurrentLockedSupplement(assessment)
+  )
+    return undefined;
+  const source = projectionConsumers(
+    candidate,
+    assessment.obligation.consumerConfigId,
+  )[0];
+  if (source === undefined || assessment.coverage.state !== 'unique')
+    return undefined;
+  return {
+    obligation: assessment.obligation,
+    targetIdentities: [assessment.coverage.target],
+    requiredRelation: selectRelation(source, [assessment.coverage]),
+  };
 }

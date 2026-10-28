@@ -258,9 +258,12 @@ export function resolveVueSemanticToolchain(
         resolved.requireFromVueTsc('typescript'),
       ),
       versions,
-      volarTypeScript: assertVolarTypeScriptRuntime(
-        resolved.requireFromVueTsc('@volar/typescript'),
-      ),
+      volarTypeScript: assertVolarTypeScriptRuntime({
+        ...resolved.requireFromVueTsc('@volar/typescript'),
+        ...resolved.requireFromVueTsc(
+          '@volar/typescript/lib/resolveModuleName',
+        ),
+      }),
     };
   } catch (error) {
     return rethrowToolchainResolutionError({

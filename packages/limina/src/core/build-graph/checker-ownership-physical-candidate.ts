@@ -1,9 +1,17 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { hasModuleSpecifierQueryOrFragment } from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
-import { deriveNativeCoverage } from '../../domain/analysis/native-coverage';
+import {
+  deriveNativeCoverage,
+  type NativeCoverage,
+} from '../../domain/analysis/native-coverage';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
+import {
+  discoverSupplementalTarget,
+  type SupplementalResolution,
+} from '../import-analysis/supplemental-resolution';
 import type { TypeScriptSemanticDependencyContext } from '../typescript-semantic/contracts';
+import type { NativeModulePremises } from '../typescript-semantic/native-context-inventory';
 import { observeNativeFileIdentity } from '../typescript-semantic/native-file-identity';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
@@ -229,6 +237,11 @@ export function resolvePendingPhysicalCandidate(options: {
   context: PhysicalCandidateContext;
   importRecord: CheckerDependencyFact['importRecord'];
   problems: string[];
+  premises: NativeModulePremises;
+  onDiscovery: (
+    value: SupplementalResolution,
+    coverage: NativeCoverage | undefined,
+  ) => void;
 }): PhysicalFrameworkCandidate | null {
   // A query or fragment belongs to a module host. Without a checker target,
   // Limina has no authority to reinterpret it through Oxc or the filesystem.
@@ -237,13 +250,55 @@ export function resolvePendingPhysicalCandidate(options: {
   ) {
     return null;
   }
-  const targetPath = options.context.importAnalysis.resolveOxcImport(
-    options.importRecord.specifier,
-    options.importRecord.filePath,
-    options.context.semantic.project.options,
-    options.context.semantic.project,
-  );
-  return targetPath === null
-    ? null
-    : qualifyPendingPhysicalCandidate({ ...options, targetPath });
+  const { premises, context } = options;
+  const baseline =
+    context.typeScriptSemanticContext.nativeEvidence?.contexts[0];
+  if (baseline === undefined || premises.options === undefined) return null;
+  const discovery = (
+    context.importAnalysis.resolveSupplementalImport ??
+    discoverSupplementalTarget
+  )({
+    requestId: premises.requestId,
+    contextId: baseline.id,
+    importer: options.importRecord.filePath,
+    specifier: options.importRecord.specifier,
+    mode: premises.mode,
+    options: premises.options,
+    configPath:
+      typeof premises.options.configFilePath === 'string'
+        ? premises.options.configFilePath
+        : context.project.configPath,
+    extensions: [...context.semantic.project.extensions],
+  });
+  const coverage =
+    discovery.state === 'resolved'
+      ? candidateCoverage(context, discovery.target)
+      : undefined;
+  options.onDiscovery(discovery, coverage);
+  if (discovery.state !== 'resolved') {
+    if (discovery.state !== 'unresolved')
+      options.problems.push(
+        `Pending supplemental resolution ${discovery.state}: ${options.importRecord.specifier}: ${discovery.reason}`,
+      );
+    return null;
+  }
+  if (
+    coverage === undefined ||
+    coverage.completeness === 'incomplete' ||
+    coverage.state === 'unavailable'
+  ) {
+    options.problems.push(
+      `Pending supplemental coverage unavailable: ${discovery.target}: ${coverage?.gaps.join(', ') ?? 'no-index'}`,
+    );
+    return null;
+  }
+  const candidate = qualifyPendingPhysicalCandidate({
+    ...options,
+    targetPath: discovery.target,
+  });
+  if (candidate === null && /\.(?:vue|svelte|astro)$/.test(discovery.target))
+    options.problems.push(
+      `Pending supplemental target qualification unavailable: ${discovery.target} (${candidateCoverage(context, discovery.target)?.state ?? 'unavailable'})`,
+    );
+  return candidate;
 }

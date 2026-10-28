@@ -37,6 +37,7 @@ import type { LibraryProjectionReceipt } from './library-projection';
 import type { GeneratedTsconfigGraphManifest } from './manifest-types';
 import type { NativeAnalysisEvidence } from './native-analysis-evidence';
 import type { OutputProjectionReceipt } from './output-projection';
+import type { SupplementalAssessment } from './pending-supplemental-assessment';
 import type { ReferenceValidation } from './reference-validation';
 import type { AutoFrameworkEvidence } from './source-capabilities';
 import type { SourceConfigDiscovery } from './source-config-discovery';
@@ -263,6 +264,7 @@ export interface SemanticSourceRelation {
 }
 
 export interface DependencyAnalysisResult {
+  supplementalAssessments?: readonly SupplementalAssessment[];
   referenceValidation?: ReferenceValidation;
   declarationContexts?: DeclarationContextDecision[];
   declarationValidation?: {

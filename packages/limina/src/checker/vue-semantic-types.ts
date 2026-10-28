@@ -116,6 +116,21 @@ export type VueResolvedModule = ts.ResolvedModuleWithFailedLookupLocations;
 export type VueLanguageServiceHost = ts.LanguageServiceHost;
 
 export interface VolarTypeScriptRuntime {
+  createResolveModuleName?(
+    compiler: typeof ts,
+    getFileSize: (file: string) => number | undefined,
+    host: ts.ModuleResolutionHost,
+    plugins: unknown[],
+    getSourceScript: (file: string) => VolarSourceScript | undefined,
+  ): (
+    name: string,
+    importer: string,
+    options: ts.CompilerOptions,
+    cache: ts.ModuleResolutionCache | undefined,
+    redirected: ts.ResolvedProjectReference | undefined,
+    mode: ts.ResolutionMode,
+  ) => VueResolvedModule;
+
   createLanguageServiceHost(
     tsModule: typeof ts,
     sys: typeof ts.sys,

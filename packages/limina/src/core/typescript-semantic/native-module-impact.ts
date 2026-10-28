@@ -19,6 +19,7 @@ interface ImpactInput {
 }
 type RequestInput = Pick<ImpactInput, 'observation' | 'program'>;
 interface TargetInput {
+  service?: { extension: string; scriptKind: ts.ScriptKind };
   target: string;
   extension: ts.ResolvedModuleFull['extension'];
   compiler: typeof ts;
@@ -32,23 +33,31 @@ interface TargetInput {
 export function independentModuleAbsence(
   input: RequestInput,
 ): NativeModuleImpact | undefined {
-  return input.observation.role === 'augmentation'
-    ? { state: 'absent', rule: 'compiler-augmentation-does-not-add-input' }
-    : (rootAbsence(input) ?? noResolveAbsence(input));
+  return independentModuleInputAbsence({
+    role: input.observation.role,
+    options: input.program.getCompilerOptionsForFile(input.observation.source),
+    target: moduleTarget(input.observation),
+    roots: input.program.getRootFileNames(),
+  });
 }
-function noResolveAbsence(input: RequestInput): NativeModuleImpact | undefined {
-  const options = input.program.getCompilerOptionsForFile(
-    input.observation.source,
-  );
-  return options?.noResolve
+export function independentModuleInputAbsence(input: {
+  role: 'import' | 'augmentation';
+  options: ts.CompilerOptions | undefined;
+  target: string | undefined;
+  roots: readonly string[];
+}): NativeModuleImpact | undefined {
+  if (input.role === 'augmentation')
+    return {
+      state: 'absent',
+      rule: 'compiler-augmentation-does-not-add-input',
+    };
+  if (input.target !== undefined && input.roots.includes(input.target))
+    return {
+      state: 'absent',
+      rule: 'consumer-root-has-no-cross-unit-obligation',
+    };
+  return input.options?.noResolve
     ? { state: 'absent', rule: 'compiler-noResolve-disables-module-input' }
-    : undefined;
-}
-function rootAbsence(input: RequestInput): NativeModuleImpact | undefined {
-  const target = moduleTarget(input.observation);
-  if (target === undefined) return undefined;
-  return input.program.getRootFileNames().includes(target)
-    ? { state: 'absent', rule: 'consumer-root-has-no-cross-unit-obligation' }
     : undefined;
 }
 function moduleTarget(
@@ -70,86 +79,86 @@ export function observeNativeModuleImpact(
       }
     : classifyTarget(input, target);
 }
+/** Shared premises for native observations and separately qualified adapters.
+ * A service classification describes an actual generated script, never a
+ * replacement filename or a manufactured compiler resolution. */
+export interface ModuleImpactPremises {
+  target: ts.ResolvedModuleFull;
+  compiler: typeof ts;
+  inputOptions: ts.CompilerOptions | undefined;
+  emitOptions: ts.CompilerOptions;
+  reference: NativeReferenceObservation | undefined;
+  sourceIsExternal: boolean;
+  sourceIsDeclaration: boolean;
+  excludedDocumentation: boolean;
+  service?: { extension: string; scriptKind: ts.ScriptKind };
+}
 function classifyTarget(
   input: ImpactInput,
   target: ts.ResolvedModuleFull,
 ): NativeModuleImpact {
+  return evaluateModuleImpact({
+    target,
+    compiler: input.compiler,
+    reference: input.reference,
+    inputOptions: input.program.getCompilerOptionsForFile(
+      input.observation.source,
+    ),
+    emitOptions: input.program.getCompilerOptions(),
+    sourceIsExternal: input.program.isSourceFileFromExternalLibrary(
+      input.observation.source,
+    ),
+    sourceIsDeclaration: input.observation.source.isDeclarationFile,
+    excludedDocumentation:
+      (input.observation.literal.flags & 16_777_216) !== 0 &&
+      !nativeCompilerApi(input.compiler).isInJSFile(input.observation.literal),
+  });
+}
+export function evaluateModuleImpact(
+  input: ModuleImpactPremises,
+): NativeModuleImpact {
+  const { target, compiler } = input;
   if (isDeclarationFile(target.resolvedFileName))
     return {
       state: 'absent',
       rule: 'declaration-consumption-does-not-establish-a-producer',
     };
-  return target.extension === input.compiler.Extension.Json
-    ? {
-        state: 'unknown',
-        reason: 'json-emission-requires-output-projection-proof',
-      }
-    : classifyImplementation(input, target);
-}
-function isExternalInput(
-  input: ImpactInput,
-  target: ts.ResolvedModuleFull,
-): boolean {
-  return (
-    target.isExternalLibraryImport === true ||
-    input.program.isSourceFileFromExternalLibrary(input.observation.source)
-  );
-}
-function classifyImplementation(
-  input: ImpactInput,
-  target: ts.ResolvedModuleFull,
-): NativeModuleImpact {
-  if (isExternalInput(input, target))
+  if (target.extension === compiler.Extension.Json)
+    return {
+      state: 'unknown',
+      reason: 'json-emission-requires-output-projection-proof',
+    };
+  if (target.isExternalLibraryImport || input.sourceIsExternal)
     return {
       state: 'absent',
       rule: 'compiler-external-library-input-is-not-emitted-by-consumer',
     };
-  const options = input.program.getCompilerOptionsForFile(
-    input.observation.source,
-  );
-  return options === undefined
-    ? { state: 'unknown', reason: 'compiler-source-options-unavailable' }
-    : diagnosticImpact(input, target, options);
-}
-function diagnosticImpact(
-  input: ImpactInput,
-  target: ts.ResolvedModuleFull,
-  options: ts.CompilerOptions,
-): NativeModuleImpact {
-  const diagnostic = nativeCompilerApi(input.compiler).getResolutionDiagnostic(
-    options,
+  if (input.inputOptions === undefined)
+    return { state: 'unknown', reason: 'compiler-source-options-unavailable' };
+  const diagnostic = nativeCompilerApi(compiler).getResolutionDiagnostic(
+    input.inputOptions,
     target,
-    input.observation.source,
+    { isDeclarationFile: input.sourceIsDeclaration },
   );
-  return diagnostic === undefined
-    ? inputEligibility(input, target, options)
-    : {
-        state: 'absent',
-        rule: `compiler-resolution-diagnostic:${diagnostic.code}`,
-      };
-}
-function inputEligibility(
-  input: ImpactInput,
-  target: ts.ResolvedModuleFull,
-  options: ts.CompilerOptions,
-): NativeModuleImpact {
-  return isExcludedDocumentation(input)
-    ? { state: 'absent', rule: 'compiler-typescript-jsdoc-input-excluded' }
-    : moduleTargetEligibility({
-        target: target.resolvedFileName,
-        extension: target.extension,
-        compiler: input.compiler,
-        inputOptions: options,
-        emitOptions: input.program.getCompilerOptions(),
-        reference: input.reference,
-      });
-}
-function isExcludedDocumentation(input: ImpactInput): boolean {
-  const isDocumentation = (input.observation.literal.flags & 16_777_216) !== 0;
-  return (
-    isDocumentation &&
-    !nativeCompilerApi(input.compiler).isInJSFile(input.observation.literal)
-  );
+  if (diagnostic !== undefined)
+    return {
+      state: 'absent',
+      rule: `compiler-resolution-diagnostic:${diagnostic.code}`,
+    };
+  if (input.excludedDocumentation)
+    return {
+      state: 'absent',
+      rule: 'compiler-typescript-jsdoc-input-excluded',
+    };
+  return moduleTargetEligibility({
+    target: target.resolvedFileName,
+    extension: target.extension,
+    compiler,
+    inputOptions: input.inputOptions,
+    emitOptions: input.emitOptions,
+    reference: input.reference,
+    service: input.service,
+  });
 }
 
 function moduleTargetEligibility(input: TargetInput): NativeModuleImpact {
@@ -163,10 +172,18 @@ function moduleTargetEligibility(input: TargetInput): NativeModuleImpact {
 /** Selection and JS input permission belong to each request entry. Only
  * recognized target classification and consumer emit eligibility are shared. */
 export function nativeTargetEligibility(
-  input: Pick<TargetInput, 'target' | 'compiler' | 'emitOptions'>,
+  input: Pick<TargetInput, 'target' | 'compiler' | 'emitOptions' | 'service'>,
 ): NativeModuleImpact {
   if (/\.(?:js|jsx|mjs|cjs)$/.test(input.target))
     return javaScriptEmitEligibility(input);
+  if (input.service !== undefined && isQualifiedService(input)) {
+    return [
+      input.compiler.ScriptKind.JS,
+      input.compiler.ScriptKind.JSX,
+    ].includes(input.service.scriptKind)
+      ? javaScriptEmitEligibility(input)
+      : eligibleTarget(input);
+  }
   return /\.(?:ts|tsx|mts|cts)$/.test(input.target)
     ? eligibleTarget(input)
     : {
@@ -191,6 +208,14 @@ function referenceJavaScriptEligibility(
   input: TargetInput,
   reference: Extract<NativeReferenceObservation, { state: 'observed' }>,
 ): NativeModuleImpact {
+  if (
+    !/\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(input.target) &&
+    (input.service === undefined || !isQualifiedService(input))
+  )
+    return {
+      state: 'unknown',
+      reason: 'target-emission-rule-unqualified-for-extension',
+    };
   // processImportedModules changed in 5.5; retain the version's membership
   // predicate independently of the optional declaration output path.
   return reference.javascriptReference
@@ -224,4 +249,18 @@ function eligibleTarget(
     state: 'present',
     rule: `declaration-project-composite-root-membership:typescript-${input.compiler.version}`,
   };
+}
+
+function isQualifiedService(
+  input: Pick<TargetInput, 'compiler' | 'service'>,
+): boolean {
+  const { Extension, ScriptKind } = input.compiler;
+  return (
+    new Map<string, ts.ScriptKind>([
+      [Extension.Ts, ScriptKind.TS],
+      [Extension.Tsx, ScriptKind.TSX],
+      [Extension.Js, ScriptKind.JS],
+      [Extension.Jsx, ScriptKind.JSX],
+    ]).get(input.service!.extension) === input.service!.scriptKind
+  );
 }

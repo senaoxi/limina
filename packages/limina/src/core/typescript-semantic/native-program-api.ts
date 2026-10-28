@@ -5,7 +5,7 @@ import {
 } from '../../dependency-contract';
 import { NativeObservationError } from './native-observation-failure';
 
-export const NATIVE_PROGRAM_ADAPTER = 'bounded-program-ts5.4-6.0-v8';
+export const NATIVE_PROGRAM_ADAPTER = 'bounded-program-ts5.4-6.0-v9';
 
 /**
  * Internal observations adapted across TypeScript 5.4–5.9 and 6.0. No collector,
@@ -63,7 +63,7 @@ interface NativeCompilerApi {
   getResolutionDiagnostic(
     options: ts.CompilerOptions,
     resolution: ts.ResolvedModuleFull,
-    source: ts.SourceFile,
+    source: Pick<ts.SourceFile, 'isDeclarationFile'>,
   ): ts.DiagnosticMessage | undefined;
   getAllowJSCompilerOption(options: ts.CompilerOptions): boolean;
   resolutionExtensionIsTSOrJson(extension: string): boolean;
