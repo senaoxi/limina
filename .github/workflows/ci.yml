@@ -85,9 +85,14 @@ jobs:
           - name: macOS / Node 22.22.3
             os: macos-latest
             node: 22.22.3
-          - name: Windows / Node 22.22.3
+          - name: Windows / Node 22.22.3 / unit 1 of 2
             os: windows-latest
             node: 22.22.3
+            unitShard: 1
+          - name: Windows / Node 22.22.3 / unit 2 of 2
+            os: windows-latest
+            node: 22.22.3
+            unitShard: 2
           - name: Linux / Node 24 Latest
             os: ubuntu-latest
             node: 24
@@ -102,13 +107,13 @@ jobs:
       - name: Unit Tests
         env:
           VITEST_MAX_WORKERS: "2"
-        run: pnpm --filter limina run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-unit.xml && pnpm --filter limina-migrate run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml && pnpm run test:tooling
+        run: pnpm --filter limina run test:unit ${{ matrix.unitShard && format('--shard={0}/2', matrix.unitShard) || '' }} --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-unit.xml && pnpm --filter limina-migrate run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml && pnpm run test:tooling
       - name: Limina Integration Tests
         run: pnpm --filter limina run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-integration.xml && pnpm --filter limina-migrate run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-integration.xml
       - name: Upload Test Results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: test-results-${{ matrix.os }}-${{ matrix.node }}
+          name: test-results-${{ matrix.os }}-${{ matrix.node }}${{ matrix.unitShard && format('-unit-{0}', matrix.unitShard) || '' }}
           path: .smoke/test-results/**
           include-hidden-files: true
           retention-days: 7

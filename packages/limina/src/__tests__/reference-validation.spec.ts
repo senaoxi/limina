@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { createGeneratedGraphStructuredError } from '../core/build-graph/problems';
 import { validateRestoredReferences } from '../core/build-graph/reference-validation';
 import type { DependencyAnalysisResult } from '../core/build-graph/types';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const file = createFixturePathResolver(
@@ -93,6 +95,35 @@ describe('final serialized project reference admission', () => {
       graph.dependencyAnalysis.referenceValidation?.diagnostics.join('\n'),
     ).toContain(`${file('b.json')} -> ${file('b.json')}`);
   });
+  it.each(['tsc', 'vue-tsc'])(
+    'preserves restored cycle attribution when another member uses %s',
+    (checkerName) => {
+      const references = dag();
+      references['b.json'] = ['a.json'];
+      const graph = candidate(references);
+      graph.sourceToDts.get('tsc')!.delete('source-b');
+      const entries = graph.sourceToDts.get(checkerName) ?? new Map();
+      entries.set('source-b', file('b.json'));
+      graph.sourceToDts.set(checkerName, entries);
+      validateRestoredReferences(graph);
+      const error = createGeneratedGraphStructuredError({
+        config: withFixtureGovernanceRoot({
+          rootDir: file('.'),
+          configPath: file('limina.config.mts'),
+        }),
+        fallback: 'Failed to prepare generated tsconfig graph.',
+        problems: graph.dependencyAnalysis.referenceValidation!.diagnostics,
+      });
+      expect(error.issues).toEqual([
+        expect.objectContaining({
+          checkerName: checkerName === 'tsc' ? 'tsc' : undefined,
+          code: 'LIMINA_GRAPH_REFERENCE_CYCLE',
+          filePath: 'a.json',
+          task: 'graph:check',
+        }),
+      ]);
+    },
+  );
   it('admits a shared DAG while excluding scheduling relations', () => {
     const graph = {
       ...candidate(dag()),

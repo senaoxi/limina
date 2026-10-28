@@ -16,6 +16,32 @@ export interface ReferenceCycle {
   edges: { from: string; to: string }[];
 }
 
+interface ReferenceProject {
+  checkerName: string;
+  sourceConfig: string;
+}
+
+function formatReferenceCycle(
+  cycle: ReferenceCycle,
+  sources: ReadonlyMap<string, ReferenceProject>,
+): string {
+  const checkers = new Set(
+    cycle.members.map((member) => sources.get(member)!.checkerName),
+  );
+  return [
+    'Generated project reference cycle:',
+    `  config: ${cycle.members[0]}`,
+    ...(checkers.size === 1 ? [`  checker: ${[...checkers][0]}`] : []),
+    ...cycle.members.map(
+      (member) =>
+        `  project: ${member} (source config: ${sources.get(member)!.sourceConfig})`,
+    ),
+    '  references in cycle:',
+    ...cycle.edges.map((edge) => `  reference: ${edge.from} -> ${edge.to}`),
+    '  reason: TypeScript project references must be acyclic.',
+  ].join('\n');
+}
+
 export function collectReferenceCycles(
   graph: ReadonlyMap<string, ReadonlySet<string>>,
 ): ReferenceCycle[] {
@@ -51,7 +77,7 @@ export function collectReferenceCycles(
  * Scheduling edges are deliberately absent from this graph. */
 function validateReferences(
   files: ReadonlyMap<string, string>,
-  sources: ReadonlyMap<string, string>,
+  sources: ReadonlyMap<string, ReferenceProject>,
 ): ReferenceValidation {
   try {
     const graph = new Map<string, Set<string>>();
@@ -77,16 +103,7 @@ function validateReferences(
       graph.set(file, references);
     }
     const diagnostics = collectReferenceCycles(graph).map((cycle) =>
-      [
-        'Generated project reference cycle:',
-        ...cycle.members.map(
-          (member) =>
-            `  project: ${member} (source config: ${sources.get(member)})`,
-        ),
-        '  references in cycle:',
-        ...cycle.edges.map((edge) => `  reference: ${edge.from} -> ${edge.to}`),
-        '  reason: TypeScript project references must be acyclic.',
-      ].join('\n'),
+      formatReferenceCycle(cycle, sources),
     );
     return {
       state: diagnostics.length > 0 ? 'denied' : 'admitted',
@@ -98,7 +115,7 @@ function validateReferences(
 }
 
 function addBuildConfigs(
-  sources: Map<string, string>,
+  sources: Map<string, ReferenceProject>,
   checkers: GeneratedTsconfigGraphResult['sourceToBuild'],
   generatedCheckers: ReadonlyMap<string, string>,
 ): void {
@@ -106,17 +123,21 @@ function addBuildConfigs(
   // Use the same checker-entry boundary as writeCheckerArtifacts.
   for (const [checker, entries] of checkers) {
     if (!generatedCheckers.has(checker)) continue;
-    for (const [source, module] of entries) sources.set(module.path, source);
+    for (const [source, module] of entries)
+      sources.set(module.path, { checkerName: checker, sourceConfig: source });
   }
 }
 
 export function validateStagedReferences(
   state: GeneratedGraphPreparationState,
 ): void {
-  const sources = new Map<string, string>();
-  for (const projects of state.projectsByChecker.values())
+  const sources = new Map<string, ReferenceProject>();
+  for (const [checkerName, projects] of state.projectsByChecker)
     for (const project of projects)
-      sources.set(project.dtsConfigPath, project.configPath);
+      sources.set(project.dtsConfigPath, {
+        checkerName,
+        sourceConfig: project.configPath,
+      });
   addBuildConfigs(sources, state.sourceToBuildByChecker, state.checkerEntries);
   addBuildConfigs(
     sources,
@@ -124,7 +145,10 @@ export function validateStagedReferences(
     state.checkerEntries,
   );
   for (const [checker, entry] of state.checkerEntries)
-    sources.set(entry, `${checker} entry`);
+    sources.set(entry, {
+      checkerName: checker,
+      sourceConfig: `${checker} entry`,
+    });
   state.dependencyAnalysis.referenceValidation = validateReferences(
     state.writeContext.files,
     sources,
@@ -143,13 +167,17 @@ export function validateRestoredReferences(
   >,
 ): void {
   if (graph.dependencyAnalysis === undefined) return;
-  const sources = new Map<string, string>();
-  for (const entries of graph.sourceToDts.values())
-    for (const [source, generated] of entries) sources.set(generated, source);
+  const sources = new Map<string, ReferenceProject>();
+  for (const [checkerName, entries] of graph.sourceToDts)
+    for (const [source, generated] of entries)
+      sources.set(generated, { checkerName, sourceConfig: source });
   addBuildConfigs(sources, graph.sourceToBuild, graph.checkerEntries);
   addBuildConfigs(sources, graph.configToOutputBuild, graph.checkerEntries);
   for (const [checker, entry] of graph.checkerEntries)
-    sources.set(entry, `${checker} entry`);
+    sources.set(entry, {
+      checkerName: checker,
+      sourceConfig: `${checker} entry`,
+    });
   graph.dependencyAnalysis.referenceValidation = validateReferences(
     graph.generatedFiles,
     sources,
