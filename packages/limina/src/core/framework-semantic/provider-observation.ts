@@ -3,6 +3,7 @@ import type ts from 'typescript';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
 import type { TypeEvidence } from '../type-evidence/cache';
+import { nativeProgramSource } from '../typescript-semantic/native-program-api';
 import {
   findSourceFileLiterals,
   isObservedJSDocumentLiteral,
@@ -62,6 +63,15 @@ function findProgramLiteral(options: {
     normalizeAbsolutePath(candidate.containingSourceFile.fileName),
   );
   if (sourceFile === undefined) return null;
+  if (candidate.sourceRecord.compilerRequest !== undefined) {
+    const inventory = nativeProgramSource(sourceFile);
+    return sourceFile === candidate.containingSourceFile &&
+      [...inventory.imports, ...inventory.moduleAugmentations].includes(
+        candidate.literal,
+      )
+      ? candidate.literal
+      : null;
+  }
   const expectedStart = candidate.literal.getStart(
     candidate.containingSourceFile,
   );

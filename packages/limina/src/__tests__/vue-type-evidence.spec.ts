@@ -263,7 +263,10 @@ describe('Vue resource type evidence', () => {
       expect(
         preparation.facts.every((fact) => fact.typeEvidence === undefined),
       ).toBe(true);
-      const evidence = preparation.facts.map(
+      const mappedFacts = preparation.facts.filter(
+        (fact) => fact.provenance === 'strict-source-map',
+      );
+      const evidence = mappedFacts.map(
         (fact) =>
           observeVueDependency({
             context,
@@ -316,7 +319,11 @@ describe('Vue resource type evidence', () => {
       });
       expect(preparation.kind).toBe('supported');
       if (preparation.kind === 'unsupported') return;
-      const fact = preparation.facts[0]!;
+      const mappedFacts = preparation.facts.filter(
+        (fact) => fact.provenance === 'strict-source-map',
+      );
+      expect(mappedFacts).toHaveLength(1);
+      const fact = mappedFacts[0]!;
       expect(fact.typeEvidence).toBeUndefined();
       expect(
         observeVueDependency({

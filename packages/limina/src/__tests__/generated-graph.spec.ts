@@ -10318,6 +10318,155 @@ it('retains competing-reference protection for a local declaration root with ski
 
 describe('compiler requests and final reference admission', () => {
   it.each([
+    { name: 'SFC-only JSX request', jsx: true, references: 1 },
+    { name: 'SFC-only helper request', jsx: false, references: 1 },
+    {
+      name: 'SFC-only JSX noResolve',
+      jsx: true,
+      noResolve: true,
+      references: 0,
+    },
+    {
+      name: 'SFC-only helper noResolve',
+      jsx: false,
+      noResolve: true,
+      references: 0,
+    },
+  ])('preserves $name', async (scenario) => {
+    const compilerOptions = {
+      composite: true,
+      target: 'ES2022',
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      types: [],
+    };
+    const fixture = await createFixture({
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          ...compilerOptions,
+          noResolve: scenario.noResolve,
+          ...(scenario.jsx
+            ? { jsx: 'react-jsx', jsxImportSource: '../b' }
+            : { importHelpers: true, paths: { tslib: ['../b/helper.ts'] } }),
+        },
+        files: ['App.vue'],
+      }),
+      'packages/a/App.vue': scenario.jsx
+        ? '<script lang="tsx">export const view = <div />;</script>'
+        : '<script lang="ts">export const value = 1;</script>',
+      'packages/b/tsconfig.json': json({
+        compilerOptions,
+        files: [scenario.jsx ? 'jsx-runtime.ts' : 'helper.ts'],
+      }),
+      [`packages/b/${scenario.jsx ? 'jsx-runtime.ts' : 'helper.ts'}`]:
+        scenario.jsx
+          ? 'export namespace JSX { export interface Element {} export interface IntrinsicElements { div: {} } } export const jsx = () => ({}); export const jsxs = jsx;'
+          : 'export const helper = 1;',
+    });
+    fixture.config.scope!.checkers = {
+      'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+    };
+    try {
+      const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+      const generated = graph.sourceToDts
+        .get('vue-tsc')!
+        .get(fixture.path('packages/a/tsconfig.json'))!;
+      expect(
+        JSON.parse(await readFile(generated, 'utf8')).references,
+      ).toHaveLength(scenario.references);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each([
+    { language: 'js', allowJs: false, references: 0 },
+    { language: 'js', allowJs: true, references: 1 },
+    { language: 'ts', allowJs: false, references: 1 },
+  ])(
+    'qualifies $language service input with allowJs=$allowJs',
+    async (scenario) => {
+      const compilerOptions = {
+        composite: true,
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        types: [],
+        noImplicitAny: false,
+      };
+      const fixture = await createFixture({
+        'packages/a/tsconfig.json': json({
+          compilerOptions: { ...compilerOptions, allowJs: scenario.allowJs },
+          files: ['a.ts'],
+        }),
+        'packages/a/a.ts':
+          'import B from "../b/B.vue"; export const component = B;',
+        'packages/b/tsconfig.json': json({
+          compilerOptions: {
+            ...compilerOptions,
+            allowJs: scenario.language === 'js',
+          },
+          files: ['B.vue'],
+        }),
+        'packages/b/B.vue': `<script lang="${scenario.language}">export const b = 1;</script>`,
+      });
+      fixture.config.scope!.checkers = {
+        'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+      };
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const generated = graph.sourceToDts
+          .get('vue-tsc')!
+          .get(fixture.path('packages/a/tsconfig.json'))!;
+        expect(
+          JSON.parse(await readFile(generated, 'utf8')).references,
+        ).toHaveLength(scenario.references);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'does not turn an augmentation into declaration consumption (skipLibCheck=%s)',
+    async (skipLibraryCheck) => {
+      const compilerOptions = {
+        composite: true,
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        types: [],
+        skipLibCheck: skipLibraryCheck,
+      };
+      const fixture = await createFixture({
+        'packages/a/tsconfig.json': json({
+          compilerOptions,
+          files: ['a.ts', 'env.d.ts'],
+        }),
+        'packages/a/a.ts': 'export interface A { value?: number }',
+        'packages/a/env.d.ts':
+          'export {}; declare module "../b/b" { interface Added {} }',
+        'packages/b/tsconfig.json': json({
+          compilerOptions: { ...compilerOptions, skipLibCheck: false },
+          files: ['b.d.ts'],
+        }),
+        'packages/b/b.d.ts': 'export interface B {}',
+      });
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const generated = graph.sourceToDts
+          .get('tsc')!
+          .get(fixture.path('packages/a/tsconfig.json'))!;
+        expect(
+          JSON.parse(await readFile(generated, 'utf8')).references,
+        ).toEqual([]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([
     {
       name: 'TS runtime require',
       extension: 'ts',

@@ -215,6 +215,8 @@ function resolveWithContext(options: {
       stage: 'source-map-mismatch',
     };
   }
+  if (options.importRecord.compilerRequest !== undefined)
+    return resolveCompilerCandidates(options.context, dependency.candidates);
   const resolvedByLiteral = options.context.resolveModuleNameLiterals(
     dependency.candidates.map((candidate) => candidate.literal),
   );
@@ -240,4 +242,34 @@ function hasServiceScript(
       'Resolved Vue source script has no TypeScript service script.',
     );
   return true;
+}
+
+function resolveCompilerCandidates(
+  context: ReturnType<VueSemanticContextManager['acquire']>,
+  candidates: readonly SemanticDependencyEvidence[],
+): VueSemanticResolution {
+  const resolved: ResolvedSemanticCandidate[] = [];
+  for (const evidence of candidates) {
+    const request = context.compilerRequests
+      .collect(context.program, evidence.containingSourceFile)
+      .find((entry) => entry.literal === evidence.literal);
+    if (request?.raw === undefined)
+      return {
+        kind: 'unsupported',
+        stage: 'module-resolution',
+        reason: 'Vue compiler request has no observed resolution receipt.',
+      };
+    resolved.push({
+      evidence,
+      mode: String(request.mode),
+      resolution:
+        request.raw.resolvedModule === undefined
+          ? null
+          : createCheckerResolution({
+              context,
+              resolvedModule: request.raw.resolvedModule,
+            }),
+    });
+  }
+  return selectCanonicalCandidate(resolved);
 }

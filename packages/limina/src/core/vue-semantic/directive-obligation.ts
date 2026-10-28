@@ -49,10 +49,9 @@ export function vueDirectiveObligation(
   const program = nativeObservedProgram(
     context.program,
     context.tsModule,
-    new Map(),
+    context.compilerRequests.optionsBySource,
   );
-  const options = program.getCompilerOptionsForFile(source);
-  if (options === undefined) return proof;
+
   if (!isPath) {
     const target = program.getResolvedTypeReferenceDirective(
       source,
@@ -68,6 +67,9 @@ export function vueDirectiveObligation(
         }
       : proof;
   }
+  // Path directives use Program options in processReferencedFiles, even when
+  // no module/type resolver callback occurs for this SourceFile.
+  const options = program.getCompilerOptions();
   const receipt = selectNativePath({
     source,
     reference,

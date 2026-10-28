@@ -69,6 +69,132 @@ function crossProjectFixture() {
 // Each case starts multiple real compiler processes. Keep room for Windows
 // startup and cold analysis while retaining the warm/forced-cold controls.
 describe('persistent Vue and mixed graph analysis', () => {
+  it('restores distinct SFC-only compiler requests without creating a Program', () => {
+    const f = fixture();
+    f.write(
+      'limina.config.mjs',
+      `export default {scope:{source:{include:['vue/**/*.vue','providers/**/*.ts']},checkers:{'vue-tsc':{include:['vue/tsconfig.json','providers/*/tsconfig.json']}}}};`,
+    );
+    const options = {
+      composite: true,
+      types: [],
+      target: 'ES2022',
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+    };
+    f.write(
+      'vue/tsconfig.json',
+      JSON.stringify({
+        compilerOptions: {
+          ...options,
+          jsx: 'react-jsx',
+          jsxImportSource: '../providers/jsx',
+          importHelpers: true,
+          paths: { tslib: ['../providers/helper/index.ts'] },
+        },
+        files: ['App.vue'],
+      }),
+    );
+    f.write(
+      'vue/App.vue',
+      '<script lang="tsx">export const view = <div />;</script>',
+    );
+    for (const provider of ['jsx', 'helper']) {
+      f.write(
+        `providers/${provider}/tsconfig.json`,
+        JSON.stringify({ compilerOptions: options, include: ['*.ts'] }),
+      );
+    }
+    f.write(
+      'providers/jsx/jsx-runtime.ts',
+      'export namespace JSX { export interface Element {} export interface IntrinsicElements { div: {} } } export const jsx = () => ({}); export const jsxs = jsx;',
+    );
+    f.write('providers/helper/index.ts', 'export const helper = 1;');
+    const cold = f.run();
+    expectCold(cold);
+    const references = () => {
+      const data = snapshotCodec.decodeData(
+        Object.values(f.snapshot().graphs)[0]!.data,
+      ) as StoredGraphData;
+      return data.governedSources
+        .get('vue-tsc')!
+        .get(f.path('vue/tsconfig.json'))!.declarationReferences;
+    };
+    expect(references().size).toBe(2);
+    expectRestored(f.run());
+    expect(references().size).toBe(2);
+    f.write(
+      'vue/App.vue',
+      '<script lang="tsx">export const view = <div id="changed" />;</script>',
+    );
+    expectCold(f.run());
+    expect(references().size).toBe(2);
+    expectRestored(f.run());
+  });
+
+  it('requalifies a cached JS service reference when allowJs changes', () => {
+    const f = fixture();
+    f.write(
+      'limina.config.mjs',
+      `export default {scope:{source:{include:['vue/**/*.vue','vue/**/*.ts']},checkers:{'vue-tsc':{include:['vue/tsconfig.json','vue/provider/tsconfig.json']}}}};`,
+    );
+    const options = {
+      composite: true,
+      types: [],
+      target: 'ES2022',
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      noImplicitAny: false,
+    };
+    f.write(
+      'vue/a.ts',
+      'import B from "./provider/B.vue"; export const component = B;',
+    );
+    f.write(
+      'vue/provider/B.vue',
+      '<script lang="js">export const value = 1;</script>',
+    );
+    f.write(
+      'vue/provider/tsconfig.json',
+      JSON.stringify({
+        compilerOptions: { ...options, allowJs: true },
+        files: ['B.vue'],
+      }),
+    );
+    for (const isJavaScriptAllowed of [false, true]) {
+      f.write(
+        'vue/tsconfig.json',
+        JSON.stringify({
+          compilerOptions: { ...options, allowJs: isJavaScriptAllowed },
+          files: ['a.ts'],
+        }),
+      );
+      expectCold(f.run());
+      const data = snapshotCodec.decodeData(
+        Object.values(f.snapshot().graphs)[0]!.data,
+      ) as StoredGraphData;
+      expect(
+        data.governedSources.get('vue-tsc')!.get(f.path('vue/tsconfig.json'))!
+          .declarationReferences.size,
+      ).toBe(isJavaScriptAllowed ? 1 : 0);
+      expectRestored(f.run());
+    }
+  });
+
+  it('invalidates producer facts and graphs from the previous analysis adapter', () => {
+    const f = crossProjectFixture();
+    expectCold(f.run());
+    expectRestored(f.run());
+    const snapshot = f.snapshot();
+    snapshot.header.implementation = 'typescript-5.4-6.0-coverage-bounded-v24';
+    f.writeSnapshot(snapshot);
+    const rebuilt = f.run();
+    expectCold(rebuilt);
+    expect(cacheMetric(rebuilt, 'semanticPrograms')).toBeGreaterThan(0);
+    expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
+    expectRestored(f.run());
+  });
+
   it('restores cross-project Vue declaration references and removes them after the last import changes', () => {
     const f = crossProjectFixture();
     const cold = f.run();

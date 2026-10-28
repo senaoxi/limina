@@ -10,7 +10,10 @@ import type { DeclarationClosure } from '../typescript-semantic/declaration-clos
 
 export type FrameworkSemanticKind = 'astro' | 'svelte' | 'vue';
 
-export type FrameworkSemanticProvenance = 'direct-source' | 'strict-source-map';
+export type FrameworkSemanticProvenance =
+  | 'direct-source'
+  | 'strict-source-map'
+  | 'compiler-request';
 
 export interface FrameworkSemanticCandidate<
   SourceFile,
@@ -126,6 +129,10 @@ export function createFrameworkSemanticEvidence<Profile>(options: {
     semanticSpecifier: options.candidate.semanticSpecifier,
     sourceRecord: {
       ...options.candidate.sourceRecord,
+      compilerRequest:
+        options.candidate.sourceRecord.compilerRequest === undefined
+          ? undefined
+          : { ...options.candidate.sourceRecord.compilerRequest },
       locator: { ...options.candidate.sourceRecord.locator },
     },
     target: options.target === null ? null : { ...options.target },

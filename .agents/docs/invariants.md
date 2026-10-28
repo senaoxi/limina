@@ -63,6 +63,8 @@ Output projection uses actual generated options, roots, references and an indepe
 
 - **JSDoc boundary**: Parsed occurrence location does not establish a compiler request or type provider. Exact current-Program node/inventory binding and scoped failures are protected by [JSDoc regressions](../../packages/limina/src/__tests__/jsdoc-semantic-location.spec.ts); [semantics](./semantics.md#occurrences-evidence-and-graph-requirements) owns the mechanism.
 
+**Compiler-request guards**: [Generated graph cases](../../packages/limina/src/__tests__/generated-graph.spec.ts) distinguish SFC synthetic requests, JS service input permission and augmentation-only declaration consumption. [The Vue matrix](../../packages/limina/fixtures/vue-semantic-matrix/cross-project.mjs) covers cross-config module and path channels; [cache tests](../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) preserve those identities through replay.
+
 ## I05 — TypeEvidence does not control dependency existence or reference projection
 
 - **Statement / Applies when**: TypeEvidence proves type provision only. Native and Vue compilation edges require independent obligation-existence proof in a qualified locked fact; resolution, owner, loading and Symbols are individually insufficient.

@@ -69,7 +69,7 @@ export interface DirectSourceDependency extends ProjectDependencyBase {
 
 export interface MappedSourceDependency extends ProjectDependencyBase {
   framework: 'astro' | 'svelte' | 'vue';
-  provenance: 'strict-source-map';
+  provenance: 'strict-source-map' | 'compiler-request';
 }
 
 export type ProjectDependency = DirectSourceDependency | MappedSourceDependency;
