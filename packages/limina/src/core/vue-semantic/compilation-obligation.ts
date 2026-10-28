@@ -1,3 +1,4 @@
+import type ts from 'typescript';
 import type { CompilationObligationProof } from '../dependency-semantics';
 import {
   independentModuleAbsence,
@@ -49,7 +50,7 @@ function requestImpact(
   const program = nativeObservedProgram(
     context.program,
     context.tsModule,
-    new Map(),
+    context.compilerRequests.optionsBySource,
   );
   const observation = {
     source: request.sourceFile,
@@ -88,12 +89,44 @@ function requestImpact(
     compiler: context.tsModule,
     reference,
   });
+  // A reference membership proof can qualify JS input before native filename
+  // classification. Foreign framework targets still need a matching service.
+  if (
+    impact.state === 'present' &&
+    !/\.(?:[cm]?[jt]s|[jt]sx)$/.test(target.resolvedFileName) &&
+    !isQualifiedService(context, target)
+  )
+    return {
+      state: 'unknown' as const,
+      reason: 'framework-service-classification-unavailable',
+    };
   return impact.state === 'unknown' &&
     impact.reason === 'target-emission-rule-unqualified-for-extension' &&
-    getVueServiceScript({ context, fileName: target.resolvedFileName }) !== null
+    isQualifiedService(context, target)
     ? {
         state: 'present' as const,
         rule: 'vue-service-script-declaration-input',
       }
     : impact;
+}
+
+function isQualifiedService(
+  context: VueSemanticContext,
+  target: ts.ResolvedModuleFull,
+): boolean {
+  const service = getVueServiceScript({
+    context,
+    fileName: target.resolvedFileName,
+  })?.serviceScript;
+  if (service === undefined || service.extension !== target.extension)
+    return false;
+  const { Extension, ScriptKind } = context.tsModule;
+  return (
+    new Map<string, number>([
+      [Extension.Ts, ScriptKind.TS],
+      [Extension.Tsx, ScriptKind.TSX],
+      [Extension.Js, ScriptKind.JS],
+      [Extension.Jsx, ScriptKind.JSX],
+    ]).get(service.extension) === service.scriptKind
+  );
 }

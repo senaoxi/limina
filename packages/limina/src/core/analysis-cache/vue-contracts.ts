@@ -36,7 +36,7 @@ export interface VueQueryRecord {
   data: DataNode;
 }
 export interface VueContextRecord {
-  adapter: 'vue-3.2.4-v6';
+  adapter: 'vue-3.2.4-v7';
   project: Pick<VueProjectSemanticIdentity, 'configPath' | 'projectRootDir'> & {
     extensions: string[];
     outputProjection?: {

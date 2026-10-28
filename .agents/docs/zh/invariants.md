@@ -63,6 +63,8 @@
 
 - **JSDoc 边界**：已解析 occurrence 的定位不能证明编译器请求或类型供给。精确的当前 Program 节点／inventory 绑定和局部失败由 [JSDoc 回归](../../../packages/limina/src/__tests__/jsdoc-semantic-location.spec.ts)保护；机制由[语义记录](./semantics.md#occurrence证据与建图需求)持有。
 
+**Compiler-request 守卫**：[生成图用例](../../../packages/limina/src/__tests__/generated-graph.spec.ts)区分 SFC 合成请求、JS service 输入资格及 augmentation-only 声明消费。[Vue 矩阵](../../../packages/limina/fixtures/vue-semantic-matrix/cross-project.mjs)覆盖跨配置 module/path 通道；[缓存测试](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护重放中的请求身份。
+
 ## I05 — TypeEvidence 不控制依赖存在性或引用投影
 
 - **Statement / Applies when**：TypeEvidence 仅证明类型供给。Native 与 Vue 编译边需要合格 locked 事实中的独立义务存在性证明；解析、owner、加载和 Symbol 都不能单独代替。

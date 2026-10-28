@@ -101,6 +101,8 @@ function projectDependency(options: {
     { kind: 'supported' }
   >['unmapped'];
 }): ProjectionResult {
+  if (options.dependency.literal !== null && options.dependency.literal.pos < 0)
+    return compilerRequestCandidate(options);
   const projection = strictBackprojectVolarDependency({
     dependency: options.dependency,
     mapper: options.mapper,
@@ -110,6 +112,8 @@ function projectDependency(options: {
   if (projection.kind !== 'unmapped') {
     return handleNonUnmappedProjection({ ...options, projection });
   }
+  if (options.dependency.record.compilerRequest !== undefined)
+    return compilerRequestCandidate(options);
   options.unmapped.push({
     generatedFilePath: options.dependency.generatedFilePath,
     semanticSpecifier: options.dependency.record.specifier,
@@ -171,4 +175,34 @@ export function collectVueMappedCandidates(options: {
     if (failure !== null) return failure;
   }
   return { candidates, kind: 'supported' };
+}
+
+function compilerRequestCandidate(options: {
+  context: VueSemanticContext;
+  dependency: GeneratedSemanticDependency;
+  filePath: string;
+}): ProjectionResult {
+  const { dependency, context } = options;
+  if (
+    dependency.literal === null ||
+    dependency.record.compilerRequest === undefined
+  )
+    return createFailure(
+      'Vue generated dependency has no bound compiler request.',
+      'source-map-mismatch',
+    );
+  return {
+    containingSourceFile: dependency.sourceFile,
+    framework: 'vue',
+    identityId: context.identity.id,
+    literal: dependency.literal,
+    provenance: 'compiler-request',
+    semanticSpecifier: dependency.record.specifier,
+    sourceRecord: {
+      ...dependency.record,
+      filePath: options.filePath,
+      line: 0,
+      locator: { ...dependency.record.locator, sourceStart: -1, sourceEnd: -1 },
+    },
+  };
 }

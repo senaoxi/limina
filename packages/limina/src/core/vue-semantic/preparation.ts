@@ -74,28 +74,6 @@ function createTarget(options: {
   };
 }
 
-function getResolutionMode(options: {
-  candidate: VueCandidate;
-  context: VueSemanticContext;
-}): string {
-  const api = options.context.tsModule as typeof ts & {
-    getModeForUsageLocation?: (
-      sourceFile: ts.SourceFile,
-      literal: ts.StringLiteralLike,
-      compilerOptions: ts.CompilerOptions,
-    ) => unknown;
-  };
-  return api.getModeForUsageLocation === undefined
-    ? 'default'
-    : String(
-        api.getModeForUsageLocation(
-          options.candidate.containingSourceFile,
-          options.candidate.literal,
-          options.context.identity.options,
-        ),
-      );
-}
-
 function resolveCandidates(options: {
   candidates: readonly VueCandidate[];
   context: VueSemanticContext;
@@ -110,10 +88,7 @@ function resolveCandidates(options: {
         options.context,
         requests,
       ),
-      resolutionMode: getResolutionMode({
-        candidate,
-        context: options.context,
-      }),
+      resolutionMode: String(requests[0]?.mode),
       target: createTarget({
         context: options.context,
         resolvedModule: requests[0]?.raw?.resolvedModule,
@@ -144,6 +119,16 @@ function prepareMappedCandidates(options: {
   const direct = mergePreparedDirectSourceRecords(options.directSourceRecords);
   if (direct.kind === 'unsupported') return direct;
   const resolved = resolveCandidates(options);
+  if (
+    resolved.some(
+      (item) =>
+        item.target === null && item.compilationObligation.state === 'unknown',
+    )
+  )
+    return createFailure(
+      'Vue compiler request has no qualified resolution observation.',
+      'toolchain-compatibility',
+    );
   const prepared = prepareResolvedFrameworkCandidates({
     checkerName: 'vue-tsc',
     framework: 'vue',

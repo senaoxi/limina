@@ -196,6 +196,7 @@ export class SemanticState {
 export function occurrenceKey(record: ImportRecord): string {
   return JSON.stringify([
     record.domain,
+    record.compilerRequest,
     record.kind,
     record.specifier,
     [

@@ -15,6 +15,7 @@ import type { TypeEvidence } from '../type-evidence/cache';
 import { observeCompilerMembership } from '../typescript-semantic/compiler-membership';
 import { observeProjectReferenceRedirect } from '../typescript-semantic/reference-redirect';
 import { vueCompilationObligation } from './compilation-obligation';
+import { isMatchingVueCompilerRequest } from './compiler-requests';
 import type { VueSemanticContext } from './context';
 import {
   collectSemanticDependencyEvidence,
@@ -124,18 +125,21 @@ function graphObligation(
   const { context, importRecord } = options;
   if (['triple-slash-path', 'triple-slash-types'].includes(importRecord.kind))
     return vueDirectiveObligation(context, importRecord);
-  const source = context.program.getSourceFile(importRecord.filePath);
+  const source = context.program.getSourceFile(
+    importRecord.compilerRequest?.fileName ?? importRecord.filePath,
+  );
   const isMapped = context.identity.profilesByFileName.has(
     importRecord.filePath,
   );
-  const ranges = isMapped
-    ? getVueMappedRangeIdentities(options)
-    : new Set([
-        rangeIdentity(
-          importRecord.locator.sourceStart,
-          importRecord.locator.sourceEnd,
-        ),
-      ]);
+  const ranges =
+    isMapped && importRecord.compilerRequest === undefined
+      ? getVueMappedRangeIdentities(options)
+      : new Set([
+          rangeIdentity(
+            importRecord.locator.sourceStart,
+            importRecord.locator.sourceEnd,
+          ),
+        ]);
   if (source === undefined || ranges === null)
     return {
       state: 'unknown',
@@ -146,6 +150,8 @@ function graphObligation(
   const requests = context.compilerRequests
     .collect(context.program, source)
     .filter((request) => {
+      if (importRecord.compilerRequest !== undefined)
+        return isMatchingVueCompilerRequest(request, importRecord);
       const { sourceStart, sourceEnd } = request.record.locator;
       return (
         request.literal.text === importRecord.specifier &&
@@ -156,6 +162,12 @@ function graphObligation(
       );
     });
   const proof = vueCompilationObligation(context, requests);
+  if (importRecord.compilerRequest !== undefined && requests.length !== 1)
+    return {
+      ...proof,
+      state: 'unknown',
+      reason: 'compiler-request-inventory-binding-unavailable',
+    };
   const target = options.target?.resolvedFileName;
   if (
     target !== undefined &&

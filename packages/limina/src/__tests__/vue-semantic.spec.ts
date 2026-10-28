@@ -635,7 +635,81 @@ describe('Vue semantic architecture', () => {
     }
   });
 
-  it('maps script src and generic imports without admitting synthetic helpers', async () => {
+  it.each([
+    {
+      name: 'missing receipt',
+      completed: false,
+      noResolve: false,
+      supported: false,
+    },
+    {
+      name: 'completed unresolved request',
+      completed: true,
+      noResolve: false,
+      supported: true,
+    },
+    {
+      name: 'independent noResolve absence',
+      completed: false,
+      noResolve: true,
+      supported: true,
+    },
+  ])('qualifies generated request failure with $name', async (scenario) => {
+    const fixture = await createFixture({
+      'src/App.vue': '<script lang="tsx">export const view = <div />;</script>',
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: {
+          composite: true,
+          target: 'ES2022',
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          types: [],
+          jsx: 'react-jsx',
+          jsxImportSource: './missing',
+          noResolve: scenario.noResolve,
+        },
+        files: ['src/App.vue'],
+      }),
+    });
+    const manager = new VueSemanticContextManager();
+    try {
+      const context = manager.acquire(
+        parseIdentity({ rootDir: fixture.rootDir }),
+      );
+      const collect = context.compilerRequests.collect.bind(
+        context.compilerRequests,
+      );
+      vi.spyOn(context.compilerRequests, 'collect').mockImplementation(
+        (program, source) =>
+          collect(program, source).map((request) => ({
+            ...request,
+            raw: scenario.completed ? { resolvedModule: undefined } : undefined,
+          })),
+      );
+      const prepared = prepareVueSemanticDependencies({
+        context,
+        filePath: fixture.path('src/App.vue'),
+      });
+      expect(prepared.kind).toBe(
+        scenario.supported ? 'supported' : 'unsupported',
+      );
+      if (prepared.kind === 'supported')
+        expect(
+          prepared.facts.every(
+            (fact) => fact.compilationObligation?.state === 'absent',
+          ),
+        ).toBe(true);
+      else
+        expect(prepared.reason).toContain(
+          'no qualified resolution observation',
+        );
+    } finally {
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('maps script src and generic imports while retaining non-producing compiler helpers', async () => {
     const fixture = await createFixture({
       'src/App.vue': ['<script lang="ts" src="./entry.ts"></script>', ''].join(
         '\n',
@@ -674,12 +748,14 @@ describe('Vue semantic architecture', () => {
       expect(
         prepared.flatMap((result) =>
           result.kind === 'supported'
-            ? result.facts.map((fact) => [
-                fact.importRecord.filePath,
-                fact.importRecord.specifier,
-                fact.semanticSpecifier,
-                fact.target?.resolvedFileName,
-              ])
+            ? result.facts
+                .filter((fact) => fact.provenance === 'strict-source-map')
+                .map((fact) => [
+                  fact.importRecord.filePath,
+                  fact.importRecord.specifier,
+                  fact.semanticSpecifier,
+                  fact.target?.resolvedFileName,
+                ])
             : [],
         ),
       ).toEqual([
@@ -691,6 +767,19 @@ describe('Vue semantic architecture', () => {
           fixture.path('src/types.ts'),
         ],
       ]);
+      const compilerFacts = prepared.flatMap((result) =>
+        result.kind === 'supported'
+          ? result.facts.filter(
+              (fact) => fact.provenance === 'compiler-request',
+            )
+          : [],
+      );
+      expect(compilerFacts.length).toBeGreaterThan(0);
+      expect(
+        compilerFacts.every(
+          (fact) => fact.compilationObligation?.state === 'absent',
+        ),
+      ).toBe(true);
       expect(
         metrics
           .snapshot()
@@ -733,14 +822,16 @@ describe('Vue semantic architecture', () => {
       expect(prepared.kind).toBe('supported');
       expect(
         prepared.kind === 'supported'
-          ? prepared.facts.map((fact) => ({
-              line: fact.importRecord.line,
-              sourceText: sourceText.slice(
-                fact.importRecord.locator.sourceStart,
-                fact.importRecord.locator.sourceEnd,
-              ),
-              specifier: fact.semanticSpecifier,
-            }))
+          ? prepared.facts
+              .filter((fact) => fact.provenance === 'strict-source-map')
+              .map((fact) => ({
+                line: fact.importRecord.line,
+                sourceText: sourceText.slice(
+                  fact.importRecord.locator.sourceStart,
+                  fact.importRecord.locator.sourceEnd,
+                ),
+                specifier: fact.semanticSpecifier,
+              }))
           : [],
       ).toEqual([
         { line: 3, sourceText: "'./first'", specifier: './first' },
@@ -769,22 +860,25 @@ describe('Vue semantic architecture', () => {
 
     try {
       const identity = parseIdentity({ rootDir: fixture.rootDir });
-      expect(
-        prepareVueSemanticDependencies({
-          context: manager.acquire(identity),
-          filePath: fixture.path('src/App.vue'),
-        }),
-      ).toMatchObject({
-        facts: [
-          {
-            target: {
-              resolvedBy: 'checker-source',
-              resolvedFileName: fixture.path('src/Component.vue'),
-            },
-          },
-        ],
-        kind: 'supported',
+      const prepared = prepareVueSemanticDependencies({
+        context: manager.acquire(identity),
+        filePath: fixture.path('src/App.vue'),
       });
+      expect(prepared.kind).toBe('supported');
+      expect(
+        prepared.kind === 'supported'
+          ? prepared.facts.filter(
+              (fact) => fact.provenance === 'strict-source-map',
+            )
+          : [],
+      ).toMatchObject([
+        {
+          target: {
+            resolvedBy: 'checker-source',
+            resolvedFileName: fixture.path('src/Component.vue'),
+          },
+        },
+      ]);
     } finally {
       manager.dispose();
       await fixture.cleanup();

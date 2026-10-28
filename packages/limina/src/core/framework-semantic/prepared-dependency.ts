@@ -35,6 +35,13 @@ export type PreparedDirectSourceMergeResult =
 function occurrenceIdentity(fact: PreparedDependencyFact): string {
   return JSON.stringify([
     normalizeAbsolutePathIdentity(fact.importRecord.filePath),
+    fact.importRecord.compilerRequest === undefined
+      ? null
+      : [
+          fact.importRecord.compilerRequest,
+          fact.importRecord.kind,
+          fact.importRecord.specifier,
+        ],
     fact.importRecord.locator.sourceStart,
     fact.importRecord.locator.sourceEnd,
   ]);
@@ -173,6 +180,10 @@ function clonePreparedFact(
         : structuredClone(fact.compilationObligation),
     importRecord: {
       ...fact.importRecord,
+      compilerRequest:
+        fact.importRecord.compilerRequest === undefined
+          ? undefined
+          : { ...fact.importRecord.compilerRequest },
       locator: { ...fact.importRecord.locator },
     },
     target: fact.target === null ? null : { ...fact.target },
