@@ -153,6 +153,15 @@ export class VueSemanticContext {
 
   #disposed = false;
 
+  readonly resolveSupplementalModule:
+    | ((
+        name: string,
+        importer: string,
+        options: ts.CompilerOptions,
+        mode: ts.ResolutionMode,
+      ) => ts.ResolvedModuleWithFailedLookupLocations)
+    | undefined;
+
   readonly compilerRequests: VueCompilerRequests;
 
   readonly identity: VueProjectSemanticIdentity;
@@ -211,6 +220,20 @@ export class VueSemanticContext {
       (id) => syncScript({ id, store, sys: this.sys, tsModule: this.tsModule }),
     );
     store.language = this.language;
+    const resolve =
+      identity.toolchain.volarTypeScript.createResolveModuleName?.(
+        this.tsModule,
+        (file) => this.sys.getFileSize?.(file),
+        this.sys,
+        [plugin],
+        (file) => this.language.scripts.get(file),
+      );
+    this.resolveSupplementalModule =
+      resolve === undefined
+        ? undefined
+        : (name, importer, options, mode) =>
+            resolve(name, importer, options, undefined, undefined, mode);
+
     this.#snapshots = store.snapshots;
     const hostResult =
       identity.toolchain.volarTypeScript.createLanguageServiceHost(

@@ -57,6 +57,7 @@ export class NativeAnalysisCache {
     { program: ts.Program; capture(): void }
   >();
   readonly #states = new Map<string, SemanticState>();
+  requiresSupplementalReassessment = false;
   readonly epoch: EpochInputs = new EpochInputs();
   readonly metrics: AnalysisCacheMetrics = emptyMetrics();
   readonly inputs: AnalysisInputs;

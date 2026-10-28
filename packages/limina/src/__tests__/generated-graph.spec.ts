@@ -27,9 +27,12 @@ import { promisify } from 'node:util';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import { projectSupplementalPrerequisite } from '../core/build-graph/compilation-prerequisite';
 import * as generatedConfigs from '../core/build-graph/generated-configs';
 import type { DependencyAnalysisResult } from '../core/build-graph/types';
+import type { SupplementalResolutionRequest } from '../core/import-analysis/supplemental-resolution';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
+import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
 import * as nativeFactory from '../core/typescript-semantic/native-semantic-factory';
 import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
@@ -279,10 +282,10 @@ function managedOutputCompilerOptions(): Record<string, unknown> {
 
 function createSpiedImportAnalysis() {
   const base = createImportAnalysisContext();
-  const resolveOxcImport = vi.fn(base.resolveOxcImport);
+  const resolveSupplementalImport = vi.fn(base.resolveSupplementalImport!);
   return {
-    context: { ...base, resolveOxcImport },
-    resolveOxcImport,
+    context: { ...base, resolveSupplementalImport },
+    resolveSupplementalImport,
   };
 }
 
@@ -497,7 +500,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
             'Unable to map generated graph import to a declaration project',
           );
         }
-        expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+        expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
       } finally {
         await fixture.cleanup();
       }
@@ -587,7 +590,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           { importAnalysisContext: analysis.context },
         ),
       ).rejects.toThrow('has no provider with checker tsc');
-      expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
     } finally {
       await fixture.cleanup();
     }
@@ -1561,13 +1564,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
         'packages/app/tsconfig.json':
           '.limina/tsconfig/checkers/vue-tsc/projects/packages/app/tsconfig.dts.json',
       });
-      expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('qualifies a Vue profile through the owner registered path of a symlink', async () => {
+  it('retains unknown when a symlinked owner profile is unavailable to the consumer', async () => {
     const fixture = await createFixture({
       'packages/app/src/index.ts':
         "import Component from '@example/custom'; export const value = Component;",
@@ -1599,34 +1602,28 @@ describe('prepareGeneratedTsconfigGraph', () => {
         'packages/custom',
         '@example/custom',
       );
-      const result = await prepareGeneratedTsconfigGraph(
-        {
-          ...fixture.config,
-          scope: {
-            regions: fixture.config.scope?.regions,
-            checkers: { auto: {} },
+      await expect(
+        prepareGeneratedTsconfigGraph(
+          {
+            ...fixture.config,
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
           },
-        },
-        { importAnalysisContext: analysis.context },
-      );
+          { importAnalysisContext: analysis.context },
+        ),
+      ).rejects.toThrow('supplement-checker-resolution-mismatch');
       expect(
-        result.ownershipPlan.typeConfigs.get(
-          fixture.path('packages/app/tsconfig.json'),
-        )?.semanticAuthority,
-      ).toMatchObject({ family: 'vue', kind: 'locked', source: 'dependency' });
-      expect(
-        analysis.resolveOxcImport.mock.results.some(
+        analysis.resolveSupplementalImport.mock.results.some(
           (result) =>
-            result.value ===
+            result.value?.target ===
             fixture.path(
               'packages/app/node_modules/@example/custom/src/App.md',
             ),
         ),
       ).toBe(true);
-      // Qualification identifies the owner profile; it cannot invent a provider
-      // for a custom extension that the consumer's native channel cannot resolve.
-      expect(result.dependencyEdges).toEqual([]);
-      expect(analysis.resolveOxcImport).toHaveBeenCalledTimes(1);
+      expect(analysis.resolveSupplementalImport).toHaveBeenCalledTimes(2);
     } finally {
       await fixture.cleanup();
     }
@@ -1698,7 +1695,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(result.governedSources.get('vue-tsc')?.has(hintConfigPath)).toBe(
         true,
       );
-      expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
     } finally {
       await fixture.cleanup();
     }
@@ -2025,7 +2022,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         }),
       );
       expect(result.manifest.checkers.astro?.sourceToDts).toBeUndefined();
-      expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
     } finally {
       await fixture.cleanup();
     }
@@ -2100,7 +2097,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       ).rejects.toThrow(
         /multiple framework checker requirements[\s\S]*astro[\s\S]*svelte-check/u,
       );
-      expect(analysis.resolveOxcImport).toHaveBeenCalledTimes(2);
+      expect(analysis.resolveSupplementalImport).toHaveBeenCalledTimes(2);
     } finally {
       await fixture.cleanup();
     }
@@ -2254,12 +2251,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
           name: 'svelte-check',
         },
       ]);
-      expect(analysis.resolveOxcImport).toHaveBeenCalledWith(
-        '../../svelte/src/App.svelte',
-        fixture.path('packages/consumer/src/index.ts'),
-        expect.anything(),
+      expect(analysis.resolveSupplementalImport).toHaveBeenCalledWith(
         expect.objectContaining({
-          analysisBinding: { checker: 'tsc', phase: 'pending' },
+          specifier: '../../svelte/src/App.svelte',
+          importer: fixture.path('packages/consumer/src/index.ts'),
         }),
       );
     } finally {
@@ -2299,7 +2294,7 @@ export default component;
           { importAnalysisContext: analysis.context },
         ),
       ).rejects.toThrow('has no provider with checker tsc');
-      expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
     } finally {
       await fixture.cleanup();
     }
@@ -2413,7 +2408,7 @@ export default component;
     },
   );
 
-  it('does not propagate ownership from a framework file excluded from its nearby config', async () => {
+  it('reports unknown qualification for a framework file excluded from its nearby config', async () => {
     const fixture = await createFixture({
       'packages/consumer/src/index.ts':
         "import '../../svelte/misc/Test.svelte';\nexport const value = true;\n",
@@ -2427,24 +2422,16 @@ export default component;
     });
 
     try {
-      const checkers = await resolveGeneratedGraphCheckers({
-        ...fixture.config,
-        scope: {
-          regions: fixture.config.scope?.regions,
-          checkers: { auto: {} },
-        },
-      });
-      expect(checkers).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            include: ['packages/consumer/tsconfig.json'],
-            name: 'tsc',
-          }),
-          expect.objectContaining({
-            include: ['packages/svelte/tsconfig.json'],
-            name: 'svelte-check',
-          }),
-        ]),
+      await expect(
+        resolveGeneratedGraphCheckers({
+          ...fixture.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
+        }),
+      ).rejects.toThrow(
+        /Pending supplemental target qualification unavailable:.*\(uncovered\)/u,
       );
     } finally {
       await fixture.cleanup();
@@ -2548,7 +2535,7 @@ export default component;
           toChecker: 'tsc',
         },
       ]);
-      expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
     } finally {
       await fixture.cleanup();
     }
@@ -2578,7 +2565,7 @@ export default component;
       ).resolves.toMatchObject([
         { include: ['packages/app/tsconfig.json'], name: 'tsc' },
       ]);
-      expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
     } finally {
       await fixture.cleanup();
     }
@@ -2636,7 +2623,7 @@ export default component;
           }),
         ]);
         expect(result.dependencyEdges).toEqual([]);
-        expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+        expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
       } finally {
         await fixture.cleanup();
       }
@@ -2695,7 +2682,7 @@ export default component;
           typeEvidenceKind: 'unobserved',
         });
         expect(result.dependencyEdges).toEqual([]);
-        expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+        expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
       } finally {
         await fixture.cleanup();
       }
@@ -2755,7 +2742,7 @@ export default component;
             toConfigPath: fixture.path('packages/b/tsconfig.json'),
           },
         ]);
-        expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+        expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
       } finally {
         await fixture.cleanup();
       }
@@ -2775,7 +2762,16 @@ export default component;
     const ordinaryTarget = normalizeAbsolutePath(
       path.join(fixture.rootDir, 'packages/vue/src/ordinary.ts'),
     );
-    const resolveOxcImport = vi.fn(() => ordinaryTarget);
+    const resolveOxcImport = vi.fn(
+      (request: SupplementalResolutionRequest) => ({
+        state: 'resolved' as const,
+        target: ordinaryTarget,
+        requestId: request.requestId,
+        contextId: request.contextId,
+        profile: 'test-ordinary-target',
+        resolver: 'test-ordinary-target',
+      }),
+    );
 
     try {
       await expect(
@@ -2788,7 +2784,10 @@ export default component;
             },
           },
           {
-            importAnalysisContext: { ...base, resolveOxcImport },
+            importAnalysisContext: {
+              ...base,
+              resolveSupplementalImport: resolveOxcImport,
+            },
           },
         ),
       ).resolves.toEqual(
@@ -3204,7 +3203,7 @@ export default component;
         });
         expect(result.sourceToDts.get(checkerName)?.size ?? 0).toBe(0);
         expect(result.sourceToBuild.get(checkerName)?.size ?? 0).toBe(0);
-        expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+        expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
       } finally {
         await fixture.cleanup();
       }
@@ -4074,6 +4073,122 @@ export default component;
     },
   );
 
+  it.each([
+    { noResolve: false, script: 'ts', allowJs: false },
+    { noResolve: true, script: 'ts', allowJs: false },
+    { noResolve: false, script: 'js', allowJs: false },
+    { noResolve: false, script: 'js', allowJs: true },
+  ])(
+    'qualifies a Pending Vue target without granting native loading ($script, noResolve=$noResolve, allowJs=$allowJs)',
+    async ({ noResolve, script, allowJs }) => {
+      const fixture = await createFixture({
+        'packages/a/src/index.ts':
+          "import { model } from '../../b/src/model'; import Button from '../../c/src/Button.vue'; export const result = { model, Button };",
+        'packages/a/tsconfig.json': json({
+          compilerOptions: {
+            ...managedOutputCompilerOptions(),
+            noResolve,
+            allowJs,
+          },
+          include: ['src/**/*.ts'],
+        }),
+        'packages/b/src/model.ts': 'export const model = 1;',
+        'packages/b/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*.ts'],
+        }),
+        'packages/c/src/Button.vue': `<script setup lang="${script}">const label = "hello";</script><template>{{ label }}</template>`,
+        'packages/c/tsconfig.json': json({
+          compilerOptions: { ...managedOutputCompilerOptions(), allowJs: true },
+          include: ['src/**/*'],
+        }),
+      });
+      const caches = createProjectDependencyCaches();
+      const imports = createSpiedImportAnalysis();
+      try {
+        const result = await prepareGeneratedTsconfigGraph(
+          {
+            ...fixture.config,
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
+          },
+          {
+            projectDependencyCaches: caches,
+            importAnalysisContext: imports.context,
+          },
+        );
+        const pending = result.ownershipPlan.ownershipSelectionFacts?.find(
+          (fact) => fact.importRecord.specifier.endsWith('Button.vue'),
+        );
+        expect(pending?.nativeEvidence?.obligation?.existence.state).toBe(
+          'absent',
+        );
+        expect(pending?.supplementalDiscovery?.state).toBe('resolved');
+        expect(
+          imports.resolveSupplementalImport.mock.calls.some(([request]) =>
+            request.specifier.endsWith('/model'),
+          ),
+        ).toBe(false);
+        expect(
+          caches.nativeSourceContexts?.get(
+            fixture.path('packages/a/tsconfig.json'),
+          )?.nativeInventory?.members,
+        ).not.toContain(fixture.path('packages/c/src/Button.vue'));
+        const locked = result.dependencyAnalysis!.supplementalAssessments![0]!;
+        expect(locked.context.id).not.toBe(
+          pending?.supplementalAssessment?.context.id,
+        );
+        expect(
+          projectSupplementalPrerequisite(
+            locked,
+            result.dependencyAnalysis!.candidate!,
+          ),
+        ).toBeDefined();
+        expect(
+          projectSupplementalPrerequisite(
+            structuredClone(locked),
+            result.dependencyAnalysis!.candidate!,
+          ),
+        ).toBeUndefined();
+
+        expect(
+          pending?.supplementalAssessment?.obligation.existence,
+          JSON.stringify(pending?.supplementalAssessment?.obligation),
+        ).toMatchObject({
+          state:
+            noResolve || (script === 'js' && !allowJs) ? 'absent' : 'present',
+        });
+        const snapshot = result.dependencyAnalysis?.nativeEvidence
+          ?.map((item) => item.snapshot)
+          .find((value) =>
+            value.contexts.some(
+              (context) =>
+                context.authority.phase === 'pending' &&
+                context.inputs.config ===
+                  fixture.path('packages/a/tsconfig.json'),
+            ),
+          );
+        expect(
+          snapshot?.resolutions.find(
+            (value) => value.requestId === pending?.nativeEvidence?.requestId,
+          ),
+        ).toMatchObject({ state: 'unresolved', target: null });
+        expect(
+          result.dependencyEdges.some(
+            (edge) =>
+              edge.fromConfigPath ===
+                fixture.path('packages/a/tsconfig.json') &&
+              edge.toConfigPath === fixture.path('packages/c/tsconfig.json'),
+          ),
+        ).toBe(!noResolve && (script === 'ts' || allowJs));
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('uses an untyped Svelte import for pending ownership without admitting the Oxc bootstrap as a final edge', async () => {
     const fixture = await createFixture({
       'packages/a/src/index.ts':
@@ -4108,7 +4223,7 @@ export default component;
         },
       ]);
       expect(result.dependencyEdges).toEqual([]);
-      expect(analysis.resolveOxcImport).toHaveBeenCalledTimes(1);
+      expect(analysis.resolveSupplementalImport).toHaveBeenCalledTimes(1);
     } finally {
       await fixture.cleanup();
     }

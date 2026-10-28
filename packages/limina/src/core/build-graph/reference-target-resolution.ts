@@ -7,6 +7,7 @@ import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { formatAmbiguousCanonicalOwner } from './canonical-owner-problems';
 import { nativeReferenceTarget } from './native-reference-target';
+import { isCurrentLockedSupplement } from './pending-supplemental-assessment';
 import { getDtsProjectsForSourcePath } from './project-indexes';
 import { formatReferenceBoundaryProblem } from './reference-boundary';
 import type {
@@ -194,6 +195,24 @@ export function createReferenceTarget(options: {
   base: ReferenceImportOptions;
   provider: ResolvedProvider;
 }): ReferenceTarget | null {
+  const supplement = options.base.projectDependency.supplementalAssessment;
+  if (supplement !== undefined) {
+    if (
+      !isCurrentLockedSupplement(supplement) ||
+      supplement.coverage.state !== 'unique' ||
+      supplement.obligation.targetConfigId === null
+    )
+      return null;
+    return {
+      targetSourceConfigPath: supplement.obligation.targetConfigId,
+      resolvedFilePath: options.base.projectDependency.resolvedFilePath,
+      providerSourceFilePaths:
+        options.base.context.fileOwnerLookup.registeredFileNames(
+          options.base.projectDependency.resolvedFilePath,
+          supplement.obligation.targetConfigId,
+        ),
+    };
+  }
   const nativeTarget = nativeReferenceTarget(options.base);
   return nativeTarget === undefined
     ? legacyReferenceTarget(options)
