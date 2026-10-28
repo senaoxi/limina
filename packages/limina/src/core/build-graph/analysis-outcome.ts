@@ -3,9 +3,11 @@ import {
   summarizeCoreCollection,
 } from '../../domain/analysis/core-collection';
 import type { NativeCollectionStatus } from '../../domain/analysis/native-collection';
+import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { candidateAdmission } from './analysis-admission';
 import { bindCurrentCompilationContexts } from './compilation-prerequisite';
+import { bindSupplementalCompilationContexts } from './compilation-projection';
 import { retainNativeAnalysis } from './native-analysis-evidence';
 import type { DependencyAnalysisResult } from './types';
 
@@ -36,6 +38,14 @@ export function finishAnalysisOutcome(
   governance: AnalysisOutcome['governance'],
 ): void {
   retainCollectedEvidence(analysis, caches);
+  analysis.supplementalAssessments = caches.supplementalAssessments ?? [];
+  bindSupplementalCompilationContexts(
+    analysis.candidate,
+    analysis.supplementalAssessments,
+  );
+  analysis.complete &&= analysis.supplementalAssessments.every(
+    (item) => summarizeCompilationObligation(item.obligation) !== 'unknown',
+  );
   if (caches.nativeObservations !== undefined)
     bindCurrentCompilationContexts(
       analysis.candidate,

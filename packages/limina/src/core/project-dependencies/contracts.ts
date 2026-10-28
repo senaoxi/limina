@@ -12,6 +12,7 @@ import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-eviden
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-types';
 import type { CoreCollectionRun } from '../build-graph/core-collection-run';
+import type { SupplementalAssessment } from '../build-graph/pending-supplemental-assessment';
 import type { RequirementDecision } from '../dependency-semantics';
 import type { PreparedDependencyFact } from '../framework-semantic/contracts';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
@@ -54,6 +55,7 @@ export interface ProjectSemanticContext {
 interface ProjectDependencyBase {
   readonly evidence: ProjectDependencyEvidence;
   nativeFact?: NativeDependencyFact;
+  supplementalAssessment?: SupplementalAssessment;
   referenceRequirement: DeclarationReferenceRequirement | null;
   importRecord: ImportRecord;
   resolutionMode: string;
@@ -72,7 +74,14 @@ export interface MappedSourceDependency extends ProjectDependencyBase {
   provenance: 'strict-source-map' | 'compiler-request';
 }
 
-export type ProjectDependency = DirectSourceDependency | MappedSourceDependency;
+export interface SupplementalDependency extends ProjectDependencyBase {
+  provenance: 'qualified-supplement';
+  supplementalAssessment: SupplementalAssessment;
+}
+export type ProjectDependency =
+  | DirectSourceDependency
+  | MappedSourceDependency
+  | SupplementalDependency;
 
 export type ProjectDependencyObservation = {
   readonly evidence: ProjectDependencyEvidence;
@@ -165,6 +174,7 @@ export interface ProjectDependencyRequest {
 }
 
 export interface ProjectDependencyCaches {
+  supplementalAssessments?: SupplementalAssessment[];
   coreCollectionRun?: CoreCollectionRun;
   readonly metrics?: AnalysisMetricsRecorder;
   nativeSourceEvidence?: NativeEvidenceSnapshot;
@@ -175,7 +185,6 @@ export interface ProjectDependencyCaches {
   nativeObservations?: Map<string, NativeEvidenceSnapshot>;
   sourceConfigCoverage?: SourceConfigCoverageIndex;
   readonly analysisCache?: NativeAnalysisCache;
-  pendingOwnershipEvidenceCache: Map<string, unknown>;
   projectDependencyCache: Map<string, ProjectDependencyCollection>;
   projectDependencyPreparationCache: Map<string, ProjectDependencyPreparation>;
   sourceEvidenceCache: Map<string, SourceEvidence>;

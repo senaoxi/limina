@@ -25,7 +25,6 @@ export function createProjectDependencyCaches(
   return {
     metrics,
     analysisCache,
-    pendingOwnershipEvidenceCache: new Map(),
     projectDependencyCache: new Map(),
     projectDependencyPreparationCache: new Map(),
     sourceEvidenceCache: new Map(),

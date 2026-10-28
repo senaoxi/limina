@@ -1,4 +1,5 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
+import type { SupplementalAssessment } from '../build-graph/pending-supplemental-assessment';
 import type { PreparedDependencyFact } from '../framework-semantic/contracts';
 import type { ImportRuntimeResolutionEvidence } from '../import-analysis/evidence';
 import type { ImportRecord } from '../import-analysis/records';
@@ -22,6 +23,10 @@ type CheckerEvidence =
         'profile'
       >;
       failure?: CanonicalImportResolutionEvidence['semanticFailure'];
+    }
+  | {
+      kind: 'supplemental';
+      assessment: SupplementalAssessment;
     }
   | { kind: 'unobserved' };
 
@@ -162,6 +167,7 @@ function getObservedCheckerTarget(
     { kind: 'unobserved' }
   >,
 ): ResolvedCheckerModuleName | null {
+  if (checker.kind === 'supplemental') return null;
   if (checker.kind === 'native') return checker.fact.resolution.target;
   return checker.kind === 'framework' ? checker.fact.target : checker.target;
 }

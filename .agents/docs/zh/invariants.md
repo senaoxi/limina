@@ -26,13 +26,13 @@
 - **Statement / Applies when**：managed type config 的 semantic authority 在 facts convergence 后 freeze；后续 promotion/coloring/fallback/finalization 不能改变它。成功 finalization 为 leaf 确定唯一执行 owner。
 - **Problem**：为共享 declaration build 选用 Vue checker，可能错误地把原生 TS import 改为 Vue module semantics。
 - **Root cause**：解释源码与安排构建使用不同 authority，二者都曾容易被称为 owner。
-- **Enforcement / Why it works**：[ownership types](../../../packages/limina/src/core/build-graph/checker-ownership-types.ts) 分字段；[semantic authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 限定 lock evidence、保存 frozen 值并在 coloring/finalization 后比对；[resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先收齐 requirements 再应用锁。执行选择无法冒充新的语义证据。pending inference 必须同时具有 missing evidence 与合格 pending-framework-candidate；native source requirement 本身不能锁定 framework authority。
+- **Enforcement / Why it works**：[ownership types](../../../packages/limina/src/core/build-graph/checker-ownership-types.ts) 分字段；[semantic authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 限定 lock evidence、保存 frozen 值并在 coloring/finalization 后比对；[resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先收齐 requirements 再应用锁。执行选择无法冒充新的语义证据。pending inference 必须具有独立来源的合格 pending-framework-candidate；native source requirement 本身不能锁定 framework authority。
 - **Concrete example**：`generated-graph.spec.ts` 中 TS app 导入 Vue project 的 theme TS 后可由 `vue-tsc` 构建，同时 semantic/frozen authority 保持 TypeScript。
 - **Protected property**：语义稳定、import 顺序不隐藏跨框架冲突。
 - **Evidence / Strength / Confidence**：[generated graph tests](../../../packages/limina/src/__tests__/generated-graph.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：freeze 是快照与校验机制，不是全对象 deep freeze；named solution 的 explicit ownership constraints 在 discovery 阶段已经存在。
 
-**Native 阶段资格**：[pending baseline](../../../packages/limina/src/core/build-graph/pending-native-context.ts)在最终 Checker 初始化前建立；locked 阶段重新采集而不重标 pending 对象。框架物理候选有独立来源，只能支持选择。输入/epoch/phase 变化撤销旧资格，冻结后冲突显式报告，不循环重选。
+**Native 阶段资格**：[pending baseline](../../../packages/limina/src/core/build-graph/pending-native-context.ts)在最终 Checker 初始化前建立；locked 阶段重新采集而不重标 pending 对象。框架物理候选有独立来源，不授予 Program 加载权。合格补充评估复用 Native 义务规则，重新取得 Locked 绑定后才能参与引用投影及准入；未取得资格的物理命中仅支持选择。输入/epoch/phase 变化撤销旧资格，冻结后冲突显式报告，不循环重选。
 
 ## I03 — Importer roots、支撑准入与解析相互独立
 

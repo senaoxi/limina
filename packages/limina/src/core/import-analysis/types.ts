@@ -25,6 +25,10 @@ import type { VueDependencyObservation } from '../vue-semantic/dependency-observ
 import type { ImportRuntimeResolutionEvidence } from './evidence';
 import type { ImportRecord } from './records';
 import type { SemanticEligibility } from './semantic-eligibility';
+import type {
+  SupplementalResolution,
+  SupplementalResolutionRequest,
+} from './supplemental-resolution';
 
 export interface ModuleResolutionPair {
   oxc: string | null;
@@ -80,6 +84,9 @@ export type StandaloneInternalImportArguments = [
 ];
 
 export interface ImportAnalysisContext {
+  resolveSupplementalImport?: (
+    request: SupplementalResolutionRequest,
+  ) => SupplementalResolution;
   collectCheckerSourceRecords?: (options: {
     context: ImportResolveContextFields;
     filePath: string;
