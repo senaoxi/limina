@@ -20,6 +20,7 @@ interface ImpactInput {
 type RequestInput = Pick<ImpactInput, 'observation' | 'program'>;
 interface TargetInput {
   target: string;
+  extension: ts.ResolvedModuleFull['extension'];
   compiler: typeof ts;
   inputOptions: ts.CompilerOptions;
   emitOptions: ts.CompilerOptions;
@@ -136,6 +137,7 @@ function inputEligibility(
     ? { state: 'absent', rule: 'compiler-typescript-jsdoc-input-excluded' }
     : moduleTargetEligibility({
         target: target.resolvedFileName,
+        extension: target.extension,
         compiler: input.compiler,
         inputOptions: options,
         emitOptions: input.program.getCompilerOptions(),
@@ -151,9 +153,11 @@ function isExcludedDocumentation(input: ImpactInput): boolean {
 }
 
 function moduleTargetEligibility(input: TargetInput): NativeModuleImpact {
-  return /\.(?:js|jsx|mjs|cjs)$/.test(input.target)
-    ? javaScriptEligibility(input)
-    : nativeTargetEligibility(input);
+  return nativeCompilerApi(input.compiler).resolutionExtensionIsTSOrJson(
+    input.extension,
+  )
+    ? nativeTargetEligibility(input)
+    : javaScriptEligibility(input);
 }
 
 /** Selection and JS input permission belong to each request entry. Only
@@ -208,7 +212,9 @@ function ordinaryJavaScriptEligibility(input: TargetInput): NativeModuleImpact {
   return nativeCompilerApi(input.compiler).getAllowJSCompilerOption(
     input.inputOptions,
   )
-    ? nativeTargetEligibility(input)
+    ? input.emitOptions.noEmitForJsFiles
+      ? { state: 'absent', rule: 'compiler-javascript-emission-disabled' }
+      : nativeTargetEligibility(input)
     : { state: 'absent', rule: 'compiler-javascript-input-disabled' };
 }
 function eligibleTarget(

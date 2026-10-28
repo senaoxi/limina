@@ -226,6 +226,7 @@ export class VueSemanticContext {
     this.#boundedHost = createBoundedLanguageServiceHost({
       host: this.languageServiceHost,
       observeModule: (input) => this.compilerRequests.observe(input),
+      observeOptions: (input) => this.compilerRequests.observeOptions(input),
       tsModule: this.tsModule,
       project: {
         configPath: identity.configPath,
@@ -295,6 +296,7 @@ export class VueSemanticContext {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#program = undefined;
+    this.compilerRequests.dispose();
     this.#semanticSourceFiles.clear();
     this.#texts.clear();
     disposeLanguage({

@@ -103,7 +103,7 @@ export function nativeProjectRelations(options: {
 }
 
 /** A target hit is not input authority. Only the bound request's audited
- * noResolve proof cancels its contribution, never another root or request. */
+ * non-input proof cancels its contribution, never another root or request. */
 function disabledModuleRequests(
   context: NativeEvidenceContext,
   obligations: readonly NativeCompilationObligation[],
@@ -119,7 +119,10 @@ function disabledModuleRequests(
     if (
       proof.contextId === context.id &&
       proof.kind === 'audited-rule' &&
-      proof.ruleOrObservation === 'compiler-noResolve-disables-module-input' &&
+      [
+        'compiler-noResolve-disables-module-input',
+        'compiler-augmentation-does-not-add-input',
+      ].includes(proof.ruleOrObservation) &&
       obligation.requestIds.includes(proof.evidenceId)
     )
       disabled.add(proof.evidenceId);

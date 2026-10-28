@@ -91,6 +91,10 @@ export function createPreparedFact(
     framework: candidate.framework,
     importRecord: {
       ...candidate.sourceRecord,
+      compilerRequest:
+        candidate.sourceRecord.compilerRequest === undefined
+          ? undefined
+          : { ...candidate.sourceRecord.compilerRequest },
       locator: { ...candidate.sourceRecord.locator },
       specifier: candidate.semanticSpecifier,
     },

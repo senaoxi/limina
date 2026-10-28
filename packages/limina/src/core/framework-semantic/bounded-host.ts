@@ -6,16 +6,22 @@ import { prepareTypeScriptSupportInputs } from '../typescript-semantic/support-i
 type ModuleResolver = NonNullable<
   ts.LanguageServiceHost['resolveModuleNameLiterals']
 >;
+interface SourceOptionsReceipt {
+  source: ts.SourceFile;
+  options: ts.CompilerOptions;
+  redirect: ts.ResolvedProjectReference | undefined;
+}
 interface HostOptions {
   host: ts.LanguageServiceHost;
   project: TypeScriptSemanticProject;
   tsModule: typeof ts;
-  observeModule?: (input: {
-    source: ts.SourceFile;
-    literal: ts.StringLiteralLike;
-    options: ts.CompilerOptions;
-    result: ts.ResolvedModuleWithFailedLookupLocations;
-  }) => void;
+  observeOptions?: (input: SourceOptionsReceipt) => void;
+  observeModule?: (
+    input: SourceOptionsReceipt & {
+      literal: ts.StringLiteralLike;
+      result: ts.ResolvedModuleWithFailedLookupLocations;
+    },
+  ) => void;
 }
 interface BoundedHost {
   host: ts.LanguageServiceHost;
@@ -86,6 +92,7 @@ function wrapModuleResolver(
             source: arguments_[4],
             literal: arguments_[0][index]!,
             options: arguments_[3],
+            redirect: arguments_[2],
             result,
           });
           return maskModuleResult({
@@ -106,10 +113,14 @@ function installTypeResolver(
   raw: ts.LanguageServiceHost,
   host: ts.LanguageServiceHost,
   admission: TypeScriptInclusionLedger,
+  observe: HostOptions['observeOptions'],
 ): void {
   const resolve = raw.resolveTypeReferenceDirectiveReferences?.bind(raw);
   if (resolve === undefined) return;
   host.resolveTypeReferenceDirectiveReferences = (...arguments_) => {
+    const source = arguments_[4];
+    if (source !== undefined)
+      observe?.({ source, options: arguments_[3], redirect: arguments_[2] });
     const results = resolve(...arguments_);
     for (const result of results) admitResolvedType(admission, result);
     return results;
@@ -165,7 +176,7 @@ export function createBoundedLanguageServiceHost(
     admission,
     options.observeModule,
   );
-  installTypeResolver(raw, host, admission);
+  installTypeResolver(raw, host, admission, options.observeOptions);
   return {
     host,
     begin: () => {

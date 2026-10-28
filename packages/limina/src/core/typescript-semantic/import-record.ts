@@ -24,6 +24,7 @@ export function isModuleImportRecord(importRecord: ImportRecord): boolean {
 export function createImportRecordIdentity(importRecord: ImportRecord): string {
   return JSON.stringify({
     containingFile: importRecord.filePath,
+    compilerRequest: importRecord.compilerRequest,
     kind: importRecord.kind,
     locator: [
       importRecord.locator.occurrence,

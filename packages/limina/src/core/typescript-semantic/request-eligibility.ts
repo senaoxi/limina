@@ -23,7 +23,8 @@ function isDocumentationOnly(
   record: ImportRecord,
 ): boolean {
   return (
-    record.kind === 'environment-pragma' ||
+    (record.kind === 'environment-pragma' &&
+      record.compilerRequest === undefined) ||
     [record.kind === 'jsdoc-import', !/\.[cm]?jsx?$/.test(file.fileName)].every(
       Boolean,
     )

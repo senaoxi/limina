@@ -42,6 +42,17 @@ const requirement = z
   })
   .nullable();
 const occurrence = z.object({
+  compilerRequest: z
+    .object({
+      contextConfig: text,
+      fileName: text,
+      role: z.enum(['import', 'augmentation']),
+      mode: z.number().optional(),
+      occurrence: z.number(),
+      start: z.number(),
+      end: z.number(),
+    })
+    .optional(),
   domain: z.enum(['typescript', 'vue']),
   filePath: text,
   kind: z.enum([
@@ -69,7 +80,7 @@ const occurrence = z.object({
   configurationSource: z
     .object({
       configPath: text,
-      option: z.literal('jsxImportSource'),
+      option: z.enum(['jsxImportSource', 'importHelpers']),
       resolutionMode: z.number().optional(),
     })
     .optional(),

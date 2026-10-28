@@ -72,7 +72,11 @@ const fact = z.object({
   eligibility: requestEligibilitySchema.optional(),
   framework: z.literal('vue'),
   importRecord: occurrenceSchema,
-  provenance: z.enum(['direct-source', 'strict-source-map']),
+  provenance: z.enum([
+    'direct-source',
+    'strict-source-map',
+    'compiler-request',
+  ]),
   resolutionMode: text,
   semanticSpecifier: text,
   target: target.nullable(),
@@ -115,7 +119,11 @@ const schemas = {
     profile: z
       .enum(['vue-sfc', 'petite-vue-html', 'vitepress-markdown'])
       .optional(),
-    provenance: z.enum(['direct-source', 'strict-source-map']),
+    provenance: z.enum([
+      'direct-source',
+      'strict-source-map',
+      'compiler-request',
+    ]),
     resolutionMode: text,
     semanticSpecifier: text,
     sourceRecord: occurrenceSchema,

@@ -3,6 +3,7 @@ import { accessSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkCrossProjectRequests } from './cross-project.mjs';
 
 const cases = [
   {
@@ -229,7 +230,10 @@ for (const testCase of cases) {
     stdio: 'inherit',
   });
   if (result.error !== undefined) throw result.error;
-  if (result.status === 0) continue;
+  if (result.status === 0) {
+    checkCrossProjectRequests(caseDirectory, installed.liminaCli);
+    continue;
+  }
   process.exitCode = result.status ?? 1;
   break;
 }

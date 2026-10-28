@@ -24,7 +24,17 @@ export function syntheticModuleMetadata(
   );
   return input.literal.text === runtime
     ? jsxMetadata(input)
-    : { kind: 'environment-pragma' };
+    : {
+        kind: 'environment-pragma',
+        ...(options.importHelpers &&
+          input.literal.text === 'tslib' && {
+            configurationSource: {
+              configPath: input.configPath,
+              option: 'importHelpers',
+              resolutionMode: input.mode,
+            },
+          }),
+      };
 }
 
 function jsxMetadata(

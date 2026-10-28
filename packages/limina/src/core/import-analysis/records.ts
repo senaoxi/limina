@@ -30,9 +30,21 @@ export interface ImportLocator {
 }
 
 export interface ImportRecord {
+  /**
+  Inventory identity, independent of an optional source-character mapping.
+  */
+  compilerRequest?: {
+    readonly contextConfig: string;
+    readonly fileName: string;
+    readonly role: 'import' | 'augmentation';
+    readonly mode: number | undefined;
+    readonly occurrence: number;
+    readonly start: number;
+    readonly end: number;
+  };
   configurationSource?: {
     configPath: string;
-    option: 'jsxImportSource';
+    option: 'jsxImportSource' | 'importHelpers';
     resolutionMode: number | undefined;
   };
   domain: ImportDomain;

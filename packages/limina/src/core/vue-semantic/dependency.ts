@@ -5,6 +5,7 @@ import type ts from 'typescript';
 import type { FrameworkSemanticCandidate } from '../framework-semantic/contracts';
 import { rangeIdentity } from '../framework-semantic/generated-dependencies';
 import { findSourceFileLiterals } from '../typescript-semantic/source-file-literals';
+import { isMatchingVueCompilerRequest } from './compiler-requests';
 import type { VueSemanticContext } from './context';
 
 export type SemanticDependencyEvidence = FrameworkSemanticCandidate<
@@ -263,10 +264,46 @@ export function collectSemanticDependencyEvidence(options: {
   importRecord: ImportRecord;
 }): SemanticDependencyResult {
   options.context.assertActive();
+  if (options.importRecord.compilerRequest !== undefined)
+    return collectCompilerDependency(options);
   const profile = options.context.identity.profilesByFileName.get(
     normalizeAbsolutePath(options.importRecord.filePath),
   );
   return profile === undefined
     ? collectDirectDependency(options)
     : collectMappedDependency({ ...options, profile });
+}
+
+function collectCompilerDependency(options: {
+  context: VueSemanticContext;
+  importRecord: ImportRecord;
+}): SemanticDependencyResult {
+  const { context, importRecord } = options;
+  const source = context.program.getSourceFile(
+    importRecord.compilerRequest!.fileName,
+  );
+  const requests =
+    source === undefined
+      ? []
+      : context.compilerRequests
+          .collect(context.program, source)
+          .filter((request) =>
+            isMatchingVueCompilerRequest(request, importRecord),
+          );
+  if (requests.length !== 1)
+    return createUnsupported(
+      'Vue compiler request could not be rebound to this Program inventory.',
+    );
+  return {
+    kind: 'supported',
+    candidates: requests.map((request) => ({
+      containingSourceFile: request.sourceFile,
+      literal: request.literal,
+      framework: 'vue',
+      identityId: context.identity.id,
+      provenance: 'compiler-request',
+      semanticSpecifier: request.literal.text,
+      sourceRecord: importRecord,
+    })),
+  };
 }
