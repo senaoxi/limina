@@ -52,6 +52,8 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 完整矩阵的 Unit Tests 步骤通过 `VITEST_MAX_WORKERS` 将 Vitest 限制为两个 worker，为 CLI 子进程和框架宿主留出资源。隔离 CLI 夹具实际复制运行时源码，排除 `__tests__` 目录；依赖链接、编译器 shim 和仓库边界仍由夹具自身持有。测试选择和安全断言保持不变。
 
+Windows 将 Limina 单元测试文件分到两个完整互补的 Vitest shard，每个 job 保留原有两个 worker 上限和 60 分钟时限。未分片时，Windows 仅完成 Limina 单元套件就已消耗约 55 分钟，无法为 migration、tooling 和集成检查留下足够预算。两个 shard job 仍各自构建并执行全部质量门禁、完整 migration/tooling 套件及两个集成套件；Linux 和 macOS 不分片。失败运行的 artifact 名称包含 Windows shard，避免冲突。[CI 合同守卫](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)要求两份分片、原有时限和全部门禁；CI Status 等待整个矩阵。
+
 六个使用真实 Astro 声明图的跨领域用例各有 120 秒时限，分别覆盖 package imports、核心治理域、两类跨配置边、Proof 的观察集合以及 Build 目标选择。[Windows / Node 22.22.3 日志](https://github.com/senaoxi/limina/actions/runs/40097787173/job/120883562891)记录了 31.713–93.150 秒耗时，超出默认 30 秒预算。全局时限、两 worker 上限、原断言和 Svelte 核心治理用例的 30 秒时限保留。较大的有限时限适用于这些真实工具链用例，在所有平台一致执行；它不修复或证明 Windows 性能，也不替代修改后的原生 Windows CI 验收。
 
 [License plugin](../../../packages/build-tools/src/license.ts)保留来自实际 bundler 输入的 bundled-dependencies.json，包含实际打包的开发依赖，拒绝缺失／冲突／禁止的 metadata。安全工作流为 `pnpm licenses list --prod --json` 显式选择 limina 和 limina-migrate；这份基于源码 manifest 的依赖报告不替代 bundle license 门禁。构建两个产品后，固定版本的 Anchore／Syft Action 扫描工作目录，在 .reports/sbom 生成 CycloneDX SBOM。扫描范围是目录，不是逐 tarball 依赖 inventory，也不保证消费者最终解析结果。原始审计数据与 Markdown 报告位于 .reports/security，许可证数据与报告位于 .reports/licenses。自制的包体积、SHA-512 和逐包 SBOM 报告已移除。

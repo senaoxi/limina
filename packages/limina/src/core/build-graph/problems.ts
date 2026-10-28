@@ -44,11 +44,13 @@ const SPECIALIZED_ISSUE_FACTORIES: ReadonlyMap<
     'Generated project reference cycle',
     ({ config, lines }) =>
       createTaskFailureIssue({
+        checkerName: findGeneratedGraphProblemLineValue(lines, ['checker']),
         code: LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
         title: 'Generated project reference cycle',
         task: 'graph:check',
         rootDir: config.rootDir,
         detailLines: lines,
+        filePath: findGeneratedGraphProblemLineValue(lines, ['config']),
         reason: 'TypeScript project references must be acyclic.',
         fix: 'Merge coupled source scopes or extract a shared contract to break the compilation cycle.',
         verifyCommands: ['limina graph prepare'],

@@ -10658,7 +10658,10 @@ describe('compiler requests and final reference admission', () => {
         ).rejects.toMatchObject({
           issues: expect.arrayContaining([
             expect.objectContaining({
+              checkerName: 'tsc',
               code: 'LIMINA_GRAPH_REFERENCE_CYCLE',
+              filePath:
+                '.limina/tsconfig/checkers/tsc/projects/packages/a/tsconfig.dts.json',
               reason: 'TypeScript project references must be acyclic.',
             }),
           ]),
