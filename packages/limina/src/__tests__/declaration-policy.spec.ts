@@ -150,7 +150,7 @@ describe('Coverage-bounded declaration traversal', () => {
       ['local', 'package'].map((route) => ({ covered, route })),
     ),
   )(
-    'stops foreign declarations with covered=$covered and route=$route',
+    'delegates covered declarations and retains uncovered declarations: covered=$covered route=$route',
     async ({ covered, route }) => {
       const f = await fixture();
       f.write(
@@ -160,14 +160,16 @@ describe('Coverage-bounded declaration traversal', () => {
       const result = collect(f.project({ covered }));
       expect(result.evidence.failures).toEqual([]);
       expect(result.closure.incomplete).toEqual([]);
-      expect(result.members).not.toContain(f.path('b/helper.d.ts'));
-      expect(result.closure.links[0]?.expansion).toBe(false);
+      expect(result.members.includes(f.path('b/helper.d.ts'))).toBe(!covered);
+      expect(result.closure.links[0]?.expansion).toBe(!covered);
       expect(result.closure.links[0]?.stop).toBe(
-        covered ? 'declaration-context-boundary' : 'uncovered',
+        covered ? 'declaration-context-boundary' : undefined,
       );
       expect(result.members).not.toContain(f.path('c.ts'));
       expect(result.members).not.toContain(f.path('d.ts'));
-      expect(result.targets).toEqual([]);
+      expect(result.targets).toEqual(
+        !covered && route === 'local' ? [f.path('c.ts')] : [],
+      );
       if (covered)
         expect(
           result.evidence.coverage.find(
@@ -196,13 +198,13 @@ describe('Coverage-bounded declaration traversal', () => {
       expect(projectNativeDeclarationClosure(context, project, lookup)).toEqual(
         ordinary,
       );
-      expect(ordinary.links[0]?.expansion).toBe(false);
+      expect(ordinary.links[0]?.expansion).toBe(!covered);
       context.dispose();
     },
   );
 
   it.each(['types', 'typings', 'main', 'index', 'typesVersions', 'exports'])(
-    'stops the uncovered %s package declaration without a governance failure',
+    'retains the uncovered %s package declaration without fabricating an implementation obligation',
     async (entry) => {
       const f = await fixture();
       f.write('a.ts', 'export type { Value } from "@closure/b";');
@@ -220,8 +222,8 @@ describe('Coverage-bounded declaration traversal', () => {
       expect(result.targets).toEqual([]);
       expect(result.closure.links[0]).toMatchObject({
         target: f.path('b/index.d.ts'),
-        expansion: false,
-        stop: 'uncovered',
+        expansion: true,
+        stop: undefined,
       });
       expect(result.evidence.failures).toEqual([]);
     },
@@ -291,7 +293,7 @@ describe('Coverage-bounded declaration traversal', () => {
       expect(
         collect(f.project({ covered: false, options: project.options })).closure
           .links[0]?.expansion,
-      ).toBe(false);
+      ).toBe(true);
     },
   );
 
@@ -397,6 +399,26 @@ describe('Coverage-bounded declaration traversal', () => {
     expect(removed.members).toEqual([f.path('a.ts')]);
   });
 
+  it('retains every incoming request without duplicating a shared declaration inventory per root', async () => {
+    const f = await fixture();
+    const roots = Array.from({ length: 64 }, (_, index) => `root-${index}.ts`);
+    for (const root of roots)
+      f.write(root, 'export type { Value } from "./b/index";');
+    const result = collect(f.project({ roots, covered: false }));
+    expect(result.targets).toEqual([f.path('c.ts')]);
+    expect(
+      result.closure.links.filter((link) =>
+        roots.some((root) => link.occurrence.filePath === f.path(root)),
+      ),
+    ).toHaveLength(roots.length);
+    expect(
+      result.closure.links.filter(
+        (link) => link.occurrence.filePath === f.path('b/helper.d.ts'),
+      ),
+    ).toHaveLength(1);
+    expect(result.members).not.toContain(f.path('c.ts'));
+  });
+
   it('restores the stopped branch and refreshes Coverage when the selected config is removed', async () => {
     const f = await fixture();
     const first = collect(f.project());
@@ -405,8 +427,9 @@ describe('Coverage-bounded declaration traversal', () => {
     expect(warm.evidence).toEqual(first.evidence);
     const removed = collect(f.project({ covered: false }), warm.cache);
     expect(removed.cache.metrics.restoredContexts ?? 0).toBe(0);
-    expect(removed.targets).toEqual([]);
-    expect(removed.members).not.toContain(f.path('b/index.d.ts'));
+    expect(removed.targets).toEqual([f.path('c.ts')]);
+    expect(removed.members).toContain(f.path('b/index.d.ts'));
+    expect(removed.members).not.toContain(f.path('c.ts'));
   });
 
   it('revokes manifest and symlink targets instead of inheriting the previous declaration membership', async () => {
@@ -421,8 +444,8 @@ describe('Coverage-bounded declaration traversal', () => {
     const changed = collect(f.project(), first.cache);
     expect(changed.closure.links[0]).toMatchObject({
       target: f.path('b/alternate.d.ts'),
-      expansion: false,
-      stop: 'uncovered',
+      expansion: true,
+      stop: undefined,
     });
     mkdirSync(f.path('other'));
     f.write(
@@ -435,7 +458,7 @@ describe('Coverage-bounded declaration traversal', () => {
     const rebound = collect(f.project(), changed.cache);
     expect(rebound.closure.links[0]).toMatchObject({
       target: f.path('other/index.d.ts'),
-      expansion: false,
+      expansion: true,
     });
     expect(rebound.evidence.failures).toEqual([]);
   });

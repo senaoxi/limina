@@ -402,7 +402,7 @@ describe('coverage-driven frontier contract', () => {
     },
   );
 
-  it('stops uncovered libraries/declarations normally and preserves root expansion', () => {
+  it('retains uncovered declarations in the consumer and preserves root expansion', () => {
     const coverage = observeCoverage(
       [config('A', []), config('B', [])],
       file('lib.d.ts'),
@@ -414,7 +414,7 @@ describe('coverage-driven frontier contract', () => {
         consumerConfigId: 'A',
         coverage,
       }),
-    ).toEqual({ action: 'stop', reason: 'uncovered' });
+    ).toEqual({ action: 'expand', basis: 'consumer-declaration' });
     expect(
       decideNativeFrontier({
         root: true,
@@ -811,7 +811,7 @@ describe('pending/locked consumption eligibility', () => {
 
 function snapshot(): NativeEvidenceSnapshot {
   return {
-    version: 4,
+    version: 5,
     run: 'completed',
     contexts: [pending()],
     coverageIndexes: [],

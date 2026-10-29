@@ -253,7 +253,10 @@ function resolveCompilerCandidates(
     const request = context.compilerRequests
       .collect(context.program, evidence.containingSourceFile)
       .find((entry) => entry.literal === evidence.literal);
-    if (request?.raw === undefined)
+    if (
+      request === undefined ||
+      (request.raw === undefined && !request.ambient)
+    )
       return {
         kind: 'unsupported',
         stage: 'module-resolution',
@@ -263,7 +266,7 @@ function resolveCompilerCandidates(
       evidence,
       mode: String(request.mode),
       resolution:
-        request.raw.resolvedModule === undefined
+        request.raw?.resolvedModule === undefined
           ? null
           : createCheckerResolution({
               context,

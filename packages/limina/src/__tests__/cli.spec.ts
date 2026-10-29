@@ -305,6 +305,14 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
     ].join('\n'),
   );
   await writeText(
+    path.join(rootDirectory, 'node_modules/vue-tsc/bin/vue-tsc.js'),
+    [
+      "const { writeFileSync } = require('node:fs');",
+      "const { join } = require('node:path');",
+      "writeFileSync(join(process.cwd(), 'vue-tsc-args.txt'), process.argv.slice(2).join('\\n'));",
+    ].join('\n'),
+  );
+  await writeText(
     path.join(rootDirectory, 'node_modules/vue-tsc/package.json'),
     stringifyConfig({
       name: 'vue-tsc',

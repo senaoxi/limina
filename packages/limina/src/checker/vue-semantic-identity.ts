@@ -97,7 +97,7 @@ function assertJsonConfigSourceFile(options: {
   );
 }
 
-function parseVueConfigWithToolchain(options: {
+export function parseVueConfigWithToolchain(options: {
   configPath: string;
   extensions: readonly string[];
   host: typeof ts.sys;

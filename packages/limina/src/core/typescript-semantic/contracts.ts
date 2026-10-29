@@ -22,6 +22,7 @@ export type TypeScriptSemanticAdmissionMode =
   | 'coverage-bounded';
 
 export interface TypeScriptSemanticProject {
+  loadingCeiling?: (file: string) => boolean;
   sourceConfigPath?: string;
   /**
   Candidate-only observation; never restored as source-analysis authority.

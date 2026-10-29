@@ -45,6 +45,13 @@ function fixture(options: Record<string, unknown> = {}) {
     packageManager: 'pnpm@12.10.1',
   });
   write('pnpm-workspace.yaml', 'packages:\n  - packages/*\n');
+  write('node_modules/.modules.yaml', 'packageManager: pnpm@12.10.1\n');
+  // Retained replacement declarations are real installed inputs. Restoration
+  // requires the same installation coverage as any other loaded package.
+  write(
+    'pnpm-lock.yaml',
+    "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  packages/a: {}\n",
+  );
   write(
     'limina.config.mjs',
     'export default {scope:{checkers:{tsc:{include:["tsconfig.json"]}}}};',

@@ -250,6 +250,7 @@ describe('path selection survives physical truncation', () => {
               (name) => mode !== 'root-uncovered' || name !== 'b.d.ts',
             ),
             ...(isGhostExpected ? ['b.d.ts'] : []),
+            ...(mode === 'redirect-uncovered' ? ['out/b.d.ts'] : []),
           ]),
         ]
           .map((name) => fixture.path(name))
@@ -257,6 +258,9 @@ describe('path selection survives physical truncation', () => {
         expect(
           adapter.program
             .getSourceFiles()
+            .filter(
+              (source) => !adapter.program.isSourceFileDefaultLibrary(source),
+            )
             .map((s) => s.fileName)
             .sort(compareCodeUnits),
         ).toEqual(expectedSources);

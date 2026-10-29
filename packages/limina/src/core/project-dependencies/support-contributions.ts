@@ -1,7 +1,5 @@
-import {
-  type ClosureFact,
-  projectDeclarationClosure,
-} from '../typescript-semantic/declaration-closure';
+import { projectObservedDeclarationClosure } from '../declaration-governance/projection';
+import type { ClosureFact } from '../typescript-semantic/declaration-closure';
 import { createImportRecordIdentity } from '../typescript-semantic/import-record';
 import { projectNativeDeclarationClosure } from '../typescript-semantic/native-closure';
 import type {
@@ -16,14 +14,12 @@ export function collectSupportContributions(
   collection: ProjectDependencyCollection,
   request: ProjectDependencyRequest,
 ): void {
-  const context = request.typeScriptSemanticContext;
-  if (
-    [
-      context === undefined,
-      request.context.semanticAuthority.family === 'vue',
-    ].some(Boolean)
-  )
+  if (request.context.semanticAuthority.family === 'vue') {
+    collectObservedSupportContributions(collection, request);
     return;
+  }
+  const context = request.typeScriptSemanticContext;
+  if (context === undefined) return;
   collection.nativeEvidence = context!.nativeEvidence;
   const projection = projectNativeDeclarationClosure(
     context!,
@@ -93,7 +89,7 @@ function checkerQualification(
   return {};
 }
 
-export function collectVueSupportContributions(
+function collectObservedSupportContributions(
   collection: ProjectDependencyCollection,
   request: ProjectDependencyRequest,
 ): void {
@@ -107,7 +103,7 @@ export function collectVueSupportContributions(
   ].flatMap((item) => ('importRecord' in item ? [item.importRecord] : []));
   const facts = new Map<string, ClosureFact>();
   const readDependencyFact = createDependencyFactReader(collection);
-  const projection = projectDeclarationClosure({
+  const projection = projectObservedDeclarationClosure({
     configPath: request.context.configPath,
     entries: [
       ...request.context.fileNames.map((fileName) => ({
@@ -121,13 +117,12 @@ export function collectVueSupportContributions(
         vueSemanticIdentity: request.context.vueSemanticIdentity,
       }) ?? []),
     ],
-    noResolve: request.context.compilerOptions.noResolve,
-    boundary: request.context.workspaceSourceBoundary,
-    managedOutputLookup: request.managedOutputLookup,
+    incomplete: [],
+    loaded: (file) => files.has(file),
     records: (file) =>
       roots.has(file)
         ? rootRecords.filter((record) => record.filePath === file)
-        : files.get(file),
+        : (files.get(file) ?? []),
     fact: (record) => {
       const key = createImportRecordIdentity(record);
       const cached = facts.get(key);

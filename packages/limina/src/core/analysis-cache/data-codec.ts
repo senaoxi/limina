@@ -1,6 +1,7 @@
 /*
 Plain data only. Tags preserve undefined and ordered Map/Set entries.
 */
+import { isPublishedNativeData } from '../../domain/analysis/native-evidence-freeze';
 import { isDecodedRecord, ownDecodedRecord } from './record-table';
 
 export type DataNode =
@@ -203,6 +204,45 @@ function encodeContainer(value: unknown, stack: Set<object>): DataNode {
 }
 export function decodeData(node: unknown, shouldShare = false): unknown {
   return decodeNode(node, { retain: true, shouldShare, values: new WeakMap() });
+}
+
+/** Copy the same accepted plain-data grammar without allocating a second
+ * tagged tree. Like encode/decode, repeated mutable values get independent
+ * copies and accessors are rejected without being invoked. */
+export function cloneData(
+  value: unknown,
+  stack: Set<object> = new Set(),
+): unknown {
+  if (isPublishedNativeData(value)) return value;
+  const scalar = scalarNode(value);
+  if (scalar !== undefined) return value;
+  const object = requireObject(value, stack);
+  stack.add(object);
+  try {
+    if (Array.isArray(object))
+      return object.map((item) => cloneData(item, stack));
+    if (object instanceof Set)
+      return new Set([...object].map((item) => cloneData(item, stack)));
+    if (object instanceof Map)
+      return new Map(
+        [...object].map(([key, item]) => [
+          requireStringKey(key),
+          cloneData(item, stack),
+        ]),
+      );
+    if (![Object.prototype, null].includes(Object.getPrototypeOf(object)))
+      throw new Error('Opaque data object.');
+    return Object.fromEntries(
+      Object.entries(Object.getOwnPropertyDescriptors(object)).map(
+        ([key, property]) => {
+          if (!('value' in property)) throw new Error('Live data accessor.');
+          return [key, cloneData(property.value, stack)];
+        },
+      ),
+    );
+  } finally {
+    stack.delete(object);
+  }
 }
 
 /**

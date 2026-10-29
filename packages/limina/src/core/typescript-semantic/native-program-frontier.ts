@@ -25,6 +25,7 @@ export interface NativeSourceAttempt {
  */
 export class NativeProgramFrontier {
   readonly #roots: Set<string>;
+  readonly #declarationRoots = new Set<string>();
   readonly #observations = new Map<string, NativeSourceAttempt>();
   readonly #attempts = new Map<string, NativeSourceAttempt>();
   readonly identities: NativeIdentityObservations;
@@ -43,6 +44,12 @@ export class NativeProgramFrontier {
     this.index = index;
     this.validation = validation;
     this.#roots = new Set(roots.map(normalizeAbsolutePath));
+    for (const root of roots) {
+      if (!isDeclarationFile(root)) continue;
+      const file = this.identities.read(root);
+      if (file.physical.state === 'verified')
+        this.#declarationRoots.add(file.physical.canonicalId);
+    }
   }
 
   inspect(fileName: string): NativeSourceAttempt {
@@ -56,7 +63,11 @@ export class NativeProgramFrontier {
       coverage,
       decision: decideNativeFrontier({
         consumerConfigId: this.validation?.sourceConfig ?? this.configId,
-        root: this.#roots.has(file.lexicalPath),
+        root:
+          this.#roots.has(file.lexicalPath) ||
+          (isDeclarationFile(file.lexicalPath) &&
+            file.physical.state === 'verified' &&
+            this.#declarationRoots.has(file.physical.canonicalId)),
         kind: isDeclarationFile(file.lexicalPath)
           ? 'declaration'
           : 'implementation',

@@ -1,5 +1,6 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import { createVueProjectSemanticIdentity } from '../../checker/vue-semantic-identity';
+import { withVueDeclarationLoading } from '../vue-semantic/loading-identity';
 import { createVueOutputIdentity } from '../vue-semantic/output-identity';
 import { encodeData } from './data-codec';
 import type { EpochInputReplay } from './epoch-inputs';
@@ -36,13 +37,17 @@ function recordedIdentity(
   record: VueContextRecord,
   source: VueProjectSemanticIdentity,
 ): VueProjectSemanticIdentity {
-  return record.project.outputProjection === undefined
-    ? source
-    : createVueOutputIdentity(source, {
-        configPath: record.project.configPath,
-        options: record.project.outputProjection.options,
-        fileNames: record.project.outputProjection.fileNames,
-      });
+  const identity =
+    record.project.outputProjection === undefined
+      ? source
+      : createVueOutputIdentity(source, {
+          configPath: record.project.configPath,
+          options: record.project.outputProjection.options,
+          fileNames: record.project.outputProjection.fileNames,
+        });
+  return record.project.declarationLoading === undefined
+    ? identity
+    : withVueDeclarationLoading(identity, record.project.declarationLoading);
 }
 
 export class VueAnalysisRecords {

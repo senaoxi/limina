@@ -11,6 +11,7 @@ import type {
   DeclarationContextDecision,
   DeclarationContextReceipt,
 } from '../../domain/analysis/declaration-context';
+import type { DeclarationCompilationEvidence } from '../../domain/analysis/declaration-governance';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import type { ArtifactChange, ArtifactPlan } from '../../domain/artifacts/plan';
@@ -263,6 +264,15 @@ export interface SemanticSourceRelation {
 }
 
 export interface DependencyAnalysisResult {
+  /** Current compiler relations can be determined while migration comparison
+   * must preserve explicit references for unresolved source requests. */
+  unresolvedDependencies?: {
+    sourceConfig: string;
+    file: string;
+    line: number;
+    specifier: string;
+  }[];
+  declarationEvidence?: DeclarationCompilationEvidence[];
   referenceValidation?: ReferenceValidation;
   declarationContexts?: DeclarationContextDecision[];
   declarationValidation?: {

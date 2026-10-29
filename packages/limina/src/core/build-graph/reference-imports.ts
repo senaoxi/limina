@@ -53,12 +53,16 @@ function addProjectDependencyFailures(options: {
     importAnalysis: options.context.importAnalysis,
   });
   retainNativeAnalysis(options.context.analysis, collection.nativeEvidence);
+  if (options.context.analysis && collection.declarationEvidence)
+    (options.context.analysis.declarationEvidence ??= []).push(
+      collection.declarationEvidence,
+    );
   recordCollectionGovernance(options, collection.dependencies);
   addDependencyCollectionFailures(options.context, collection.failures);
   const declaration = collectDeclarationContextDecisions({
     config: options.context.config,
     project: options.project,
-    snapshot: collection.nativeEvidence,
+    evidence: collection.declarationEvidence,
     unsupportedDependencies:
       options.project.semanticAuthority.family === 'typescript'
         ? undefined
@@ -77,7 +81,7 @@ function addProjectDependencyFailures(options: {
     addDeclarationContextReferences({
       ...options,
       decisions: declaration.decisions,
-      snapshot: collection.nativeEvidence,
+      evidence: collection.declarationEvidence,
     });
   };
   const cache = options.context.projectDependencyCaches.analysisCache;
@@ -187,6 +191,13 @@ function recordMissingObservation(
     { kind: 'missing' }
   >,
 ): void {
+  if (options.context.analysis)
+    (options.context.analysis.unresolvedDependencies ??= []).push({
+      sourceConfig: options.project.configPath,
+      file: observation.importRecord.filePath,
+      line: observation.importRecord.line,
+      specifier: observation.importRecord.specifier,
+    });
   options.context.analysis?.diagnostics.push(
     [
       'Dependency comparison could not resolve an import:',

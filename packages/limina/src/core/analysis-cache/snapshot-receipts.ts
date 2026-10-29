@@ -1,8 +1,9 @@
 import { compareCodeUnits } from '#utils/collections';
 import { isPlainRecord } from '#utils/values';
 import { z } from 'zod';
+import { isPublishedNativeData } from '../../domain/analysis/native-evidence-freeze';
 import type { AnalysisSnapshot, InputDependency } from './contracts';
-import { decodeData, encodeData } from './data-codec';
+import { cloneData } from './data-codec';
 import { shareValidatedDependency } from './dependency-schema';
 import { mapAnalysisRecords } from './record-payload';
 import { isDecodedRecord, ownDecodedRecord } from './record-table';
@@ -32,6 +33,9 @@ interface VisitOptions {
   decoded?: WeakMap<object, object>;
 }
 function visit(value: unknown, options: VisitOptions): unknown {
+  // These JSON proofs are privately owned and recursively immutable. Snapshot
+  // isolation needs no second copy; persistence still applies canonical order.
+  if (!options.shouldSortKeys && isPublishedNativeData(value)) return value;
   if (!Array.isArray(value) && !isPlainRecord(value)) return value;
   const previous = options.decoded?.get(value);
   if (previous !== undefined) return previous;
@@ -215,11 +219,7 @@ export function cloneAnalysisSnapshot(
   const { header, configModules, ...records } = snapshot;
   // Copy compact tagged values without serializing or compressing them. Receipt
   // parsing owns the tuples; opaque values and runtime identity order survive.
-  const encoded = encodeRecords(
-    records,
-    (record) => decodeData(encodeData(record)),
-    false,
-  );
+  const encoded = encodeRecords(records, cloneData, false);
   return {
     ...structuredClone({ header, configModules }),
     ...decodeAnalysisRecords(encoded, false),

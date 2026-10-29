@@ -35,6 +35,9 @@ export interface ExecutionReferenceClosure {
   observations?: EpochInputs;
   projects?: ProjectKey[];
   configs: Set<string>;
+  /** Physical configurations actually reached, including solution members
+   * whose wrapper edges have no source-project identity. */
+  executedConfigs: Set<string>;
   inputs: Set<string>;
   references: ReferenceIdentity[];
   governed: { reference: GovernedReference; aliases: Map<string, string[]> }[];
@@ -111,6 +114,7 @@ function frameworkClosure(
       },
     ],
     configs: new Set([source.configPath]),
+    executedConfigs: new Set([source.configPath]),
     inputs: new Set([
       ...source.ownedFileNames,
       ...frameworkExecutionInputs(source).paths,
@@ -149,6 +153,10 @@ function nativeClosure(options: {
     observations: new EpochInputs(),
     projects: [],
     configs: new Set(),
+    executedConfigs: new Set([
+      options.target.configPath,
+      ...physical.configPaths,
+    ]),
     inputs: new Set(physical.dependencies.map((item) => item.path)),
     references: [],
     governed: [],

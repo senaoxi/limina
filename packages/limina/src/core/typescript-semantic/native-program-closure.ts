@@ -81,6 +81,11 @@ export function createBoundedProgramClosure(
     // A newly discovered import can change physical loading. Register it in
     // the same convergence protocol as resolver callbacks, before freezing.
     registerInventoryLoads(loads, modules, program);
+    // TS 6 can use built-in libraries without invoking resolveLibrary. These
+    // are actual Compiler inventory targets, not filesystem pre-scan grants.
+    for (const { request, resolution } of requests.entries)
+      if (request.channel === 'library')
+        loads.grant(resolution.target?.lexicalPath);
     isRepeat = loads.finishPass(program, revision);
     assertNativeObservationInputs(options, compiler);
   } while (isRepeat);

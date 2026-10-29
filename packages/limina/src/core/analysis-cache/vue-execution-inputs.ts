@@ -71,6 +71,15 @@ export function retainVueExecutionInputs(
   scopes.set(reused, vueExecutionInputs(source));
 }
 
+/** Purposes keep separate semantic identities but execution must watch all
+ * reads made on behalf of the same source configuration. */
+export function shareVueExecutionInputs(
+  source: VueProjectSemanticIdentity,
+  purpose: VueProjectSemanticIdentity,
+): void {
+  scopes.set(purpose, currentScope(source));
+}
+
 function versionRead(input: AnalysisInput, inputs: AnalysisInputs): string {
   const options = { path: input.path, metrics: inputs.metrics };
   return input.kind === 'imports' || input.kind === 'exports'

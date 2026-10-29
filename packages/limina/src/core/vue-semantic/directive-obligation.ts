@@ -4,7 +4,10 @@ import type { ImportRecord } from '../import-analysis/records';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import { nativeTargetEligibility } from '../typescript-semantic/native-module-impact';
 import { selectNativePath } from '../typescript-semantic/native-path-selection';
-import { nativeObservedProgram } from '../typescript-semantic/native-program-api';
+import {
+  nativeObservedProgram,
+  nativeTypeReferenceMode,
+} from '../typescript-semantic/native-program-api';
 import { observeProjectReferenceRedirect } from '../typescript-semantic/reference-redirect';
 import type { VueSemanticContext } from './context';
 import { getVueMappedRangeIdentities } from './dependency';
@@ -53,10 +56,21 @@ export function vueDirectiveObligation(
   );
 
   if (!isPath) {
+    if (program.getCompilerOptions().noResolve)
+      return {
+        ...proof,
+        state: 'absent',
+        reason: 'compiler-noResolve-disables-file-type-directive-input',
+      };
     const target = program.getResolvedTypeReferenceDirective(
       source,
       record.specifier,
-      reference.resolutionMode ?? source.impliedNodeFormat,
+      nativeTypeReferenceMode(
+        context.tsModule,
+        reference,
+        source,
+        program.getCompilerOptionsForFile(source),
+      ),
     )?.resolvedTypeReferenceDirective?.resolvedFileName;
     proof.requests[0]!.target = target ?? null;
     return target !== undefined && isDeclarationFile(target)

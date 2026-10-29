@@ -17,6 +17,9 @@ export function validateStagedDeclarationContexts(
         sourceConfig: project.configPath,
         generatedConfig: project.dtsConfigPath,
         checker: project.checkerName,
+        executionRoot: project.context.vueSemanticIdentity?.projectRootDir,
+        executionIdentity: project.context.vueSemanticIdentity,
+        preset: project.context.checkerPresets[0],
       });
   for (const projects of state.outputProjectsByChecker.values())
     for (const project of projects)
@@ -24,6 +27,9 @@ export function validateStagedDeclarationContexts(
         sourceConfig: project.configPath,
         generatedConfig: project.outputConfigPath,
         checker: project.checkerName,
+        executionRoot: project.context.vueSemanticIdentity?.projectRootDir,
+        executionIdentity: project.context.vueSemanticIdentity,
+        preset: project.context.checkerPresets[0],
       });
   validateDeclarationContexts({
     analysis: state.dependencyAnalysis,
@@ -46,6 +52,7 @@ export function hasValidRestoredDeclarationContexts(
     | 'configToOutputBuild'
     | 'generatedFiles'
     | 'sourceConfigCoverage'
+    | 'governedSources'
   >,
   metrics?: AnalysisMetricsRecorder,
 ): boolean {
@@ -54,11 +61,21 @@ export function hasValidRestoredDeclarationContexts(
   const targets: DeclarationValidationTarget[] = [];
   for (const [checker, sources] of graph.sourceToDts)
     for (const [sourceConfig, generatedConfig] of sources)
-      targets.push({ checker, sourceConfig, generatedConfig });
+      targets.push({
+        checker,
+        sourceConfig,
+        generatedConfig,
+        ...restoredAuthority(graph, checker, sourceConfig),
+      });
   for (const [checker, sources] of graph.configToOutputBuild)
     for (const [sourceConfig, module] of sources)
       if (module.kind === 'project')
-        targets.push({ checker, sourceConfig, generatedConfig: module.path });
+        targets.push({
+          checker,
+          sourceConfig,
+          generatedConfig: module.path,
+          ...restoredAuthority(graph, checker, sourceConfig),
+        });
   validateDeclarationContexts({
     analysis,
     files: graph.generatedFiles,
@@ -71,4 +88,17 @@ export function hasValidRestoredDeclarationContexts(
     analysis.declarationValidation === undefined ||
     analysis.declarationValidation.state === 'admitted'
   );
+}
+
+function restoredAuthority(
+  graph: Pick<GeneratedTsconfigGraphResult, 'governedSources'>,
+  checker: string,
+  source: string,
+) {
+  const context = graph.governedSources.get(checker)?.get(source)?.context;
+  return {
+    executionRoot: context?.vueSemanticIdentity?.projectRootDir,
+    executionIdentity: context?.vueSemanticIdentity,
+    preset: context?.checkerPresets[0],
+  };
 }

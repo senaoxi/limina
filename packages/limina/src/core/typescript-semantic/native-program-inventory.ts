@@ -2,9 +2,9 @@ import path from 'node:path';
 import type ts from 'typescript';
 import { nativeLibraryFileName } from './native-library-api';
 import {
-  nativeCompilerApi,
   type NativeObservedProgram,
   nativeProgramSource,
+  nativeTypeReferenceMode,
 } from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
 import {
@@ -109,9 +109,11 @@ function collectType(
   source: ts.SourceFile,
   reference: ts.FileReference,
 ) {
-  const mode = nativeCompilerApi(options.compiler).getModeForFileReference(
+  const mode = nativeTypeReferenceMode(
+    options.compiler,
     reference,
-    source.impliedNodeFormat,
+    source,
+    options.program.getCompilerOptionsForFile(source),
   );
   options.requests.typeCallback({
     reference,
