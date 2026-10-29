@@ -151,6 +151,7 @@ it.each(['transitive', 'unrelated', 'new-config', 'config-import'])(
   },
 );
 
+// A real Node loader and two framework generations can exceed 30s on Windows.
 it('retains live CommonJS configuration proof through managed refresh in Node', async () => {
   const { f, preflight } = await frameworkInputFixture(true);
   const moduleURL = (file: string) =>
@@ -205,7 +206,7 @@ console.log(JSON.stringify({statuses: [afterRefresh.status, changed.status], sta
     preflight.dispose();
     await f.cleanup();
   }
-});
+}, 60_000);
 
 it.each([
   { cacheMode: 'disabled', change: 'content' },

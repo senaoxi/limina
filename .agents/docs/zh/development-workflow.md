@@ -70,7 +70,9 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 将相互独立的跨进程损坏 gate 分成使用新 fixture 和正向恢复控制的独立用例。[配置模块缓存回归](../../../packages/limina/src/__tests__/config-module-cache.spec.ts)此前把九个 gate 与二十次 runner 启动放入同一个用例，在 Linux、macOS 和 Windows CI 超过未调整的单例时限。每个 gate 仍断言拒绝原因、不采用旧输入、适用时跳过旧模型 validation，以及冷发布后的再次恢复。
 
-[标准库投影回归](../../../packages/limina/src/__tests__/library-projection.spec.ts)分别覆盖未变化时的恢复、更高优先级替换后的跨进程失效，以及失效后发布的新图恢复。各自使用新 fixture、精确的库选择检查，每例最多启动两个 runner。发布对照在同一个子进程内通过分别 dispose 的 manager 建立和替换绑定，再用新的子进程验证恢复及库选择身份；独立的失效用例仍保留真实进程边界。三次 runner 启动仍会超出未调整的 Windows 单例时限。Teardown 在删除工作目录前终止并等待尚未结束的子进程，避免超时清理与仍在运行的 Windows 进程竞争。
+[标准库投影回归](../../../packages/limina/src/__tests__/library-projection.spec.ts)分别覆盖未变化时的恢复、更高优先级替换后的跨进程失效，以及失效后发布的新图恢复。各自使用新 fixture、精确的库选择检查，每例最多启动两个 runner。发布对照在同一个子进程内通过分别 dispose 的 manager 建立和替换绑定，再用新的子进程验证恢复及库选择身份；独立的失效用例仍保留真实进程边界。这三个用例使用 60 秒预算，因为 Windows CI 中即使只有两次真实 Node／TypeScript 启动也超过了 30 秒。全局测试时限保持不变。Teardown 在删除工作目录前终止并等待尚未结束的子进程，避免超时清理与仍在运行的 Windows 进程竞争。
+
+[Full-analysis-cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts) 的声明治理用例省略本地声明输入不使用的默认标准库，同时保留 Coverage、显式选择、独立 types 贡献及检查选项撤销断言。每例三到五次新 runner 启动及候选 Checker 进程使用 60 秒预算。[Execution-admission](../../../packages/limina/src/__tests__/execution-admission.spec.ts) 中真实 CommonJS 受管刷新用例也为 Node loader 与框架 generation 使用 60 秒，其余用例保留既有预算。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 将 Pending 出现／消失与 output target 恢复／变化分别放入新 fixture，每例两到三次 runner 启动，继续使用既有 60 秒预算。Adapter 版本拒绝保留冷启动 seed 及重建后的恢复控制；普通未变化恢复已有独立覆盖。这些 fixture 调整保留真实进程边界与语义拒绝控制，不改变生产执行时限。
 
 fixture 转换 `load` Hook 返回的二进制源码前，先按 UTF-8 解码。Node 22.18.0 和 24.11.0 可能返回 `Uint8Array`；`String(source)` 会生成逗号分隔的字节值，而非 JavaScript 文本，导致配置导出丢失。配置模块缓存回归保留字符串源码，通过 `TextDecoder` 解码二进制源码，并在断言 warm 恢复前确认新发布的源码来源及摘要。旧快照的 complete 状态本身不能证明转换后的配置已发布。将转换开关的两个方向放入使用新 fixture 的独立用例，各自保留变更前后的正向恢复控制，使四次 runner 启动能在未调整的单例时限内完成。
 
