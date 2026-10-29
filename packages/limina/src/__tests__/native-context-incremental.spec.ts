@@ -21,6 +21,8 @@ import {
   createWorkspaceSourceBoundary,
 } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
+import { nativeFingerprint } from '../core/typescript-semantic/native-file-identity';
+import { freezeNativeData } from '../domain/analysis/native-evidence-freeze';
 import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
 import { roundTripAnalysisSnapshot } from './helpers/analysis-snapshot';
 import { readFixtureSourceCoverage } from './helpers/native-coverage';
@@ -30,6 +32,22 @@ const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
+});
+
+it('keeps canonical proof identities across shared wrappers and mutable replacements', () => {
+  const mutable = { z: { later: 2, first: 1 }, a: ['second', 'first'] };
+  const published = freezeNativeData(mutable);
+  const reordered = { a: ['second', 'first'], z: { first: 1, later: 2 } };
+  const expected = nativeFingerprint([reordered]);
+  expect(nativeFingerprint([published])).toBe(expected);
+  expect(nativeFingerprint([published])).toBe(expected);
+  mutable.z.first = 3;
+  expect(nativeFingerprint([mutable])).not.toBe(expected);
+  expect(nativeFingerprint([published])).toBe(expected);
+  expect(nativeFingerprint([freezeNativeData(mutable)])).not.toBe(expected);
+  expect(
+    nativeFingerprint([{ ...reordered, a: ['first', 'second'] }]),
+  ).not.toBe(expected);
 });
 
 it.each(['member-version', 'target-identity'] as const)(
@@ -157,6 +175,49 @@ function collect(
 }
 
 describe('bounded compiler context replacement and incremental inputs', () => {
+  it('reuses neutral text facts while Pending and Locked retain independent compiler evidence', () => {
+    const f = fixture();
+    f.write(
+      'a.ts',
+      'import type { Value } from "./value"; export type T = Value;',
+    );
+    f.write('value.ts', 'export interface Value {}');
+    const project = f.project(['a.ts', 'value.ts']);
+    const cache = new NativeAnalysisCache('syntax', undefined, 'config');
+    const pending = createTypeScriptDependencyContext(
+      { ...project, analysisBinding: { phase: 'pending', checker: 'tsc' } },
+      { analysisCache: cache },
+    );
+    const original = pending.getFileDependencyFacts!(f.file('a.ts'))!;
+    const expected = structuredClone(original);
+    original.requests[0]!.occurrence.specifier = './unobserved';
+    const locked = createTypeScriptDependencyContext(project, {
+      analysisCache: cache,
+    });
+    expect(cache.metrics.semanticPrograms).toBe(2);
+    expect(cache.metrics.syntaxFactHits).toBeGreaterThan(0);
+    expect(locked.getFileDependencyFacts!(f.file('a.ts'))).toEqual(expected);
+    expect(pending.nativeEvidence!.contexts[0]!.authority.phase).toBe(
+      'pending',
+    );
+    expect(locked.nativeEvidence!.contexts[0]!.authority.phase).toBe('locked');
+    expect(pending.nativeEvidence!.contexts[0]!.id).not.toBe(
+      locked.nativeEvidence!.contexts[0]!.id,
+    );
+    const changed = cache.readFileSyntax(f.file('a.ts'), 'import "./new";');
+    expect(
+      changed.requests.map((request) => request.occurrence.specifier),
+    ).toEqual(['./new']);
+    expect(changed.sourceVersion).not.toBe(expected.sourceVersion);
+    expect(pending.getFileDependencyFacts!(f.file('a.ts'))).toEqual(expected);
+    expect(locked.getFileDependencyFacts!(f.file('a.ts'))).toEqual(expected);
+    const next = new NativeAnalysisCache('syntax', undefined, 'config');
+    expect(next.readFileSyntax(f.file('a.ts'), 'import "./new";')).toEqual(
+      changed,
+    );
+    expect(next.metrics.syntaxFactBuilds).toBe(1);
+  });
+
   it('rebuilds only subscribers of an independently changed installation lock', () => {
     const fixtures = [fixture(), fixture()];
     const projects = fixtures.map((f) => {

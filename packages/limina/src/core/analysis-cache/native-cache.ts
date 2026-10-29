@@ -6,7 +6,10 @@ import type {
 } from '../typescript-semantic/contracts';
 import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
-import type { FileDependencyFacts } from '../typescript-semantic/file-dependency-facts';
+import {
+  extractFileDependencyFacts,
+  type FileDependencyFacts,
+} from '../typescript-semantic/file-dependency-facts';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { emptyMetrics } from './cache-metrics';
 import { NativeContextRecords } from './context-records';
@@ -24,7 +27,7 @@ import type {
 import { ReferenceContributions } from './contributions';
 import { type EpochInputReplay, EpochInputs } from './epoch-inputs';
 import { CachedGraphRecords } from './graph-records';
-import { nativeContextId } from './identity';
+import { analysisHash, nativeContextId } from './identity';
 import { type FactRequest, ImporterFacts } from './importer-facts';
 import { AnalysisInputs } from './inputs';
 import { subscribeInstallationDomains } from './installation-environment';
@@ -44,6 +47,7 @@ import {
 import { VueAnalysisRecords } from './vue-records';
 import { observePreviousVueBytes } from './vue-toolchain-inputs';
 export class NativeAnalysisCache {
+  readonly #fileSyntax = new Map<string, FileDependencyFacts>();
   readonly #syntaxProofs = new Map<string, string>();
   readonly #resolutions: ResolutionQueries;
   readonly #facts: ImporterFacts;
@@ -140,6 +144,22 @@ export class NativeAnalysisCache {
   }
   #physicalProject(project: TypeScriptSemanticProject): boolean {
     return (project.virtualFiles?.size ?? 0) === 0;
+  }
+
+  readFileSyntax(file: string, text: string): FileDependencyFacts {
+    const version = analysisHash(text);
+    let facts = this.#fileSyntax.get(file);
+    if (
+      facts?.sourceVersion !== version ||
+      facts.compilerVersion !== ts.version
+    ) {
+      facts = extractFileDependencyFacts(file, text, version);
+      this.#fileSyntax.set(file, facts);
+      this.increment('syntaxFactBuilds');
+    } else this.increment('syntaxFactHits');
+    // Only neutral text facts cross contexts. Current Programs still own their
+    // requests, resolutions and proof; no caller can mutate this private memo.
+    return structuredClone(facts);
   }
 
   retainSyntax(facts: FileDependencyFacts, fingerprint: string): void {

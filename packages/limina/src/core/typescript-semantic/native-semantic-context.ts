@@ -2,6 +2,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptSemanticContext } from './contracts';
+import type { FileDependencyFactsReader } from './file-dependency-facts';
 import { createImportRecordIdentity } from './import-record';
 import { TypeCheckerObservation } from './metrics';
 import { NativeDependencyContext } from './native-dependency-context';
@@ -25,10 +26,10 @@ export class NativeSemanticContext
 
   constructor(
     options: NativeProgramObservationOptions,
-    shouldCaptureSyntax = false,
+    readSyntax?: FileDependencyFactsReader,
   ) {
     const adapter = new NativeObservationAdapter(options);
-    super(options, adapter, shouldCaptureSyntax);
+    super(options, adapter, readSyntax);
     this.#program = adapter.program;
     this.#checker = new TypeCheckerObservation(options.metrics);
     const literals = new Map(

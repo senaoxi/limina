@@ -17,6 +17,7 @@ Read the relevant paired records before edits. For architecture work, use the Li
 | Identify entities, authority, execution phases and relations        | [System model](./system-model.md)                                        |
 | Establish TypeScript / Vue / Astro / Svelte dependency facts        | [Semantic facts](./semantics.md)                                         |
 | Trace generations, caches, contexts, mutation and result freshness  | [Lifecycle](./lifecycle.md)                                              |
+| Review startup measurements and acceptance limits                   | [Startup performance](./startup-performance.md)                          |
 | Locate protected properties, counterexamples and executable guards  | [Core invariants](./invariants.md)                                       |
 | Review invariant impact and select maintenance validation           | [Architecture workflow](./architecture-workflow.md)                      |
 | Check reconstruction evidence, corrections and verification limits  | [Architecture audit](./architecture-audit.md)                            |

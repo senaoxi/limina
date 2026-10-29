@@ -66,7 +66,9 @@ function collectBoundedContext(
       context: new NativeDependencyContext(
         input,
         undefined,
-        cache !== undefined,
+        cache === undefined
+          ? undefined
+          : (file, text) => cache.readFileSyntax(file, text),
       ),
     };
   } catch (error) {

@@ -3,7 +3,10 @@
  * selection/solution traversal, before parsing its members. Neither extends
  * inputs nor generated configs become source configs by being read.
  */
+import { publishedCoverageMembers } from './native-coverage-members';
 import { freezeNativeData } from './native-evidence-freeze';
+
+type MemberView = ReturnType<typeof publishedCoverageMembers>;
 
 export interface NativeFileIdentity {
   readonly lexicalPath: string;
@@ -132,24 +135,28 @@ function exclusionGaps(
 function inspectConfig(
   config: SourceConfigEnumeration,
   index: SourceConfigCoverageIndex,
+  view: MemberView,
 ) {
   if (config.state === 'failed') return [];
-  return config.members.every((file) =>
-    hasVerifiedIdentity(file, index.inputVersion),
-  )
-    ? []
-    : ['member-identity-unavailable'];
+  const isComplete =
+    view?.hasCurrentIdentities ??
+    config.members.every((file) =>
+      hasVerifiedIdentity(file, index.inputVersion),
+    );
+  return isComplete ? [] : ['member-identity-unavailable'];
 }
 
 function collectMember(
   config: SourceConfigEnumeration,
   target: NativeFileIdentity,
   version: string,
+  view: MemberView,
 ) {
   if (config.state !== 'enumerated') return [];
-  const member = config.members.find((file) =>
-    currentMemberMatch(file, target, version),
-  );
+  const member =
+    view === undefined
+      ? config.members.find((file) => currentMemberMatch(file, target, version))
+      : view.firstMatch(target);
   if (!member) return [];
   return [
     {
@@ -187,13 +194,16 @@ function hasConflictingIdentity(
 function identityConflictGaps(
   config: SourceConfigEnumeration,
   target: NativeFileIdentity,
+  view: MemberView,
 ): string[] {
   if (config.state !== 'enumerated') return [];
-  const hasConflict = config.members.some(
-    (member) =>
-      member.lexicalPath === target.lexicalPath &&
-      hasConflictingIdentity(member, target),
-  );
+  const hasConflict =
+    view?.hasConflict(target) ??
+    config.members.some(
+      (member) =>
+        member.lexicalPath === target.lexicalPath &&
+        hasConflictingIdentity(member, target),
+    );
   return hasConflict ? ['lexical-identity-conflict'] : [];
 }
 
@@ -277,12 +287,13 @@ function observeConfig(
   if (configs.length !== 1)
     return { gaps: [`config-unavailable:${id}`], members: [] };
   const config = configs[0]!;
+  const view = publishedCoverageMembers(config);
   return {
     gaps: [
-      ...inspectConfig(config, index),
+      ...inspectConfig(config, index, view),
       ...enumerationGaps(config, target),
-      ...identityConflictGaps(config, target),
+      ...identityConflictGaps(config, target, view),
     ],
-    members: collectMember(config, target, index.inputVersion),
+    members: collectMember(config, target, index.inputVersion, view),
   };
 }

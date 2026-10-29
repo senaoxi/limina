@@ -12,6 +12,8 @@
 
 **Coverage 证明：**[索引合同](../../../packages/limina/src/domain/analysis/native-coverage.ts)要求先按已激活的 entry selection 与 solution traversal 建立全集，再了解哪些配置成功解析。Extends 输入、生成配置和声明产物不因此成为 owner。只有发现闭合、当前配置成员枚举完成且文件身份经过验证，才能证明零或一个成员。无法限定范围的解析失败使相关全集保持不完整；只有带证据的目标身份排除才能缩小影响。Lexical 与 canonical 成员匹配均要求目标和成员具有当前版本的已验证身份；过期或不可用的身份不能计入已确认成员。Lexical 命中不跳过 canonical 别名检查。两个已确认的不同成员即使在部分索引中也能证明 ambiguous；其余不完整证据为 unavailable。文件身份只证明等价，不增加作用域。
 
+[Coverage 成员视图](../../../packages/limina/src/domain/analysis/native-coverage-members.ts)只为私有发布的不可变枚举建立索引。它保留枚举顺序中的首个当前 canonical 匹配，即使后续成员具有完全相同的 lexical 拼写；过期但已验证的 lexical 冲突仍独立于正向成员资格保留。未发布的可变输入继续重新检查。该视图只加速既有证明，不选择全集、不建立物理身份，也不授予恢复权威。[Coverage 合同测试](../../../packages/limina/src/__tests__/native-evidence-contract.spec.ts)覆盖已发布与可变表示、别名顺序及浅冻结调用者输入的修改。
+
 **编译义务证明：**[义务合同](../../../packages/limina/src/domain/analysis/native-obligation.ts)独立保留存在性、引用结构和声明可用性。已证明存在且结构未满足为 `required`，已证明存在且结构满足为 `already-satisfied`，已证明不存在为 `not-required`，其余为 `unknown`。上下文、原始 references 和端点映射必须匹配。产物缺失或陈旧不抹掉已满足的结构，文件存在本身不证明产物可用。解析目标、owner、加载尝试或 TypeEvidence 均不能单独提供存在性证明。
 
 **请求级证明：**`absent` 只否定当前请求的跨单元义务。编译器清单确认的 augmentation、有效的 module `noResolve`（包括解析观察不可用），以及已证明的消费者 root，均可独立证明 absence。解析、Coverage、归属和其他请求继续保留。`present` 还要求目标具备输入及 emit 资格、源码分类已取得资格，并符合现有 composite／生成声明项目编译作用域。Import 诊断、JSDoc 和每个来源的有效选项与 path 选择独立。共用 TS/JS 资格只识别受支持的 TS 与四种 JS 扩展名，并区分 `noEmitForJsFiles` 与 Program 成员资格。Module 输入许可使用有效 `allowJs`，已经合法选择的 path 不再被该 module 规则二次否定。已重定向的 JS path 如果尚未证明生产者的 emit 义务，保持 unknown，不借用消费者的 JS 抑制规则。`allowNonTsExtensions` 不赋予任意文件 JS 身份。JSON emit 仍未证明。`sourceFileMayBeEmitted` 只作为真实目标 SourceFile 的测试 Oracle，不证明请求引入目标，也不授予加载资格。TypeScript 5.4/5.5 缺少每个来源的 callback 选项 receipt 时保持不可用，不借用全局选项。

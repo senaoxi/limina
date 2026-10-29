@@ -356,8 +356,8 @@ function collectVueDependencies(
   request: ProjectDependencyRequest,
 ): ProjectDependencyCollection {
   // The compiler collection is synchronous and read-only. Each collection gets
-  // fresh ancestors; leaf/content observations and later fences stay live.
-  return new PathBindingReplay().run(() => {
+  // fresh bindings. Content reads and independent later fences stay live.
+  return new PathBindingReplay({ reuseLeafBindings: true }).run(() => {
     const collection = createEmptyCollection();
     for (const fileName of request.context.fileNames)
       collectProjectDependencyFile({ collection, fileName, request });

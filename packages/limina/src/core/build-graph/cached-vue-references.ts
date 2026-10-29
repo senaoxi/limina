@@ -1,9 +1,6 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
-import {
-  createProjectDependencyCaches,
-  withProjectDependencyReplay,
-} from '../project-dependencies/runner';
+import { createProjectDependencyCaches } from '../project-dependencies/runner';
 import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
   type ValidatedWorkspaceContext,
@@ -80,23 +77,21 @@ function collectReferences(
   const caches = createProjectDependencyCaches(input.cache);
   caches.sourceConfigCoverage = input.graph.sourceConfigCoverage;
   try {
-    const result = withProjectDependencyReplay(caches, () =>
-      inferProjectReferences({
+    const result = inferProjectReferences({
+      config: input.config,
+      activatedRegions: new WorkspaceRegionPathIndex(input.workspace),
+      governedSources: selected.vueSources,
+      ownerGovernedSources: selected.sources,
+      ownerProjects: selected.primary,
+      projects: selected.projects,
+      primaryProjects: selected.primary,
+      sourceToBuildByChecker: input.graph.sourceToBuild,
+      projectDependencyCaches: caches,
+      importAnalysisContext: resolveBuildGraphImportAnalysis({
         config: input.config,
-        activatedRegions: new WorkspaceRegionPathIndex(input.workspace),
-        governedSources: selected.vueSources,
-        ownerGovernedSources: selected.sources,
-        ownerProjects: selected.primary,
-        projects: selected.projects,
-        primaryProjects: selected.primary,
-        sourceToBuildByChecker: input.graph.sourceToBuild,
-        projectDependencyCaches: caches,
-        importAnalysisContext: resolveBuildGraphImportAnalysis({
-          config: input.config,
-          vueSemanticContexts: contexts,
-        }),
+        vueSemanticContexts: contexts,
       }),
-    );
+    });
     if (result.problems.length > 0)
       throw new Error('Vue reference reconstruction is incomplete.');
     return new Map(
