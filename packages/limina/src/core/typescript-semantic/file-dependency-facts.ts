@@ -4,7 +4,7 @@ import {
   collectTypeScriptSourceFileImports,
   getSourceFileKind,
 } from '../import-analysis/typescript-imports';
-import { findImportRecordLiteral } from './import-record';
+import { findImportRecordLiterals } from './import-record';
 import {
   potentialAugmentations,
   requestEligibility,
@@ -33,6 +33,10 @@ export interface FileDependencyFacts {
   requests: DependencyRequestTemplate[];
   libraries: string[];
 }
+export type FileDependencyFactsReader = (
+  filePath: string,
+  text: string,
+) => FileDependencyFacts;
 
 function attributesOf(
   node: ts.Node | undefined,
@@ -63,12 +67,8 @@ function explicitUsageMode(
 function template(
   file: ts.SourceFile,
   occurrence: ImportRecord,
+  literal: ts.StringLiteralLike | null,
 ): DependencyRequestTemplate {
-  const literal = findImportRecordLiteral({
-    importRecord: occurrence,
-    sourceFile: file,
-    tsModule: ts,
-  });
   const reference = file.typeReferenceDirectives.filter(
     (item) => item.fileName === occurrence.specifier,
   )[occurrence.locator.occurrence];
@@ -91,10 +91,18 @@ export function extractFileDependencyFacts(
     true,
     getSourceFileKind(filePath),
   );
-  const requests = collectTypeScriptSourceFileImports({
+  const records = collectTypeScriptSourceFileImports({
     filePath,
     sourceFile: file,
-  }).map((record) => template(file, record));
+  });
+  const literals = findImportRecordLiterals({
+    records,
+    sourceFile: file,
+    tsModule: ts,
+  });
+  const requests = records.map((record) =>
+    template(file, record, literals.get(record) ?? null),
+  );
   requests.push(
     ...potentialAugmentations(file, ts).map((occurrence) => ({
       occurrence,

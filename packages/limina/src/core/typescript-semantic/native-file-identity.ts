@@ -7,6 +7,7 @@ import type { NativeFileIdentity } from '../../domain/analysis/native-coverage';
 import { isPublishedNativeData } from '../../domain/analysis/native-evidence-freeze';
 
 const fingerprints = new WeakMap<object, string>();
+const canonicalRecords = new WeakMap<object, Record<string, unknown>>();
 
 export function nativeFingerprint(value: unknown): string {
   // Schema decoding may change object insertion order; ordered roots/references
@@ -22,21 +23,22 @@ export function nativeFingerprint(value: unknown): string {
 }
 
 function canonicalFields(_key: string, value: unknown): unknown {
-  return isRecord(value)
-    ? Object.fromEntries(
-        Object.entries(value).sort(([left], [right]) =>
-          compareCodeUnits(left, right),
-        ),
-      )
-    : value;
+  if (!isRecord(value)) return value;
+  const isImmutable = isPublishedNativeData(value);
+  const previous = isImmutable ? canonicalRecords.get(value) : undefined;
+  if (previous !== undefined) return previous;
+  const ordered = Object.fromEntries(
+    Object.entries(value).sort(([left], [right]) =>
+      compareCodeUnits(left, right),
+    ),
+  );
+  // Shared nested proofs can occur beneath different (uncached) wrapper arrays.
+  if (isImmutable) canonicalRecords.set(value, ordered);
+  return ordered;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return [
-    value !== null,
-    typeof value === 'object',
-    !Array.isArray(value),
-  ].every(Boolean);
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 /**
  * A lexical path is not proof of physical identity. In particular, a missing

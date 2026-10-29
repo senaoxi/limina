@@ -317,6 +317,7 @@ describe('persistent Vue and mixed graph analysis', () => {
       .sourceToDts.get('vue-tsc')!
       .get(f.path('vue/provider/tsconfig.json'))!;
     expect(references()).toEqual(new Set([provider]));
+    expect(cacheMetric(cold, 'collectionReplayHits')).toBeGreaterThan(0);
     const warm = f.run();
     expectRestored(warm);
     expect(cacheMetric(warm, 'collectionReplayHits')).toBeGreaterThan(0);

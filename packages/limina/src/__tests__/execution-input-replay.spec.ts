@@ -1,4 +1,4 @@
-import { readAnalysisInput } from '#utils/analysis-input';
+import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
 import {
   readPhysicalFileBinding,
   readPhysicalFileIdentity,
@@ -112,6 +112,66 @@ it('shares restoration observations while retaining each context receipt and lat
   } finally {
     read.mockRestore();
     syncBuiltinESMExports();
+  }
+});
+
+it('shares one read notification across collectors without reusing its next dispatch', () => {
+  const f = fixture();
+  const scopes = Array.from({ length: 3 }, () => new EpochInputs());
+  const input = {
+    path: f.target,
+    key: 'shared-content',
+    descriptor: { kind: 'content' as const, path: f.target },
+    value: readFileSync(f.target, 'utf8'),
+    read: () => readFileSync(f.target, 'utf8'),
+  };
+  const dispatch = () =>
+    scopes[0]!.collect(() =>
+      scopes[1]!.collect(() =>
+        scopes[2]!.collect(() => observeAnalysisRead(input)),
+      ),
+    );
+  const canonical = vi.spyOn(fs.realpathSync, 'native');
+  try {
+    dispatch();
+    expect(
+      canonical.mock.calls.filter(([file]) => file === f.target),
+    ).toHaveLength(1);
+    for (const scope of scopes)
+      expect(scope.snapshot()).toEqual(scopes[0]!.snapshot());
+    rmSync(f.file('view'));
+    symlinkSync(f.file('b'), f.file('view'), 'junction');
+    // Reusing the caller's object must still observe its new physical binding.
+    expect(dispatch).toThrow(/changed|drift/u);
+  } finally {
+    canonical.mockRestore();
+  }
+});
+
+it('reuses bindings within bounded analysis and observes them afresh at stability checks', async () => {
+  const f = fixture();
+  const inputs = new EpochInputs();
+  const canonical = vi.spyOn(fs.realpathSync, 'native');
+  try {
+    inputs.run(() => {
+      for (let index = 0; index < 16; index += 1) {
+        readAnalysisInput(f.target, () => readFileSync(f.target, 'utf8'));
+        readAnalysisInput(
+          f.target,
+          () => readPhysicalFileBinding(f.target),
+          'file-binding',
+        );
+      }
+    });
+    const readsPerRound = process.platform === 'win32' ? 2 : 1;
+    expect(canonical.mock.calls).toHaveLength(readsPerRound);
+    await expect(inputs.assertStable()).resolves.toBeUndefined();
+    expect(canonical.mock.calls).toHaveLength(readsPerRound * 2);
+    rmSync(f.file('view'));
+    symlinkSync(f.file('b'), f.file('view'), 'junction');
+    await expect(inputs.assertStable()).rejects.toThrow(/changed|drift/u);
+  } finally {
+    canonical.mockRestore();
   }
 });
 

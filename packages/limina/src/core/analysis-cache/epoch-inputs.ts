@@ -1,5 +1,6 @@
 import {
   type AnalysisRead,
+  deriveAnalysisRead,
   withAdditionalAnalysisReads,
   withAnalysisReads,
 } from '#utils/analysis-input';
@@ -43,6 +44,9 @@ function observedValue(input: AnalysisRead): unknown {
     : input.value;
 }
 function observation(input: AnalysisRead): Observation {
+  return deriveAnalysisRead(input, captureObservation);
+}
+function captureObservation(input: AnalysisRead): Observation {
   return {
     version: analysisHash(observedValue(input)),
     binding: analysisHash(pathBinding(input.path)),
@@ -147,7 +151,7 @@ export class EpochInputs {
     this.#recordObservation(replay.observe(input));
   }
   run<T>(operation: () => T): T {
-    return new PathBindingReplay().run(() =>
+    return new PathBindingReplay({ reuseLeafBindings: true }).run(() =>
       withAnalysisReads((input) => this.#observe(input), operation),
     );
   }

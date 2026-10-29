@@ -64,13 +64,18 @@ export function captureNativeContextInventory(
   entries: readonly NativeRequestRecord[],
   syntax: ReadonlyMap<string, FileDependencyFacts>,
 ): NativeContextInventory {
+  const resolutions = new Map<
+    string,
+    (typeof adapter.snapshot.resolutions)[number]
+  >();
+  for (const resolution of adapter.snapshot.resolutions)
+    if (!resolutions.has(resolution.requestId))
+      resolutions.set(resolution.requestId, resolution);
   const unqualified = unqualifiedNativeLoads(
     adapter.program as NativeObservedProgram,
     adapter.snapshot.requests.map((request) => ({
       request,
-      resolution: adapter.snapshot.resolutions.find(
-        (r) => r.requestId === request.id,
-      )!,
+      resolution: resolutions.get(request.id)!,
     })),
   );
   const inventory = freezeNativeData({

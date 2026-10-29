@@ -43,6 +43,12 @@ export interface AnalysisRead {
 export type AnalysisReadObserver = (input: AnalysisRead) => void;
 const observations = new AsyncLocalStorage<AnalysisReadObserver>();
 
+interface ReadDispatch {
+  input: AnalysisRead;
+  derived: Map<(input: AnalysisRead) => unknown, unknown>;
+}
+const dispatches: ReadDispatch[] = [];
+
 /**
 Scoped to a provider epoch; these callbacks are never persisted.
 */
@@ -68,7 +74,29 @@ export function withAdditionalAnalysisReads<T>(
 }
 
 export function observeAnalysisRead(input: AnalysisRead): void {
-  observations.getStore()?.(input);
+  const observer = observations.getStore();
+  if (observer === undefined) return;
+  dispatches.push({ input, derived: new Map() });
+  try {
+    observer(input);
+  } finally {
+    dispatches.pop();
+  }
+}
+
+/**
+ * Read-only subscribers share derivations of one synchronous notification.
+ * Neither the caller's object nor an asynchronous continuation extends it.
+ */
+export function deriveAnalysisRead<T>(
+  input: AnalysisRead,
+  derive: (input: AnalysisRead) => T,
+): T {
+  const currentDispatch = dispatches.at(-1);
+  if (currentDispatch?.input !== input) return derive(input);
+  const values = currentDispatch.derived;
+  if (!values.has(derive)) values.set(derive, derive(input));
+  return values.get(derive) as T;
 }
 
 export function readAnalysisInput<T>(

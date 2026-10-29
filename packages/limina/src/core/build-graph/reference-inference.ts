@@ -3,6 +3,7 @@ import { compareCodeUnits } from '#utils/collections';
 import {
   createProjectDependencyCaches,
   type ProjectDependencyCaches,
+  withProjectDependencyReplay,
 } from '../project-dependencies/runner';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic';
 import { withVueDeclarationLoading } from '../vue-semantic/loading-identity';
@@ -211,22 +212,24 @@ export function inferProjectReferences(options: {
       caches.sourceConfigCoverage,
     ),
   };
-  processReferenceImports({
-    context,
-    governedSources: options.governedSources,
-    projects: options.projects,
-  });
-  context.analysis = undefined;
-  processFrameworkSourceReferences({
-    buildOwnersByConfigPath: createGovernedBuildOwners({
-      governedSources: ownerGovernedSources,
-      sourceToBuildByChecker: options.sourceToBuildByChecker,
-    }),
-    context,
-    governedSources: options.governedSources,
-    primaryProjectsByConfigPath: createPrimaryProjectsByConfigPath(
-      options.primaryProjects,
-    ),
+  withProjectDependencyReplay(caches, () => {
+    processReferenceImports({
+      context,
+      governedSources: options.governedSources,
+      projects: options.projects,
+    });
+    context.analysis = undefined;
+    processFrameworkSourceReferences({
+      buildOwnersByConfigPath: createGovernedBuildOwners({
+        governedSources: ownerGovernedSources,
+        sourceToBuildByChecker: options.sourceToBuildByChecker,
+      }),
+      context,
+      governedSources: options.governedSources,
+      primaryProjectsByConfigPath: createPrimaryProjectsByConfigPath(
+        options.primaryProjects,
+      ),
+    });
   });
   return {
     analysis,
