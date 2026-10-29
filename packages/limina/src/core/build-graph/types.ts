@@ -241,6 +241,7 @@ export interface PreparedCheckerGraph {
 }
 
 export interface ResolvedCheckerEntrySelection {
+  sourceConfigPaths?: string[];
   checker: ResolvedCheckerConfig;
   selection: CheckerEntrySelection;
 }

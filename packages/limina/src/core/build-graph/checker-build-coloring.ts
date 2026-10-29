@@ -6,14 +6,13 @@ import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import { addLocalCheckerRequirement } from './checker-ownership-evidence';
 import {
   assertLockedDependencyFacts,
-  nativeDependencyTarget,
+  declarationDependencyTarget,
 } from './checker-ownership-fact-qualification';
 import { createActualMembershipIndex } from './checker-ownership-membership';
 import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
-import { getUniqueConstraint } from './checker-solution-constraints';
 import type { FileOwnerLookup } from './file-owner-lookup';
 import { readImplicitReferences } from './generated/config-readers';
 
@@ -36,71 +35,6 @@ function addEdge(options: { edge: ColoringEdge; graph: ColoringGraph }): void {
   options.graph.adjacency.get(options.edge.from)!.add(options.edge.to);
   options.graph.adjacency.get(options.edge.to)!.add(options.edge.from);
   options.graph.edges.push(options.edge);
-}
-
-function getBuildLeaves(
-  discovery: CheckerOwnershipDiscovery,
-  paths: readonly string[],
-): string[] {
-  return paths.filter((configPath) => {
-    const state = discovery.plan.typeConfigs.get(configPath);
-    return state !== undefined && isBuildCandidate(state);
-  });
-}
-
-function addSolutionClosureEdges(options: {
-  discovery: CheckerOwnershipDiscovery;
-  graph: ColoringGraph;
-  leafConfigPaths: readonly string[];
-  solutionPath: string;
-}): void {
-  const [first, ...remaining] = getBuildLeaves(
-    options.discovery,
-    options.leafConfigPaths,
-  );
-  if (first === undefined) return;
-  for (const leaf of remaining) {
-    addEdge({
-      edge: {
-        from: first,
-        reason: `solution ${options.solutionPath}`,
-        to: leaf,
-      },
-      graph: options.graph,
-    });
-  }
-}
-
-function addSolutionEdges(options: {
-  discovery: CheckerOwnershipDiscovery;
-  graph: ColoringGraph;
-}): void {
-  for (const solution of options.discovery.plan.solutions.values()) {
-    addSolutionClosureEdges({
-      ...options,
-      leafConfigPaths: solution.leafConfigPaths,
-      solutionPath: solution.configPath,
-    });
-  }
-}
-
-function getUniqueFactTarget(options: {
-  fact: CheckerDependencyFact;
-  membership: FileOwnerLookup;
-}): string | null {
-  const nativeTarget = nativeDependencyTarget(options.fact);
-  if (nativeTarget !== undefined) return nativeTarget;
-  return options.fact.physicalTargetPath === null
-    ? null
-    : getSingleOwner(options.membership.get(options.fact.physicalTargetPath));
-}
-
-function getSingleOwner(owners: string[] | undefined): string | null {
-  return owners === undefined || owners.length !== 1 ? null : owners[0]!;
-}
-
-function isDeclarationRelationFact(fact: CheckerDependencyFact): boolean {
-  return fact.referenceRequirement != null;
 }
 
 function createBuildDependencyEdge(options: {
@@ -139,8 +73,7 @@ function createDependencyEdge(options: {
   fact: CheckerDependencyFact;
   membership: FileOwnerLookup;
 }): ColoringEdge | null {
-  if (!isDeclarationRelationFact(options.fact)) return null;
-  const target = getUniqueFactTarget(options);
+  const target = declarationDependencyTarget(options.fact, options.membership);
   return target === null
     ? null
     : createManagedDependencyEdge({ ...options, target });
@@ -235,7 +168,6 @@ export function colorBuildCheckerComponents(options: {
     edges: [],
   };
   const problems: string[] = [];
-  addSolutionEdges({ discovery: options.discovery, graph });
   addDependencyEdges({ ...options, graph });
   const declarationContexts = options.discovery.plan.declarationContexts ?? [];
   for (const decision of declarationContexts) {
@@ -300,6 +232,26 @@ function collectKnownColors(options: {
   return colors;
 }
 
+function formatConflictMember(options: {
+  checker: CheckerName;
+  config: ResolvedLiminaInputs;
+  configPath: string;
+  discovery: CheckerOwnershipDiscovery;
+}): string[] {
+  const relative = (value: string) =>
+    toRelativePath(options.config.rootDir, value);
+  const state = options.discovery.plan.typeConfigs.get(options.configPath)!;
+  return [
+    `    - ${relative(options.configPath)}`,
+    ...state.evidence
+      .filter((evidence) => evidence.checker === options.checker)
+      .map(
+        (evidence) =>
+          `      origin: ${evidence.source} at ${relative(evidence.configPath)} (${evidence.detail})`,
+      ),
+  ];
+}
+
 function formatConflict(options: {
   component: readonly string[];
   config: ResolvedLiminaInputs;
@@ -314,9 +266,8 @@ function formatConflict(options: {
       .sort(([left], [right]) => compareCodeUnits(left, right))
       .flatMap(([checker, paths]) => [
         `  checker: ${checker}`,
-        ...paths.map(
-          (configPath) =>
-            `    - ${toRelativePath(options.config.rootDir, configPath)}`,
+        ...paths.flatMap((configPath) =>
+          formatConflictMember({ ...options, checker, configPath }),
         ),
       ]),
     '  declaration relations:',
@@ -424,7 +375,7 @@ function getKnownBuildColor(
 ): CheckerName | undefined {
   return state.localOwner.kind === 'resolved'
     ? state.localOwner.checker
-    : getUniqueConstraint(state);
+    : undefined;
 }
 
 function isBuildColoringCandidate(

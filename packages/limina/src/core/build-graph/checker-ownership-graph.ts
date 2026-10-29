@@ -253,7 +253,6 @@ function collectSolutionLeaves(options: {
 function createTypeState(configPath: string): TypeConfigOwnershipState {
   return {
     configPath,
-    constraintCandidates: new Map(),
     evidence: [],
     kind: 'type',
     localOwner: { kind: 'pending' },
@@ -274,14 +273,13 @@ export function createOwnershipPlan(options: {
   for (const solutionPath of options.directReferences.keys()) {
     solutions.set(solutionPath, {
       configPath: solutionPath,
-      constraintCandidates: new Map(),
       kind: 'solution',
-      leafConfigPaths: collectSolutionLeaves({ ...options, solutionPath }),
+      sourceConfigPaths: collectSolutionLeaves({ ...options, solutionPath }),
     });
   }
   return {
     dependencyFacts: [],
-    entryOwnerByConfigPath: new Map(),
+    sourceConfigPathsByEntry: new Map(),
     solutions,
     typeConfigs,
   };

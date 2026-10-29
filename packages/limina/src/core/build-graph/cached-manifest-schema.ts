@@ -29,12 +29,16 @@ const dependencyEdge = z.object({
   kind: z.literal('declaration-provider'),
   cacheReuse: z.enum(['non-reusable', 'reusable']),
 });
-const configOwner = z.object({
+const configOwner = z.discriminatedUnion('role', [
+  z.object({ config: text, owner: checker, role: z.literal('type') }),
+  z.object({ config: text, role: z.literal('solution') }),
+]);
+const solutionOwner = z.object({
   config: text,
-  owner: checker,
-  role: z.enum(['solution', 'type']),
+  sources: texts,
+  checkers: z.array(checker),
+  declaredChecker: checker.optional(),
 });
-const solutionOwner = z.object({ config: text, leaves: texts, owner: checker });
 const ownership = z.object({
   configs: z.array(configOwner),
   solutions: z.array(solutionOwner),
@@ -47,7 +51,7 @@ const targets = z.object({
 });
 const knip = z.object({ diagnostics: jsonRecords, packages: jsonRecords });
 export const manifestSchema: z.ZodType<unknown> = z.object({
-  version: z.literal(5),
+  version: z.literal(6),
   generatedBy: z.literal('limina'),
   ownedArtifacts: texts,
   checkers: z.record(text, checkerManifest),

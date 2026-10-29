@@ -9,6 +9,7 @@ import { toRelativePath } from '#utils/path';
 interface CheckerSourceConfigCollectionLike {
   buildModulesBySourcePath: Map<string, { kind: string; path: string }>;
   entryConfigPaths: Set<string>;
+  projectConfigPaths: Set<string>;
 }
 
 interface CheckerOwnership {
@@ -44,7 +45,7 @@ function collectCheckerOwnership(options: {
   const collection = getPrimaryCheckerCollection(options);
   if (!collection) return;
 
-  for (const sourceConfigPath of collection.buildModulesBySourcePath.keys()) {
+  for (const sourceConfigPath of collection.projectConfigPaths) {
     getOrCreateOwnership(
       options.ownershipByKey,
       options.checker,

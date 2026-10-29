@@ -337,7 +337,6 @@ describe('defineConfig', () => {
           graphRoutes.routes[0]?.projectPaths ?? [],
         ),
       ).toEqual([
-        '.limina/tsconfig/checkers/tsgo/solutions/packages/app/tsconfig.build.json',
         '.limina/tsconfig/checkers/tsgo/projects/packages/app/tsconfig.lib.dts.json',
       ]);
     } finally {

@@ -22,11 +22,9 @@ const evidence = z.object({
     'dependency',
     'build-closure',
     'vue-promotion',
-    'solution-constraint',
     'fallback',
   ]),
 });
-const candidates = stringMap(z.array(evidence));
 const owner = z.union([
   z.object({ kind: z.literal('pending') }),
   z.object({ kind: z.literal('resolved'), checker }),
@@ -114,16 +112,13 @@ const dependencyFact = z.object({
 });
 const solution = z.object({
   configPath: text,
-  constraintCandidates: candidates,
   declaredConstraint: checker.optional(),
-  finalOwner: checker.optional(),
   kind: z.literal('solution'),
-  leafConfigPaths: texts,
+  sourceConfigPaths: texts,
 });
 const typeConfig = z.object({
   authoritativeOwner: checker.optional(),
   configPath: text,
-  constraintCandidates: candidates,
   evidence: z.array(evidence),
   finalOwner: checker.optional(),
   frozenSemanticAuthority: authority.optional(),
@@ -132,11 +127,15 @@ const typeConfig = z.object({
   semanticAuthority: pendingAuthority,
 });
 export const ownershipSchema: z.ZodType<unknown> = z.object({
+  coloringInputs: z.object({
+    version: z.literal(1),
+    seeds: stringMap(typeConfig),
+  }),
   declarationContexts: z.array(declarationContextSchema).optional(),
-  dependencyFactPhase: z.enum(['selection', 'locked']).optional(),
-  ownershipSelectionFacts: z.array(dependencyFact).optional(),
+  dependencyFactPhase: z.literal('locked'),
+  ownershipSelectionFacts: z.array(dependencyFact),
   dependencyFacts: z.array(dependencyFact),
-  entryOwnerByConfigPath: stringMap(checker),
+  sourceConfigPathsByEntry: stringMap(texts),
   solutions: stringMap(solution),
   typeConfigs: stringMap(typeConfig),
 });

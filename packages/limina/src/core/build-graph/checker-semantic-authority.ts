@@ -76,7 +76,7 @@ function createFrozenMutationProblem(options: {
     `  frozen family: ${options.current.family}`,
     `  attempted family: ${options.family}`,
     `  evidence: ${options.evidence.source} (${options.evidence.detail})`,
-    '  reason: build coloring, promotion, solution constraints, fallback, and final ownership cannot change module semantics.',
+    '  reason: build coloring, promotion, fallback, and final ownership cannot change module semantics.',
   ].join('\n');
 }
 

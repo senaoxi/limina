@@ -39,7 +39,6 @@ export type CheckerEvidenceSource =
   | 'dependency'
   | 'build-closure'
   | 'vue-promotion'
-  | 'solution-constraint'
   | 'fallback';
 
 export interface CheckerEvidence {
@@ -53,7 +52,6 @@ export interface TypeConfigOwnershipState {
   semanticAuthorityUnavailable?: string;
   authoritativeOwner?: CheckerName;
   configPath: string;
-  constraintCandidates: Map<CheckerName, CheckerEvidence[]>;
   evidence: CheckerEvidence[];
   finalOwner?: CheckerName;
   frozenSemanticAuthority?: LockedSemanticAuthority;
@@ -64,11 +62,9 @@ export interface TypeConfigOwnershipState {
 
 export interface SolutionOwnershipState {
   configPath: string;
-  constraintCandidates: Map<CheckerName, CheckerEvidence[]>;
   declaredConstraint?: CheckerName;
-  finalOwner?: CheckerName;
   kind: 'solution';
-  leafConfigPaths: string[];
+  sourceConfigPaths: string[];
 }
 
 export interface CheckerDependencyFact {
@@ -103,11 +99,12 @@ export interface PhysicalFrameworkCandidate {
 }
 
 export interface CheckerOwnershipPlan {
+  coloringInputs?: { version: 1; seeds: Map<string, TypeConfigOwnershipState> };
   declarationContexts?: DeclarationContextDecision[];
   dependencyFactPhase?: 'selection' | 'locked';
   ownershipSelectionFacts?: readonly CheckerDependencyFact[];
   dependencyFacts: CheckerDependencyFact[];
-  entryOwnerByConfigPath: Map<string, CheckerName>;
+  sourceConfigPathsByEntry: Map<string, string[]>;
   solutions: Map<string, SolutionOwnershipState>;
   typeConfigs: Map<string, TypeConfigOwnershipState>;
 }
