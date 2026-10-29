@@ -150,7 +150,11 @@ export function collectAutoScope(options: {
   projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScope | null {
   const scope = createAutoScope(options);
-  return scope.collection.projectConfigPaths.size > 0 ? scope : null;
+  return scope.collection.projectConfigPaths.size +
+    scope.collection.solutionConfigPaths.size >
+    0
+    ? scope
+    : null;
 }
 
 function getExplicitParsing(checkerName: CheckerName): {
@@ -195,7 +199,10 @@ export function collectExplicitScope(options: {
         packageRootDir: collection.packageRootBySourcePath.get(configPath)!,
       }),
     );
-  if (collection.projectConfigPaths.size === 0) {
+  if (
+    collection.projectConfigPaths.size === 0 &&
+    collection.solutionConfigPaths.size === 0
+  ) {
     return null;
   }
   return {

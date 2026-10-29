@@ -9,7 +9,7 @@ import { coreCollectionRun } from './core-collection-run';
 import { validateStagedDeclarationContexts } from './declaration-context-candidate';
 import { finalizeGeneratedGraph } from './finalize-generated-graph';
 import { prepareGeneratedKnipPackageConfigs } from './generated-knip';
-import { hasBoundGeneratedReferences } from './generated-reference-binding';
+import { assertGeneratedReferenceBinding } from './generated-reference-binding';
 import { observeOutputProjections } from './observe-output-projections';
 import type { createGeneratedGraphPreparationState } from './prepare-state';
 import { validateStagedReferences } from './reference-validation';
@@ -125,6 +125,5 @@ function assertReferenceBinding(
   graph: GeneratedTsconfigGraphResult,
   config: ResolvedLiminaInputs,
 ): void {
-  if (!hasBoundGeneratedReferences(graph, config))
-    throw new Error('Generated reference binding is inconsistent.');
+  assertGeneratedReferenceBinding(graph, config);
 }

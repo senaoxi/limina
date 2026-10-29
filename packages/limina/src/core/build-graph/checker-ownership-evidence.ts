@@ -44,6 +44,7 @@ function addEvidenceIfMissing(
   const isExists = state.evidence.some(
     (entry) =>
       entry.checker === evidence.checker &&
+      entry.configPath === evidence.configPath &&
       entry.detail === evidence.detail &&
       entry.source === evidence.source,
   );
@@ -65,6 +66,10 @@ function addAuthoritativeCheckerRequirement(options: {
       `  config: ${toRelativePath(options.config.rootDir, options.state.configPath)}`,
       `  authoritative checker: ${current}`,
       `  incompatible authoritative checker: ${options.checker}`,
+      `  existing evidence: ${options.state.evidence
+        .filter((entry) => entry.source === 'explicit')
+        .map((entry) => entry.detail)
+        .join('; ')}`,
       `  evidence: ${options.detail}`,
       '  reason: overlapping explicit checker domains require one identical owner.',
     ].join('\n');
@@ -154,7 +159,7 @@ function applyExplicitRequirement(options: {
     });
     return [
       ...problemArray(problem),
-      ...solution.leafConfigPaths.flatMap((leafConfigPath) => {
+      ...solution.sourceConfigPaths.flatMap((leafConfigPath) => {
         const state = options.plan.typeConfigs.get(leafConfigPath);
         if (state === undefined) return [];
         return problemArray(

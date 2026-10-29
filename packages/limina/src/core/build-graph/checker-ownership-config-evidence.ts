@@ -1,7 +1,6 @@
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import {
   addLocalCheckerRequirement,
-  addSolutionRequirement,
   problemArray,
 } from './checker-ownership-evidence';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
@@ -44,17 +43,6 @@ function applyConfigHint(options: {
 }): string[] {
   const checker = familyChecker(options.hint.family);
   const detail = `${options.hint.kind}: ${options.hint.value}`;
-  const solution = options.plan.solutions.get(options.configPath);
-  if (solution !== undefined) {
-    return problemArray(
-      addSolutionRequirement({
-        checker,
-        config: options.config,
-        detail,
-        solution,
-      }),
-    );
-  }
   return applyTypeConfigHint({ ...options, checker, detail });
 }
 

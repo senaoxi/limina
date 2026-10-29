@@ -126,7 +126,7 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
       version: number;
       ownership: { configs: { role: string; config: string }[] };
     };
-    expect(manifest.version).toBe(5);
+    expect(manifest.version).toBe(6);
     expect(
       manifest.ownership.configs
         .filter((config) => config.role === 'type')

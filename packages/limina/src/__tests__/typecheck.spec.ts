@@ -340,6 +340,92 @@ function createLiminaConfig(rootDirectory: string): ResolvedLiminaConfig {
 }
 
 describe('runCheckerBuild', () => {
+  it('returns zero checker results for an empty solution and retains outputless selection', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'tsconfig.json': tsconfig({ include: [], references: [] }),
+    });
+    const config = withFixtureGovernanceRoot({
+      rootDir: fixture.rootDir,
+      configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+      scope: { checkers: { tsc: { include: ['tsconfig.json'] } } },
+    });
+    try {
+      const result = await runCheckerBuild({
+        config,
+        configPath: 'tsconfig.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+      expect(result).toMatchObject({
+        passed: true,
+        rootConfigPaths: [],
+        targetResults: [],
+        targetOutcomes: [],
+      });
+      const output = await runBuild({
+        config,
+        configPath: 'tsconfig.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+      expect(output).toMatchObject({
+        passed: false,
+        failureKind: 'target-selection',
+      });
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'No output-enabled source configs were found under this solution config.',
+      );
+      expect(calls).toHaveLength(0);
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects a framework-only solution as typecheck-only before launching a build', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'tsconfig.json': tsconfig({
+        include: [],
+        references: [{ path: './svelte' }],
+      }),
+      'svelte/tsconfig.json': tsconfig({
+        compilerOptions: { types: [] },
+        include: ['src/**/*'],
+      }),
+      'svelte/src/App.svelte': '<p>hello</p>',
+    });
+    const config = withFixtureGovernanceRoot({
+      rootDir: fixture.rootDir,
+      configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+      scope: { checkers: { 'svelte-check': { include: ['tsconfig.json'] } } },
+    });
+    try {
+      const result = await runCheckerBuild({
+        config,
+        configPath: 'tsconfig.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+      expect(result).toMatchObject({
+        passed: false,
+        failureKind: 'target-selection',
+      });
+      expect(errorSpy.mock.calls.join('\n')).toContain('typecheck-only');
+      expect(calls).toHaveLength(0);
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
   it('runs only build checker entries', async () => {
     const calls: TypecheckTarget[] = [];
     const fixture = await createFixture({

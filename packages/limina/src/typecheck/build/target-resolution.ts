@@ -15,6 +15,7 @@ import { resolveBuildConfigPath } from './config-path';
 import {
   type BuildTargetDescriptor,
   getManagedBuildTargets,
+  getManagedConfigCheckers,
 } from './target-descriptors';
 
 export type OutputBuildResolutionKind =
@@ -187,6 +188,14 @@ async function resolveManagedBuildTarget(options: {
     ).ensureGeneratedArtifactsMaterialized()
   ).graph;
   const allCheckers = generatedGraph.checkers;
+  const matchingCheckers = getManagedConfigCheckers({
+    allCheckers,
+    generatedGraph,
+    sourceConfigPath: options.sourceConfigPath,
+  });
+  const solution = generatedGraph.ownershipPlan.solutions.get(
+    options.sourceConfigPath,
+  );
   const managed = getManagedBuildTargets({
     allCheckers,
     generatedGraph,
@@ -216,13 +225,21 @@ async function resolveManagedBuildTarget(options: {
     checkerTargets,
     generatedGraph,
     kind: 'managed',
-    matchingCheckers: managed.declarationTargets.map(({ checker }) => checker),
-    resolutionKind: getResolutionKind({
-      buildCapableDeclarationTargets,
-      checkerTargets,
-      declarationTargets: managed.declarationTargets,
-      dependencyTargetSelection: isDependencyTargetSelection,
-    }),
+    matchingCheckers,
+    resolutionKind:
+      solution !== undefined && checkerTargets.length === 0
+        ? matchingCheckers.length > 0 &&
+          matchingCheckers.every(
+            (checker) => getCheckerAdapter(checker.name)?.execution !== 'build',
+          )
+          ? 'typecheck-only'
+          : 'outputless-solution'
+        : getResolutionKind({
+            buildCapableDeclarationTargets,
+            checkerTargets,
+            declarationTargets: managed.declarationTargets,
+            dependencyTargetSelection: isDependencyTargetSelection,
+          }),
     ...getSelectedCheckerField(options.request.checker),
     sourceConfigPath: options.sourceConfigPath,
   };
