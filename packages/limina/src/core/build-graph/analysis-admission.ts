@@ -2,8 +2,14 @@ import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-eviden
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { AnalysisOutcome } from './analysis-outcome';
-import { compilationRelationFor } from './compilation-prerequisite';
-import { hasProjectedCompilationReference } from './compilation-reference';
+import {
+  compilationRelationFor,
+  projectSupplementalPrerequisite,
+} from './compilation-prerequisite';
+import {
+  hasProjectedCompilationReference,
+  hasProjectedPrerequisiteReference,
+} from './compilation-reference';
 import { assessDeclarationContexts } from './declaration-context-admission';
 import { pendingReferenceValidation } from './reference-validation';
 import type { DependencyAnalysisResult } from './types';
@@ -246,5 +252,46 @@ export function assessCompilationPrerequisites(
   const result = { unknown: [] as string[], denied: [] as string[], configs };
   for (const evidence of nativeEntries(analysis))
     assessRelations(evidence.snapshot, candidate, result);
+  const assessments = analysis.supplementalAssessments ?? [];
+  for (const assessment of assessments) {
+    if (!configs.has(assessment.obligation.consumerConfigId)) continue;
+    const prerequisite = projectSupplementalPrerequisite(assessment, candidate);
+    if (prerequisite === undefined) {
+      result.unknown.push(
+        `Unbound supplemental obligation: ${assessment.obligation.id}`,
+      );
+      continue;
+    }
+    const state = summarizeCompilationObligation(assessment.obligation);
+    if (state === 'not-required') continue;
+    if (state === 'unknown') {
+      const obligation = assessment.obligation;
+      const reason =
+        obligation.existence.state === 'unknown'
+          ? obligation.existence.gapIds.join(', ')
+          : 'reason' in obligation.structure
+            ? obligation.structure.reason
+            : 'proof-unqualified';
+      result.unknown.push(
+        `Supplemental obligation unavailable: ${reason}: ${assessment.occurrence.specifier}`,
+      );
+      continue;
+    }
+    const pairs =
+      prerequisite.requiredRelation === 'declaration-reference'
+        ? candidate.references
+        : candidate.schedules;
+    const isCovered =
+      hasProjectedPrerequisiteReference(prerequisite, candidate) &&
+      pairs.some(
+        (pair) =>
+          pair.from === assessment.obligation.consumerConfigId &&
+          pair.to === assessment.obligation.targetConfigId,
+      );
+    if (!isCovered)
+      result.denied.push(
+        `Unsatisfied supplemental obligation: ${assessment.obligation.id}`,
+      );
+  }
   return result;
 }

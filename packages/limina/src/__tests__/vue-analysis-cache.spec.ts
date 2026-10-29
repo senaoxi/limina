@@ -181,6 +181,63 @@ describe('persistent Vue and mixed graph analysis', () => {
     }
   });
 
+  it('reassesses Pending misses across processes and retracts supplemental contributions', () => {
+    const f = fixture();
+    f.write(
+      'limina.config.mjs',
+      `export default {scope:{source:{include:['vue/**/*.vue','vue/**/*.ts']},checkers:{auto:{}}}};`,
+    );
+    const options = {
+      composite: true,
+      declaration: true,
+      types: [],
+      target: 'ES2022',
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      outDir: 'dist',
+    };
+    f.write(
+      'vue/tsconfig.json',
+      JSON.stringify({ compilerOptions: options, files: ['a.ts'] }),
+    );
+    f.write(
+      'vue/a.ts',
+      'import Button from "./provider/Button.vue"; export const component = Button;',
+    );
+    f.write(
+      'vue/provider/tsconfig.json',
+      JSON.stringify({ compilerOptions: options, include: ['*.vue'] }),
+    );
+    f.write(
+      'vue/provider/Anchor.vue',
+      '<script setup lang="ts">const value = 1;</script>',
+    );
+    const dependencies = () =>
+      Object.values(f.snapshot().contributions)
+        .flat()
+        .filter(
+          (c) =>
+            c.fromConfigPath === f.path('vue/tsconfig.json') &&
+            c.toConfigPath === f.path('vue/provider/tsconfig.json'),
+        );
+    const missing = f.run();
+    expect(missing.passed).toBe(true);
+    expect(dependencies()).toHaveLength(0);
+    f.write(
+      'vue/provider/Button.vue',
+      '<script setup lang="ts">const label = "hello";</script>',
+    );
+    const found = f.run();
+    expect(found.passed).toBe(true);
+    expect(cacheMetric(found, 'graphHits')).toBe(0);
+    expect(dependencies()).toHaveLength(1);
+    rmSync(f.path('vue/provider/Button.vue'));
+    const removed = f.run();
+    expect(removed.passed).toBe(true);
+    expect(cacheMetric(removed, 'graphHits')).toBe(0);
+    expect(dependencies()).toHaveLength(0);
+  });
+
   it('invalidates producer facts and graphs from the previous analysis adapter', () => {
     const f = crossProjectFixture();
     expectCold(f.run());

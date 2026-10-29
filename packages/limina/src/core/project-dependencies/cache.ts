@@ -25,7 +25,6 @@ export function createProjectDependencyCaches(
   return {
     metrics,
     analysisCache,
-    pendingOwnershipEvidenceCache: new Map(),
     projectDependencyCache: new Map(),
     projectDependencyPreparationCache: new Map(),
     sourceEvidenceCache: new Map(),
@@ -38,7 +37,6 @@ export function createProjectDependencyCaches(
 export function releaseProjectDependencyMemos(
   caches: ProjectDependencyCaches,
 ): void {
-  caches.pendingOwnershipEvidenceCache.clear();
   caches.projectDependencyCache.clear();
   caches.projectDependencyPreparationCache.clear();
   caches.sourceEvidenceCache.clear();

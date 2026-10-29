@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { type ChildProcess, execFile } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -19,13 +19,31 @@ import { runCheckerBuildImpl } from '../typecheck/checker/build-runner';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
-const execute = promisify(execFile);
+const execFileAsync = promisify(execFile);
 const require = createRequire(import.meta.url);
 const roots: string[] = [];
-afterEach(() => {
+const children = new Map<ChildProcess, Promise<unknown>>();
+afterEach(async () => {
+  const running = [...children];
+  for (const [child] of running) child.kill();
+  await Promise.allSettled(running.map(([, completion]) => completion));
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
+
+async function execute(
+  executable: string,
+  arguments_: string[],
+  options: { cwd: string; env?: NodeJS.ProcessEnv },
+) {
+  const running = execFileAsync(executable, arguments_, options);
+  children.set(running.child, running);
+  try {
+    return await running;
+  } finally {
+    children.delete(running.child);
+  }
+}
 
 function fixture(options: Record<string, unknown> = {}) {
   const temporary = mkdtempSync(path.join(tmpdir(), 'limina-libraries-'));
@@ -213,6 +231,7 @@ interface CachedResult {
   hit: boolean;
   generated: string;
   files: string[];
+  seedHit?: boolean;
 }
 
 it('preserves replacement identity when an output target activates a different default library', async () => {
@@ -254,13 +273,18 @@ it('preserves replacement identity when an output target activates a different d
     manager.dispose();
   }
 });
-async function cached(input: Fixture): Promise<CachedResult> {
+async function cached(
+  input: Fixture,
+  shouldPublishReplacement = false,
+): Promise<CachedResult> {
   const url = (name: string) => new URL(`../${name}.ts`, import.meta.url).href;
   input.write(
     'cache-runner.mjs',
     `
+import {renameSync} from 'node:fs';
 import {loadConfig} from ${JSON.stringify(url('config/loader'))};
 import {LiminaPreflightManager} from ${JSON.stringify(url('preflight/manager'))};
+async function collect() {
 const events=[];
 const config=await loadConfig({configPath:${JSON.stringify(input.file('limina.config.mjs'))}});
 const manager=new LiminaPreflightManager({config,analysisCache:true,metrics:{record:e=>events.push(e)}});
@@ -268,8 +292,16 @@ try {
   await manager.ensureGeneratedArtifactsMaterialized();
   const graph=await manager.ensureGeneratedGraph();
   await manager.publishAnalysisCache();
-  console.log(JSON.stringify({hit:events.some(e=>e.name==='analysis-cache'&&e.kind==='graphHits'&&e.count===1),generated:graph.sourceToDts.get('tsc').get(${JSON.stringify(input.file('packages/a/tsconfig.json'))}),files:[...graph.generatedFiles.keys()]}));
-}finally{manager.dispose();}`,
+  return {hit:events.some(e=>e.name==='analysis-cache'&&e.kind==='graphHits'&&e.count===1),generated:graph.sourceToDts.get('tsc').get(${JSON.stringify(input.file('packages/a/tsconfig.json'))}),files:[...graph.generatedFiles.keys()]};
+}finally{manager.dispose();}
+}
+if (process.argv[2] === 'publish-replacement') {
+  const seed = await collect();
+  renameSync(${JSON.stringify(input.file('pending/node_modules'))}, ${JSON.stringify(input.file('packages/a/node_modules'))});
+  console.log(JSON.stringify({...await collect(), seedHit:seed.hit}));
+} else {
+  console.log(JSON.stringify(await collect()));
+}`,
   );
   const result = await execute(
     process.execPath,
@@ -277,24 +309,48 @@ try {
       '--import',
       pathToFileURL(require.resolve('tsx')).href,
       input.file('cache-runner.mjs'),
+      ...(shouldPublishReplacement ? ['publish-replacement'] : []),
     ],
     { cwd: input.root, env: { ...process.env, TSX_DISABLE_CACHE: '1' } },
   );
   return JSON.parse(result.stdout.trim().split('\n').at(-1)!);
 }
 
-it('restores library bindings across processes and invalidates a new higher-priority replacement', async () => {
+it('restores library bindings across processes', async () => {
   const input = fixture();
   const first = replacement(input, '.', 'workspace');
   const cold = await cached(input);
   expect(program(cold.generated).getSourceFile(first)).toBeDefined();
   expect((await cached(input)).hit).toBe(true);
+});
+
+it('invalidates a new higher-priority library replacement across processes', async () => {
+  const input = fixture();
+  const first = replacement(input, '.', 'workspace');
+  expect((await cached(input)).hit).toBe(false);
   const second = replacement(input, 'packages/a', 'local');
   const changed = await cached(input);
   expect(changed.hit).toBe(false);
-  expect(program(changed.generated).getSourceFile(second)).toBeDefined();
-  expect(program(changed.generated).getSourceFile(first)).toBeUndefined();
-  expect((await cached(input)).hit).toBe(true);
+  const compiled = program(changed.generated);
+  expect(compiled.getSourceFile(second)).toBeDefined();
+  expect(compiled.getSourceFile(first)).toBeUndefined();
+});
+
+it('restores the graph published after a library replacement invalidates prior bindings', async () => {
+  const input = fixture();
+  const first = replacement(input, '.', 'workspace');
+  replacement(input, 'pending', 'local');
+  const second = input.file(
+    'packages/a/node_modules/@typescript/lib-dom/index.d.ts',
+  );
+  const changed = await cached(input, true);
+  expect(changed.seedHit).toBe(false);
+  expect(changed.hit).toBe(false);
+  const restored = await cached(input);
+  expect(restored.hit).toBe(true);
+  const compiled = program(restored.generated);
+  expect(compiled.getSourceFile(second)).toBeDefined();
+  expect(compiled.getSourceFile(first)).toBeUndefined();
 });
 
 it('refuses a modified library forwarding manifest before launching the Checker', async () => {

@@ -21,6 +21,7 @@ import {
   isValidReferenceTarget,
   resolveUsableProvider,
 } from './reference-target-resolution';
+import { collectSupplementalReferenceInputs } from './supplemental-reference-inputs';
 import type { GovernedSourceUnit, SourceProject } from './types';
 
 export type { ReferenceImportContext } from './reference-import-types';
@@ -77,7 +78,12 @@ function addProjectDependencyFailures(options: {
       ...declaration.decisions,
     );
   const collect = () => {
-    processReferenceDependencies(options, effectiveReferenceInputs(collection));
+    const dependencies = effectiveReferenceInputs(collection);
+    processReferenceDependencies(options, dependencies);
+    processReferenceDependencies(
+      options,
+      collectSupplementalReferenceInputs({ ...options, dependencies }),
+    );
     addDeclarationContextReferences({
       ...options,
       decisions: declaration.decisions,

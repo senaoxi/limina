@@ -23,6 +23,7 @@ import type {
 import type { FileOwnerLookup } from './file-owner-lookup';
 import { collectIndependentCoreWork } from './independent-core-work';
 import { prepareLockedSemanticProject } from './locked-semantic-project';
+import { rebindSupplementalAssessments } from './locked-supplemental-assessment';
 
 interface FactCollectionOptions {
   phase?: 'selection' | 'locked';
@@ -58,10 +59,13 @@ function collectProjectFacts(options: {
   if (state.semanticAuthority.kind === 'pending') {
     return collectPendingOwnershipEvidence({
       ...options.base,
+      onSupplementalAttempt: () => {
+        if (options.caches.analysisCache)
+          options.caches.analysisCache.requiresSupplementalReassessment = true;
+      },
       baseline: options.caches.nativeSourceContexts?.get(
         options.project.configPath,
       ),
-      cache: options.caches.pendingOwnershipEvidenceCache,
       project: options.project,
       state,
     });
@@ -170,6 +174,14 @@ export async function collectCheckerDependencyFacts(options: {
       projectDependencyCaches: caches,
       workspaceSourceBoundary,
     });
+    if (options.phase === 'locked')
+      caches.supplementalAssessments = rebindSupplementalAssessments({
+        discovery: options.discovery,
+        facts: collected.facts,
+        importAnalysis: options.importAnalysis,
+        rootDir: options.config.rootDir,
+        projectConfigCache: options.projectConfigCache,
+      });
     retainFactPhase(options, collected.facts);
     if (options.phase === 'locked')
       options.discovery.plan.declarationContexts =

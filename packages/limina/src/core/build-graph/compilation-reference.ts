@@ -70,7 +70,10 @@ function hasMatchingReference(
 function hasDeclarationReference(
   candidate: CandidateBuildPlan,
   source: GovernedSourceUnit,
-  prerequisite: ProjectedCompilationPrerequisite,
+  prerequisite: Pick<
+    ProjectedCompilationPrerequisite,
+    'obligation' | 'targetIdentities'
+  >,
 ): boolean {
   const projection = projections.get(candidate)!;
   const provider = projectedProvider(source, {
@@ -107,8 +110,21 @@ export function hasProjectedCompilationReference(
     obligation,
     candidate,
   );
-  if (prerequisite === undefined) return false;
+  return (
+    prerequisite !== undefined &&
+    hasProjectedPrerequisiteReference(prerequisite, candidate)
+  );
+}
+
+export function hasProjectedPrerequisiteReference(
+  prerequisite: Pick<
+    ProjectedCompilationPrerequisite,
+    'obligation' | 'targetIdentities' | 'requiredRelation'
+  >,
+  candidate: CandidateBuildPlan,
+): boolean {
   if (prerequisite.requiredRelation === 'framework-schedule') return true;
+  const obligation = prerequisite.obligation;
   const sources = projectionConsumers(candidate, obligation.consumerConfigId);
   return [
     sources.length > 0,

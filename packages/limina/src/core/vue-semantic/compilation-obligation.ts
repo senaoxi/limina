@@ -1,10 +1,12 @@
-import type ts from 'typescript';
 import type { CompilationObligationProof } from '../dependency-semantics';
 import {
+  evaluateModuleImpact,
   independentModuleAbsence,
-  observeNativeModuleImpact,
 } from '../typescript-semantic/native-module-impact';
-import { nativeObservedProgram } from '../typescript-semantic/native-program-api';
+import {
+  nativeCompilerApi,
+  nativeObservedProgram,
+} from '../typescript-semantic/native-program-api';
 import {
   observedDeclarationRedirect,
   observeNativeReference,
@@ -88,50 +90,27 @@ function requestImpact(
       state: 'absent' as const,
       rule: 'original-project-reference-satisfies-input',
     };
-  const impact = observeNativeModuleImpact({
-    program,
-    observation,
-    compiler: context.tsModule,
-    reference,
-  });
-  // A reference membership proof can qualify JS input before native filename
-  // classification. Foreign framework targets still need a matching service.
-  if (
-    impact.state === 'present' &&
-    !/\.(?:[cm]?[jt]s|[jt]sx)$/.test(target.resolvedFileName) &&
-    !isQualifiedService(context, target)
-  )
-    return {
-      state: 'unknown' as const,
-      reason: 'framework-service-classification-unavailable',
-    };
-  return impact.state === 'unknown' &&
-    impact.reason === 'target-emission-rule-unqualified-for-extension' &&
-    isQualifiedService(context, target)
-    ? {
-        state: 'present' as const,
-        rule: 'vue-service-script-declaration-input',
-      }
-    : impact;
-}
-
-function isQualifiedService(
-  context: VueSemanticContext,
-  target: ts.ResolvedModuleFull,
-): boolean {
   const service = getVueServiceScript({
     context,
     fileName: target.resolvedFileName,
   })?.serviceScript;
-  if (service === undefined || service.extension !== target.extension)
-    return false;
-  const { Extension, ScriptKind } = context.tsModule;
-  return (
-    new Map<string, number>([
-      [Extension.Ts, ScriptKind.TS],
-      [Extension.Tsx, ScriptKind.TSX],
-      [Extension.Js, ScriptKind.JS],
-      [Extension.Jsx, ScriptKind.JSX],
-    ]).get(service.extension) === service.scriptKind
-  );
+  return evaluateModuleImpact({
+    target,
+    compiler: context.tsModule,
+    inputOptions: program.getCompilerOptionsForFile(request.sourceFile),
+    emitOptions: program.getCompilerOptions(),
+    reference,
+    sourceIsExternal: program.isSourceFileFromExternalLibrary(
+      request.sourceFile,
+    ),
+    sourceIsDeclaration: request.sourceFile.isDeclarationFile,
+    excludedDocumentation:
+      (request.literal.flags & 16_777_216) !== 0 &&
+      !nativeCompilerApi(context.tsModule).isInJSFile(request.literal),
+    service:
+      service?.extension === target.extension &&
+      service.scriptKind !== undefined
+        ? { extension: service.extension, scriptKind: service.scriptKind }
+        : undefined,
+  });
 }

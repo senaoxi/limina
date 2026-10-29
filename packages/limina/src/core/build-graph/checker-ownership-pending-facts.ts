@@ -2,33 +2,38 @@ import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
-import { configInputIdentity } from '../tsconfig/input-identity';
 import type { TypeEvidenceCore } from '../type-evidence';
 import type {
   TypeScriptSemanticDependencyContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
+import { createTypeScriptDependencyContext } from '../typescript-semantic';
 import { projectNativeDeclarationClosure } from '../typescript-semantic/native-closure';
+import { isLiveNativeInventory } from '../typescript-semantic/native-context-inventory';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import {
   createEvidenceProject,
   type EvidenceProject,
 } from './checker-ownership-evidence-project';
-import {
-  getCachedPendingEvidence,
-  type PendingOwnershipEvidence,
-  storePendingEvidence,
-} from './checker-ownership-pending-cache';
 import { resolvePendingPhysicalCandidate } from './checker-ownership-physical-candidate';
 import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import type { FileOwnerLookup } from './file-owner-lookup';
+import { prepareLockedSemanticProject } from './locked-semantic-project';
 import { qualifiedPendingContext } from './pending-native-context';
+import { assessPendingSupplement } from './pending-supplemental-assessment';
+
+interface PendingOwnershipEvidence {
+  failures?: string[];
+  facts: CheckerDependencyFact[];
+  problems: string[];
+}
 
 interface FactCollectionContext {
+  onSupplementalAttempt?: () => void;
   config: ResolvedLiminaInputs;
   core: TypeEvidenceCore;
   discovery: CheckerOwnershipDiscovery;
@@ -42,8 +47,8 @@ interface FactCollectionContext {
 }
 
 interface CollectPendingOptions {
+  onSupplementalAttempt?: () => void;
   baseline?: TypeScriptSemanticDependencyContext;
-  cache?: Map<string, unknown>;
   config: ResolvedLiminaInputs;
   core: TypeEvidenceCore;
   discovery: CheckerOwnershipDiscovery;
@@ -147,12 +152,8 @@ export function collectPendingOwnershipEvidence(
   options: CollectPendingOptions,
 ): PendingOwnershipEvidence {
   assertPendingAuthority(options.state);
-  const cacheKey = createPendingCacheKey(options);
-  const cached = getCachedPendingEvidence({ cache: options.cache, cacheKey });
-  if (cached !== undefined) return cached;
-  const collected = collectProjectFacts(options);
-  storePendingEvidence({ cache: options.cache, cacheKey, evidence: collected });
-  return collected;
+  // Supplemental positive and negative lookups are collection-local authority.
+  return collectProjectFacts(options);
 }
 
 function assertPendingAuthority(state: TypeConfigOwnershipState): void {
@@ -160,19 +161,6 @@ function assertPendingAuthority(state: TypeConfigOwnershipState): void {
   throw new Error(
     'Pending ownership evidence requires a pending semantic authority.',
   );
-}
-
-function createPendingCacheKey(options: CollectPendingOptions): string {
-  return JSON.stringify({
-    adapterVersion: 'pending-typescript-v6-declaration-governance',
-    boundary: options.workspaceSourceBoundary.identity,
-    authority: options.state.semanticAuthority,
-    configPath: options.project.configPath,
-    fileNames: options.project.filePartition.typescriptFiles,
-    generation: options.projectConfigCache?.generation ?? 0,
-    references: options.project.references,
-    virtualFiles: configInputIdentity(options.project.virtualFiles),
-  });
 }
 
 function pendingCandidate(
@@ -184,28 +172,81 @@ function pendingCandidate(
   | 'physicalTargetProvenance'
   | 'typeEvidenceKind'
   | 'frameworkCandidate'
+  | 'supplementalCoverage'
+  | 'supplementalDiscovery'
+  | 'supplementalAssessment'
 > {
-  const candidate =
-    target === null ? resolvePendingPhysicalCandidate(options) : null;
+  const empty = {
+    physicalTargetPath: null,
+    physicalTargetProvenance: null,
+    typeEvidenceKind: 'unobserved' as const,
+  };
+  if (target !== null) return empty;
+  const { context } = options;
+  const native = context.typeScriptSemanticContext;
+  const fact = native.getDependencyFact(options.importRecord);
+  const requestId = fact.nativeEvidence?.requestId;
+  const premises = native.nativeInventory?.modules?.find(
+    (item) => item.requestId === requestId,
+  );
+  const resolution = native.nativeEvidence?.resolutions.find(
+    (item) => item.requestId === requestId,
+  );
+  if (premises === undefined || resolution === undefined) return empty;
+  let supplementalCoverage: CheckerDependencyFact['supplementalCoverage'];
+  let supplementalDiscovery: CheckerDependencyFact['supplementalDiscovery'];
+  const candidate = resolvePendingPhysicalCandidate({
+    ...options,
+    premises,
+    onDiscovery: (value, coverage) => {
+      supplementalCoverage = coverage;
+      supplementalDiscovery = value;
+      context.onSupplementalAttempt?.();
+    },
+  });
   if (candidate === null)
-    return {
-      physicalTargetPath: null,
-      physicalTargetProvenance: null,
-      typeEvidenceKind: 'unobserved',
-    };
-  return {
+    return { ...empty, supplementalDiscovery, supplementalCoverage };
+  const result: ReturnType<typeof pendingCandidate> = {
     frameworkCandidate: candidate,
     physicalTargetPath: candidate.targetPath,
     physicalTargetProvenance: 'pending-framework-candidate',
-    typeEvidenceKind: 'missing',
+    typeEvidenceKind: 'unobserved',
+    supplementalDiscovery,
+    supplementalCoverage,
   };
+  if (supplementalDiscovery === undefined || candidate.family !== 'vue')
+    return result;
+  const owner = context.discovery.projectByConfigPath.get(
+    candidate.owningConfigPath,
+  )?.context.vueSemanticIdentity;
+  if (owner === undefined) return result;
+  const consumer = prepareLockedSemanticProject({
+    project: context.project,
+    authority: { kind: 'locked', family: 'vue', source: 'dependency' },
+    rootDir: context.config.rootDir,
+  }).context.vueSemanticIdentity;
+  if (consumer === undefined) return result;
+  result.supplementalAssessment = assessPendingSupplement({
+    baseline: native.nativeEvidence!.contexts[0]!,
+    emitOptions: context.semantic.project.options,
+    occurrence: options.importRecord,
+    premises,
+    discovery: supplementalDiscovery,
+    coverage: candidate.coverage,
+    owner,
+    consumer,
+    importer: options.importRecord.filePath,
+    specifier: options.importRecord.specifier,
+    roots: native.nativeInventory!.roots.map((item) => item.root),
+  });
+  return result;
 }
 
 function pendingContext(
   options: CollectPendingOptions,
   semantic: EvidenceProject,
 ): TypeScriptSemanticDependencyContext {
-  return (
+  const context =
     qualifiedPendingContext(options.baseline, {
       ...semantic.project,
       workspaceSourceBoundary: options.workspaceSourceBoundary,
@@ -213,6 +254,12 @@ function pendingContext(
     options.core.getTypeScriptSemanticDependencyContext({
       checkerName: semantic.checkerName,
       project: semantic.project,
-    })
-  );
+    });
+  return isLiveNativeInventory(context.nativeInventory)
+    ? context
+    : createTypeScriptDependencyContext({
+        ...semantic.project,
+        workspaceSourceBoundary: options.workspaceSourceBoundary,
+        admissionMode: 'coverage-bounded',
+      });
 }

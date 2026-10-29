@@ -54,7 +54,21 @@ const project = z.object({
     .optional(),
 });
 const boundaryEntry = z.tuple([text, z.boolean()]);
+const modulePremises = z.object({
+  requestId: text,
+  role: z.enum(['import', 'augmentation']),
+  sourceFingerprint: text,
+  sourceLoadGap: text.optional(),
+  mode: z.number().optional(),
+  options: options.optional(),
+  sourceIsDeclaration: z.boolean(),
+  sourceIsExternal: z.boolean(),
+  excludedDocumentation: z.boolean(),
+  ownAmbient: z.boolean(),
+});
+
 const compilerInventory = z.object({
+  modules: z.array(modulePremises),
   members: texts,
   syntax: z.array(z.object({ file: text, fingerprint: text })),
   occurrences: z.array(z.object({ requestId: text, fingerprint: text })),
