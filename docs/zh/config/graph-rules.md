@@ -2,7 +2,7 @@
 
 图规则把项目边界写成可检查的约束。先在 `graph.rules` 定义标签对应的规则，再在源码 `tsconfig` 的 `liminaOptions.graphRules` 中使用标签；只有使用该标签的配置才受这组规则约束。
 
-使用 `graph: { rules: {} }` 可启用没有附加规则的基础 Graph Check。配置 `graph` 时必须声明 `rules`，`graph: {}` 无效。省略 `graph` 只移除默认治理任务；核心图分析、物化及执行准入仍运行，即使流水线只含 Checker，适用的 `deny.refs` 也必须在编译器执行前通过准入。
+省略 `graph` 仍执行 Graph Check，且不添加额外规则。配置 `graph` 时必须声明 `rules`；`rules: {}` 表示没有附加规则，`graph: {}` 无效。核心图分析、物化及执行准入各自保留职责；即使流水线只含 Checker，适用的 `deny.refs` 也必须在编译器执行前通过准入。
 
 ```js
 import { defineConfig } from 'limina';

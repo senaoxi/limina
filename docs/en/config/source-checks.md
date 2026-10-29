@@ -2,7 +2,7 @@
 
 `source` configures source import authorization, ambient declaration roles, and optional source-usage analysis. By default, `source check` checks imports against the source-owning package and its dependency declarations. Empty `allow` or `knip` objects are not needed to enable that check.
 
-A valid top-level `source` enables the default Source Check. `source: { knip: false }` runs all applicable base checks and skips only Knip; `source: { knip: true }` also runs Knip. An absent `source` omits the default task, while `limina source check` still runs base governance. Empty `source`, `declarations`, or `importAuthority` wrappers are invalid. Use `declarations: { ambient: [] }` or `importAuthority: { allow: {} }` for explicit empty collections.
+Omitting `source` still runs base Source Check. `source: { knip: false }` runs all applicable base checks and skips only Knip; `source: { knip: true }` also runs Knip. Standalone `limina source check` uses the same policy. Empty `source`, `declarations`, or `importAuthority` wrappers are invalid. Use `declarations: { ambient: [] }` or `importAuthority: { allow: {} }` for explicit empty collections.
 
 | Field                         | Purpose                                                                      | When omitted                                                            |
 | ----------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |

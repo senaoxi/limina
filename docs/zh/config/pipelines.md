@@ -2,7 +2,7 @@
 
 流水线把团队共用的步骤保存在配置中，通过 `limina check <name>` 按顺序运行。下面的 `publish` 只做发布前检查，假设项目已有 `pnpm build` 和 `pnpm test` 脚本，并已配置待检查的 `package.entries`：
 
-命名流水线按顺序执行全部声明步骤，不受默认治理任务自动选择影响。省略 `graph`、`source` 或 `proof` 不会移除显式声明的检查。
+命名流水线按顺序执行全部声明步骤，独立于固定的默认工作流。省略 `graph`、`source` 或 `proof` 不会移除显式声明的检查。
 
 ```js
 import { defineConfig } from 'limina';

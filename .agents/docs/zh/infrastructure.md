@@ -42,7 +42,7 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 仓库检查通过 `limina check` 使用 Limina 的[内置默认工作流](../../../packages/limina/src/pipeline/steps.ts)，通过 `limina check <pipeline>` 执行 [limina.config.mts](../../../limina.config.mts)中的命名 pipelines。根脚本、文档构建和发布编排将固定工作流交给这些入口。根配置不再重复定义 `pipelines.check`，默认流程保留 graph、source、proof 与 checker 验证。自定义 pipeline 按检查用途命名：`typecheck`、`format`、`lint`、`packages`、`privacy`、`gates`、`release-tag` 与 `release`。`typecheck` 运行受管理的 `checker:build` 任务，由任务选择并落盘当前 TypeScript 与 Vue 图入口。外部命令输入固定在配置中，遵循 [CLI 工作流边界](./system-model.md#pipeline-与-phase-contracts)。`docs:privacy` 脚本直接调用扫描器，通过其专用输入契约接收目标路径、`--built` 和 `--context-records`；固定的 `privacy` pipeline 仍可执行默认扫描。提交消息文件使用独立集成入口。未使用的 `graph`、`lib`、`vue`、`package` 与 `publish` 别名已移除：前三者手动选择生成的 checker 路径，`lib` 与 `graph` 使用同一 tsgo 入口，包／发布检查现在由实际入口调用。[根配置集成守卫](../../../packages/limina/integration/tests/root-config.spec.ts)在小型 workspace 中执行两个配置的编译器范围，分别拒绝 TypeScript 与 Vue 源码错误。产品不变量 I01–I12 不变。
 
-根配置显式启用 Graph（`rules: {}`）、Source（Knip 开启）和 Proof（`allowlist: []`），保留仓库完整治理及 independent 默认调度。共享 build-and-check action 执行一次 `pnpm run check`，移除重复的 `pnpm run typecheck`，后者的流水线只包含同一 Checker Build。独立 typecheck 脚本及流水线、产品构建和框架生产者依赖仍保留。根配置及 CI 工作流测试保护治理覆盖和执行次数。
+根配置启用可选的 Knip 分析；Graph 和 Proof 无需空声明即可加入固定默认工作流。共享 build-and-check action 执行一次 `pnpm run check`，移除重复的 `pnpm run typecheck`，后者的流水线只包含同一 Checker Build。独立 typecheck 脚本及流水线、产品构建和框架生产者依赖仍保留。根配置及 CI 工作流测试保护治理覆盖和执行次数。
 
 共享 build action 调用根 `format:check` 与 `lint:check` 别名，分别通过 `limina check format` 和 `limina check lint` 执行只读 Prettier 和 ESLint 校验。[CI 守卫](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)解析实际配置的命令步骤，保护只读参数。两命令覆盖整个仓库；修改仍显式通过 `format:write` 与 `lint:fix` 执行，复用当前 `format` 和 `lint` 脚本。
 

@@ -38,15 +38,15 @@ export interface ScopeConfig {
 export interface LiminaConfig {
   scope?: ScopeConfig;
   /**
-  Configuring this domain enables graph:check in the default workflow.
+  Additional graph rules; graph:check also runs when this domain is omitted.
   */
   graph?: GraphConfig;
   /**
-  Enables source:check, independently of the Knip sub-capability.
+  Source policies and optional Knip analysis; base source:check runs by default.
   */
   source?: SourceCheckConfig;
   /**
-  Enables proof:check; allowlist: [] grants no coverage exceptions.
+  Coverage exceptions; omitted proof or allowlist: [] grants no exceptions.
   */
   proof?: ProofConfig;
   package?: PackageConfig;

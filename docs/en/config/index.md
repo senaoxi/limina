@@ -2,7 +2,7 @@
 
 Use `scope` for governance boundaries. Configure checks, `pipelines`, `concurrency`, and `cache` directly at the top level so their options are easy to find. Every field is optional; `defineConfig({})` uses all defaults.
 
-The default `limina check` always schedules `checker:build` and `checker:typecheck`. It adds `graph:check`, `source:check`, and `proof:check` only when the corresponding top-level domain is configured with valid explicit fields. `scope` selects inputs and Checkers; it does not enable these governance tasks. `package.entries` and `release` do not add default tasks.
+The default `limina check` schedules five tasks: `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. `scope` selects inputs and Checkers; top-level `graph`, `source`, and `proof` configure rules, exceptions, and optional capabilities. Omitting a domain does not disable its task. `package.entries` and `release` do not add default tasks.
 
 | Domain                                           | Responsibility                                                                                                               |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |

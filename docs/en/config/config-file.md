@@ -12,25 +12,15 @@ A config module can export an object, a `Promise`, or a function that receives `
 
 ## Default governance and migration {#default-governance}
 
-The default `limina check` always schedules `checker:build` and `checker:typecheck`. It adds `graph:check`, `source:check`, and `proof:check` only when the corresponding top-level domain is configured with valid explicit fields. `scope` selects inputs and Checkers; it does not enable these governance tasks. `package.entries` and `release` do not add default tasks.
-
-To enable all three governance domains, use:
-
-```ts
-export default {
-  graph: { rules: {} },
-  source: { knip: false },
-  proof: { allowlist: [] },
-};
-```
+The default `limina check` schedules five tasks: `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. `scope` selects inputs and Checkers; top-level `graph`, `source`, and `proof` configure rules, exceptions, and optional capabilities. Omitting a domain does not disable its task. `package.entries` and `release` do not add default tasks.
 
 Set `source.knip: true` to add Knip analysis. `false` retains source ownership, tsconfig governance, import boundaries, and package dependency authorization.
 
-An exported `{}` runs the core workflow and the two Checker tasks. Restore the previous five-task default by explicitly configuring the three domains above; no pipeline is required. Empty domains (`graph: {}`, `source: {}`, `proof: {}`), unknown fields, non-object domain values, and explicit `undefined` are configuration errors. Omit a field to use its default. `graph.rules` and `proof.allowlist` are required when their domains are present; empty collections are valid. Source requires at least one of `knip`, `declarations`, or `importAuthority`. The latter wrappers require `ambient` and `allow` respectively; `ambient: []` and `allow: {}` are valid. Knip object form requires `root` or `workspaces`, so `knip: {}` is invalid. Unknown nested fields and invalid element types fail at loading; workspace-dependent rule, owner, path, and coverage diagnostics remain domain checks.
+An exported `{}` schedules all five default tasks with default inputs and policies. It does not guarantee success: source within the governance boundary must still have valid ownership and Checker coverage. Empty domains (`graph: {}`, `source: {}`, `proof: {}`), unknown fields, non-object domain values, and explicit `undefined` are configuration errors. Omit a field to use its default. `graph.rules` and `proof.allowlist` are required when their domains are present; empty collections are valid. Source requires at least one of `knip`, `declarations`, or `importAuthority`. The latter wrappers require `ambient` and `allow` respectively; `ambient: []` and `allow: {}` are valid. Knip object form requires `root` or `workspaces`, so `knip: {}` is invalid. Unknown nested fields and invalid element types fail at loading; workspace-dependent rule, owner, path, and coverage diagnostics remain domain checks.
 
 Config factories and Promises are evaluated before validation and task selection. For dynamic omission, use conditional object spreads rather than `source: undefined`. Domains must be own data properties; non-enumerable top-level domains are supported. Their nested fields must be enumerable data properties on plain objects or arrays. Accessors, Proxies, inherited fields and cycles are rejected; compute dynamic values inside the factory. Validation preserves `false` and empty collections without filling defaults or stripping fields. The existing Knip `Symbol.toStringTag` string marker is metadata and cannot activate an otherwise empty object.
 
-Unselected governance tasks are absent from the current run, with no fabricated `passed`, `disabled`, or `skipped` status. A planned framework check without targets remains `disabled`. `check --issues` reads the saved invocation; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, `proof check`, and explicitly declared pipeline steps still run without their top-level domain.
+Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
 
 ## Config Discovery and Governance Root {#governance-root}
 

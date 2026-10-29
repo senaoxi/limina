@@ -93,9 +93,6 @@ describe('ExecutionPlan construction', () => {
 
   it('makes every default segment task depend on one materializer', async () => {
     const fixture = await createConfig();
-    fixture.config.graph = { rules: {} };
-    fixture.config.source = { knip: false };
-    fixture.config.proof = { allowlist: [] };
     try {
       const plan = createDefaultExecutionPlan(fixture.config);
       const materializer = plan.tasks.filter(
@@ -574,9 +571,6 @@ describe('runPipeline', () => {
 
   it('runs the built-in default check pipeline without configured pipelines', async () => {
     const fixture = await createConfig();
-    fixture.config.graph = { rules: {} };
-    fixture.config.source = { knip: false };
-    fixture.config.proof = { allowlist: [] };
     const { chunks, flow } = createFlow();
 
     fixture.config.scope = {
@@ -633,9 +627,6 @@ describe('runPipeline', () => {
 
   it('renders default check task tree before auto checker discovery resolves', async () => {
     const fixture = await createConfig();
-    fixture.config.graph = { rules: {} };
-    fixture.config.source = { knip: false };
-    fixture.config.proof = { allowlist: [] };
     const { chunks, flow } = createTtyFlow();
     const generatedGraphStarted = deferred<void>();
     const releaseGeneratedGraph = deferred<void>();
@@ -1352,57 +1343,94 @@ describe('runPipeline', () => {
   );
 });
 
-describe('configuration-driven default tasks', () => {
-  it.each([
-    [[], ['checker:build', 'checker:typecheck']],
-    [['graph'], ['graph:check', 'checker:build', 'checker:typecheck']],
-    [['source'], ['source:check', 'checker:build', 'checker:typecheck']],
-    [['proof'], ['proof:check', 'checker:build', 'checker:typecheck']],
-    [
-      ['graph', 'source'],
-      ['graph:check', 'source:check', 'checker:build', 'checker:typecheck'],
-    ],
-    [
-      ['graph', 'proof'],
-      ['graph:check', 'proof:check', 'checker:build', 'checker:typecheck'],
-    ],
-    [
-      ['source', 'proof'],
-      ['source:check', 'proof:check', 'checker:build', 'checker:typecheck'],
-    ],
-    [
-      ['graph', 'source', 'proof'],
-      [
+describe('fixed default tasks', () => {
+  const domains = [
+    [],
+    ['graph'],
+    ['source'],
+    ['proof'],
+    ['graph', 'source'],
+    ['graph', 'proof'],
+    ['source', 'proof'],
+    ['graph', 'source', 'proof'],
+  ];
+  const cases = domains.flatMap((domains) =>
+    [false, true].map((hasScope) => ({ domains, hasScope })),
+  );
+  it.each(cases)(
+    'keeps all default tasks for $domains (scope=$hasScope)',
+    async ({ domains, hasScope }) => {
+      const fixture = await createConfig();
+      try {
+        if (domains.includes('graph')) fixture.config.graph = { rules: {} };
+        if (domains.includes('source')) fixture.config.source = { knip: false };
+        if (domains.includes('proof')) fixture.config.proof = { allowlist: [] };
+        if (hasScope)
+          fixture.config.scope = { source: { include: ['src/**/*.ts'] } };
+        const plan = createDefaultExecutionPlan(fixture.config);
+        const tasks = plan.tasks.filter((task) => task.kind === 'task');
+        expect(tasks.map((task) => task.issueTask)).toEqual([
+          'graph:check',
+          'source:check',
+          'proof:check',
+          'checker:build',
+          'checker:typecheck',
+        ]);
+        expect(plan.userTaskCount).toBe(5);
+        expect(tasks.every((task) => (task.after?.length ?? 0) === 0)).toBe(
+          true,
+        );
+        const preparations = plan.tasks.filter(
+          (task) => task.kind === 'preparation',
+        );
+        expect(preparations.map((task) => task.issueTask)).toEqual([
+          'workspace:validate',
+          'graph:materialize',
+        ]);
+        const [validation, materializer] = preparations;
+        expect(materializer!.requiresSuccessOf).toEqual([validation!.id]);
+        expect(
+          tasks.every(
+            (task) => task.requiresSuccessOf?.[0] === materializer!.id,
+          ),
+        ).toBe(true);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+  it('keeps named pipelines and package/release configuration separate from defaults', async () => {
+    const fixture = await createConfig();
+    try {
+      fixture.config.pipelines = { explicit: ['proof:check', 'graph:check'] };
+      const expected = [
         'graph:check',
         'source:check',
         'proof:check',
         'checker:build',
         'checker:typecheck',
-      ],
-    ],
-  ])('selects independent default tasks for %j', async (domains, expected) => {
-    const fixture = await createConfig();
-    try {
-      if (domains.includes('graph')) fixture.config.graph = { rules: {} };
-      if (domains.includes('source')) fixture.config.source = { knip: false };
-      if (domains.includes('proof')) fixture.config.proof = { allowlist: [] };
-      fixture.config.scope = { source: { include: ['src/**/*.ts'] } };
+      ];
+      expect(
+        createDefaultExecutionPlan(fixture.config)
+          .tasks.filter((task) => task.kind === 'task')
+          .map((task) => task.issueTask),
+      ).toEqual(expected);
       fixture.config.package = { entries: [] };
       fixture.config.release = { contentHash: { baselineTag: 'latest' } };
-      const plan = createDefaultExecutionPlan(fixture.config);
-      const tasks = plan.tasks.filter((task) => task.kind === 'task');
-      expect(tasks.map((task) => task.issueTask)).toEqual(expected);
-      expect(tasks.every((task) => (task.after?.length ?? 0) === 0)).toBe(true);
-      const materializer = plan.tasks.find(
-        (task) => task.issueTask === 'graph:materialize',
-      )!;
-      const validation = plan.tasks.find(
-        (task) => task.issueTask === 'workspace:validate',
-      )!;
-      expect(materializer.requiresSuccessOf).toEqual([validation.id]);
       expect(
-        tasks.every((task) => task.requiresSuccessOf?.[0] === materializer.id),
-      ).toBe(true);
+        createDefaultExecutionPlan(fixture.config)
+          .tasks.filter((task) => task.kind === 'task')
+          .map((task) => task.issueTask),
+      ).toEqual(expected);
+      const explicit = createExecutionPlan(
+        fixture.config,
+        'explicit',
+      ).tasks.filter((task) => task.kind === 'task');
+      expect(explicit.map((task) => task.issueTask)).toEqual([
+        'proof:check',
+        'graph:check',
+      ]);
+      expect(explicit[1]!.after).toEqual([explicit[0]!.id]);
     } finally {
       await fixture.cleanup();
     }
