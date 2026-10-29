@@ -5,108 +5,16 @@ import { satisfies } from 'semver';
 import { describe, expect, it } from 'vitest';
 import { parseAllDocuments } from 'yaml';
 
-interface DependencyReferences {
-  dependencies?: Record<string, string>;
-  optionalDependencies?: Record<string, string>;
-}
-
 interface Lockfile {
   packages: Record<string, unknown>;
-  snapshots: Record<string, DependencyReferences>;
-  importers: Record<
-    string,
-    Record<string, Record<string, { version: string }>>
-  >;
 }
 
-const allowedZod3Owners = new Set([
-  '@vercel/backends@22.0.1',
-  '@vercel/express@22.0.1',
-  '@vercel/hono@22.0.1',
-  '@vercel/python-analysis@0.15.2',
-]);
-
-function isZod3Reference(name: string, reference: string): boolean {
-  if (name !== 'zod' && !reference.startsWith('zod@')) return false;
-  const version = reference.replace(/^zod@/u, '').split('(', 1)[0]!;
-  return satisfies(version, '>=3.0.0 <4.0.0');
-}
-
-function assertZodExceptionBoundary(lockfile: Lockfile): void {
-  const versions = Object.keys(lockfile.packages)
-    .filter((name) => name.startsWith('zod@'))
-    .map((name) => name.slice('zod@'.length));
-  if (!versions.includes('3.22.4'))
-    throw new Error('Remove the obsolete Zod 3 audit exception.');
-  for (const version of versions) {
-    if (version !== '3.22.4' && !satisfies(version, '>=4.6.7'))
-      throw new Error(`Unreviewed or unpatched Zod version: ${version}`);
-  }
-  for (const [owner, snapshot] of Object.entries(lockfile.snapshots)) {
-    const dependencies = {
-      ...snapshot.dependencies,
-      ...snapshot.optionalDependencies,
-    };
-    for (const [name, reference] of Object.entries(dependencies)) {
-      if (
-        isZod3Reference(name, reference) &&
-        !allowedZod3Owners.has(owner.split('(', 1)[0]!)
-      )
-        throw new Error(`Unreviewed Zod 3 consumer: ${owner}`);
-    }
-  }
-  // Propagate the exception through the real graph, including aliases and peers.
-  const reachesZod3 = new Set<string>();
-  let hasChanges = true;
-  while (hasChanges) {
-    hasChanges = false;
-    for (const [owner, snapshot] of Object.entries(lockfile.snapshots)) {
-      if (reachesZod3.has(owner)) continue;
-      const dependencies = {
-        ...snapshot.dependencies,
-        ...snapshot.optionalDependencies,
-      };
-      if (
-        Object.entries(dependencies).every(
-          ([name, reference]) =>
-            !(
-              isZod3Reference(name, reference) ||
-              reachesZod3.has(
-                Object.hasOwn(lockfile.snapshots, reference)
-                  ? reference
-                  : `${name}@${reference}`,
-              )
-            ),
-        )
-      ) {
-        continue;
-      }
-
-      reachesZod3.add(owner);
-      hasChanges = true;
-    }
-  }
-  for (const [owner, importer] of Object.entries(lockfile.importers)) {
-    for (const [groupName, group] of Object.entries(importer)) {
-      for (const [name, reference] of Object.entries(group)) {
-        if (isZod3Reference(name, reference.version))
-          throw new Error(`Direct Zod 3 dependency: ${owner}`);
-        const target = Object.hasOwn(lockfile.snapshots, reference.version)
-          ? reference.version
-          : `${name}@${reference.version}`;
-        if (
-          reachesZod3.has(target) &&
-          !(
-            owner === 'docs' &&
-            groupName === 'devDependencies' &&
-            name === 'vercel'
-          )
-        )
-          throw new Error(
-            `Zod 3 reachable outside the docs Vercel toolchain: ${owner}`,
-          );
-      }
-    }
+function assertReviewedZodVersions(lockfile: Lockfile): void {
+  for (const name of Object.keys(lockfile.packages)) {
+    if (!name.startsWith('zod@')) continue;
+    const version = name.slice('zod@'.length);
+    if (!satisfies(version, '>=4.6.7'))
+      throw new Error(`Zod version below the reviewed minimum: ${version}`);
   }
 }
 
@@ -121,64 +29,27 @@ function readLockfile(): Lockfile {
     .toJS() as Lockfile;
 }
 
-describe('Zod audit exception boundary', () => {
-  it('keeps unpatched native distributions out of the resolved graph', () => {
-    expect(
-      Object.keys(readLockfile().packages).filter((name) =>
-        name.startsWith('@vercel/vc-native-'),
-      ),
-    ).toEqual([]);
+describe('resolved Zod security minimum', () => {
+  it('keeps resolved dependencies at or above the reviewed minimum', () => {
+    expect(() => assertReviewedZodVersions(readLockfile())).not.toThrow();
   });
 
-  it('confines the approved version to reviewed Vercel builders', () => {
-    expect(() => assertZodExceptionBoundary(readLockfile())).not.toThrow();
-  });
-
-  it('rejects a new vulnerable version or a Zod 4 rollback', () => {
-    for (const version of ['3.25.76', '4.6.5']) {
+  it('rejects reintroduced Zod 3 and a Zod 4 rollback', () => {
+    for (const version of ['3.22.4', '4.6.6']) {
       const lockfile = readLockfile();
       lockfile.packages[`zod@${version}`] = {};
-      expect(() => assertZodExceptionBoundary(lockfile)).toThrow(
-        'Unreviewed or unpatched Zod version',
+      expect(() => assertReviewedZodVersions(lockfile)).toThrow(
+        `Zod version below the reviewed minimum: ${version}`,
       );
     }
   });
 
-  it('rejects an additional consumer even when the version is unchanged', () => {
+  it('allows removal without requiring a legacy version or audit exception', () => {
     const lockfile = readLockfile();
-    lockfile.snapshots['unreviewed-consumer@1.0.0'] = {
-      dependencies: { zod: '3.22.4' },
-    };
-    expect(() => assertZodExceptionBoundary(lockfile)).toThrow(
-      'Unreviewed Zod 3 consumer',
-    );
-  });
-
-  it('rejects a direct workspace dependency on the unpatched API line', () => {
-    const lockfile = readLockfile();
-    lockfile.importers['.']!.dependencies = {
-      zod: { version: '3.22.4' },
-    };
-    expect(() => assertZodExceptionBoundary(lockfile)).toThrow(
-      'Direct Zod 3 dependency',
-    );
-  });
-
-  it('rejects a product dependency that reaches an otherwise approved builder', () => {
-    const lockfile = readLockfile();
-    lockfile.importers['packages/limina']!.dependencies!.vercel =
-      lockfile.importers.docs!.devDependencies!.vercel!;
-    expect(() => assertZodExceptionBoundary(lockfile)).toThrow(
-      'Zod 3 reachable outside the docs Vercel toolchain',
-    );
-  });
-
-  it('requires removal when the unpatched version is no longer installed', () => {
-    const lockfile = readLockfile();
-    delete lockfile.packages['zod@3.22.4'];
-    expect(() => assertZodExceptionBoundary(lockfile)).toThrow(
-      'Remove the obsolete Zod 3 audit exception',
-    );
+    for (const name of Object.keys(lockfile.packages)) {
+      if (name.startsWith('zod@')) delete lockfile.packages[name];
+    }
+    expect(() => assertReviewedZodVersions(lockfile)).not.toThrow();
   });
 });
 

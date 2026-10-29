@@ -316,13 +316,14 @@ if (process.argv[2] === 'publish-replacement') {
   return JSON.parse(result.stdout.trim().split('\n').at(-1)!);
 }
 
+// Two fresh Node/TypeScript processes need their own Windows startup budget.
 it('restores library bindings across processes', async () => {
   const input = fixture();
   const first = replacement(input, '.', 'workspace');
   const cold = await cached(input);
   expect(program(cold.generated).getSourceFile(first)).toBeDefined();
   expect((await cached(input)).hit).toBe(true);
-});
+}, 60_000);
 
 it('invalidates a new higher-priority library replacement across processes', async () => {
   const input = fixture();
@@ -334,7 +335,7 @@ it('invalidates a new higher-priority library replacement across processes', asy
   const compiled = program(changed.generated);
   expect(compiled.getSourceFile(second)).toBeDefined();
   expect(compiled.getSourceFile(first)).toBeUndefined();
-});
+}, 60_000);
 
 it('restores the graph published after a library replacement invalidates prior bindings', async () => {
   const input = fixture();
@@ -351,7 +352,7 @@ it('restores the graph published after a library replacement invalidates prior b
   const compiled = program(restored.generated);
   expect(compiled.getSourceFile(second)).toBeDefined();
   expect(compiled.getSourceFile(first)).toBeUndefined();
-});
+}, 60_000);
 
 it('refuses a modified library forwarding manifest before launching the Checker', async () => {
   const input = fixture();

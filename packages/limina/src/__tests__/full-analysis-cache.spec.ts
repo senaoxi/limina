@@ -1726,11 +1726,15 @@ function collectContextEnvironment(result: ReturnType<typeof analyze>) {
   return Object.values(result.cache.contexts)[0]?.environment.evidence;
 }
 
+// These cases start up to five Node runners plus candidate Checker processes.
+// Give slow Windows starts a case budget independent of the global default.
 it.each(['Coverage', 'explicit choice'] as const)(
   'revokes a cached declaration context when %s changes',
   (change) => {
     const f = fixture();
     const compilerOptions = {
+      // These cases govern fixture declarations, independently of default libs.
+      noLib: true,
       module: 'NodeNext',
       moduleResolution: 'NodeNext',
       types: [],
@@ -1797,12 +1801,13 @@ it.each(['Coverage', 'explicit choice'] as const)(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),
     );
   },
-  30_000,
+  60_000,
 );
 
 it('counts restored declaration candidates and revokes the last independent types contribution', () => {
   const f = fixture();
   const compilerOptions = {
+    noLib: true,
     module: 'NodeNext',
     moduleResolution: 'NodeNext',
     types: [],
@@ -1874,13 +1879,14 @@ it('counts restored declaration candidates and revokes the last independent type
   expect(restored.events).toContainEqual(
     expect.objectContaining({ kind: 'graphHits', count: 1 }),
   );
-}, 30_000);
+}, 60_000);
 
 it.each(['skipLibCheck', 'noCheck'] as const)(
   'revokes a restored external owner after enabling %s',
   (option) => {
     const f = fixture();
     const compilerOptions = {
+      noLib: true,
       module: 'NodeNext',
       moduleResolution: 'NodeNext',
       types: [],
@@ -1919,5 +1925,5 @@ it.each(['skipLibCheck', 'noCheck'] as const)(
     );
     expect(rejected.error).toContain('owner must check declarations');
   },
-  30_000,
+  60_000,
 );

@@ -24,6 +24,8 @@ import { createLiminaCli, runCheckWithCliFlowCleanup } from '../cli';
 import { assertIssueInventoryLimitArgv } from '../cli/argv';
 import { showIssueInventory } from '../cli/issue-query';
 import type { CheckFlags } from '../cli/types';
+import { loadConfig } from '../config/loader';
+import { LiminaPreflightManager } from '../preflight';
 import { toPortablePath } from './helpers/path';
 import { linkSemanticWorkspacePackages } from './helpers/semantic-repair';
 
@@ -1240,6 +1242,23 @@ export default {scope: {checkers: {
           references: [{ path: './tsconfig.lib.json' }],
         }),
       );
+      const checkerConfig = {
+        scope: { checkers: { tsc: { include: ['packages/*/tsconfig.json'] } } },
+      };
+      // This case races issue writers. Prepare their shared artifact revision
+      // first so cold materialization cannot reject one before its compiler runs.
+      await writeText(
+        configPath,
+        `export default ${JSON.stringify(checkerConfig)};`,
+      );
+      const preflight = new LiminaPreflightManager({
+        config: await loadConfig({ configPath }),
+      });
+      try {
+        await preflight.ensureGeneratedArtifactsMaterialized();
+      } finally {
+        preflight.dispose();
+      }
       await writeText(
         configPath,
         [
@@ -1263,19 +1282,7 @@ export default {scope: {checkers: {
           '    }',
           '  }, 10);',
           '});',
-          `export default ${JSON.stringify(
-            {
-              scope: {
-                checkers: {
-                  tsc: {
-                    include: ['packages/*/tsconfig.json'],
-                  },
-                },
-              },
-            },
-            null,
-            2,
-          )};\n`,
+          `export default ${JSON.stringify(checkerConfig)};\n`,
         ].join('\n'),
       );
       await writeBinShim(
@@ -1324,7 +1331,7 @@ export default {scope: {checkers: {
             },
           );
         } catch (error) {
-          return error as { code?: number; stdout?: string };
+          return error as { code?: number; stdout?: string; stderr?: string };
         }
         throw new Error(`Expected checker build ${config} to fail.`);
       };
@@ -1342,6 +1349,15 @@ export default {scope: {checkers: {
             'utf8',
           ),
         ).toBe(name);
+      }
+      for (const [name, result] of [
+        ['pkg', packageResult],
+        ['b', bResult],
+      ] as const) {
+        expect(
+          existsSync(path.join(barrierDirectory, `${name}-exit`)),
+          `${result.stdout}\n${result.stderr}`,
+        ).toBe(true);
       }
       expect(
         await readFile(path.join(barrierDirectory, 'pkg-exit'), 'utf8'),
