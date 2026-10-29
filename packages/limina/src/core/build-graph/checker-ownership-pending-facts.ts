@@ -81,6 +81,14 @@ function collectDependencyFact(options: {
     return;
   }
   const candidate = pendingCandidate(options, fact.resolution.target);
+  // The inventory still owns support-file absence proofs. Checker selection
+  // needs root occurrences, real obligations and physical framework candidates,
+  // not a second copy of every standard-library directive.
+  if (
+    candidate.physicalTargetPath === null &&
+    !options.context.project.fileNames.includes(options.importRecord.filePath)
+  )
+    return;
   options.facts.push({ ...base, ...candidate });
 }
 
@@ -156,7 +164,7 @@ function assertPendingAuthority(state: TypeConfigOwnershipState): void {
 
 function createPendingCacheKey(options: CollectPendingOptions): string {
   return JSON.stringify({
-    adapterVersion: 'pending-typescript-v5-declaration-closure',
+    adapterVersion: 'pending-typescript-v6-declaration-governance',
     boundary: options.workspaceSourceBoundary.identity,
     authority: options.state.semanticAuthority,
     configPath: options.project.configPath,

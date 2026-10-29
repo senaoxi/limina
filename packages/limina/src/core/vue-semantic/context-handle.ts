@@ -6,10 +6,14 @@ import type {
 } from '#checkers';
 import path from 'node:path';
 import type ts from 'typescript';
-import { createVueOverlaySystem } from '../../checker/vue-semantic-identity';
+import {
+  createVueOverlaySystem,
+  parseVueConfigWithToolchain,
+} from '../../checker/vue-semantic-identity';
 import { createUnsupportedVueToolchainCompatibilityError } from '../../checker/vue-semantic-toolchain';
 import { observeVueExecutionSystem } from '../analysis-cache/vue-execution-inputs';
 import type { VueInputTrace } from '../analysis-cache/vue-inputs';
+import { declarationLoadingCeiling } from '../declaration-governance/loading';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
@@ -223,12 +227,27 @@ export class VueSemanticContext {
     hostResult.languageServiceHost.getProjectVersion = () =>
       `${identity.generation}:${identity.id}`;
     this.languageServiceHost = hostResult.languageServiceHost;
+    this.languageServiceHost.getParsedCommandLine = (file) =>
+      parseVueConfigWithToolchain({
+        configPath: file,
+        extensions: identity.extensions,
+        host: this.sys,
+        toolchain: identity.toolchain,
+      });
     this.#boundedHost = createBoundedLanguageServiceHost({
       host: this.languageServiceHost,
       observeModule: (input) => this.compilerRequests.observe(input),
+      observeType: (input) => this.compilerRequests.observeType(input),
       observeOptions: (input) => this.compilerRequests.observeOptions(input),
       tsModule: this.tsModule,
       project: {
+        loadingCeiling:
+          identity.declarationLoading === undefined
+            ? undefined
+            : declarationLoadingCeiling(
+                identity.declarationLoading,
+                identity.fileNames,
+              ),
         configPath: identity.configPath,
         fileNames: identity.fileNames,
         options: identity.options,

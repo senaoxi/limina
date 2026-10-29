@@ -22,6 +22,16 @@ export class VueInputTrace extends QueryTrace {
       this.add(file, 'content');
       this.add(file, 'binding');
     }
+    const configurations =
+      identity.declarationLoading?.coverage.configurations ?? [];
+    for (const config of configurations) {
+      this.add(config.configId, 'content');
+      this.add(config.configId, 'binding');
+      if (config.state === 'enumerated')
+        for (const member of config.members) {
+          this.add(member.lexicalPath, 'binding');
+        }
+    }
     observeVueTools(identity, this);
   }
 

@@ -5,6 +5,7 @@ import {
   type ProjectDependencyCaches,
 } from '../project-dependencies/runner';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic';
+import { withVueDeclarationLoading } from '../vue-semantic/loading-identity';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { FileOwnerLookup } from './file-owner-lookup';
 import {
@@ -167,6 +168,26 @@ export function inferProjectReferences(options: {
   const caches = resolveProjectDependencyCaches(
     options.projectDependencyCaches,
   );
+  const projects = new Set([
+    ...ownerProjects,
+    ...options.projects,
+    ...ownerGovernedSources,
+    ...options.governedSources,
+  ]);
+  if (caches.sourceConfigCoverage !== undefined)
+    for (const project of projects) {
+      const identity = project.context.vueSemanticIdentity;
+      if (identity === undefined) continue;
+      project.context = {
+        ...project.context,
+        vueSemanticIdentity: withVueDeclarationLoading(identity, {
+          version: 1,
+          sourceConfig: project.configPath,
+          purpose: 'graph',
+          coverage: caches.sourceConfigCoverage,
+        }),
+      };
+    }
   const context: ReferenceImportContext = {
     analysis,
     activatedRegions: options.activatedRegions,

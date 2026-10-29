@@ -1,6 +1,6 @@
 import { toRelativePath } from '#utils/path';
 import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
-import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
+import type { DeclarationCompilationEvidence } from '../../domain/analysis/declaration-governance';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { ReferenceImportContext } from './reference-import-types';
 import type { GeneratedDependencyEdge, SourceProject } from './types';
@@ -11,7 +11,7 @@ Policy references use the existing graph, never a fabricated compiler fact.
 export function addDeclarationContextReferences(options: {
   context: ReferenceImportContext;
   project: SourceProject;
-  snapshot: NativeEvidenceSnapshot | undefined;
+  evidence: DeclarationCompilationEvidence | undefined;
   decisions: readonly DeclarationContextDecision[];
 }): void {
   for (const decision of options.decisions) {
@@ -39,10 +39,10 @@ function addPolicyReference(
   },
 ): void {
   const { context, project, provider, decision } = options;
-  const request = options.snapshot?.requests.find((item) =>
+  const request = options.evidence?.requestOrigins.find((item) =>
     decision.requestIds.includes(item.id),
   );
-  const source = request?.sourceFile?.lexicalPath ?? project.configPath;
+  const source = request?.file ?? project.configPath;
   const edge: GeneratedDependencyEdge = {
     kind: 'declaration-provider',
     cacheReuse: 'reusable',

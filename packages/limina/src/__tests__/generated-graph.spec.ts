@@ -31,6 +31,8 @@ import * as generatedConfigs from '../core/build-graph/generated-configs';
 import type { DependencyAnalysisResult } from '../core/build-graph/types';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import * as nativeFactory from '../core/typescript-semantic/native-semantic-factory';
+import { VueSemanticContextManager } from '../core/vue-semantic/context';
+import { collectVueRequestInventory } from '../core/vue-semantic/request-inventory';
 import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
@@ -366,12 +368,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
           graph.dependencyEdges
             .filter((edge) => edge.fromConfigPath === app.configPath)
             .map((edge) => edge.toConfigPath),
-        ).toEqual(
-          checker === 'tsc'
-            ? []
-            : [fixture.path('packages/core/tsconfig.json')],
-        );
-        expect(graph.dependencyEdges).toHaveLength(checker === 'tsc' ? 1 : 2);
+        ).toEqual([fixture.path('packages/core/tsconfig.json')]);
+        expect(graph.dependencyEdges).toHaveLength(2);
       } finally {
         await fixture.cleanup();
       }
@@ -8323,7 +8321,6 @@ describe('reference graph repair compiler differentials', () => {
   ])(
     'builds same-package named leaves from inferred references: %s',
     async (variant) => {
-      const hasUncoveredEntry = variant.startsWith('relative-types');
       const isVue = variant === 'vue-direct';
       const compilerOptions = {
         target: 'ES2022',
@@ -8425,15 +8422,14 @@ describe('reference graph repair compiler differentials', () => {
               path.resolve(path.dirname(importer), reference.path),
             ),
           ),
-        ).toEqual(hasUncoveredEntry ? [] : [provider]);
-        if (!hasUncoveredEntry)
-          expect(generated.dependencyEdges).toContainEqual(
-            expect.objectContaining({
-              fromConfigPath: fixturePath('packages/p/tsconfig.a.json'),
-              toConfigPath: fixturePath('packages/p/tsconfig.b.json'),
-              kind: 'declaration-provider',
-            }),
-          );
+        ).toEqual([provider]);
+        expect(generated.dependencyEdges).toContainEqual(
+          expect.objectContaining({
+            fromConfigPath: fixturePath('packages/p/tsconfig.a.json'),
+            toConfigPath: fixturePath('packages/p/tsconfig.b.json'),
+            kind: 'declaration-provider',
+          }),
+        );
         const bin = requireFromTest.resolve(
           isVue ? 'vue-tsc/bin/vue-tsc.js' : 'typescript/bin/tsc',
         );
@@ -8442,11 +8438,7 @@ describe('reference graph repair compiler differentials', () => {
           [bin, '-b', importer, '--pretty', 'false', '--force'],
           { cwd: fixture.rootDir },
         );
-        if (hasUncoveredEntry)
-          await expect(build).rejects.toMatchObject({
-            stdout: expect.stringMatching(/TS6307|TS6059/),
-          });
-        else await expect(build).resolves.toMatchObject({ stderr: '' });
+        await expect(build).resolves.toMatchObject({ stderr: '' });
       } finally {
         await fixture.cleanup();
       }
@@ -8574,12 +8566,6 @@ describe('reference graph repair compiler differentials', () => {
           fixture.path('node_modules/@closure/bridge'),
           'junction',
         );
-        if (governed && checker === 'vue-tsc') {
-          await expect(
-            prepareGeneratedTsconfigGraph(fixture.config),
-          ).rejects.toThrow('qualified native tsc observer');
-          return;
-        }
         const generated = await prepareGeneratedTsconfigGraph(fixture.config);
         const edges = generated.dependencyEdges.filter(
           (edge) =>
@@ -8767,7 +8753,7 @@ describe('reference graph repair compiler differentials', () => {
       const fixture = await createFrameworkRequirementFixture(framework, kind);
       try {
         const generated = await prepareGeneratedTsconfigGraph(fixture.config);
-        if (kind === 'support-public' || kind === 'support-public-local')
+        if (kind === 'support-public')
           expect(generated.dependencyEdges).toEqual([]);
         else if (kind === 'ambient-membership' || kind.startsWith('support-')) {
           expect(
@@ -9363,7 +9349,13 @@ describe('ambient references and compiler membership', () => {
           graph.dependencyEdges
             .filter((edge) => edge.fromConfigPath === source)
             .map((edge) => edge.toConfigPath),
-        ).toEqual([]);
+        ).toEqual([
+          fixture.path(
+            variant === 'absolute'
+              ? 'packages/b/tsconfig.json'
+              : 'packages/c/tsconfig.json',
+          ),
+        ]);
         const configs = [
           graph.sourceToDts.get('tsc')!.get(source)!,
           graph.configToOutputBuild.get('tsc')!.get(source)!.path,
@@ -9396,20 +9388,8 @@ describe('ambient references and compiler membership', () => {
         );
         expect(
           ts.createSolutionBuilder(host, configs, { force: true }).build(),
-        ).not.toBe(0);
-        expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
-          6307,
-        );
-        expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
-          6059,
-        );
-        expect(
-          diagnostics.some(
-            (diagnostic) =>
-              diagnostic.file !== undefined &&
-              normalizeAbsolutePath(diagnostic.file.fileName) === selected,
-          ),
-        ).toBe(true);
+        ).toBe(0);
+        expect(diagnostics).toEqual([]);
       } finally {
         await fixture.cleanup();
       }
@@ -9681,7 +9661,14 @@ describe('declaration configuration governance', () => {
     try {
       const graph = await prepareGeneratedTsconfigGraph(fixture.config);
       expect(graph.dependencyEdges).toEqual([]);
-      expect(graph.dependencyAnalysis?.declarationContexts ?? []).toEqual([]);
+      expect(graph.dependencyAnalysis?.declarationContexts).toEqual([
+        expect.objectContaining({
+          selection: {
+            state: 'local',
+            config: fixture.path('packages/a/tsconfig.json'),
+          },
+        }),
+      ]);
       await writeText(
         fixture.path('packages/a/tsconfig.json'),
         json({
@@ -9880,7 +9867,7 @@ describe('declaration configuration governance', () => {
       await writeText(fixture.path('packages/a/tsconfig.json'), json(a));
       await expect(
         prepareGeneratedTsconfigGraph(fixture.config),
-      ).rejects.toThrow('Competing declaration input mappings');
+      ).rejects.toThrow('Declaration context mismatch');
       delete a.liminaOptions.implicitRefs;
       await writeText(fixture.path('packages/a/tsconfig.json'), json(a));
       const b2 = JSON.parse(files['packages/b2/tsconfig.json']!);
@@ -9892,7 +9879,7 @@ describe('declaration configuration governance', () => {
       await writeText(fixture.path('packages/b2/tsconfig.json'), json(b2));
       await expect(
         prepareGeneratedTsconfigGraph(fixture.config),
-      ).rejects.toThrow('Competing declaration input mappings');
+      ).rejects.toThrow('Declaration context mismatch');
     } finally {
       await fixture.cleanup();
     }
@@ -10025,18 +10012,19 @@ describe('declaration consumption responsibilities', () => {
         const receipt =
           graph.dependencyAnalysis!.declarationValidation!.receipts.find(
             (candidate) => candidate.generatedConfig === generated,
-          )!;
-        expect(receipt.mappings).toContainEqual(
-          expect.objectContaining({
-            file: fixture.path('packages/b/private.d.ts'),
-            loaded: consumed,
-          }),
-        );
+          );
+        if (consumed)
+          expect(receipt?.mappings).toContainEqual(
+            expect.objectContaining({
+              file: fixture.path('packages/b/private.d.ts'),
+              loaded: true,
+            }),
+          );
         expect(
-          receipt.requests.some(
+          receipt?.requests.some(
             (request) =>
               request.file === fixture.path('packages/b/private.d.ts'),
-          ),
+          ) ?? false,
         ).toBe(consumed);
         expect(
           new Set(graph.dependencyEdges.map((edge) => edge.toConfigPath)),
@@ -10309,7 +10297,7 @@ it('retains competing-reference protection for a local declaration root with ski
   const fixture = await createFixture(files);
   try {
     await expect(prepareGeneratedTsconfigGraph(fixture.config)).rejects.toThrow(
-      'Competing declaration input mappings',
+      'Declaration context mismatch',
     );
   } finally {
     await fixture.cleanup();
@@ -10669,4 +10657,553 @@ describe('compiler requests and final reference admission', () => {
       }
     },
   );
+});
+
+describe('checker-neutral declaration governance', () => {
+  it.each([false, true])(
+    'compares nested declaration requests across explicitly mapped boundaries (differs=%s)',
+    async (differs) => {
+      const compilerOptions = {
+        composite: true,
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        types: [],
+      };
+      const aConfig = {
+        compilerOptions,
+        files: ['App.vue'],
+        liminaOptions: {
+          declarationContexts: [
+            { file: '../shared/api.d.ts', config: '../d/tsconfig.json' },
+          ],
+        },
+      };
+      const fixture = await createFixture({
+        'packages/a/tsconfig.json': json({
+          ...aConfig,
+          references: [{ path: '../b' }, { path: '../d' }],
+        }),
+        'packages/a/App.vue':
+          '<script setup lang="ts">import type { Nested } from "../b/entry"; import type { Api } from "../shared/api"; let nested: Nested; let api: Api;</script>',
+        'packages/b/tsconfig.json': json({
+          compilerOptions: {
+            ...compilerOptions,
+            paths: { dep: ['../values/left.d.ts'] },
+          },
+          files: ['entry.d.ts', '../shared/api.d.ts'],
+        }),
+        'packages/d/tsconfig.json': json({
+          compilerOptions: {
+            ...compilerOptions,
+            paths: { dep: [`../values/${differs ? 'right' : 'left'}.d.ts`] },
+          },
+          files: ['../shared/api.d.ts'],
+        }),
+        'packages/b/entry.d.ts':
+          'export type { Api as Nested } from "../shared/api";',
+        'packages/shared/api.d.ts':
+          'import type { Model } from "dep"; export type Api = Model;',
+        'packages/values/left.d.ts': 'export interface Model { value: number }',
+        'packages/values/right.d.ts':
+          'export interface Model { value: number }',
+      });
+      fixture.config.scope!.checkers = {
+        'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+      };
+      try {
+        const a = fixture.path('packages/a/tsconfig.json');
+        const bin = requireFromTest.resolve('vue-tsc/bin/vue-tsc.js');
+        // Both environments typecheck: a successful build alone does not prove
+        // that B's delegated declaration requests retained their context.
+        await execFileAsync(
+          process.execPath,
+          [bin, '-b', a, '--pretty', 'false'],
+          {
+            cwd: fixture.rootDir,
+          },
+        );
+        await writeText(a, json(aConfig));
+        const preparation = prepareGeneratedTsconfigGraph(fixture.config);
+        if (differs) {
+          await expect(preparation).rejects.toThrow(
+            'Declaration request context differs from its selected owner',
+          );
+          return;
+        }
+        const graph = await preparation;
+        expect(graph.dependencyAnalysis!.declarationValidation!.state).toBe(
+          'admitted',
+        );
+        const receipt =
+          graph.dependencyAnalysis!.declarationValidation!.receipts.find(
+            (candidate) => candidate.sourceConfig === a,
+          )!;
+        expect(receipt.mappings).toContainEqual(
+          expect.objectContaining({
+            file: fixture.path('packages/shared/api.d.ts'),
+            sourceConfig: fixture.path('packages/d/tsconfig.json'),
+            loaded: true,
+          }),
+        );
+        expect(receipt.requests).toContainEqual(
+          expect.objectContaining({
+            file: fixture.path('packages/shared/api.d.ts'),
+            specifier: 'dep',
+            target: fixture.path('packages/values/left.d.ts'),
+          }),
+        );
+        await execFileAsync(
+          process.execPath,
+          [
+            bin,
+            '-b',
+            graph.sourceToDts.get('vue-tsc')!.get(a)!,
+            '--pretty',
+            'false',
+          ],
+          {
+            cwd: fixture.rootDir,
+          },
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    60_000,
+  );
+  it.each([
+    'unused',
+    'private-consumption',
+    'local-root',
+    'selected',
+    'conflicting',
+  ] as const)(
+    'keeps independent shared declaration inputs scoped to their own context (%s)',
+    async (variant) => {
+      const compilerOptions = {
+        composite: true,
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        types: [],
+      };
+      const isSelected = variant === 'selected' || variant === 'conflicting';
+      const fixture = await createFixture({
+        'packages/a/tsconfig.json': json({
+          compilerOptions,
+          files:
+            variant === 'local-root' ? ['App.vue', 'local.d.ts'] : ['App.vue'],
+          ...(isSelected && {
+            liminaOptions: {
+              declarationContexts: [
+                {
+                  file: '../shared/api.d.ts',
+                  config:
+                    variant === 'selected'
+                      ? '../d/tsconfig.json'
+                      : '../b/tsconfig.json',
+                },
+              ],
+            },
+          }),
+        }),
+        'packages/a/App.vue': `<script setup lang="ts">import { b } from "../b/model"; import { d } from "../d/model"; ${isSelected ? 'import type { Api } from "../shared/api"; let api: Api;' : ''} let value = b + d;</script>`,
+        'packages/a/local.d.ts': 'export interface Local {}',
+        'packages/b/tsconfig.json': json({
+          compilerOptions,
+          files: ['model.ts', '../shared/api.d.ts'],
+        }),
+        'packages/d/tsconfig.json': json({
+          compilerOptions,
+          files: ['model.ts', '../shared/api.d.ts'],
+        }),
+        'packages/b/model.ts': `${variant === 'private-consumption' ? 'import type { Api } from "../shared/api";' : ''} export const b = 1;`,
+        'packages/d/model.ts': `${variant === 'private-consumption' ? 'import type { Api } from "../shared/api";' : ''} export const d = 2;`,
+        'packages/shared/api.d.ts': 'export interface Api { value: number }',
+      });
+      fixture.config.scope!.checkers = {
+        'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+      };
+      try {
+        const preparation = prepareGeneratedTsconfigGraph(fixture.config);
+        if (variant === 'conflicting') {
+          await expect(preparation).rejects.toThrow(
+            'Declaration context mismatch',
+          );
+          return;
+        }
+        const graph = await preparation;
+        const a = fixture.path('packages/a/tsconfig.json');
+        expect(
+          [
+            ...new Set(
+              graph.dependencyEdges
+                .filter((edge) => edge.fromConfigPath === a)
+                .map((edge) => edge.toConfigPath),
+            ),
+          ].sort(compareCodeUnits),
+        ).toEqual([
+          fixture.path('packages/b/tsconfig.json'),
+          fixture.path('packages/d/tsconfig.json'),
+        ]);
+        expect(graph.dependencyAnalysis!.declarationValidation!.state).toBe(
+          'admitted',
+        );
+        const choices = graph.dependencyAnalysis!.declarationContexts!.filter(
+          (decision) => decision.consumerConfig === a,
+        );
+        expect(
+          choices.filter((decision) => decision.kind === 'consumption'),
+        ).toHaveLength(isSelected ? 1 : 0);
+        if (isSelected) {
+          const receipt =
+            graph.dependencyAnalysis!.declarationValidation!.receipts.find(
+              (entry) => entry.sourceConfig === a,
+            )!;
+          expect(receipt.mappings).toContainEqual(
+            expect.objectContaining({
+              file: fixture.path('packages/shared/api.d.ts'),
+              sourceConfig: fixture.path('packages/d/tsconfig.json'),
+              loaded: true,
+            }),
+          );
+        }
+        await execFileAsync(
+          process.execPath,
+          [
+            requireFromTest.resolve('vue-tsc/bin/vue-tsc.js'),
+            '-b',
+            graph.sourceToDts.get('vue-tsc')!.get(a)!,
+            '--pretty',
+            'false',
+          ],
+          { cwd: fixture.rootDir },
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    60_000,
+  );
+  it.each([
+    { kind: 'path', noResolve: false },
+    { kind: 'path', noResolve: true },
+    { kind: 'types', noResolve: false },
+    { kind: 'types', noResolve: true },
+  ])(
+    'distinguishes suppressed declaration $kind directives with noResolve=$noResolve',
+    async ({ kind, noResolve }) => {
+      const targetName = kind === 'path' ? 'model.ts' : 'model.d.ts';
+      const specifier = `../c/${targetName}`;
+      const channel = kind === 'path' ? 'path-directive' : 'type-directive';
+      const compilerOptions = {
+        composite: true,
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        types: [],
+      };
+      const fixture = await createFixture({
+        'packages/b/tsconfig.json': json({
+          compilerOptions: { ...compilerOptions, noResolve },
+          files: ['api.d.ts'],
+        }),
+        'packages/b/api.d.ts': `/// <reference ${kind}="${specifier}"/>\nexport interface Api {}`,
+        'packages/c/tsconfig.json': json({
+          compilerOptions,
+          files: [targetName],
+        }),
+        [`packages/c/${targetName}`]: 'export interface Model {}',
+      });
+      fixture.config.scope!.checkers = {
+        'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+      };
+      const manager = new VueSemanticContextManager();
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const source = fixture.path('packages/b/tsconfig.json');
+        const context = manager.acquire(
+          graph.governedSources.get('vue-tsc')!.get(source)!.context
+            .vueSemanticIdentity!,
+        );
+        const candidate =
+          graph.dependencyAnalysis!.declarationValidation!.receipts.find(
+            (receipt) => receipt.sourceConfig === source,
+          )!;
+        for (const requests of [
+          collectVueRequestInventory(context).requests,
+          candidate.requests,
+        ])
+          expect(
+            requests.filter((request) => request.channel === channel),
+          ).toEqual([
+            expect.objectContaining({
+              specifier,
+              resolutionState: noResolve ? 'suppressed' : 'resolved',
+              target: noResolve
+                ? null
+                : fixture.path(`packages/c/${targetName}`),
+            }),
+          ]);
+        const bin = requireFromTest.resolve('vue-tsc/bin/vue-tsc.js');
+        const listed = await execFileAsync(
+          process.execPath,
+          [bin, '-p', source, '--listFilesOnly', '--pretty', 'false'],
+          { cwd: fixture.rootDir },
+        );
+        expect(
+          listed.stdout
+            .trim()
+            .split(/\r?\n/)
+            .map(toPortablePath)
+            .includes(fixture.path(`packages/c/${targetName}`)),
+        ).toBe(!noResolve);
+        const target = graph.sourceToDts.get('vue-tsc')!.get(source)!;
+        await execFileAsync(
+          process.execPath,
+          [bin, '-b', target, '--pretty', 'false'],
+          { cwd: fixture.rootDir },
+        );
+      } finally {
+        manager.dispose();
+        await fixture.cleanup();
+      }
+    },
+    60_000,
+  );
+  it('keeps custom-plugin declaration delegation unavailable after a successful Vue checker control', async () => {
+    const compilerOptions = {
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      types: [],
+    };
+    const fixture = await createFixture({
+      'packages/a/tsconfig.json': json({ compilerOptions, files: ['App.vue'] }),
+      'packages/a/App.vue':
+        '<script setup lang="ts">import type { Model } from "../b/api"; let value: Model;</script>',
+      'packages/b/tsconfig.json': json({
+        compilerOptions,
+        files: ['api.d.ts'],
+        vueCompilerOptions: { plugins: ['./plugin.cjs'] },
+      }),
+      'packages/b/plugin.cjs': 'module.exports = () => ({version: 2.2});',
+      'packages/b/api.d.ts': 'export interface Model { value: number }',
+    });
+    fixture.config.scope!.checkers = {
+      'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+    };
+    try {
+      await execFileAsync(
+        process.execPath,
+        [
+          requireFromTest.resolve('vue-tsc/bin/vue-tsc.js'),
+          '-p',
+          fixture.path('packages/b/tsconfig.json'),
+          '--noEmit',
+          '--pretty',
+          'false',
+        ],
+        { cwd: fixture.rootDir },
+      );
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow('custom plugins lacks input provenance qualification');
+    } finally {
+      await fixture.cleanup();
+    }
+  }, 60_000);
+  it.each([
+    'typescript',
+    'vue',
+    'retained',
+    'path',
+    'automatic',
+    'environment',
+  ])(
+    'delegates %s declaration requests with an actual Vue build',
+    async (kind) => {
+      const isButton = kind === 'vue';
+      const compilerOptions = {
+        composite: true,
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        types: [],
+        skipLibCheck: false,
+      };
+      const fixture = await createFixture({
+        'packages/a/tsconfig.json': json({
+          compilerOptions:
+            kind === 'automatic'
+              ? { ...compilerOptions, types: ['../b/api'] }
+              : compilerOptions,
+          files: ['App.vue'],
+        }),
+        'packages/a/App.vue':
+          kind === 'automatic'
+            ? '<script setup lang="ts">let value: AuditModel;</script>'
+            : '<script setup lang="ts">import type { Model } from "../b/api"; let value: Model;</script>',
+        'packages/b/tsconfig.json': json({
+          compilerOptions,
+          files: isButton ? ['api.d.ts', 'Button.vue'] : ['api.d.ts'],
+        }),
+        'packages/b/api.d.ts': isButton
+          ? 'import Button from "./Button.vue"; export type Model = typeof Button;'
+          : kind === 'retained'
+            ? 'export type { Model } from "./internal";'
+            : kind === 'path'
+              ? '/// <reference path="../c/model.ts"/>\nexport interface Model {}'
+              : kind === 'automatic'
+                ? 'import type { Model } from "../c/model"; declare global { type AuditModel = Model; }'
+                : kind === 'environment'
+                  ? '/// <reference types="fixture-type" />\nexport type { Model } from "../c/model";'
+                  : 'export type { Model } from "../c/model";',
+        'node_modules/@types/fixture-type/package.json': json({
+          name: '@types/fixture-type',
+          version: '1.0.0',
+          types: 'index.d.ts',
+          type: 'commonjs',
+        }),
+        'node_modules/@types/fixture-type/index.d.ts':
+          'declare module "fixture-own" { export const value: number; } declare module "node:fixture-own" { export * from "fixture-own"; }',
+        'packages/b/internal.d.ts': 'export type { Model } from "../c/model";',
+        'packages/b/Button.vue':
+          '<script setup lang="ts">defineProps<{label: string}>();</script>',
+        'packages/c/tsconfig.json': json({
+          compilerOptions,
+          files: ['model.ts'],
+        }),
+        'packages/c/model.ts': 'export interface Model { value: number }',
+      });
+      fixture.config.scope!.checkers = {
+        'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+      };
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const a = fixture.path('packages/a/tsconfig.json');
+        const b = fixture.path('packages/b/tsconfig.json');
+        const c = fixture.path('packages/c/tsconfig.json');
+        expect(
+          graph.dependencyEdges
+            .filter((edge) => edge.fromConfigPath === a)
+            .map((edge) => edge.toConfigPath),
+        ).toEqual([b]);
+        expect(
+          graph.dependencyEdges.some(
+            (edge) => edge.fromConfigPath === b && edge.toConfigPath === c,
+          ),
+        ).toBe(!isButton);
+        const validation = graph.dependencyAnalysis!.declarationValidation!;
+        expect(validation.state).toBe('admitted');
+        expect(
+          validation.receipts.every(
+            (receipt) =>
+              receipt.authority.adapter === 'vue-cli-declaration-candidate-v1',
+          ),
+        ).toBe(true);
+        const target = graph.sourceToDts.get('vue-tsc')!.get(a)!;
+        const built = await execFileAsync(
+          process.execPath,
+          [
+            requireFromTest.resolve('vue-tsc/bin/vue-tsc.js'),
+            '-b',
+            target,
+            '--pretty',
+            'false',
+          ],
+          { cwd: fixture.rootDir },
+        );
+        expect(built.stderr).toBe('');
+        const receipt = validation.receipts.find(
+          (item) => item.sourceConfig === a,
+        )!;
+        expect(
+          receipt.mappings.some(
+            (item) =>
+              item.file === fixture.path('packages/b/api.d.ts') &&
+              item.sourceConfig === b &&
+              item.loaded,
+          ),
+        ).toBe(true);
+        const child =
+          kind === 'retained'
+            ? 'packages/b/internal.d.ts'
+            : 'packages/b/api.d.ts';
+        if (isButton) {
+          const mapping = receipt.referenceMappings.find(
+            (item) => item.file === fixture.path('packages/b/Button.vue'),
+          )!;
+          expect(mapping.referenceConfig).toBe(
+            graph.sourceToDts.get('vue-tsc')!.get(b),
+          );
+          expect(mapping.declarationOutput?.endsWith('/Button.vue.d.ts')).toBe(
+            true,
+          );
+          expect(existsSync(mapping.declarationOutput!)).toBe(true);
+        } else
+          expect(
+            receipt.requests.some(
+              (item) =>
+                item.file === fixture.path(child) &&
+                item.target === fixture.path('packages/c/model.ts'),
+            ),
+          ).toBe(true);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    60_000,
+  );
+  it('rejects delegated retained declarations with different actual resolution environments', async () => {
+    const compilerOptions = {
+      composite: true,
+      target: 'ES2022',
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      types: [],
+    };
+    const fixture = await createFixture({
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          ...compilerOptions,
+          paths: { model: ['../d/model.ts'] },
+        },
+        files: ['App.vue'],
+      }),
+      'packages/a/App.vue':
+        '<script setup lang="ts">import type { Model } from "../b/api"; let value: Model;</script>',
+      'packages/b/tsconfig.json': json({
+        compilerOptions: {
+          ...compilerOptions,
+          paths: { model: ['../c/model.ts'] },
+        },
+        files: ['api.d.ts'],
+      }),
+      'packages/b/api.d.ts': 'export type { Model } from "./internal";',
+      'packages/b/internal.d.ts': 'export type { Model } from "model";',
+      'packages/c/tsconfig.json': json({
+        compilerOptions,
+        files: ['model.ts'],
+      }),
+      'packages/c/model.ts': 'export interface Model { fromC: number }',
+      'packages/d/tsconfig.json': json({
+        compilerOptions,
+        files: ['model.ts'],
+      }),
+      'packages/d/model.ts': 'export interface Model { fromD: number }',
+    });
+    fixture.config.scope!.checkers = {
+      'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+    };
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow(
+        'Declaration request context differs from its selected owner',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  }, 60_000);
 });

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import {
+  cp,
   mkdir,
   readFile,
   rm,
@@ -261,7 +262,8 @@ it.each([
           return { configPath: target.configPath, status: 0 };
         });
       await writeFile(f.path('d/unrelated.ts'), 'export const unrelated=2;');
-      expect((await run()).status).toBe(0);
+      const initial = await run();
+      expect(initial.status, JSON.stringify(initial)).toBe(0);
       if (change === 'content') {
         await writeFile(
           f.path('b/content/index.d.ts'),
@@ -646,7 +648,11 @@ it('authenticates permit identity, scope and callback lifetime before consumptio
           admission.assertPermit(permit, target!, 'mutation'),
         ).rejects.toThrow('invalid or expired');
         const providers = input.preflight.providers;
-        input.preflight.providers = { ...providers, dispose: () => {} };
+        input.preflight.providers = {
+          ...providers,
+          releaseDependencyMemos: () => {},
+          dispose: () => {},
+        };
         await expect(
           admission.assertPermit(permit, target!, 'launch'),
         ).rejects.toThrow('invalid or expired');
@@ -751,9 +757,95 @@ it.each(['mutation', 'launch'] as const)(
   },
 );
 
-it('revokes declaration owner checking before launching a previously admitted target', async () => {
+it.each(['tsc', 'vue-tsc'])(
+  'revokes %s declaration owner checking before launching a previously admitted target',
+  async (checker) => {
+    const f = await createSemanticRepairFixture({
+      'package.json': '{"name":"declaration-admission","private":true}',
+      'limina.config.mjs': 'export default {};',
+      'tsconfig.json':
+        '{"files":[],"references":[{"path":"./tsconfig.a.json"},{"path":"./tsconfig.b.json"}]}',
+      'tsconfig.a.json':
+        '{"compilerOptions":{"module":"ESNext","moduleResolution":"bundler","types":[]},"files":["a.ts"]}',
+      'tsconfig.b.json': '{"compilerOptions":{"types":[]},"files":["b.d.ts"]}',
+      'a.ts': 'import type { B } from "./b"; export type A = B;',
+      'b.d.ts': 'export interface B { value: string }',
+    });
+    if (checker === 'vue-tsc') {
+      await mkdir(f.path('node_modules'), { recursive: true });
+      const require = createRequire(import.meta.url);
+      for (const name of ['vue-tsc', 'typescript'])
+        await symlink(
+          path.dirname(require.resolve(`${name}/package.json`)),
+          f.path(`node_modules/${name}`),
+          'junction',
+        );
+    }
+    const config = withFixtureGovernanceRoot({
+      rootDir: f.root,
+      configPath: f.path('limina.config.mjs'),
+      cache: false,
+      scope: { checkers: { [checker]: { include: ['tsconfig.json'] } } },
+    });
+    const preflight = new LiminaPreflightManager({ config });
+    try {
+      const graph = (await preflight.ensureGeneratedArtifactsMaterialized())
+        .graph;
+      const target = createCheckerTarget({
+        checker: graph.checkers[0]!,
+        configPath: graph.sourceToBuild
+          .get(checker)!
+          .get(f.path('tsconfig.a.json'))!.path,
+        executionKind: 'build',
+        projectRootDir: f.root,
+        sourceConfigPath: f.path('tsconfig.a.json'),
+      });
+      const admission = new ExecutionAdmission(preflight, graph, [target]);
+      let launches = 0;
+      const run = () =>
+        admission.withAuthorizedTarget(target, 'launch', async (permit) => {
+          await admission.assertPermit(permit, target, 'launch');
+          launches++;
+        });
+      expect((await run()).state).toBe('executed');
+      const recordUnexpectedLaunch = async () => {
+        launches++;
+      };
+      for (const buildArguments of [
+        [...target.args, '--noCheck'],
+        target.args.map((argument, index) =>
+          index === 2 ? 'tsconfig.b.json' : argument,
+        ),
+      ]) {
+        const changed = { ...target, args: buildArguments };
+        const fresh = new ExecutionAdmission(preflight, graph, [changed]);
+        const result = await fresh.withAuthorizedTarget(
+          changed,
+          'launch',
+          recordUnexpectedLaunch,
+        );
+        expect(result.state).toBe('refused');
+        if (result.state === 'refused')
+          expect(
+            result.rejection.diagnostics.map((item) => item.message).join('\n'),
+          ).toContain('qualified checker build target');
+      }
+      await writeFile(
+        f.path('tsconfig.b.json'),
+        '{"compilerOptions":{"types":[],"skipLibCheck":true},"files":["b.d.ts"]}',
+      );
+      await expect(run()).rejects.toBeInstanceOf(AnalysisInputDriftError);
+      expect(launches).toBe(1);
+    } finally {
+      preflight.dispose();
+      await f.cleanup();
+    }
+  },
+);
+
+it('revokes Vue declaration receipts when the actual CLI entry changes', async () => {
   const f = await createSemanticRepairFixture({
-    'package.json': '{"name":"declaration-admission","private":true}',
+    'package.json': '{"name":"vue-entry-admission","private":true}',
     'limina.config.mjs': 'export default {};',
     'tsconfig.json':
       '{"files":[],"references":[{"path":"./tsconfig.a.json"},{"path":"./tsconfig.b.json"}]}',
@@ -763,11 +855,31 @@ it('revokes declaration owner checking before launching a previously admitted ta
     'a.ts': 'import type { B } from "./b"; export type A = B;',
     'b.d.ts': 'export interface B { value: string }',
   });
+  const require = createRequire(import.meta.url);
+  const fromVue = createRequire(require.resolve('vue-tsc/package.json'));
+  await cp(
+    path.dirname(require.resolve('vue-tsc/package.json')),
+    f.path('node_modules/vue-tsc'),
+    { recursive: true },
+  );
+  for (const name of [
+    'typescript',
+    '@vue/language-core',
+    '@volar/typescript',
+  ]) {
+    const target = f.path(`node_modules/${name}`);
+    await mkdir(path.dirname(target), { recursive: true });
+    await symlink(
+      path.dirname(fromVue.resolve(`${name}/package.json`)),
+      target,
+      'junction',
+    );
+  }
   const config = withFixtureGovernanceRoot({
     rootDir: f.root,
     configPath: f.path('limina.config.mjs'),
     cache: false,
-    scope: { checkers: { tsc: { include: ['tsconfig.json'] } } },
+    scope: { checkers: { 'vue-tsc': { include: ['tsconfig.json'] } } },
   });
   const preflight = new LiminaPreflightManager({ config });
   try {
@@ -775,26 +887,35 @@ it('revokes declaration owner checking before launching a previously admitted ta
       .graph;
     const target = createCheckerTarget({
       checker: graph.checkers[0]!,
-      configPath: graph.sourceToBuild
-        .get('tsc')!
-        .get(f.path('tsconfig.a.json'))!.path,
+      configPath: graph.checkerEntries.get('vue-tsc')!,
       executionKind: 'build',
       projectRootDir: f.root,
-      sourceConfigPath: f.path('tsconfig.a.json'),
     });
     const admission = new ExecutionAdmission(preflight, graph, [target]);
     let launches = 0;
     const run = () =>
-      admission.withAuthorizedTarget(target, 'launch', async (permit) => {
-        await admission.assertPermit(permit, target, 'launch');
+      executeAuthorizedTypecheck({ admission }, target, () => {
         launches++;
+        return { configPath: target.configPath, status: 0 };
       });
-    expect((await run()).state).toBe('executed');
+    expect((await run()).status).toBe(0);
+    const entry = f.path('node_modules/vue-tsc/bin/vue-tsc.js');
     await writeFile(
-      f.path('tsconfig.b.json'),
-      '{"compilerOptions":{"types":[],"skipLibCheck":true},"files":["b.d.ts"]}',
+      entry,
+      `${await readFile(entry, 'utf8')}\n// Changed execution entry.\n`,
     );
-    await expect(run()).rejects.toBeInstanceOf(AnalysisInputDriftError);
+    expect((await run()).status).toBe('admission-rejected');
+    // Creating a new admission object cannot adopt a changed entry using the
+    // earlier candidate receipt: its original compiler-read fence still binds.
+    const renewed = new ExecutionAdmission(preflight, graph, [target]);
+    expect(
+      (
+        await executeAuthorizedTypecheck({ admission: renewed }, target, () => {
+          launches++;
+          return { configPath: target.configPath, status: 0 };
+        })
+      ).status,
+    ).toBe('admission-rejected');
     expect(launches).toBe(1);
   } finally {
     preflight.dispose();

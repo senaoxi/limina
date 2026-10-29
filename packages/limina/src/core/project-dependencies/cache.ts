@@ -33,10 +33,24 @@ export function createProjectDependencyCaches(
   };
 }
 
+/** Publication owns detached facts. Release rebuildable collection views before
+ * encoding them; compiler evidence and execution input receipts stay retained. */
+export function releaseProjectDependencyMemos(
+  caches: ProjectDependencyCaches,
+): void {
+  caches.pendingOwnershipEvidenceCache.clear();
+  caches.projectDependencyCache.clear();
+  caches.projectDependencyPreparationCache.clear();
+  caches.sourceEvidenceCache.clear();
+  caches.typeScriptSemanticFactsCache.clear();
+  caches.nativeSourceContexts = undefined;
+}
+
 export function cloneProjectDependencyCollection(
   collection: ProjectDependencyCollection,
 ): ProjectDependencyCollection {
   return {
+    declarationEvidence: collection.declarationEvidence,
     nativeEvidence: collection.nativeEvidence,
     declarationClosure:
       collection.declarationClosure === undefined

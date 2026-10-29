@@ -1,4 +1,5 @@
 import type ts from 'typescript';
+import type { DeclarationLoadingPlan } from '../domain/analysis/declaration-governance';
 
 export type VueSourceProfile =
   | 'vue-sfc'
@@ -155,6 +156,8 @@ export interface VueConfigClosureEntry {
 }
 
 export interface VueProjectSemanticIdentity {
+  declarationBaseId?: string;
+  declarationLoading?: DeclarationLoadingPlan;
   outputSourceConfigPath?: string;
   configClosure: readonly VueConfigClosureEntry[];
   configPath: string;

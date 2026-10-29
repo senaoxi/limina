@@ -345,7 +345,7 @@ describe('bounded native provider evidence', () => {
   );
 
   it.each([false, true])(
-    'retains real Project Reference mapping without exempting its uncovered output with built=%s',
+    'retains real Project Reference declaration providers without loading implementation with built=%s',
     async (built) => {
       const fixture = await createSemanticRepairFixture({
         'tsconfig.json': JSON.stringify({
@@ -388,10 +388,15 @@ describe('bounded native provider evidence', () => {
         expect(fact.resolution.target?.resolvedFileName).toBe(
           fixture.path('b/value.ts'),
         );
-        expect(fact.admission).toBe('excluded');
-        expect(explicitProviderEvidence(context, record)).toEqual({
-          kind: 'missing',
-        });
+        expect(fact.admission).toBe(built ? 'admitted' : 'excluded');
+        expect(explicitProviderEvidence(context, record)).toEqual(
+          built
+            ? {
+                kind: 'concrete-declaration',
+                filePath: fixture.path('b/out/value.d.ts'),
+              }
+            : { kind: 'missing' },
+        );
         expect(fact.referenceRequirement).toBeNull();
         expect(fact.redirect).toEqual({
           originalTarget: fixture.path('b/value.ts'),
@@ -400,9 +405,16 @@ describe('bounded native provider evidence', () => {
           availability: built ? 'present' : 'missing',
         });
         expect(
-          context.getSourceFile(fixture.path('b/value.ts')),
-        ).toBeUndefined();
-        expect(context.getSymbolAtImportRecord(record)).toBeUndefined();
+          context.getSourceFile(fixture.path('b/value.ts'))?.fileName,
+        ).toBe(built ? fixture.path('b/out/value.d.ts') : undefined);
+        expect(
+          context.program
+            .getSourceFiles()
+            .some((source) => source.fileName === fixture.path('b/value.ts')),
+        ).toBe(false);
+        expect(context.getSymbolAtImportRecord(record) !== undefined).toBe(
+          built,
+        );
         const oracle = ts.createProgram({
           rootNames: project.fileNames,
           options: project.options,
@@ -428,7 +440,12 @@ describe('bounded native provider evidence', () => {
             managedOutputLookup: { resolve },
           }).type,
         ).toEqual(explicitProviderEvidence(context, record));
-        expect(resolve).not.toHaveBeenCalled();
+        if (built)
+          expect(resolve).toHaveBeenCalledWith(
+            fixture.path('b/out/value.d.ts'),
+            'tsc',
+          );
+        else expect(resolve).not.toHaveBeenCalled();
       } finally {
         core.dispose();
       }

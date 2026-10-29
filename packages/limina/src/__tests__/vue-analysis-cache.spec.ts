@@ -195,6 +195,56 @@ describe('persistent Vue and mixed graph analysis', () => {
     expectRestored(f.run());
   });
 
+  it('revalidates delegated declaration contexts after hot restoration and revokes an edited owner', () => {
+    const f = crossProjectFixture();
+    f.write(
+      'vue/provider/api.d.ts',
+      'export type { shared } from "./index.js";',
+    );
+    f.write(
+      'vue/provider/tsconfig.json',
+      JSON.stringify({
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          types: [],
+          target: 'ES2022',
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          outDir: 'dist',
+        },
+        files: ['api.d.ts', 'index.ts'],
+      }),
+    );
+    f.write(
+      'vue/src/Widget.vue',
+      '<script setup lang="ts">import type { shared } from "../provider/api"; let value: typeof shared;</script>',
+    );
+    const cold = f.run();
+    expect(cold.passed).toBe(true);
+    const warm = f.run();
+    expect(warm.passed).toBe(true);
+    expect(warm.vuePrograms).toBe(0);
+    expect(cacheMetric(warm, 'graphHits')).toBeGreaterThan(0);
+    expect(
+      warm.events.some(
+        (event) => event.name === 'declaration-candidate' && event.count > 0,
+      ),
+    ).toBe(true);
+    const graph = snapshotCodec.decodeData(
+      Object.values(f.snapshot().graphs)[0]!.data,
+    ) as StoredGraphData;
+    expect(
+      graph.dependencyAnalysis.declarationValidation?.receipts.every(
+        (receipt) =>
+          receipt.authority.adapter === 'vue-cli-declaration-candidate-v1',
+      ),
+    ).toBe(true);
+    f.write('vue/provider/api.d.ts', 'export declare const shared: number;');
+    const changed = f.run();
+    expectCold(changed);
+  });
+
   it('restores cross-project Vue declaration references and removes them after the last import changes', () => {
     const f = crossProjectFixture();
     const cold = f.run();

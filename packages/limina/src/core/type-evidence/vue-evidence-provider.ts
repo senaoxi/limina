@@ -2,6 +2,7 @@ import type { ImportRecord } from '#core/import-analysis/runner';
 import { occurrenceKey } from '../analysis-cache/semantic-state';
 import type { VueSemanticContextManager } from '../vue-semantic/context';
 import { observeVueDependency } from '../vue-semantic/dependency-observation';
+import { withVueDeclarationLoading } from '../vue-semantic/loading-identity';
 import type {
   TypeEvidence,
   TypeEvidenceGenerationCache,
@@ -91,8 +92,22 @@ function queryPersistentProvider(
 }
 
 export function createVueTypeEvidenceProvider(
-  options: VueEvidenceProviderOptions,
+  input: VueEvidenceProviderOptions,
 ): TypeEvidenceProvider {
+  const identity = input.capability.identity;
+  const options =
+    identity.declarationLoading === undefined
+      ? input
+      : {
+          ...input,
+          capability: {
+            ...input.capability,
+            identity: withVueDeclarationLoading(identity, {
+              ...identity.declarationLoading,
+              purpose: 'type-provider',
+            }),
+          },
+        };
   const state: VueEvidenceProviderState = {
     disposed: false,
     options,

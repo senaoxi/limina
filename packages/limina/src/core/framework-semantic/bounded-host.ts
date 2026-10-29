@@ -1,6 +1,7 @@
 import type ts from 'typescript';
 import { TypeScriptInclusionLedger } from '../typescript-semantic/admission';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
+import { nativeTypeReferenceMode } from '../typescript-semantic/native-program-api';
 import { prepareTypeScriptSupportInputs } from '../typescript-semantic/support-inputs';
 
 type ModuleResolver = NonNullable<
@@ -16,6 +17,14 @@ interface HostOptions {
   project: TypeScriptSemanticProject;
   tsModule: typeof ts;
   observeOptions?: (input: SourceOptionsReceipt) => void;
+  observeType?: (input: {
+    source: ts.SourceFile | undefined;
+    reference: ts.FileReference | string;
+    options: ts.CompilerOptions;
+    redirect: ts.ResolvedProjectReference | undefined;
+    mode: ts.ResolutionMode;
+    result: ts.ResolvedTypeReferenceDirectiveWithFailedLookupLocations;
+  }) => void;
   observeModule?: (
     input: SourceOptionsReceipt & {
       literal: ts.StringLiteralLike;
@@ -114,15 +123,41 @@ function installTypeResolver(
   host: ts.LanguageServiceHost,
   admission: TypeScriptInclusionLedger,
   observe: HostOptions['observeOptions'],
+  observeType: HostOptions['observeType'],
+  compiler: typeof ts,
 ): void {
-  const resolve = raw.resolveTypeReferenceDirectiveReferences?.bind(raw);
-  if (resolve === undefined) return;
+  if (raw.resolveTypeReferenceDirectiveReferences === undefined) {
+    if (observeType === undefined) return;
+    if (raw.resolveTypeReferenceDirectives !== undefined)
+      throw new Error('Unqualified legacy type-directive resolver.');
+  }
+  // Volar has no custom type-directive resolver in some supported tuples.
+  // Install the compiler's own default at the same host boundary so automatic
+  // requests are observed before snapshots are withheld, too.
+  const resolve =
+    raw.resolveTypeReferenceDirectiveReferences?.bind(raw) ??
+    defaultTypeResolver(raw, compiler);
   host.resolveTypeReferenceDirectiveReferences = (...arguments_) => {
     const source = arguments_[4];
     if (source !== undefined)
       observe?.({ source, options: arguments_[3], redirect: arguments_[2] });
     const results = resolve(...arguments_);
-    for (const result of results) admitResolvedType(admission, result);
+    for (const [index, result] of results.entries()) {
+      observeType?.({
+        source,
+        reference: arguments_[0][index]!,
+        options: arguments_[3],
+        redirect: arguments_[2],
+        mode: nativeTypeReferenceMode(
+          compiler,
+          arguments_[0][index]!,
+          source,
+          arguments_[2]?.commandLine.options ?? arguments_[3],
+        ),
+        result,
+      });
+      admitResolvedType(admission, result);
+    }
     return results;
   };
 }
@@ -176,7 +211,14 @@ export function createBoundedLanguageServiceHost(
     admission,
     options.observeModule,
   );
-  installTypeResolver(raw, host, admission, options.observeOptions);
+  installTypeResolver(
+    raw,
+    host,
+    admission,
+    options.observeOptions,
+    options.observeType,
+    tsModule,
+  );
   return {
     host,
     begin: () => {
@@ -189,4 +231,34 @@ export function createBoundedLanguageServiceHost(
       return admission.needsProgramRebuild();
     },
   };
+}
+
+function defaultTypeResolver(
+  raw: ts.LanguageServiceHost,
+  compiler: typeof ts,
+): NonNullable<
+  ts.LanguageServiceHost['resolveTypeReferenceDirectiveReferences']
+> {
+  const cache = compiler.createTypeReferenceDirectiveResolutionCache(
+    raw.getCurrentDirectory(),
+    (file) =>
+      compiler.sys.useCaseSensitiveFileNames ? file : file.toLowerCase(),
+  );
+  return (references, file, redirect, options, source) =>
+    references.map((reference) =>
+      compiler.resolveTypeReferenceDirective(
+        typeof reference === 'string' ? reference : reference.fileName,
+        file,
+        options,
+        raw,
+        redirect,
+        cache,
+        nativeTypeReferenceMode(
+          compiler,
+          reference,
+          source,
+          redirect?.commandLine.options ?? options,
+        ),
+      ),
+    );
 }

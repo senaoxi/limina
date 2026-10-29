@@ -78,9 +78,9 @@ Governance 独立检查图规则。被拒绝的关系仍保留在证据及引用
 
 检查器选中 `dist/index.d.ts` 时，未选中的 default 源码分支不产生引用，也不能从声明路径反推出生产者。
 
-Native 对每个到达的声明检查当前 Source Config Coverage。源码分析在创建 SourceFile 前截断消费者 roots 之外的受管声明。完整唯一 Coverage 自动选择对应配置；多覆盖需要 `liminaOptions.declarationContexts`，不完整证据不能证明唯一。选定项目独立分析自己的输入，共享声明可以同时是多个项目的本地 root。无覆盖声明保留既有边界；新政策不推断产物生产者，也不扩大 Coverage。
+Native 与 Vue 使用同一套 Source Config Coverage 和声明责任规则。消费者保留原始请求及委派责任后，不将 roots 之外的受管声明加载到源码分析 Program。完整唯一 Coverage 自动选择对应配置；多覆盖需要 `liminaOptions.declarationContexts`，不完整证据不能证明唯一。选定项目以自身权威 Checker 独立分析输入，共享声明可以同时是多个项目的本地 root。无覆盖声明保留消费者的解析环境，沿声明输入继续分析至下一受管边界或实现目标，不授权展开非根实现文件。这项政策不推断产物生产者，也不扩大 Coverage。
 
-对于 `app → index.d.ts → feature.ts`，选择 B 解释 index 后，声明上下文政策产生 app→B；B→feature 所属项目仍须来自 B 的独立编译义务证明。最终 bounded 验证检查实际生成引用闭包及声明输入映射，包括没有声明输出的纯声明项目。竞争映射不论引用顺序如何都拒绝。选定项目必须检查声明，消费者仍使用自己的 TypeChecker 选项。配置方法和当前工具链限制见[声明上下文](./monorepo-constraints.md#选择声明的配置上下文)。
+对于 `app → index.d.ts → feature.ts`，选择 B 解释 index 后，声明上下文政策产生 app→B；B→feature 所属项目仍须来自 B 的独立编译义务证明。最终 bounded 验证检查实际生成引用闭包及声明输入映射，包括没有声明输出的纯声明项目。只有实际映射与独立观察的声明请求一致时才接受选择，嵌套声明请求也参与比较。多个可达 owner 本身不代表冲突，引用排序也不能代替显式选择。选定项目必须检查声明，消费者仍使用自己的 TypeChecker 选项。配置方法和当前工具链限制见[声明上下文](./monorepo-constraints.md#选择声明的配置上下文)。
 
 原始引用结构和产物状态分别保留。输出缺失不抹掉真实 reference，reference 存在也不保证输出准备完成。生产实际产物的工作流与最终 Checker 负责构建、诊断及新鲜度。
 

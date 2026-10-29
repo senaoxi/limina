@@ -1,5 +1,6 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import type ts from 'typescript';
+import type { CheckerRequestInventory } from '../../domain/analysis/declaration-governance';
 import type {
   FrameworkSemanticDependencyPreparation,
   FrameworkSemanticEvidence,
@@ -13,6 +14,7 @@ import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
 
 export interface VueQueryResults {
+  'request-inventory': CheckerRequestInventory;
   'compiler-source': ImportRecord[];
   'type-environment-entries': DeclarationEntry[];
   'support-inputs': { filePath: string; records: ImportRecord[] }[];
@@ -36,8 +38,9 @@ export interface VueQueryRecord {
   data: DataNode;
 }
 export interface VueContextRecord {
-  adapter: 'vue-3.2.4-v7';
+  adapter: 'vue-3.2.4-v8-declaration-governance';
   project: Pick<VueProjectSemanticIdentity, 'configPath' | 'projectRootDir'> & {
+    declarationLoading?: VueProjectSemanticIdentity['declarationLoading'];
     extensions: string[];
     outputProjection?: {
       sourceConfigPath: string;

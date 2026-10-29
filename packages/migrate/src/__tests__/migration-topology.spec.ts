@@ -203,6 +203,11 @@ return {};};`,
 
   it('reports unresolved observations separately from fresh input consumption', async () => {
     const f = await fixture({
+      'packages/app/good/tsconfig.json': source({
+        noLib: true,
+        types: [],
+        noEmit: true,
+      }),
       'packages/app/good/src/index.ts':
         "import type { Missing } from 'not-installed'; export type Result = Missing;",
     });
@@ -691,9 +696,10 @@ return {};};`,
   ])(
     'compares proved relations or preserves declarations at Coverage boundaries (deny=$denied, complete=$complete)',
     async ({ denied, complete }) => {
-      // Explicitly disable environment inputs only in the complete control.
-      // Default libraries in the other control remain uncovered evidence boundaries.
-      const compilerOptions = complete ? { noLib: true, types: [] } : {};
+      // Ordinary libraries are retained. A declaration that reaches an
+      // implementation outside every source config leaves a real Coverage
+      // gap; migration must preserve the original explicit references.
+      const compilerOptions = { types: [] };
       const f = await fixture({
         'packages/app/good/tsconfig.json': source({
           ...compilerOptions,
@@ -728,13 +734,15 @@ return {};};`,
             implicitRefs: [{ path: '../c', reason: 'user contract' }],
           },
         }),
-        'packages/app/a/index.ts':
-          "import type { B } from '../b/index'; import type { D } from '../d/index'; export type A = B & D;",
+        'packages/app/a/index.ts': `import type { B } from '../b/index'; import type { D } from '../d/index'; export type A = B & D;${complete ? '' : "import type { Marker } from '../b/entry'; export type Boundary = Marker;"}`,
         'packages/app/b/tsconfig.json': json({
           compilerOptions,
           files: ['index.ts'],
         }),
         'packages/app/b/index.ts': 'export interface B { b: string }',
+        'packages/app/b/entry.d.ts':
+          'export type { Marker } from "../outside/model";',
+        'packages/app/outside/model.ts': 'export interface Marker {}',
         'packages/app/c/tsconfig.json': json({
           compilerOptions,
           files: ['index.ts'],

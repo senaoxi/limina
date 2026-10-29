@@ -182,6 +182,8 @@ export class LiminaPreflightManager {
   async publishAnalysisCache(): Promise<void> {
     this.#signal.throwIfAborted();
     this.#configuration.assertStable();
+    if (!this.#usesCustomProviders && this.#analysisCache !== undefined)
+      this.providers.releaseDependencyMemos();
     await this.#analysisCache?.publish();
   }
   dispose(): void {

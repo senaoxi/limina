@@ -47,6 +47,8 @@
 
 输出投影使用实际生成 options、roots、references 和独立 context，在全部生成配置暂存后观察。它不更改源码 context 的冻结事实；未满足投影能力不能获得成功发布资格。
 
+**公共声明责任**：Native 与 Vue 采用同一套 Coverage、上下文选择、消费者保留／委派边界及候选验证规则；宿主仅执行经 Checker 资格化的加载许可。未归属声明保留真实消费者环境，不授权非根实现展开。Vue 候选证据来自实际 `vue-tsc` Compiler 路径，不能替换成 Language Service Map。拒绝加载后仍保留原始解析成功事实，拒绝不能证明编译义务不存在。详见[声明治理](./semantics.md#托管声明配置上下文)。
+
 ## I04 — locked dependency fact 必须保持 checker occurrence 与 provenance
 
 - **Statement / Applies when**：locked project dependency 路径保留 occurrence kind/locator、compiler channel/mode/redirect、checker target 与 evidence；generated fact 必须有可信 source mapping，实际 provider 观察可归因，miss 不被 Oxc 补成 semantic target。

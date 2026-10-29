@@ -176,20 +176,21 @@ function hasCurrentDeclarationDecisions(
   input: ReturnType<typeof inputForDecisions>,
 ): boolean {
   const expected = input.sources.flatMap((source) =>
-    nativeEvidence(input.graph)
-      .filter(({ snapshot }) =>
-        snapshot.contexts.some(
-          (context) => context.inputs.config === source.configPath,
+    (input.graph.dependencyAnalysis.declarationEvidence ?? [])
+      .filter((evidence) =>
+        evidence.declarations.some(
+          (item) => item.consumerConfig === source.configPath,
         ),
       )
-      .flatMap(({ snapshot }) => {
+      .flatMap((evidence) => {
         const current = collectDeclarationContextDecisions({
           config: input.config,
           project: {
             configPath: source.configPath,
             fileNames: source.declarationFileNames,
           },
-          snapshot,
+          evidence,
+          coverageIndex: input.graph.sourceConfigCoverage,
         });
         if (current.problems.length > 0)
           throw new Error('Invalid declaration context choice.');

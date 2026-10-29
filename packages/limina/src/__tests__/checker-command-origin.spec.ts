@@ -3,7 +3,10 @@ import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { createTscCommandTarget } from '../checker/command-targets';
+import {
+  createTscCommandTarget,
+  createVueTscCommandTarget,
+} from '../checker/command-targets';
 import { collectCheckerPeerDependencyDetails } from '../typecheck/targets';
 import { createFixturePathResolver } from './helpers/path';
 
@@ -64,5 +67,30 @@ describe('TypeScript command installation origin', () => {
     });
     expect(target.command).toBe('custom-tsc');
     expect(target.args).toEqual(['-b', 'tsconfig.json', '--pretty', 'false']);
+  });
+});
+
+describe('Vue command installation origin', () => {
+  it('runs the execution scope CLI without a PATH lookup', async () => {
+    const target = createVueTscCommandTarget({
+      ...options,
+      checker: { ...checker, name: 'vue-tsc' },
+    });
+    expect(target.command).toBe(process.execPath);
+    expect(target.args[0]).toBe(
+      requireFromTest.resolve('vue-tsc/bin/vue-tsc.js'),
+    );
+    const result = await execFileAsync(
+      target.command,
+      [target.args[0]!, '--version'],
+      { env: { ...process.env, PATH: '' } },
+    );
+    expect(result.stdout.trim()).toBe(`Version ${ts.version}`);
+    expect(target.args.slice(1)).toEqual([
+      '-b',
+      'tsconfig.json',
+      '--pretty',
+      'false',
+    ]);
   });
 });

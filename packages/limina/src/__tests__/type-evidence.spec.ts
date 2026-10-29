@@ -445,7 +445,7 @@ describe('TypeScript resource type evidence', () => {
     }
   });
 
-  it('retains configured vite/client requests without exempting declarations lacking Coverage proof', async () => {
+  it('retains configured unmanaged vite/client requests and their ambient providers', async () => {
     const fixture = await createFixture({
       'node_modules/vite/client.d.ts': [
         "declare module '*.css' {",
@@ -480,7 +480,11 @@ describe('TypeScript resource type evidence', () => {
           importRecord: importRecord!,
           project,
         }).type,
-      ).toEqual({ kind: 'missing' });
+      ).toEqual({
+        kind: 'ambient',
+        modulePattern: '*.css',
+        declarationFilePaths: [fixture.path('node_modules/vite/client.d.ts')],
+      });
       const context = core.getTypeScriptSemanticContext({
         checkerName: 'tsc',
         project,

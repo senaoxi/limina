@@ -1,6 +1,7 @@
 export {
   createProjectDependencyCaches,
   createProjectSemanticCacheIdentity,
+  releaseProjectDependencyMemos,
 } from './cache';
 export {
   createAutoProjectSemanticContext,

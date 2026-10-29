@@ -7,6 +7,7 @@ import type {
   ImportRecord,
 } from '#core/import-analysis/runner';
 import type ts from 'typescript';
+import type { DeclarationCompilationEvidence } from '../../domain/analysis/declaration-governance';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
@@ -129,6 +130,7 @@ export interface ProjectDependencyFailure {
 }
 
 export interface ProjectDependencyCollection {
+  declarationEvidence?: DeclarationCompilationEvidence;
   nativeEvidence?: NativeEvidenceSnapshot;
   declarationClosure?: DeclarationClosure;
   referenceInputs?: ProjectDependency[];

@@ -1,10 +1,11 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import { isPlainRecord } from '#utils/values';
 import { readFileSync } from 'node:fs';
+import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { type DataNode, encodeData } from './data-codec';
 import { analysisHash } from './identity';
 
-export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v7';
+export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v8-declaration-governance';
 
 function hasPlugins(plugins: unknown): boolean {
   return plugins !== undefined && hasPluginEntries(plugins);
@@ -66,6 +67,10 @@ export function vueDataIdentity(
   delete options.configFile;
   return encodeData({
     adapter: VUE_ANALYSIS_ADAPTER,
+    declarationLoading:
+      identity.declarationLoading === undefined
+        ? undefined
+        : nativeFingerprint(identity.declarationLoading),
     configPath: identity.configPath,
     outputSourceConfigPath: identity.outputSourceConfigPath,
     projectRootDir: identity.projectRootDir,

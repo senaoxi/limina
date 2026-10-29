@@ -20,7 +20,7 @@ import {
 import { createFixturePathResolver } from './path';
 
 export interface VueCacheRun {
-  events: { kind: string; count: number }[];
+  events: { name: string; kind: string; count: number }[];
   graph: unknown;
   passed: boolean;
   vuePrograms: number;

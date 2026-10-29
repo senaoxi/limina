@@ -39,6 +39,7 @@ function resolveLibraryFileName(options: {
 }
 
 export class TypeScriptInclusionLedger {
+  readonly #loadingCeiling: ((file: string) => boolean) | undefined;
   readonly #defaultLibDirectory: string;
 
   readonly #mode: NonNullable<TypeScriptSemanticProject['admissionMode']>;
@@ -53,6 +54,7 @@ export class TypeScriptInclusionLedger {
   #revision = 0;
 
   constructor(project: TypeScriptSemanticProject, tsModule: typeof ts) {
+    this.#loadingCeiling = project.loadingCeiling;
     this.#mode = project.admissionMode ?? 'full-program';
     this.#defaultLibDirectory = path.dirname(
       tsModule.getDefaultLibFilePath(project.options),
@@ -108,7 +110,7 @@ export class TypeScriptInclusionLedger {
     const target = resolution.resolvedFileName;
     if (isDeclarationFile(target) || this.#isSupportImporter(containingFile)) {
       this.add(target, 'type-support');
-      return true;
+      return this.has(target);
     }
     return false;
   }
@@ -175,6 +177,8 @@ export class TypeScriptInclusionLedger {
   }
 
   add(fileName: string, reason: InclusionReason): void {
+    if (this.#loadingCeiling?.(normalizeAbsolutePath(fileName)) === false)
+      return;
     for (const identity of this.#getPathIdentities(fileName)) {
       this.#addReason(fileName, identity, reason);
     }
@@ -228,8 +232,11 @@ export class TypeScriptInclusionLedger {
   }
 
   has(fileName: string): boolean {
-    return this.#getPathIdentities(fileName).some((identity) =>
-      this.#reasons.has(identity),
+    return (
+      this.#loadingCeiling?.(normalizeAbsolutePath(fileName)) !== false &&
+      this.#getPathIdentities(fileName).some((identity) =>
+        this.#reasons.has(identity),
+      )
     );
   }
 }

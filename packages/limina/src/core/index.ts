@@ -14,6 +14,7 @@ import { PackageDomainCore } from './packages';
 import {
   createProjectDependencyCaches,
   type ProjectDependencyCaches,
+  releaseProjectDependencyMemos,
 } from './project-dependencies/runner';
 import { SvelteSemanticContextManager } from './svelte-semantic/context';
 import { TsconfigCore } from './tsconfig';
@@ -171,6 +172,11 @@ export class AnalysisProviderSet {
       buildGraph: this.buildGraph,
       workspace: this.workspace,
     });
+  }
+
+  releaseDependencyMemos(): void {
+    releaseProjectDependencyMemos(this.projectDependencies);
+    this.imports.releaseDependencyMemos();
   }
 
   dispose(): void {

@@ -255,6 +255,11 @@ export function getCheckerImplementationFingerprint(options: {
   const root = options.target.dependencyRootDir ?? options.projectRootDir;
   return hashValue({
     commandIdentity: getCommandIdentity({ ...options, projectRootDir: root }),
+    interpreterEntryIdentity:
+      options.target.command === process.execPath &&
+      path.isAbsolute(options.target.args[0] ?? '')
+        ? captureConfigDependencyIdentity(options.target.args[0]!)
+        : undefined,
     packageIdentities: packageNames.map((packageName) =>
       getPackageIdentity({
         packageName,

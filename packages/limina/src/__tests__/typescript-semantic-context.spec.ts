@@ -432,7 +432,7 @@ describe('bounded TypeScript semantic context', () => {
     },
   );
 
-  it('preserves raw project references without granting their outputs a Coverage exemption', async () => {
+  it('preserves raw project references and retains declaration outputs without loading implementation', async () => {
     const rootDirectory = await createFixture({
       'A/src/index.ts': [
         "import { value } from '../../B/src/index';",
@@ -484,7 +484,7 @@ describe('bounded TypeScript semantic context', () => {
       ).toBeUndefined();
       const redirectedSourceFile =
         withReference.program.getSourceFile(referencedFile);
-      expect(redirectedSourceFile).toBeUndefined();
+      expect(redirectedSourceFile?.fileName).toBe(referencedDeclaration);
       expect(withReference.program.getSourceFile(referencedDeclaration)).toBe(
         redirectedSourceFile,
       );
@@ -690,7 +690,7 @@ describe('bounded TypeScript semantic context', () => {
     }
   });
 
-  it('observes a TypeScript library replacement without automatically loading the uncovered declaration', async () => {
+  it('retains a compiler-requested unmanaged TypeScript library replacement', async () => {
     const rootDirectory = await createFixture({
       'node_modules/@typescript/lib-dom/index.d.ts':
         'interface CustomDocument { replacement: true; }\n',
@@ -718,7 +718,9 @@ describe('bounded TypeScript semantic context', () => {
     });
 
     try {
-      expect(context.program.getSourceFile(replacement)).toBeUndefined();
+      expect(context.program.getSourceFile(replacement)?.fileName).toBe(
+        replacement,
+      );
       expect(context.nativeEvidence?.resolutions).toContainEqual(
         expect.objectContaining({
           target: expect.objectContaining({ lexicalPath: replacement }),

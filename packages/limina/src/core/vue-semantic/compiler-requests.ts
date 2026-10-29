@@ -9,6 +9,15 @@ import {
 } from '../typescript-semantic/native-program-api';
 import { syntheticModuleMetadata } from '../typescript-semantic/native-program-synthetic';
 
+export interface VueTypeResolution {
+  source: ts.SourceFile | undefined;
+  reference: ts.FileReference | string;
+  options: ts.CompilerOptions;
+  redirect: ts.ResolvedProjectReference | undefined;
+  mode: ts.ResolutionMode;
+  result: ts.ResolvedTypeReferenceDirectiveWithFailedLookupLocations;
+}
+
 interface Resolution {
   source: ts.SourceFile;
   literal: ts.StringLiteralLike;
@@ -21,6 +30,7 @@ export interface VueCompilerRequest extends GeneratedSemanticDependency {
   role: 'import' | 'augmentation';
   mode: ts.ResolutionMode;
   raw: ts.ResolvedModuleWithFailedLookupLocations | undefined;
+  ambient: boolean;
 }
 function key(
   source: ts.SourceFile,
@@ -44,6 +54,8 @@ export class VueCompilerRequests {
     Map<string, ts.ResolvedModuleWithFailedLookupLocations>
   >();
   #files = new WeakMap<ts.SourceFile, VueCompilerRequest[]>();
+  readonly typeResolutions: VueTypeResolution[] = [];
+  readonly moduleResolutions: Resolution[] = [];
   readonly optionsBySource: Map<ts.SourceFile, ts.CompilerOptions> = new Map();
   readonly compiler: typeof ts;
   readonly configPath: string;
@@ -61,10 +73,18 @@ export class VueCompilerRequests {
   }
   dispose(): void {
     this.optionsBySource.clear();
+    this.typeResolutions.length = 0;
+    this.moduleResolutions.length = 0;
     this.#raw = new WeakMap();
     this.#files = new WeakMap();
   }
+  observeType(input: VueTypeResolution): void {
+    this.typeResolutions.push(input);
+    if (input.source !== undefined)
+      this.observeOptions({ ...input, source: input.source });
+  }
   observe(input: Resolution): void {
+    this.moduleResolutions.push(input);
     this.observeOptions(input);
     const mode = this.compiler.getModeForUsageLocation(
       input.source,
@@ -131,6 +151,7 @@ export class VueCompilerRequests {
         literal,
         role,
         mode,
+        ambient: inventory.ambientModuleNames.includes(literal.text),
         record,
         raw:
           this.#raw.get(source)?.get(key(source, literal, mode)) ??

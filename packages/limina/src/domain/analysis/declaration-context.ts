@@ -1,10 +1,14 @@
+import type {
+  CheckerAuthority,
+  DeclarationRequestReceipt,
+} from './declaration-governance';
 import type { NativeCoverage, NativeFileIdentity } from './native-coverage';
-import type { NativeResolution } from './native-evidence';
 
 /**
 Governance decisions never change the compiler's obligation assessment.
 */
 export interface DeclarationContextDecision {
+  readonly kind: 'consumption' | 'root-input';
   readonly consumerConfig: string;
   readonly contextId: string;
   readonly file: NativeFileIdentity;
@@ -24,7 +28,8 @@ export interface DeclarationContextDecision {
 }
 
 export interface DeclarationContextReceipt {
-  readonly version: 2;
+  readonly version: 3;
+  readonly authority: CheckerAuthority;
   readonly contextId: string;
   readonly generatedConfig: string;
   readonly sourceConfig: string;
@@ -38,14 +43,11 @@ export interface DeclarationContextReceipt {
     readonly referenceConfig: string;
     readonly loaded: boolean;
   }[];
-  readonly requests: readonly {
+  readonly referenceMappings: readonly {
     readonly file: string;
-    readonly position: number;
-    readonly channel: string;
-    readonly specifier: string;
-    readonly mode: string | null;
-    readonly target: string | null;
-    readonly resolutionState: NativeResolution['state'];
-    readonly redirects: readonly string[];
+    readonly referenceConfig: string | null;
+    readonly declarationOutput: string | null;
+    readonly qualified: boolean;
   }[];
+  readonly requests: readonly DeclarationRequestReceipt[];
 }

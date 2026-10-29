@@ -14,6 +14,7 @@ import {
   createParsedProjectSemanticContext,
   createProjectDependencyCaches,
   type ProjectDependencyCollection,
+  releaseProjectDependencyMemos,
 } from './project-dependencies/runner';
 import type { SvelteSemanticContextManager } from './svelte-semantic/context';
 import type { WorkspaceSourceBoundary } from './typescript-semantic';
@@ -134,6 +135,10 @@ export class ImportCore {
 
   get context(): ImportAnalysisContext {
     return this.#context;
+  }
+
+  releaseDependencyMemos(): void {
+    releaseProjectDependencyMemos(this.#projectDependencyCaches);
   }
 
   getImports(filePath: string): ImportRecord[] {

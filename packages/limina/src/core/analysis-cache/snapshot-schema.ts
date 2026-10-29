@@ -191,7 +191,7 @@ export function parseGraphRecords(value: unknown): AnalysisSnapshot['graphs'] {
   return z.record(text, graphRecord).parse(value) as AnalysisSnapshot['graphs'];
 }
 const header = z.object({
-  schema: z.literal(11),
+  schema: z.literal(12),
   implementation: z.literal(ANALYSIS_ADAPTER),
   identity: text,
   configVersion: text,

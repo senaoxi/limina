@@ -1,5 +1,6 @@
 import { toRelativePath } from '#utils/path';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import type {
   CheckerCommandTarget,
   CheckerCommandTargetOptions,
@@ -62,9 +63,15 @@ export function createVueTscCommandTarget(
   options: CheckerCommandTargetOptions,
 ): CheckerCommandTarget {
   const relativeConfigPath = getRelativeConfigPath(options);
+  const requireFromProject = createRequire(
+    path.join(options.projectRootDir, 'package.json'),
+  );
   return {
-    args: createBuildArguments(relativeConfigPath, options.watch),
-    command: 'vue-tsc',
+    args: [
+      requireFromProject.resolve('vue-tsc/bin/vue-tsc.js'),
+      ...createBuildArguments(relativeConfigPath, options.watch),
+    ],
+    command: process.execPath,
     label: `${options.checker.name}: vue-tsc -b ${relativeConfigPath}${getWatchLabel(options.watch)}`,
   };
 }

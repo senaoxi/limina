@@ -1,24 +1,26 @@
+import type { VueProjectSemanticIdentity } from '#checkers';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import path from 'node:path';
 import ts from 'typescript';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
+import { createVueProjectSemanticIdentity } from '../../checker/vue-semantic-identity';
 import type {
   DeclarationContextDecision,
   DeclarationContextReceipt,
 } from '../../domain/analysis/declaration-context';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
-import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
+import { DeclarationObservationUnavailable } from '../declaration-governance/candidate';
+import { observeNativeDeclarationCandidate } from '../declaration-governance/native-candidate';
+import { createDeclarationValidationScope } from '../declaration-governance/validation-scope';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import {
   nativeFingerprint,
   observeNativeFileIdentity,
 } from '../typescript-semantic/native-file-identity';
-import { NativeObservationError } from '../typescript-semantic/native-observation-failure';
-import { createNativeSemanticContext } from '../typescript-semantic/native-semantic-factory';
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
-import { observeNativeReference } from '../typescript-semantic/reference-redirect';
-import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
+import { observeVueDeclarationCandidate } from '../vue-semantic/declaration-candidate';
 import { declarationFileKey } from './declaration-context-decisions';
 import type { DependencyAnalysisResult } from './types';
 
@@ -26,6 +28,9 @@ export interface DeclarationValidationTarget {
   sourceConfig: string;
   generatedConfig: string;
   checker: string;
+  executionRoot?: string;
+  executionIdentity?: VueProjectSemanticIdentity;
+  preset?: string;
 }
 export interface DeclarationValidationInput {
   analysis: DependencyAnalysisResult;
@@ -38,7 +43,7 @@ export interface DeclarationValidationInput {
 interface CandidateProject extends DeclarationValidationTarget {
   parsed: ts.ParsedCommandLine;
 }
-class UnavailableDeclarationContext extends Error {}
+class UnavailableDeclarationContext extends DeclarationObservationUnavailable {}
 class DeclarationContextConflict extends Error {}
 
 /** One candidate pass, with unchanged roots. Its observations never become
@@ -61,16 +66,14 @@ export function validateDeclarationContexts(
         'Declaration Coverage is unavailable.',
       );
     const projects = readProjects(input);
+    const scope = createDeclarationValidationScope({
+      decisions,
+      evidence: input.analysis.declarationEvidence ?? [],
+      fileKey: (file) => fileKey(input, file),
+    });
     for (const project of projects.values()) {
       const closure = referenceClosure(project, projects);
-      const applicable = decisions.filter(
-        (decision) =>
-          closure.some(
-            (member) => member.sourceConfig === decision.consumerConfig,
-          ) ||
-          (decision.selection.state === 'selected' &&
-            decision.selection.config === project.sourceConfig),
-      );
+      const applicable = scope(project.sourceConfig);
       const localInputs = relevantDeclarationRoots(input, project, decisions);
       if (applicable.length === 0 && localInputs.length === 0) continue;
       const start = performance.now();
@@ -90,12 +93,14 @@ export function validateDeclarationContexts(
     compareDelegatedRequests(result.receipts);
   } catch (error) {
     if (
-      !(error instanceof UnavailableDeclarationContext) &&
+      !(error instanceof DeclarationObservationUnavailable) &&
       !(error instanceof DeclarationContextConflict)
     )
       throw error;
     result.state =
-      error instanceof UnavailableDeclarationContext ? 'unavailable' : 'denied';
+      error instanceof DeclarationObservationUnavailable
+        ? 'unavailable'
+        : 'denied';
     result.diagnostics.push(
       error instanceof Error ? error.message : String(error),
     );
@@ -107,6 +112,19 @@ function readProjects(
 ): Map<string, CandidateProject> {
   return new Map(
     input.targets.map((target) => {
+      if ((target.preset ?? target.checker) === 'vue-tsc') {
+        const { parsed } = createVueProjectSemanticIdentity({
+          configPath: target.generatedConfig,
+          projectRootDir:
+            target.executionRoot ?? path.dirname(target.sourceConfig),
+          virtualFiles: input.files,
+        });
+        if (parsed.errors.length > 0)
+          throw new DeclarationContextConflict(
+            `Cannot parse Vue declaration context candidate: ${target.generatedConfig}`,
+          );
+        return [target.generatedConfig, { ...target, parsed }];
+      }
       const system = observedCompilerSystem(ts, target.generatedConfig);
       const parsed = ts.getParsedCommandLineOfConfigFile(
         target.generatedConfig,
@@ -193,7 +211,19 @@ function expectedContexts(
   localInputs: readonly string[],
 ): Map<string, CandidateProject> {
   const expected = new Map<string, CandidateProject>();
+  const direct = new Set(
+    decisions
+      .filter((decision) => decision.consumerConfig === project.sourceConfig)
+      .map((decision) => decision.file.lexicalPath),
+  );
   for (const decision of decisions) {
+    // A descendant's independent checking context does not override this
+    // consumer's explicit/local selection for the same declaration input.
+    if (
+      decision.consumerConfig !== project.sourceConfig &&
+      direct.has(decision.file.lexicalPath)
+    )
+      continue;
     const selection = decision.selection;
     if (selection.state !== 'selected' && selection.state !== 'local')
       throw new UnavailableDeclarationContext(
@@ -221,21 +251,6 @@ function expectedContexts(
   for (const file of localInputs) expected.set(file, project);
   for (const [file, owner] of expected) {
     const key = fileKey(input, file);
-    const providers = closure.filter(
-      (candidate) =>
-        candidate !== project &&
-        candidate.parsed.fileNames.some(
-          (member) => fileKey(input, member) === key,
-        ),
-    );
-    if (
-      providers.some(
-        (candidate) => candidate.generatedConfig !== owner.generatedConfig,
-      )
-    )
-      throw new DeclarationContextConflict(
-        `Competing declaration input mappings for ${file}: ${providers.map((candidate) => candidate.sourceConfig).join(', ')}; selected ${owner.sourceConfig}.`,
-      );
     if (
       owner.parsed.fileNames.every((member) => fileKey(input, member) !== key)
     )
@@ -247,7 +262,7 @@ function expectedContexts(
 }
 
 function checkOwner(owner: CandidateProject, isDelegated: boolean): void {
-  if (owner.checker !== 'tsc')
+  if (!['tsc', 'vue-tsc'].includes(owner.preset ?? owner.checker))
     throw new UnavailableDeclarationContext(
       `Declaration context checking is not qualified for ${owner.checker}: ${owner.sourceConfig}`,
     );
@@ -269,10 +284,6 @@ function validateProject(
   decisions: readonly DeclarationContextDecision[],
   localInputs: readonly string[],
 ): DeclarationContextReceipt {
-  if (project.checker !== 'tsc')
-    throw new UnavailableDeclarationContext(
-      `Declaration context consumption is not qualified for ${project.checker}: ${project.sourceConfig}`,
-    );
   const expected = expectedContexts(
     input,
     project,
@@ -280,95 +291,86 @@ function validateProject(
     decisions,
     localInputs,
   );
-  const context = createNativeSemanticContext(
-    {
-      configPath: project.generatedConfig,
-      fileNames: project.parsed.fileNames,
-      options: project.parsed.options,
-      projectReferences: project.parsed.projectReferences,
-      virtualFiles: input.files,
-      declarationContextValidation: {
-        sourceConfig: project.sourceConfig,
-        allowedDeclarations: expected.keys().toArray(),
-      },
-      workspaceSourceBoundary: createWorkspaceSourceBoundary(
-        closure.flatMap((member) => member.parsed.fileNames),
-        undefined,
-        input.coverage,
-      ),
-    },
-    undefined,
-    input.metrics,
+  const observe =
+    (project.preset ?? project.checker) === 'tsc'
+      ? observeNativeDeclarationCandidate
+      : (project.preset ?? project.checker) === 'vue-tsc'
+        ? observeVueDeclarationCandidate
+        : undefined;
+  if (observe === undefined)
+    throw new UnavailableDeclarationContext(
+      `Declaration context consumption is not qualified for ${project.checker}: ${project.sourceConfig}`,
+    );
+  const observation = observe({
+    ...project,
+    files: input.files,
+    coverage: input.coverage!,
+    roots: closure.flatMap((member) => member.parsed.fileNames),
+    configs: closure.map((member) => member.generatedConfig),
+    declarations: expected.keys().toArray(),
+    requiresDelegationProof: decisions.some(
+      (decision) => decision.selection.state === 'selected',
+    ),
+    metrics: input.metrics,
+  });
+  const sources = new Map(
+    observation.sources.map((source) => [source.file, source]),
   );
-  try {
-    const failure = context.nativeEvidence!.failures[0];
-    if (failure !== undefined)
-      throw new NativeObservationError(failure.kind, failure.detail);
-    if (context.nativeEvidence!.run !== 'completed')
+  for (const decision of decisions) {
+    if (
+      decision.consumerConfig === project.sourceConfig &&
+      !sources.has(decision.file.lexicalPath)
+    )
       throw new UnavailableDeclarationContext(
-        'Candidate declaration observation is incomplete.',
+        `Selected declaration was not loaded: ${decision.file.lexicalPath}`,
       );
-    for (const decision of decisions) {
-      if (
-        decision.consumerConfig === project.sourceConfig &&
-        context.getSourceFile(decision.file.lexicalPath) === undefined
-      )
-        throw new UnavailableDeclarationContext(
-          `Selected declaration was not loaded: ${decision.file.lexicalPath}`,
-        );
-    }
-    for (const decision of decisions) {
-      if (
-        decision.selection.state === 'selected' &&
-        decision.selection.config === project.sourceConfig &&
-        project.parsed.options.skipDefaultLibCheck &&
-        context.getSourceFile(decision.file.lexicalPath)?.hasNoDefaultLib
-      )
-        throw new DeclarationContextConflict(
-          `Declaration context owner skips this default library: ${decision.file.lexicalPath}`,
-        );
-    }
-    const mappings = [...expected].map(([file, owner]) => {
-      const observation = observeNativeReference(context.program, file, ts);
-      if (
-        observation.state === 'unavailable' ||
-        !observation.canProveMissingReference
-      )
-        throw new UnavailableDeclarationContext(
-          `TypeScript ${ts.version} cannot qualify declaration input mapping: ${file}`,
-        );
-      const actual = observation.referenceConfig ?? project.generatedConfig;
-      if (actual !== owner.generatedConfig)
-        throw new DeclarationContextConflict(
-          `Declaration context mismatch: ${file}; selected ${owner.generatedConfig}, actual ${actual}.`,
-        );
-      return {
-        file,
-        sourceConfig: owner.sourceConfig,
-        referenceConfig: actual,
-        loaded: context.getSourceFile(file) !== undefined,
-      };
-    });
-    return {
-      version: 2,
-      contextId: context.nativeEvidence!.contexts[0]!.id,
-      ...projectIdentity(project),
-      compilerVersion: ts.version,
-      inputFingerprint: nativeFingerprint(
-        closure.map((member) => [
-          member.generatedConfig,
-          effectiveCompilerOptions(member.parsed.options),
-          member.parsed.fileNames,
-          member.parsed.projectReferences,
-        ]),
-      ),
-      decisionsFingerprint: nativeFingerprint(decisions),
-      mappings,
-      requests: observedDeclarationRequests(context.nativeEvidence!, expected),
-    };
-  } finally {
-    context.dispose();
+    if (
+      decision.selection.state === 'selected' &&
+      decision.selection.config === project.sourceConfig &&
+      project.parsed.options.skipDefaultLibCheck &&
+      sources.get(decision.file.lexicalPath)?.defaultLibrary
+    )
+      throw new DeclarationContextConflict(
+        `Declaration context owner skips this default library: ${decision.file.lexicalPath}`,
+      );
   }
+  const mappings = [...expected].map(([file, owner]) => {
+    const mapping = observation.mappings.find((item) => item.file === file);
+    if (!mapping?.qualified)
+      throw new UnavailableDeclarationContext(
+        `Checker cannot qualify declaration input mapping: ${file}`,
+      );
+    const actual = mapping.referenceConfig ?? project.generatedConfig;
+    if (actual !== owner.generatedConfig)
+      throw new DeclarationContextConflict(
+        `Declaration context mismatch: ${file}; selected ${owner.generatedConfig}, actual ${actual}.`,
+      );
+    return {
+      file,
+      sourceConfig: owner.sourceConfig,
+      referenceConfig: actual,
+      loaded: sources.has(file),
+    };
+  });
+  return {
+    version: 3,
+    authority: observation.authority,
+    contextId: observation.contextId,
+    ...projectIdentity(project),
+    compilerVersion: observation.compilerVersion,
+    inputFingerprint: nativeFingerprint(
+      closure.map((member) => [
+        member.generatedConfig,
+        effectiveCompilerOptions(member.parsed.options),
+        member.parsed.fileNames,
+        member.parsed.projectReferences,
+      ]),
+    ),
+    decisionsFingerprint: nativeFingerprint(decisions),
+    mappings,
+    referenceMappings: observation.mappings,
+    requests: observation.requests,
+  };
 }
 function projectIdentity(
   project: CandidateProject,
@@ -380,44 +382,6 @@ function projectIdentity(
   };
 }
 
-function observedDeclarationRequests(
-  snapshot: NativeEvidenceSnapshot,
-  expected: ReadonlyMap<string, CandidateProject>,
-): DeclarationContextReceipt['requests'] {
-  return snapshot.requests.flatMap((request) => {
-    if (
-      request.entry.kind !== 'source' ||
-      !expected.has(request.entry.file.lexicalPath)
-    )
-      return [];
-    if (
-      snapshot.contexts.length !== 1 ||
-      request.consumerContextId !== snapshot.contexts[0]!.id
-    )
-      throw new UnavailableDeclarationContext(
-        `Unbound declaration request: ${request.specifier}`,
-      );
-    const resolution = snapshot.resolutions.find(
-      (item) => item.requestId === request.id,
-    );
-    if (resolution === undefined || resolution.state === 'unavailable')
-      throw new UnavailableDeclarationContext(
-        `Unavailable declaration request: ${request.specifier}`,
-      );
-    return [
-      {
-        file: request.entry.file.lexicalPath,
-        position: request.entry.position,
-        channel: request.channel,
-        specifier: request.specifier,
-        mode: request.resolutionMode,
-        target: resolution.target?.lexicalPath ?? null,
-        resolutionState: resolution.state,
-        redirects: resolution.rawRedirectEvidenceIds,
-      },
-    ];
-  });
-}
 function compareDelegatedRequests(
   receipts: readonly DeclarationContextReceipt[],
 ): void {
@@ -436,17 +400,20 @@ function compareDelegatedRequests(
           `Missing owner observation: ${mapping.referenceConfig}`,
         );
       const requests = (value: DeclarationContextReceipt) =>
-        value.requests.filter((request) => request.file === mapping.file);
+        delegatedRequests(value, mapping.file);
       const consumer = requests(receipt);
       const expected = requests(owner);
       const key = (request: DeclarationContextReceipt['requests'][number]) =>
         nativeFingerprint([
+          request.file,
           request.position,
           request.channel,
           request.specifier,
           request.mode,
           request.resolutionState,
           request.target,
+          declarationInputPermissions(request.environment),
+          request.externalLibrary,
         ]);
       if (
         nativeFingerprint(consumer.map(key).sort(compareCodeUnits)) !==
@@ -474,6 +441,7 @@ function compareDelegatedRequests(
           continue;
         }
         if (
+          request.file === mapping.file &&
           ['module', 'type-directive'].includes(request.channel) &&
           !request.redirects.includes(mapping.referenceConfig)
         )
@@ -482,4 +450,44 @@ function compareDelegatedRequests(
           );
       }
     }
+}
+
+/** Compare independently observed outcomes, not the spelling of configuration
+ * addresses. paths/conditions and mode are exercised by each real resolver;
+ * rootDir/outDir/configFilePath need not be equal across consumers. Retain raw
+ * environments in the receipt and bind them to candidate/input fingerprints.
+ * Input suppression is independent of a successful resolution. */
+function declarationInputPermissions(
+  options: Readonly<Record<string, unknown>>,
+) {
+  return [
+    Boolean(options.noResolve),
+    Boolean(options.allowJs ?? options.checkJs),
+    Boolean(options.noEmitForJsFiles),
+  ];
+}
+
+function delegatedRequests(
+  receipt: DeclarationContextReceipt,
+  file: string,
+): DeclarationContextReceipt['requests'] {
+  const visited = new Set<string>();
+  const pending = [file];
+  const requests: DeclarationContextReceipt['requests'][number][] = [];
+  while (pending.length > 0) {
+    const source = pending.pop()!;
+    if (visited.has(source)) continue;
+    visited.add(source);
+    for (const request of receipt.requests) {
+      if (request.file !== source) continue;
+      requests.push(request);
+      if (
+        request.target !== null &&
+        isDeclarationFile(request.target) &&
+        request.channel !== 'library'
+      )
+        pending.push(request.target);
+    }
+  }
+  return requests;
 }

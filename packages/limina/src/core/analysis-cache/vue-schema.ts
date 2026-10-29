@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  declarationLoadingSchema,
+  declarationRequestSchema,
+} from '../declaration-governance/schema';
 import { decodeData } from './data-codec';
 import {
   declarationEntrySchema,
@@ -95,6 +99,10 @@ const fact = z.object({
     .optional(),
 });
 const schemas = {
+  'request-inventory': z.object({
+    complete: z.boolean(),
+    requests: z.array(declarationRequestSchema),
+  }),
   'compiler-source': z.array(occurrenceSchema),
   'type-environment-entries': z.array(declarationEntrySchema),
   'support-inputs': z.array(
@@ -176,6 +184,7 @@ export function hasValidVueQuery(kind: VueQueryKind, data: unknown): boolean {
 
 const querySchema = z.object({
   kind: z.enum([
+    'request-inventory',
     'compiler-source',
     'preparation',
     'resolution',
@@ -194,6 +203,7 @@ const outputProjection = z.object({
 export const vueContextSchema: z.ZodType<unknown> = z.object({
   adapter: z.literal(VUE_ANALYSIS_ADAPTER),
   project: z.object({
+    declarationLoading: declarationLoadingSchema.optional(),
     configPath: text,
     projectRootDir: text,
     extensions: texts,

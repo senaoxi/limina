@@ -1,11 +1,11 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
+import type { DeclarationCompilationEvidence } from '../../domain/analysis/declaration-governance';
 import {
   deriveNativeCoverage,
   type NativeFileIdentity,
   type SourceConfigCoverageIndex,
 } from '../../domain/analysis/native-coverage';
-import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import type { ProjectDependency } from '../project-dependencies/contracts';
 import {
   nativeFingerprint,
@@ -22,18 +22,18 @@ export function declarationFileKey(file: NativeFileIdentity): string {
 export function collectDeclarationContextDecisions(options: {
   config: ResolvedLiminaInputs;
   project: { configPath: string; fileNames: readonly string[] };
-  snapshot: NativeEvidenceSnapshot | undefined;
+  evidence: DeclarationCompilationEvidence | undefined;
   unsupportedDependencies?: readonly ProjectDependency[];
   coverageIndex?: SourceConfigCoverageIndex;
   isWorkspaceFile?: (file: string) => boolean;
 }): { decisions: DeclarationContextDecision[]; problems: string[] } {
-  const { project, snapshot } = options;
+  const { project, evidence } = options;
   const read = readDeclarationContextChoices(
     options.config,
     project.configPath,
   );
   const decisions: DeclarationContextDecision[] = unsupportedDecisions(options);
-  const index = snapshot?.coverageIndexes[0] ?? options.coverageIndex;
+  const index = options.coverageIndex;
   if (index === undefined) return { decisions, problems: read.problems };
   const identity = (file: string) =>
     observeNativeFileIdentity(file, index.inputVersion);
@@ -56,15 +56,11 @@ export function collectDeclarationContextDecisions(options: {
       );
     else choices.set(key, choice.config);
   }
-  if (snapshot === undefined) return { decisions, problems: read.problems };
-  for (const relation of snapshot.relations) {
-    if (relation.kind !== 'declaration-consumption') continue;
-    const context = snapshot.contexts.find(
-      (item) => item.id === relation.consumerContextId,
-    );
+  if (evidence === undefined) return { decisions, problems: read.problems };
+  for (const relation of evidence.declarations) {
     if (
-      context?.inputs.config !== project.configPath ||
-      context.authority.phase !== 'locked'
+      relation.consumerConfig !== project.configPath ||
+      relation.contextId !== evidence.contextId
     )
       continue;
     const coverage = deriveNativeCoverage(index, relation.file);
@@ -79,8 +75,9 @@ export function collectDeclarationContextDecisions(options: {
       continue;
     const key = declarationFileKey(relation.file);
     decisions.push({
+      kind: relation.kind,
       consumerConfig: project.configPath,
-      contextId: context.id,
+      contextId: evidence.contextId,
       file: relation.file,
       requestIds: relation.requestIds,
       coverage,
@@ -133,7 +130,7 @@ function unsupportedDecisions(
   options: Parameters<typeof collectDeclarationContextDecisions>[0],
 ): DeclarationContextDecision[] {
   const index = options.coverageIndex;
-  if (index === undefined) return [];
+  if (index === undefined || options.evidence !== undefined) return [];
   const localInputs = new Set(
     options.project.fileNames.map((file) =>
       declarationFileKey(observeNativeFileIdentity(file, index.inputVersion)),
@@ -158,6 +155,7 @@ function unsupportedDecisions(
       return [];
     return [
       {
+        kind: 'consumption' as const,
         consumerConfig: options.project.configPath,
         contextId: nativeFingerprint(dependency.evidence),
         file,
@@ -166,7 +164,7 @@ function unsupportedDecisions(
         selection: {
           state: 'unavailable' as const,
           reason:
-            'Managed declaration contexts require a qualified native tsc observer and Checker.',
+            'Managed declaration contexts require a qualified Checker declaration adapter.',
         },
       },
     ];

@@ -1,10 +1,12 @@
 import { PathBindingReplay } from '../analysis-cache/directory-fingerprint';
+import { collectDeclarationCompilationEvidence } from '../declaration-governance/evidence';
 import { managedOutputLookupIdentity } from '../import-graph/managed-output-provider';
 import {
   createTypeScriptDependencyContext,
   createTypeScriptProjectDependencyFactsIdentity,
   createTypeScriptSemanticDependencySnapshot,
 } from '../typescript-semantic';
+import { withVueDeclarationLoading } from '../vue-semantic/loading-identity';
 import {
   cloneProjectDependencyCollection,
   getProjectSemanticCacheIdentity,
@@ -19,10 +21,7 @@ import type {
 import { collectionReferenceInputs } from './declaration-projection';
 import { retainNativeObservation } from './native-evidence-retention';
 import { collectProjectDependencyFile } from './preparation';
-import {
-  collectSupportContributions,
-  collectVueSupportContributions,
-} from './support-contributions';
+import { collectSupportContributions } from './support-contributions';
 
 const collectionReplays = new WeakMap<
   ProjectDependencyCaches,
@@ -229,8 +228,9 @@ function collectUncachedProjectDependencies(options: {
 }
 
 export function collectProjectDependencies(
-  request: ProjectDependencyRequest,
+  input: ProjectDependencyRequest,
 ): ProjectDependencyCollection {
+  const request = withDeclarationLoading(input);
   const projectSemanticIdentity = getProjectSemanticCacheIdentity(request);
   const cacheKey = JSON.stringify([
     projectSemanticIdentity,
@@ -260,12 +260,44 @@ export function collectProjectDependencies(
     factsCacheKey,
     request: semanticRequest,
   });
+  collection.declarationEvidence = collectDeclarationCompilationEvidence(
+    collection,
+    semanticRequest,
+  );
   cacheCollection({
     cacheKey,
     collection,
     request: semanticRequest,
   });
   return collection;
+}
+
+function withDeclarationLoading(
+  request: ProjectDependencyRequest,
+): ProjectDependencyRequest {
+  const identity = request.context.vueSemanticIdentity;
+  const coverage =
+    request.caches?.sourceConfigCoverage ??
+    request.context.workspaceSourceBoundary.sourceConfigCoverage;
+  if (identity === undefined || coverage === undefined) return request;
+  const declarationLoading = {
+    version: 1 as const,
+    sourceConfig:
+      identity.declarationLoading?.sourceConfig ??
+      request.context.resolverConfigPath,
+    purpose: 'graph' as const,
+    coverage,
+  };
+  return {
+    ...request,
+    context: {
+      ...request.context,
+      vueSemanticIdentity: withVueDeclarationLoading(
+        identity,
+        declarationLoading,
+      ),
+    },
+  };
 }
 
 export function isProjectDependencyCreatesSourceEdge(
@@ -329,7 +361,7 @@ function collectVueDependencies(
     const collection = createEmptyCollection();
     for (const fileName of request.context.fileNames)
       collectProjectDependencyFile({ collection, fileName, request });
-    collectVueSupportContributions(collection, request);
+    collectSupportContributions(collection, request);
     deduplicateFailures(collection);
     return collection;
   });

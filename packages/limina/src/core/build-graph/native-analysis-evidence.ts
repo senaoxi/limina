@@ -46,6 +46,13 @@ export function mergeNativeAnalysis(
   target: DependencyAnalysisResult,
   source: DependencyAnalysisResult,
 ): void {
+  if (source.unresolvedDependencies?.length)
+    (target.unresolvedDependencies ??= []).push(
+      ...source.unresolvedDependencies,
+    );
+  (target.declarationEvidence ??= []).push(
+    ...(source.declarationEvidence ?? []),
+  );
   (target.declarationContexts ??= []).push(
     ...(source.declarationContexts ?? []),
   );

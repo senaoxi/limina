@@ -11,6 +11,7 @@ import { observeNativeHostInputs } from './native-host-inputs';
 import {
   nativeCompilerApi,
   type NativeLibraryHost,
+  nativeTypeReferenceMode,
 } from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
 import type { NativeProgramLoads } from './native-program-loads';
@@ -82,14 +83,15 @@ function configuredTypeIndex(
 }
 
 function attachTypeResolver(host: ts.CompilerHost, input: HostInputs): void {
-  const api = nativeCompilerApi(input.compiler);
   host.resolveTypeReferenceDirectiveReferences = (...arguments_) => {
     const [references, from, redirect, effective, source] = arguments_;
     recordSourceOptions(input, source, { redirect, effective });
     return references.map((reference) => {
-      const mode = api.getModeForFileReference(
+      const mode = nativeTypeReferenceMode(
+        input.compiler,
         reference,
-        source?.impliedNodeFormat,
+        source,
+        redirect?.commandLine.options ?? effective,
       );
       const raw = resolveTypeWithOrigin(
         input.compiler,

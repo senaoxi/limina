@@ -367,7 +367,7 @@ describe('runCheckerBuild', () => {
       );
       expect(orderedCalls.map((target) => target.command)).toEqual([
         process.execPath,
-        'vue-tsc',
+        process.execPath,
       ]);
       expect(orderedCalls.map((target) => target.args)).toEqual([
         [
@@ -378,6 +378,7 @@ describe('runCheckerBuild', () => {
           'false',
         ],
         [
+          requireFromTest.resolve('vue-tsc/bin/vue-tsc.js'),
           '-b',
           '.limina/tsconfig/checkers/vue-tsc/tsconfig.build.json',
           '--pretty',
@@ -573,7 +574,7 @@ describe('runCheckerBuild', () => {
         calls
           .map((target) => target.command)
           .sort((left, right) => Number(left > right) - Number(left < right)),
-      ).toEqual([process.execPath, 'vue-tsc']);
+      ).toEqual([process.execPath, process.execPath]);
       expect(delayed.getMaxActive()).toBe(
         getExpectedDefaultBuildConcurrency(2),
       );
@@ -853,7 +854,7 @@ describe('runCheckerBuild', () => {
         calls
           .map((target) => target.command)
           .sort((left, right) => Number(left > right) - Number(left < right)),
-      ).toEqual([process.execPath, 'vue-tsc']);
+      ).toEqual([process.execPath, process.execPath]);
       expect(errorSpy).not.toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
@@ -985,7 +986,7 @@ describe('runCheckerBuild', () => {
         calls
           .map((target) => target.command)
           .sort((left, right) => Number(left > right) - Number(left < right)),
-      ).toEqual([process.execPath, 'vue-tsc']);
+      ).toEqual([process.execPath, process.execPath]);
       expect(delayed.getMaxActive()).toBe(
         getExpectedDefaultBuildConcurrency(2),
       );
@@ -1648,7 +1649,7 @@ describe('runBuild', () => {
       });
 
       expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command)).toEqual(['vue-tsc']);
+      expect(calls.map((target) => target.command)).toEqual([process.execPath]);
     } finally {
       await fixture.cleanup();
     }
@@ -2539,9 +2540,15 @@ describe('runBuild', () => {
       });
 
       expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command)).toEqual(['vue-tsc']);
+      expect(calls.map((target) => target.command)).toEqual([process.execPath]);
       expect(calls.map((target) => target.args)).toEqual([
-        ['-b', 'packages/app/tsconfig.raw.json', '--pretty', 'false'],
+        [
+          requireFromTest.resolve('vue-tsc/bin/vue-tsc.js'),
+          '-b',
+          'packages/app/tsconfig.raw.json',
+          '--pretty',
+          'false',
+        ],
       ]);
     } finally {
       await fixture.cleanup();

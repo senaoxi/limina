@@ -106,7 +106,7 @@ function config(files: string[], extra: Record<string, unknown> = {}): string {
 }
 
 describe('compiler-owned Native Program observations', () => {
-  it('does not present an uncovered declaration frontier as a complete relation graph', async () => {
+  it('retains uncovered declarations without claiming their uncovered implementation relation is complete', async () => {
     const { adapter } = await setup({
       'tsconfig.json': config(['main.ts'], {
         compilerOptions: { ...compilerOptions, noLib: true, types: [] },
@@ -117,7 +117,7 @@ describe('compiler-owned Native Program observations', () => {
     });
     expect(
       adapter.snapshot.obligations.map(summarizeCompilationObligation),
-    ).toEqual(['not-required']);
+    ).toEqual(['unknown', 'not-required']);
     expect(nativeCollectionStatus(adapter.snapshot)).toMatchObject({
       execution: 'completed',
       traversal: 'complete-within-boundary',
@@ -125,7 +125,7 @@ describe('compiler-owned Native Program observations', () => {
     });
     const projection = projectNativeReferences(adapter.snapshot);
     expect(projection.relationBoundaryIds.length).toBeGreaterThan(0);
-    expect(projection.relations).toHaveLength(1);
+    expect(projection.relations).toHaveLength(2);
     expect(adapter.snapshot.failures).toEqual([]);
   });
   it('preserves independent selected entries when solution discovery reaches a malformed config', async () => {
@@ -296,7 +296,7 @@ describe('compiler-owned Native Program observations', () => {
   });
 
   it.each([
-    { discovery: 'closed', owners: 0, expanded: false, state: 'uncovered' },
+    { discovery: 'closed', owners: 0, expanded: true, state: 'uncovered' },
     { discovery: 'open', owners: 1, expanded: false, state: 'unavailable' },
     { discovery: 'closed', owners: 1, expanded: false, state: 'unique' },
     { discovery: 'open', owners: 2, expanded: false, state: 'ambiguous' },
@@ -401,7 +401,7 @@ describe('compiler-owned Native Program observations', () => {
     ).toBe(true);
   });
 
-  it('keeps configured types and real library requests without loading uncovered declarations', async () => {
+  it('retains configured declaration inputs and their requests without loading external implementations', async () => {
     const { adapter, fixture } = await setup({
       'tsconfig.json': config(['main.ts'], {
         compilerOptions: {
@@ -436,13 +436,16 @@ describe('compiler-owned Native Program observations', () => {
     )!;
     expect(summarizeCompilationObligation(typeObligation)).toBe('not-required');
     expect(
-      adapter.program.getSourceFiles().map((file) => file.fileName),
-    ).toEqual([fixture.path('main.ts')]);
+      adapter.program
+        .getSourceFiles()
+        .filter((file) => !adapter.program.isSourceFileDefaultLibrary(file))
+        .map((file) => file.fileName),
+    ).toEqual([fixture.path('main.ts'), fixture.path('env.d.ts')]);
     expect(
       adapter.snapshot.requests.some(
         (request) => request.specifier === './hidden.js',
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('retains implicit JSX and helper compiler requests with explicit synthetic provenance', async () => {
@@ -652,7 +655,7 @@ describe('compiler-owned Native Program observations', () => {
       'config-1',
     );
     expect(snapshot).toBeDefined();
-    expect(snapshot!.header.schema).toBe(11);
+    expect(snapshot!.header.schema).toBe(12);
     const warm = new NativeAnalysisCache(
       'bounded-fixture',
       snapshot,
@@ -851,7 +854,7 @@ describe('compiler-owned Native Program observations', () => {
     expect(projection.records.map((item) => item.specifier)).toContain(
       './inside.js',
     );
-    expect(projection.records.map((item) => item.specifier)).not.toContain(
+    expect(projection.records.map((item) => item.specifier)).toContain(
       './never.js',
     );
     expect(projection.incomplete).toEqual([]);
