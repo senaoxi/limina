@@ -16,7 +16,10 @@ import {
   type NativeCompletenessPartition,
   type NativeEvidenceSnapshot,
 } from '../domain/analysis/native-evidence';
-import { freezeNativeEvidence } from '../domain/analysis/native-evidence-freeze';
+import {
+  freezeNativeData,
+  freezeNativeEvidence,
+} from '../domain/analysis/native-evidence-freeze';
 import {
   type DeclarationAvailability,
   type NativeCompilationObligation,
@@ -76,240 +79,311 @@ function observeCoverage(
   return deriveNativeCoverage(index(configurations), target);
 }
 
-describe('source config coverage proof', () => {
-  it('does not replace the selected universe with successfully parsed configs', () => {
-    const partial = observeCoverage([config('A')], file());
-    expect(partial.state).toBe('unavailable');
-    expect(partial.members.map((member) => member.configId)).toEqual(['A']);
-    expect(partial.gaps).toContain('config-unavailable:B');
-    expect(observeCoverage([config('A'), config('B', [])], file()).state).toBe(
-      'unique',
-    );
-  });
-
-  it.each([
-    [[], [], 'uncovered'],
-    [[file()], [], 'unique'],
-    [[file()], [file()], 'ambiguous'],
-  ] as const)(
-    'distinguishes complete zero/one/many membership (%s, %s)',
-    (a, b, state) => {
-      expect(
-        observeCoverage([config('A', [...a]), config('B', [...b])], file())
-          .state,
-      ).toBe(state);
-    },
-  );
-
-  it('proves ambiguity with two positive members even before discovery closes', () => {
-    const open = index([config('A'), config('B')]);
-    const result = deriveNativeCoverage(
-      { ...open, universe: { ...open.universe, discovery: 'open' } },
-      file(),
-    );
-    expect(result.state).toBe('ambiguous');
-    expect(result.completeness).toBe('incomplete');
-  });
-
-  it('checks canonical aliases even when the lexical path already matches', () => {
-    const result = observeCoverage(
-      [config('A'), config('B', [file('symlink')])],
-      file(),
-    );
-    expect(result.state).toBe('ambiguous');
-    expect(result.members.map((member) => member.match)).toEqual([
-      'lexical',
-      'canonical',
-    ]);
-  });
-
-  it('does not borrow scope from an extends/generated config outside the universe', () => {
-    const result = observeCoverage(
-      [
-        config('A', []),
-        config('B', []),
-        config('extends'),
-        config('generated'),
-      ],
-      file(),
-    );
-    expect(result.state).toBe('uncovered');
-    expect(result.members).toEqual([]);
-  });
-
-  it('cannot prove unique when an alias identity has not been verified', () => {
-    const unverified: NativeFileIdentity = {
-      lexicalPath: 'other',
-      physical: { state: 'unavailable', reason: 'stat failed' },
-    };
-    const result = observeCoverage(
-      [config('A'), config('B', [unverified])],
-      file(),
-    );
-    expect(result.state).toBe('unavailable');
-    expect(result.gaps).toContain('member-identity-unavailable');
-  });
-
-  it('rejects conflicting physical identities at the same lexical path', () => {
-    const current = index([config('A'), config('B', [])]);
-    const result = deriveNativeCoverage(
-      current,
-      file('source', 'retargeted-physical-file'),
-    );
-    expect(result.state).toBe('unavailable');
-    expect(result.members).toEqual([]);
-    expect(result.gaps).toContain('lexical-identity-conflict');
-  });
-
-  it('rejects stale target, member, config and discovery proofs independently', () => {
-    const baseline = index([config('A'), config('B', [])]);
-    const stale = {
-      ...file(),
-      physical: {
-        ...file().physical,
-        state: 'verified' as const,
-        canonicalId: 'physical-source',
-        evidenceId: 'old',
-        inputVersion: 'v0',
-      },
-    };
-    expect(deriveNativeCoverage(baseline, stale).state).toBe('unavailable');
-    expect(
-      observeCoverage([config('A', [stale]), config('B', [])], file()).state,
-    ).toBe('unavailable');
-    expect(
-      observeCoverage(
-        [{ ...config('A'), inputVersion: 'v0' }, config('B', [])],
-        file(),
-      ).members,
-    ).toEqual([]);
-    expect(
+describe.each(['mutable', 'published'] as const)(
+  'source config coverage proof (%s)',
+  (representation) => {
+    const observe = (
+      coverage: SourceConfigCoverageIndex,
+      target: NativeFileIdentity,
+    ) =>
       deriveNativeCoverage(
-        { ...baseline, universe: { ...baseline.universe, discovery: 'open' } },
-        file(),
-      ).state,
-    ).toBe('unavailable');
-  });
-
-  it('does not count a stale canonical alias as positive coverage', () => {
-    const staleAlias: NativeFileIdentity = {
-      lexicalPath: 'alias',
-      physical: {
-        state: 'verified',
-        canonicalId: 'physical-source',
-        evidenceId: 'old',
-        inputVersion: 'v0',
-      },
-    };
-    const result = observeCoverage(
-      [config('A', [staleAlias]), config('B', [])],
-      file(),
-    );
-    expect(result.members).toEqual([]);
-    expect(result.state).toBe('unavailable');
-  });
-
-  it.each([
-    'stale-member',
-    'stale-target',
-    'unverified-member',
-    'unverified-target',
-  ])(
-    'does not count %s lexical matches as confirmed membership',
-    (condition) => {
-      const invalid: NativeFileIdentity = condition.startsWith('stale')
-        ? {
-            ...file(),
-            physical: {
-              state: 'verified',
-              canonicalId: 'physical-source',
-              evidenceId: 'old-identity',
-              inputVersion: 'v0',
-            },
-          }
-        : {
-            ...file(),
-            physical: { state: 'unavailable', reason: 'identity unavailable' },
-          };
-      const member = condition.endsWith('member') ? invalid : file();
-      const target = condition.endsWith('target') ? invalid : file();
-      const result = observeCoverage(
-        [config('A', [member]), config('B', [member])],
+        representation === 'published' ? freezeNativeData(coverage) : coverage,
         target,
+      );
+    const observeConfigs = (
+      configurations: readonly SourceConfigEnumeration[],
+      target = file(),
+    ) => observe(index(configurations), target);
+
+    it('does not replace the selected universe with successfully parsed configs', () => {
+      const partial = observeConfigs([config('A')], file());
+      expect(partial.state).toBe('unavailable');
+      expect(partial.members.map((member) => member.configId)).toEqual(['A']);
+      expect(partial.gaps).toContain('config-unavailable:B');
+      expect(observeConfigs([config('A'), config('B', [])], file()).state).toBe(
+        'unique',
+      );
+    });
+
+    it.each([
+      [[], [], 'uncovered'],
+      [[file()], [], 'unique'],
+      [[file()], [file()], 'ambiguous'],
+    ] as const)(
+      'distinguishes complete zero/one/many membership (%s, %s)',
+      (a, b, state) => {
+        expect(
+          observeConfigs([config('A', [...a]), config('B', [...b])], file())
+            .state,
+        ).toBe(state);
+      },
+    );
+
+    it('proves ambiguity with two positive members even before discovery closes', () => {
+      const open = index([config('A'), config('B')]);
+      const result = observe(
+        { ...open, universe: { ...open.universe, discovery: 'open' } },
+        file(),
+      );
+      expect(result.state).toBe('ambiguous');
+      expect(result.completeness).toBe('incomplete');
+    });
+
+    it('checks canonical aliases even when the lexical path already matches', () => {
+      const result = observeConfigs(
+        [config('A'), config('B', [file('symlink')])],
+        file(),
+      );
+      expect(result.state).toBe('ambiguous');
+      expect(result.members.map((member) => member.match)).toEqual([
+        'lexical',
+        'canonical',
+      ]);
+    });
+
+    it('does not borrow scope from an extends/generated config outside the universe', () => {
+      const result = observeConfigs(
+        [
+          config('A', []),
+          config('B', []),
+          config('extends'),
+          config('generated'),
+        ],
+        file(),
+      );
+      expect(result.state).toBe('uncovered');
+      expect(result.members).toEqual([]);
+    });
+
+    it('cannot prove unique when an alias identity has not been verified', () => {
+      const unverified: NativeFileIdentity = {
+        lexicalPath: 'other',
+        physical: { state: 'unavailable', reason: 'stat failed' },
+      };
+      const result = observeConfigs(
+        [config('A'), config('B', [unverified])],
+        file(),
+      );
+      expect(result.state).toBe('unavailable');
+      expect(result.gaps).toContain('member-identity-unavailable');
+    });
+
+    it('rejects conflicting physical identities at the same lexical path', () => {
+      const current = index([config('A'), config('B', [])]);
+      const result = observe(
+        current,
+        file('source', 'retargeted-physical-file'),
+      );
+      expect(result.state).toBe('unavailable');
+      expect(result.members).toEqual([]);
+      expect(result.gaps).toContain('lexical-identity-conflict');
+    });
+
+    it('rejects stale target, member, config and discovery proofs independently', () => {
+      const baseline = index([config('A'), config('B', [])]);
+      const stale = {
+        ...file(),
+        physical: {
+          ...file().physical,
+          state: 'verified' as const,
+          canonicalId: 'physical-source',
+          evidenceId: 'old',
+          inputVersion: 'v0',
+        },
+      };
+      expect(observe(baseline, stale).state).toBe('unavailable');
+      expect(
+        observeConfigs([config('A', [stale]), config('B', [])], file()).state,
+      ).toBe('unavailable');
+      expect(
+        observeConfigs(
+          [{ ...config('A'), inputVersion: 'v0' }, config('B', [])],
+          file(),
+        ).members,
+      ).toEqual([]);
+      expect(
+        observe(
+          {
+            ...baseline,
+            universe: { ...baseline.universe, discovery: 'open' },
+          },
+          file(),
+        ).state,
+      ).toBe('unavailable');
+    });
+
+    it('does not count a stale canonical alias as positive coverage', () => {
+      const staleAlias: NativeFileIdentity = {
+        lexicalPath: 'alias',
+        physical: {
+          state: 'verified',
+          canonicalId: 'physical-source',
+          evidenceId: 'old',
+          inputVersion: 'v0',
+        },
+      };
+      const result = observeConfigs(
+        [config('A', [staleAlias]), config('B', [])],
+        file(),
       );
       expect(result.members).toEqual([]);
       expect(result.state).toBe('unavailable');
-    },
+    });
+
+    it.each([
+      'stale-member',
+      'stale-target',
+      'unverified-member',
+      'unverified-target',
+    ])(
+      'does not count %s lexical matches as confirmed membership',
+      (condition) => {
+        const invalid: NativeFileIdentity = condition.startsWith('stale')
+          ? {
+              ...file(),
+              physical: {
+                state: 'verified',
+                canonicalId: 'physical-source',
+                evidenceId: 'old-identity',
+                inputVersion: 'v0',
+              },
+            }
+          : {
+              ...file(),
+              physical: {
+                state: 'unavailable',
+                reason: 'identity unavailable',
+              },
+            };
+        const member = condition.endsWith('member') ? invalid : file();
+        const target = condition.endsWith('target') ? invalid : file();
+        const result = observeConfigs(
+          [config('A', [member]), config('B', [member])],
+          target,
+        );
+        expect(result.members).toEqual([]);
+        expect(result.state).toBe('unavailable');
+      },
+    );
+
+    it('does not promote one current member and one stale lexical hit to ambiguity', () => {
+      const stale: NativeFileIdentity = {
+        ...file(),
+        physical: {
+          state: 'verified',
+          canonicalId: 'physical-source',
+          evidenceId: 'old-identity',
+          inputVersion: 'v0',
+        },
+      };
+      const result = observeConfigs([config('A'), config('B', [stale])]);
+      expect(result.members.map((member) => member.configId)).toEqual(['A']);
+      expect(result.state).toBe('unavailable');
+    });
+
+    it('limits parse failures only through target-specific proven exclusions', () => {
+      const failed: SourceConfigEnumeration = {
+        configId: 'B',
+        inputVersion: 'v1',
+        state: 'failed',
+        failureId: 'parse-failure',
+        impact: { kind: 'unbounded' },
+      };
+      expect(observeConfigs([config('A'), failed], file()).state).toBe(
+        'unavailable',
+      );
+      const excluded = {
+        ...failed,
+        impact: {
+          kind: 'proven-exclusion' as const,
+          evidenceId: 'validated-boundary',
+          excludedCanonicalIds: ['physical-source'],
+        },
+      };
+      expect(observeConfigs([config('A'), excluded], file()).state).toBe(
+        'unique',
+      );
+      expect(
+        observeConfigs(
+          [config('A'), excluded],
+          file('elsewhere', 'other-identity'),
+        ).state,
+      ).toBe('unavailable');
+    });
+
+    it('does not use duplicate entries or incomplete enumeration to prove unique', () => {
+      expect(
+        observeConfigs([config('A'), config('A'), config('B', [])], file())
+          .state,
+      ).toBe('unavailable');
+      const incomplete = { ...config('B', []), complete: false };
+      expect(observeConfigs([config('A'), incomplete], file()).state).toBe(
+        'unavailable',
+      );
+    });
+
+    it('does not use a closed universe from an earlier input version', () => {
+      const current = index([config('A'), config('B', [])]);
+      const result = observe(
+        {
+          ...current,
+          universe: { ...current.universe, inputVersion: 'v0' },
+        },
+        file(),
+      );
+      expect(result.state).toBe('unavailable');
+      expect(result.members).toEqual([]);
+    });
+    it('preserves the first canonical alias before a later lexical match', () => {
+      const result = observeConfigs([
+        config('A', [file('alias'), file()]),
+        config('B', []),
+      ]);
+      expect(result.members).toEqual([
+        {
+          configId: 'A',
+          membershipEvidenceId: 'members:A',
+          match: 'canonical',
+        },
+      ]);
+    });
+
+    it('retains stale lexical conflicts beside a current canonical membership', () => {
+      const stale: NativeFileIdentity = {
+        lexicalPath: 'source',
+        physical: {
+          state: 'verified',
+          canonicalId: 'old-target',
+          evidenceId: 'old',
+          inputVersion: 'v0',
+        },
+      };
+      const result = observeConfigs([
+        config('A', [stale, file('alias')]),
+        config('B', []),
+      ]);
+      expect(result.members.map((member) => member.match)).toEqual([
+        'canonical',
+      ]);
+      expect(result.state).toBe('unavailable');
+      expect(result.gaps).toEqual([
+        'member-identity-unavailable',
+        'lexical-identity-conflict',
+      ]);
+    });
+  },
+);
+
+it('does not retain caller-owned memberships behind a shallow frozen index', () => {
+  const members = [file()];
+  const coverage = Object.freeze(
+    index([config('A', members), config('B', [])]),
   );
-
-  it('does not promote one current member and one stale lexical hit to ambiguity', () => {
-    const stale: NativeFileIdentity = {
-      ...file(),
-      physical: {
-        state: 'verified',
-        canonicalId: 'physical-source',
-        evidenceId: 'old-identity',
-        inputVersion: 'v0',
-      },
-    };
-    const result = observeCoverage([config('A'), config('B', [stale])]);
-    expect(result.members.map((member) => member.configId)).toEqual(['A']);
-    expect(result.state).toBe('unavailable');
-  });
-
-  it('limits parse failures only through target-specific proven exclusions', () => {
-    const failed: SourceConfigEnumeration = {
-      configId: 'B',
-      inputVersion: 'v1',
-      state: 'failed',
-      failureId: 'parse-failure',
-      impact: { kind: 'unbounded' },
-    };
-    expect(observeCoverage([config('A'), failed], file()).state).toBe(
-      'unavailable',
-    );
-    const excluded = {
-      ...failed,
-      impact: {
-        kind: 'proven-exclusion' as const,
-        evidenceId: 'validated-boundary',
-        excludedCanonicalIds: ['physical-source'],
-      },
-    };
-    expect(observeCoverage([config('A'), excluded], file()).state).toBe(
-      'unique',
-    );
-    expect(
-      observeCoverage(
-        [config('A'), excluded],
-        file('elsewhere', 'other-identity'),
-      ).state,
-    ).toBe('unavailable');
-  });
-
-  it('does not use duplicate entries or incomplete enumeration to prove unique', () => {
-    expect(
-      observeCoverage([config('A'), config('A'), config('B', [])], file())
-        .state,
-    ).toBe('unavailable');
-    const incomplete = { ...config('B', []), complete: false };
-    expect(observeCoverage([config('A'), incomplete], file()).state).toBe(
-      'unavailable',
-    );
-  });
-
-  it('does not use a closed universe from an earlier input version', () => {
-    const current = index([config('A'), config('B', [])]);
-    const result = deriveNativeCoverage(
-      {
-        ...current,
-        universe: { ...current.universe, inputVersion: 'v0' },
-      },
-      file(),
-    );
-    expect(result.state).toBe('unavailable');
-    expect(result.members).toEqual([]);
-  });
+  const before = deriveNativeCoverage(coverage, file());
+  expect(before.state).toBe('unique');
+  members[0] = file('elsewhere', 'different-file');
+  expect(deriveNativeCoverage(coverage, file()).state).toBe('uncovered');
+  expect(before.state).toBe('unique');
 });
 
 describe('coverage-driven frontier contract', () => {
@@ -847,6 +921,19 @@ describe('immutable, non-executable native evidence publication', () => {
     expect(() => {
       (published.contexts as NativeEvidenceContext[]).push(pending());
     }).toThrow(TypeError);
+  });
+
+  it('copies repeated sibling aliases without treating them as cycles', () => {
+    const member = { state: 'ready' };
+    const published = freezeNativeData({ first: member, second: member });
+    expect(published.first).toEqual({ state: 'ready' });
+    expect(published.second).toEqual(published.first);
+    expect(published.first).not.toBe(published.second);
+    member.state = 'changed';
+    expect(published.first.state).toBe('ready');
+    expect(() => Object.assign(published.second, { state: 'changed' })).toThrow(
+      TypeError,
+    );
   });
 
   it.each([new Map(), new Set(), () => {}, NaN])(

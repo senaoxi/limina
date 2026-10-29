@@ -27,7 +27,12 @@ export function createNativeSemanticContext(
     cache?.recordProgram();
     return {
       input,
-      context: new NativeSemanticContext(input, cache !== undefined),
+      context: new NativeSemanticContext(
+        input,
+        cache === undefined
+          ? undefined
+          : (file, text) => cache.readFileSyntax(file, text),
+      ),
     };
   });
   if (cache?.supports(result.input.project, ts))

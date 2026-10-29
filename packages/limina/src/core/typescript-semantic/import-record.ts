@@ -110,6 +110,7 @@ export function findImportRecordLiterals(options: {
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
 }): Map<ImportRecord, ts.StringLiteralLike | null> {
+  if (options.records.length === 0) return new Map();
   const indexed = new Map<string, ts.StringLiteralLike | null>();
   const literals = findSourceFileLiterals({ ...options, matches: () => true });
   for (const literal of literals) {

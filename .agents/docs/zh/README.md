@@ -17,6 +17,7 @@
 | 识别实体、authority、执行阶段与关系                        | [系统模型](./system-model.md)                              |
 | 建立 TypeScript / Vue / Astro / Svelte 的依赖事实          | [语义事实](./semantics.md)                                 |
 | 追踪 generation、cache、context、mutation 与结果 freshness | [生命周期](./lifecycle.md)                                 |
+| 核对启动测量、保留优化与验收边界                           | [启动性能验收](./startup-performance.md)                   |
 | 定位受保护性质、反例与 executable guard                    | [Core invariants](./invariants.md)                         |
 | Review invariant impact 并选择维护验证                     | [架构 workflow](./architecture-workflow.md)                |
 | 核对重建证据、纠正内容与验证边界                           | [架构审计](./architecture-audit.md)                        |

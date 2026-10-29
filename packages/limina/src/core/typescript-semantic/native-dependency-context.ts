@@ -1,6 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
-import { analysisHash } from '../analysis-cache/identity';
 import type { ImportRecord } from '../import-analysis/records';
 import type {
   TypeScriptSemanticDependencyContext,
@@ -8,9 +7,9 @@ import type {
 } from './contracts';
 import type { DeclarationEntry } from './declaration-closure';
 import type { NativeDependencyFact } from './dependency-fact';
-import {
-  extractFileDependencyFacts,
-  type FileDependencyFacts,
+import type {
+  FileDependencyFacts,
+  FileDependencyFactsReader,
 } from './file-dependency-facts';
 import { createImportRecordIdentity } from './import-record';
 import {
@@ -43,7 +42,7 @@ export class NativeDependencyContext
   constructor(
     options: NativeProgramObservationOptions,
     adapter: NativeObservationAdapter = new NativeObservationAdapter(options),
-    shouldCaptureSyntax = false,
+    readSyntax?: FileDependencyFactsReader,
   ) {
     this.identity = options.context.id;
     this.nativeEvidence = adapter.snapshot;
@@ -54,7 +53,8 @@ export class NativeDependencyContext
     );
     this.#typeEntries = typeEnvironmentEntries(adapter.snapshot);
     const entries = nativeProgramRecords(adapter);
-    this.#syntax = shouldCaptureSyntax ? sourceSyntax(adapter) : new Map();
+    this.#syntax =
+      readSyntax === undefined ? new Map() : sourceSyntax(adapter, readSyntax);
     this.nativeInventory = captureNativeContextInventory(
       adapter,
       entries,
@@ -113,18 +113,12 @@ export class NativeDependencyContext
 
 function sourceSyntax(
   adapter: NativeObservationAdapter,
+  read: FileDependencyFactsReader,
 ): ReadonlyMap<string, FileDependencyFacts> {
   return new Map(
     adapter.program.getSourceFiles().map((source) => {
       const file = normalizeAbsolutePath(source.fileName);
-      return [
-        file,
-        extractFileDependencyFacts(
-          file,
-          source.text,
-          analysisHash(source.text),
-        ),
-      ];
+      return [file, read(file, source.text)];
     }),
   );
 }
