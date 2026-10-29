@@ -72,10 +72,9 @@ function createRequirementEvidence(options: {
 }
 
 function getMissingPhysicalTarget(fact: CheckerDependencyFact): string | null {
-  return fact.typeEvidenceKind !== 'missing' ||
-    fact.physicalTargetProvenance !== 'pending-framework-candidate'
-    ? null
-    : fact.physicalTargetPath;
+  return fact.physicalTargetProvenance === 'pending-framework-candidate'
+    ? fact.physicalTargetPath
+    : null;
 }
 
 function resolveFrameworkDomain(options: {

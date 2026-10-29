@@ -1,5 +1,6 @@
 import type { NativeEvidenceContext } from '../../domain/analysis/native-context';
 import type { CandidateBuildPlan } from './analysis-admission';
+import type { SupplementalAssessment } from './pending-supplemental-assessment';
 import type { GovernedSourceUnit } from './types';
 
 export interface CompilationReferenceIdentity {
@@ -10,6 +11,7 @@ export interface CompilationReferenceIdentity {
   kind: string;
 }
 interface CompilationProjection {
+  supplements?: readonly SupplementalAssessment[];
   sources: readonly GovernedSourceUnit[];
   contexts: readonly NativeEvidenceContext[];
   references?: readonly CompilationReferenceIdentity[];
@@ -72,4 +74,13 @@ export function projectionConsumers(
         (source) =>
           source.configPath === config && hasConsumer(projection, source),
       );
+}
+
+export function bindSupplementalCompilationContexts(
+  candidate: CandidateBuildPlan | undefined,
+  supplements: readonly SupplementalAssessment[],
+): void {
+  const projection =
+    candidate === undefined ? undefined : projections.get(candidate);
+  if (projection !== undefined) projection.supplements = supplements;
 }

@@ -1,11 +1,40 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import ts from 'typescript';
 import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
+import { effectiveCompilerOptions } from './compiler-options';
 import type { FileDependencyFacts } from './file-dependency-facts';
 import { nativeFingerprint } from './native-file-identity';
+import { unqualifiedNativeLoads } from './native-load-qualification';
 import type { NativeObservationAdapter } from './native-observation-adapter';
+import {
+  nativeCompilerApi,
+  type NativeObservedProgram,
+  nativeProgramSource,
+} from './native-program-api';
 import type { NativeRequestRecord } from './native-program-records';
+import type { NativeModuleObservation } from './native-program-requests';
+
+const liveInventories = new WeakSet<NativeContextInventory>();
+export function isLiveNativeInventory(
+  inventory: NativeContextInventory | undefined,
+): boolean {
+  return inventory !== undefined && liveInventories.has(inventory);
+}
+export interface NativeModulePremises {
+  readonly requestId: string;
+  readonly sourceFingerprint: string;
+  readonly sourceLoadGap?: string;
+  readonly role: 'import' | 'augmentation';
+  readonly mode?: ts.ResolutionMode;
+  readonly options?: ts.CompilerOptions;
+  readonly sourceIsDeclaration: boolean;
+  readonly sourceIsExternal: boolean;
+  readonly excludedDocumentation: boolean;
+  readonly ownAmbient: boolean;
+}
 
 export interface NativeContextInventory {
+  readonly modules: readonly NativeModulePremises[];
   readonly members: readonly string[];
   readonly syntax: readonly {
     readonly file: string;
@@ -35,7 +64,26 @@ export function captureNativeContextInventory(
   entries: readonly NativeRequestRecord[],
   syntax: ReadonlyMap<string, FileDependencyFacts>,
 ): NativeContextInventory {
-  return freezeNativeData({
+  const unqualified = unqualifiedNativeLoads(
+    adapter.program as NativeObservedProgram,
+    adapter.snapshot.requests.map((request) => ({
+      request,
+      resolution: adapter.snapshot.resolutions.find(
+        (r) => r.requestId === request.id,
+      )!,
+    })),
+  );
+  const inventory = freezeNativeData({
+    modules: adapter.modules.map((observation) => ({
+      ...captureModulePremises(
+        observation,
+        adapter.program as NativeObservedProgram,
+        ts,
+      ),
+      ...(unqualified.has(observation.source.fileName) && {
+        sourceLoadGap: 'path-fallback-source-classification-unavailable',
+      }),
+    })),
     members: adapter.program
       .getSourceFiles()
       .map((source) => normalizeAbsolutePath(source.fileName)),
@@ -55,6 +103,8 @@ export function captureNativeContextInventory(
         : [{ root, source: normalizeAbsolutePath(source.fileName) }];
     }),
   });
+  liveInventories.add(inventory);
+  return inventory;
 }
 
 function loadedSources(adapter: NativeObservationAdapter) {
@@ -76,4 +126,31 @@ function loadedSources(adapter: NativeObservationAdapter) {
             },
           ];
     });
+}
+
+export function captureModulePremises(
+  observation: NativeModuleObservation,
+  program: NativeObservedProgram,
+  compiler: typeof ts,
+): NativeModulePremises {
+  const options = program.getCompilerOptionsForFile(observation.source);
+  return {
+    requestId: observation.requestId,
+    sourceFingerprint: nativeFingerprint(observation.source.text),
+    role: observation.role,
+    ...(observation.mode !== undefined && { mode: observation.mode }),
+    ...(options !== undefined && {
+      options: effectiveCompilerOptions(options),
+    }),
+    sourceIsDeclaration: observation.source.isDeclarationFile,
+    sourceIsExternal: program.isSourceFileFromExternalLibrary(
+      observation.source,
+    ),
+    excludedDocumentation:
+      (observation.literal.flags & 16_777_216) !== 0 &&
+      !nativeCompilerApi(compiler).isInJSFile(observation.literal),
+    ownAmbient: nativeProgramSource(
+      observation.source,
+    ).ambientModuleNames.includes(observation.literal.text),
+  };
 }
