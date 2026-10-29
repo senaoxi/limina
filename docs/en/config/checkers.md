@@ -118,7 +118,7 @@ For example, an ordinary TypeScript project and a Vue project that need to share
 
 ::: details How checker ownership and dependency evidence are determined
 
-Explicit checker selection, checker-specific config evidence, effective root-file evidence, and a confirmed pending framework dependency are the only inputs that can lock semantic authority. After pending dependency requirements have been collected, Limina freezes that authority. Vue promotion, solution constraints, declaration-component coloring, the TypeScript fallback, and `finalOwner` can select or propagate a build owner, but cannot reinterpret the project's dependencies. A TypeScript-semantic project may therefore finish with `vue-tsc` as its build owner while retaining TypeScript module semantics.
+Explicit checker selection, checker-specific config evidence, effective root-file evidence, and a confirmed pending framework dependency are the only inputs that can lock semantic authority. After pending dependency requirements have been collected, Limina freezes that authority. Vue promotion, declaration-component coloring, the TypeScript fallback, and `finalOwner` can select or propagate a build owner, but cannot reinterpret the project's dependencies. A TypeScript-semantic project may therefore finish with `vue-tsc` as its build owner while retaining TypeScript module semantics.
 
 For automatic scopes whose checker is still undetermined, Limina starts with TypeScript semantics. Limina enumerates dependencies from the parsed TypeScript project and its TypeScript AST, then applies the checker type-evidence gate to every source-authored dependency. `ambient`, `concrete-declaration`, and `checker-source` evidence stop at the TypeScript boundary; unsupported semantic evidence fails closed. Only `missing` evidence may invoke Oxc, and then only to identify a physical framework-source candidate for ownership inference. The candidate must be an effective member of exactly one governed config and one framework semantic domain. Ordinary TypeScript files, resources, excluded files, and ambiguous targets cannot color the checker. Limina collects the complete requirement set before resolving the pending owner, so conflicting Astro/Svelte/Vue requirements are deterministic and independent of import order.
 
@@ -212,7 +212,7 @@ Limina distinguishes declaration dependencies from framework scheduling dependen
 
 Providers run before consumers. Pure framework-scheduling cycles run as one scheduling component; declaration cycles still fail.
 
-Every successful `declaration-provider` edge has the same `tsc`, `tsgo`, or `vue-tsc` identity on both ends and records `cacheReuse: "reusable"` in manifest version 5. A canonical declaration relation therefore colors its whole build component before generated configs and targets are materialized. If a connected group of configs that need to share declaration caches already contains different build identities, graph preparation fails instead of preserving a cross-checker reference or issuing a cache-churn warning. `framework-schedule` may still cross checker identities because it is not a compiler project reference.
+Every successful `declaration-provider` edge has the same `tsc`, `tsgo`, or `vue-tsc` identity on both ends and records `cacheReuse: "reusable"` in manifest version 6. A canonical declaration relation therefore colors its whole build component before generated configs and targets are materialized. If a connected group of configs that need to share declaration caches already contains different build identities, graph preparation fails instead of preserving a cross-checker reference or issuing a cache-churn warning. `framework-schedule` may still cross checker identities because it is not a compiler project reference.
 
 ## Migrating from named aliases and `preset`
 
@@ -257,3 +257,9 @@ Generated declaration/output configs preserve the source's selected `compilerOpt
 For a `vue-tsc` owner, source and output `target` values may differ. Limina observes the output's effective compiler options through a separate Vue semantic context, including native TypeScript files and mapped Vue components. It checks output dependencies against existing output references; it does not add source references to make the output pass. Unsupported observations and uncovered output dependencies still stop graph preparation.
 
 Expected declaration outputs of explicit project references may be absent before an ordered `tsc -b` creates them. This permission does not cover arbitrary missing declarations or allow stale output to supplement source discovery.
+
+### Solutions and Checker groups
+
+An automatically discovered solution can contain independent projects executed by different Checkers. Limina traverses nested solutions to collect every terminal source config and generates separate Checker build entries from final ownership. Aggregation alone does not require one Checker. Real declaration build dependencies still require exact Checker identity and compatible declaration caches.
+
+Explicitly selecting a solution through `scope.checkers.<checker>.include` still requires all its terminal source configs to use that Checker. Conflicting explicit requirements on a shared source produce an error. A valid empty solution creates no build targets; `limina checker build <config>` starts no Checker for it.

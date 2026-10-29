@@ -8,6 +8,7 @@ import {
 } from './analysis-cache-schema';
 import { restoreGraphContexts } from './analysis-cache-vue';
 import { rebindCachedCompilation } from './cached-candidate-binding';
+import { hasCurrentOwnership } from './cached-ownership-replay';
 import { hasBoundCachedReferences } from './cached-reference-reconstruction';
 import { reconstructVueReferences } from './cached-vue-references';
 import { validateRestoredReferences } from './reference-validation';
@@ -24,11 +25,19 @@ interface Binding {
 /**
 Restored semantic contexts supply evidence; graph projections grant no authority.
 */
-export function bindCachedGraph(input: Binding): CachedGraphData | undefined {
+export async function bindCachedGraph(
+  input: Binding,
+): Promise<CachedGraphData | undefined> {
   const restored = restoreGraphContexts({ ...input, data: input.stored });
   if (restored === undefined) return undefined;
   rebindCachedCompilation(restored, input.cache);
-  return validateReferences(input, restored);
+  try {
+    return (await hasCurrentOwnership(restored, input.config, input.workspace))
+      ? validateReferences(input, restored)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function validateReferences(

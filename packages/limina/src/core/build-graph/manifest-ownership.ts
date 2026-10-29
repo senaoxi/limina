@@ -41,12 +41,22 @@ export function createOwnershipManifest(options: {
     .values()
     .map((state) => ({
       config: toManifestPath(options.rootDir, state.configPath),
-      leaves: state.leafConfigPaths.map((configPath) =>
+      sources: state.sourceConfigPaths.map((configPath) =>
         toManifestPath(options.rootDir, configPath),
       ),
-      owner: requireFinalOwner({
-        configPath: state.configPath,
-        owner: state.finalOwner,
+      checkers: [
+        ...new Set(
+          state.sourceConfigPaths.map((configPath) =>
+            requireFinalOwner({
+              configPath,
+              owner:
+                options.ownershipPlan!.typeConfigs.get(configPath)?.finalOwner,
+            }),
+          ),
+        ),
+      ].sort(compareCodeUnits),
+      ...(state.declaredConstraint !== undefined && {
+        declaredChecker: state.declaredConstraint,
       }),
     }))
     .toArray();
@@ -55,7 +65,6 @@ export function createOwnershipManifest(options: {
       ...typeConfigs,
       ...solutions.map((solution) => ({
         config: solution.config,
-        owner: solution.owner,
         role: 'solution' as const,
       })),
     ].sort((left, right) => compareCodeUnits(left.config, right.config)),

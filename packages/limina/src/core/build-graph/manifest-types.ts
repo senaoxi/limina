@@ -15,16 +15,15 @@ interface GeneratedCheckerManifest {
   dtsToSource: Record<string, string>;
 }
 
-interface GeneratedConfigOwnershipManifest {
-  config: string;
-  owner: ResolvedCheckerConfig['name'];
-  role: 'solution' | 'type';
-}
+type GeneratedConfigOwnershipManifest =
+  | { config: string; owner: ResolvedCheckerConfig['name']; role: 'type' }
+  | { config: string; role: 'solution' };
 
 interface GeneratedSolutionClosureManifest {
   config: string;
-  leaves: string[];
-  owner: ResolvedCheckerConfig['name'];
+  sources: string[];
+  checkers: ResolvedCheckerConfig['name'][];
+  declaredChecker?: ResolvedCheckerConfig['name'];
 }
 
 interface GeneratedBuildTargetManifest {
@@ -65,7 +64,7 @@ type GeneratedDependencyEdgeManifest =
   | FrameworkScheduleEdgeManifest;
 
 export interface GeneratedTsconfigGraphManifest {
-  version: 5;
+  version: 6;
   generatedBy: 'limina';
   checkers: Record<string, GeneratedCheckerManifest>;
   knip: {

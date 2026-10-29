@@ -1,8 +1,12 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { CheckerOwnershipPlan } from '../core/build-graph/checker-ownership-types';
 import { createGeneratedGraphStructuredError } from '../core/build-graph/problems';
 import { validateRestoredReferences } from '../core/build-graph/reference-validation';
-import type { DependencyAnalysisResult } from '../core/build-graph/types';
+import type {
+  DependencyAnalysisResult,
+  GovernedSourceUnit,
+} from '../core/build-graph/types';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
@@ -18,6 +22,57 @@ function candidate(references: Record<string, string[]>) {
     referenceValidation: { state: 'admitted', diagnostics: [] },
   };
   return {
+    ownershipPlan: {
+      dependencyFacts: [],
+      sourceConfigPathsByEntry: new Map(),
+      solutions: new Map(),
+      typeConfigs: new Map(
+        ['a', 'b'].map((name) => [
+          `source-${name}`,
+          {
+            configPath: `source-${name}`,
+            evidence: [],
+            kind: 'type',
+            localOwner: { kind: 'resolved', checker: 'tsc' },
+            finalOwner: 'tsc',
+            semanticAuthority: {
+              kind: 'locked',
+              family: 'typescript',
+              source: 'explicit',
+            },
+          },
+        ]),
+      ),
+    } satisfies CheckerOwnershipPlan,
+    governedSources: new Map([
+      [
+        'tsc',
+        new Map(
+          ['a', 'b'].map((name) => [
+            `source-${name}`,
+            {
+              configPath: `source-${name}`,
+              primaryCheckerName: 'tsc',
+              buildProjection: {
+                kind: 'declaration-project',
+                dtsConfigPath: file(`${name}.json`),
+              },
+              context: { checkerPresets: ['tsc'], extensions: ['.ts'] },
+              ownedFileNames: [],
+              declarationFileNames: [],
+              declarationReferences: new Set<string>(),
+              frameworkCapabilities: [],
+              packageRootDir: file('.'),
+              semanticAuthority: {
+                kind: 'locked',
+                family: 'typescript',
+                source: 'explicit',
+              },
+            } satisfies GovernedSourceUnit,
+          ]),
+        ),
+      ],
+    ]),
     dependencyAnalysis,
     generatedFiles: new Map(
       Object.entries(references).map(([from, to]) => [
@@ -114,14 +169,16 @@ describe('final serialized project reference admission', () => {
         fallback: 'Failed to prepare generated tsconfig graph.',
         problems: graph.dependencyAnalysis.referenceValidation!.diagnostics,
       });
-      expect(error.issues).toEqual([
-        expect.objectContaining({
-          checkerName: checkerName === 'tsc' ? 'tsc' : undefined,
-          code: 'LIMINA_GRAPH_REFERENCE_CYCLE',
-          filePath: 'a.json',
-          task: 'graph:check',
-        }),
-      ]);
+      expect(error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            checkerName: checkerName === 'tsc' ? 'tsc' : undefined,
+            code: 'LIMINA_GRAPH_REFERENCE_CYCLE',
+            filePath: 'a.json',
+            task: 'graph:check',
+          }),
+        ]),
+      );
     },
   );
   it('admits a shared DAG while excluding scheduling relations', () => {
@@ -146,6 +203,30 @@ describe('final serialized project reference admission', () => {
       diagnostics: [],
     });
   });
+  it('rejects colliding generated identities before indexing overwrites either source', () => {
+    const graph = candidate(dag());
+    graph.sourceToDts.get('tsc')!.set('source-b', file('a.json'));
+    validateRestoredReferences(graph);
+    expect(graph.dependencyAnalysis.referenceValidation).toMatchObject({
+      state: 'denied',
+      diagnostics: [
+        expect.stringContaining('Conflicting generated config identity'),
+      ],
+    });
+  });
+  it('rejects an output path colliding with the same source declaration identity', () => {
+    const graph = candidate(dag());
+    graph.configToOutputBuild
+      .get('tsc')!
+      .set('source-a', { kind: 'project', path: file('a.json') });
+    validateRestoredReferences(graph);
+    expect(graph.dependencyAnalysis.referenceValidation).toMatchObject({
+      state: 'denied',
+      diagnostics: [
+        expect.stringContaining('Conflicting generated config identity'),
+      ],
+    });
+  });
   it('cannot admit a missing serialized target', () => {
     const graph = candidate(dag());
     graph.generatedFiles.delete(file('b.json'));
@@ -153,5 +234,40 @@ describe('final serialized project reference admission', () => {
     expect(graph.dependencyAnalysis.referenceValidation?.state).toBe(
       'unavailable',
     );
+  });
+  it('rejects omitted independent targets even when every serialized reference binds', () => {
+    const references = dag();
+    references['a.json'] = [];
+    references['solution.json'] = ['a.json'];
+    const graph = candidate(references);
+    validateRestoredReferences(graph);
+    expect(graph.dependencyAnalysis.referenceValidation?.state).toBe('denied');
+    expect(
+      graph.dependencyAnalysis.referenceValidation?.diagnostics.join('\n'),
+    ).toContain(`missing ${file('b.json')}`);
+  });
+  it.each([
+    ['tsc', 'tsgo'],
+    ['tsc', 'vue-tsc'],
+    ['tsgo', 'tsc'],
+    ['tsgo', 'vue-tsc'],
+    ['vue-tsc', 'tsc'],
+    ['vue-tsc', 'tsgo'],
+  ])('rejects an acyclic %s root reaching a %s target', (from, checker) => {
+    const graph = candidate(dag());
+    graph.sourceToDts = new Map([
+      [from, new Map([['source-a', file('a.json')]])],
+      [checker, new Map([['source-b', file('b.json')]])],
+    ]);
+    graph.sourceToBuild = new Map([[from, graph.sourceToBuild.get('tsc')!]]);
+    graph.configToOutputBuild = new Map([
+      [from, graph.configToOutputBuild.get('tsc')!],
+    ]);
+    graph.checkerEntries = new Map([[from, file('entry.json')]]);
+    validateRestoredReferences(graph);
+    expect(graph.dependencyAnalysis.referenceValidation?.state).toBe('denied');
+    expect(
+      graph.dependencyAnalysis.referenceValidation?.diagnostics.join('\n'),
+    ).toContain('Cross-checker generated reference');
   });
 });

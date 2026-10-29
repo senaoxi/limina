@@ -202,3 +202,7 @@ All 12 have mechanical connections. Eleven are Strongly executable within their 
 - Portable `/` paths, code-unit sorting, snapshot schema versions, manifest legacy cleanup policy, and Svelte source maps avoiding repeated Windows drive rebasing are important supporting contracts. Their owners are the respective source/tests and the [lifecycle page](./lifecycle.md).
 - Helper names, directory depth, active context slot counts, default timeouts, and adapter version tags are implementation details. They trigger architecture review only when a change affects the core properties above.
 - Product audiences, long-term plugin extension, compatibility promises, and reasons for choosing a toolchain are human judgments. Tests must not freeze direction that has not been decided.
+
+### Source Checker entry coverage
+
+Every governed source has one execution owner; organizational solutions may have projections for multiple Checkers. Final roots must cover every target independently derived from complete source ownership and build capability, without cross-Checker references. Cold generation and warm restoration both apply reference-validation and generated-reference-binding; missing files, coverage or ownership evidence cannot grant admission. Generated-graph and reference-validation regressions cover generation and corrupted serialization respectively.

@@ -10,6 +10,8 @@
 
 [AnalysisRun](../../../packages/limina/src/application/analysis/analysis-run.ts) 和 [AnalysisProviderSet](../../../packages/limina/src/core/index.ts) 已参与生产 preflight。[ArchitectureValidationWorkflow](../../../packages/limina/src/application/validation/architecture-workflow.ts) 的 typed registry、views 与 validators 有独立实现和测试，但当前生产调用搜索没有找到它的消费者。实际 graph/source/proof 仍由各自 runner 组织阶段。因此不能画成“CLI 统一执行该 registry 的七个 validator”。这是当前接线边界；将来是否统一属于未决设计。
 
+Source config 是唯一执行归属单位。嵌套 solution 的 DFS 收集所有终端并在各 source 处剪枝；重复路径去重但保留显式入口来源。自动聚合允许混合 Checker；显式选择 solution 仍约束全部终端。空 solution 保留组织元数据，不具有 final owner，也不生成构建目标。每个 Checker root 直接覆盖其全部 source build modules；用户 solution 的生成投影仅包含该 Checker 的终端。
+
 ## 实体与 identity
 
 | 实体                       | Identity / 创建处                                                                                                                                                                                                                   | 拥有什么，不能据此推导什么                                                                                                                                |
@@ -159,7 +161,7 @@ flowchart TB
 | Relation                     | Producer / 意义                                                                                                 | 下游权限与边界                                                                               |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | raw tsconfig reference       | source config 的 TypeScript 输入关系                                                                            | 可影响原生语义与 solution closure；inferred/generated refs 不倒灌回该输入                    |
-| solution-leaf equality       | solution terminal leaf closure                                                                                  | 参与 build identity equality；不要求先有 import occurrence                                   |
+| solution discovery           | 原始 solution DAG 的终端 source 集合                                                                            | 聚合不产生同色边；显式 Checker 选择直接约束每个终端 source                                   |
 | native occurrence resolution | TS 的 module/path/type/lib/JSX channels                                                                         | 只证明该 occurrence 的解释结果；admission 与 TypeEvidence 独立                               |
 | referenceRequirement         | Native 合格编译义务；framework 自身适配器判定                                                                   | 不能由解析、owner、加载尝试或 TypeEvidence 单独生成；不代表产物可用                          |
 | 声明上下文政策               | 完整唯一 Coverage 或按消费者指定的 file/config 选择                                                             | 独立于 NativeCompilationObligation，复用 declaration-provider 投影；需要最终映射和执行验证   |

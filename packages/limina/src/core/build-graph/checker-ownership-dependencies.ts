@@ -5,7 +5,7 @@ import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import { addLocalCheckerRequirement } from './checker-ownership-evidence';
 import {
   assertLockedDependencyFacts,
-  nativeDependencyTarget,
+  declarationDependencyTarget,
 } from './checker-ownership-fact-qualification';
 import {
   collectRequirementsForConsumer,
@@ -167,50 +167,13 @@ export function applyDependencyRequirementPass(options: {
   return result;
 }
 
-function getUniqueMembershipTarget(options: {
-  fact: CheckerDependencyFact;
-  membership: FileOwnerLookup;
-}): string | null {
-  const nativeTarget = nativeDependencyTarget(options.fact);
-  return nativeTarget === undefined
-    ? legacyMembershipTarget(options)
-    : nativeTarget;
-}
-
-function legacyMembershipTarget(options: {
-  fact: CheckerDependencyFact;
-  membership: FileOwnerLookup;
-}): string | null {
-  if (options.fact.physicalTargetPath === null) return null;
-  const owners = getMembershipOwners(
-    options.membership,
-    options.fact.physicalTargetPath,
-  );
-  return owners.length === 1 ? owners[0]! : null;
-}
-
-function getMembershipOwners(
-  membership: FileOwnerLookup,
-  targetPath: string,
-): string[] {
-  return membership.get(targetPath) ?? [];
-}
-
-function getUniqueDependencyTarget(options: {
-  fact: CheckerDependencyFact;
-  membership: FileOwnerLookup;
-}): string | null {
-  const target = getUniqueMembershipTarget(options);
-  return target === options.fact.consumerConfigPath ? null : target;
-}
-
 function addOwnershipDependency(options: {
   dependencies: Map<string, Set<string>>;
   fact: CheckerDependencyFact;
   membership: FileOwnerLookup;
 }): void {
-  const target = getUniqueDependencyTarget(options);
-  if (target === null) return;
+  const target = declarationDependencyTarget(options.fact, options.membership);
+  if (target === null || target === options.fact.consumerConfigPath) return;
   options.dependencies.get(options.fact.consumerConfigPath)?.add(target);
 }
 

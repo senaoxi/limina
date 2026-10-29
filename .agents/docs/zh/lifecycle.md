@@ -201,7 +201,7 @@ Pending 受控补充发现仅属于当前 collection。[分析缓存](../../../p
 
 提前产生的循环 issue 保留按确定顺序排列的第一个 generated config 作为 `filePath`；仅当全部循环成员属于同一个 checker 时填写 `checkerName`。暂存与恢复验证都从图映射获取 checker 身份，不依赖生成路径的拼写；跨 checker 的循环不归属于某一个 checker。[Generated-graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)、[恢复引用回归](../../../packages/limina/src/__tests__/reference-validation.spec.ts)和 [detector fixture](../../../packages/limina/fixtures/detectors/graph/reference-cycle-mutual/case.mts)保护结构化诊断归属，同时保留物化前拒绝。
 
-Analysis adapter v27、Vue adapter v8、Native Program adapter v10、generated-graph identity v8 与 storage schema 12 拒绝旧声明加载及证据合同。Checker-qualified evidence 为版本 5，声明验证 receipt 为版本 3；旧记录直接冷启动，不做转换。Compiler-source inventory、request inventory 和 obligation query 分别拥有合格 replay coverage，runtime syntax cache 不会升级为编译证明。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护恢复与当前候选重新验证；被拒绝的数据回退分析。
+Analysis adapter v27、Vue adapter v8、Native Program adapter v10、generated-graph identity v9 与 storage schema 12 拒绝旧声明加载及证据合同。Checker-qualified evidence 为版本 5，声明验证 receipt 为版本 3；旧记录直接冷启动，不做转换。Compiler-source inventory、request inventory 和 obligation query 分别拥有合格 replay coverage，runtime syntax cache 不会升级为编译证明。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护恢复与当前候选重新验证；被拒绝的数据回退分析。
 
 生成的声明目录与增量缓存路径在既有 checker 和目录分区内保留完整源配置文件名，包括 `tsconfig.` 和 `.json`，因此 `tsconfig.json` 与 `tsconfig.tsconfig.json` 不再共享路径。规划阶段拒绝不同源配置占用同一路径。重新生成会更新受管配置；过期清理只依据原有所有权清单，不递归删除未登记的编译缓存或用户文件。[Namespace 守卫](../../../packages/limina/src/__tests__/artifact-namespace.spec.ts)与[图重新生成测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖路径冲突、旧所有权清单和重复规划。
 
@@ -215,7 +215,7 @@ Analysis adapter v27、Vue adapter v8、Native Program adapter v10、generated-g
 
 失败后 marker 保留，reader lease 报 recovery required；下一个 writer 用完整新 plan 恢复并验证后解除 marker。manifest-last 是协议的一环，不是 filesystem 多文件原子事务。恢复没有通用 journal 或 backup tree。Checker typecheck 在可能的重新规划完成后，从物化 receipt 选择目标，包括判断是否没有目标；其[读租约](../../../packages/limina/src/core/build-graph/materialization-read-lease.ts)在启动 checker 前检查当前产物 revision 仍匹配 receipt，漂移时明确失败并要求重新执行命令。Checker build、选定 checker build 和 managed output build 在编译器执行前使用同一 receipt/revision 握手。单独的 reader lease 不能授权旧的内存 classification 消费更新的 generated closure；其他无关产物消费者仍遵循各自协议。[回归覆盖](../../../packages/limina/src/__tests__/typecheck.spec.ts)在规划与物化之间改变 leaf 和 package root，并在取得读租约前替换 receipt。
 
-[manifest version](../../../packages/limina/src/core/build-graph/manifest-version.ts) / [ownership](../../../packages/limina/src/core/build-graph/manifest-ownership.ts) 允许旧格式仅作为 cleanup ownership ledger；当前 schema 定义在生产 types。当前检查时为 v5，v1–4 不作为当前 graph 重用。future/非法版本拒绝。ordering 使用 code-unit comparison；运行时能力描述和 live source descriptors 不因此变成持久化 graph。
+[manifest version](../../../packages/limina/src/core/build-graph/manifest-version.ts) / [ownership](../../../packages/limina/src/core/build-graph/manifest-ownership.ts) 允许旧格式仅作为 cleanup ownership ledger；当前 schema 定义在生产 types。当前格式为 v6，v1–5 不作为当前 graph 重用。future/非法版本拒绝。ordering 使用 code-unit comparison；运行时能力描述和 live source descriptors 不因此变成持久化 graph。
 
 这套 namespace materialization 管的是 managed generated artifacts。graph export 的用户目标文件、`build --raw` 的外部工具输出和 migration 有不同 writer contract；不能写成“全部磁盘写入都经过 materializer”。managed checker output 另经 [managed-mutation](../../../packages/limina/src/typecheck/managed-mutation.ts) 与 [output](../../../packages/limina/src/typecheck/output) 校验 authority。
 
@@ -302,3 +302,11 @@ Checker-qualified evidence v5 与 receipt v3 绑定源分析／执行权威、�
 恢复从当前选择与合格事实重建政策引用，随后在持久化源分析复用之外，对每个适用候选上下文重新验证一次。源 Program 数为零不代表候选 Program 数为零。候选子进程的内容读取、文件／目录查找、目录枚举和 realpath 绑定会重新绑定消费者执行范围；输入漂移使观察被拒绝。候选观察和执行准入同时绑定实际 CLI 入口内容。凭据保留实际引用／输出映射，本身不能授权执行。执行要求当前 Node、已解析的绝对 `tsc` 或 `vue-tsc` 入口，以及已验证生成闭包。工具链、目标、source/output 用途、owner 检查选项或命令覆盖变化均不能兑换旧凭据。 声明执行凭据还绑定实际构建配置与已取得资格的 build/watch 参数。在准入前追加检查选项或改选另一份配置，也不能兑换先前的候选证明。
 
 Vue 上下文身份包含 Coverage 和加载用途。graph、output、type-provider 查询不交换 Program 对象或 Symbol。后到的 provider 查询可以用必要加载许可替换唯一受管理上下文；不会建立常驻第二 Program，也不授予图遍历权。冷／热测量必须纳入候选和 provider 重建次数。增量 Checker 成功不能证明刚执行了声明检查，缓存命中也不能代替当前候选验证。
+
+## Source ownership 恢复与入口覆盖
+
+Manifest v6 将 source 单值 owner 与 solution 的 sources/checkers 元数据分开。Graph cache v9 要求 coloring 前的 seeds；恢复从当前选择、root/config 证据和绑定 facts 重建 seeds，然后重放 promotion、coloring 与 finalization。缺失证据或结果不同即冷回退；不使用缓存 finalOwner 作为 seed。Native storage schema 12 不变。
+
+最终序列化校验独立从完整 ownership 与 build projections 求 Required，并检查生成 root 的实际可达覆盖、精确 Checker 身份、绑定及环。结构失败不交付可执行产物计划；deny.refs 仍对选中闭包执行准入，不删除事实。旧 manifest 仅保留受限产物清理用途。
+
+最终绑定还会独立比对 manifest 的 Checker roots、ownership、targets 和路径映射与 source/执行投影的一致性。

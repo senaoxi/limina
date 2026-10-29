@@ -8,6 +8,7 @@ import {
   formatTypecheckOnlyBuildProblem,
   resolveBuildConfigPath,
 } from '../build/config-path';
+import { getManagedConfigCheckers } from '../build/target-descriptors';
 import {
   collectManagedDeclarationBuildTargets,
   type ManagedDeclarationBuildTarget,
@@ -62,7 +63,7 @@ function createUnmanagedConfigProblem(options: {
 function createSelectionProblem(options: {
   availableCheckers: readonly string[];
   checker: BuildCheckerPreset | undefined;
-  managedTargets: readonly ManagedDeclarationBuildTarget[];
+  managedCheckers: readonly ResolvedCheckerConfig[];
   projectRootDir: string;
   sourceConfigPath: string;
 }): string {
@@ -74,9 +75,9 @@ function createSelectionProblem(options: {
       sourceConfigPath: options.sourceConfigPath,
     });
   }
-  if (options.managedTargets.length > 0) {
+  if (options.managedCheckers.length > 0) {
     return formatTypecheckOnlyBuildProblem({
-      checkers: options.managedTargets.map(({ checker }) => checker),
+      checkers: options.managedCheckers,
       projectRootDir: options.projectRootDir,
       sourceConfigPath: options.sourceConfigPath,
     });
@@ -97,6 +98,10 @@ export function selectManagedCheckerBuildTargets(options: {
     cwd: options.cwd,
     rootDir: options.projectRootDir,
   });
+  const solution =
+    options.generatedGraph.ownershipPlan.solutions.get(sourceConfigPath);
+  if (solution?.sourceConfigPaths.length === 0)
+    return { kind: 'selected', selected: [], sourceConfigPath };
   const managedTargets = collectManagedDeclarationBuildTargets({
     allCheckers: options.allCheckers,
     generatedGraph: options.generatedGraph,
@@ -117,7 +122,10 @@ export function selectManagedCheckerBuildTargets(options: {
         buildCapable.map(({ checker }) => checker.name),
       ),
       checker: options.checker,
-      managedTargets,
+      managedCheckers: getManagedConfigCheckers({
+        ...options,
+        sourceConfigPath,
+      }),
       projectRootDir: options.projectRootDir,
       sourceConfigPath,
     }),

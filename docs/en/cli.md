@@ -140,7 +140,7 @@ For Applied verification, separate fresh workers use the confirmed real config, 
 
 The terminal summary includes isolation, outside-reference removal, comparison completeness, diagnostic and failed/skipped-group counts, and the audit path. Planning phases and output-candidate counts expose progress. The audit report is `.limina/migration/latest.json`. It records targets, isolation, pruned relations, comparison completeness, output decisions, writes and final verification, phase timings and fatal attempts when the report location remains writable. Report publication failure warns without undoing committed configs. Neither core nor later migration runs use this report as input authority.
 
-Migration does not install framework dependencies, run `astro sync`, or rewrite framework sources. Generated graphs retain manifest version 5; no migration readiness or partial-graph state is persisted there.
+Migration does not install framework dependencies, run `astro sync`, or rewrite framework sources. Generated graphs use manifest version 6; no migration readiness or partial-graph state is persisted there.
 
 ### limina check [pipeline]
 

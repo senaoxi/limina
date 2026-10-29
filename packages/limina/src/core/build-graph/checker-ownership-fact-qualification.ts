@@ -31,3 +31,18 @@ export function nativeDependencyTarget(
     ? undefined
     : qualifiedNativeDependencyTarget(evidence);
 }
+
+/**
+Only a qualified declaration relation may contribute an execution-color edge.
+*/
+export function declarationDependencyTarget(
+  fact: CheckerDependencyFact,
+  membership: { get(path: string): string[] | undefined },
+): string | null {
+  if (fact.referenceRequirement == null) return null;
+  const native = nativeDependencyTarget(fact);
+  if (native !== undefined) return native;
+  if (fact.physicalTargetPath === null) return null;
+  const owners = membership.get(fact.physicalTargetPath);
+  return owners?.length === 1 ? owners[0]! : null;
+}

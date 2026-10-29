@@ -1,7 +1,7 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
-import { collectReferencePathInfosForConfig } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
+import { assertGeneratedManifestBinding } from './generated-manifest-binding';
 import { readImplicitReferences } from './generated/config-readers';
 import type {
   GeneratedBuildModule,
@@ -19,6 +19,7 @@ type ReferenceGraph = Pick<
   | 'configToOutputBuild'
   | 'checkerEntries'
   | 'ownershipPlan'
+  | 'manifest'
 >;
 
 function references(graph: ReferenceGraph, file: string): Set<string> {
@@ -81,24 +82,23 @@ class GeneratedReferenceBinding {
     return output.path;
   }
   #sourceReferences(source: string): string[] {
-    const collection = collectReferencePathInfosForConfig(
-      this.#config.rootDir,
-      source,
-      this.#config.virtualFiles,
+    return (
+      this.#graph.ownershipPlan.solutions.get(source)?.sourceConfigPaths ?? []
     );
-    if (collection.problems.length > 0)
-      throw new Error(collection.problems.join('\n'));
-    return collection.references.map((reference) => reference.resolvedPath);
   }
   #solutionReferences(identity: ProjectIdentity): string[] {
-    return this.#sourceReferences(identity.source).map((source) => {
-      const module = this.#graph.sourceToBuild
-        .get(identity.checker)
-        ?.get(source);
-      if (module === undefined)
-        throw new Error(`Unmapped solution member: ${source}`);
-      return module.path;
-    });
+    return this.#sourceReferences(identity.source)
+      .filter(
+        (source) =>
+          this.#graph.ownershipPlan.typeConfigs.get(source)?.finalOwner ===
+          identity.checker,
+      )
+      .map((source) => {
+        const module = this.#build({ checker: identity.checker, source });
+        if (module === undefined)
+          throw new Error(`Unmapped solution member: ${source}`);
+        return module.path;
+      });
   }
   #assertImplicitReferences(
     identity: ProjectIdentity,
@@ -125,6 +125,31 @@ class GeneratedReferenceBinding {
   }
   #assertLeaf(identity: ProjectIdentity, unit: GovernedSourceUnit): void {
     const declaration = this.#declaration(identity);
+    if (
+      unit.configPath !== identity.source ||
+      unit.primaryCheckerName !== identity.checker
+    )
+      throw new Error(
+        `Inconsistent governed source identity: ${identity.source}`,
+      );
+    const projection = unit.buildProjection;
+    if (
+      'dtsConfigPath' in projection &&
+      (declaration !== projection.dtsConfigPath ||
+        this.#graph.dtsToSource.get(identity.checker)?.get(declaration) !==
+          identity.source)
+    )
+      throw new Error(
+        `Unbound source declaration projection: ${identity.source}`,
+      );
+    const buildPath =
+      'buildConfigPath' in projection
+        ? projection.buildConfigPath
+        : 'dtsConfigPath' in projection
+          ? projection.dtsConfigPath
+          : undefined;
+    if (buildPath !== undefined && this.#build(identity)?.path !== buildPath)
+      throw new Error(`Unbound source build projection: ${identity.source}`);
     if (declaration === undefined) return;
     this.#assertReferences(declaration, unit.declarationReferences);
     this.#assertImplicitReferences(identity, unit);
@@ -158,9 +183,15 @@ class GeneratedReferenceBinding {
   ): string[] {
     if (seen.has(identity.source)) return [];
     seen.add(identity.source);
-    return this.#sourceReferences(identity.source).flatMap((source) =>
-      this.#outputMembers({ checker: identity.checker, source }, seen),
-    );
+    return this.#sourceReferences(identity.source)
+      .filter(
+        (source) =>
+          this.#graph.ownershipPlan.typeConfigs.get(source)?.finalOwner ===
+          identity.checker,
+      )
+      .flatMap((source) =>
+        this.#outputMembers({ checker: identity.checker, source }, seen),
+      );
   }
   #outputMembers(identity: ProjectIdentity, seen: Set<string>): string[] {
     const output = this.#output(identity);
@@ -178,12 +209,6 @@ class GeneratedReferenceBinding {
         this.#outputSolutionReferences(identity, new Set()),
       );
   }
-  #entryMember(checker: string, entry: [string, string]): string[] {
-    const [source, owner] = entry;
-    if (owner !== checker) return [];
-    const module = this.#build({ checker, source });
-    return module === undefined ? [] : [module.path];
-  }
   #assertLeaves(): void {
     for (const [checker, units] of this.#graph.governedSources)
       for (const [source, unit] of units)
@@ -199,14 +224,65 @@ class GeneratedReferenceBinding {
       for (const [source, module] of sources)
         this.#assertOutputSolution({ checker, source }, module);
   }
+  #assertSourceMaps(): void {
+    for (const [checker, paths] of this.#graph.sourceToDts) {
+      const inverse = this.#graph.dtsToSource.get(checker);
+      if (inverse?.size !== paths.size)
+        throw new Error(`Declaration mappings are not bijective: ${checker}`);
+      for (const [source, declaration] of paths)
+        if (
+          this.#graph.ownershipPlan.typeConfigs.get(source)?.finalOwner !==
+            checker ||
+          inverse.get(declaration) !== source
+        )
+          throw new Error(
+            `Unbound declaration source identity: ${checker}: ${source}`,
+          );
+    }
+    for (const mappings of [
+      this.#graph.sourceToBuild,
+      this.#graph.configToOutputBuild,
+    ])
+      for (const [checker, modules] of mappings)
+        for (const [source, module] of modules)
+          this.#assertModuleOwner({ checker, source }, module);
+  }
+  #assertModuleOwner(
+    identity: ProjectIdentity,
+    module: GeneratedBuildModule,
+  ): void {
+    const plan = this.#graph.ownershipPlan;
+    if (plan.typeConfigs.get(identity.source)?.finalOwner === identity.checker)
+      return;
+    const solution = plan.solutions.get(identity.source);
+    if (
+      module.kind === 'solution' &&
+      solution?.sourceConfigPaths.some(
+        (source) =>
+          plan.typeConfigs.get(source)?.finalOwner === identity.checker,
+      )
+    )
+      return;
+    throw new Error(
+      `Unbound generated module owner: ${identity.checker}: ${identity.source}`,
+    );
+  }
   assertBound(): void {
+    assertGeneratedManifestBinding(this.#graph, this.#config.rootDir);
+    this.#assertSourceMaps();
     this.#assertLeaves();
     this.#assertSolutions();
     this.#assertOutputSolutions();
     for (const [checker, entry] of this.#graph.checkerEntries) {
-      const expected = [
-        ...this.#graph.ownershipPlan.entryOwnerByConfigPath,
-      ].flatMap((member) => this.#entryMember(checker, member));
+      const expected = this.#graph.ownershipPlan.typeConfigs
+        .values()
+        .filter((state) => state.finalOwner === checker)
+        .map((state) => {
+          const module = this.#build({ checker, source: state.configPath });
+          if (module === undefined)
+            throw new Error(`Missing source build target: ${state.configPath}`);
+          return module.path;
+        });
       this.#assertReferences(entry, expected);
     }
   }
@@ -224,4 +300,11 @@ export function hasBoundGeneratedReferences(
   } catch {
     return false;
   }
+}
+
+export function assertGeneratedReferenceBinding(
+  graph: ReferenceGraph,
+  config: ResolvedLiminaInputs,
+): void {
+  new GeneratedReferenceBinding(graph, config).assertBound();
 }

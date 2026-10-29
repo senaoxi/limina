@@ -131,7 +131,7 @@ It mainly covers the following categories.
 
 When retained checker evidence requires a relation to another managed project and an eligible provider exists, the generated declaration build config should contain that reference. `graph:check` reports missing required references and checks whether generated references have inferred evidence or an explicit allowance. `liminaOptions.implicitRefs` declares otherwise unobservable relations; `allow.refs` can explain permitted extra references but does not itself create them.
 
-Semantic authority and final checker owner have different roles. Authority fixes how the source config is interpreted; final ownership selects its checker execution lane. Build coloring or solution constraints can assign `vue-tsc` to an ordinary TypeScript config without changing its frozen TypeScript semantics.
+Semantic authority and final checker owner have different roles. Authority fixes how the source config is interpreted; final ownership selects its checker execution lane. Declaration-component coloring can assign `vue-tsc` to an ordinary TypeScript config without changing its frozen TypeScript semantics.
 
 Use `liminaOptions.implicitRefs` to add a relationship that static analysis cannot see. Graph-rule allowances only explain existing extra references. Neither replaces deny rules or resolution evidence.
 

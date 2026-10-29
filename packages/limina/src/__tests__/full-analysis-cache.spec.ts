@@ -1178,6 +1178,13 @@ describe('production graph snapshots and publication', () => {
   );
 
   it.each([
+    'old-graph-key',
+    'missing-coloring-inputs',
+    'forged-coloring-seed',
+    'forged-manifest-owner',
+    'forged-manifest-roots',
+    'forged-manifest-targets',
+    'missing-root-member',
     'foreign-target',
     'missing-native-proof',
     'missing-core-work',
@@ -1235,6 +1242,47 @@ describe('production graph snapshots and publication', () => {
       const fact = data.ownershipPlan.dependencyFacts[0]!;
       expect(fact.nativeEvidence).toBeDefined();
       switch (corruption) {
+        case 'old-graph-key': {
+          const key = Object.keys(snapshot.graphs)[0]!;
+          delete snapshot.graphs[key];
+          snapshot.graphs['generated-graph-declaration-governance-v8'] = record;
+          break;
+        }
+        case 'forged-manifest-roots': {
+          data.manifest.checkers.tsc!.roots = [];
+          break;
+        }
+        case 'forged-manifest-targets': {
+          data.manifest.targets.build = [];
+          break;
+        }
+        case 'forged-manifest-owner': {
+          const source = data.manifest.ownership.configs.find(
+            (entry) => entry.role === 'type',
+          )!;
+          if (source.role === 'type') source.owner = 'tsgo';
+          break;
+        }
+        case 'missing-root-member': {
+          const root = data.checkerEntries.get('tsc')!;
+          data.generatedFiles = new Map(data.generatedFiles).set(
+            root,
+            JSON.stringify({ references: [] }),
+          );
+          data.manifest.checkers.tsc!.roots = [];
+          break;
+        }
+        case 'missing-coloring-inputs': {
+          delete data.ownershipPlan.coloringInputs;
+          break;
+        }
+        case 'forged-coloring-seed': {
+          const seed = data.ownershipPlan
+            .coloringInputs!.seeds.values()
+            .next().value!;
+          seed.localOwner = { kind: 'resolved', checker: 'tsgo' };
+          break;
+        }
         case 'missing-generated-reference':
         case 'extra-generated-reference':
         case 'redirected-generated-reference':
@@ -1301,12 +1349,13 @@ describe('production graph snapshots and publication', () => {
       record.data = encodeData(data);
       writeStoredAnalysisSnapshot(store.path, snapshot);
       const rejected = f.execute<GraphRunResult>(run);
-      expect(rejected.events).toContainEqual(
-        expect.objectContaining({
-          kind: 'fallback-graph-dto-invalid',
-          count: 1,
-        }),
-      );
+      if (corruption !== 'old-graph-key')
+        expect(rejected.events).toContainEqual(
+          expect.objectContaining({
+            kind: 'fallback-graph-dto-invalid',
+            count: 1,
+          }),
+        );
       expect(rejected.events).not.toContainEqual(
         expect.objectContaining({ kind: 'graphHits', count: 1 }),
       );

@@ -2101,7 +2101,97 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('propagates one framework constraint across overlapping solutions through a shared pending leaf', async () => {
+  it('projects nested shared solutions into independent checker roots and retains empty containers', async () => {
+    const fixture = await createFixture({
+      'packages/a/tsconfig.json': json({
+        include: [],
+        references: [
+          { path: '../b' },
+          { path: '../d/tsconfig.lib.json' },
+          { path: '../e' },
+          { path: '../b' },
+        ],
+      }),
+      'packages/b/tsconfig.json': json({
+        include: [],
+        references: [{ path: '../c/tsconfig.lib.json' }],
+      }),
+      'packages/s/tsconfig.json': json({
+        include: [],
+        references: [{ path: '../c/tsconfig.lib.json' }],
+      }),
+      'packages/e/tsconfig.json': json({ include: [], references: [] }),
+      'packages/c/tsconfig.lib.json': json({ include: ['src/**/*'] }),
+      'packages/c/src/App.vue':
+        '<script setup lang="ts">const value = 1;</script><template>{{value}}</template>',
+      'packages/d/tsconfig.lib.json': json({ include: ['src/**/*.ts'] }),
+      'packages/d/src/index.ts': 'export const value = 1;',
+    });
+    try {
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        scope: { checkers: { auto: {} } },
+      });
+      expect(
+        result.ownershipPlan.solutions.get(
+          fixture.path('packages/a/tsconfig.json'),
+        )?.sourceConfigPaths,
+      ).toEqual([
+        fixture.path('packages/c/tsconfig.lib.json'),
+        fixture.path('packages/d/tsconfig.lib.json'),
+      ]);
+      expect(result.manifest.ownership.solutions).toContainEqual({
+        config: 'packages/e/tsconfig.json',
+        sources: [],
+        checkers: [],
+      });
+      for (const [checker, source] of [
+        ['tsc', 'd'],
+        ['vue-tsc', 'c'],
+      ] as const) {
+        const entry = result.checkerEntries.get(checker)!;
+        const references = JSON.parse(
+          result.generatedFiles.get(entry)!,
+        ).references;
+        expect(references).toHaveLength(1);
+        expect(references[0].path).toContain(
+          `packages/${source}/tsconfig.lib.dts.json`,
+        );
+        expect(result.governedSources.get(checker)?.size).toBe(1);
+        expect(
+          result.sourceToBuild
+            .get(checker)
+            ?.has(fixture.path('packages/a/tsconfig.json')),
+        ).toBe(true);
+      }
+      expect(result.dependencyEdges).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('retains an entirely empty selected solution without a checker owner or build entry', async () => {
+    const fixture = await createFixture({
+      'packages/empty/tsconfig.json': json({ include: [], references: [] }),
+    });
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      expect(result.manifest.ownership.solutions).toEqual([
+        {
+          config: 'packages/empty/tsconfig.json',
+          sources: [],
+          checkers: [],
+          declaredChecker: 'tsc',
+        },
+      ]);
+      expect(result.checkerEntries.size).toBe(0);
+      expect(result.governedSources.size).toBe(0);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('isolates framework ownership across overlapping solutions with a shared source', async () => {
     const fixture = await createFixture({
       'packages/a/src/App.svelte': '<h1>Svelte</h1>\n',
       'packages/a/tsconfig.lib.json': json({ include: ['src/**/*'] }),
@@ -2139,17 +2229,21 @@ describe('prepareGeneratedTsconfigGraph', () => {
         expect.arrayContaining([
           expect.objectContaining({
             config: 'packages/b/tsconfig.lib.json',
-            owner: 'svelte-check',
+            owner: 'tsc',
           }),
           expect.objectContaining({
             config: 'packages/shared/tsconfig.lib.json',
-            owner: 'svelte-check',
+            owner: 'tsc',
           }),
         ]),
       );
       expect(
-        new Set(result.manifest.ownership.solutions.map(({ owner }) => owner)),
-      ).toEqual(new Set(['svelte-check']));
+        new Set(
+          result.manifest.ownership.solutions.flatMap(
+            ({ checkers }) => checkers,
+          ),
+        ),
+      ).toEqual(new Set(['svelte-check', 'tsc']));
     } finally {
       await fixture.cleanup();
     }
@@ -5032,7 +5126,7 @@ export default component;
         references?: { path: string }[];
       };
 
-      expect(result.manifest.version).toBe(5);
+      expect(result.manifest.version).toBe(6);
       expect(result.manifest.checkers.tsc?.configToOutputBuild).toMatchObject({
         [sourcePath]: {
           kind: 'project',
@@ -5860,10 +5954,10 @@ export default component;
 
       expect(buildConfig.references).toEqual([
         {
-          path: './solutions/packages/pkg/tsconfig.build.json',
+          path: './projects/packages/pkg/tsconfig.lib.dts.json',
         },
         {
-          path: './solutions/tsconfig.build.json',
+          path: './projects/packages/pkg/tsconfig.test.dts.json',
         },
       ]);
 
@@ -5881,7 +5975,10 @@ export default component;
 
       expect(rootSolutionConfig.references).toEqual([
         {
-          path: './packages/pkg/tsconfig.build.json',
+          path: '../projects/packages/pkg/tsconfig.lib.dts.json',
+        },
+        {
+          path: '../projects/packages/pkg/tsconfig.test.dts.json',
         },
       ]);
 
@@ -6125,7 +6222,7 @@ export default component;
     }
   });
 
-  it('rejects same-preset checkers that share a solution-expanded leaf', async () => {
+  it('preserves overlapping explicit sources and rejects different native checker engines', async () => {
     const fixture = await createFixture({
       'packages/one/tsconfig.json': json({
         files: [],
@@ -6157,6 +6254,32 @@ export default component;
     });
 
     try {
+      const shared = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: {
+            tsc: {
+              include: [
+                'packages/one/tsconfig.json',
+                'packages/two/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+      const source = fixture.path('packages/shared/tsconfig.lib.json');
+      expect(shared.governedSources.get('tsc')?.size).toBe(1);
+      expect(
+        shared.ownershipPlan.typeConfigs
+          .get(source)
+          ?.evidence.filter((entry) => entry.source === 'explicit')
+          .map((entry) => entry.configPath)
+          .sort((left, right) => left.localeCompare(right)),
+      ).toEqual([
+        fixture.path('packages/one/tsconfig.json'),
+        fixture.path('packages/two/tsconfig.json'),
+      ]);
       await expect(
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
@@ -6490,6 +6613,14 @@ export default component;
 
   it('rejects different build checker identities in one import component', async () => {
     const fixture = await createFixture({
+      'packages/app-entry/tsconfig.json': json({
+        include: [],
+        references: [{ path: '../app' }],
+      }),
+      'packages/theme-entry/tsconfig.json': json({
+        include: [],
+        references: [{ path: '../theme' }],
+      }),
       'packages/app/src/index.ts':
         "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
       'packages/app/tsconfig.json': json({
@@ -6516,22 +6647,29 @@ export default component;
     });
 
     try {
-      await expect(
-        prepareGeneratedTsconfigGraph({
-          ...fixture.config,
-          scope: {
-            regions: fixture.config.scope?.regions,
-            checkers: {
-              tsc: {
-                include: ['packages/app/tsconfig.json'],
-              },
-              tsgo: {
-                include: ['packages/theme/tsconfig.json'],
-              },
+      const preparation = prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: {
+            tsc: {
+              include: ['packages/app-entry/tsconfig.json'],
+            },
+            tsgo: {
+              include: ['packages/theme-entry/tsconfig.json'],
             },
           },
-        }),
-      ).rejects.toThrow('Build checker ownership conflict');
+        },
+      });
+      await expect(preparation).rejects.toThrow(
+        'Build checker ownership conflict',
+      );
+      await expect(preparation).rejects.toThrow(
+        'origin: explicit at packages/app-entry/tsconfig.json',
+      );
+      await expect(preparation).rejects.toThrow(
+        'origin: explicit at packages/theme-entry/tsconfig.json',
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -8032,7 +8170,7 @@ export default className;
             'utf8',
           ),
         ) as { version: number };
-        expect(manifest.version).toBe(5);
+        expect(manifest.version).toBe(6);
       } finally {
         await fixture.cleanup();
       }
@@ -8048,7 +8186,7 @@ export default className;
       manifest: json({
         generatedBy: 'limina',
         ownedArtifacts: ['manifest.json'],
-        version: 6,
+        version: 7,
       }),
       name: 'a future version',
     },
@@ -9104,7 +9242,7 @@ describe('ambient references and compiler membership', () => {
     const fixture = await createFixture({
       '.limina/manifest.json': json({
         generatedBy: 'limina',
-        version: 5,
+        version: 6,
         ownedArtifacts: [owned, 'manifest.json'],
       }),
       [`.limina/${owned}`]: 'old managed cache',

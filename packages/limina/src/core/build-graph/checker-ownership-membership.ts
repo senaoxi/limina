@@ -6,7 +6,6 @@ import type {
   CheckerDependencyFact,
   CheckerEvidence,
   CheckerOwnershipPlan,
-  TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import { FileOwnerLookup } from './file-owner-lookup';
 
@@ -31,16 +30,6 @@ function frameworkCheckerOrNull(checker: CheckerName): CheckerName | null {
   return frameworkCheckers.has(checker) ? checker : null;
 }
 
-function getPendingFrameworkConstraint(
-  state: TypeConfigOwnershipState,
-): CheckerName | null {
-  return state.constraintCandidates.size === 1
-    ? frameworkCheckerOrNull(
-        state.constraintCandidates.keys().next().value as CheckerName,
-      )
-    : null;
-}
-
 function getFrameworkDomain(
   plan: CheckerOwnershipPlan,
   configPath: string,
@@ -49,7 +38,7 @@ function getFrameworkDomain(
   if (state === undefined) return null;
   return state.localOwner.kind === 'resolved'
     ? frameworkCheckerOrNull(state.localOwner.checker)
-    : getPendingFrameworkConstraint(state);
+    : null;
 }
 
 function createRequirementEvidence(options: {

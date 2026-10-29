@@ -118,7 +118,7 @@ Limina 为每个项目分别记录：
 
 ::: details 检查器归属与依赖证据的判定边界
 
-只有显式检查器选择、检查器专属配置证据、有效根文件证据，以及已确认的待定框架依赖可以锁定语义判定依据。Limina 收集完待定依赖需求后会冻结该依据。Vue 检查器提升、聚合配置约束、声明连通分量的检查器身份传播、TypeScript 默认选择与 `finalOwner` 可以选择或传播构建检查器归属，但不能重新解释项目依赖。因此，采用 TypeScript 语义的项目可以在构建检查器身份传播后由 `vue-tsc` 构建，同时继续使用 TypeScript 模块语义。
+只有显式检查器选择、检查器专属配置证据、有效根文件证据，以及已确认的待定框架依赖可以锁定语义判定依据。Limina 收集完待定依赖需求后会冻结该依据。Vue 检查器提升、声明连通分量的检查器身份传播、TypeScript 默认选择与 `finalOwner` 可以选择或传播构建检查器归属，但不能重新解释项目依赖。因此，采用 TypeScript 语义的项目可以在构建检查器身份传播后由 `vue-tsc` 构建，同时继续使用 TypeScript 模块语义。
 
 检查器归属尚未确定的自动范围先使用 TypeScript 语义。Limina 从已解析的 TypeScript 项目及其 TypeScript AST 枚举依赖，再对每条源于用户源码的依赖执行检查器类型证据校验。`ambient`、`concrete-declaration` 与 `checker-source` 证据都停在 TypeScript 边界；不受支持的语义证据会使分析失败并停止。只有 `missing` 证据可以调用 Oxc，而且 Oxc 在这里仅用于在归属推断时识别物理框架源码候选。候选必须恰好属于一个受治理配置的有效文件集合，并且只属于一个框架语义域。普通 TypeScript 文件、资源、被排除文件与有歧义的目标都不能用来确定检查器身份。Limina 会先收集完整需求集合，再确定待定的检查器归属，因此 Astro/Svelte/Vue 冲突是确定性的，不受导入顺序影响。
 
@@ -212,7 +212,7 @@ Limina 会区分声明依赖和框架调度依赖：
 
 提供方会先于消费方运行。纯框架调度循环会作为一个调度连通分量执行；声明循环仍然失败。
 
-每条成功生成的 `declaration-provider`（声明提供者）边两端都具有完全相同的 `tsc`、`tsgo` 或 `vue-tsc` 身份，并在版本 5 的生成清单中记录 `cacheReuse: "reusable"`。因此，规范声明关系会在生成配置与目标物化前，把检查器身份传播到整个构建连通分量。需要共享声明缓存的一组相连配置已包含不同构建检查器身份时，`graph prepare` 会失败，不再保留跨检查器引用，也不再发出缓存反复失效警告。`framework-schedule` 不是编译器项目引用，因此仍可跨检查器身份。
+每条成功生成的 `declaration-provider`（声明提供者）边两端都具有完全相同的 `tsc`、`tsgo` 或 `vue-tsc` 身份，并在版本 6 的生成清单中记录 `cacheReuse: "reusable"`。因此，规范声明关系会在生成配置与目标物化前，把检查器身份传播到整个构建连通分量。需要共享声明缓存的一组相连配置已包含不同构建检查器身份时，`graph prepare` 会失败，不再保留跨检查器引用，也不再发出缓存反复失效警告。`framework-schedule` 不是编译器项目引用，因此仍可跨检查器身份。
 
 ## 从别名与 `preset` 迁移 {#从-alias-与-preset-迁移}
 
@@ -257,3 +257,9 @@ checkers: {
 `vue-tsc` 负责的项目可以为源和输出配置不同的 `target`。Limina 使用独立 Vue 语义 context 观察有效输出编译选项，覆盖原生 TypeScript 文件及映射后的 Vue 组件。输出依赖必须被既有输出引用覆盖，不会为了使输出通过而补充源码引用。不支持的观察或未覆盖的输出依赖仍会停止图准备。
 
 明确项目引用的预期声明输出可以尚未存在；实际 `tsc -b` 按依赖顺序生成它们。此许可不适用于任意缺失声明，也不会以陈旧输出补充源码发现。
+
+### Solution 与 Checker 分组
+
+自动发现的 solution 可以包含由不同 Checker 执行的独立项目。Limina 穿过嵌套 solution 收集所有终端 source config，并按最终归属生成独立的 Checker 构建入口；聚合关系本身不要求项目使用同一个 Checker。真实声明构建依赖仍必须满足精确 Checker 身份和缓存兼容性约束。
+
+显式通过 `scope.checkers.<checker>.include` 选择 solution，仍表示其全部终端 source config 必须使用指定 Checker。不同显式入口对共享 source 提出冲突要求时会报错。合法空 solution 不产生构建目标；对它执行 `limina checker build <config>` 不启动 Checker。

@@ -33,7 +33,7 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-const key = 'generated-graph-declaration-governance-v8';
+const key = 'generated-graph-declaration-governance-v9';
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
@@ -98,7 +98,7 @@ async function readVersionedGraph(
     restoredGeneration(options),
   );
   if (record === undefined) return undefined;
-  const data = decodeBoundGraph(options, record);
+  const data = await decodeBoundGraph(options, record);
   if (data === undefined) {
     delete options.cache.graphs[key];
     options.cache.fallback('graph-dto-invalid');
@@ -107,12 +107,12 @@ async function readVersionedGraph(
   options.cache.increment('graphHits');
   return data;
 }
-function decodeBoundGraph(
+async function decodeBoundGraph(
   options: GraphRestoreInput,
   record: NonNullable<
     Awaited<ReturnType<NativeAnalysisCache['restoreGraphRecord']>>
   >,
-): CachedGraphData | undefined {
+): Promise<CachedGraphData | undefined> {
   const stored = decodeGraph(record.data, options.cache);
   return isRestorableGraph(stored, options)
     ? bindAndRestoreGraph(options, { stored, record })
@@ -130,7 +130,7 @@ function isRestorableGraph(
     ].every(Boolean)
   );
 }
-function bindAndRestoreGraph(
+async function bindAndRestoreGraph(
   options: GraphRestoreInput,
   input: {
     stored: StoredGraphData;
@@ -138,7 +138,7 @@ function bindAndRestoreGraph(
       Awaited<ReturnType<NativeAnalysisCache['restoreGraphRecord']>>
     >;
   },
-): CachedGraphData | undefined {
+): Promise<CachedGraphData | undefined> {
   const { stored, record } = input;
   return bindCachedGraph({
     ...options,

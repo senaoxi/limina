@@ -30,7 +30,6 @@ import {
   freezeSemanticAuthorities,
   validateFrozenSemanticAuthorities,
 } from './checker-semantic-authority';
-import { getUniqueConstraint } from './checker-solution-constraints';
 import { coreCollectionRun } from './core-collection-run';
 import { createGeneratedGraphStructuredError } from './problems';
 import type {
@@ -40,9 +39,8 @@ import type {
 
 function hasVueRequirement(state: TypeConfigOwnershipState): boolean {
   return (
-    (state.localOwner.kind === 'resolved' &&
-      state.localOwner.checker === 'vue-tsc') ||
-    getUniqueConstraint(state) === 'vue-tsc'
+    state.localOwner.kind === 'resolved' &&
+    state.localOwner.checker === 'vue-tsc'
   );
 }
 
@@ -121,7 +119,7 @@ function runVuePromotion(options: {
   });
 }
 
-function runDependencyRequirements(options: {
+export function runDependencyRequirements(options: {
   config: ResolvedLiminaInputs;
   discovery: CheckerOwnershipDiscovery;
 }): void {
@@ -200,6 +198,25 @@ export async function resolveCheckerOwnership(options: {
     problems: discovery.collectionProblems,
   });
   assertCollectedExecution(options.projectDependencyCaches);
+  finalizeLockedOwnership({ config: options.config, discovery });
+  return {
+    ownershipPlan: discovery.plan,
+    selections: createOwnershipSelections({
+      config: options.config,
+      discovery,
+    }),
+  };
+}
+
+export function finalizeLockedOwnership(options: {
+  config: ResolvedLiminaInputs;
+  discovery: CheckerOwnershipDiscovery;
+}): void {
+  const { discovery } = options;
+  discovery.plan.coloringInputs = {
+    version: 1,
+    seeds: structuredClone(discovery.plan.typeConfigs),
+  };
   runVuePromotion({ config: options.config, discovery });
   assertOwnershipPhase({
     config: options.config,
@@ -231,13 +248,6 @@ export async function resolveCheckerOwnership(options: {
       states: discovery.plan.typeConfigs.values(),
     }),
   });
-  return {
-    ownershipPlan: discovery.plan,
-    selections: createOwnershipSelections({
-      config: options.config,
-      discovery,
-    }),
-  };
 }
 
 async function collectFrozenDependencyFacts(

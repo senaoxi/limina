@@ -110,6 +110,7 @@ function createExplicitOwnerByEntryPath(options: {
 }
 
 export async function discoverCheckerOwnership(options: {
+  restoredSourceCoverage?: SourceConfigCoverageIndex;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
@@ -120,10 +121,12 @@ export async function discoverCheckerOwnership(options: {
     config: options.config,
     sourceConfigPaths: options.workspaceSourceConfigPaths,
   });
-  const baseline = prepareNativeSourceBaseline({
-    ...options,
-    entries: activeEntryPaths,
-  });
+  const sourceCoverage =
+    options.restoredSourceCoverage ??
+    prepareNativeSourceBaseline({
+      ...options,
+      entries: activeEntryPaths,
+    }).coverageIndexes[0];
   const collectionProblems: string[] = [];
   const explicitOwnerByEntryPath = createExplicitOwnerByEntryPath({
     problems: collectionProblems,
@@ -167,7 +170,7 @@ export async function discoverCheckerOwnership(options: {
   registerCoreWork(options.projectDependencyCaches, projectByConfigPath);
   return {
     collectionProblems,
-    sourceConfigCoverage: baseline.coverageIndexes[0],
+    sourceConfigCoverage: sourceCoverage,
     activatedRegions: options.activatedRegions,
     activeEntryPaths: managedEntryPaths,
     autoChecker: getAutoCheckerConfig(options.config.scope?.checkers).useTsgo
@@ -185,35 +188,38 @@ export function createOwnershipSelections(options: {
   config: ResolvedLiminaInputs;
 }): ResolvedCheckerEntrySelection[] {
   const entriesByChecker = new Map<CheckerName, string[]>();
-  for (const entryPath of options.discovery.activeEntryPaths) {
-    const checker = getRequiredEntryChecker(options.discovery.plan, entryPath);
-    addCheckerEntry(entriesByChecker, checker, entryPath);
+  for (const state of options.discovery.plan.typeConfigs.values()) {
+    if (state.finalOwner === undefined)
+      throw new Error(`Missing source owner: ${state.configPath}`);
+    addCheckerEntry(entriesByChecker, state.finalOwner, state.configPath);
   }
   return [...entriesByChecker]
     .sort(([left], [right]) => compareCodeUnits(left, right))
     .map(([name, entries]) => {
       entries.sort(compareCodeUnits);
+      const origins = [...options.discovery.plan.sourceConfigPathsByEntry]
+        .filter(([, sources]) =>
+          sources.some(
+            (source) =>
+              options.discovery.plan.typeConfigs.get(source)?.finalOwner ===
+              name,
+          ),
+        )
+        .map(([entry]) => entry)
+        .sort(compareCodeUnits);
       return {
+        sourceConfigPaths: entries,
         checker: createResolvedChecker({
-          entries,
+          entries: origins,
           name,
           rootDir: options.config.rootDir,
         }),
         selection: {
-          effectiveEntryPaths: entries,
-          includedEntryPaths: entries,
+          effectiveEntryPaths: origins,
+          includedEntryPaths: origins,
         },
       };
     });
-}
-
-function getRequiredEntryChecker(
-  plan: CheckerOwnershipPlan,
-  entryPath: string,
-): CheckerName {
-  const checker = plan.entryOwnerByConfigPath.get(entryPath);
-  if (checker !== undefined) return checker;
-  throw new Error(`Missing final checker owner for entry ${entryPath}.`);
 }
 
 function addCheckerEntry(

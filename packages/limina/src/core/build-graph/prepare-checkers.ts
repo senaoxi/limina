@@ -5,6 +5,7 @@ import {
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import { createSolutionBuildModule } from './build-modules';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import { getGeneratedCheckerEntryPath } from './generated/paths';
 import { createGovernedSourceUnit } from './governed-sources';
@@ -217,7 +218,9 @@ export function prepareCheckerGraph(options: {
     checkerPreset: parsing.checkerPreset,
     discoveryExtensions: parsing.discoveryExtensions,
     config: options.config,
-    entryConfigPaths: options.selection.selection.effectiveEntryPaths,
+    entryConfigPaths:
+      options.selection.sourceConfigPaths ??
+      options.selection.selection.effectiveEntryPaths,
     explicitOwnerByConfigPath: options.explicitOwnerByConfigPath,
     inheritedOwnerByConfigPath: options.inheritedOwnerByConfigPath,
     projectConfigCache: options.projectConfigCache,
@@ -251,6 +254,37 @@ export function prepareCheckerGraph(options: {
     }),
   );
   applyBuildProjections({ collection, governedSources });
+  if (isBuildCapablePreset(options.selection.checker.name)) {
+    for (const solution of options.ownershipPlan.solutions.values()) {
+      const members = solution.sourceConfigPaths.filter((source) =>
+        collection.projectConfigPaths.has(source),
+      );
+      if (members.length === 0) continue;
+      const packageRootDirectory = getPackageRootDirectory({
+        activatedRegions: options.activatedRegions,
+        sourceConfigPath: solution.configPath,
+      });
+      collection.solutionConfigPaths.add(solution.configPath);
+      collection.packageRootBySourcePath.set(
+        solution.configPath,
+        packageRootDirectory,
+      );
+      collection.solutionReferencesBySourcePath.set(
+        solution.configPath,
+        members,
+      );
+      collection.buildModulesBySourcePath.set(
+        solution.configPath,
+        createSolutionBuildModule({
+          checkerName: options.selection.checker.name,
+          packageRootDir: packageRootDirectory,
+          rootDir: options.config.rootDir,
+          sourceConfigPath: solution.configPath,
+        }),
+      );
+    }
+  }
+
   const projects = getDeclarationProjects({
     governedSources,
     primaryProjects,

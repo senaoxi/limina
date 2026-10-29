@@ -204,3 +204,7 @@
 - portable `/` path、code-unit sorting、snapshot schema versions、manifest legacy cleanup policy、Svelte source-map 不重复 rebasing Windows drive 都是重要 supporting contracts；归各 source/tests 与[生命周期页](./lifecycle.md)。
 - helper 命名、目录层数、active context slot 数量、默认 timeout、adapter version tag 是 implementation details；只有当改动影响上述 core 性质时才触发 architecture review。
 - 产品受众、长期插件扩展、兼容承诺与为何选某工具链是 human judgments。不能用测试写死尚未决定的方向。
+
+### Source Checker 入口覆盖
+
+每个受治理 source 有唯一执行 owner；组织 solution 可有多个 Checker 投影。最终 root 必须覆盖由完整 source ownership 和构建能力独立推导的全部目标，且不得跨 Checker 引用。冷生成和热恢复共同执行 reference-validation 与 generated-reference-binding；缺失文件、覆盖或归属证据不能获得准入。generated-graph 与 reference-validation 回归分别覆盖实际生成和损坏序列化边界。

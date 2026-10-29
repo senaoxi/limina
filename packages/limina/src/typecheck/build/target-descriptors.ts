@@ -58,6 +58,20 @@ export function collectManagedDeclarationBuildTargets(options: {
   });
 }
 
+export function getManagedConfigCheckers(options: {
+  allCheckers: readonly ResolvedCheckerConfig[];
+  generatedGraph: GeneratedTsconfigGraphResult;
+  sourceConfigPath: string;
+}): ResolvedCheckerConfig[] {
+  const plan = options.generatedGraph.ownershipPlan;
+  const sources = plan.solutions.get(options.sourceConfigPath)
+    ?.sourceConfigPaths ?? [options.sourceConfigPath];
+  const owners = new Set(
+    sources.map((source) => plan.typeConfigs.get(source)?.finalOwner),
+  );
+  return options.allCheckers.filter((checker) => owners.has(checker.name));
+}
+
 function cloneCopyContexts(
   contexts: readonly GeneratedOutputDeclarationCopyContext[] | undefined,
 ): GeneratedOutputDeclarationCopyContext[] | undefined {

@@ -2,7 +2,6 @@ import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
-import { connectCrossCheckerReferences } from './explicit-checker-ownership';
 import { prepareCheckerGraph } from './prepare-checkers';
 import type {
   PreparedCheckerGraph,
@@ -12,22 +11,15 @@ import type {
 function createExplicitOwnerIndex(
   ownershipPlan: CheckerOwnershipPlan,
 ): Map<string, ResolvedCheckerEntrySelection['checker']['name']> {
-  return new Map([
-    ...ownershipPlan.typeConfigs
+  return new Map(
+    ownershipPlan.typeConfigs
       .values()
       .flatMap((state) =>
         state.finalOwner === undefined
           ? []
           : [[state.configPath, state.finalOwner] as const],
       ),
-    ...ownershipPlan.solutions
-      .values()
-      .flatMap((state) =>
-        state.finalOwner === undefined
-          ? []
-          : [[state.configPath, state.finalOwner] as const],
-      ),
-  ]);
+  );
 }
 
 export function prepareCheckerGraphs(options: {
@@ -49,6 +41,5 @@ export function prepareCheckerGraphs(options: {
       selection,
     }),
   );
-  connectCrossCheckerReferences({ config: options.config, graphs });
   return graphs;
 }
