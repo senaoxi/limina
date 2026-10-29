@@ -13,6 +13,15 @@ export function assessDeclarationContexts(
   configs: ReadonlySet<string>,
 ): { denied: string[]; unknown: string[] } {
   const result = { denied: [] as string[], unknown: [] as string[] };
+  const evidenceRecords = analysis.declarationEvidence ?? [];
+  for (const evidence of evidenceRecords)
+    if (
+      configs.has(evidence.sourceConfig) &&
+      evidence.completeness !== 'complete'
+    )
+      result.unknown.push(
+        `${evidence.sourceConfig}: Checker declaration request inventory is incomplete.`,
+      );
   const decisions = (analysis.declarationContexts ?? []).filter((decision) =>
     configs.has(decision.consumerConfig),
   );

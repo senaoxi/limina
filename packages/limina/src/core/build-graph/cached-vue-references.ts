@@ -78,6 +78,7 @@ function collectReferences(
 ): ReadonlyMap<string, ReadonlySet<string>> {
   const contexts = new VueSemanticContextManager(undefined, input.cache);
   const caches = createProjectDependencyCaches(input.cache);
+  caches.sourceConfigCoverage = input.graph.sourceConfigCoverage;
   try {
     const result = withProjectDependencyReplay(caches, () =>
       inferProjectReferences({

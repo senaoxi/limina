@@ -62,6 +62,11 @@ function requestImpact(
   };
   const independent = independentModuleAbsence({ program, observation });
   if (independent !== undefined) return independent;
+  if (request.ambient)
+    return {
+      state: 'absent' as const,
+      rule: 'compiler-own-ambient-module-has-no-file-input',
+    };
   const target = request.raw?.resolvedModule;
   if (target === undefined)
     return request.raw === undefined

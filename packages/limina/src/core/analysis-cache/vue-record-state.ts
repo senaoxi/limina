@@ -78,6 +78,7 @@ export class VueRecordState {
     return retainData(previous, {
       adapter: VUE_ANALYSIS_ADAPTER,
       project: {
+        declarationLoading: this.identity.declarationLoading,
         configPath: this.identity.configPath,
         projectRootDir: this.identity.projectRootDir,
         extensions: [...this.identity.extensions],

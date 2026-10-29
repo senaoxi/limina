@@ -1,9 +1,11 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import path from 'node:path';
 import type ts from 'typescript';
 import type { ProjectReferenceRedirect } from '../dependency-semantics';
 import type { TypeScriptSemanticProject } from './contracts';
 import { nativeFingerprint } from './native-file-identity';
 import type { NativeHostFailures } from './native-host-failures';
+import { nativeLibraryFileName } from './native-library-api';
 import {
   nativeFailure,
   nativeObservationFailureKind,
@@ -157,6 +159,33 @@ export class NativeProgramLoads {
     host: ts.CompilerHost,
     requests: NativeProgramRequests,
   ): void {
+    // TS 6 skips resolveLibrary when libReplacement is disabled. These
+    // compiler-inventoried directives use the compiler's fixed default-lib
+    // location; grant them before loading instead of rebuilding once per layer.
+    if (
+      /^6\.0\./.test(this.compiler.version) &&
+      this.project.options.libReplacement !== true &&
+      !this.project.options.noLib
+    ) {
+      for (const reference of source.libReferenceDirectives) {
+        const name = nativeLibraryFileName(this.compiler, reference);
+        if (name === undefined) continue;
+        const target = path.join(
+          path.dirname(
+            this.compiler.getDefaultLibFilePath(this.project.options),
+          ),
+          name,
+        );
+        requests.record({
+          source,
+          position: reference.pos,
+          channel: 'library',
+          name: reference.fileName,
+          target,
+        });
+        this.grant(target);
+      }
+    }
     for (const reference of source.referencedFiles) {
       const receipt = selectNativePath({
         compiler: this.compiler,

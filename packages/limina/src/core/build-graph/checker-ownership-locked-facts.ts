@@ -103,7 +103,10 @@ export function collectLockedProjectFacts(options: {
     retainDependencyFailure(options.caches, failure, detail);
     return detail;
   });
-  const dependencies = lockedDependencies(collection);
+  const dependencies = lockedDependencies(
+    collection,
+    options.project.fileNames,
+  );
   for (const dependency of dependencies) {
     if (
       !shouldInferDeclarationReferenceFromImportRecord(dependency.importRecord)
@@ -115,7 +118,8 @@ export function collectLockedProjectFacts(options: {
   const declaration = collectDeclarationContextDecisions({
     config: options.config,
     project: options.project,
-    snapshot: collection.nativeEvidence,
+    evidence: collection.declarationEvidence,
+    coverageIndex: options.caches.sourceConfigCoverage,
     isWorkspaceFile:
       options.workspaceSourceBoundary.governance?.isWorkspaceFile,
   });
@@ -141,8 +145,14 @@ function getSupportedEvidenceKind(
 
 function lockedDependencies(
   collection: ReturnType<typeof collectProjectDependencies>,
+  roots: readonly string[],
 ) {
+  const rootFiles = new Set(roots);
   return collection.nativeEvidence === undefined
     ? effectiveReferenceInputs(collection)
-    : collection.dependencies;
+    : collection.dependencies.filter(
+        (dependency) =>
+          rootFiles.has(dependency.importRecord.filePath) ||
+          dependency.referenceRequirement !== null,
+      );
 }

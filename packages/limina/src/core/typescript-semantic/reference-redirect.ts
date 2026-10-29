@@ -62,6 +62,23 @@ function readCompilerReference(
     ? legacyReferenceRedirect(program, target)
     : null;
 }
+
+/** The real map can qualify a declaration context when a suppressed directive
+ * produced no resolver callback. An unavailable or unqualified negative map
+ * must not silently choose the consumer's options. */
+export function observeReferenceCompilerOptions(
+  program: ts.Program,
+  file: string,
+  compiler: typeof ts,
+): ts.CompilerOptions | undefined {
+  if (!hasReferences(program)) return program.getCompilerOptions();
+  const reference = readCompilerReference(program, file, compiler);
+  return reference === null ||
+    (reference === undefined && !isReferenceNegativeQualified(file, compiler))
+    ? undefined
+    : (reference?.resolvedRef.commandLine.options ??
+        program.getCompilerOptions());
+}
 function referenceObservation(
   raw: CompilerReference,
   target: string,

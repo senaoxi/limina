@@ -295,15 +295,19 @@ describe('JSDoc occurrence location and actual Program observation', () => {
           .map((file) => file.fileName)
           .sort(compareCodeUnits),
       ).toEqual(
-        [f.path('entry.mjs'), f.path('healthy.ts')].sort(compareCodeUnits),
+        [
+          f.path('entry.mjs'),
+          f.path('healthy.ts'),
+          ...(noResolve ? [] : [f.path('hidden.d.ts'), f.path('outside.d.ts')]),
+        ].sort(compareCodeUnits),
       );
       expect(
         adapter.snapshot.requests.some(
           (request) => request.specifier === './hidden.js',
         ),
-      ).toBe(false);
+      ).toBe(!noResolve);
       expect(adapter.snapshot.failures).toEqual([]);
-      expect(adapter.snapshot.obligations).toHaveLength(2);
+      expect(adapter.snapshot.obligations).toHaveLength(noResolve ? 2 : 3);
       const oracle = ts.createProgram(parsed.fileNames, parsed.options);
       const oracleSource = oracle.getSourceFile(f.path('entry.mjs'))!;
       expect(

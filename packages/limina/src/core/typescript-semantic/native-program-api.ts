@@ -5,7 +5,8 @@ import {
 } from '../../dependency-contract';
 import { NativeObservationError } from './native-observation-failure';
 
-export const NATIVE_PROGRAM_ADAPTER = 'bounded-program-ts5.4-6.0-v8';
+export const NATIVE_PROGRAM_ADAPTER =
+  'bounded-program-ts5.4-6.0-v9-declarations';
 
 /**
  * Internal observations adapted across TypeScript 5.4–5.9 and 6.0. No collector,
@@ -101,6 +102,30 @@ export function nativeCompilerApi(compiler: typeof ts): NativeCompilerApi {
       'Native compiler observation APIs unavailable.',
     );
   return api;
+}
+
+/** The compiler changed type-reference cache modes independently of module
+ * requests. Use its actual worker when exposed; older compilers key these
+ * references directly by the source's implied format. */
+export function nativeTypeReferenceMode(
+  compiler: typeof ts,
+  reference: ts.FileReference | string,
+  source: ts.SourceFile | undefined,
+  options: ts.CompilerOptions | undefined,
+): ts.ResolutionMode {
+  const worker = (
+    compiler as typeof ts & {
+      getDefaultResolutionModeForFileWorker?: (
+        source: ts.SourceFile,
+        options: ts.CompilerOptions,
+      ) => ts.ResolutionMode;
+    }
+  ).getDefaultResolutionModeForFileWorker;
+  const mode =
+    source !== undefined && worker !== undefined && options !== undefined
+      ? worker(source, options)
+      : source?.impliedNodeFormat;
+  return nativeCompilerApi(compiler).getModeForFileReference(reference, mode);
 }
 
 export function assertNativeProgramCompiler(compiler: typeof ts): void {

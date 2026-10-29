@@ -1,6 +1,7 @@
+import { declarationResponsibility } from './declaration-governance';
 /**
  * Native DTO contract. A snapshot records evidence; it never authorizes
- * execution. Version 4 adds declaration context boundaries and source configuration binding.
+ * execution. Version 5 shares declaration responsibility with checker-qualified governance.
  */
 import type {
   NativeEvidenceContext,
@@ -13,7 +14,7 @@ import type {
 } from './native-coverage';
 import type { NativeCompilationObligation } from './native-obligation';
 
-export const NATIVE_EVIDENCE_VERSION = 4;
+export const NATIVE_EVIDENCE_VERSION = 5;
 
 export interface NativeRequest {
   readonly id: string;
@@ -84,7 +85,7 @@ export type NativeStopReason =
 export type NativeFrontierDecision =
   | {
       readonly action: 'expand';
-      readonly basis: 'root' | 'covered-declaration';
+      readonly basis: 'root' | 'covered-declaration' | 'consumer-declaration';
     }
   | { readonly action: 'stop'; readonly reason: NativeStopReason };
 
@@ -122,17 +123,25 @@ export function decideNativeFrontier(
 function declarationFrontier(
   input: NativeFrontierInput,
 ): NativeFrontierDecision {
-  const { coverage } = input;
-  if (coverage.members.length === 0)
-    return { action: 'stop', reason: uncoveredStop(coverage) };
-  const isLocal =
-    input.root &&
-    coverage.members.some(
-      (member) => member.configId === input.consumerConfigId,
-    );
-  return isLocal
-    ? { action: 'expand', basis: 'covered-declaration' }
-    : { action: 'stop', reason: 'declaration-context-boundary' };
+  const responsibility = declarationResponsibility({
+    sourceConfig: input.consumerConfigId,
+    root: input.root,
+    coverage: input.coverage,
+  });
+  switch (responsibility.kind) {
+    case 'local': {
+      return { action: 'expand', basis: 'covered-declaration' };
+    }
+    case 'consumer': {
+      return { action: 'expand', basis: 'consumer-declaration' };
+    }
+    case 'delegate': {
+      return { action: 'stop', reason: 'declaration-context-boundary' };
+    }
+    default: {
+      return { action: 'stop', reason: uncoveredStop(input.coverage) };
+    }
+  }
 }
 
 function implementationFrontier(

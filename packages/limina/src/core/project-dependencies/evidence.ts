@@ -60,10 +60,16 @@ function freezeSnapshot<T>(value: T): T {
   return Object.freeze(value);
 }
 
+const publishedEvidence = new WeakSet<ProjectDependencyEvidence>();
+
 export function cloneDependencyEvidence(
   evidence: ProjectDependencyEvidence,
 ): ProjectDependencyEvidence {
-  return freezeSnapshot(structuredClone(evidence));
+  const result = publishedEvidence.has(evidence)
+    ? Object.freeze({ ...evidence })
+    : freezeSnapshot(structuredClone(evidence));
+  publishedEvidence.add(result);
+  return result;
 }
 
 function createContext(request: ProjectDependencyRequest) {

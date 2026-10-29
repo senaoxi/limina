@@ -16,6 +16,7 @@ import {
   observeVueGraphDependency,
   type VueDependencyObservation,
 } from './dependency-observation';
+import { collectVueRequestInventory } from './request-inventory';
 
 type ObserveRequest = Parameters<
   NonNullable<ImportAnalysisContext['observeCheckerDependency']>
@@ -89,12 +90,25 @@ export function createVueDependencyObserver(
   manager: VueSemanticContextManager,
 ): Pick<
   ImportAnalysisContext,
+  | 'collectCheckerRequestInventory'
   | 'collectCheckerSourceRecords'
   | 'collectCheckerSupportInputs'
   | 'observeCheckerDependency'
   | 'collectCheckerTypeEnvironmentEntries'
 > {
   return {
+    collectCheckerRequestInventory: (request) => {
+      const identity = request.vueSemanticIdentity;
+      return identity === undefined || request.semanticFamily !== 'vue'
+        ? undefined
+        : manager.query({
+            identity,
+            kind: 'request-inventory',
+            request: [],
+            collect: () =>
+              collectVueRequestInventory(manager.acquire(identity)),
+          });
+    },
     collectCheckerSourceRecords: ({ context, filePath }) => {
       const identity = context.vueSemanticIdentity;
       return identity === undefined || context.semanticFamily !== 'vue'

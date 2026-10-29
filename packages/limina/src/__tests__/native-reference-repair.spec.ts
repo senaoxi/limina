@@ -312,7 +312,7 @@ describe('native reference repair independent Program evidence', () => {
   );
 
   it.each([false, true, 'workspace'] as const)(
-    'retains lexical aliases while stopping external declaration closure: %s',
+    'retains unmanaged declaration aliases and stops governed declaration delegation: %s',
     async (preserveSymlinks) => {
       const f = await fixture({
         'package.json': '{"type":"module"}',
@@ -353,9 +353,14 @@ describe('native reference repair independent Program evidence', () => {
           new Set(parsed.fileNames),
         );
         expect(bounded.getImportRecords(f.path('main.ts'))).toHaveLength(2);
-        expect(
-          bounded.getSourceFile(f.path('external/inner.d.ts')) !== undefined,
-        ).toBe(false);
+        const declaration = f.path(
+          preserveSymlinks === true
+            ? 'node_modules/dep/inner.d.ts'
+            : 'external/inner.d.ts',
+        );
+        expect(bounded.getSourceFile(declaration) !== undefined).toBe(
+          preserveSymlinks !== 'workspace',
+        );
         const full = ts.createProgram({
           rootNames: parsed.fileNames,
           options: parsed.options,

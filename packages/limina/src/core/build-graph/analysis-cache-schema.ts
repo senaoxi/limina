@@ -13,6 +13,7 @@ import {
 } from './cached-data-schema';
 import {
   declarationContextSchema,
+  declarationEvidenceSchema,
   declarationValidationSchema,
 } from './cached-declaration-schema';
 import { jsonRecords, manifestSchema } from './cached-manifest-schema';
@@ -99,7 +100,14 @@ const relation = z.object({
   specifier: text,
 });
 const candidateReference = z.object({ from: text, to: text });
+const unresolvedDependency = z.object({
+  sourceConfig: text,
+  file: text,
+  line: z.number(),
+  specifier: text,
+});
 const dependencyAnalysis = z.object({
+  declarationEvidence: z.array(declarationEvidenceSchema).optional(),
   referenceValidation: z
     .object({
       state: z.enum(['admitted', 'denied', 'unavailable']),
@@ -118,6 +126,7 @@ const dependencyAnalysis = z.object({
   outcome: analysisOutcomeSchema,
   nativeEvidence: z.array(nativeAnalysisEvidenceSchema).optional(),
   complete: z.boolean(),
+  unresolvedDependencies: z.array(unresolvedDependency).optional(),
   diagnostics: texts,
   facts: z.array(relation),
 });

@@ -6,6 +6,7 @@ import type {
 } from '#checkers';
 import type { ResolverFactory } from 'oxc-resolver';
 import type ts from 'typescript';
+import type { CheckerRequestInventory } from '../../domain/analysis/declaration-governance';
 import type { AstroSemanticContextManager } from '../astro-semantic/context';
 import type {
   FrameworkSemanticDependencyPreparation,
@@ -80,6 +81,9 @@ export type StandaloneInternalImportArguments = [
 ];
 
 export interface ImportAnalysisContext {
+  collectCheckerRequestInventory?: (
+    context: ImportResolveContextFields,
+  ) => CheckerRequestInventory | undefined;
   collectCheckerSourceRecords?: (options: {
     context: ImportResolveContextFields;
     filePath: string;

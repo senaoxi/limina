@@ -29,13 +29,14 @@ export function ownDecodedRecord<T extends object>(value: T): T {
 
 class RecordTableWriter {
   readonly #ids = new Map<string, number>();
-  readonly #seen = new WeakMap<object, number>();
+  readonly #decoded = new WeakMap<object, number>();
   readonly #active = new Set<object>();
   readonly #strings = new Map<string, number>();
+  readonly #references: [number][] = [];
   readonly entries: Entry[] = [];
 
   #object(value: object): number {
-    const prior = this.#seen.get(value);
+    const prior = this.#decoded.get(value);
     if (prior !== undefined) return prior;
     if (this.#active.has(value)) throw new Error('Cyclic cache record.');
     this.#active.add(value);
@@ -43,7 +44,10 @@ class RecordTableWriter {
     this.#active.delete(value);
     const key = JSON.stringify(entry);
     const id = this.#ids.get(key) ?? this.#append(key, entry);
-    this.#seen.set(value, id);
+    if (isDecodedRecord(value)) this.#decoded.set(value, id);
+    // Snapshot copies contain independent mutable objects. Content interning
+    // already owns deduplication; retaining every input object's identity here
+    // adds an unbounded second index over the much larger expanded snapshot.
     return id;
   }
   #append(key: string, entry: Entry): number {
@@ -72,13 +76,18 @@ class RecordTableWriter {
         .map(([key, item]) => [key, this.value(item)]),
     ];
   }
+  #reference(id: number): [number] {
+    // Table references are immutable while packing. Repeated scalar and object
+    // references need one tuple per table entry, not one allocation per use.
+    return (this.#references[id] ??= [id]);
+  }
   value(value: unknown): Reference {
     if (value === undefined) return null;
-    if (typeof value === 'string') return [this.#string(value)];
+    if (typeof value === 'string') return this.#reference(this.#string(value));
     if (value === null || typeof value === 'boolean') return value as Scalar;
     if (typeof value === 'number' && Number.isFinite(value)) return value;
     if (typeof value !== 'object') throw new Error('Non-JSON cache record.');
-    return [this.#object(value!)];
+    return this.#reference(this.#object(value!));
   }
 }
 

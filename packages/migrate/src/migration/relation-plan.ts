@@ -52,6 +52,14 @@ async function collectAnalysis(
       ],
     };
   }
+  // Compiler absence of an input is not permission to delete a user's native
+  // reference while a source request remains unresolved. Keep this migration
+  // comparison judgment separate from checker-qualified compilation evidence.
+  analysis = {
+    ...analysis,
+    complete:
+      analysis.complete && (analysis.unresolvedDependencies?.length ?? 0) === 0,
+  };
   return { topology, analysis };
 }
 

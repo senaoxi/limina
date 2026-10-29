@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import {
+  cloneData,
   type DataNode,
   decodeData,
   encodeData,
@@ -29,6 +30,7 @@ it.each<{ name: string; value: unknown; encoded: DataNode }>([
   const result = encodeData(value);
   expect(result).toStrictEqual(encoded);
   expect(decodeData(encoded)).toBe(value);
+  expect(cloneData(value)).toBe(value);
   expect(() => validateData(encoded)).not.toThrow();
   result.pop();
   expect(encodeData(value)).toStrictEqual(encoded);
@@ -36,6 +38,7 @@ it.each<{ name: string; value: unknown; encoded: DataNode }>([
 
 it.each([NaN, Infinity, -Infinity])('rejects non-finite data %s', (value) => {
   expect(() => encodeData(value)).toThrow('Non-finite data.');
+  expect(() => cloneData(value)).toThrow('Non-finite data.');
 });
 
 it.each([
@@ -44,6 +47,7 @@ it.each([
   { name: 'bigint', value: 1n },
 ])('rejects unsupported $name data', ({ value }) => {
   expect(() => encodeData(value)).toThrow('Executable data.');
+  expect(() => cloneData(value)).toThrow('Executable data.');
 });
 
 it('validates nested containers while decoding retains their kinds and order', () => {
@@ -54,6 +58,7 @@ it('validates nested containers while decoding retains their kinds and order', (
   const encoded = encodeData(value);
   expect(() => validateData(encoded)).not.toThrow();
   expect(decodeData(encoded)).toStrictEqual(value);
+  expect(cloneData(value)).toStrictEqual(value);
 });
 
 it.each([
