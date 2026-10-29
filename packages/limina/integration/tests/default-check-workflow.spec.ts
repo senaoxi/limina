@@ -73,7 +73,13 @@ async function inventory(f: Awaited<ReturnType<typeof fixture>>) {
   return snapshot!;
 }
 
-const checkerTasks = ['checker:build', 'checker:typecheck'];
+const defaultTasks = [
+  'graph:check',
+  'source:check',
+  'proof:check',
+  'checker:build',
+  'checker:typecheck',
+];
 const full = {
   graph: { rules: {} },
   source: { knip: false },
@@ -81,7 +87,7 @@ const full = {
 };
 const scope = { source: { include: ['packages/**/*.ts'] } };
 
-it('replaces a full check inventory with the current minimal plan', async () => {
+it('refreshes all default task inventories after governance domains are omitted', async () => {
   const f = await fixture();
   await f.config({ ...full, scope });
   const first = await f.run(['check']);
@@ -91,10 +97,10 @@ it('replaces a full check inventory with the current minimal plan', async () => 
     previous
       .run!.tasks.filter((task) => task.kind === 'task')
       .map((task) => task.label),
-  ).toEqual(['graph:check', 'source:check', 'proof:check', ...checkerTasks]);
+  ).toEqual(defaultTasks);
   const sourcePath = getSourceIssueSnapshotPath(f.cwd);
   const sourceBytes = await readFile(sourcePath, 'utf8');
-  await f.config({});
+  await f.config({ scope });
   const second = await f.run(['check']);
   expect(second.code, second.stdout + second.stderr).toBe(0);
   const current = await inventory(f);
@@ -102,34 +108,47 @@ it('replaces a full check inventory with the current minimal plan', async () => 
   expect(current.run!.tasks.map((task) => [task.label, task.state])).toEqual([
     ['workspace:validate', 'passed'],
     ['graph:materialize', 'passed'],
+    ['graph:check', 'passed'],
+    ['source:check', 'passed'],
+    ['proof:check', 'passed'],
     ['checker:build', 'passed'],
     ['checker:typecheck', 'disabled'],
   ]);
   expect(current.issues).toEqual([]);
-  expect(await readFile(sourcePath, 'utf8')).toBe(sourceBytes);
+  const refreshed = JSON.parse(await readFile(sourcePath, 'utf8'));
+  expect(refreshed.createdAt).not.toBe(JSON.parse(sourceBytes).createdAt);
+  expect(refreshed.status).toBe('completed');
+  expect(refreshed.issues).toEqual([]);
 });
 
-it('fails source authorization with knip false in the default workflow', async () => {
-  const f = await fixture('detectors/source/package-import-unauthorized');
-  const result = await f.run(['check']);
-  expect(result.code).toBe(1);
-  const snapshot = await inventory(f);
-  expect(snapshot.issues).toContainEqual(
-    expect.objectContaining({ code: codes.sourcePackageImportUnauthorized }),
-  );
-  const source = snapshot.run!.tasks.find(
-    (task) => task.label === 'source:check',
-  );
-  expect(source?.state).toBe('failed');
-  expect(source?.checkItems).toContainEqual(
-    expect.objectContaining({ name: 'knip source usage', status: 'skipped' }),
-  );
-  expect(
-    snapshot
-      .run!.tasks.filter((task) => task.kind === 'task')
-      .map((task) => task.label),
-  ).toEqual(['source:check', ...checkerTasks]);
-});
+it.each([undefined, { knip: false }])(
+  'fails base source authorization with source=%j',
+  async (sourceConfig) => {
+    const f = await fixture('detectors/source/package-import-unauthorized');
+    await f.config({
+      scope,
+      ...(sourceConfig !== undefined && { source: sourceConfig }),
+    });
+    const result = await f.run(['check']);
+    expect(result.code).toBe(1);
+    const snapshot = await inventory(f);
+    expect(snapshot.issues).toContainEqual(
+      expect.objectContaining({ code: codes.sourcePackageImportUnauthorized }),
+    );
+    const source = snapshot.run!.tasks.find(
+      (task) => task.label === 'source:check',
+    );
+    expect(source?.state).toBe('failed');
+    expect(source?.checkItems).toContainEqual(
+      expect.objectContaining({ name: 'knip source usage', status: 'skipped' }),
+    );
+    expect(
+      snapshot
+        .run!.tasks.filter((task) => task.kind === 'task')
+        .map((task) => task.label),
+    ).toEqual(defaultTasks);
+  },
+);
 
 it('runs the installed Knip when explicitly enabled', async () => {
   const f = await fixture();
@@ -155,10 +174,9 @@ it('runs the installed Knip when explicitly enabled', async () => {
   );
 });
 
-it('runs proof without exceptions and keeps named pipelines authoritative', async () => {
+it('runs proof without a configured domain and keeps named pipelines authoritative', async () => {
   const f = await fixture('detectors/proof/coverage-missing');
   await f.config({
-    proof: { allowlist: [] },
     scope,
     pipelines: { explicit: ['proof:check', 'graph:check'] },
   });
@@ -171,7 +189,7 @@ it('runs proof without exceptions and keeps named pipelines authoritative', asyn
     automatic
       .run!.tasks.filter((task) => task.kind === 'task')
       .map((task) => task.label),
-  ).toEqual(['proof:check', ...checkerTasks]);
+  ).toEqual(defaultTasks);
   await f.config({
     scope,
     pipelines: { explicit: ['proof:check', 'graph:check'] },
@@ -245,9 +263,24 @@ it.each([
   },
 );
 
+it('records all default tasks and uncovered source with an empty config', async () => {
+  const f = await fixture('detectors/proof/coverage-missing');
+  await f.config({});
+  expect((await f.run(['check'])).code).toBe(1);
+  const snapshot = await inventory(f);
+  expect(
+    snapshot
+      .run!.tasks.filter((task) => task.kind === 'task')
+      .map((task) => task.label),
+  ).toEqual(defaultTasks);
+  expect(snapshot.issues).toContainEqual(
+    expect.objectContaining({ code: codes.proofUncoveredSourceFile }),
+  );
+});
+
 it('retains the historical invocation when a later config fails to load', async () => {
   const f = await fixture();
-  await f.config({});
+  await f.config({ scope });
   expect((await f.run(['check'])).code).toBe(0);
   const previous = await inventory(f);
   await f.config({ graph: {} });

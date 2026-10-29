@@ -6,27 +6,17 @@ This page covers daily checks, focused feedback, and pre-publish checks after ad
 
 ### Local Development
 
-To run the core workflow and configured governance, run:
+For a complete default check, run:
 
 ```sh
 pnpm exec limina check
 ```
 
-The default `limina check` always schedules `checker:build` and `checker:typecheck`. It adds `graph:check`, `source:check`, and `proof:check` only when the corresponding top-level domain is configured with valid explicit fields. `scope` selects inputs and Checkers; it does not enable these governance tasks. `package.entries` and `release` do not add default tasks.
-
-To enable all three governance domains, use:
-
-```ts
-export default {
-  graph: { rules: {} },
-  source: { knip: false },
-  proof: { allowlist: [] },
-};
-```
+The default `limina check` schedules five tasks: `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. `scope` selects inputs and Checkers; top-level `graph`, `source`, and `proof` configure rules, exceptions, and optional capabilities. Omitting a domain does not disable its task. `package.entries` and `release` do not add default tasks.
 
 Set `source.knip: true` to add Knip analysis. `false` retains source ownership, tsconfig governance, import boundaries, and package dependency authorization.
 
-With these domains configured, it combines graph, source, and coverage checks with type-checker execution. To shorten feedback for a particular kind of change, use the corresponding standalone command:
+It combines graph, source, and coverage checks with type-checker execution. To shorten feedback for a particular kind of change, use the corresponding standalone command:
 
 | Current task                                    | Command                              |
 | ----------------------------------------------- | ------------------------------------ |
@@ -36,7 +26,7 @@ With these domains configured, it combines graph, source, and coverage checks wi
 | Run the internal declaration build              | `pnpm exec limina checker build`     |
 | Run Astro / Svelte type checks                  | `pnpm exec limina checker typecheck` |
 
-Each focused command covers only its own relationships. After changing TypeScript configs, package boundaries, or checking rules, run the default check again with the affected governance domains explicitly enabled.
+Each focused command covers only its own relationships. After changing TypeScript configs, package boundaries, or checking rules, run the complete default check again to cover other affected relationships.
 
 To inspect artifact consumption, export the dependency graph:
 

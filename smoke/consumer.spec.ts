@@ -47,7 +47,7 @@ async function assertDefaultCheckWorkflow(
               source: { knip: false },
               proof: { allowlist: [] },
             }
-          : {},
+          : { scope: { source: { include: ['src/**/*.ts'] } } },
       )};`,
     );
     await runPnpm(['exec', 'limina', 'check'], { cwd });
@@ -63,25 +63,45 @@ async function assertDefaultCheckWorkflow(
         .filter((task) => task.kind === 'task')
         .map((task) => [task.label, task.state]),
     ).toEqual([
-      ...(isFull
-        ? [
-            ['graph:check', 'passed'],
-            ['source:check', 'passed'],
-            ['proof:check', 'passed'],
-          ]
-        : []),
+      ['graph:check', 'passed'],
+      ['source:check', 'passed'],
+      ['proof:check', 'passed'],
       ['checker:build', 'passed'],
       ['checker:typecheck', 'disabled'],
     ]);
   }
   for (const command of ['graph', 'source'])
     await runPnpm(['exec', 'limina', command, 'check'], { cwd });
-  // The standalone proof still runs without a proof domain; exclude the config module from source coverage.
-  await writeFile(
-    config,
-    'export default { scope: { source: { include: ["src/**/*.ts"] } } };',
-  );
   await runPnpm(['exec', 'limina', 'proof', 'check'], { cwd });
+  await writeFile(
+    path.join(cwd, 'uncovered.ts'),
+    'export const uncovered = 1;\n',
+  );
+  await writeFile(config, 'export default {};');
+  const empty = await runPnpm(['exec', 'limina', 'check'], {
+    cwd,
+    reject: false,
+  });
+  expect(empty.exitCode, empty.stdout + empty.stderr).toBe(1);
+  const query = await runPnpm(
+    ['exec', 'limina', 'check', '--issues', '--format', 'json'],
+    { cwd },
+  );
+  const inventory = JSON.parse(query.stdout);
+  expect(
+    inventory.run.tasks
+      .filter((task: { kind: string }) => task.kind === 'task')
+      .map((task: { label: string }) => task.label),
+  ).toEqual([
+    'graph:check',
+    'source:check',
+    'proof:check',
+    'checker:build',
+    'checker:typecheck',
+  ]);
+  expect(inventory.issues).toContainEqual(
+    expect.objectContaining({ code: 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE' }),
+  );
 }
 
 describe('limina published package smoke', () => {

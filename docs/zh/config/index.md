@@ -2,7 +2,7 @@
 
 治理边界放在 `scope`。各类检查、`pipelines`、`concurrency` 和 `cache` 直接使用顶层字段，便于查找和理解。所有字段均可省略；`defineConfig({})` 使用全部默认行为。
 
-默认 `limina check` 始终计划 `checker:build` 和 `checker:typecheck`；只有对应顶层域含有合法显式字段时，才加入 `graph:check`、`source:check` 和 `proof:check`。`scope` 选择输入和 Checker，不启用这些治理任务；`package.entries` 和 `release` 也不增加默认任务。
+默认 `limina check` 固定计划五个任务：`graph:check`、`source:check`、`proof:check`、`checker:build` 和 `checker:typecheck`。`scope` 选择输入和 Checker；顶层 `graph`、`source`、`proof` 配置规则、例外及可选子能力，省略配置域不会关闭对应任务。`package.entries` 和 `release` 不增加默认任务。
 
 | 配置域                                           | 职责                                                                         |
 | ------------------------------------------------ | ---------------------------------------------------------------------------- |

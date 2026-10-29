@@ -6,7 +6,7 @@ Limina 把配置选定的 package 治理范围、checker 的语义事实、声�
 
 本记录集重建于 **2026-09-11 当前 working tree**。生产代码、类型、schema、配置和可执行调用链是事实来源；测试用于寻找反例。旧 PCR 仅用来发现待核对的问题。所有文字均未获 human vouch；`Confirmed` 表示有直接实现依据，不表示长期产品承诺或全部环境已实测。实测范围单列在[本次审计](./architecture-audit.md)。
 
-默认 Check 根据合法顶层 Graph/Source/Proof 声明选择独立治理任务。空配置仍执行两个 Checker 任务及必要的内部准备和准入。Scope 保持输入权威，显式流水线及独立检查保持原合同。合法声明及诊断归属见[配置设计](./configuration-design.md#配置驱动的默认检查)。
+默认 Check 独立计划全部五个治理与 Checker 任务，不依赖顶层 Graph/Source/Proof 声明。Scope 保持输入权威，治理域选项提供策略；必要准备、执行准入、显式流水线及独立检查保留各自合同。输入结构和诊断归属见[配置设计](./configuration-design.md#固定默认检查与配置)。
 
 ## 从问题进入记录
 

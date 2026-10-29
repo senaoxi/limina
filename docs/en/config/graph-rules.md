@@ -2,7 +2,7 @@
 
 Graph rules express project boundaries as checkable constraints. Define a label's rules in `graph.rules`, then apply the label through `liminaOptions.graphRules` in a source tsconfig. Only configs using that label are governed by those rules.
 
-Use `graph: { rules: {} }` to enable base Graph Check without additional rules. `rules` is required when `graph` is present; `graph: {}` is invalid. Omitting `graph` removes only the default governance task. Core graph analysis, materialization and execution admission still run; applicable `deny.refs` constraints are enforced before compiler execution even in a checker-only pipeline.
+Omitting `graph` still runs Graph Check with no additional rules. When `graph` is present, `rules` is required; `rules: {}` declares no additional rules, while `graph: {}` is invalid. Core graph analysis, materialization and execution admission retain their own responsibilities; applicable `deny.refs` constraints are enforced before compiler execution even in a checker-only pipeline.
 
 ```js
 import { defineConfig } from 'limina';
