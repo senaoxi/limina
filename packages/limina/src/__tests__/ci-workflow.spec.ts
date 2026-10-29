@@ -20,7 +20,11 @@ interface Job {
   steps?: Step[];
   strategy?: {
     matrix?: {
-      include?: { os: string; node: string | number }[];
+      include?: {
+        os: string;
+        node: string | number;
+        unitShard?: number;
+      }[];
       node?: string[];
     };
   };
@@ -134,6 +138,29 @@ describe('Limina CI validation contract', () => {
   });
   it('retains independent platform builds and the supported Node test matrix', async () => {
     const { jobs } = await workflow();
+    const testMatrix = jobs.test.strategy?.matrix?.include ?? [];
+    expect(
+      testMatrix
+        .filter((entry) => entry.os === 'windows-latest')
+        .map((entry) => entry.unitShard)
+        .toSorted((left, right) => (left ?? 0) - (right ?? 0)),
+    ).toEqual([1, 2]);
+    for (const entry of testMatrix) {
+      if (entry.os !== 'windows-latest')
+        expect(entry.unitShard).toBeUndefined();
+    }
+    expect(jobs.test).toHaveProperty('timeout-minutes', 60);
+    const unit = jobs.test.steps?.find((step) => step.name === 'Unit Tests');
+    expect(unit?.env?.VITEST_MAX_WORKERS).toBe('2');
+    expect(unit?.run).toContain(
+      "${{ matrix.unitShard && format('--shard={0}/2', matrix.unitShard) || '' }}",
+    );
+    expect(
+      jobs.test.steps?.find((step) => step.name === 'Upload Test Results')?.with
+        ?.name,
+    ).toContain(
+      "${{ matrix.unitShard && format('-unit-{0}', matrix.unitShard) || '' }}",
+    );
     expect(jobs.test.strategy?.matrix?.include).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ os: 'ubuntu-latest', node: '22.22.3' }),

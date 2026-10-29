@@ -9,6 +9,7 @@ import {
   createImportAnalysisCaches,
 } from './resolver-caches';
 import { createSourceProvider } from './source-provider';
+import { discoverSupplementalTarget } from './supplemental-resolution';
 import type {
   CreateImportAnalysisContextOptions,
   ImportAnalysisContext,
@@ -57,6 +58,13 @@ export function createImportAnalysisContext(
     vueSemanticContexts: vue.manager,
   });
   return {
+    resolveSupplementalImport: (request) => {
+      options.metrics?.record({
+        name: 'oxc-resolution',
+        provider: 'pending-supplement',
+      });
+      return discoverSupplementalTarget(request);
+    },
     clearOxcResolverCaches: () => clearOxcResolverCaches(caches),
     collectImportsFromFile: source.collectImportsFromFile,
     dispose: () => {

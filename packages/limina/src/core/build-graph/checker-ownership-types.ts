@@ -3,10 +3,12 @@ import type { ImportRecord } from '#core/import-analysis/runner';
 import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
 import type { NativeEvidenceOrigin } from '../../domain/analysis/native-context';
 import type { NativeCoverage } from '../../domain/analysis/native-coverage';
+import type { SupplementalResolution } from '../import-analysis/supplemental-resolution';
 import type {
   DeclarationReferenceRequirement,
   NativeDependencyFact,
 } from '../typescript-semantic/dependency-fact';
+import type { SupplementalAssessment } from './pending-supplemental-assessment';
 
 export type CheckerOwner =
   | { kind: 'pending' }
@@ -70,6 +72,9 @@ export interface SolutionOwnershipState {
 }
 
 export interface CheckerDependencyFact {
+  supplementalDiscovery?: SupplementalResolution;
+  supplementalCoverage?: NativeCoverage;
+  supplementalAssessment?: SupplementalAssessment;
   frameworkCandidate?: PhysicalFrameworkCandidate;
   nativeEvidence?: NativeDependencyFact['nativeEvidence'];
   referenceRequirement?: DeclarationReferenceRequirement | null;

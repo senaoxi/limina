@@ -11,7 +11,7 @@ import type { TypeEnvironmentRecord } from './installation-environment';
 import type { VueContextRecord } from './vue-contracts';
 
 // Compiler occurrence/load receipts qualify restored projections.
-export const ANALYSIS_ADAPTER = 'checker-declaration-governance-v26';
+export const ANALYSIS_ADAPTER = 'checker-declaration-supplements-v27';
 
 export interface InputDependency {
   inputId: string;
