@@ -158,21 +158,11 @@ pnpm exec limina check ci --force
 pnpm exec limina check --package @scope/pkg
 ```
 
-The default `limina check` always schedules `checker:build` and `checker:typecheck`. It adds `graph:check`, `source:check`, and `proof:check` only when the corresponding top-level domain is configured with valid explicit fields. `scope` selects inputs and Checkers; it does not enable these governance tasks. `package.entries` and `release` do not add default tasks.
-
-To enable all three governance domains, use:
-
-```ts
-export default {
-  graph: { rules: {} },
-  source: { knip: false },
-  proof: { allowlist: [] },
-};
-```
+The default `limina check` schedules five tasks: `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. `scope` selects inputs and Checkers; top-level `graph`, `source`, and `proof` configure rules, exceptions, and optional capabilities. Omitting a domain does not disable its task. `package.entries` and `release` do not add default tasks.
 
 Set `source.knip: true` to add Knip analysis. `false` retains source ownership, tsconfig governance, import boundaries, and package dependency authorization.
 
-Unselected governance tasks are absent from the current run, with no fabricated `passed`, `disabled`, or `skipped` status. A planned framework check without targets remains `disabled`. `check --issues` reads the saved invocation; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, `proof check`, and explicitly declared pipeline steps still run without their top-level domain.
+Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
 
 Tasks in the default group are scheduled independently according to available resources. Named pipelines come from configured `pipelines` and run through `limina check <name>`, with steps executed in configured order. Pipeline steps may be built-in tasks or external commands. External commands support object-form configuration with `command`, `args`, `cwd`, and `env`.
 

@@ -10,7 +10,7 @@ import {
   filesystemDependentTasks,
 } from './execution-tasks';
 import {
-  getDefaultCheckSteps,
+  defaultCheckPipeline,
   getPipelineSteps,
   normalizePipelineStep,
 } from './steps';
@@ -258,6 +258,6 @@ export function createDefaultExecutionPlan(
     config,
     dependencyMode: 'independent',
     pipelineOptions: options,
-    steps: getDefaultCheckSteps(config).map(normalizePipelineStep),
+    steps: defaultCheckPipeline.map(normalizePipelineStep),
   });
 }

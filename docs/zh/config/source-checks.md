@@ -2,7 +2,7 @@
 
 `source` 配置源码导入授权、环境声明角色和可选的源码使用分析。`source check` 默认按源码所属包及其依赖声明检查导入；不必先填写空的 `allow` 或 `knip` 对象。
 
-合法的顶层 `source` 启用默认 Source Check。`source: { knip: false }` 执行适用的全部基础检查，仅跳过 Knip；`source: { knip: true }` 还会执行 Knip。缺少 `source` 时不计划默认 Source 任务，独立 `limina source check` 仍执行基础治理。空的 `source`、`declarations`、`importAuthority` 包装无效；可用 `declarations: { ambient: [] }`、`importAuthority: { allow: {} }` 显式声明空集合。
+省略 `source` 仍执行基础 Source Check。`source: { knip: false }` 执行适用的全部基础检查，仅跳过 Knip；`source: { knip: true }` 还会执行 Knip。独立 `limina source check` 使用相同策略。空的 `source`、`declarations`、`importAuthority` 包装无效；可用 `declarations: { ambient: [] }`、`importAuthority: { allow: {} }` 显式声明空集合。
 
 | 字段                          | 用途                                   | 未配置时                   |
 | ----------------------------- | -------------------------------------- | -------------------------- |

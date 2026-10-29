@@ -50,11 +50,11 @@
 
 合法值和拒绝条件保留在可执行契约中，设计理由由本文维护。语义影响遵循[架构工作流](./architecture-workflow.md)，验证遵循[开发工作流](./development-workflow.md)。优先进行最小必要调整，不为形式统一重新组织已经清晰的公共 API。
 
-## 配置驱动的默认检查
+## 固定默认检查与配置
 
-合法的自有顶层 `graph`、`source`、`proof` 声明将相应治理任务加入 independent 默认计划；`scope` 仍负责输入和 Checker 权威。两个 Checker 任务、工作区验证、Core 分析、图物化和执行准入保持必要流程。显式流水线及独立检查保留既有合同，package/release 不自动加入默认任务。
+independent 默认计划始终包含 `graph:check`、`source:check`、`proof:check`、`checker:build` 和 `checker:typecheck`。`scope` 提供输入和 Checker 权威；顶层治理域配置规则、例外及可选子能力，不决定任务是否存在。空配置使用默认策略，不缩减覆盖。显式流水线自行选择步骤，独立检查保留各自领域合同；package/release 不加入默认任务。
 
-使用 `graph: { rules: {} }` 和 `proof: { allowlist: [] }` 启用没有附加规则或例外的基础治理。这复用已有且具有明确含义的字段，无需增加 Proof coverage 开关。Source 子能力保持独立：`source: { knip: false }` 保留基础治理。拒绝空域、未知字段和显式 undefined。原始属性验证先于 Zod 形状验证，保留非枚举顶层域，同时防止 accessor、Proxy、继承及隐藏的嵌套字段导致选择与消费含义不同。动态计算放在配置函数内，不通过转换或默认补值替换返回数据。
+配置域仍须遵守显式结构：配置 Graph、Proof 时分别要求 `graph.rules`、`proof.allowlist`，Source 要求至少一个支持的字段。这些输入约束不决定默认任务集合。空集合表示没有附加规则或例外，`source: { knip: false }` 仅关闭 Knip。未知字段和显式 undefined 仍无效。原始属性验证先于 Zod 形状验证，保留非枚举顶层域，同时拒绝 accessor、Proxy、继承及隐藏的嵌套字段。动态值在配置函数内计算，验证不补默认值、不替换返回数据。
 
 现有 Zod 与 Node 属性描述符足以实现，不增加依赖或工作流抽象。Graph/Knip 的结构错误前移到配置加载；依赖工作区事实的语义诊断仍属于领域检查。`fixtures/config-errors` 保留原非法输入，替代的语义 detector fixture 继续保护领域诊断边界。
 

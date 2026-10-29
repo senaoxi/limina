@@ -6,7 +6,7 @@ Limina connects config-selected package governance scope, checker semantic facts
 
 This record set was reconstructed from the **2026-09-11 working tree**. Production code, types, schemas, configuration, and executable call chains establish facts; tests seek counterexamples. Earlier PCR served only to identify questions to recheck. None of the prose has a human vouch. `Confirmed` means direct implementation evidence, not a long-term product commitment or empirical coverage of every environment. The empirical scope is recorded separately in the [audit](./architecture-audit.md).
 
-The default Check uses valid top-level Graph/Source/Proof declarations to select independent governance tasks. Empty configuration still runs both Checker tasks and necessary internal preparation/admission. Scope remains input authority; explicit pipelines and standalone checks remain authoritative. See [configuration design](./configuration-design.md#configuration-driven-default-check) for accepted declarations and diagnostic ownership.
+The default Check schedules all five governance and Checker tasks independently of top-level Graph/Source/Proof declarations. Scope remains input authority; domain options supply policy. Necessary preparation and admission, explicit pipelines and standalone checks retain their contracts. See [configuration design](./configuration-design.md#fixed-default-check-and-configuration) for input structure and diagnostic ownership.
 
 ## Find a record by question
 

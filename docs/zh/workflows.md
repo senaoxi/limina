@@ -6,27 +6,17 @@
 
 ### 本地开发
 
-运行核心工作流及已配置的治理检查：
+运行完整的默认检查：
 
 ```sh
 pnpm exec limina check
 ```
 
-默认 `limina check` 始终计划 `checker:build` 和 `checker:typecheck`；只有对应顶层域含有合法显式字段时，才加入 `graph:check`、`source:check` 和 `proof:check`。`scope` 选择输入和 Checker，不启用这些治理任务；`package.entries` 和 `release` 也不增加默认任务。
-
-要启用三个治理域，可配置：
-
-```ts
-export default {
-  graph: { rules: {} },
-  source: { knip: false },
-  proof: { allowlist: [] },
-};
-```
+默认 `limina check` 固定计划五个任务：`graph:check`、`source:check`、`proof:check`、`checker:build` 和 `checker:typecheck`。`scope` 选择输入和 Checker；顶层 `graph`、`source`、`proof` 配置规则、例外及可选子能力，省略配置域不会关闭对应任务。`package.entries` 和 `release` 不增加默认任务。
 
 将 `source.knip` 设为 `true` 可增加 Knip 分析。`false` 保留源码归属、tsconfig 治理、导入边界及包依赖授权检查。
 
-上述配置组合图、源码、覆盖检查和类型检查器执行。只想缩短某类改动的反馈时间时，可以选用相应独立命令：
+默认工作流组合图、源码、覆盖检查和类型检查器执行。只想缩短某类改动的反馈时间时，可以选用相应独立命令：
 
 | 当前任务                     | 命令                                 |
 | ---------------------------- | ------------------------------------ |
@@ -36,7 +26,7 @@ export default {
 | 执行内部声明构建             | `pnpm exec limina checker build`     |
 | 执行 Astro / Svelte 类型检查 | `pnpm exec limina checker typecheck` |
 
-局部命令只覆盖其负责的关系。修改 TypeScript 配置、包边界或检查规则后，应再运行默认检查，并确保受影响的治理域已显式启用。
+局部命令只覆盖其负责的关系。修改 TypeScript 配置、包边界或检查规则后，应再运行完整的默认检查，覆盖其他受影响的关系。
 
 需要观察产物消费关系时，可以导出依赖图：
 
