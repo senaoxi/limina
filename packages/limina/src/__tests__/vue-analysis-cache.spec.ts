@@ -181,67 +181,67 @@ describe('persistent Vue and mixed graph analysis', () => {
     }
   });
 
-  it('reassesses Pending misses across processes and retracts supplemental contributions', () => {
-    const f = fixture();
-    f.write(
-      'limina.config.mjs',
-      `export default {scope:{source:{include:['vue/**/*.vue','vue/**/*.ts']},checkers:{auto:{}}}};`,
-    );
-    const options = {
-      composite: true,
-      declaration: true,
-      types: [],
-      target: 'ES2022',
-      module: 'ESNext',
-      moduleResolution: 'Bundler',
-      outDir: 'dist',
-    };
-    f.write(
-      'vue/tsconfig.json',
-      JSON.stringify({ compilerOptions: options, files: ['a.ts'] }),
-    );
-    f.write(
-      'vue/a.ts',
-      'import Button from "./provider/Button.vue"; export const component = Button;',
-    );
-    f.write(
-      'vue/provider/tsconfig.json',
-      JSON.stringify({ compilerOptions: options, include: ['*.vue'] }),
-    );
-    f.write(
-      'vue/provider/Anchor.vue',
-      '<script setup lang="ts">const value = 1;</script>',
-    );
-    const dependencies = () =>
-      Object.values(f.snapshot().contributions)
-        .flat()
-        .filter(
-          (c) =>
-            c.fromConfigPath === f.path('vue/tsconfig.json') &&
-            c.toConfigPath === f.path('vue/provider/tsconfig.json'),
+  it.each(['appears', 'disappears'] as const)(
+    'reassesses a Pending target that %s across processes',
+    (change) => {
+      const f = fixture();
+      f.write(
+        'limina.config.mjs',
+        `export default {scope:{source:{include:['vue/**/*.vue','vue/**/*.ts']},checkers:{auto:{}}}};`,
+      );
+      const options = {
+        composite: true,
+        declaration: true,
+        types: [],
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        outDir: 'dist',
+      };
+      f.write(
+        'vue/tsconfig.json',
+        JSON.stringify({ compilerOptions: options, files: ['a.ts'] }),
+      );
+      f.write(
+        'vue/a.ts',
+        'import Button from "./provider/Button.vue"; export const component = Button;',
+      );
+      f.write(
+        'vue/provider/tsconfig.json',
+        JSON.stringify({ compilerOptions: options, include: ['*.vue'] }),
+      );
+      f.write(
+        'vue/provider/Anchor.vue',
+        '<script setup lang="ts">const value = 1;</script>',
+      );
+      const dependencies = () =>
+        Object.values(f.snapshot().contributions)
+          .flat()
+          .filter(
+            (c) =>
+              c.fromConfigPath === f.path('vue/tsconfig.json') &&
+              c.toConfigPath === f.path('vue/provider/tsconfig.json'),
+          );
+      const addTarget = () =>
+        f.write(
+          'vue/provider/Button.vue',
+          '<script setup lang="ts">const label = "hello";</script>',
         );
-    const missing = f.run();
-    expect(missing.passed).toBe(true);
-    expect(dependencies()).toHaveLength(0);
-    f.write(
-      'vue/provider/Button.vue',
-      '<script setup lang="ts">const label = "hello";</script>',
-    );
-    const found = f.run();
-    expect(found.passed).toBe(true);
-    expect(cacheMetric(found, 'graphHits')).toBe(0);
-    expect(dependencies()).toHaveLength(1);
-    rmSync(f.path('vue/provider/Button.vue'));
-    const removed = f.run();
-    expect(removed.passed).toBe(true);
-    expect(cacheMetric(removed, 'graphHits')).toBe(0);
-    expect(dependencies()).toHaveLength(0);
-  });
+      if (change === 'disappears') addTarget();
+      expect(f.run().passed).toBe(true);
+      expect(dependencies()).toHaveLength(change === 'appears' ? 0 : 1);
+      if (change === 'appears') addTarget();
+      else rmSync(f.path('vue/provider/Button.vue'));
+      const changed = f.run();
+      expect(changed.passed).toBe(true);
+      expect(cacheMetric(changed, 'graphHits')).toBe(0);
+      expect(dependencies()).toHaveLength(change === 'appears' ? 1 : 0);
+    },
+  );
 
   it('invalidates producer facts and graphs from the previous analysis adapter', () => {
     const f = crossProjectFixture();
     expectCold(f.run());
-    expectRestored(f.run());
     const snapshot = f.snapshot();
     snapshot.header.implementation = 'typescript-5.4-6.0-coverage-bounded-v24';
     f.writeSnapshot(snapshot);
@@ -446,7 +446,7 @@ describe('persistent Vue and mixed graph analysis', () => {
     ).toBe(true);
   });
 
-  it('restores distinct Vue output target contexts and invalidates a changed output target', () => {
+  function outputTargetFixture() {
     const f = fixture();
     const config = JSON.parse(
       readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
@@ -455,9 +455,12 @@ describe('persistent Vue and mixed graph analysis', () => {
       outputs: { target: 'ES2020', rootDir: 'src', outDir: 'build' },
     };
     f.write('vue/tsconfig.json', JSON.stringify(config));
-    const cold = f.run();
-    expectCold(cold);
-    expectRestored(f.run());
+    return { f, config };
+  }
+
+  it('restores distinct Vue output target contexts after generated artifacts are removed', () => {
+    const { f } = outputTargetFixture();
+    expectCold(f.run());
     const projected = Object.values(f.snapshot().vueContexts).filter(
       (context) => context.project.outputProjection !== undefined,
     );
@@ -467,6 +470,11 @@ describe('persistent Vue and mixed graph analysis', () => {
     expect(projected[0]!.project.outputProjection!.sourceConfigPath).toBe(
       f.path('vue/tsconfig.json'),
     );
+  });
+
+  it('invalidates a changed Vue output target and restores its replacement', () => {
+    const { f, config } = outputTargetFixture();
+    expectCold(f.run());
     config.liminaOptions.outputs.target = 'ES2023';
     f.write('vue/tsconfig.json', JSON.stringify(config));
     expectCold(f.run());

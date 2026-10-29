@@ -144,7 +144,7 @@ describe('Limina CI validation contract', () => {
         .filter((entry) => entry.os === 'windows-latest')
         .map((entry) => entry.unitShard)
         .toSorted((left, right) => (left ?? 0) - (right ?? 0)),
-    ).toEqual([1, 2]);
+    ).toEqual([1, 2, 3, 4]);
     for (const entry of testMatrix) {
       if (entry.os !== 'windows-latest')
         expect(entry.unitShard).toBeUndefined();
@@ -153,7 +153,7 @@ describe('Limina CI validation contract', () => {
     const unit = jobs.test.steps?.find((step) => step.name === 'Unit Tests');
     expect(unit?.env?.VITEST_MAX_WORKERS).toBe('2');
     expect(unit?.run).toContain(
-      "${{ matrix.unitShard && format('--shard={0}/2', matrix.unitShard) || '' }}",
+      "${{ matrix.unitShard && format('--shard={0}/4', matrix.unitShard) || '' }}",
     );
     expect(
       jobs.test.steps?.find((step) => step.name === 'Upload Test Results')?.with
