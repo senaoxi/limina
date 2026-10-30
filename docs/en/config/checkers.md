@@ -1,28 +1,76 @@
 # Checker Configuration
 
-`scope.checkers` selects default `tsconfig.json` entries and determines which checker owns their reachable source leaf configs. Automatic discovery is already enabled when this field is omitted; configure it only to fix checker ownership or exclude direct entries.
+When Limina checks or builds a project, it needs to know which checker handles each TypeScript config. `scope.checkers` selects the project's `tsconfig.json` entries and, when needed, assigns checkers to them.
 
-Checkers use these fixed names:
+Most projects **do not need to configure this field**. Limina automatically finds entries in the activated [regions](./regions.md) and selects checkers based on the project's files and frameworks. Configure it when you want to change the default checker, exclude an automatically discovered entry, or explicitly choose a checker for an entry.
 
-| Key            | Execution                             | Emits declarations |
-| -------------- | ------------------------------------- | ------------------ |
-| `tsc`          | generated TypeScript build target     | yes                |
-| `tsgo`         | generated native TypeScript target    | yes                |
-| `vue-tsc`      | generated Vue/TypeScript build target | yes                |
-| `svelte-check` | per-leaf framework typecheck target   | no                 |
-| `astro`        | per-leaf framework typecheck target   | no                 |
+Limina supports these fixed names:
 
-The key identifies the checker for ownership, generated paths, execution, and caches. `preset` fields and custom checker aliases are not supported.
+| Key            | When to use it                    | Generates internal declarations |
+| -------------- | --------------------------------- | ------------------------------- |
+| `tsc`          | TypeScript projects               | Yes                             |
+| `tsgo`         | Native TypeScript builds          | Yes                             |
+| `vue-tsc`      | Vue and TypeScript projects       | Yes                             |
+| `svelte-check` | Type checking for Svelte projects | No                              |
+| `astro`        | Type checking for Astro projects  | No                              |
 
-`vue-tsc`, `svelte-check`, and `@typescript/native-preview` are optional external-checker peers. Their peer ranges state which checker versions Limina supports, and each checker resolves from the scope where its target actually executes. `svelte2tsx` is a separate optional checker-toolchain peer: install it in each Svelte leaf alongside `svelte-check`; Limina does not ship it as a production dependency. `typescript` remains Limina's required runtime peer and resolves from the workspace installation running Limina.
+The key identifies the checker, its execution tool, and its associated caches. These declaration files are internal build artifacts used by Limina. See [CLI Reference](../cli.md) for the commands.
 
-Auto discovery is always enabled. Named scopes claim selected entries first; entries not claimed by a named scope are still analyzed automatically.
+## Automatic discovery {#auto-mode}
+
+Automatic discovery is always enabled, even when you also configure named checkers. Ordinary TypeScript projects use `tsc` by default when no other checker is required. Limina also identifies Vue, Astro, and Svelte projects from framework configuration, actual files, and dependencies.
+
+| Project                           | Typical checker |
+| --------------------------------- | --------------- |
+| Ordinary TypeScript               | `tsc`           |
+| Project requiring Vue checking    | `vue-tsc`       |
+| Project requiring Astro checking  | `astro`         |
+| Project requiring Svelte checking | `svelte-check`  |
+
+To use `tsgo` as the default for ordinary TypeScript projects, set:
+
+```ts
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  scope: { checkers: { auto: { useTsgo: true } } },
+});
+```
+
+`useTsgo` defaults to `false`. When enabled, ordinary TypeScript projects whose checker has not already been determined by a framework or declaration-build relationship default to `tsgo`. It does not change Astro or Svelte projects to `tsgo`. Install a supported `@typescript/native-preview` in the checker's execution scope first.
+
+To exclude `packages/playground/tsconfig.json` only from automatic discovery, use `exclude`:
 
 ```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   scope: {
+    checkers: {
+      auto: { exclude: ['packages/playground/tsconfig.json'] },
+    },
+  },
+});
+```
+
+Paths and patterns are relative to `config.rootDir`. This excludes only the **automatically discovered entry**: a named checker can still select it, and another selected entry can still reach it through project references. This is different from excluding files from the expected source scope. See [Source Boundary](./source-boundary.md) to exclude source files.
+
+If no selected entry covers the playground's source, `proof:check` may report those files as uncovered. Select an appropriate checker entry for them, or adjust the source scope if they should not be governed in this run. When changing the source scope, also check whether another selected config still includes those files.
+
+For a Vue project with custom component extensions, `vueCompilerOptions` alone is not enough. Limina also inspects the files actually resolved by the config. A custom extension prompts `vue-tsc` selection only when a matching Vue file exists.
+
+## Choose a checker for an entry {#named-entry-constraints-and-solution-closures}
+
+To explicitly choose an entry, use the checker name as a key. This example assumes `apps/web` is a governed workspace package and a supported `vue-tsc` is installed in the checker's execution scope. It assigns the entry to `vue-tsc`:
+
+```ts
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  scope: {
+    source: {
+      include: ['...', 'apps/web/**/*.vue'],
+    },
     checkers: {
       'vue-tsc': {
         include: ['apps/web/tsconfig.json'],
@@ -32,234 +80,143 @@ export default defineConfig({
 });
 ```
 
-This fixes the web entry to `vue-tsc` while other entries continue through automatic discovery. Do not fix a shared TypeScript project to another checker merely to make the config look complete: connected projects that need to share declaration caches must use the same build checker. Conflicts cause graph preparation to fail.
+`apps/web/tsconfig.json` is handled by `vue-tsc`. Entries not selected by a named rule remain subject to automatic discovery. If the web entry is an aggregator, the selection also applies to every terminal source config it references.
 
-Every named `include` must be a non-empty array; `exclude` is optional. Framework-only named configurations are valid. The same entry cannot match two named checker scopes.
+The example also adds Vue components under `apps/web` to `scope.source` and retains the default TypeScript scope. It does not change the `tsconfig` file list: the source config responsible for Vue must still include the components. If the checker includes them but the source scope does not, the coverage check may report a mismatch. Merge both fields into an existing config and adjust the patterns to your project.
 
-## Auto mode
+Each named checker uses the same fields:
 
-- **Type:** `{ exclude?: string[]; useTsgo?: boolean }`
-- **Default:** enabled whether or not named scopes are present
+| Field     | Purpose                                                               |
+| --------- | --------------------------------------------------------------------- |
+| `include` | Required non-empty string array selecting entries for this checker.   |
+| `exclude` | Optional string array removing entries from this checker's `include`. |
 
-By default, auto mode falls back to `tsc` for ordinary TypeScript. Framework evidence resolves the corresponding framework owner before fallback:
+For example, `include: ['apps/*/tsconfig.json']` can select several app entries, and `exclude: ['apps/playground/tsconfig.json']` removes one from that checker's selection. It may still be selected by automatic discovery or another named rule. This differs from `auto.exclude`. Neither exclusion cuts valid references from an already selected entry.
+
+Selector paths are relative to `config.rootDir`. They directly select only default-named `tsconfig.json` entries, not `tsconfig.lib.json` or `tsconfig.test.json`. Include those named configs through project references from a selected entry. Paths for external activated packages may use `../`. Selectors cannot activate a region or cross a workspace boundary.
+
+The same direct entry cannot be selected by two different named checkers. Even when entries differ, they cannot assign different checkers to the same reachable source config. Conflicts fail graph preparation. A config that names only framework checkers is valid; there is no need to add `tsc` just to fill out the configuration.
+
+### How an aggregator affects selection
+
+Some `tsconfig.json` files do not directly check source. They organize other configs using `references`. This guide calls them **aggregators**; the terminal configs that contain source are **source configs**. For example:
 
 ```text
-ordinary TypeScript -> tsc
-Vue                 -> vue-tsc
-Astro               -> astro
-Svelte              -> svelte-check
+apps/web/tsconfig.json          aggregator entry
+├── tsconfig.app.json           Vue source config
+└── tsconfig.node.json          ordinary TypeScript source config
 ```
 
-Set `useTsgo: true` to route only the ordinary TypeScript fallback to `tsgo` instead. Framework ownership is unchanged.
+If automatic discovery selects the entry, Limina determines the checker for each source config. Assuming they do not need to share a declaration-build cache, the first can use `vue-tsc` and the second can use `tsc`. Belonging to the same aggregator does not itself require a shared checker.
 
-```js
-export default defineConfig({
-  scope: {
-    checkers: {
-      auto: {
-        useTsgo: true,
-        exclude: ['packages/playground/tsconfig.json'],
-      },
-    },
-  },
-});
-```
+If you explicitly select the aggregator through `vue-tsc.include`, as in the earlier example, both source configs must use `vue-tsc`. Explicit selection constrains the entire reference chain and is not overridden by framework config, actual files, or automatic discovery.
 
-`useTsgo` changes only the fallback for build components that remain uncolored after framework analysis. Before generated checker paths exist, Limina joins build-capable leaves that must share declarations: leaves of one solution and configs connected by accepted source imports or `liminaOptions.implicitRefs`. One existing `tsc`, `tsgo`, or `vue-tsc` identity colors the complete component; an uncolored component uses the configured fallback; two different identities fail graph preparation.
+Limina recursively expands nested aggregators and deduplicates source configs reached more than once. A default `tsconfig.json` can directly reference a source config such as `tsconfig.node.json`. If the chain includes another aggregator, that intermediate config must also be named `tsconfig.json`, for example `tsconfig.json → packages/lib/tsconfig.json → packages/lib/tsconfig.lib.json`. A named config that declares references cannot serve as an intermediate aggregator.
 
-Vue capability is confirmed from the checker-resolved file set, not from `vueCompilerOptions` alone. Limina first traverses entries, solutions, referenced leaves, and effective `extends`, then asks the Vue parser for its actual extensions and files. A custom Vue extension is routed to `vue-tsc` only when a matching file exists. A configuration hint without a matching module does not change ownership.
-
-Auto `exclude` filters entry selection inside activated [regions](./regions.md). It does not prune valid project references reached from a selected entry and is separate from `scope.source.exclude`.
-
-The legacy `{ mode: 'auto' }` shape is rejected. Move `exclude` and `useTsgo` under `auto`.
-
-## Named entry constraints and solution closures
-
-All named checker scopes use the same shape:
-
-```ts
-interface CheckerScope {
-  include: string[];
-  exclude?: string[];
-}
-```
-
-`include` selects only direct default `tsconfig.json` entries relative to `config.rootDir`. It never directly selects `tsconfig.lib.json`, `tsconfig.test.json`, or another named config; those configs enter only through a managed references closure. Selectors can use `../` for external activated packages, but cannot pull an unactivated path or a path behind a workspace boundary into the graph. `exclude` removes direct entries after inclusion. It does not cut the normal project-reference closure.
-
-Limina distinguishes solution configs from terminal type configs. A solution organizes references and is not itself an Astro, Svelte, or Vue execution target. Limina recursively expands nested solutions, deduplicates terminal type configs by normalized path, and runs the selected checker once for each leaf.
-
-A named checker is authoritative for its complete terminal-leaf closure. Config hints, effective root files, dependency requirements, and Vue promotion do not recolor that domain. Overlapping named scopes with the same checker merge their evidence; different checker identities on the same terminal leaf fail graph preparation.
-
-A reference may go directly from a default solution to a named terminal config, such as `tsconfig.json -> tsconfig.node.json`. A nested solution must itself use the default name, for example `tsconfig.json -> packages/lib/tsconfig.json -> packages/lib/tsconfig.lib.json`. A named config that declares references is not a supported intermediate solution.
-
-Non-entry configs such as `tsconfig.lib.json` or `tsconfig.test.json` enter the managed graph only when selected `tsconfig.json` entries reference them. Generated files stay under Limina's `.limina` namespace; source config paths remain the paths used in user configuration and diagnostics.
+A valid empty aggregator can remain in the project, but has no checker owner or build target. Running `limina checker build <config>` for it does not start a checker.
 
 ## Framework Prerequisites
 
-Framework checker commands and their execution runtimes resolve from the leaf package that owns the source config:
+Besides Limina, framework checkers and their dependencies must be available in the appropriate execution scope. This is the package scope where Limina looks for checker dependencies. If a dependency is missing, use the scope identified in the error. Versions must be within Limina's supported ranges. Installing Limina does not install these dependencies for every framework project.
 
-- Astro requires `astro`, `@astrojs/check`, and `typescript`, plus the leaf's generated `.astro/types.d.ts`. Limina runs `astro check --noSync --root <leaf> --tsconfig <source-config>` and never runs `astro sync`.
-- Svelte requires `svelte-check`, `svelte2tsx`, `svelte`, and `typescript`. Limina runs `svelte-check --workspace <leaf> --tsconfig <source-config>` without SvelteKit sync, incremental mode, a `.svelte-check` cache, or an output-format override.
+- **Vue:** Install a supported `vue-tsc` in its build execution scope. For toolchain compatibility problems, see [Vue semantic import analysis](#vue-semantic-import-analysis).
+- **Astro:** Each package owned by the Astro checker needs `astro`, `@astrojs/check`, `typescript`, and a previously generated `.astro/types.d.ts`. Limina runs `astro check --noSync --root <leaf> --tsconfig <source-config>`; it does not run `astro sync`. If the generated file is missing, run the project's sync step first.
+- **Svelte:** Each package owned by the Svelte checker needs `svelte-check`, `svelte2tsx`, `svelte`, and `typescript`. Limina runs `svelte-check --workspace <leaf> --tsconfig <source-config>` without running SvelteKit sync, enabling incremental mode, writing a `.svelte-check` cache, or overriding the output format.
 
-`@astrojs/check` is an optional Limina peer dependency. Install the supported version explicitly in every Astro-owning leaf; installing Limina does not install it for the leaf.
+`@astrojs/check`, `vue-tsc`, `svelte-check`, `svelte2tsx`, and `@typescript/native-preview` are optional Limina peers. `typescript` is a required runtime peer. Missing framework dependencies cause an error before the corresponding checker process starts. Astro and Svelte commands and runtimes resolve from the package owning the source config; other external checkers resolve from their target's execution scope.
 
-Framework dependency collection uses the owning checker's generated TypeScript representation. Astro resolves its compiler only through the installed `@astrojs/check` → `@astrojs/language-server` toolchain; Limina has no direct `@astrojs/compiler` dependency, peer, or workspace fallback, and a competing leaf compiler cannot shadow the Language Server-owned instance. Svelte semantic analysis resolves the public `svelte/compiler`, `svelte2tsx`, and TypeScript instances from the owning leaf. Missing framework checker dependencies still fail preflight before checker processes start.
+Astro and Svelte checkers perform type checking and do not generate declaration projects. TypeScript that also needs declaration output belongs in a separate config handled by `tsc`, `tsgo`, or `vue-tsc`. See [Workflows](../workflows.md) for execution options.
 
-`checker typecheck` is a full rerun, not framework watch mode. Stable target IDs preserve target identity between runs but do not provide incremental invalidation.
+When `limina checker typecheck` has applicable targets and preparation succeeds, it reruns Astro and Svelte checks; it is not watch mode. With no such target, it records `disabled` and exits successfully. That means no applicable work, not that framework checking ran. The command still validates the workspace and prepares the graph before deciding whether targets exist, so those steps can fail first.
 
 ## Framework ownership and dependency boundaries
 
-Limina records two project identities:
+Keep two questions separate:
 
-- **Semantic authority** selects the checker-compatible module semantics used to interpret project dependencies.
-- **Final owner** selects the checker that executes the build or typecheck target.
+1. **How are source imports interpreted?** Limina analyzes dependencies using the project's TypeScript or framework semantics.
+2. **Which checker ultimately builds or typechecks the project?** Declaration-build relationships can also affect this choice.
 
 For example, an ordinary TypeScript project and a Vue project that need to share declaration caches can both be built by `vue-tsc`. Imports in the ordinary project still use its established TypeScript semantics.
 
-::: details How checker ownership and dependency evidence are determined
+An explicitly selected `astro` checker covers TypeScript and `.astro` files; `svelte-check` covers TypeScript and `.svelte`; `vue-tsc` covers TypeScript and Vue extensions actually recognized by the checker. Selecting one framework checker does not make it cover other frameworks' files. If a file is in the proof source scope but the responsible checker cannot handle it, `limina proof check` reports `LIMINA_PROOF_UNCOVERED_SOURCE_FILE`. The file's presence alone does not make `graph prepare` fail.
 
-Explicit checker selection, checker-specific config evidence, effective root-file evidence, and a confirmed pending framework dependency are the only inputs that can lock semantic authority. After pending dependency requirements have been collected, Limina freezes that authority. Vue promotion, declaration-component coloring, the TypeScript fallback, and `finalOwner` can select or propagate a build owner, but cannot reinterpret the project's dependencies. A TypeScript-semantic project may therefore finish with `vue-tsc` as its build owner while retaining TypeScript module semantics.
+::: details When dependency analysis is uncertain
 
-For automatic scopes whose checker is still undetermined, Limina starts with TypeScript semantics. Limina enumerates dependencies from the parsed TypeScript project and its TypeScript AST, then applies the checker type-evidence gate to every source-authored dependency. `ambient`, `concrete-declaration`, and `checker-source` evidence stop at the TypeScript boundary; unsupported semantic evidence fails closed. Only `missing` evidence may invoke Oxc, and then only to identify a physical framework-source candidate for ownership inference. The candidate must be an effective member of exactly one governed config and one framework semantic domain. Ordinary TypeScript files, resources, excluded files, and ambiguous targets cannot color the checker. Limina collects the complete requirement set before resolving the pending owner, so conflicting Astro/Svelte/Vue requirements are deterministic and independent of import order.
+Limina determines analysis semantics from explicit selection, configuration, actual files, and confirmed framework dependencies. Once determined, changing the build checker to share a declaration cache does not change how imports are interpreted.
 
-Once semantic authority is locked, all project-aware consumers use the corresponding TypeScript, Vue, Astro, or Svelte semantic provider. A checker-semantic miss remains missing; toolchain, materialization, source-map, ambiguity, and resolution-host failures fail closed. Locked project dependency resolution never uses Oxc or a lightweight collector as a fallback.
+For a project whose framework is not yet determined, Limina starts with TypeScript analysis. Only when TypeScript explicitly finds missing type evidence may Oxc help identify a physical framework source file for checker selection. Ordinary files, resources, excluded files, and files with ambiguous ownership cannot select a framework this way. Conflicting framework requirements produce an error rather than a choice based on import order.
 
-`SourceEvidence` remains a source-only view for syntax, diagnostics, and source coordinates. It is not graph or checker authority. Architecture consumers accept only source-authored `ProjectDependency` values with `direct-source` or strict `mapped-source` provenance. Generated dependencies that cannot be mapped to one source dependency are observations only and never create source-derived edges; an ambiguous reverse mapping is an error.
+Once the framework is determined, dependency resolution uses that framework's toolchain. If Limina cannot reliably resolve a dependency, identify its source location, or use the toolchain, it reports failure rather than inventing an approximate project dependency. Framework-generated imports that cannot be uniquely mapped to user source do not create source dependency relationships.
 
 :::
 
-An explicit Astro owner observes TypeScript files plus `.astro`; an explicit Svelte owner observes TypeScript files plus `.svelte`; an explicit `vue-tsc` owner observes TypeScript and its checker-resolved Vue extensions. A framework name does not implicitly add the other framework extensions. Files inside the configured proof source boundary that the final owner cannot observe do not block graph preparation merely because they exist; `proof check` reports them with `LIMINA_PROOF_UNCOVERED_SOURCE_FILE`.
-
-Astro and Svelte owners do not generate declaration projects, wrappers, or transparent build solutions. Their complete type config is checked once per leaf by `checker:typecheck`. TypeScript that must emit declarations must live in a separate `tsc`, `tsgo`, or `vue-tsc` config.
-
-When `checker:typecheck` has no framework-owned leaf, it is recorded as `disabled` and exits successfully without target peer preflight or a checker process. The command still validates the workspace and materializes the generated graph before testing whether targets exist; graph preparation or materialization can fail first. A disabled result does not prove framework typechecking ran.
+For more on imports, declaration builds, and execution order, see [Import Resolution to Declaration Build Graph](../import-resolution-to-declaration-build-graph.md).
 
 ## Astro semantic import resolution
 
-For a locked Astro project, Limina materializes the primary and extra TypeScript service scripts from the official Astro/Volar context and enumerates dependencies with that toolchain's TypeScript instance. Each generated dependency must reverse-map strictly to one user-source range before the Astro decorated TypeScript host resolves it. There is no standalone Astro collector or source-first resolution round trip.
+Limina uses the Astro toolchain to understand imports in `.astro` files and schedules other projects' checks or builds from actual source dependencies. For example, when `A.astro` imports `B.vue`, Astro analyzes the import in `A.astro`. The Vue toolchain is used only when analyzing `B.vue` itself.
 
-Only a strict source mapping can produce a mapped dependency. Limina first tries the complete generated literal token and tries its inner content only when the first strict lookup has no result; neither lookup permits a fallback match. Generated synthetic imports remain `unmapped-generated` observations even when they resolve to governed workspace source and never create graph edges. Damaged, ambiguous, or conflicting mappings, incompatible toolchains, service-script failures, and resolution-host failures fail closed. Oxc and workspace TypeScript export fallback are not consulted in this locked path.
+The Astro checker does not emit declarations, but cross-project imports can still affect execution order. Imports in generated files must map reliably to user source before they can establish source dependencies. Mapping errors, ambiguity, or incompatible toolchains stop analysis with a diagnostic.
 
-The Astro adapter supports the following component versions:
+The Astro adapter supports these versions:
 
-| Component                                 | Supported contract                      |
-| ----------------------------------------- | --------------------------------------- |
-| Astro                                     | `>=7.0.0 <8.0.0`                        |
-| `@astrojs/check`                          | `>=0.9.6 <0.10.0`                       |
-| `@astrojs/language-server`                | `2.16.13`                               |
-| LS-owned `@astrojs/compiler`              | `2.13.1`                                |
-| `@volar/language-core`                    | `2.4.28`                                |
-| `@volar/kit`                              | `2.4.28`                                |
-| `@volar/typescript`                       | `2.4.28`                                |
-| leaf-visible and check-visible TypeScript | Limina's declared TypeScript peer range |
+| Component                             | Supported versions                    |
+| ------------------------------------- | ------------------------------------- |
+| Astro                                 | `>=7.0.0 <8.0.0`                      |
+| `@astrojs/check`                      | `>=0.9.6 <0.10.0`                     |
+| `@astrojs/language-server`            | `2.16.13`                             |
+| Language server's `@astrojs/compiler` | `2.13.1`                              |
+| `@volar/language-core`                | `2.4.28`                              |
+| `@volar/kit`                          | `2.4.28`                              |
+| `@volar/typescript`                   | `2.4.28`                              |
+| Project- and check-visible TypeScript | `>=5.4.0 <5.10.0` or `>=6.0.0 <6.1.0` |
 
-The TypeScript peer range is `>=5.4.0 <5.10.0 || >=6.0.0 <6.1.0`. Astro `7.0.0` is the supported floor, not the only accepted Astro version. The adapter also checks the internal API shape, so matching version strings with incompatible exports still fail closed.
+Astro `7.0.0` is the supported floor, not the only supported version. Limina also checks the actual toolchain API; incompatible exports fail even when version numbers match. The runtime version check for `@astrojs/check` permits prereleases satisfying the range, such as `0.9.7-beta.1` and `0.10.0-beta.1`. The installation must also satisfy each dependency's own peer requirements.
 
-The check range also requires every other component in the table and the supported internal API shape. Limina's runtime check-version admission uses `includePrerelease: true`, so `0.9.7-beta.1` and `0.10.0-beta.1` can satisfy that range. This runtime admission does not validate every installed package's own peer declarations; those remain part of the consuming installation.
-
-Dependency resolution follows package ownership. Limina creates resolution scopes from the owning leaf, then `@astrojs/check`, then the Language Server, and finally `@volar/kit`. A package must be declared by the scope that owns that dependency; Limina does not retry from the workspace root after an owner-scoped failure. The resolved files may physically live in a pnpm store, a hoisted directory, or another symlink layout. Their paths are recorded as provenance and keep different module instances isolated, but physical-path equality is never a compatibility condition. Two supported TypeScript instances may therefore have different real paths, or even different supported versions.
-
-The semantic provider confirms the source-authored dependency and target. Limina still owns source ownership, provider selection, scheduling, and graph policy:
-
-| Astro source target | Graph policy                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| `.astro`            | framework scheduling                                                                   |
-| `.svelte`           | framework scheduling                                                                   |
-| `.vue`              | Astro confirms the physical target, then records framework scheduling to the Vue owner |
-| `.ts` / `.tsx`      | framework scheduling to the target's build owner                                       |
-
-For `A.astro -> B.vue -> C.ts`, Astro remains the authority for `A -> B`. Vue semantic resolution is used only when `B.vue` is analyzed as its own source, so it cannot reinterpret the import written in `A.astro`. `.astro` and `.svelte` files remain outside generated declaration `files`; their real cross-owner imports can still produce framework scheduling, while declaration-provider edges remain inside one build-checker identity.
+The Astro compiler comes from the language server used by `@astrojs/check`. Limina does not depend on it directly or substitute another copy from the workspace root or project. Dependencies resolve from their owning package scopes and do not need identical physical paths. Different TypeScript installations can use different supported versions.
 
 ## Vue semantic import analysis
 
-Vue import collection has no configuration field. Framework files are not accepted by standalone import APIs: `.vue` dependency semantics require a project-aware `vue-tsc` context. Source profiles remain adapter-local inputs for selecting the official service-script representation; they are not a second dependency authority.
+Limina uses the project's `vue-tsc` toolchain to analyze dependencies in `.vue` files. Because the toolchain transforms component code, an import in a report can differ from the source spelling. For example, source `<script src="./entry.ts">` may be reported as `./entry.js`, while the file and line still point to the original `.vue` file.
 
-For a locked Vue-semantic project, Limina first resolves `vue-tsc` from the checker's execution scope, then resolves Vue Language Core, Volar TypeScript, and the toolchain's TypeScript from that installed `vue-tsc` dependency environment. It materializes the Vue service script, enumerates generated TypeScript dependencies with the same toolchain TypeScript, strictly backprojects each dependency, and resolves the generated semantic literal through the Volar-aware host. The semantic identity is the generated `semanticSpecifier`, resolution mode, checker target, resolver, kind, and canonical type evidence; source spelling is not a second authority. Consequently, `ImportRecord.specifier` and reported `importedSpecifier` may expose `./entry.js` for source `<script src="./entry.ts">`, while file and line locations still point to the `.vue` source. Synthetic service-script imports remain observations and never become graph edges. There is no Oxc or workspace-resolution rescue. TypeScript-only source directives retain bounded direct-source TypeScript semantics.
-
-The Vue adapter supports the following component combinations:
+The Vue adapter supports these toolchain combinations:
 
 | `vue-tsc` family | Matching `@vue/language-core` | `@volar/typescript` | TypeScript           |
 | ---------------- | ----------------------------- | ------------------- | -------------------- |
-| 2.2.0–2.2.12     | same version as `vue-tsc`     | 2.4.11–2.4.28       | 5.4.x–5.9.x or 6.0.x |
-| 3.2.0–3.2.4      | same version as `vue-tsc`     | 2.4.27              | 5.4.x–5.9.x or 6.0.x |
+| 2.2.0–2.2.12     | Same version as `vue-tsc`     | 2.4.11–2.4.28       | 5.4.x–5.9.x or 6.0.x |
+| 3.2.0–3.2.4      | Same version as `vue-tsc`     | 2.4.27              | 5.4.x–5.9.x or 6.0.x |
 
-The published package declares only `vue-tsc` as the optional Vue checker peer. `@vue/language-core` and `@volar/typescript` are checker-internal toolchain packages: applications do not install them for Limina, and Limina does not publish them as peers. The `vue-tsc` peer range describes the supported external-checker versions; Limina still validates the complete installed tuple against the table above. A missing or unsupported top-level checker is reported as `Missing external checker` or `Unsupported external checker`. An incomplete or incompatible internal tuple is reported as `Unsupported vue-tsc toolchain`, and the fix is to upgrade, downgrade, or reinstall `vue-tsc` in its checker scope rather than installing internal packages directly.
+`@vue/language-core` and `@volar/typescript` are internal `vue-tsc` dependencies; you do not need to install them separately for Limina. Limina checks the complete installed combination:
 
-The TypeScript used by this Vue tuple follows the checker-toolchain role and resolves through `vue-tsc`. It does not need to be the same physical installation as Limina's own required TypeScript runtime.
+- For `Missing external checker` or `Unsupported external checker`, check that `vue-tsc` is present and supported in the execution scope.
+- For `Unsupported vue-tsc toolchain`, upgrade, downgrade, or reinstall a supported `vue-tsc` in that scope to repair an incomplete or incompatible internal combination.
 
-An unsupported tuple makes project-aware Vue dependency preparation fail closed. Standalone APIs do not fall back to a lightweight Vue collector or an approximate Vue extension resolver.
+The Vue toolchain resolves TypeScript through `vue-tsc`; it need not be the same physical installation used by Limina itself. An unsupported toolchain causes Vue dependency analysis to fail rather than switching to approximate resolution. Standalone import APIs cannot process `.vue` files without project context.
+
+Vue checkers and editor tools handle single-file component structure issues such as duplicate script blocks or `<script setup src>`. Limina reports source-location, resolution, and graph issues within its own dependency analysis.
 
 ## Svelte semantic dependency analysis
 
-For a locked Svelte project, Limina resolves the public `svelte/compiler`, supported public `svelte2tsx` peer, and TypeScript from the owning leaf. The adapter converts the original component to generated TSX plus a Source Map v3 map; Limina does not bundle or install this Svelte-only adapter for non-Svelte consumers. Dependencies are enumerated with that same TypeScript instance. Provenance is accepted only when decoded segments explicitly cover every UTF-16 offset in the generated dependency range and map monotonically and continuously to the current source. Sparse, partial, unmapped, cross-source, backward, or jumping ranges fail closed rather than inheriting a greatest-lower-bound segment.
+Limina resolves `svelte/compiler`, `svelte2tsx`, and TypeScript from the Svelte project's package and analyzes component dependencies through the transformed TypeScript representation. Only dependencies that can be reliably mapped to original component source establish project relationships. Incomplete or ambiguous source mappings cause an error.
 
-This bounded path does not load `svelte.config.js`, run preprocess/default-language hooks, import private `svelte-check` or Language Server subpaths, or recreate their snapshot and Language Service lifecycle. It uses a minimal explicit `lang="ts"`/`lang="typescript"` detector only to provide the public `svelte2tsx.isTsFile` input; it does not distinguish instance and module scripts for graph policy. The bounded Program overlay may query ambient TypeChecker evidence for an already-enumerated literal but is not a second `.svelte` module resolver. A generated synthetic dependency is observation-only, and locked Svelte resolution never falls back to Oxc.
-
-For every locked framework, preparation records the checker target and existing `TypeEvidence` together. A governed source target becomes a project dependency, a concrete declaration remains a declaration boundary, `target = null` with ambient evidence becomes a typed non-source observation, and `target = null` with missing evidence remains missing. File existence, resource extensions, virtual-module allowlists, workspace export resolution, and Oxc cannot turn a checker miss into a new target.
-
-### Breaking migration from `config.imports.vue`
-
-Delete `config.imports.vue`; there is no replacement field. Loading a configuration that still contains `config.imports` reports this migration directly. The public `VueImportParser` type and Limina's direct/optional `@vue/compiler-sfc` dependency have also been removed.
-
-Limina no longer provides compiler-sfc-specific structural diagnostics for duplicate script blocks or `<script setup src>`. Vue checkers and editor tooling remain responsible for SFC validity. Limina reports only source-provenance, resolution, and graph failures within its own analysis boundary.
+This analysis does not load `svelte.config.js` or run preprocessors or default-language hooks. It recognizes only explicit `lang="ts"` or `lang="typescript"` as transformation input. Do not assume other preprocessing runs here. The Svelte typecheck command still runs as described above.
 
 ## Declaration dependencies and checker identity
 
-Limina distinguishes declaration dependencies from framework scheduling dependencies:
+When Limina establishes a declaration-build relationship that requires two managed projects to share a cache, the declaration provider must run before the consumer. Both must use the same build checker: `tsc`, `tsgo`, or `vue-tsc`. Consuming an existing declaration artifact does not necessarily create such a relationship; use the relationship Limina identifies.
 
-- `declaration-provider` means a real compiler declaration relationship and can become a generated TypeScript project reference.
-- `framework-schedule` orders framework checks or builds but never becomes a generated `tsconfig` reference.
+For example, if a library already uses `vue-tsc` and a dependent project needs to share its declaration cache, Limina can use `vue-tsc` for both. If two projects that must share a cache are explicitly assigned different checkers, `limina graph prepare` fails. Review the named rules and declaration relationship instead of assigning a checker to every project mechanically.
 
-Providers run before consumers. Pure framework-scheduling cycles run as one scheduling component; declaration cycles still fail.
+Qualified declaration dependencies, selected declaration contexts, and valid `liminaOptions.implicitRefs` can impose this requirement. In a connected group that must share a cache, one established build checker is used for the group; with none, the `tsc` or `auto.useTsgo` default is used; conflicting established checkers cause an error. Aggregation alone does not impose this requirement.
 
-Every successful `declaration-provider` edge has the same `tsc`, `tsgo`, or `vue-tsc` identity on both ends and records `cacheReuse: "reusable"` in manifest version 6. A canonical declaration relation therefore colors its whole build component before generated configs and targets are materialized. If a connected group of configs that need to share declaration caches already contains different build identities, graph preparation fails instead of preserving a cross-checker reference or issuing a cache-churn warning. `framework-schedule` may still cross checker identities because it is not a compiler project reference.
-
-## Migrating from named aliases and `preset`
-
-Move each old entry to the key named by its `preset`, then delete `preset`:
-
-```js
-// before
-checkers: {
-  typescript: {
-    preset: 'tsgo',
-    include: ['packages/**/tsconfig.json'],
-  },
-  vue: {
-    preset: 'vue-tsc',
-    include: ['apps/web/tsconfig.json'],
-  },
-}
-
-// after
-checkers: {
-  tsgo: {
-    include: ['packages/**/tsconfig.json'],
-  },
-  'vue-tsc': {
-    include: ['apps/web/tsconfig.json'],
-  },
-}
-```
-
-If multiple aliases previously used the same `preset`, merge their non-overlapping selectors into one fixed key. Resolve overlapping selectors or conflicting policies explicitly; Limina does not assign precedence to old aliases. Configuration files are TypeScript/MTS, so Limina reports a deterministic schema diagnostic but does not rewrite them automatically.
+Framework checks or builds may also require an order. These **framework scheduling relationships** can cross checker identities and do not become TypeScript project references. A cycle consisting only of framework scheduling can be scheduled as a group. A declaration dependency cycle still fails.
 
 ## Generated graph and manifest
 
-Run `limina graph prepare` to materialize `.limina/manifest.json` and generated checker configs. Managed build/typecheck commands and pipelines materialize them when needed; read-only graph, source, and proof checks calculate the graph in memory.
+You normally do not need to generate checker configs by hand. Limina-managed builds, typechecks, and pipelines prepare them when needed. To refresh files on disk separately, run `limina graph prepare`. It generates `.limina/manifest.json` and checker configs. Graph, source, and proof checks calculate the graph in memory.
 
-The current manifest is version 5. It stores the ownership plan (config roles, final owners, and solution leaf closures), stable typed `dependencyEdges`, and build/framework execution targets. Manifest versions 1 through 4 are accepted only as old owned-artifact ledgers for safe cleanup before a fresh version 5 manifest is written. Future or malformed versions fail closed.
+The generated manifest records source-config checker ownership, source configs referenced by aggregators, dependencies, and execution targets. The current manifest is version 6; malformed or unsupported manifests cause an error. Configs and diagnostics use the paths of the project's source configs.
 
-Declaration support inputs can contribute their explicit legal dependencies without becoming Source Configs. Limina does not infer a producer tsconfig, bundler or task from an arbitrary `.d.ts`; declare additional production relationships explicitly.
+Generated declaration and output configs preserve the source's selected `compilerOptions.types`, including relative paths and inherited `typeRoots`. Source and output can use different `target` values, including for `vue-tsc` projects, and default libraries may differ. Governed dependencies actually needed by the output must still be covered by output relationships. Incomplete analysis or uncovered dependencies produce a limitation and source chain instead of automatically expanding the source graph or adding source references.
 
-Generated declaration/output configs preserve the source's selected `compilerOptions.types` entries, including relative entries and effective inherited `typeRoots`. This does not require an identical complete type environment: existing `liminaOptions.outputs.target` choices and defaults remain valid, and default libraries may differ. Actual output governance dependencies must be covered by existing output relations. Uncovered or incompletely observed inputs report a capability limit and source chain instead of expanding the source graph.
-
-For a `vue-tsc` owner, source and output `target` values may differ. Limina observes the output's effective compiler options through a separate Vue semantic context, including native TypeScript files and mapped Vue components. It checks output dependencies against existing output references; it does not add source references to make the output pass. Unsupported observations and uncovered output dependencies still stop graph preparation.
-
-Expected declaration outputs of explicit project references may be absent before an ordered `tsc -b` creates them. This permission does not cover arbitrary missing declarations or allow stale output to supplement source discovery.
-
-### Solutions and Checker groups
-
-An automatically discovered solution can contain independent projects executed by different Checkers. Limina traverses nested solutions to collect every terminal source config and generates separate Checker build entries from final ownership. Aggregation alone does not require one Checker. Real declaration build dependencies still require exact Checker identity and compatible declaration caches.
-
-Explicitly selecting a solution through `scope.checkers.<checker>.include` still requires all its terminal source configs to use that Checker. Conflicting explicit requirements on a shared source produce an error. A valid empty solution creates no build targets; `limina checker build <config>` starts no Checker for it.
+An expected declaration file required by an explicit project reference can be absent before an ordered build and generated later in reference order, for example by `tsc -b`. This does not apply to arbitrary missing declarations and does not use stale output in place of source discovery. Limina does not infer a producer project, build tool, or task solely from a `.d.ts`; declare additional artifact dependencies explicitly.

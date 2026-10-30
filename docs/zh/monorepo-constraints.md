@@ -1,6 +1,8 @@
 # 多包仓库约束 {#单体仓库约束}
 
-在多包仓库中，Limina 要求实现源码拥有清楚的包归属和类型检查归属，再据此检查跨包导入、声明引用和产物消费。目录结构可以按项目需要组织，但一个叶子配置不能把多个包的实现混成自己的输入。
+假设工作区有 `app` 和 `ui` 两个包：`app` 应通过 `ui` 的公开入口使用它，并在自己的 `package.json` 中声明依赖。`ui` 的源码则由 `ui` 的类型配置负责。Limina 用这些信息检查跨包导入、声明引用和产物消费是否一致。
+
+本页中的“源码配置”指直接包含源码的 `tsconfig`，也称源码叶子配置。一个源码配置不能把多个包的实现混成自己的输入。检查器因导入读取另一个包的文件，并不等于导入方拥有该文件。
 
 本页按常见结构问题解释这些约束。配置角色的完整定义见[核心概念](./concepts.md)，具体匹配规则见[配置参考](./config/index.md)。
 
@@ -32,7 +34,7 @@ packages/core/tsconfig.lib.json       包含 src/index.ts
 packages/core/tsconfig.browser.json   也包含 src/index.ts
 ```
 
-让每个实现文件只归一个叶子源码叶子配置管辖。如需聚合多个环境，用 `tsconfig.json` 引用各自的叶子配置，避免它们重复覆盖实现文件。
+让每个实现文件只归一份源码配置管辖。如需聚合多个环境，用 `tsconfig.json` 引用各自的源码配置，避免它们重复覆盖实现文件。
 
 ## 文件先要有治理区域和清楚的包归属
 
@@ -54,9 +56,9 @@ packages/
 
 如果 `app/tsconfig.lib.json` 同时包含 `ui/src/Button.ts`，它就跨过了包归属边界。应让 `ui` 的配置拥有该文件，再让 `app` 通过公开包入口依赖它。检查器因导入读到一个文件，不等于这个文件归导入方所有。
 
-默认情况下，嵌套 `package.json`、嵌套工作区根和激活子包都会停止外层包的遍历；已激活的子包从自己的包根独立治理。满足条件的无名嵌套包作用域可以通过 `scope.regions.extendNestedPackageScopes` 留在外层区域，但它的最近包作用域仍约束相对导入和 `#imports`。
+默认情况下，嵌套 `package.json`、嵌套工作区根和激活子包都会停止外层包的遍历。已激活的子包从自己的包根独立治理。满足条件的无名嵌套包作用域可以通过 `scope.regions.extendNestedPackageScopes` 留在外层区域，但它的最近包作用域仍约束相对导入和 `#imports`。
 
-`scope.regions.exclude` 按种类排除包、嵌套包作用域或精确 `tsconfig`。排除父包不自动排除独立激活的后代；只排除配置文件也不等于排除源码。详细条件见[治理区域](./config/regions.md)。
+`scope.regions.exclude` 按种类排除包、嵌套包作用域或精确 `tsconfig`。排除父包不会自动排除独立激活的后代，只排除配置文件也不等于排除源码。详细条件见[治理区域](./config/regions.md)。
 
 还要区分源码归属、有效分析输入与检查器 `Program` 的文件集合。本地相对 `compilerOptions.types` 可以带入类型输入，`extends` 可以引用配置，但都不能单独证明源码归属。治理根内的本地有效输入仍须处于激活区域。
 
@@ -64,7 +66,7 @@ packages/
 
 ![Limina 多包仓库分层边界模型](/layered-boundaries.png)
 
-图中 `Module` 表示源码模块，`tsconfig scope` 表示源码配置范围，`tsconfig build scope` 对应派生的构建配置范围。这里讨论的内部声明配置位于 `.limina`，不是发布到 `dist` 的产物。pnpm 只是工作区层次示例；图中嵌套包作用域是否被治理，还取决于实际激活与扩展规则。
+图中 `Module` 表示源码模块，`tsconfig scope` 表示源码配置范围，`tsconfig build scope` 对应派生的构建配置范围。这里讨论的内部声明配置位于 `.limina`，不是发布到 `dist` 的产物。pnpm 只是工作区层次示例。图中嵌套包作用域是否被治理，还取决于实际激活与扩展规则。
 
 :::
 
@@ -72,7 +74,7 @@ packages/
 
 用户维护两类输入：叶子配置描述源码范围与类型环境，聚合配置用 `references` 组织叶子。默认 `tsconfig.json` 只有在检查器解析后的文件集合为空、且直接声明了 `references` 时，才是 Limina 支持的聚合配置。
 
-普通源码叶子不能直接声明原生 `references`，空数组也不行。Limina 根据源码关系生成 `.limina` 下的声明引用；静态分析看不到但确实需要的关系，由叶子上的 `liminaOptions.implicitRefs` 补充。
+普通源码叶子不能直接声明原生 `references`，空数组也不行。Limina 根据源码关系和受管声明上下文生成 `.limina` 下的声明引用。静态分析看不到但确实需要的关系，由叶子上的 `liminaOptions.implicitRefs` 补充。
 
 ```text
 用户 tsconfig.json：聚合叶子成员
@@ -80,7 +82,7 @@ packages/
 .limina/.../*.dts.json：记录内部声明输出及生成的 references
 ```
 
-源码范围问题在用户配置中修复，引用问题则检查导入、提供者和规则，再重新生成。不要手动修补 `.limina` 文件；合法输入无法投影时，应报告生成缺陷。
+源码范围问题在用户配置中修复，引用问题则检查导入、提供者和规则，再重新生成。不要手动修补 `.limina` 文件。合法输入无法投影时，应报告生成缺陷。
 
 ## 跨包访问应该经过公开入口
 
@@ -90,9 +92,11 @@ packages/
 import { Button } from '../../ui/src/Button';
 ```
 
-这条导入绕过了 `ui` 的公开入口和 `app` 对 `ui` 的依赖声明。应声明依赖并通过包名导入：
+这条导入绕过了 `ui` 的公开入口。即使 `app` 没有声明对 `ui` 的依赖，TypeScript 也可能解析到目标文件。应在 `app` 中声明依赖，并通过包名导入：
 
-```json [packages/app/package.json]
+`packages/app/package.json`：
+
+```json
 {
   "dependencies": {
     "@acme/ui": "workspace:*"
@@ -118,7 +122,9 @@ Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。
 
 例如，一个包可以同时声明以下入口：
 
-```json [packages/utility/package.json]
+`packages/utility/package.json`：
+
+```json
 {
   "name": "utility",
   "type": "module",
@@ -135,7 +141,7 @@ Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。
 
 发布检查面向另一对象。[包检查](./config/package-checks.md)只处理显式配置的输出条目。Limina 检查声明一致性，包括本地依赖协议和混合 `exports` 根键。可选的 publint 检查打包后的产物，包括导出目标缺失；关闭或无法使用 publint 时，该项未检查。可选的 ATTW 检查运行时与类型的兼容性，不改变图事实、边或诊断。包边界检查保留自身的产物代码约束，[发布检查](./config/release-checks.md)也保持独立。
 
-图检查通过不代表完整发布契约已经通过。哪些公开入口应保留、弃用或删除，由包作者决定；未被工作区使用的入口可能服务外部消费者或兼容性需求。
+图检查通过不代表完整发布契约已经通过。哪些公开入口应保留、弃用或删除，由包作者决定。未被工作区使用的入口可能服务外部消费者或兼容性需求。
 
 ## 项目引用来自声明提供者，不是来自导入文本 {#references-来自声明提供者-不是来自导入文本}
 
@@ -146,20 +152,22 @@ Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。
 import { createClient } from '@acme/core';
 ```
 
-如果检查器把它解析到 `core` 的已有 `.d.ts` 文件，这属于声明文件消费，不会强行生成源码项目引用。被消费的源码关系只有在语义证据要求声明提供者，且另一受管配置具有有效的声明提供者时，才会映射到 `.limina` 下的声明构建配置。框架调度依赖仍是单独的关系。
+如果检查器把它解析到 `core` 的已有 `.d.ts` 文件，它消费的是该声明，不能仅凭路径推断生产者。如果声明本身作为源码管理，Limina 仍可能生成引用，指向选定的检查上下文。对于实现源码之间的关系，只有语义证据要求声明提供者，且另一受管配置具有有效的声明提供者时，才会映射到 `.limina` 下的声明构建配置。框架调度依赖仍是单独的关系。
 
 解析结果与项目引用的关系如下：
 
-| `TypeScript` 类型解析结果     | Limina 对项目引用的处理                                      |
-| ----------------------------- | ------------------------------------------------------------ |
-| `.d.ts` / `.d.mts` / `.d.cts` | 受管源码声明选择配置上下文；生成产物和第三方声明保留消费边界 |
-| 当前源码叶子配置内的源码      | 视为当前范围内部关系，不生成 `TypeScript` 项目引用           |
-| 另一个 Limina 管辖的源码文件  | 可能生成到目标声明构建配置的项目引用                         |
-| `TypeScript` 无法解析         | 不用 `Oxc` 补判项目引用，输出诊断或交给相关检查暴露问题      |
+| `TypeScript` 类型解析结果     | Limina 对项目引用的处理                                    |
+| ----------------------------- | ---------------------------------------------------------- |
+| `.d.ts` / `.d.mts` / `.d.cts` | 受管声明可能需要检查上下文，不能仅凭路径判断由哪个项目生成 |
+| 当前源码叶子配置内的源码      | 视为当前范围内部关系，不生成 `TypeScript` 项目引用         |
+| 另一个 Limina 管辖的源码文件  | 可能生成到目标声明构建配置的项目引用                       |
+| `TypeScript` 无法解析         | 不用 `Oxc` 补判项目引用，输出诊断或交给相关检查暴露问题    |
 
-如果确实存在静态分析看不到的声明构建关系，例如代码生成后的连接，可以使用 `liminaOptions.implicitRefs` 显式声明，并写清原因。
+如果确实存在静态分析看不到的声明构建关系，例如代码生成后的类型连接，可以使用 `liminaOptions.implicitRefs` 显式声明，并写清原因。下例假设 `app` 和 `core` 已纳入工作区，各自的源码配置可由检查器入口找到，且 `app` 已声明对 `core` 的依赖。示例还假设工作区根目录有 `tsconfig.base.json`。请保留项目实际使用的 `extends` 和其他选项。
 
-```json [packages/app/tsconfig.lib.json]
+`packages/app/tsconfig.lib.json`：
+
+```json
 {
   "extends": "../../tsconfig.base.json",
   "include": ["src"],
@@ -168,7 +176,7 @@ import { createClient } from '@acme/core';
     "implicitRefs": [
       {
         "path": "../core/tsconfig.lib.json",
-        "reason": "app 包的路由清单由构建插件生成，生成后会加载 core 包；源码中没有静态导入。"
+        "reason": "app 生成的路由声明需要引用 core 的类型。当前源码中没有这条导入。"
       }
     ]
   }
@@ -179,33 +187,49 @@ import { createClient } from '@acme/core';
 
 ## 选择声明的配置上下文
 
-消费者使用受管 `.d.ts`、`.d.mts` 或 `.d.cts` 时，如果当前完整 Coverage 唯一，Limina 自动选择该源配置，即使项目只有声明也生成引用。多个配置合法覆盖同一声明时，外部消费者分支等待显式选择：
+消费方使用受管 `.d.ts`、`.d.mts` 或 `.d.cts` 时，Limina 需要知道应按哪份源码配置检查这份声明。如果完整的覆盖结果指向唯一配置，Limina 会自动选择它。即使该项目只包含声明，也可以生成引用。如果多个配置覆盖同一声明，外部消费方需要显式选择。
+
+例如，假设 `packages/app` 依赖工作区包 `@acme/types`，后者公开了 `packages/types/api.d.ts`。这个文件由 `packages/types/tsconfig.json` 包含。可以在消费方的 `packages/app/tsconfig.json` 中加入以下字段，显式选择这份配置：
 
 ```json
 {
   "liminaOptions": {
-    "declarationContexts": [{ "file": "../shared/api.d.ts", "config": "../types/tsconfig.json" }]
+    "declarationContexts": [{ "file": "../types/api.d.ts", "config": "../types/tsconfig.json" }]
   }
 }
 ```
 
-两个路径都相对消费者的 ordinary source tsconfig。指定准确的声明文件和当前确实覆盖它的受管源配置，不支持 glob。项目自己的声明 roots 保持本地角色，共享 roots 也一样。此选项不建立全仓唯一 owner，implicitRefs 也不能选择声明上下文。
+在这个例子中，如果只有 `packages/types/tsconfig.json` 覆盖该声明，就不必显式选择。两个路径都相对于消费方的源码 `tsconfig`。`file` 指向具体的声明文件，`config` 指向当前确实覆盖该文件的受管源码配置。两者都不支持通配模式。项目自己的声明根文件仍按本地输入处理，共享声明根文件也一样。这个选项不会为整个仓库指定唯一归属，`implicitRefs` 也不能代替它选择声明上下文。
 
-只有具备声明输入引入资格的请求才参与外部上下文选择。`noResolve` 会抑制 module import 和逐文件 path/type directives，这些请求与未解析请求分别记录。它们不会仅因 Resolver 命中文件而生成政策引用；roots、配置指定或自动发现的类型入口仍保留独立输入责任。
+选择上下文不能绕过[源码归属规则](./config/source-boundary.md)。例如，普通声明不能同时属于两个源码治理配置，也不能被另一个包所属的配置覆盖。环境声明有自己的[共享规则](./config/source-checks.md#declarations-ambient)。
 
-选定项目独立分析自己的声明依赖。Limina 验证实际生成引用映射，并将声明请求与选定上下文的独立观察比较。被外部消费的声明可以由多个可达配置覆盖，但显式选择必须匹配实际映射，且请求必须一致。不能通过引用排序选择上下文；引用环仍不合法。责任沿声明请求传播，包括嵌套声明，不会继承被引用实现内部的所有私有声明消费。不需要 Resolver callback 时，own ambient module 仍保留编译器证明的上下文。已消费上下文处于待选择或 unavailable 时，相关生成候选和 Checker 准入被阻止；未使用的共享声明不会造成全局失败。
+::: details 声明检查和工具链的具体要求
 
-Native `tsc` 与 Vue `vue-tsc` 使用同一套声明治理规则，分别提供合格的编译观察和执行命令。工具链必须能提供实际声明输入关联；原生 TypeScript 5.9.0–5.9.2 缺少该关联。Vue 候选验证使用已解析的 `vue-tsc` 工具链，以保留 Vue 声明输出映射。缺少观察能力或使用 command override 时不能取得准入。自定义 Vue 插件保留本地分析，但其任意输入尚未取得资格，因此当前不支持跨项目声明委派。普通本地声明消费保留自身检查选项和映射保护。被选作外部 owner 的配置不能通过 skipLibCheck/noCheck，或实际适用的 skipDefaultLibCheck 跳过声明检查。既有 outputs 与 Checker 身份规则继续适用。
+这样可以让另一个项目负责检查消费到的声明。下文将这种安排称为跨项目声明委派。
 
-References 可以为 A 消费的声明选择模块解析选项，但 A 仍使用自己的 TypeChecker。B 的独立检查是另一项责任；增量构建可以复用此前检查，不保证每次重新运行。
+不是所有解析到声明文件的请求都会触发上下文选择。例如，`noResolve` 会抑制模块导入和逐文件的 path/type 引用。这些请求不会仅因为解析器找到文件就生成引用。配置选中的根文件，以及配置指定或自动发现的类型入口，仍按各自的输入规则处理。
 
-框架 Checker 对自己的声明 roots 保留既有检查能力。Svelte 和 Astro 保持当前加载行为，但不能使用 Native 或 Vue 凭据取得跨项目声明委派资格。
+选定的项目会独立分析自己的声明依赖。Limina 会比较生成引用后的实际映射与这份分析结果，嵌套声明也在检查范围内。显式选择必须与实际映射一致。调整引用顺序不能代替选择，引用环也仍然无效。
+
+如果实际消费的声明还没有选定上下文，或上下文不可用，相关构建会被阻止。没有被使用的共享声明不会因此让整个项目失败。责任只沿实际声明请求传播，不会把被引用实现的所有私有声明依赖都归给消费方。本地环境模块也会保留编译器证明的上下文。
+
+`tsc` 和 `vue-tsc` 使用同一套声明规则，但各自的工具链必须能够提供所需的声明输入信息。原生 TypeScript 5.9.0–5.9.2 缺少这项信息。使用自定义命令覆盖检查器，或使用自定义 Vue 插件时，也不能取得跨项目声明委派的资格。自定义 Vue 插件的本地分析仍可使用。
+
+被选为外部声明负责方的配置必须实际检查声明，不能通过 `skipLibCheck`、`noCheck` 或适用的 `skipDefaultLibCheck` 跳过。普通本地声明消费仍使用自己的检查选项，输出配置和检查器身份规则也继续适用。
+
+项目引用可以影响消费方解析声明时使用的模块选项，但消费方仍使用自己的类型检查器。被选中项目的独立检查是另一项责任。增量构建可以复用此前结果，不保证每次都重新运行。
+
+框架检查器仍可检查自己项目中的声明根文件。Svelte 和 Astro 不能借用 TypeScript 或 Vue 的分析结果取得跨项目声明委派资格。
+
+:::
 
 ## 图规则要落到真实导入上
 
 有些架构边界不是靠包名就能表达的，比如浏览器代码不能导入 `Node` 内置模块，公共接口不应该访问内部实现，插件运行时代码不应该依赖命令行代码。Limina 允许把这些边界写成图规则，再用真实导入去验证。
 
-```jsonc [packages/app/src/client/tsconfig.json]
+`packages/app/src/client/tsconfig.json`：
+
+```jsonc
 {
   "liminaOptions": {
     "graphRules": ["runtime-client"],
@@ -214,7 +238,9 @@ References 可以为 A 消费的声明选择模块解析选项，但 A 仍使用
 }
 ```
 
-```ts [limina.config.mts]
+`limina.config.mts`：
+
+```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({
@@ -243,7 +269,9 @@ export default defineConfig({
 
 `package.json` 里声明了另一个工作区包，不代表这条依赖一定还在被使用。启用 `source.knip` 时，Limina 的源码检查会结合包入口、`bin`、脚本和显式配置的额外入口，借助 `Knip` 相关能力检查工作区依赖和源码文件的可达性。
 
-```json [packages/app/package.json]
+`packages/app/package.json`：
+
+```json
 {
   "dependencies": {
     "@acme/core": "workspace:*",
@@ -264,7 +292,7 @@ export default defineConfig({
 import { runtimeValue } from '@acme/core/runtime';
 ```
 
-如果 `@acme/core/runtime` 通过公开入口解析到由 `liminaOptions.outputs` 或已配置包产物条目声明并验证的输出根，且目标没有实际源码归属方，`limina graph export --view artifact` 可以把这段关系导出为产物边。仅有 `dist` 目录名不能证明该分类；`lib` 等自定义输出也可以。这个边来自真实导入及其保留的检查器解析结果，并带有导入文件、导入说明符和解析结果作为证据。
+如果 `@acme/core/runtime` 通过公开入口解析到由 `liminaOptions.outputs` 或已配置包产物条目声明并验证的输出根，且目标没有实际源码归属方，`limina graph export --view artifact` 可以把这段关系导出为产物边。仅有 `dist` 目录名不能证明该分类，`lib` 等自定义输出也可以符合条件。这个边来自真实导入及其保留的检查器解析结果，并带有导入文件、导入说明符和解析结果作为证据。
 
 导出的产物边描述消费关系，不决定构建任务顺序。用于任务编排时，外部任务系统或持续集成流程仍需结合自己的构建目标配置。
 
