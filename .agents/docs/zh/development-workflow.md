@@ -74,6 +74,12 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 [Full-analysis-cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts) 的声明治理用例省略本地声明输入不使用的默认标准库，同时保留 Coverage、显式选择、独立 types 贡献及检查选项撤销断言。每例三到五次新 runner 启动及候选 Checker 进程使用 60 秒预算。[Execution-admission](../../../packages/limina/src/__tests__/execution-admission.spec.ts) 中真实 CommonJS 受管刷新用例也为 Node loader 与框架 generation 使用 60 秒，其余用例保留既有预算。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 将 Pending 出现／消失与 output target 恢复／变化分别放入新 fixture，每例两到三次 runner 启动，继续使用既有 60 秒预算。Adapter 版本拒绝保留冷启动 seed 及重建后的恢复控制；普通未变化恢复已有独立覆盖。这些 fixture 调整保留真实进程边界与语义拒绝控制，不改变生产执行时限。
 
+[执行输入交接 fixture](../../../packages/limina/src/__tests__/execution-input-handoff.spec.ts)使用 `noLib: true`，保留既有空 `types` 列表。四个项目只使用基础类型与本地声明；反复发现标准库与受管输出 receipt 合同无关，且已在 Windows CI 超过 30 秒。保留相同的每例时限、源码漂移及相关输出拒绝控制、无关输出接纳、独立 target 并发与刷新发布屏障。生产输入验证及标准库专项测试保持既有行为。
+
+[循环具名 wrapper 迁移回归](../../../packages/migrate/src/__tests__/migration-topology.spec.ts)仅为数值导出源码 leaf 设置 `noLib: true` 和空 `types`，包括独立的健康 sibling。其合同是 solution 成员关系及新进程幂等性，默认标准库发现增加了无关工作。保留两条验证命令、两个保留的源码成员、真实 CLI 重跑及每例 30 秒时限。覆盖普通标准库的其他迁移用例仍保留标准库。
+
+独立的默认／具名 solution 展开用例保留普通标准库及两次完整迁移，每次均由新的 `check` 与 `graph` 进程验证。该用例使用 60 秒预算以容纳四进程合同：[Windows CI](https://github.com/senaoxi/limina/actions/runs/41019655628/job/123943833401)完成首次迁移，但在 30.014 秒时中断了幂等重跑。保留两项 implicit reference、展开后的 wrapper 成员、schema 接纳、输入消费及文件未变化断言。全局测试时限与生产 verifier 行为不变。
+
 fixture 转换 `load` Hook 返回的二进制源码前，先按 UTF-8 解码。Node 22.18.0 和 24.11.0 可能返回 `Uint8Array`；`String(source)` 会生成逗号分隔的字节值，而非 JavaScript 文本，导致配置导出丢失。配置模块缓存回归保留字符串源码，通过 `TextDecoder` 解码二进制源码，并在断言 warm 恢复前确认新发布的源码来源及摘要。旧快照的 complete 状态本身不能证明转换后的配置已发布。将转换开关的两个方向放入使用新 fixture 的独立用例，各自保留变更前后的正向恢复控制，使四次 runner 启动能在未调整的单例时限内完成。
 
 交付或获授权提交前复核预期 diff。PCR 与保存的审计结果按 [project-context-writing](../../skills/project-context-writing/SKILL.md) 复核两种语言的隐私与技术含义；凭据只报告位置／类别。最后运行 `git diff --check`、检查 Git 状态，并明确列出已执行和未执行的验证，包括失败与剩余不确定性。本地成功不代表满足[迁移与外部门禁](./migration.md)。
