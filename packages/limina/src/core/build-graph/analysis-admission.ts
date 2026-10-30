@@ -197,6 +197,7 @@ function hasCandidateImpact(
   obligation: NativeCompilationObligation,
 ): boolean {
   return (
+    obligation.existence.state === 'present' ||
     obligation.targetConfigId !== null ||
     hasUnknownTargetImpact(snapshot, obligation)
   );

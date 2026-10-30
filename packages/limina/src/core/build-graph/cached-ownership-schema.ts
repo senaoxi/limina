@@ -88,7 +88,7 @@ const dependencyFact = z.object({
     .object({
       origin: nativeOriginSchema,
       coverage: nativeCoverageSchema,
-      observer: z.literal('oxc-physical-candidate-v1'),
+      observer: z.literal('qualified-framework-candidate-v2'),
       family: z.enum(['vue', 'astro', 'svelte']),
       owningConfigPath: text,
       targetPath: text,

@@ -67,8 +67,10 @@ export function observeVueDeclarationCandidate(
     input: JSON.stringify({
       vueTsc: toolchain.paths.vueTsc,
       generatedConfig: input.generatedConfig,
+      buildInfoFile: input.parsed.options.tsBuildInfoFile,
       files: [...input.files],
       declarations: input.declarations,
+      referenceInputs: input.referenceInputs ?? [],
       configs: input.configs,
       governed: input.coverage.configurations.flatMap((config) =>
         config.state === 'enumerated'

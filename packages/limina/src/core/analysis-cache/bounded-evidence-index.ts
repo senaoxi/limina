@@ -1,8 +1,8 @@
-import {
-  deriveNativeCoverage,
-  type NativeCoverage,
-  type NativeFileIdentity,
+import type {
+  NativeCoverage,
+  NativeFileIdentity,
 } from '../../domain/analysis/native-coverage';
+import { deriveCompilerCoverage } from '../typescript-semantic/compiler-coverage';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { NativeContextRecord } from './contracts';
 
@@ -39,7 +39,7 @@ export class BoundedEvidenceIndex {
     const key = nativeFingerprint(target);
     const previous = this.#coverage.get(key);
     if (previous !== undefined) return previous;
-    const coverage = deriveNativeCoverage(this.#coverageIndex, target);
+    const coverage = deriveCompilerCoverage(this.#coverageIndex, target);
     this.#coverage.set(key, coverage);
     return coverage;
   }
