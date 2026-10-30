@@ -1,6 +1,8 @@
 # From Import Resolution to the Declaration Build Graph
 
-Limina generates a declaration build graph from dependency facts under the current checker and tsconfig. An import can stop at a Coverage boundary or establish a compilation relationship. Reference projection preserves those facts; Governance evaluates policy and Build Admission controls execution separately.
+An import may consume an existing declaration file, or it may need another source project to generate declarations first. Limina uses checker resolution and `tsconfig` information to decide whether a project reference is needed. It then separately checks whether the relationship follows the rules and whether the build can run.
+
+For example, when `app` imports `@acme/core`, a checker that uses `core/dist/index.d.ts` consumes an existing declaration. If it instead uses implementation source in another managed config, Limina may generate a project reference when the declaration build needs that config to provide declarations. Source ownership and checker compatibility must also hold. An existing declaration that is itself managed as source may require a reference to its checking context, as explained below. Graph rules separately decide whether a reference is allowed.
 
 This page explains the decision process. If package dependencies, source imports, and `references` are still unfamiliar distinctions, start with [Why Imports Cannot Directly Become References](./why-import-is-not-references.md).
 
@@ -12,7 +14,11 @@ Consider an import in `app`:
 import { createClient } from '@acme/core';
 ```
 
-Limina first identifies the source leaf that owns this line, collects and resolves dependencies using that project's checker semantics, and then decides whether another project must participate in the declaration build. For native TypeScript dependencies, this preserves four separate facts:
+Limina first finds the source config containing the import and resolves it with that project's checker. It distinguishes current-project source, other managed source, and existing declarations, then decides whether another project is needed for the declaration build. If it is, ownership and checker compatibility determine whether a reference can be generated. Graph rules separately check whether the relationship is allowed.
+
+::: details How TypeScript's evidence contributes
+
+For native TypeScript dependencies, Limina preserves four separate facts:
 
 | Fact                                                   | Question it answers                                                                                     | Why it cannot decide a reference on its own                                                                     |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -21,19 +27,21 @@ Limina first identifies the source leaf that owns this line, collects and resolv
 | Type evidence (`TypeEvidence`)                         | Do types come from checker source, a concrete declaration, an ambient declaration, or are they missing? | The type source can differ from the original resolution path                                                    |
 | Compiler relation requirement (`referenceRequirement`) | Is a compilation obligation proved, and is its reference structure satisfied?                           | Obligation, structure and output state are independent; valid projection and build admission are still required |
 
-Here, `Program` is the TypeScript program context the checker uses to analyze a set of files. A “declaration provider” is a managed source leaf that supplies declaration output or the selected configuration context for a managed source declaration.
+Here, `Program` is the TypeScript program context the checker uses to analyze a set of files. A “declaration provider” is a managed source leaf that produces declarations or is selected to check a managed declaration.
 
-### Collect Dependencies with Source Provenance
+:::
 
-Native TypeScript uses the compiler's actual request inventory, preserving static imports, re-exports, type imports, dynamic imports, implicit types/lib/JSX requests and compiler modes. JavaScript require follows compiler behavior. Ordinary require, createRequire and require.resolve in TypeScript remain available to separate runtime and package governance but do not automatically generate Native project references. An import first belongs to its source leaf's context; a test-config import does not become a library reference merely because both are in one package.
+### Collect source dependencies {#collect-dependencies-with-source-provenance}
 
-Once Vue, Astro, or Svelte resolution semantics are established, collection uses the official generated TypeScript representation. Each generated dependency must map strictly back to user source before it can participate in graph inference. Synthetic dependencies that cannot map back to source remain observations and create no edges; damaged or ambiguous mappings fail analysis.
+For TypeScript projects, Limina considers requests the compiler actually handles. These include static imports, re-exports, type imports, literal dynamic imports, and types, libraries, or JSX requests introduced by the compiler. JavaScript `require` follows compiler behavior. Ordinary `require`, `createRequire`, and `require.resolve` in TypeScript can still be used for runtime and package-boundary checks, but do not automatically generate TypeScript project references. An import belongs to the source config that contains it. An import in a test config does not become a library reference just because both configs are in the same package.
+
+Once Vue, Astro, or Svelte resolution is established, Limina analyzes the TypeScript representation generated by that framework's toolchain. A dependency must map reliably back to user source before it can contribute to the graph. Generated dependencies with no source location do not create source-derived edges. Damaged or ambiguous mappings cause analysis to fail.
 
 A specifier in the semantic representation can differ from the source text. For example, Vue's `<script src="./entry.ts">` may be reported as `./entry.js`, while file and line locations still point to the original source. See [Checker Configuration](./config/checkers.md) for toolchain requirements.
 
-### Determine Whether a Compiler Relation Is Required
+### Determine whether another project is required {#determine-whether-a-compiler-relation-is-required}
 
-Native records three questions independently: whether a compilation obligation exists, whether actual reference/redirect structure satisfies it, and whether the required declarations are available. Resolving another project's file, finding an owner or obtaining TypeEvidence cannot independently prove an obligation.
+For TypeScript projects, Limina distinguishes three questions: whether another project is needed for compilation, whether the existing reference structure satisfies that need, and whether the required declaration output is available. Resolving another project's file, finding its owner, or finding type evidence alone does not prove that a build reference is needed.
 
 | Evidence                                 | Summary             |
 | ---------------------------------------- | ------------------- |
@@ -42,9 +50,9 @@ Native records three questions independently: whether a compilation obligation e
 | Proven absence of this obligation        | `not-required`      |
 | Other insufficient evidence              | `unknown`           |
 
-`already-satisfied` describes structure, not completed declaration builds. Outputs can still be missing, stale or unknown; existence alone does not prove availability. Source and generated-declaration options qualify their proofs independently. Successful noResolve or augmentation resolution does not automatically create references. Type provision is a separate on-demand proof and cannot create or erase compilation obligations.
+`already-satisfied` describes the reference structure, not whether declarations have been built. Outputs can still be missing, stale, or of unknown status; a file's presence alone does not prove it is usable. Source and generated declaration options both affect the decision. Successful resolution under `noResolve` or an augmentation does not automatically create a reference. Finding a source of types is also separate from proving that compilation requires another project.
 
-Expected uncovered boundaries, resolution misses and unknown obligations stop their branches without automatically creating governance diagnostics or failing the entire analysis. Configuration parsing, reading and compiler initialization failures carry impact scopes. Independent contexts retain evidence, but an untrustworthy transaction cannot publish a successful build plan. The final Checker reports real compiler errors.
+An expected uncovered boundary, a resolution miss, or an unknown requirement stops that part of the analysis without automatically failing the entire run. Config parsing, file reading, or compiler initialization can fail and affect the build plan. Independent contexts may still retain evidence, but Limina cannot report a successful build plan when the transaction is not reliable. The checker reports actual compiler errors.
 
 ### Validate the Target and Generate the Relationship
 
@@ -56,7 +64,7 @@ To project a proved compiler relation, Limina checks:
 
 Qualified relationships map source leaves to declaration configs under `.limina/tsconfig/checkers/<checker>/projects/` and their generated `references`. Dependencies within one leaf do not produce self-references. External dependencies without managed source ownership do not acquire internal workspace references from this process either.
 
-Governance checks graph rules independently. A denied relationship remains in the evidence and reference projection so its violation stays visible; it is not deleted to make the graph appear complete. Unknown relationships retain their unresolved state without inventing a reference. Build Admission separately determines whether the plan may execute, and only a trustworthy transaction may publish a successful plan.
+Graph rules are checked independently. A denied relationship remains in the analysis and generated-reference plan so its violation stays visible; it is not deleted to make the graph appear valid. When a relationship is unknown, Limina does not invent a reference. Before running a checker, Limina also checks whether the build plan has reliable inputs.
 
 Dependency declarations in `package.json` authorize package imports; they cannot replace this evidence. A package dependency, an existing file, or successful runtime resolution alone is insufficient to generate a declaration reference.
 
@@ -78,11 +86,15 @@ Suppose the public entry of `core` has both type and runtime branches:
 
 When the checker selects `dist/index.d.ts`, the unselected default source branch creates no reference, and the declaration path does not identify its producer.
 
-Native and Vue use the same Source Config Coverage and declaration responsibility rules. A managed declaration outside the consumer's roots is withheld from its source-analysis Program after the original request and delegation responsibility are retained. Complete unique Coverage selects its configuration; multiple covering configurations require `liminaOptions.declarationContexts`. Incomplete evidence cannot establish uniqueness. The selected project analyzes its own inputs with its authoritative Checker; a shared declaration can be a local root in several projects. Uncovered declarations retain the consumer's resolution environment and continue through declaration inputs to the next managed boundary or implementation target. They do not authorize expansion of non-root implementations. This policy does not infer artifact producers or expand Coverage.
+For TypeScript and Vue projects, a managed declaration can be covered by a source config. If complete coverage identifies exactly one config, Limina selects it automatically. If several configs cover the declaration, an external consumer needs to select one using `liminaOptions.declarationContexts`. Limina does not guess a unique config from incomplete information. A shared declaration can also be a local input of several projects.
 
-For `app → index.d.ts → feature.ts`, selecting configuration B for index creates app→B from a declaration-context policy. B→feature's project still requires B's independent compilation-obligation proof. Final bounded validation checks the actual generated reference closure and declaration input mapping, including pure declarations without emitted output. A selection is accepted only when the actual mapping and independently observed declaration requests agree, including nested declaration requests. Multiple reachable owners do not by themselves establish a conflict, and reference order cannot substitute for an explicit selection. The selected owner must check declarations; the consumer still has its own TypeChecker options. See [declaration contexts](./monorepo-constraints.md#choose-a-declaration-configuration-context) for configuration and current toolchain limits.
+Context selection does not authorize overlapping source ownership. See the [declaration-context guidance](./monorepo-constraints.md#choose-a-declaration-configuration-context) for the ownership and ambient-sharing rules.
 
-Original reference structure and output state remain separate. Missing outputs do not erase a real reference, and an existing reference does not prove readiness. The producing workflow and final Checker own actual builds, diagnostics and output freshness.
+The selected project independently analyzes its declaration dependencies using its own checker. The consumer keeps its own resolution and type-checking options. For a declaration that no managed config covers, analysis keeps the consumer's resolution environment and follows declaration inputs toward a managed boundary or implementation target. This does not add implementation files outside the original project root file set to the analysis, infer an artifact producer, or expand the source-coverage scope.
+
+For example, suppose `app` uses `index.d.ts`, which is handled by project B, and that declaration depends on `feature.ts`. After B is selected, `app` can reference B. Whether B needs a reference to the project owning `feature.ts` is still decided by B's own analysis. Limina checks that generated references and declaration mappings agree with the analysis, including nested declarations and projects containing only declarations. Multiple reachable configs are not automatically a conflict, but changing reference order cannot replace an explicit selection. See [declaration contexts](./monorepo-constraints.md#choose-a-declaration-configuration-context) for configuration and toolchain limits.
+
+Reference structure and output status remain separate. Missing output does not erase a real reference, and an existing reference does not prove the output is ready. The project's build workflow and the checker handle actual builds, diagnostics, and output freshness.
 
 ## Declaration References and Framework Scheduling
 
@@ -99,7 +111,7 @@ Pure framework-scheduling cycles can be handled as one scheduling component. Dec
 
 ### Why Checker Identity Propagates
 
-Before generated paths and execution targets are created, build-capable configs connected through proved compiler relationships, declaration-context policies, aggregator membership, or `implicitRefs`, and needing to share declaration caches, form a group. A single known checker identity propagates to the whole group. With no known identity, the ordinary TypeScript default is used. Multiple different identities cause graph preparation to fail. Successful declaration-provider edges record `cacheReuse: "reusable"`.
+Before generated paths and execution targets are created, build-capable configs connected through proved compiler relationships, selected declaration contexts, or `implicitRefs`, and needing to share declaration caches, form a group. A single known checker identity propagates to the whole group. With no known identity, the ordinary TypeScript default is used. Multiple different identities cause graph preparation to fail. Sharing an aggregator alone does not require the same checker. Successful declaration-provider edges record `cacheReuse: "reusable"`.
 
 A known identity comes from ownership evidence such as named checker constraints or a confirmed framework. The ordinary TypeScript default is applied only if the whole group still has no known identity. An automatically discovered shared TypeScript leaf connected to a Vue leaf can therefore use `vue-tsc` with it. Explicitly fixing the shared leaf to `tsc` instead creates a conflict when the same group requires both `tsc` and `vue-tsc`.
 
@@ -107,7 +119,7 @@ Execution identity and resolution semantics are determined separately. An ordina
 
 ## Runtime Resolution Cannot Repair a Checker Resolution Failure
 
-Once a project's resolution semantics are established, a missing checker target remains missing. Oxc, workspace export resolution, file existence, resource suffixes, and virtual-module allowlists cannot supply a new target on the declaration-inference path.
+Once a project's resolution semantics are established, a missing checker target remains missing. Oxc, a separate resolver Limina uses in limited cases, cannot supply a new target on the declaration-inference path. Workspace export resolution, file existence, resource suffixes, and virtual-module allowlists cannot supply one either.
 
 During initial checker ownership inference, and only with `missing` type evidence, Oxc identifies eligible physical framework candidates. It is not a fallback resolver for a project whose semantics are already established. Separate physical-resource checks and runtime-oriented source checks do not generate declaration references in place of the checker either.
 
@@ -187,9 +199,9 @@ For an entry intended for source governance, add a type-declaration branch or im
 
 `Missing project reference for workspace import` means a static import reaches another source provider that needs declaration output, but the current generated declaration config has no corresponding project reference.
 
-First check that both sides belong to the intended checker scopes and that each default `tsconfig.json` has been selected by automatic discovery or a named checker scope. Explicit `include` is not required. Named terminal configs such as `tsconfig.lib.json` and `tsconfig.test.json` must be reachable through the effective `references` closure of a selected entry. Placing those leaf paths directly in `include` is rejected.
+First check that both source configs are reachable from the intended `tsconfig.json` entries, selected either automatically or by a named checker scope. An explicit checker `include` is not required. Named terminal configs such as `tsconfig.lib.json` and `tsconfig.test.json` must be reachable through references from a selected entry. Placing those leaf paths directly in a checker `include` is rejected.
 
-For example, once a root `tsconfig.json` is automatically discovered or explicitly selected, membership references can include named leaves:
+For example, suppose `packages/app` is an activated workspace package and the two named source configs exist. Once a root `tsconfig.json` is automatically discovered or explicitly selected, its membership references can include those leaves:
 
 ```json [tsconfig.json]
 {

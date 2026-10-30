@@ -148,7 +148,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         link: '/zh/cli',
       },
       {
-        text: pkg.version,
+        text: `开发版 ${pkg.version}`,
         items: [
           {
             text: '更新日志',

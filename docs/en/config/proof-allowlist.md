@@ -1,8 +1,10 @@
 # Proof Allowlist
 
-`proof.allowlist` records exceptions for specific files that remain within the source governance boundary but intentionally have no checker or generated-graph coverage. It affects only coverage proof: it does not change checker inputs, hide type diagnostics, or authorize cross-package imports.
+When Limina reports a source file that is not covered by the configured checkers or generated graph, first decide whether it belongs in an appropriate `tsconfig`. If it must remain in the governed source scope but is intentionally not covered, use `proof.allowlist` to record an exception and reason for that specific file. The exception only affects this coverage check: it does not add the file to a checker, hide type diagnostics, or authorize cross-package imports.
 
-Omitting `proof` still runs Proof Check without exceptions. When `proof` is present, `allowlist` is required; `allowlist: []` grants no exceptions. `proof: {}` and a `coverage` field are invalid. Standalone `limina proof check` and explicit pipeline steps retain the same coverage checks.
+Omitting `proof` still runs coverage checking without exceptions. When `proof` is present, `allowlist` is required; `allowlist: []` grants no exceptions. Standalone `limina proof check` and explicit pipeline steps use the same coverage rules.
+
+For example, if the following generated declaration exists in the source scope and intentionally has no ordinary coverage:
 
 ```ts
 import { defineConfig } from 'limina';

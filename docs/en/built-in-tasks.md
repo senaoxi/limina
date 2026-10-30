@@ -10,6 +10,18 @@ See the [CLI reference](./cli.md) for commands and options, and [pipeline config
 
 The default `limina check` schedules five tasks: `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. `scope` selects inputs and Checkers; top-level `graph`, `source`, and `proof` configure rules, exceptions, and optional capabilities. Omitting a domain does not disable its task. `package.entries` and `release` do not add default tasks.
 
+Use this table to read your first report:
+
+| Task                | Question it answers                                                   |
+| ------------------- | --------------------------------------------------------------------- |
+| `graph:check`       | Do project references and dependency rules agree with the source?     |
+| `source:check`      | Do source ownership, cross-package imports, and dependencies agree?   |
+| `proof:check`       | Are the files expected to be checked covered?                         |
+| `checker:build`     | Can a declaration-build checker handle the TypeScript or Vue configs? |
+| `checker:typecheck` | Are Astro or Svelte type checks needed, and can they run?             |
+
+With no Astro or Svelte targets, the last task is `disabled`, meaning it has no applicable work. Package and release checks run separately after the production build.
+
 The report order is Graph, Source, Proof, Checker Build, then Framework Typecheck, including all five default tasks. Workspace validation, core analysis, graph materialization and execution admission remain mandatory internal work.
 
 This order is the display and recording order for results. It does not mean the default check runs these tasks serially. The default check schedules them as independent tasks; when the concurrency budget and resource locks allow it, they may run concurrently. A failed task fails the current check; other default tasks can continue.
@@ -18,9 +30,11 @@ This order is the display and recording order for results. It does not mean the 
 
 Named pipelines are different. `limina check <name>` runs according to the configured pipeline step order and is used to express explicit sequencing, such as building first and then checking artifacts.
 
-Built-in tasks can be written directly as strings. This example assumes the project has a production build script, `pnpm build`, and configured `package.entries`. It does not publish packages:
+Built-in tasks can be written directly as strings. This example assumes the project has a production build script, `pnpm build`, and configured `package.entries`. Merge the `pipelines` field into that existing config. This pipeline does not publish packages:
 
 ```js
+import { defineConfig } from 'limina';
+
 export default defineConfig({
   pipelines: {
     release: [
@@ -92,19 +106,19 @@ Each named checker `include` selects ordinary source-level `tsconfig.json` entri
 
 Generated declaration build configs inherit from their corresponding source configs and write options suitable for declaration builds, such as `composite`, `incremental`, `declaration`, `emitDeclarationOnly`, `noEmit: false`, `rootDir`, `outDir`, `declarationDir`, and `tsBuildInfoFile`. The generated `outDir` and `declarationDir` are always the same Limina-managed root.
 
-Limina derives eligible `references` from source imports, configuration entries, and explicit exceptions, then validates the generated graph through check tasks.
+Limina derives eligible `references` from source compiler relationships, managed declaration contexts, and explicit configuration, then validates the generated graph through check tasks.
 
-### Static Imports and Explicit Reference Exceptions
+### Source Imports and Explicit Reference Exceptions {#static-imports-and-explicit-reference-exceptions}
 
-Most reference edges come from static imports in source. Suppose one package imports another managed source project:
+For example, one package can import another managed source project:
 
 ```ts
 import { createClient } from '@acme/core';
 ```
 
-An import into another managed source leaf is only a candidate relationship. It must require a declaration build, have a unique target owner and build-capable endpoints with the same checker identity, and pass graph rules before becoming a generated reference. If the current checker already consumes concrete declaration files, the relationship stops at the declaration boundary. See [From Import Resolution to the Declaration Build Graph](./import-resolution-to-declaration-build-graph.md) for the full process.
+An import into another managed leaf's implementation source is only a candidate relationship. It must require a declaration build and have a unique target owner and build-capable endpoints with the same checker identity before Limina can infer a reference. Graph rules separately check whether the reference is allowed; they do not hide a real relationship to remove a violation. If the checker consumes a declaration instead, its path alone does not identify a source producer. A declaration managed as source may still require a reference to its checking context. See [From Import Resolution to the Declaration Build Graph](./import-resolution-to-declaration-build-graph.md) for the full process.
 
-Some relationships cannot be expressed by static imports, such as declaration build relationships required by generated code or runtime manifests. Declare these with `liminaOptions.implicitRefs` in the source `tsconfig` that owns the relationship:
+Some declaration-build relationships cannot be observed from source imports, such as those required by generated code or runtime manifests. Declare these with `liminaOptions.implicitRefs` in the source `tsconfig` that owns the relationship:
 
 ```jsonc
 {
@@ -131,7 +145,7 @@ It mainly covers the following categories.
 
 When retained checker evidence requires a relation to another managed project and an eligible provider exists, the generated declaration build config should contain that reference. `graph:check` reports missing required references and checks whether generated references have inferred evidence or an explicit allowance. `liminaOptions.implicitRefs` declares otherwise unobservable relations; `allow.refs` can explain permitted extra references but does not itself create them.
 
-Semantic authority and final checker owner have different roles. Authority fixes how the source config is interpreted; final ownership selects its checker execution lane. Declaration-component coloring can assign `vue-tsc` to an ordinary TypeScript config without changing its frozen TypeScript semantics.
+Limina determines how to interpret each source config and which checker runs it. An ordinary TypeScript config may be assigned to `vue-tsc` while retaining its original TypeScript resolution settings.
 
 Use `liminaOptions.implicitRefs` to add a relationship that static analysis cannot see. Graph-rule allowances only explain existing extra references. Neither replaces deny rules or resolution evidence.
 
@@ -247,7 +261,7 @@ Workspace validation and generated-artifact materialization, including the revis
 
 ## graph:prepare and graph export
 
-`graph:prepare` validates workspace and graph inputs, computes the plan, and materializes its files. It does not run `graph:check` governance rules or invoke the compiler. Tasks that consume generated files prepare them automatically; run it separately when you need to inspect or refresh files on disk.
+`graph:prepare` validates workspace and graph inputs, computes the plan, and generates its files. It does not run the full `graph:check` or invoke the compiler. Generated files do not mean graph rules have passed; use `graph check` to check them. A prohibited declaration reference is also rejected before checker execution. Tasks that consume generated files prepare them automatically; run this command separately when you need to refresh the files on disk.
 
 `graph export` exports the dependency graph collected by Limina within managed `tsconfig` scopes. It supports different views, such as source edges only, artifact edges only, or both. This graph is suitable for architecture diagnostics and external analysis, but should not be treated as the authoritative build-order source.
 

@@ -56,7 +56,7 @@ Each scope can use a `tsconfig` suited to its type environment. Tests and toolin
 
 Splitting configs creates relationships to coordinate: whether new files enter the intended scope, whether multiple configs claim the same file as their own source, whether imports between configs need upstream declarations, and whether dependencies follow the direction the team intended.
 
-Here, “source ownership” means which config's selected source scope a file belongs to. Importing `shared` from both client code and tests is different from listing its files as owned source in both configs. Shared use does not itself create an ownership conflict.
+For an ordinary source file, Limina checks which package owns it and which source config is responsible for it. Importing `shared` from both client code and tests is different from listing its files as owned source in both configs. Shared use does not itself create an ownership conflict.
 
 Directory names help people understand purpose. To make tools report violations, the source scopes and allowed dependency directions also need to be configured.
 
@@ -80,7 +80,7 @@ TypeScript [project references](https://www.typescriptlang.org/docs/handbook/pro
 
 With Limina, the team continues to maintain configs that describe source scopes and type environments. Limina derives the required project references from checker analysis of dependencies and type sources, then delegates declaration builds to `tsc`, `tsgo`, or `vue-tsc`.
 
-For example, when `client` imports a module from `shared`, a reference is generated only if they belong to different managed source configs, the checker establishes that the current build needs declarations from `shared` source, and ownership and checker compatibility conditions are met. If the checker consumes an existing `.d.ts` instead, that consumption alone does not create a reference to its source project.
+For example, when `client` imports implementation source from `shared`, a source-derived reference requires different managed source configs, evidence that the current build needs declarations from `shared`, and compatible ownership and checkers. If the checker consumes a built `.d.ts` artifact instead, its path alone does not identify the source project that produced it. A declaration managed as source may separately require a checking context.
 
 Source imports, artifact consumption, and project references therefore need separate explanations. See [Why Imports Cannot Directly Become References](./why-import-is-not-references.md). Astro and Svelte checkers type-check their respective source configs without generating declaration build configs; scheduling relationships between framework checks are also distinct from TypeScript project references.
 
@@ -91,14 +91,6 @@ Correct source relationships do not establish that a published package is usable
 For packages that will be published, configure [package checks](./config/package-checks.md) and [release checks](./config/release-checks.md) after preparing the build outputs. Coverage depends on the configured outputs, enabled checks, and available analysis tools. These checks still need real consumer tests alongside them.
 
 Limina derives and checks these relationships. Package managers still install dependencies, type checkers perform type checking and supported declaration builds, and bundlers produce production artifacts. Business behavior, API design, and the suitability of the boundaries still require tests and review.
-
-## AI-Assisted Changes Need Structural Feedback Too
-
-AI can use project documentation and instructions such as `AGENTS.md` to modify code, but it may still omit dependency declarations, bypass package entries, or leave new files outside the intended checking scope. These changes need the same checks as human changes.
-
-Once team constraints are expressed as rules, local and CI reports from Limina can provide concrete files, configs, and dependency evidence to help developers or AI locate problems.
-
-Fixing a violating import is different from changing an allowlist, ignore rule, or boundary exception. The latter changes the constraints the team accepts; developers should review the reason, rather than treating a passing check as the only goal.
 
 ## When Adoption Is Worth Considering
 
@@ -116,8 +108,16 @@ Adoption requires the team to define source scopes, checker ownership, and appli
 
 Evaluate adoption around a specific problem, such as finding unchecked source or maintaining client/server dependency boundaries:
 
-1. Follow [Getting Started](./getting-started.md) to prepare dependencies and initialize a config. Review which packages and source files are included and which checker owns each source config.
+1. Follow [Getting Started](./getting-started.md) to prepare dependencies and create a config. Review which packages and source files are included and which checker owns each source config.
 2. If configs that actually contain source already declare TypeScript project references by hand, use the matching version of `limina-migrate` as described in the [migration guide](./cli.md#limina-migration). Initialization does not rewrite source tsconfigs, so completing initialization does not mean migration is complete.
 3. Run checks, use the reported files, configs, and dependency evidence to resolve issues, then add the applicable checks to daily development and CI.
 
 Read results together with their scope and execution status: disabled, blocked, skipped, or unavailable analysis does not establish that the corresponding relationships are valid.
+
+## AI-Assisted Changes Need Structural Feedback Too
+
+AI can use project documentation and instructions such as `AGENTS.md` to modify code, but it may still omit dependency declarations, bypass package entries, or leave new files outside the intended checking scope. These changes need the same checks as human changes.
+
+Once team constraints are expressed as rules, local and CI reports from Limina can provide concrete files, configs, and dependency evidence to help developers or AI locate problems.
+
+Fixing a violating import is different from changing an allowlist, ignore rule, or boundary exception. The latter changes the constraints the team accepts; developers should review the reason, rather than treating a passing check as the only goal.

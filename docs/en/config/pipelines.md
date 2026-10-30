@@ -1,8 +1,8 @@
 # Pipelines
 
-Pipelines store shared team steps in configuration and run them in order through `limina check <name>`. The `publish` example below performs pre-publish checks only. It assumes the project has `pnpm build` and `pnpm test` scripts and has configured the `package.entries` to check:
+Pipelines store steps your team needs to run together. For example, before release you can run the project's production build and then check the built package. This example assumes a `pnpm build` script and configured [package output entries](./package-checks.md). Merge the `pipelines` field into the existing Limina config so it retains those entries:
 
-Named pipelines execute every declared step in order, independently of the fixed default workflow. Omitting `graph`, `source`, or `proof` does not remove explicitly declared checks.
+`limina.config.mjs`:
 
 ```js
 import { defineConfig } from 'limina';
@@ -10,31 +10,27 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   pipelines: {
     publish: [
-      'graph:check',
-      'source:check',
-      'proof:check',
-      'checker:build',
-      'checker:typecheck',
       { type: 'command', command: 'pnpm', args: ['build'] },
       'package:check',
       'release:check',
-      {
-        type: 'command',
-        command: 'pnpm',
-        args: ['test'],
-      },
     ],
   },
 });
 ```
 
-Run `pnpm exec limina check publish --package @acme/core` to select this pipeline and the package outputs with that name. `checker:build` generates internal declarations under `.limina`; `pnpm build` in the example prepares the consumer artifacts.
+Run this at the project root:
+
+```sh
+pnpm exec limina check publish --package @acme/core
+```
+
+`publish` is only the pipeline name; the example does not publish anything. The build and checks run in the declared order. If the build command fails, later steps are skipped. A named pipeline contains only tasks explicitly listed, not the five default checks. To run those checks, run `pnpm exec limina check` separately or include the tasks you need in the pipeline.
 
 ## pipelines
 
 - **Type:** `Record<string, PipelineStep[]>`
 
-`pipelines` maps a name to an ordered list of steps. `pnpm exec limina check <name>` schedules that pipeline's steps in array order, with each step depending on the previous one. This differs from the default `limina check`: the default check schedules built-in tasks as independent work that can run concurrently, while a named pipeline preserves the order you wrote.
+`pipelines` maps a name to an ordered list of steps. `pnpm exec limina check <name>` runs them in array order, starting each after the preceding step ends. The default `limina check` schedules built-in tasks as independent work that may run concurrently. A named pipeline may continue after a built-in task fails; see the failure policy below.
 
 The name selects only `pipelines[name]`. For example, `limina check graph` requires a configured `pipelines.graph`; it does not implicitly run `limina graph check` or the `graph:check` task. Include `graph:check` explicitly in that pipeline when it belongs to the workflow.
 
@@ -57,13 +53,19 @@ Define each external command's `command`, `args`, `cwd`, and `env` in configurat
 
 The [config file](./config-file.md) is a JS/TS module loaded and evaluated at runtime. Module evaluation and exported config functions can construct workflow configuration dynamically. Reading `process.argv` to forward extra arguments is outside the CLI contract. Integrations needing per-invocation input, such as a `commit-msg` message file, should use a dedicated entry point with its own input contract.
 
-Consecutive built-in tasks form a task segment, and external commands separate these segments. Limina inserts shared `workspace:validate` preparation before each segment. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives shared `graph:materialize` preparation before all its built-in tasks. Preparations are injected automatically, not accepted as `BuiltinTaskName` steps. A failed required preparation records its dependent tasks as `blocked` before they consume topology or generated files.
+Before running built-in tasks, Limina automatically performs necessary preparation, such as validating the workspace or generating checker configs. If preparation fails, dependent tasks are recorded as `blocked`.
+
+::: details When preparation runs
+
+Consecutive built-in tasks form a task segment, and external commands separate segments. Limina runs `workspace:validate` before each segment. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives `graph:materialize` before all its built-in tasks. Limina adds these steps automatically; they cannot be configured as `BuiltinTaskName` steps. When preparation fails, dependent tasks do not proceed to consume workspace topology or generated files.
+
+:::
 
 A built-in task that runs and fails makes the final result fail, but later steps are still attempted in order. Preparation failure blocks only the built-in tasks that depend on it; it does not automatically cancel subsequent external commands.
 
 For example, in `checker:build → pnpm build → package:check`, failure to prepare the first segment blocks `checker:build`, but `pnpm build` is still attempted. If it succeeds, the next segment prepares the workspace again before attempting the package check. The earlier failure remains in the final result. Only an external command failure stops the remaining steps and records them as `skipped`.
 
-An external command separates analysis generations. Limina joins current work before the next generation, disposes its default analysis providers, and recreates provider/query caches and the artifact namespace. The next generation reuses the loaded configuration object; it does not rerun the config module or function after the command.
+An external command may change files needed by later tasks. Limina waits for current work to finish and establishes a fresh analysis context before those tasks. It keeps the config object loaded at the start of the run; it does not rerun the config module or function after the command.
 
 ## String steps
 
@@ -80,7 +82,9 @@ A string step can be a built-in Limina task:
 
 It can also be a simple external command. Simple commands are split on whitespace; use object form when arguments contain spaces, or when the step needs `cwd` or environment variables.
 
-`graph:prepare` validates inputs and materializes graph files; it does not run graph governance checks or the compiler. Validation-only flows can use `graph:check`, which calculates its graph in memory without materializing checker configs. Checker tasks receive automatic materialization. `checker:build` emits Limina's internal declarations; add your project's build command before `package:check` or `release:check` when consumer artifacts need to be produced.
+`graph:prepare` validates inputs and generates graph files, but does not run the full graph check or a compiler. A check-only workflow can use `graph:check`, which calculates the graph in memory without generating checker configs. Checker tasks receive the necessary preparation automatically.
+
+`checker:build` emits declarations for Limina's internal use. To generate artifacts for consumers, add your project's build command before `package:check` or `release:check`.
 
 ## Object command step
 
@@ -115,13 +119,19 @@ Built-in tasks can also be written explicitly:
 }
 ```
 
-After configuration, `pnpm exec limina check publish` runs steps in array order. If a change introduces a cross-package relative import:
+Suppose a change introduces a cross-package relative import:
 
 ```ts
 // packages/app/src/main.ts
 import { createClient } from '../../core/src/index';
 ```
 
-the pipeline records a failure during `source:check`, and later build, package check, and external test commands are still attempted in order. The final result fails. Fix the source import before rerunning the pipeline.
+The `publish` pipeline at the start of this page does not include `source:check`, so it will not run a source check for this import. To check source before release, run `pnpm exec limina check` separately or add `source:check` to the pipeline.
 
-Use an authorized `@acme/core` package export and declare the dependency in the importing source owner's manifest. Limina derives generated references from checker evidence and graph rules; source leaf configs do not need handwritten `references`.
+If you add `source:check` before the build, the build and package checks are still attempted in order after a source failure, but the final pipeline result fails. If a source failure should prevent the build, run the check separately and start the publish pipeline only after it succeeds. For example, at the workspace root:
+
+```sh
+pnpm exec limina check && pnpm exec limina check publish --package @acme/core
+```
+
+Use an authorized `@acme/core` package export and declare the dependency in the importing source owner's manifest. Limina derives references from checker evidence and checks graph rules separately. Source leaf configs do not need handwritten `references`.

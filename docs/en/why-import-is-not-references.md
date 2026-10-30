@@ -1,6 +1,8 @@
 # Why Imports Cannot Directly Become References
 
-In a monorepo, `import`, `package.json` dependencies, and `TypeScript references` are often discussed together. They are related, but they are not the same kind of information.
+Suppose an application imports `@acme/core`. TypeScript may read core's source, or it may read an already-built `.d.ts`. The import looks the same in both cases, but declaration builds may need different work.
+
+In a monorepo, `import`, `package.json` dependencies, and TypeScript project references are related but record different information.
 
 When a package declares a dependency in `package.json`, it only means that the package is allowed to use another package. When a source file contains an `import`, it only means that a file uses a certain module entry. `references` are concerned with something else:
 
@@ -49,7 +51,7 @@ Another package imports it:
 import { createClient } from '@acme/core';
 ```
 
-The current checker and `tsconfig` determine which entry TypeScript resolves. If it resolves through `types` to `./dist/index.d.ts`, Limina does not generate a source project reference for that target. The `default` branch pointing to `./src/index.ts` does not change that result. Eligible local or governed workspace declaration entries can still reveal dependencies on other implementation projects through their internal declaration chain.
+The current checker and `tsconfig` determine which entry TypeScript resolves. If it resolves through `types` to a built `./dist/index.d.ts` outside managed source coverage, Limina does not infer its source producer from that path. The unselected `default` branch does not change that result. If a managed source config instead covers the declaration, Limina may generate a reference to the config selected to check it. Eligible declarations can also reveal dependencies through their declaration chain. See [declaration contexts](./monorepo-constraints.md#choose-a-declaration-configuration-context).
 
 Now consider another import:
 
@@ -107,9 +109,9 @@ Distinguish two kinds of `references`:
 
 ## What Limina actually determines is the declaration provider
 
-Suppose `app` needs types from `core`. They may already be provided by `core/dist/index.d.ts`, or a source leaf in `core` may need to generate declarations first. Only in the latter case is that leaf a candidate declaration provider.
+Suppose `app` needs types from `core`. A built `core/dist/index.d.ts` may already provide them, or a source leaf in `core` may need to generate declarations first. A declaration file that is itself covered by a managed source config is another case: Limina can select that config as the declaration's checking context, even if the project contains only declarations.
 
-Limina must also check who owns the target source, whether the config can emit declarations, whether both sides can use the same build checker, and whether graph rules allow the relationship. Only declaration-build relationships satisfying these conditions enter generated `references`.
+For an implementation-source relationship, Limina must also check who owns the target, whether the config can emit declarations, and whether both sides can use the same build checker. Eligible declaration-build relationships can enter generated `references`. Graph rules separately check whether the relationship is allowed. A prohibited relationship is reported rather than removed to hide the violation.
 
 Supported Astro / Svelte dependencies may instead need only checking order. These framework-scheduling relationships supply no declaration project and are not written as TypeScript references. See [the decision process](./import-resolution-to-declaration-build-graph.md#how-limina-decides-whether-an-import-needs-a-project-reference) for type evidence and scheduling distinctions.
 
@@ -117,7 +119,7 @@ Supported Astro / Svelte dependencies may instead need only checking order. Thes
 
 Generated imports, route manifests, or plugin registries can contain connections that source analysis cannot currently see. Supplement them only when they form real declaration-build dependencies; ordinary runtime dependencies do not all need to become project references. Literal dynamic imports such as `import('./module.js')` already participate in analysis and are not such omissions.
 
-Such edges should be declared explicitly through `liminaOptions.implicitRefs`:
+Such edges should be declared explicitly through `liminaOptions.implicitRefs`. For example, suppose `app` and `core` are governed workspace packages, their source configs are reachable from checker entries, and `app` declares a dependency on `core`. This fragment assumes a `tsconfig.base.json` at the workspace root; retain the actual `extends` and other options used by your project:
 
 ```json [packages/app/tsconfig.lib.json]
 {
@@ -318,7 +320,7 @@ In this example, `app` performs the registration, and `a` and `b` no longer depe
 
 ### Using explicitly maintained declaration boundaries
 
-If one side is inherently an external declaration boundary, you can let it expose types through an explicitly maintained `.d.ts`. The generation and freshness of that declaration file are then the responsibility of the user's own build process, and Limina will not reverse-engineer it back into a source project reference.
+One side can expose types through a `.d.ts` outside the managed source scope. The project is responsible for keeping that declaration current, whether it is generated by a build or maintained by hand. Limina does not infer the source project that produced it from the declaration path alone.
 
 For example:
 
@@ -346,18 +348,18 @@ When inferring a reference from an import, unresolved checker targets or ambiguo
 
 Common cases and their implications include:
 
-| Symptom                                                          | What it more likely indicates                                                                                  |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| TypeScript cannot resolve the import                             | The type entry, path alias, or tsconfig resolution configuration needs to be fixed                             |
-| Consuming checker has no target for an observed workspace import | The checker cannot resolve the workspace entry under its current options                                       |
-| The import reaches another package’s internal source             | It may be bypassing the public entry                                                                           |
-| The import resolves to `.d.ts`                                   | Managed source declarations select a context; artifact paths do not identify a source producer                 |
-| A source file is governed by multiple tsconfigs                  | Implementation ownership needs resolution; shared declaration Coverage is legal and requires a consumer choice |
-| A real edge is invisible to static imports                       | It needs to be declared explicitly through `implicitRefs`                                                      |
-| A generated reference violates graph rules                       | The source relationship exists, but the architecture rules do not allow it                                     |
-| Generated references form a cycle                                | Source relationships cross independently ordered declaration build boundaries                                  |
+| Symptom                                                          | What it more likely indicates                                                                                                           |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript cannot resolve the import                             | The type entry, path alias, or tsconfig resolution configuration needs to be fixed                                                      |
+| Consuming checker has no target for an observed workspace import | The checker cannot resolve the workspace entry under its current options                                                                |
+| The import reaches another package’s internal source             | It may be bypassing the public entry                                                                                                    |
+| The import resolves to `.d.ts`                                   | Managed source declarations select a context; artifact paths do not identify a source producer                                          |
+| A source file is governed by multiple tsconfigs                  | Resolve ordinary source ownership; ambient declarations follow separate [sharing rules](./config/source-checks.md#declarations-ambient) |
+| A real edge is invisible to static imports                       | It needs to be declared explicitly through `implicitRefs`                                                                               |
+| A generated reference violates graph rules                       | The source relationship exists, but the architecture rules do not allow it                                                              |
+| Generated references form a cycle                                | Source relationships cross independently ordered declaration build boundaries                                                           |
 
-A generated declaration reference needs valid source ownership and permission under graph rules. Generated `references` affect TypeScript build order, incremental caches, and upstream declaration consumption, so their evidence and boundaries need to be checked.
+Inferring declaration references requires valid source ownership and build evidence. Graph rules separately check whether the relationship is allowed. Generated `references` affect TypeScript build order, incremental caches, and upstream declaration consumption, so their evidence and boundaries need to be checked.
 
 ## When this inference should be trusted
 

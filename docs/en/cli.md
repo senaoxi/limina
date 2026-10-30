@@ -45,110 +45,15 @@ The config file can export an object, a `Promise`, or a function that receives `
 
 ## Command Reference
 
-### limina init
-
-`init` generates the base adoption files for Limina in the selected project.
-
-```sh
-pnpm exec limina init
-pnpm exec limina init --yes
-```
-
-It finds the nearest `package.json` from cwd, validates it, and places `limina.config.mts` beside it. Only when no manifest exists does it offer to create one at cwd. Invalid nearest manifests stop initialization. It adds no workspace declaration and `--yes` works without manager metadata. Init checks the selected root's packages, writes or updates the config and `.gitignore`, adds the `limina:build` script and missing Limina/TypeScript development dependencies, removes the root's existing generated `.limina` directory, and can install the optional agent skill interactively.
-
-`--yes` accepts the default confirmation and skips the interactive `skill` installation prompt. In non-interactive environments, steps that require confirmation fail unless `--yes` is used.
-
-Configure graph rules and permitted package boundaries for your repository after initialization; `init` does not infer them from business structure.
-
-To install the optional agent skill offered by initialization separately, use the same command:
-
-```sh
-npx --yes skills add senaoxi/limina --skill limina
-```
-
-This installs the skill without rewriting source `tsconfig` files. For existing source project references, use the next section to decide whether migration is needed.
-
-### limina-migrate {#limina-migration}
-
-`limina-migrate` is a separate CLI package released together with `limina` at the same version. It embeds the required core input implementation and has no runtime dependency on the main package. Install it locally to use the command below, or run `pnpm dlx limina-migrate@<version>`. It accepts `--config`, `--config-loader`, `--mode`, `--yes` and `--dry-run`; configuration functions still receive `command: 'migration'`.
-
-A neutral config such as `export default {}` can be migrated with only this tool and its required TypeScript peer. If the config imports public `limina`, install Limina where that config resolves dependencies; the tool does not supply or rewrite those imports. Optional loaders/checkers still require their supported peers. The CLI reports the embedded version and observes project package versions from config/governance-root anchors. Different or unavailable project versions are non-blocking metadata notices, not target-runtime verification. Tool build/self version mismatches fail before writes. Persisted `$schema` paths continue to refer to `node_modules/limina/schemas/tsconfig-schema.json`; editor resolution may be unavailable until the main package is installed.
-
-`limina migration` remains as a deprecated forwarding entry. It prefers a matching local package, otherwise npm downloads that exact version. Its help stays local; offline execution requires the matching migration package to be installed. It does not upgrade project dependencies.
-
-`limina-migrate` normalizes existing TypeScript configuration into input that Limina can discover and read again from disk.
-
-```sh
-pnpm exec limina-migrate
-```
-
-The command reports processing completion separately from input consumption. Architecture rules, package dependencies, checker ownership and type errors still belong to `limina check`. Migration does not promise equivalent native `tsc -b` behavior.
-
-#### Scope and write-plan preview
-
-Discovery has fixed priority: explicit `--config` resolved against the original cwd; default-named Limina configs searched from cwd through every ancestor using the existing same-directory filename order; and, only when no config exists, the nearest `package.json` from cwd. Selecting a config uses its nearest manifest and the normal single-package/workspace classifier. It does not chase a higher workspace when using defaults. Missing manifests and invalid/unreadable nearest manifests stop execution; explicit config errors never fall back.
-
-Flow shows the original cwd, final rootDir, root kind, manifest, config path (or `none (using defaults)`) and input source before loading executable configuration. `Continue with this migration scope?` defaults to Yes. No or cancellation stops before evaluation, planning and migration writes. Non-TTY execution requires `--yes`, including previews. `--yes` accepts this scope only; it does not approve dirty-worktree or hardlink writes. A change to config selection or root binding while waiting stops execution rather than silently choosing another input.
-
-```sh
-pnpm exec limina-migrate --dry-run --yes
-```
-
-After planning, the complete **Write Plan Summary (planned)** lists actual frozen create/update patches with stable paths, schema, native reference deletion/conversion, implicitRefs additions/reuse, outputs and exact isolation exclusions. It lists unchanged/blocked targets and preserved isolated configs separately. Checker entries and discovered candidates are not the write set: `scope.checkers.auto.exclude` does not exclude activated sources from migration. Outside-scope reference removal is identified separately. The auxiliary audit location is distinct from business patches. Write checks and specialized decisions can shrink the displayed plan; the Applied summary reports actual modifications.
-
-Without a config, migration constructs validated defaults in memory. It does not run init, add dependencies/scripts or create an empty config. If safe isolation requires persisted `scope.regions.exclude`, the plan creates `${rootDir}/limina.config.mjs` containing only those static fields, without importing `limina`. The bad tsconfig stays unchanged. Creation cannot replace an existing entry; a competing writer, failed create or skipped consistency group prevents successful adoption. The configuration and rewrites that depend on it share the existing consistency group. Rollback preserves a created target if its identity or content has drifted.
-
-`--dry-run` ends after showing this same frozen plan. It performs no migration-controlled project writes, transaction directories/backups, graph outputs, cache publication, audit success/failure publication or post-write disk verification. It needs no clean Git worktree or Git membership and requests no dirty-worktree/hardlink authorization. A complete readable plan with governed sources returns zero; planning failure, unavailable necessary patches, residual structural incompleteness or no governed sources returns nonzero with available diagnostics. Incomplete dependency comparison alone retains conservative reference preservation. Preview output cannot establish Applied success or disk consumption.
-
-User configuration and existing third-party entrypoints remain executable code; dry-run is not a JavaScript side-effect sandbox. Each later CLI invocation independently replans; a preview grants no future write authorization.
-
-#### Configuration and relationships
-
-Only default `tsconfig.json` files can be checker entries. Named source configs enter checker ownership through solution references. Independent readable source candidates are also normalized without creating checker entries. Migration removes ordinary source `references`, prunes invalid or outside-region solution members, and preserves the remaining source membership. An outside-region reference is recorded without reading or migrating its target.
-
-A pure named solution wrapper can be expanded into every parent when its rewritten references contain only `path` and it has no substantive Limina declarations. Paths are rebased for each parent; the wrapper file remains. Attributed references require manual conversion. Named-wrapper back edges are cut during expansion. Default solution cycles are pruned with compensating source memberships; both rewrites preserve each retained solution's reachable sources. Empty solutions retain their solution role and an explicit `references: []`.
-
-Limina compares native in-region source relations with independently inferred source relations. Inferred relations do not need duplicate `implicitRefs`. Source declarations to solutions expand to their retained source members, with the original target and expansion recorded. Checker mapping and declaration-project legality are left to core analysis. Remaining native declarations become explicit implicit references; existing user reasons are preserved. An incomplete or failed semantic analysis is reported as unavailable comparison, never as an empty inferred graph. Missing or not-yet-generated source files do not make their readable configuration an isolation target.
-
-Unreadable configs, including empty or malformed JSONC inputs, are preserved on disk. Where safe, migration writes exact `scope.regions.exclude` entries of kind `tsconfig` and removes incoming memberships or implicit references. This keeps the package activated. `extends` paths are not removed. A single implicit-reference object can be wrapped in an array; a missing or blank reason receives a factual migration explanation. Illegal shapes that cannot be normalized are isolated or reported as incomplete.
-
-Automatic exclusion editing supports direct exported objects, imported `defineConfig` object calls, and uniquely used immutable `const` objects with statically editable regions/exclusion arrays. Functions, promises, spreads and dynamic composition are preserved. If required exclusions cannot be written, adoption remains incomplete. Existing output visibility cycles without a safe input baseline also require correction; migration does not exclude healthy sources to manufacture success.
-
-#### Optional output adoption
-
-Source compiler options, including build fields and inherited paths, remain intact. Existing valid `liminaOptions.outputs`, including `{}`, remain explicit user contracts.
-
-| Existing configuration without explicit outputs                                              | Automatic output adoption                                      |
-| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Effective `noEmit: true`, including inheritance                                              | None                                                           |
-| Effective emit enabled and `outDir` present                                                  | Proposed, then checked against the complete candidate topology |
-| Only `rootDir`, `target`, declaration flags or `noEmit: false`                               | None                                                           |
-| Declaration-only emit, split declaration/JS directories, only `declarationDir`, or `outFile` | None; native options and the unadopted behavior are recorded   |
-| Solution config                                                                              | None                                                           |
-
-Each optional proposal must pass output-path and mutation-authority checks, stable descriptor discovery, and preservation of entries and their source closures. Proposals are tried once in stable config-path order. A self-hiding output, or a stable output that hides another healthy source, is rejected without isolating those sources. Rejection leaves other source conversions and independent safe outputs eligible. Migration does not duplicate the inherited source `target` into outputs or delete existing output files.
-
-#### Writing and results
-
-Every write target must belong to a Git worktree. All patches and input snapshots are prepared before writing; a dirty worktree requires one interactive confirmation, defaulting to no. Non-interactive runs stop before writes when confirmation is needed. Approval does not commit, stash or discard user changes.
-
-JSONC edits preserve unrelated text, comments and line endings. Ambiguous governed keys leave that target unchanged and are reported while independent targets continue. Filesystem preflight checks canonical scope, regular files, write access, physical aliases and identity drift. Single-link files use atomic replacement. Hard-linked files require one explicit choice: rewrite through the existing inode, skip the affected consistency group, or cancel. In-place writes preserve aliases but are not atomic; all aliases observe the change.
-
-Edits of a solution cycle and edits sharing a required persisted isolation form consistency groups. A recoverable failure restores its group and independent groups continue. Uncertain filesystem state stops execution and preserves recovery evidence. There is no cross-process writer lease and no semantic replanning after writing begins.
-
-For Applied verification, separate fresh workers use the confirmed real config, rebuild defaults from the locked manifest/workspace when no config was created, or load the actually created minimal config. Defaults results identify input validation under a default context; ordinary `limina check` still requires a config. The workers use the normal `check` and `graph` input readers embedded from the same-release Limina source. Success means that embedded implementation consumed the disk inputs; it does not mean full typechecking, graph governance or the project’s installed Limina runtime ran. Only successful rereading, completed necessary writes, preserved source membership and a nonempty governed source set permit a successful adoption result. Necessary write failures, residual structural errors or unavailable verification return nonzero. Rejecting optional outputs alone does not require failure.
-
-The terminal summary includes isolation, outside-reference removal, comparison completeness, diagnostic and failed/skipped-group counts, and the audit path. Planning phases and output-candidate counts expose progress. The audit report is `.limina/migration/latest.json`. It records targets, isolation, pruned relations, comparison completeness, output decisions, writes and final verification, phase timings and fatal attempts when the report location remains writable. Report publication failure warns without undoing committed configs. Neither core nor later migration runs use this report as input authority.
-
-Migration does not install framework dependencies, run `astro sync`, or rewrite framework sources. Generated graphs use manifest version 6; no migration readiness or partial-graph state is persisted there.
-
 ### limina check [pipeline]
 
 `check` is the daily entry point. It checks structure and runs type checkers; `checker:build` writes internal declarations and does not produce the production bundle.
 
-`limina check [pipeline] --force` ignores the existing persistent analysis cache, performs a cold Limina analysis, and refreshes the cache with the new eligible result. Use it after installation repairs or operations that may preserve or roll back file timestamps. Checker build caches such as `.tsbuildinfo` retain their own behavior. Persistent native fact reuse currently targets TypeScript 6.0.3; unproven framework or custom-provider contexts are analyzed afresh. This option cannot be combined with `--issues`, which only queries an existing result.
+`limina check [pipeline] --force` skips existing persistent analysis results for this run, analyzes the project again, and saves an eligible new result. Use it after installation repairs or operations that may preserve or roll back file timestamps. Checker build caches such as `.tsbuildinfo` retain their own behavior. This option cannot be combined with `--issues`, which only queries an existing result.
 
 Persistent analysis caching defaults to enabled. Set [`cache: false`](./config/config-file.md#cache) to prevent both restoration and publication, including with `--force`; this leaves existing snapshots, configuration drift protection, issue records and checker caches intact. `--force` can read old snapshot bytes for safe concurrent publication, but does not restore the old analysis model or delete this configuration's, other configurations' or other worktrees' snapshots.
+
+The `ci` examples below require a configured `pipelines.ci`:
 
 ```sh
 pnpm exec limina check
@@ -179,7 +84,7 @@ Common options:
 | `--scope <glob>`       | repeatable path or `glob` | Do not filter by path scope | `limina check --issues --scope 'packages/a/**'`               | Matches path-bearing issue candidates only                           |
 | `--task <name>`        | repeatable string         | Do not filter by task       | `limina check --issues --task source:check`                   | Must be used with `--issues`                                         |
 | `--checker <name>`     | repeatable string         | Do not filter by checker    | `limina check --issues --checker vue-tsc`                     | Only filters issue snapshots here; it is not build checker selection |
-| `--issues`             | boolean                   | Run configured checks       | `limina check --issues`                                       | Requires a fresh inventory; cannot be used with a pipeline name      |
+| `--issues`             | boolean                   | Run configured checks       | `limina check --issues`                                       | Queries saved issues; cannot be used with a pipeline name            |
 | `--limit <limit>`      | positive integer or `all` | 20 visible issue cards      | `limina check --issues --limit 50`                            | Human issue inventories only; must be used with `--issues`           |
 | `--invocation <uuid>`  | UUID                      | Read the last check         | `limina check --issues --invocation <uuid>`                   | Reads one immutable standalone failure record                        |
 | `--format <format>`    | `human`, `json`, `ndjson` | `human`                     | `limina check --issues --format json`                         | Must be used with `--issues`                                         |
@@ -199,11 +104,13 @@ pnpm exec limina check --issues --format json
 
 `--issues` does not rerun checks. Without `--invocation`, it authenticates the issue inventory against the latest published `limina check` attempt. A previous completed `last-run.json` may remain on disk while a newer attempt is running or interrupted, but the query refuses to return it as current. Standalone commands use separate invocation records. Workspace validation failures are recordable too: the trusted `.limina` snapshot namespace is created before validation, so a structural failure can appear under task `workspace:validate`. Let `limina check` finish once before using its issue inventory.
 
+A query can exit successfully even when the saved check failed and contains issues, or when it reports that no snapshot exists. Its exit status describes the query, not the result of the recorded check. In CI, run `limina check` and review its task statuses to determine the check result.
+
 If the current error occurred during config discovery, loading, or execution-plan setup, the attempt may not have been registered yet and the query may still return the previous completed record. Compare its timestamp with the current terminal error. An unavailable current result does not mean zero issues.
 
 ::: details Latest Attempts, Snapshot Versions, and Recovery
 
-The unqualified query is freshness-aware. Once a check attempt has been published, `--issues` returns inventory only when that same attempt completed and its metadata matches the version-8 snapshot. A running, interrupted, aborted, or persistence-failed latest attempt, or corrupt or mismatched freshness metadata, makes the query fail closed with exit code `1`; it never falls back to older completed issues. Missing required metadata also fails closed. Only when both latest-attempt and latest-completed metadata are absent does the reader use the legacy snapshot path. Human, JSON, and NDJSON output report unavailable explicitly; a machine response with unavailable `status` and zero issues is not a successful zero-issue check.
+The unqualified query checks freshness. Once an attempt has been published, `--issues` returns its inventory only when the same attempt completed and its metadata matches the current-format snapshot. A running, interrupted, aborted, or persistence-failed latest attempt, or corrupt or mismatched freshness metadata, makes the query exit with code `1`; it never falls back to older completed issues. Missing required metadata also causes failure. When both freshness metadata records are absent, the reader attempts compatible reading. Human, JSON, and NDJSON output report unavailable explicitly; a machine response with unavailable `status` and zero issues is not a successful zero-issue check.
 
 Configuration discovery, validation, and execution-plan failures that happen before an attempt is published do not replace the previous completed inventory. If a process stops between the `last-run.json` and freshness-index writes, a later successful check with a higher sequence rewrites both files and restores query availability automatically.
 
@@ -211,12 +118,12 @@ Configuration discovery, validation, and execution-plan failures that happen bef
 
 Issue output is progressive:
 
-| View     | Trigger                                                                                              | Output                                                                                                                                  | Visible issue limit |
-| -------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| Summary  | `limina check --issues` with no filter, invocation, or explicit limit                                | Full filtered-set counts, primary blockers, and next commands; no issue cards                                                           | No cards            |
-| Compact  | Add any task, rule, package, file, scope, or checker filter; select an invocation; or pass `--limit` | One bounded card per selected issue with one location, rule, optional owner/tool metadata, and one-line summary/reason/fix fields       | 20 by default       |
-| Detailed | Add `--verbose` to an issue query                                                                    | Selected issue cards with all locations, evidence, external diagnostics, fix steps, verification commands, and deduplicated raw details | 20 by default       |
-| Machine  | Use `--format json` or `--format ndjson`                                                             | The complete filtered issue set in the existing machine-readable contract                                                               | Never truncated     |
+| View     | Trigger                                                                                              | Output                                                                                                                               | Visible issue limit |
+| -------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| Summary  | `limina check --issues` with no filter, invocation, or explicit limit                                | Full filtered-set counts, primary blockers, and next commands; no issue cards                                                        | No cards            |
+| Compact  | Add any task, rule, package, file, scope, or checker filter; select an invocation; or pass `--limit` | One bounded card per selected issue with one location, rule, optional owner/tool metadata, and one-line summary/reason/fix fields    | 20 by default       |
+| Detailed | Add `--verbose` to an issue query                                                                    | Selected issue cards with available locations, evidence, diagnostics, fix steps, verification commands, and deduplicated raw details | 20 by default       |
+| Machine  | Use `--format json` or `--format ndjson`                                                             | The complete filtered issue set in the existing machine-readable contract                                                            | Never truncated     |
 
 Human summary counts and primary blockers always use the complete filtered set. Compact and detailed cards are sampled deterministically: Limina gives unrelated root causes visibility before taking another sample from the same root cause, then rotates across packages within that root cause. The report states `Showing X of Y issues`. Use `--limit <positive integer>` for an exact card budget or `--limit all` for every matching card. A zero-match query keeps its summary, filter diagnostics, and help commands without printing an empty card section.
 
@@ -232,7 +139,7 @@ An invocation is a selector, not an issue filter, so it promotes the default hum
 
 `--file` performs exact matching, while `--scope` accepts a directory or `glob`. Both accept workspace-relative paths, `./` paths, absolute paths, and either slash style. They match only path-bearing candidates such as issue files and package manifests; diagnostic labels such as config field scopes are not treated as paths. Repeated values within one filter use OR semantics.
 
-Check snapshots use schema version 8, and the reader accepts only version 8.
+If a saved check record uses an incompatible format, the query reports it as unavailable. A successfully completed check writes a record in the current format.
 
 Helper queries:
 
@@ -243,7 +150,7 @@ pnpm exec limina check --issues --checker --help
 pnpm exec limina check --issues --rule --help
 ```
 
-When the selected inventory is readable, task help lists every public static check task and merges tasks present in the snapshot, including when the issue set is empty. The legacy no-snapshot path also retains static task help. Unavailable latest-attempt metadata prevents task, package, and checker help from presenting stale inventory values. Package and checker values come from the selected snapshot; rule help uses the static public rule registry.
+Task help can list supported task names even before the first check. A count of zero in that list does not mean the task ran. When the selected record is readable, the list also includes tasks from that record and their issue counts. Package and checker help use values from the selected record; rule help lists the supported rules. If the latest attempt's metadata is unavailable, task, package, and checker help do not present values from an older record.
 
 ### limina graph \<action\>
 
@@ -256,11 +163,13 @@ pnpm exec limina graph export
 pnpm exec limina graph export --view source --output graph.json
 ```
 
-`graph prepare` validates inputs and generates the project graph and checker entries under `.limina`. It does not run graph governance checks or the compiler. Managed builds and typechecks automatically materialize the files they need; run it separately to inspect or refresh files on disk. `graph check`, `source check`, and `proof check` calculate the graph in memory without materializing checker configs.
+`graph prepare` validates inputs and generates the project graph and checker entries under `.limina`. It does not run the full `graph check` or invoke the compiler. Managed builds and typechecks automatically materialize the files they need; run it separately to inspect or refresh files on disk. `graph check`, `source check`, and `proof check` calculate the graph in memory without materializing checker configs.
 
 `graph check` checks whether the generated graph is consistent with source import relationships. It covers project references, source graph routing, reference completeness, graph rules, workspace package dependency declarations, and some resolution boundaries. Typical issues include missing project references for source imports, extra project references, missing dependency declarations for cross-package project references, graph-rule denials, and workspace imports that cannot resolve or whose targets are not in the generated graph.
 
-`graph export` outputs a package-level dependency graph as `JSON`. `--view` can be `all`, `source`, or `artifact`; the default is `all`. Without `--output`, it writes to stdout; with `--output <path>`, it writes to a file. The exported graph is available for external analysis. It records package-level dependency facts and does not define task order; in particular, artifact edges do not establish a production build plan.
+`graph export` outputs a package-level dependency graph as `JSON`. `--view` can be `all`, `source`, or `artifact`; the default is `all`. Without `--output`, it writes to stdout. With `--output <path>`, it writes to a file, resolving a relative path from the current working directory. It creates missing parent directories and overwrites an existing file at that path.
+
+The exported graph is available for external analysis. It records package-level dependency facts and does not define task order; in particular, artifact edges do not establish a production build plan.
 
 ### limina source check
 
@@ -374,6 +283,103 @@ It also selects artifact directories based on `package.entries`, and requires th
 `release check` does not run `npm publish`, and it does not replace package-manager or registry-side validation. It is suitable as a local consistency check before a publish command.
 
 Package and release tarball checks use `pnpm pack --ignore-scripts` on the configured output directory. This requires pnpm regardless of the project's declared manager or single-package/workspace classification. The results describe that pnpm-packed output; other managers may produce different artifacts. Name, version, output-file, and optional-tool requirements apply to the artifact and checks selected.
+
+### limina init
+
+`init` generates the base adoption files for Limina in the selected project. It can modify the config, `.gitignore`, manifest, and dependencies, and removes the root `.limina/`, including saved check and migration records. `--yes` accepts overwrite confirmations. Save anything you need before running it.
+
+```sh
+pnpm exec limina init
+pnpm exec limina init --yes
+```
+
+It finds the nearest `package.json` from cwd, validates it, and places `limina.config.mts` beside it. Only when no manifest exists does it offer to create one at cwd. Invalid nearest manifests stop initialization. It adds no workspace declaration and `--yes` works without manager metadata. Init checks the selected root's packages, writes or updates the config and `.gitignore`, adds the `limina:build` script and missing Limina/TypeScript development dependencies, removes the root's existing generated `.limina` directory, and can install the optional agent skill interactively.
+
+`--yes` accepts the default confirmation and skips the interactive `skill` installation prompt. In non-interactive environments, steps that require confirmation fail unless `--yes` is used.
+
+Configure graph rules and permitted package boundaries for your repository after initialization; `init` does not infer them from business structure.
+
+To install the optional agent skill offered by initialization separately, use the same command:
+
+```sh
+npx --yes skills add senaoxi/limina --skill limina
+```
+
+This installs the skill without rewriting source `tsconfig` files. For existing source project references, use the next section to decide whether migration is needed.
+
+### limina-migrate {#limina-migration}
+
+`limina-migrate` helps organize existing TypeScript configs so Limina can read and manage their source relationships. It is a separate CLI package with no runtime dependency on the main package. For the development version described here, use the migration tool built from the same source as `limina`; see [Getting Started](./getting-started.md#migrate-existing-project-references-first) for installation. For a published release, use that release's documentation. The tool accepts `--config`, `--config-loader`, `--mode`, `--yes` and `--dry-run`; configuration functions receive `command: 'migration'`.
+
+A neutral config such as `export default {}` can be migrated with only this tool and its required TypeScript peer. If the config imports public `limina`, install Limina where that config resolves dependencies; the tool does not supply or rewrite those imports. Optional loaders/checkers still require their supported peers. The CLI reports the embedded version and observes project package versions from config/governance-root anchors. Different or unavailable project versions are non-blocking metadata notices, not target-runtime verification. Tool build/self version mismatches fail before writes. Persisted `$schema` paths continue to refer to `node_modules/limina/schemas/tsconfig-schema.json`; editor resolution may be unavailable until the main package is installed.
+
+`limina-migrate` normalizes existing TypeScript configuration into input that Limina can discover and read again from disk. First preview the scope and write plan in the target project:
+
+```sh
+pnpm exec limina-migrate --dry-run --yes
+```
+
+Review the plan, then run `pnpm exec limina-migrate` when ready. The preview does not write project files through the migration tool, but it still executes the config module.
+
+The command reports processing completion separately from input consumption. Architecture rules, package dependencies, checker ownership and type errors still belong to `limina check`. Migration does not promise equivalent native `tsc -b` behavior.
+
+#### Scope and write-plan preview
+
+Discovery has fixed priority: explicit `--config` resolved against the original cwd; default-named Limina configs searched from cwd through every ancestor using the existing same-directory filename order; and, only when no config exists, the nearest `package.json` from cwd. Selecting a config uses its nearest manifest and the normal single-package/workspace classifier. It does not chase a higher workspace when using defaults. Missing manifests and invalid/unreadable nearest manifests stop execution; explicit config errors never fall back.
+
+Flow shows the original cwd, final rootDir, root kind, manifest, config path (or `none (using defaults)`) and input source before loading executable configuration. `Continue with this migration scope?` defaults to Yes. No or cancellation stops before evaluation, planning and migration writes. Non-TTY execution requires `--yes`, including previews. `--yes` accepts this scope only; it does not approve dirty-worktree or hardlink writes. A change to config selection or root binding while waiting stops execution rather than silently choosing another input.
+
+```sh
+pnpm exec limina-migrate --dry-run --yes
+```
+
+After planning, the complete **Write Plan Summary (planned)** lists actual frozen create/update patches with stable paths, schema, native reference deletion/conversion, implicitRefs additions/reuse, outputs and exact isolation exclusions. It lists unchanged/blocked targets and preserved isolated configs separately. Checker entries and discovered candidates are not the write set: `scope.checkers.auto.exclude` does not exclude activated sources from migration. Outside-scope reference removal is identified separately. The auxiliary audit location is distinct from business patches. Write checks and specialized decisions can shrink the displayed plan; the Applied summary reports actual modifications.
+
+Without a config, migration constructs validated defaults in memory. It does not run init, add dependencies/scripts or create an empty config. If safe isolation requires persisted `scope.regions.exclude`, the plan creates `${rootDir}/limina.config.mjs` containing only those static fields, without importing `limina`. The bad tsconfig stays unchanged. Creation cannot replace an existing entry; a competing writer, failed create or skipped consistency group prevents successful adoption. The configuration and rewrites that depend on it share the existing consistency group. Rollback preserves a created target if its identity or content has drifted.
+
+`--dry-run` ends after showing this same frozen plan. It performs no migration-controlled project writes, transaction directories/backups, graph outputs, cache publication, audit success/failure publication or post-write disk verification. It needs no clean Git worktree or Git membership and requests no dirty-worktree/hardlink authorization. A complete readable plan with governed sources returns zero; planning failure, unavailable necessary patches, residual structural incompleteness or no governed sources returns nonzero with available diagnostics. Incomplete dependency comparison alone retains conservative reference preservation. Preview output cannot establish Applied success or disk consumption.
+
+User configuration and existing third-party entrypoints remain executable code; dry-run is not a JavaScript side-effect sandbox. Each later CLI invocation independently replans; a preview grants no future write authorization.
+
+#### Configuration and relationships
+
+Only default `tsconfig.json` files can be checker entries. Named source configs enter checker ownership through solution references. Independent readable source candidates are also normalized without creating checker entries. Migration removes ordinary source `references`, prunes invalid or outside-region solution members, and preserves the remaining source membership. An outside-region reference is recorded without reading or migrating its target.
+
+A pure named solution wrapper can be expanded into every parent when its rewritten references contain only `path` and it has no substantive Limina declarations. Paths are rebased for each parent; the wrapper file remains. Attributed references require manual conversion. Named-wrapper back edges are cut during expansion. Default solution cycles are pruned with compensating source memberships; both rewrites preserve each retained solution's reachable sources. Empty solutions retain their solution role and an explicit `references: []`.
+
+Limina compares native in-region source relations with independently inferred source relations. Inferred relations do not need duplicate `implicitRefs`. Source declarations to solutions expand to their retained source members, with the original target and expansion recorded. Checker mapping and declaration-project legality are left to core analysis. Remaining native declarations become explicit implicit references; existing user reasons are preserved. An incomplete or failed semantic analysis is reported as unavailable comparison, never as an empty inferred graph. Missing or not-yet-generated source files do not make their readable configuration an isolation target.
+
+Unreadable configs, including empty or malformed JSONC inputs, are preserved on disk. Where safe, migration writes exact `scope.regions.exclude` entries of kind `tsconfig` and removes incoming memberships or implicit references. This keeps the package activated. `extends` paths are not removed. A single implicit-reference object can be wrapped in an array; a missing or blank reason receives a factual migration explanation. Illegal shapes that cannot be normalized are isolated or reported as incomplete.
+
+Automatic exclusion editing supports direct exported objects, imported `defineConfig` object calls, and uniquely used immutable `const` objects with statically editable regions/exclusion arrays. Functions, promises, spreads and dynamic composition are preserved. If required exclusions cannot be written, adoption remains incomplete. Existing output visibility cycles without a safe input baseline also require correction; migration does not exclude healthy sources to manufacture success.
+
+#### Optional output adoption
+
+Source compiler options, including build fields and inherited paths, remain intact. Existing valid `liminaOptions.outputs`, including `{}`, remain explicit user contracts.
+
+| Existing configuration without explicit outputs                                              | Automatic output adoption                                      |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Effective `noEmit: true`, including inheritance                                              | None                                                           |
+| Effective emit enabled and `outDir` present                                                  | Proposed, then checked against the complete candidate topology |
+| Only `rootDir`, `target`, declaration flags or `noEmit: false`                               | None                                                           |
+| Declaration-only emit, split declaration/JS directories, only `declarationDir`, or `outFile` | None; native options and the unadopted behavior are recorded   |
+| Solution config                                                                              | None                                                           |
+
+Each optional proposal must pass output-path and mutation-authority checks, stable descriptor discovery, and preservation of entries and their source closures. Proposals are tried once in stable config-path order. A self-hiding output, or a stable output that hides another healthy source, is rejected without isolating those sources. Rejection leaves other source conversions and independent safe outputs eligible. Migration does not duplicate the inherited source `target` into outputs or delete existing output files.
+
+#### Writing and results
+
+Every write target must belong to a Git worktree. All patches and input snapshots are prepared before writing; a dirty worktree requires one interactive confirmation, defaulting to no. Non-interactive runs stop before writes when confirmation is needed. Approval does not commit, stash or discard user changes.
+
+JSONC edits preserve unrelated text, comments and line endings. Ambiguous governed keys leave that target unchanged and are reported while independent targets continue. Filesystem preflight checks canonical scope, regular files, write access, physical aliases and identity drift. Single-link files use atomic replacement. Hard-linked files require one explicit choice: rewrite through the existing inode, skip the affected consistency group, or cancel. In-place writes preserve aliases but are not atomic; all aliases observe the change.
+
+Edits of a solution cycle and edits sharing a required persisted isolation form consistency groups. A recoverable failure restores its group and independent groups continue. Uncertain filesystem state stops execution and preserves recovery evidence. There is no cross-process writer lease and no semantic replanning after writing begins.
+
+For Applied verification, separate fresh workers use the confirmed real config, rebuild defaults from the locked manifest/workspace when no config was created, or load the actually created minimal config. Defaults results identify input validation under a default context; ordinary `limina check` still requires a config. The workers use the normal `check` and `graph` input readers embedded from the same-release Limina source. Success means that embedded implementation consumed the disk inputs; it does not mean full typechecking, graph governance or the project’s installed Limina runtime ran. Only successful rereading, completed necessary writes, preserved source membership and a nonempty governed source set permit a successful adoption result. Necessary write failures, residual structural errors or unavailable verification return nonzero. Rejecting optional outputs alone does not require failure.
+
+The terminal summary includes isolation, outside-reference removal, comparison completeness, diagnostic and failed/skipped-group counts, and the audit path. Planning phases and output-candidate counts expose progress. The audit report is `.limina/migration/latest.json`. It records targets, isolation, pruned relations, comparison completeness, output decisions, writes and final verification, phase timings and fatal attempts when the report location remains writable. Report publication failure warns without undoing committed configs. Neither core nor later migration runs use this report as input authority.
+
+Migration does not install framework dependencies, run `astro sync`, or rewrite framework sources. Generated graphs use manifest version 6; no migration readiness or partial-graph state is persisted there.
 
 ## Troubleshooting
 

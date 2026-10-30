@@ -1,6 +1,8 @@
 # Source Checks
 
-`source` configures source import authorization, ambient declaration roles, and optional source-usage analysis. By default, `source check` checks imports against the source-owning package and its dependency declarations. Empty `allow` or `knip` objects are not needed to enable that check.
+`source` configures source import rules, ambient declarations, and optional unused-code analysis. For example, when `packages/app` imports `@acme/core`, Limina checks whether the `app` manifest authorizes that import. The default checks already include these base rules; you do not need to configure them to enable them.
+
+If an import is unauthorized, first consider declaring the dependency in the package that uses it. Use `importAuthority` below when the project intentionally shares a workspace root dependency declaration.
 
 Omitting `source` still runs base Source Check. `source: { knip: false }` runs all applicable base checks and skips only Knip; `source: { knip: true }` also runs Knip. Standalone `limina source check` uses the same policy. Empty `source`, `declarations`, or `importAuthority` wrappers are invalid. Use `declarations: { ambient: [] }` or `importAuthority: { allow: {} }` for explicit empty collections.
 
@@ -20,7 +22,7 @@ By default, a nested `package.json` stops traversal by the outer package. With [
 
 ## Resource module imports
 
-`source:check` retains physical resource existence, package authorization, ownership and boundary checks for CSS, SVG, YAML, text and similar imports. Missing physical resources report `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`. Actual Checkers own pure type-availability diagnostics; standalone source checks no longer report `LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED`. Run the configured typecheck pipeline when type diagnostics are required.
+`source:check` checks whether CSS, SVG, YAML, text, and similar resource files exist, and whether imports meet package authorization and boundary rules. Missing resources report `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`. Checkers determine whether resource types are available; run the appropriate typecheck when you need type diagnostics.
 
 Ambient declarations do not prove physical existence. Existing resources do not prove type completeness or the presence of a bundler transformer. Resource imports alone create no declaration-provider or project reference, and a missing resource does not stop `graph prepare`. If the checker resolves the request to an actual implementation, ordinary governance rules still apply to that implementation.
 
@@ -34,7 +36,7 @@ Source import authorization is strict by default: the validated source owner man
 
 Here, “source import” includes static imports, type imports, re-exports, literal dynamic imports and supported CommonJS calls collected by Limina. `Node` builtins, virtual modules, `URL` / `data` / `file` specifiers, and specifiers found only in comments are not treated as ordinary bare package dependencies.
 
-Use `allow` when a workspace root dependency declaration is intentionally shared with a specific source owner:
+For example, `packages/create-app` is a workspace package named `@example/create-app`. It contains template source to check under `templates/react`. The workspace root's `package.json` declares `react` and `react-dom`, but the package's own manifest does not. In the root Limina config, grant those templates access to the root dependency declarations. If you already have a config, merge `importAuthority` into `source`:
 
 ```js
 import { defineConfig } from 'limina';
@@ -45,7 +47,7 @@ export default defineConfig({
       allow: {
         '@example/create-app': [
           {
-            include: ['templates/react/**'],
+            include: ['packages/create-app/templates/react/**'],
             workspaceRootDependencies: ['react', 'react-dom'],
             reason: 'React template sources use dependencies declared by the workspace root.',
           },
@@ -70,7 +72,7 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 
 `allow` keys must match source owner identities that remain in the current governed region after `scope.regions` is applied. Named workspace packages use their package name, and nameless source owners use their config-root-relative lexical package directory, including `../` when needed. `include` is optional and config-root-relative; it may contain `../` but can only filter governed source owned by the keyed owner. When omitted, the grant applies to all governed source modules owned by that source owner.
 
-`workspaceRootDependencies` is not a direct import allowlist. It names package keys whose declarations may be read from the workspace root manifest when the owner grant and `include` scope match. Limina still requires the root manifest to declare the package, if an intermediate workspace package between the source owner and the root declares that same dependency, the root grant cannot bypass that declaration.
+`workspaceRootDependencies` is not a direct import allowlist. It names package keys whose declarations may be read from the workspace root manifest when the owner grant and `include` scope match. Limina still requires the root manifest to declare the package. If an intermediate workspace package between the source owner and the root declares that same dependency, the root grant cannot bypass that declaration.
 
 For imports used at runtime by the source owner, prefer declaring the dependency in that owner's manifest.
 
@@ -97,7 +99,11 @@ A matched file must have an ambient declaration shape. Managed output declaratio
 
 `allowSharedAcrossOwners` defaults to `false`. Set it to `true` only when multiple source owners intentionally consume the same ambient declaration. `allowTripleSlashReferences` also defaults to `false`; it authorizes `/// <reference path="...">` access to a matched declaration, but does not authorize ordinary imports, package dependencies, or `/// <reference types>`.
 
+For example, assume `../shared-types` is an activated package and `globals.d.ts` is an existing ambient declaration that multiple source owners need to share. Adjust the path to the actual package and file:
+
 ```js
+import { defineConfig } from 'limina';
+
 export default defineConfig({
   source: {
     declarations: {
@@ -123,6 +129,24 @@ export default defineConfig({
 ::: warning
 `knip` is an optional peer dependency of Limina. If `source.knip` is enabled but `knip` is not installed in the workspace running Limina, `source check` fails with a missing peer dependency error before source analysis starts. When `source.knip` is disabled, Limina does not resolve or run Knip. Install and verify `knip` explicitly in CI when unused-dependency and unused-module coverage is required.
 :::
+
+For example, install a version supported by the current source in the single-package project where Limina is installed:
+
+```sh
+pnpm add -D 'knip@^6.0.0'
+```
+
+At a pnpm workspace root, add `-w`. Then enable it in the Limina config. If a config already exists, merge in the `source` field:
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  source: { knip: true },
+});
+```
+
+Run `pnpm exec limina source check` to see the result. Findings depend on the project entries. Before removing a reported file, consider whether a test runner, generated code, or another tool loads it.
 
 Use `knip: true` to use Limina's generated default `Knip` config. Use `knip: false` or omit the option to disable these `Knip`-backed checks. Object form enables the checks and must declare `root` or `workspaces` (or both). Use `{ root: {} }` for the governance root package, or `{ workspaces: {} }` when no extra rules are needed:
 
@@ -157,7 +181,7 @@ type SourceKnipCheckConfig =
 
 `source.knip.root` is the only way to configure the governance root package, in both single-package projects and workspaces. It works with or without a package name. Root entries, ignores, build-script inference, multiple tsconfig groups, and findings retain that package's validated ownership. The package must already be active: `root` cannot reactivate an excluded root.
 
-`source.knip.workspaces` keys name active, non-root workspace packages, such as `@acme/app`. Unknown or excluded names fail `source check`. The keys `"."` and the root package's name are rejected even when `root` is absent. Migrate an existing `workspaces[rootPackageName]` block to `root`, preserving its fields. Relative directory keys are not public addressing: Limina maps validated owners to Knip's internal `"."`, relative workspace directories, and analysis targets. It never edits `package.json#workspaces` for this adaptation. Unnamed non-root packages remain owners but have no public name key.
+`source.knip.workspaces` keys name active, non-root workspace packages, such as `@acme/app`. Unknown or excluded names fail `source check`. Configure the root package under `root`, not with `"."` or its package name in `workspaces`. Relative directories are not supported keys. Unnamed non-root packages remain source owners but cannot be configured here by package name.
 
 `source.knip.root` and `source.knip.workspaces[pkg]` only configure extra reachability and ignore rules. Package-specific `Knip tsconfig` selection comes from static direct `limina build <config>` scripts. If a package does not declare one, Limina runs Knip for that package without `--tsConfig`, so `Knip` uses its own default `tsconfig` behavior.
 

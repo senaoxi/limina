@@ -1,24 +1,40 @@
 # Config File
 
-Limina normally reads `limina.config.mts` beside the project's `package.json`. Start with the defaults and add fields when you need to change checking scopes or rules:
+Limina looks for a project config, such as `limina.config.mjs` or `limina.config.mts` beside `package.json`. Start with the defaults and add fields when you need to change checking scopes or rules:
 
-```ts
+`limina.config.mjs`:
+
+```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({});
 ```
 
+An `.mts` or `.ts` config can itself enter the default source scope. If no project `tsconfig` covers it, adjust coverage or source scope as described in [Getting Started](../getting-started.md#minimal-manual-config).
+
 A config module can export an object, a `Promise`, or a function that receives `{ command, mode }`. `defineConfig` provides type hints and preserves its input; Limina handles loading and validation. See the [configuration overview](./index.md) for each field's responsibility.
 
-## Default governance and migration {#default-governance}
+## Default checks {#default-governance}
 
 The default `limina check` schedules five tasks: `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. `scope` selects inputs and Checkers; top-level `graph`, `source`, and `proof` configure rules, exceptions, and optional capabilities. Omitting a domain does not disable its task. `package.entries` and `release` do not add default tasks.
 
 Set `source.knip: true` to add Knip analysis. `false` retains source ownership, tsconfig governance, import boundaries, and package dependency authorization.
 
-An exported `{}` schedules all five default tasks with default inputs and policies. It does not guarantee success: source within the governance boundary must still have valid ownership and Checker coverage. Empty domains (`graph: {}`, `source: {}`, `proof: {}`), unknown fields, non-object domain values, and explicit `undefined` are configuration errors. Omit a field to use its default. `graph.rules` and `proof.allowlist` are required when their domains are present; empty collections are valid. Source requires at least one of `knip`, `declarations`, or `importAuthority`. The latter wrappers require `ambient` and `allow` respectively; `ambient: []` and `allow: {}` are valid. Knip object form requires `root` or `workspaces`, so `knip: {}` is invalid. Unknown nested fields and invalid element types fail at loading; workspace-dependent rule, owner, path, and coverage diagnostics remain domain checks.
+An exported `{}` schedules all five default tasks with default inputs and policies. It does not guarantee success: source within the governance boundary must still have valid ownership and checker coverage. If you configure `graph`, `source`, or `proof`, provide the required fields instead of an empty object:
 
-Config factories and Promises are evaluated before validation and task selection. For dynamic omission, use conditional object spreads rather than `source: undefined`. Domains must be own data properties; non-enumerable top-level domains are supported. Their nested fields must be enumerable data properties on plain objects or arrays. Accessors, Proxies, inherited fields and cycles are rejected; compute dynamic values inside the factory. Validation preserves `false` and empty collections without filling defaults or stripping fields. The existing Knip `Symbol.toStringTag` string marker is metadata and cannot activate an otherwise empty object.
+- `graph` requires `rules`. Use `rules: {}` when there are no additional rules.
+- `proof` requires `allowlist`. Use `allowlist: []` when there are no exceptions.
+- `source` requires at least one of `knip`, `declarations`, or `importAuthority`. `declarations` requires `ambient`, and `importAuthority` requires `allow`; their empty forms are `ambient: []` and `allow: {}`. The object form of `knip` requires `root` or `workspaces`.
+
+The `graph`, `source`, and `proof` domains and their nested fields do not accept an explicit `undefined`. Omit a field when you want its default. Unknown fields, invalid types, and empty domains fail at loading. Checks report paths, ownership, and coverage problems that require examining the workspace.
+
+Config factories and Promises are evaluated before validation and task selection. To omit a field such as `source` conditionally, use an object spread rather than `source: undefined`. Compute dynamic values inside the factory, then return ordinary data.
+
+::: details Configuration data constraints
+
+`graph`, `source`, and `proof` must be own data properties. Top-level domains may be non-enumerable; nested fields must be enumerable data properties on plain objects or arrays. These domains reject accessors, proxies, inherited fields, and cycles. Validation preserves `false` and empty collections without filling defaults or stripping fields. Knip's `Symbol.toStringTag` string marker is metadata and cannot make an otherwise empty `knip` object valid.
+
+:::
 
 Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
 
@@ -61,20 +77,34 @@ The `native` loader imports the config directly through the current runtime and 
 
 `cache` controls Limina's persistent analysis cache. Omission and `true` enable it, including automatic module dependency observation. `false` prevents restoring and publishing persistent analysis models, leaves existing snapshots in place, and keeps configuration loading, ordinary input observation and execution-time drift checks active. In-memory caches, checker build caches such as TypeScript/Vue `.tsbuildinfo`, issue records and other independent outputs retain their normal behavior.
 
-Object form enables caching and requires `dependencies: string[]`. An empty array is valid; `{}` is invalid. Fields such as `enabled` and `force` are rejected. `CacheOptions` is exported from `limina`. The former top-level `configDependencies` field has been removed and is a configuration error; move its array to `cache.dependencies`.
+Object form enables caching and requires `dependencies: string[]`. An empty array is valid; `{}` is invalid. Unknown fields such as `enabled` and `force` are rejected. `CacheOptions` is exported from `limina`.
 
 `check` can read and publish eligible models. Standalone graph/source consumers keep their existing read-only permission; enabling `cache` does not grant every command publication authority. `limina check [pipeline] --force` skips restoration for this invocation and normally publishes the new eligible result. With `cache: false`, force has no additional effect on persistent analysis caching and does not enable writing. Force does not delete snapshots in this configuration, other configurations or other worktrees, and does not force checker rebuilds. It remains incompatible with `--issues`.
 
-Cold Native analysis collects evidence with a physically bounded TypeScript Program. Complete valid context/graph caches can restore in a fresh process without an analysis Program. Changed inputs recollect affected contexts; actual Checker diagnostics and builds run separately. Schema 9 rejects old Programless success snapshots and rebuilds as needed, without deleting old caches, other namespaces or Checker `.tsbuildinfo`. Type entries, Coverage, raw references and output projections are validated separately during restoration.
+When a cache is valid, Limina can reuse saved analysis. Changed inputs cause affected parts to be analyzed again. Restoration still checks inputs such as type entries, source coverage, project references, and output configuration. Actual type diagnostics and builds are performed separately by the checker.
 
 ### `cache.dependencies` {#cache-dependencies}
 
 - **Type:** `string[]` (required in object form)
 - **Default:** no additional files with omitted `cache` or `cache: true`
 
-With caching enabled, a warm run reuses a validated persistent analysis model; a cold run builds current analysis again. Both evaluate the configuration in a fresh CLI process. Declare exact local files that affect configuration or checking but are read outside Node's module system. For example, a JSON file read with `fs.readFileSync()` needs a declaration:
+With caching enabled, a warm run can reuse a validated analysis model; a cold run analyzes the current inputs again. Both evaluate the configuration in a fresh CLI process. Declare local files that affect configuration or checking but are read outside Node's module system.
 
-```ts
+For example, create a `rules.json` file beside the Limina config:
+
+```json
+{
+  "browser": {
+    "deny": {
+      "deps": [{ "name": "node:*", "reason": "Browser code cannot depend on Node built-ins" }]
+    }
+  }
+}
+```
+
+This `limina.config.mjs` reads the file with `fs.readFileSync()` and declares it as a cache dependency:
+
+```js
 import { defineConfig } from 'limina';
 import { readFileSync } from 'node:fs';
 
@@ -85,6 +115,8 @@ export default defineConfig({
   graph: { rules },
 });
 ```
+
+Merge these fields into any existing config. The `browser` rule only applies to source configs that use that label; see [Graph Rules](./graph-rules.md) for how to apply it.
 
 A declared file need not be read by configuration code: policy files and manually maintained invalidation markers also participate in validity. `cache: { dependencies: [] }` enables caching without declaring extra files.
 
@@ -126,18 +158,21 @@ A configuration factory may execute imports before returning data. Executable ca
 | `checker build <config>`, `build <config>`                 | `'build'`                                         |
 | `limina-migrate`                                           | `'migration'`                                     |
 
-Output entries needed only for standalone package and release checks can be supplied by command family:
+Package output entries serve package and release checks, but `outDir` also participates in workspace output discovery and source filtering. Keep an entry during daily checks if its directory must be recognized as output then.
+
+If the project does not need these outputs declared during daily checks, entries can instead be supplied by command family:
 
 ```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig(({ command }) => ({
-  package:
-    command === 'package' || command === 'release'
-      ? {
+  ...(command === 'package' || command === 'release'
+    ? {
+        package: {
           entries: [{ name: '@acme/core', outDir: 'packages/core/dist' }],
-        }
-      : undefined,
+        },
+      }
+    : {}),
 }));
 ```
 
@@ -149,32 +184,8 @@ A named pipeline loads the config once with `command: 'check'`. Its `package:che
 
 The public `limina` entry exports `defineConfig`, config and issue types, and validation error classes. `limina/internal/*` is for repository-internal use; its source exports are removed from published packages and are not consumer APIs.
 
-## Configuration Migration {#config-domains-migration}
+## Configuration structure {#config-domains-migration}
 
-This is a breaking change to the previously published beta configuration API. Old fields and mixed old/new configurations are rejected with migration paths; old fields are neither ignored nor translated. Move each complete value, including options not shown in introductory examples.
+`scope` selects governance regions, source, and checker entries. `graph`, `source`, `proof`, `package`, `release`, `pipelines`, `concurrency`, and `cache` are top-level fields. Configure them as needed; omitted fields use their respective defaults.
 
-| Previous path                | New path                       |
-| ---------------------------- | ------------------------------ |
-| `config.source`              | `scope.source`                 |
-| `config.checkers`            | `scope.checkers`               |
-| `regions`                    | `scope.regions`                |
-| `graph`                      | `graph`                        |
-| `source`                     | `source`                       |
-| `proof`                      | `proof`                        |
-| `package`                    | `package`                      |
-| `release`                    | `release`                      |
-| `pipelines`                  | `pipelines`                    |
-| `execution.tasks`            | `concurrency.tasks`            |
-| `execution.checkerBuild`     | `concurrency.checkerBuild`     |
-| `execution.checkerTypecheck` | `concurrency.checkerTypecheck` |
-| `execution.packageEntries`   | `concurrency.packageEntries`   |
-| `execution.releaseEntries`   | `concurrency.releaseEntries`   |
-| `cache`                      | `cache`                        |
-
-`scope`, `pipelines`, `concurrency`, `cache`, and each check field can be omitted. Only governance boundaries are grouped under `scope`. `graph`, `source`, `proof`, `package`, `release`, and `pipelines` retain their top-level paths; `concurrency` replaces the former `execution` field. Neither `checks` nor `execution` wrappers are accepted. `scope.source.exclude: []` remains invalid: omit it for the defaults, or use `...` to include the defaults within an explicit array.
-
-The remaining child options retain their consumers, including `graph.rules`, `source.declarations`, package entry tool options, and `release.npmPackageJsonLint`. `package.entries[].outDir` still participates in workspace output discovery, boundary validation, and source filtering even without a `package:check` step.
-
-Modules still export objects, promises, or factories receiving `{ command, mode }`. File selectors remain relative to the resolved governance root, `config.rootDir`; `cache.dependencies` remains relative to the selected config file. CLI commands, pipeline steps, and concurrency defaults are unchanged. Snapshots from the previous analysis implementation start cold and are rebuilt; other configuration namespaces, worktrees, and checker caches are not cleared.
-
-Replace the former `SharedLiminaConfig` type with `ScopeConfig`. `ExecutionConfig` continues to describe the five concurrency settings, now under `concurrency`.
+Paths do not all share the same base. Source and region selectors are relative to the governance root, `config.rootDir`, while `cache.dependencies` is relative to the config file. `package.entries[].outDir` participates in output discovery and source filtering even when package checks are not running. See the [configuration overview](./index.md) for what each field does.

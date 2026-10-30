@@ -1,8 +1,12 @@
 # 源码检查
 
-`source` 配置源码导入授权、环境声明角色和可选的源码使用分析。`source check` 默认按源码所属包及其依赖声明检查导入；不必先填写空的 `allow` 或 `knip` 对象。
+`source` 用来配置源码导入规则、环境声明和可选的未使用代码分析。比如，`packages/app` 导入 `@acme/core` 时，Limina 会检查这条导入能否由 `app` 的包清单授权。默认检查已经包含这些基础规则，不需要为了启用它们而填写配置。
 
-省略 `source` 仍执行基础 Source Check。`source: { knip: false }` 执行适用的全部基础检查，仅跳过 Knip；`source: { knip: true }` 还会执行 Knip。独立 `limina source check` 使用相同策略。空的 `source`、`declarations`、`importAuthority` 包装无效；可用 `declarations: { ambient: [] }`、`importAuthority: { allow: {} }` 显式声明空集合。
+如果报告导入未授权，通常应先在实际使用依赖的包中声明它。只有确实需要共享工作区根目录的依赖声明时，再考虑下文的 `importAuthority`。
+
+省略 `source` 时，Limina 仍会执行基础源码检查。`source: { knip: false }` 同样执行适用的基础检查，但不运行 Knip。`source: { knip: true }` 还会启用 Knip。单独运行 `limina source check` 时使用相同策略。
+
+`source`、`declarations` 和 `importAuthority` 不能写成空对象。需要显式声明空集合时，可以使用 `declarations: { ambient: [] }` 或 `importAuthority: { allow: {} }`。
 
 | 字段                          | 用途                                   | 未配置时                   |
 | ----------------------------- | -------------------------------------- | -------------------------- |
@@ -16,25 +20,27 @@
 
 Limina 从每个已验证、已激活包的独立治理范围发现源码，包括外部包和无名称包。包根的清单决定源码归属和依赖授权。相对 `config.rootDir` 的源码选择器可以包含 `../`，但只能过滤已发现的候选，不能把未激活目录加入治理。
 
-默认情况下，嵌套 `package.json` 会停止外层包的遍历。启用 [`scope.regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，符合条件的无名嵌套作用域可以继续留在外层区域；其中源码使用外层包的依赖声明，嵌套清单仍负责相对导入和 `#imports` 的包作用域。嵌套工作区边界与区域排除的完整规则见[治理区域](./regions.md)。
+默认情况下，嵌套 `package.json` 会停止外层包的遍历。启用 [`scope.regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，符合条件的无名嵌套作用域可以继续留在外层区域。其中源码使用外层包的依赖声明，嵌套清单仍负责相对导入和 `#imports` 的包作用域。嵌套工作区边界与区域排除的完整规则见[治理区域](./regions.md)。
 
 ## 资源模块导入
 
-`source:check` 保留 CSS、SVG、YAML、文本等物理资源的存在性、包授权、归属及边界检查。物理资源缺失报告 `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`。纯类型可用性由实际 Checker 负责；独立执行 source 检查不再报告 `LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED`。需要类型诊断时同时运行配置的 typecheck 流水线。
+`source:check` 会检查 CSS、SVG、YAML、文本等资源文件是否存在，以及导入是否符合包授权和边界规则。缺少资源文件时会报告 `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`。资源的类型是否可用由检查器负责，需要类型诊断时，还应运行相应的类型检查。
 
-Ambient 声明不证明物理资源存在；物理资源存在也不证明类型完整或具备 Bundler 转换器。资源导入本身不产生 declaration-provider 或 project reference，缺失资源不阻止 `graph prepare`。如果 Checker 将请求解析到实际实现文件，该实现仍按普通治理规则处理。
+例如，给 `*.svg` 写了 TypeScript 环境声明，只能说明类型系统认识这类导入，不能证明某个 SVG 文件实际存在。反过来，文件存在也不能证明类型完整或构建工具支持处理它。资源导入本身不会产生声明提供者或项目引用，资源缺失也不会阻止 `graph prepare`。如果检查器将导入解析到实际实现文件，该实现仍按普通治理规则处理。
 
-Specifier 保持原样：`./foo.svg?raw` 和 `./foo.svg#fragment` 不会去掉后缀再检查 `./foo.svg`，也不会仅按资源扩展报告缺失。`package.json#imports` 的 `#assets/logo.svg` 保留完整映射 key。Limina 不声明宿主 query 语义；虚拟／框架注入模块的运行时行为不由 ambient 声明证明，也不冒充物理资源缺失。
+导入路径会保持原样：对于 `./foo.svg?raw` 和 `./foo.svg#fragment`，Limina 不会去掉后缀后检查 `./foo.svg`，也不会仅根据资源扩展名报告文件缺失。`package.json#imports` 的 `#assets/logo.svg` 保留完整的映射键名。
+
+Limina 不定义运行环境如何处理这些查询参数。环境声明也不能证明虚拟模块或框架注入模块在运行时存在，Limina 不会把它们当成缺失的物理资源。
 
 ## `importAuthority`
 
-`source.importAuthority` 控制那些没有写在源码归属方清单文件里的裸包导入。
+`source.importAuthority` 用于处理源码所属包没有直接声明、但需要使用工作区根目录依赖的情况。
 
-源码导入授权默认严格：已验证的源码所属包清单必须在 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 中声明这个包。按源码归属方分组的授权可以让同一个源码归属方在指定范围内使用治理根目录 `package.json` 的依赖声明。根清单文件仍然要在同样的依赖区里声明这个包。
+默认情况下，源码所属包的 `package.json` 必须在 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 中声明所导入的包。你可以按源码所属包添加授权，让指定范围使用治理根目录 `package.json` 中的依赖声明。根清单本身仍必须声明该依赖。
 
 这里的“源码导入”包括 Limina 能收集到的静态导入、类型导入、再导出、字面量动态导入及受支持的 CommonJS 调用。`Node` 内置模块、虚拟模块、`URL` / `data` / `file` 说明符和注释中的说明符不按普通裸包依赖处理。
 
-当某个源码归属方确实要使用工作区根目录声明的依赖时，可以写 `allow` 授权：
+例如，`packages/create-app` 是工作区成员，包名为 `@example/create-app`。它的 `templates/react` 中有需要检查的模板源码。`react` 和 `react-dom` 已声明在工作区根目录的 `package.json` 中，但没有声明在这个包自己的清单中。可以在工作区根目录的 Limina 配置中授予这些模板使用根依赖声明的权限。已有配置时，请将 `importAuthority` 合并到 `source` 中：
 
 ```js
 import { defineConfig } from 'limina';
@@ -45,7 +51,7 @@ export default defineConfig({
       allow: {
         '@example/create-app': [
           {
-            include: ['templates/react/**'],
+            include: ['packages/create-app/templates/react/**'],
             workspaceRootDependencies: ['react', 'react-dom'],
             reason: 'React 模板源码使用工作区根目录声明的依赖。',
           },
@@ -68,9 +74,11 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 }
 ```
 
-`allow` 的键名必须匹配应用 `scope.regions` 后仍留在当前治理区域内的源码归属方身份。具名工作区包使用包名；没有 `name` 的源码归属方使用相对于 `config.rootDir` 的词法包目录，必要时包含 `../`。`include` 可选并相对于 `config.rootDir`；它可以包含 `../`，但只能过滤键名对应的源码归属方已受治理的源码。省略时，授权适用于这个源码归属方下所有被 Limina 管辖的源码模块。
+`allow` 的键名必须对应当前治理区域内的源码所属包。具名工作区包使用包名；没有 `name` 的包使用相对于 `config.rootDir` 的包目录路径，必要时包含 `../`。
 
-`workspaceRootDependencies` 不是直接导入允许清单。它只说明当源码归属方和 `include` 范围都匹配时，哪些包名可以读取工作区根目录清单中的依赖声明。Limina 仍然要求根清单实际声明这个包；如果源码归属方和根目录之间存在中间工作区包清单声明了同一个包，根目录授权不会绕过这个中间清单。
+`include` 可选，路径相对于 `config.rootDir`，可以包含 `../`。它只能过滤键名对应包中已受治理的源码。省略时，授权适用于这个包下所有被 Limina 管辖的源码模块。
+
+`workspaceRootDependencies` 不是直接导入允许清单。当源码所属包和 `include` 范围都匹配时，它说明哪些包名可以使用工作区根目录清单中的依赖声明。Limina 仍然要求根清单实际声明这个包。如果源码所属包和根目录之间的工作区包清单也声明了同一个包，根目录授权不会绕过这个中间清单。
 
 用于源码归属方运行时的导入，优先在该归属方自己的清单中声明依赖。
 
@@ -91,13 +99,17 @@ interface SourceDeclarationsConfig {
 }
 ```
 
-每个 `include` 数组都使用相对于 `config.rootDir` 的模式；外部激活包可以使用 `../`。这些模式只过滤已验证包治理单元发现的文件，不能让未激活目录或仅对所属包生效的边界后方的路径变得可见。每条规则必须至少匹配一个声明文件，同一个物理文件也不能同时匹配多条规则。
+每个 `include` 数组都使用相对于 `config.rootDir` 的模式，外部激活包可以使用 `../`。这些模式只过滤已验证的包中发现的文件，不能让未激活目录或所属包边界之外的路径变得可见。每条规则必须至少匹配一个声明文件，同一个物理文件也不能同时匹配多条规则。
 
 被匹配文件必须确实符合环境声明的结构。Limina 管理的输出声明、包的公开声明入口，以及包含普通导入或导出的外部声明模块，都不能重新归类为环境声明。
 
-`allowSharedAcrossOwners` 默认为 `false`；只有多个源码归属方确实需要共同使用同一份环境声明时才设为 `true`。`allowTripleSlashReferences` 同样默认为 `false`；它只授权通过 `/// <reference path="...">` 访问匹配的声明文件，不会授权普通导入、包依赖或 `/// <reference types>`。
+`allowSharedAcrossOwners` 默认为 `false`，只有多个源码所属包确实需要共同使用同一份环境声明时才设为 `true`。`allowTripleSlashReferences` 同样默认为 `false`，它只授权通过 `/// <reference path="...">` 访问匹配的声明文件，不会授权普通导入、包依赖或 `/// <reference types>`。
+
+例如，假设 `../shared-types` 是已激活的包，其中的 `globals.d.ts` 是多个源码所属包需要共享的现有环境声明。请将路径改为项目中的实际包和文件：
 
 ```js
+import { defineConfig } from 'limina';
+
 export default defineConfig({
   source: {
     declarations: {
@@ -123,6 +135,24 @@ export default defineConfig({
 ::: warning 注意
 `knip` 是 Limina 的可选对等依赖。如果启用了 `source.knip`，但运行 Limina 的工作区没有安装 `knip`，`source check` 会在源码分析开始前以缺少对等依赖错误失败。关闭 `source.knip` 时，Limina 不会解析或运行 Knip。如果持续集成需要覆盖未使用依赖和未使用模块检查，应显式安装并校验 `knip`。
 :::
+
+例如，在安装 Limina 的单包项目中安装当前源码版支持的 Knip：
+
+```sh
+pnpm add -D 'knip@^6.0.0'
+```
+
+在 pnpm 工作区根目录安装时，请加上 `-w`。然后在 Limina 配置中启用它。如果已有配置，请将 `source` 字段合并进去：
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  source: { knip: true },
+});
+```
+
+运行 `pnpm exec limina source check` 查看结果。分析结果取决于项目入口。报告文件未使用时，应先判断它是否由测试运行器、生成代码或其他工具加载，再决定如何处理。
 
 写 `knip: true` 时，Limina 使用自动生成的默认 `Knip` 配置。省略该选项或写 `knip: false` 时，会关闭这些 `Knip` 驱动的检查。对象形式会启用检查，并且至少声明 `root` 或 `workspaces` 之一，也可同时声明。治理根包使用 `{ root: {} }`，不需要额外规则时也可使用 `{ workspaces: {} }`：
 
@@ -157,7 +187,7 @@ type SourceKnipCheckConfig =
 
 `source.knip.root` 是单包项目和工作区中配置治理根包的唯一方式，有无包名均可。根包入口、忽略规则、构建脚本推导、多 `tsconfig` 分组和检查结果都保留该包已经验证的归属关系。根包必须已经激活：`root` 不能重新激活已排除的根包。
 
-`source.knip.workspaces` 的键名是已激活的具名非根工作区包名称，例如 `@acme/app`。未知或已排除的名称会让 `source check` 失败。`"."` 和根包名称两个入口均被拒绝，即使没有声明 `root` 也是如此。已有 `workspaces[rootPackageName]` 配置应整体移到 `root`，保留内部字段。相对目录不是公开寻址方式：Limina 内部把已验证源码归属方映射为 Knip 的 `"."`、相对工作区目录及分析目标，不为适配修改 `package.json#workspaces`。无名称非根包仍有归属身份，但没有公开的名称键。
+`source.knip.workspaces` 的键名是已激活的具名非根工作区包名称，例如 `@acme/app`。未知或已排除的名称会让 `source check` 失败。根包请配置在 `root` 下，不能在 `workspaces` 中使用 `"."` 或根包名称。相对目录也不是这里支持的键名。没有名称的非根包仍有源码归属，但不能通过包名配置这个选项。
 
 `source.knip.root` 和 `source.knip.workspaces[pkg]` 只配置额外可达入口和忽略规则。包级 `Knip tsconfig` 由静态、直接的 `limina build <config>` 脚本推导；没有这类脚本时，Limina 不传 `--tsConfig`，交给 `Knip` 使用自己的默认 `tsconfig` 行为。
 
@@ -171,7 +201,9 @@ type SourceKnipCheckConfig =
 }
 ```
 
-`<config>` 会从这个包目录解析。它必须是工作区内的 `JSON` 文件。托管脚本必须指向 Limina 管理且存在输出构建模块的配置。原始包脚本必须使用 `--raw --preset <tsc|tsgo|vue-tsc>`，配置还必须留在所属包目录里，并且不能指向生成的 `.limina` 配置。Limina 只支持 `limina build tsconfig.json`、`limina build tsconfig.dts.json --raw --preset tsgo`、`pnpm limina build tsconfig.json`、`pnpm exec limina build tsconfig.json` 这类直接静态写法。像 `limina build $CONFIG` 这样的动态 shell 脚本会被报告为不支持。单包支持没有把解析器接受的调用语法扩大到 npm、Yarn 或 Bun 包装命令；这些项目仍可使用直接的 `limina build`。
+`<config>` 相对于这个包目录，必须是工作区内的 JSON 文件。使用 Limina 托管构建时，脚本必须指向 Limina 管理且存在输出构建模块的配置。使用原始构建时，脚本必须带上 `--raw --preset <tsc|tsgo|vue-tsc>`，配置还必须留在所属包目录里，并且不能指向生成的 `.limina` 配置。
+
+脚本需要直接写出命令和配置路径，例如 `limina build tsconfig.json`、`limina build tsconfig.dts.json --raw --preset tsgo`、`pnpm limina build tsconfig.json` 或 `pnpm exec limina build tsconfig.json`。像 `limina build $CONFIG` 这样的动态 shell 脚本不受支持。npm、Yarn 或 Bun 项目也可以直接使用 `limina build`，但不支持在这里使用它们的命令包装形式。
 
 Limina 会为受治理的源码归属方工作区写入 `entry: []`，从而关闭 `Knip` 隐式的 `index` / `main` / `cli` 入口猜测。默认可达性仍然包含包清单入口（`exports`、`main`、`module`、`browser`、`bin`、`types`、`typings`）、`Knip` 插件推断入口、包脚本，以及 Limina 为应用型源码归属方生成的虚拟入口。
 
@@ -261,7 +293,7 @@ export default defineConfig({
 
 如果依赖确实由生成代码、运行时字符串或 `Knip` 看不见的路径使用，可以添加带原因的忽略条目：治理根包写在 `source.knip.root`，具名非根包写在 `source.knip.workspaces[pkg]`。
 
-忽略条目的 `dep` 必须是已存在的工作区包，并且这个依赖关系仍然声明在`root` 或 `workspaces[pkg]` 对应的导入方包清单中。确实需要保留时，把 `reason` 写在配置旁；不再需要时，应该删除依赖。
+忽略条目的 `dep` 必须是已存在的工作区包，并且这个依赖关系仍然声明在 `root` 或 `workspaces[pkg]` 对应的导入方包清单中。确实需要保留时，把 `reason` 写在配置旁；不再需要时，应该删除依赖。
 
 ### `root.ignoreFiles` / `workspaces[pkg].ignoreFiles`
 
@@ -269,4 +301,4 @@ export default defineConfig({
 
 `ignoreFiles` 只用于确实要保留、但 `Knip` 看不见的源码模块。
 
-忽略条目必须使用相对于 `config.rootDir` 的文件路径，并提供非空 `reason`。路径可以包含 `../`，但该文件还必须属于`root` 或 `workspaces[pkg]` 对应包的已知源码模块集合。
+忽略条目必须使用相对于 `config.rootDir` 的文件路径，并提供非空 `reason`。路径可以包含 `../`，但该文件还必须属于 `root` 或 `workspaces[pkg]` 对应包的已知源码模块集合。

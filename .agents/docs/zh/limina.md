@@ -38,7 +38,7 @@ Limina 把配置选定的 package 治理范围、checker 的语义事实、声�
 
 公共配置只将治理边界归入 `scope`。`graph`、`source`、`proof`、`package`、`release`、`pipelines`、`concurrency` 和 `cache` 放在顶层；`concurrency` 替代原来的 `execution` 字段。全部字段均可省略。拒绝 `checks` 和 `execution` 包装层，让各入口直接可见，降低发现和认知成本。[公共类型](../../../packages/limina/src/config/root-types.ts)与 Zod Schema 共同定义入口；旧顶层字段及旧并发路径会被拒绝并给出迁移提示。内部 `ResolvedLiminaConfig` 直接携带同一结构，另加 `configPath`、`rootDir`、`governanceRoot` 等解析事实，不建立第二份旧格式投影。源码选择、checker 归属和区域 authority 仍由原 consumer 决定；`package.entries` 继续为 workspace 提供输出根，不能延迟到 package task 才消费。pipeline 顺序与并发默认值由原执行模块决定。
 
-此次分组复用已有 TypeScript 类型、Zod 和字段验证器；没有新的加载器、合并库或 pipeline DSL。分域的公开选项及对象／函数配置可以参考 [Vite 配置](https://vite.dev/config/)和 [Vitest 配置](https://vitest.dev/config/)，但不移植其 root、默认值或加载语义。用户迁移映射由[配置文档](../../../docs/zh/config/config-file.md#config-domains-migration)维护。
+此次分组复用已有 TypeScript 类型、Zod 和字段验证器；没有新的加载器、合并库或 pipeline DSL。分域的公开选项及对象／函数配置可以参考 [Vite 配置](https://vite.dev/config/)和 [Vitest 配置](https://vitest.dev/config/)，但不移植其 root、默认值或加载语义。公共配置的具体用法见[配置文档](../../../docs/zh/config/config-file.md)。
 
 ## 事实、推导与人类判断
 

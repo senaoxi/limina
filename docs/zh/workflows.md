@@ -1,6 +1,6 @@
 # 工作流
 
-本页说明接入后的日常检查、局部反馈和发布前检查。首次初始化见[快速开始](./getting-started.md)，完整参数见[命令行参考](./cli.md)。
+本页介绍接入 Limina 后，如何在本地开发、代码评审和发布前运行检查。首次安装见[快速开始](./getting-started.md)，完整参数见[命令行参考](./cli.md)。
 
 ## 推荐工作流
 
@@ -12,7 +12,7 @@
 pnpm exec limina check
 ```
 
-默认 `limina check` 固定计划五个任务：`graph:check`、`source:check`、`proof:check`、`checker:build` 和 `checker:typecheck`。`scope` 选择输入和 Checker；顶层 `graph`、`source`、`proof` 配置规则、例外及可选子能力，省略配置域不会关闭对应任务。`package.entries` 和 `release` 不增加默认任务。
+默认检查包含图检查、源码检查、覆盖检查、声明构建和框架类型检查这五项任务。`scope` 决定检查范围和检查器。`graph`、`source`、`proof` 用于补充规则或例外，省略它们不会关闭对应任务。包检查和发布检查需要另行运行。
 
 将 `source.knip` 设为 `true` 可增加 Knip 分析。`false` 保留源码归属、tsconfig 治理、导入边界及包依赖授权检查。
 
@@ -34,7 +34,7 @@ pnpm exec limina check
 pnpm exec limina graph export --view artifact --output .limina/dependency-graph.json
 ```
 
-产物边来自实际导入，以及配置并验证过的输出目录；目录叫 `dist` 本身不能证明它是产物。导出图用于审查消费关系，不是任务执行计划。详见[依赖图导出](./concepts.md#依赖图导出)。
+产物边来自实际导入，以及配置并验证过的输出目录。目录叫 `dist` 本身不能证明它是产物。导出图用于审查消费关系，不是任务执行计划。详见[依赖图导出](./concepts.md#依赖图导出)。
 
 ### 拉取请求 {#pull-request}
 
@@ -42,7 +42,7 @@ pnpm exec limina graph export --view artifact --output .limina/dependency-graph.
 pnpm exec limina check
 ```
 
-检查报告中的任务结果和覆盖范围。`disabled`、`blocked`、`skipped` 都不能当作相应检查已通过；可选分析器缺失时，还可能出现退出成功但检查被跳过的情况。业务测试和项目构建仍按仓库自身要求运行。
+检查报告中的任务结果和覆盖范围。`disabled`、`blocked`、`skipped` 都不能当作相应检查已通过。可选分析器缺失时，还可能出现退出成功但检查被跳过的情况。业务测试和项目构建仍按仓库自身要求运行。
 
 包检查、发布检查不属于默认流水线，需要独立命令或自定义流水线。失败后可按[故障排查](./troubleshooting.md#先定位失败任务)定位问题。
 
@@ -64,13 +64,15 @@ pnpm exec limina release check --package <name>
 pnpm exec limina check publish
 ```
 
-`publish` 是自定义流水线名称，没有同名内置流水线。它会运行你配置的命令；示例及失败策略见[流水线](./config/pipelines.md)。
+`publish` 是自定义流水线名称，没有同名内置流水线。它会运行你配置的命令，示例及失败策略见[流水线](./config/pipelines.md)。
 
 ## 迁移已有配置
 
-配置迁移使用与 `limina` 同版本的独立 `limina-migrate`。安装匹配版本后运行：
+配置迁移使用独立的 `limina-migrate`。对于本文档介绍的开发版，请使用与 `limina` 来自同一份源码构建的迁移工具；安装方法见[快速开始](./getting-started.md#已有项目引用时先迁移)。先预览计划，再根据计划决定是否写入：
 
 ```sh
+pnpm exec limina-migrate --dry-run --yes
+# 阅读计划后执行迁移
 pnpm exec limina-migrate
 pnpm exec limina check
 ```
@@ -81,29 +83,20 @@ pnpm exec limina check
 
 ## 持续集成示例 {#ci-示例}
 
-下面的示例执行默认检查。它假定仓库已固定 pnpm 版本，并提交了锁文件和 Limina 配置；框架生成类型等前置工作应在检查前按项目要求完成。
+如果项目像[快速开始](./getting-started.md)一样通过 `file:../limina/packages/limina/dist` 安装开发版，CI 也需要在相同的相对位置准备并构建 Limina 源码；只检出项目本身，安装时找不到这个本地依赖。pnpm 可能将此情况报告为 `ERR_PNPM_OUTDATED_LOCKFILE`；遇到这个错误时，先检查本地构建目录是否存在，再判断是否需要更新锁文件。
 
-```yaml
-name: ci
+例如，让 CI 将项目检出到 `project`、将与文档对应的 Limina 源码提交检出到同级的 `limina`，并从 `project` 目录开始执行：
 
-on:
-  pull_request:
-  push:
-    branches: [main]
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.22.3
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec limina check
+```sh
+cd ../limina
+pnpm install --frozen-lockfile
+pnpm run build
+cd ../project
+pnpm install --frozen-lockfile
+pnpm exec limina check
 ```
+
+项目和 Limina 仓库都需要相应的锁文件。CI 还应使用兼容的 Node.js、pnpm 版本，并在检查前完成项目自己的框架类型生成等步骤。若使用发行包，请按对应发行版本的安装方式准备依赖。
 
 ## 最佳实践
 
@@ -128,7 +121,7 @@ jobs:
 
 ### 工作区导出可以指向构建产物吗？ {#工作区导出可以指向-dist-吗}
 
-可以。消费已有声明不会反推源码项目引用，也不会自动刷新声明。消费方的构建流程仍需准备产物，见[源码边、声明边与产物边](./concepts.md#源码边、声明边与产物边)。
+可以。如果 `dist` 中的是构建后的声明产物，消费它不会推断出生产它的源码项目，也不会自动刷新它。消费方的构建流程仍需准备产物。作为源码管理的声明则遵循单独的检查上下文规则，见[源码边、声明边与产物边](./concepts.md#源码边、声明边与产物边)。
 
 ### Vue 或 Svelte 文件应该放进 TypeScript 图吗？
 
@@ -140,7 +133,7 @@ jobs:
 
 ## 维护者发布检查清单
 
-发布前应完成项目测试、适用的 Limina 检查、生产构建、产物检查与真实消费者测试，并审阅禁用和跳过项。Limina 仓库本身还需遵循仓库规定的同版本配对产物与持续集成门禁；上述命令不执行发布。
+发布前应完成项目测试、适用的 Limina 检查、生产构建、产物检查与真实消费者测试，并审阅禁用和跳过项。上述命令不执行发布。
 
 ## 相关内容
 
