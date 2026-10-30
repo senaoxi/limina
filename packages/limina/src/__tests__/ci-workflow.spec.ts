@@ -24,6 +24,7 @@ interface Job {
         os: string;
         node: string | number;
         unitShard?: number;
+        unitShards?: number;
       }[];
       node?: string[];
     };
@@ -139,21 +140,28 @@ describe('Limina CI validation contract', () => {
   it('retains independent platform builds and the supported Node test matrix', async () => {
     const { jobs } = await workflow();
     const testMatrix = jobs.test.strategy?.matrix?.include ?? [];
-    expect(
-      testMatrix
-        .filter((entry) => entry.os === 'windows-latest')
-        .map((entry) => entry.unitShard)
-        .toSorted((left, right) => (left ?? 0) - (right ?? 0)),
-    ).toEqual([1, 2, 3, 4]);
-    for (const entry of testMatrix) {
-      if (entry.os !== 'windows-latest')
-        expect(entry.unitShard).toBeUndefined();
+    for (const [os, total] of [
+      ['windows-latest', 4],
+      ['macos-latest', 2],
+    ] as const) {
+      const shards = testMatrix.filter((entry) => entry.os === os);
+      expect(
+        shards
+          .map((entry) => entry.unitShard)
+          .toSorted((left, right) => (left ?? 0) - (right ?? 0)),
+      ).toEqual(Array.from({ length: total }, (_, index) => index + 1));
+      for (const shard of shards) expect(shard.unitShards).toBe(total);
     }
-    expect(jobs.test).toHaveProperty('timeout-minutes', 60);
+    for (const entry of testMatrix) {
+      if (['windows-latest', 'macos-latest'].includes(entry.os)) continue;
+      expect(entry.unitShard).toBeUndefined();
+      expect(entry.unitShards).toBeUndefined();
+    }
+    expect(jobs.test).toHaveProperty('timeout-minutes', 90);
     const unit = jobs.test.steps?.find((step) => step.name === 'Unit Tests');
     expect(unit?.env?.VITEST_MAX_WORKERS).toBe('2');
     expect(unit?.run).toContain(
-      "${{ matrix.unitShard && format('--shard={0}/4', matrix.unitShard) || '' }}",
+      "${{ matrix.unitShard && format('--shard={0}/{1}', matrix.unitShard, matrix.unitShards) || '' }}",
     );
     expect(
       jobs.test.steps?.find((step) => step.name === 'Upload Test Results')?.with

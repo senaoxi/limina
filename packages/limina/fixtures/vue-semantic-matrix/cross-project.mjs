@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -33,6 +34,11 @@ export function checkCrossProjectRequests(
       name: 'vue-request-fixture',
       private: true,
       type: 'module',
+      devDependencies: {
+        vue: JSON.parse(
+          readFileSync(requireFromCase.resolve('vue/package.json'), 'utf8'),
+        ).version,
+      },
     });
     for (const name of ['typescript', 'vue-tsc', 'vue']) {
       const target = path.dirname(

@@ -68,7 +68,7 @@ jobs:
   test:
     name: Test (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -82,25 +82,36 @@ jobs:
           - name: Linux / Node 26.0.0
             os: ubuntu-latest
             node: 26.0.0
-          - name: macOS / Node 22.22.3
+          - name: macOS / Node 22.22.3 / unit 1 of 2
             os: macos-latest
             node: 22.22.3
+            unitShard: 1
+            unitShards: 2
+          - name: macOS / Node 22.22.3 / unit 2 of 2
+            os: macos-latest
+            node: 22.22.3
+            unitShard: 2
+            unitShards: 2
           - name: Windows / Node 22.22.3 / unit 1 of 4
             os: windows-latest
             node: 22.22.3
             unitShard: 1
+            unitShards: 4
           - name: Windows / Node 22.22.3 / unit 2 of 4
             os: windows-latest
             node: 22.22.3
             unitShard: 2
+            unitShards: 4
           - name: Windows / Node 22.22.3 / unit 3 of 4
             os: windows-latest
             node: 22.22.3
             unitShard: 3
+            unitShards: 4
           - name: Windows / Node 22.22.3 / unit 4 of 4
             os: windows-latest
             node: 22.22.3
             unitShard: 4
+            unitShards: 4
           - name: Linux / Node 24 Latest
             os: ubuntu-latest
             node: 24
@@ -115,7 +126,7 @@ jobs:
       - name: Unit Tests
         env:
           VITEST_MAX_WORKERS: "2"
-        run: pnpm --filter limina run test:unit ${{ matrix.unitShard && format('--shard={0}/4', matrix.unitShard) || '' }} --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-unit.xml && pnpm --filter limina-migrate run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml && pnpm run test:tooling
+        run: pnpm --filter limina run test:unit ${{ matrix.unitShard && format('--shard={0}/{1}', matrix.unitShard, matrix.unitShards) || '' }} --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-unit.xml && pnpm --filter limina-migrate run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml && pnpm run test:tooling
       - name: Limina Integration Tests
         run: pnpm --filter limina run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-integration.xml && pnpm --filter limina-migrate run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-integration.xml
       - name: Upload Test Results
