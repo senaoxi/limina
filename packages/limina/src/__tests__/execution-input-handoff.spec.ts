@@ -7,7 +7,12 @@ import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 async function createHandoffFixture(hasMissingInput = false) {
-  const compilerOptions = { module: 'NodeNext', types: [], strict: true };
+  const compilerOptions = {
+    module: 'NodeNext',
+    noLib: true,
+    types: [],
+    strict: true,
+  };
   const f = await createSemanticRepairFixture({
     'package.json': JSON.stringify({
       name: 'handoff',

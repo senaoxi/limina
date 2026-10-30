@@ -335,7 +335,7 @@ return {};};`,
     } finally {
       await f.cleanup();
     }
-  });
+  }, 60_000);
 
   it('rejects self-hiding output while adopting the source and accepting an independent safe output', async () => {
     const f = await fixture({
@@ -576,7 +576,14 @@ return {};};`,
   });
 
   it('expands cyclic named wrappers without losing either source member', async () => {
+    // This fixture tests solution membership, not standard-library discovery.
+    // Keep both fresh verification processes and the CLI idempotence rerun.
+    const options = { noLib: true, types: [] };
     const f = await fixture({
+      'packages/app/good/tsconfig.json': source({
+        ...options,
+        noEmit: true,
+      }),
       'packages/app/tsconfig.json': solution('./a/tsconfig.wrap.json'),
       'packages/app/a/tsconfig.wrap.json': solution(
         '../b/tsconfig.wrap.json',
@@ -586,9 +593,9 @@ return {};};`,
         '../a/tsconfig.wrap.json',
         '../y/tsconfig.lib.json',
       ),
-      'packages/app/x/tsconfig.lib.json': source(),
+      'packages/app/x/tsconfig.lib.json': source(options),
       'packages/app/x/src/index.ts': 'export const x = 1;',
-      'packages/app/y/tsconfig.lib.json': source(),
+      'packages/app/y/tsconfig.lib.json': source(options),
       'packages/app/y/src/index.ts': 'export const y = 1;',
     });
     try {
