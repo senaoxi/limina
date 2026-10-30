@@ -92,7 +92,7 @@ export interface CheckerDependencyFact {
 export interface PhysicalFrameworkCandidate {
   origin: NativeEvidenceOrigin;
   coverage: NativeCoverage;
-  observer: 'oxc-physical-candidate-v1';
+  observer: 'qualified-framework-candidate-v2';
   family: Exclude<SemanticFamily, 'typescript'>;
   owningConfigPath: string;
   targetPath: string;

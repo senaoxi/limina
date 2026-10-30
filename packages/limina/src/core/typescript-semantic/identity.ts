@@ -26,7 +26,7 @@ export function createTypeScriptSemanticContextIdentity(
   project: TypeScriptSemanticProject,
 ): string {
   return createIdentity('bounded-typescript-semantic', {
-    adapterVersion: 'bounded-typescript-semantic-v6-coverage',
+    adapterVersion: 'bounded-typescript-semantic-v7-compiler-membership',
     analysisBinding: project.analysisBinding,
     compilationScope: project.compilationObligationScope,
     admissionMode: project.admissionMode ?? 'full-program',

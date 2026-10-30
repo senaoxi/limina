@@ -30,6 +30,17 @@ export function processDeclarationProviderImport(
   options: ReferenceImportOptions,
 ): void {
   if (options.projectDependency.referenceRequirement === null) return;
+  const requiredFile =
+    options.projectDependency.referenceRequirement.targetFileName;
+  if (
+    options.context.activatedRegions.isInsideActivatedRegion(requiredFile) &&
+    !options.context.fileOwnerLookup.get(requiredFile)?.length
+  ) {
+    options.context.problems.push(
+      `Unproved necessary compilation relation: ${requiredFile}; no compiler input owner for ${options.project.configPath}.`,
+    );
+    return;
+  }
   const provider = resolveUsableProvider(options);
   const target = createReferenceTarget({ base: options, provider });
   if (isValidReferenceTarget(options.project.configPath, target)) {

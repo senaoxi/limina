@@ -2,10 +2,10 @@ import type {
   CheckerProjectConfigCache,
   VueProjectSemanticIdentity,
 } from '#checkers';
-import { deriveNativeCoverage } from '../../domain/analysis/native-coverage';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { discoverSupplementalTarget } from '../import-analysis/supplemental-resolution';
+import { deriveCompilerCoverage } from '../typescript-semantic/compiler-coverage';
 import { createImportRecordIdentity } from '../typescript-semantic/import-record';
 import { captureModulePremises } from '../typescript-semantic/native-context-inventory';
 import { observeNativeFileIdentity } from '../typescript-semantic/native-file-identity';
@@ -16,6 +16,7 @@ import type { CheckerDependencyFact } from './checker-ownership-types';
 import { prepareLockedSemanticProject } from './locked-semantic-project';
 import {
   assessPendingSupplement,
+  resolveSupplementalVueTarget,
   type SupplementalAssessment,
 } from './pending-supplemental-assessment';
 
@@ -45,7 +46,7 @@ export function rebindSupplementalAssessments(
       )
         bound.referenceRequirement = {
           kind: 'compiler-membership',
-          targetFileName: current.discovery.target,
+          targetFileName: current.coverage.target.lexicalPath,
         };
     }
     return [current];
@@ -112,14 +113,29 @@ function rebindAssessment(
     throw new Error(
       `Supplemental target became ${discovery.state} during lock: ${discovery.reason}`,
     );
+  const target =
+    resolveSupplementalVueTarget({
+      consumer,
+      premises,
+      importer: fact.importRecord.filePath,
+      specifier: fact.importRecord.specifier,
+    }) ?? previous.coverage.target.lexicalPath;
+  const currentCoverage = deriveCompilerCoverage(
+    coverage,
+    observeNativeFileIdentity(target, coverage.inputVersion),
+  );
+  if (
+    currentCoverage.state !== 'unique' ||
+    currentCoverage.members[0]?.configId !== previous.obligation.targetConfigId
+  )
+    throw new Error(
+      'Supplemental compiler input ownership changed during lock.',
+    );
   return assessPendingSupplement({
     baseline: fact.nativeEvidence!.origin.context,
     premises,
     discovery,
-    coverage: deriveNativeCoverage(
-      coverage,
-      observeNativeFileIdentity(discovery.target, coverage.inputVersion),
-    ),
+    coverage: currentCoverage,
     owner,
     consumer,
     roots: consumer.fileNames,

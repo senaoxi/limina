@@ -22,7 +22,14 @@ import {
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
 import { observeVueDeclarationCandidate } from '../vue-semantic/declaration-candidate';
 import { declarationFileKey } from './declaration-context-decisions';
-import type { DependencyAnalysisResult } from './types';
+import {
+  implementationReferenceInputs,
+  validateImplementationMappings,
+} from './implementation-reference-mapping';
+import type {
+  DependencyAnalysisResult,
+  GeneratedDependencyEdge,
+} from './types';
 
 export interface DeclarationValidationTarget {
   sourceConfig: string;
@@ -34,6 +41,7 @@ export interface DeclarationValidationTarget {
 }
 export interface DeclarationValidationInput {
   analysis: DependencyAnalysisResult;
+  dependencyEdges?: readonly GeneratedDependencyEdge[];
   files: ReadonlyMap<string, string>;
   coverage?: SourceConfigCoverageIndex;
   targets: readonly DeclarationValidationTarget[];
@@ -52,7 +60,15 @@ export function validateDeclarationContexts(
   input: DeclarationValidationInput,
 ): void {
   const decisions = input.analysis.declarationContexts ?? [];
-  if (decisions.length === 0) return;
+  // Structural rejection already owns the diagnostic; a cyclic or unbound
+  // candidate cannot yet support implementation mapping proof.
+  const canObserveImplementations =
+    input.analysis.referenceValidation === undefined ||
+    input.analysis.referenceValidation.state === 'admitted';
+  const referenceInputs = implementationReferenceInputs(
+    canObserveImplementations ? (input.dependencyEdges ?? []) : [],
+  );
+  if (decisions.length === 0 && referenceInputs.size === 0) return;
   const result: NonNullable<DependencyAnalysisResult['declarationValidation']> =
     {
       state: 'admitted',
@@ -72,14 +88,27 @@ export function validateDeclarationContexts(
       fileKey: (file) => fileKey(input, file),
     });
     for (const project of projects.values()) {
-      const closure = referenceClosure(project, projects);
       const applicable = scope(project.sourceConfig);
       const localInputs = relevantDeclarationRoots(input, project, decisions);
-      if (applicable.length === 0 && localInputs.length === 0) continue;
+      const implementations = referenceInputs.get(project.sourceConfig) ?? [];
+      if (
+        applicable.length === 0 &&
+        localInputs.length === 0 &&
+        implementations.length === 0
+      )
+        continue;
+      const closure = referenceClosure(project, projects);
       const start = performance.now();
       try {
         result.receipts.push(
-          validateProject(input, project, closure, applicable, localInputs),
+          validateProject(
+            input,
+            project,
+            closure,
+            applicable,
+            localInputs,
+            implementations,
+          ),
         );
       } finally {
         input.metrics?.record({
@@ -283,6 +312,7 @@ function validateProject(
   closure: readonly CandidateProject[],
   decisions: readonly DeclarationContextDecision[],
   localInputs: readonly string[],
+  implementations: readonly { file: string; provider: string }[],
 ): DeclarationContextReceipt {
   const expected = expectedContexts(
     input,
@@ -292,7 +322,8 @@ function validateProject(
     localInputs,
   );
   const observe =
-    (project.preset ?? project.checker) === 'tsc'
+    (project.preset ?? project.checker) === 'tsc' ||
+    ((project.preset ?? project.checker) === 'tsgo' && expected.size === 0)
       ? observeNativeDeclarationCandidate
       : (project.preset ?? project.checker) === 'vue-tsc'
         ? observeVueDeclarationCandidate
@@ -308,11 +339,14 @@ function validateProject(
     roots: closure.flatMap((member) => member.parsed.fileNames),
     configs: closure.map((member) => member.generatedConfig),
     declarations: expected.keys().toArray(),
+    referenceInputs: implementations.map((item) => item.file),
+    referenceProjects: closure,
     requiresDelegationProof: decisions.some(
       (decision) => decision.selection.state === 'selected',
     ),
     metrics: input.metrics,
   });
+  validateImplementationMappings(implementations, closure, observation);
   const sources = new Map(
     observation.sources.map((source) => [source.file, source]),
   );

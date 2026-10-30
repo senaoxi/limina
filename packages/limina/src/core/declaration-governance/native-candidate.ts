@@ -5,7 +5,7 @@ import { effectiveCompilerOptions } from '../typescript-semantic/compiler-option
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { NativeObservedProgram } from '../typescript-semantic/native-program-api';
 import { createNativeSemanticContext } from '../typescript-semantic/native-semantic-factory';
-import { observeNativeReference } from '../typescript-semantic/reference-redirect';
+import { observeNativeReferenceMapping } from '../typescript-semantic/reference-redirect';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import {
   type DeclarationCandidateInput,
@@ -13,12 +13,15 @@ import {
   declarationCandidateRequests,
   DeclarationObservationUnavailable,
 } from './candidate';
+import { observeNativeImplementationCandidate } from './native-implementation-candidate';
 
 const requireFromLimina = createRequire(import.meta.url);
 
 export function observeNativeDeclarationCandidate(
   input: DeclarationCandidateInput,
 ): DeclarationCandidateObservation {
+  if (input.declarations.length === 0 && input.referenceInputs?.length)
+    return observeNativeImplementationCandidate(input);
   const context = createNativeSemanticContext(
     {
       configPath: input.generatedConfig,
@@ -77,24 +80,22 @@ export function observeNativeDeclarationCandidate(
       mappings: [
         ...new Set([
           ...input.declarations,
+          ...(input.referenceInputs ?? []),
           ...snapshot.resolutions.flatMap((resolution) =>
             resolution.target === null ? [] : [resolution.target.lexicalPath],
           ),
         ]),
       ].map((file) => {
-        const mapping = observeNativeReference(context.program, file, ts);
+        const mapping = observeNativeReferenceMapping(
+          context.program,
+          file,
+          ts,
+        );
         return {
           file,
-          referenceConfig:
-            mapping.state === 'observed'
-              ? (mapping.referenceConfig ?? null)
-              : null,
-          declarationOutput:
-            mapping.state === 'observed'
-              ? (mapping.redirect?.declarationTarget ?? null)
-              : null,
-          qualified:
-            mapping.state === 'observed' && mapping.canProveMissingReference,
+          referenceConfig: mapping.referenceConfig ?? null,
+          declarationOutput: mapping.declarationOutput ?? null,
+          qualified: mapping.qualified,
         };
       }),
       requests: declarationCandidateRequests(

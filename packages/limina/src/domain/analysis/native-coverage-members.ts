@@ -26,11 +26,17 @@ export function publishedCoverageMembers(
 class CoverageMembers {
   readonly #current = new Map<string, NativeFileIdentity>();
   readonly #lexical = new Map<string, Set<string>>();
+  readonly #compilerMembers = new Map<
+    (file: string) => string,
+    Map<string, NativeFileIdentity[]>
+  >();
+  readonly #members: readonly NativeFileIdentity[];
   readonly #version: string;
   readonly hasCurrentIdentities: boolean;
 
   constructor(config: Enumeration) {
     this.#version = config.inputVersion;
+    this.#members = config.members;
     let hasCurrentIdentities = true;
     for (const file of config.members) {
       if (file.physical.state !== 'verified') {
@@ -63,6 +69,37 @@ class CoverageMembers {
       return undefined;
     // Preserve the first matching alias, even before a later lexical match.
     return this.#current.get(target.physical.canonicalId);
+  }
+
+  compilerMatch(
+    target: NativeFileIdentity,
+    fileKey: (file: string) => string,
+  ): NativeFileIdentity | undefined {
+    if (
+      target.physical.state !== 'verified' ||
+      target.physical.inputVersion !== this.#version
+    )
+      return undefined;
+    let index = this.#compilerMembers.get(fileKey);
+    if (index === undefined) {
+      index = new Map();
+      for (const member of this.#members) {
+        const key = fileKey(member.lexicalPath);
+        const entries = index.get(key) ?? [];
+        entries.push(member);
+        index.set(key, entries);
+      }
+      this.#compilerMembers.set(fileKey, index);
+    }
+    const physical = target.physical;
+    return index
+      .get(fileKey(target.lexicalPath))
+      ?.find(
+        (member) =>
+          member.physical.state === 'verified' &&
+          member.physical.inputVersion === this.#version &&
+          member.physical.canonicalId === physical.canonicalId,
+      );
   }
 
   hasConflict(target: NativeFileIdentity): boolean {

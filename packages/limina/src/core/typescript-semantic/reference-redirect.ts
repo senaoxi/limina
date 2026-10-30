@@ -35,6 +35,35 @@ type CompilerReference = ReturnType<
   NonNullable<StructuralProgram['getRedirectFromSourceFile']>
 >;
 
+/**
+ * Mapping proof has no dependency on whether a build output exists yet.
+ */
+export function observeNativeReferenceMapping(
+  program: ts.Program,
+  target: string,
+  compiler: typeof ts,
+): {
+  referenceConfig: string | undefined;
+  declarationOutput: string | undefined;
+  qualified: boolean;
+} {
+  const hasProjectReferences = hasReferences(program);
+  const reference = hasProjectReferences
+    ? readCompilerReference(program, target, compiler)
+    : undefined;
+  return {
+    referenceConfig: reference
+      ? normalizeAbsolutePath(reference.resolvedRef.sourceFile.fileName)
+      : undefined,
+    declarationOutput: reference?.outputDts
+      ? normalizeAbsolutePath(reference.outputDts)
+      : undefined,
+    qualified:
+      reference !== null &&
+      (!hasProjectReferences || isReferenceNegativeQualified(target, compiler)),
+  };
+}
+
 export function observeNativeReference(
   program: ts.Program,
   target: string,

@@ -1,18 +1,17 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { hasModuleSpecifierQueryOrFragment } from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
-import {
-  deriveNativeCoverage,
-  type NativeCoverage,
-} from '../../domain/analysis/native-coverage';
+import type { NativeCoverage } from '../../domain/analysis/native-coverage';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import {
   discoverSupplementalTarget,
   type SupplementalResolution,
 } from '../import-analysis/supplemental-resolution';
+import { deriveCompilerCoverage } from '../typescript-semantic/compiler-coverage';
 import type { TypeScriptSemanticDependencyContext } from '../typescript-semantic/contracts';
 import type { NativeModulePremises } from '../typescript-semantic/native-context-inventory';
 import { observeNativeFileIdentity } from '../typescript-semantic/native-file-identity';
+import { independentModuleInputAbsence } from '../typescript-semantic/native-module-impact';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import type { EvidenceProject } from './checker-ownership-evidence-project';
@@ -22,6 +21,8 @@ import type {
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import type { FileOwnerLookup } from './file-owner-lookup';
+import { prepareLockedSemanticProject } from './locked-semantic-project';
+import { resolveSupplementalVueTarget } from './pending-supplemental-assessment';
 
 interface PhysicalCandidateContext {
   typeScriptSemanticContext: TypeScriptSemanticDependencyContext;
@@ -117,7 +118,7 @@ function candidateCoverage(
   const index = context.discovery.sourceConfigCoverage;
   return index === undefined
     ? undefined
-    : deriveNativeCoverage(
+    : deriveCompilerCoverage(
         index,
         observeNativeFileIdentity(targetPath, index.inputVersion),
       );
@@ -188,7 +189,7 @@ function createProvenCandidate(
   if ([observed === undefined, !isUniqueCoverage(coverage)].some(Boolean))
     return null;
   return {
-    observer: 'oxc-physical-candidate-v1',
+    observer: 'qualified-framework-candidate-v2',
     origin: {
       source: 'framework-candidate',
       family: options.family,
@@ -233,6 +234,68 @@ function canResolvePendingSpecifier(
   );
 }
 
+function isKnownFrameworkInput(
+  context: PhysicalCandidateContext,
+  coverage: NativeCoverage,
+): boolean {
+  return (
+    /\.(?:vue|svelte|astro)$/.test(coverage.target.lexicalPath) ||
+    hasKnownVueProfile(context, coverage)
+  );
+}
+
+function hasKnownVueProfile(
+  context: PhysicalCandidateContext,
+  coverage: NativeCoverage,
+): boolean {
+  const target = coverage.target.physical;
+  const index = context.discovery.sourceConfigCoverage;
+  if (index === undefined || target.state !== 'verified') return false;
+  // Physical identity may expose a governed custom-framework input gap. It
+  // cannot grant compiler membership, select a provider or promote a Checker.
+  return index.configurations.some(
+    (config) =>
+      config.state === 'enumerated' &&
+      config.inputVersion === target.inputVersion &&
+      config.members.some(
+        (member) =>
+          member.physical.state === 'verified' &&
+          member.physical.inputVersion === target.inputVersion &&
+          member.physical.canonicalId === target.canonicalId &&
+          context.discovery.projectByConfigPath
+            .get(config.configId)
+            ?.context.vueSemanticIdentity?.profilesByFileName.has(
+              member.lexicalPath,
+            ) === true,
+      ),
+  );
+}
+
+function resolveCompilerTarget(input: {
+  context: PhysicalCandidateContext;
+  premises: NativeModulePremises;
+  importRecord: CheckerDependencyFact['importRecord'];
+  coverage: NativeCoverage;
+  target: string;
+}): string {
+  if (!hasKnownVueProfile(input.context, input.coverage)) return input.target;
+  const consumer = prepareLockedSemanticProject({
+    project: input.context.project,
+    authority: { kind: 'locked', family: 'vue', source: 'dependency' },
+    rootDir: input.context.config.rootDir,
+  }).context.vueSemanticIdentity;
+  return (
+    (consumer &&
+      resolveSupplementalVueTarget({
+        consumer,
+        premises: input.premises,
+        importer: input.importRecord.filePath,
+        specifier: input.importRecord.specifier,
+      })) ??
+    input.target
+  );
+}
+
 export function resolvePendingPhysicalCandidate(options: {
   context: PhysicalCandidateContext;
   importRecord: CheckerDependencyFact['importRecord'];
@@ -251,6 +314,14 @@ export function resolvePendingPhysicalCandidate(options: {
     return null;
   }
   const { premises, context } = options;
+  const isInputAbsent =
+    (premises.sourceLoadGap === undefined && premises.ownAmbient) ||
+    independentModuleInputAbsence({
+      role: premises.role,
+      options: premises.options,
+      target: undefined,
+      roots: [],
+    })?.state === 'absent';
   const baseline =
     context.typeScriptSemanticContext.nativeEvidence?.contexts[0];
   if (baseline === undefined || premises.options === undefined) return null;
@@ -270,11 +341,14 @@ export function resolvePendingPhysicalCandidate(options: {
         : context.project.configPath,
     extensions: [...context.semantic.project.extensions],
   });
-  const coverage =
+  let coverage =
     discovery.state === 'resolved'
       ? candidateCoverage(context, discovery.target)
       : undefined;
   options.onDiscovery(discovery, coverage);
+  // Preserve independently observed resolution and valid ownership. Missing
+  // qualification cannot reopen an input obligation the compiler disproved.
+  if (isInputAbsent && !isUniqueCoverage(coverage)) return null;
   if (discovery.state !== 'resolved') {
     if (discovery.state !== 'unresolved')
       options.problems.push(
@@ -282,23 +356,37 @@ export function resolvePendingPhysicalCandidate(options: {
       );
     return null;
   }
+  const targetPath =
+    !isInputAbsent && coverage !== undefined
+      ? resolveCompilerTarget({
+          ...options,
+          coverage,
+          target: discovery.target,
+        })
+      : discovery.target;
+  if (targetPath !== discovery.target)
+    coverage = candidateCoverage(context, targetPath);
   if (
     coverage === undefined ||
     coverage.completeness === 'incomplete' ||
     coverage.state === 'unavailable'
   ) {
     options.problems.push(
-      `Pending supplemental coverage unavailable: ${discovery.target}: ${coverage?.gaps.join(', ') ?? 'no-index'}`,
+      `Pending supplemental coverage unavailable: ${targetPath}: ${coverage?.gaps.join(', ') ?? 'no-index'}`,
     );
     return null;
   }
   const candidate = qualifyPendingPhysicalCandidate({
     ...options,
-    targetPath: discovery.target,
+    targetPath,
   });
-  if (candidate === null && /\.(?:vue|svelte|astro)$/.test(discovery.target))
+  if (
+    candidate === null &&
+    !isInputAbsent &&
+    isKnownFrameworkInput(context, coverage)
+  )
     options.problems.push(
-      `Pending supplemental target qualification unavailable: ${discovery.target} (${candidateCoverage(context, discovery.target)?.state ?? 'unavailable'})`,
+      `Pending supplemental target qualification unavailable: ${targetPath} (${coverage.state})`,
     );
   return candidate;
 }

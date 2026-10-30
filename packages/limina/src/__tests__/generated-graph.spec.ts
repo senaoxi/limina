@@ -379,7 +379,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     },
   );
 
-  it('rejects ambiguous canonical owners for a native compiler requirement', async () => {
+  it('accepts external package aliases without inventing canonical owner conflicts', async () => {
     const fixture = await createFixture({
       'packages/a/src/index.ts':
         "import { value } from '@example/shared'; export const used = value;",
@@ -427,7 +427,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
             checkers: { auto: {} },
           },
         }),
-      ).rejects.toThrow('Ambiguous canonical governed source ownership');
+      ).resolves.toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'tsc' })]),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -1568,40 +1570,63 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('retains unknown when a symlinked owner profile is unavailable to the consumer', async () => {
-    const fixture = await createFixture({
-      'packages/app/src/index.ts':
-        "import Component from '@example/custom'; export const value = Component;",
-      'packages/app/tsconfig.json': json({
-        compilerOptions: {
-          ...managedOutputCompilerOptions(),
-          preserveSymlinks: true,
-        },
-        include: ['src/**/*'],
-      }),
-      'packages/custom/package.json': json({
-        name: '@example/custom',
-        type: 'module',
-        exports: { '.': './src/App.md' },
-      }),
-      'packages/custom/src/App.md':
-        '<script setup lang="ts">const value = 1;</script>',
-      'packages/custom/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
-        vueCompilerOptions: { extensions: ['.vue', '.md'] },
-      }),
-    });
-    const analysis = createSpiedImportAnalysis();
-    try {
-      await linkWorkspacePackage(
-        fixture.rootDir,
-        'packages/app',
-        'packages/custom',
-        '@example/custom',
-      );
-      await expect(
-        prepareGeneratedTsconfigGraph(
+  it.each([
+    'unknown',
+    'asset',
+    'ambient',
+    'noResolve',
+    'augmentation',
+  ] as const)(
+    'respects compiler input proof for custom framework aliases: %s',
+    async (mode) => {
+      const hasCustomProfile = mode !== 'asset';
+      const declaration =
+        mode === 'ambient'
+          ? 'declare module "@example/custom" { export const value: number; } declare const value: typeof import("@example/custom");'
+          : mode === 'augmentation'
+            ? 'export {}; declare module "@example/custom" { interface Added {} }'
+            : undefined;
+      const fixture = await createFixture({
+        'packages/app/src/index.ts':
+          declaration === undefined
+            ? "import Component from '@example/custom'; export const value = Component;"
+            : 'export const anchor = 1;',
+        ...(declaration !== undefined && {
+          'packages/app/src/ambient.d.ts': declaration,
+        }),
+        'packages/app/tsconfig.json': json({
+          compilerOptions: {
+            ...managedOutputCompilerOptions(),
+            preserveSymlinks: true,
+            ...(mode === 'noResolve' && { noResolve: true }),
+          },
+          include: ['src/**/*'],
+        }),
+        'packages/custom/package.json': json({
+          name: '@example/custom',
+          type: 'module',
+          exports: { '.': './src/App.md' },
+        }),
+        'packages/custom/src/index.ts': 'export const value = 1;',
+        'packages/custom/src/App.md':
+          '<script setup lang="ts">const value = 1;</script>',
+        'packages/custom/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*'],
+          ...(hasCustomProfile && {
+            vueCompilerOptions: { extensions: ['.vue', '.md'] },
+          }),
+        }),
+      });
+      const analysis = createSpiedImportAnalysis();
+      try {
+        await linkWorkspacePackage(
+          fixture.rootDir,
+          'packages/app',
+          'packages/custom',
+          '@example/custom',
+        );
+        const result = prepareGeneratedTsconfigGraph(
           {
             ...fixture.config,
             scope: {
@@ -1610,22 +1635,33 @@ describe('prepareGeneratedTsconfigGraph', () => {
             },
           },
           { importAnalysisContext: analysis.context },
-        ),
-      ).rejects.toThrow('supplement-checker-resolution-mismatch');
-      expect(
-        analysis.resolveSupplementalImport.mock.results.some(
-          (result) =>
-            result.value?.target ===
-            fixture.path(
-              'packages/app/node_modules/@example/custom/src/App.md',
+        );
+        if (mode === 'unknown')
+          await expect(result).rejects.toThrow(
+            'Pending supplemental target qualification unavailable',
+          );
+        else {
+          const graph = await result;
+          expect(graph.dependencyEdges).toEqual([]);
+          expect(
+            graph.checkers.find((checker) => checker.name === 'tsc')?.include,
+          ).toContain('packages/app/tsconfig.json');
+        }
+        if (mode === 'unknown' || mode === 'asset')
+          expect(
+            analysis.resolveSupplementalImport.mock.results.some(
+              (result) =>
+                result.value?.target ===
+                fixture.path(
+                  'packages/app/node_modules/@example/custom/src/App.md',
+                ),
             ),
-        ),
-      ).toBe(true);
-      expect(analysis.resolveSupplementalImport).toHaveBeenCalledTimes(2);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+          ).toBe(true);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('confirms custom Vue extensions from actual files instead of config hints alone', async () => {
     const fixture = await createFixture({

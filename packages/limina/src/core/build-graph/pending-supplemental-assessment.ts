@@ -6,6 +6,7 @@ import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { ImportRecord } from '../import-analysis/records';
 import type { SupplementalResolution } from '../import-analysis/supplemental-resolution';
+import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type { NativeModulePremises } from '../typescript-semantic/native-context-inventory';
 import {
@@ -56,6 +57,28 @@ export interface SupplementalAssessment {
   readonly emitOptions: ts.CompilerOptions;
   readonly occurrence: ImportRecord;
   readonly obligation: NativeCompilationObligation;
+}
+
+/** Observe the consumer's actual Vue resolver before choosing a compiler
+ * member. Oxc's physical target remains independent discovery evidence. */
+export function resolveSupplementalVueTarget(input: {
+  consumer: VueProjectSemanticIdentity;
+  premises: NativeModulePremises;
+  importer: string;
+  specifier: string;
+}): string | undefined {
+  if (input.premises.options === undefined) return undefined;
+  const consumer = new VueSemanticContext(input.consumer);
+  try {
+    return consumer.resolveSupplementalModule?.(
+      input.specifier,
+      input.importer,
+      input.premises.options,
+      input.premises.mode,
+    ).resolvedModule?.resolvedFileName;
+  } finally {
+    consumer.dispose();
+  }
 }
 
 /** Pending only asks the adapter for resolution and script classification.
@@ -146,7 +169,7 @@ function supplementImpact(
     role: premises.role,
     options: premises.options,
     roots: input.roots,
-    target: discovery.state === 'resolved' ? discovery.target : undefined,
+    target: input.coverage.target.lexicalPath,
   });
   if (independent !== undefined) return independent;
   if (premises.sourceLoadGap !== undefined)
@@ -243,7 +266,7 @@ function supplementReference(
         context.tsModule,
         context.compilerRequests.optionsBySource,
       ),
-      input.discovery.target,
+      input.coverage.target.lexicalPath,
       context.tsModule,
     );
   } finally {
@@ -255,6 +278,8 @@ function hasSameSupplementalTarget(
   file: string,
   coverage: NativeCoverage,
 ): boolean {
+  if (compilerFileKey(file) !== compilerFileKey(coverage.target.lexicalPath))
+    return false;
   const expected = coverage.target.physical;
   if (expected.state !== 'verified') return false;
   const actual = observeNativeFileIdentity(

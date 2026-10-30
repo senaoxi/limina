@@ -33,6 +33,7 @@ export function validateStagedDeclarationContexts(
       });
   validateDeclarationContexts({
     analysis: state.dependencyAnalysis,
+    dependencyEdges: state.dependencyEdges,
     files: state.writeContext.files,
     coverage: state.sourceConfigCoverage,
     targets,
@@ -48,6 +49,7 @@ export function hasValidRestoredDeclarationContexts(
   graph: Pick<
     GeneratedTsconfigGraphResult,
     | 'dependencyAnalysis'
+    | 'dependencyEdges'
     | 'sourceToDts'
     | 'configToOutputBuild'
     | 'generatedFiles'
@@ -78,6 +80,7 @@ export function hasValidRestoredDeclarationContexts(
         });
   validateDeclarationContexts({
     analysis,
+    dependencyEdges: graph.dependencyEdges,
     files: graph.generatedFiles,
     coverage: graph.sourceConfigCoverage,
     targets,

@@ -2701,6 +2701,7 @@ packages:
         name: '@example/internal',
         type: 'module',
       }),
+      'packages/internal/tsconfig.json': typecheckConfig(['src/**/*.ts']),
       'packages/internal/src/index.ts': 'export const internalValue = 1;\n',
       'pnpm-workspace.yaml': `
 packages:
@@ -2743,6 +2744,7 @@ packages:
         name: '@example/internal',
         type: 'module',
       }),
+      'packages/internal/tsconfig.json': typecheckConfig(['src/**/*.ts']),
       'packages/internal/src/index.ts': 'export const internalValue = 1;\n',
       'pnpm-workspace.yaml': `
 packages:
@@ -2932,6 +2934,7 @@ packages:
         name: '@example/internal',
         type: 'module',
       }),
+      'packages/internal/tsconfig.json': typecheckConfig(['src/**/*.ts']),
       'packages/internal/src/index.ts': 'export const internalValue = 1;\n',
       'pnpm-workspace.yaml': `
 packages:
@@ -3032,6 +3035,7 @@ packages:
         name: '@example/internal',
         type: 'module',
       }),
+      'packages/internal/tsconfig.json': typecheckConfig(['src/**/*.ts']),
       'packages/internal/src/index.ts': 'export const internalValue = 1;\n',
       'pnpm-workspace.yaml': `
 packages:
