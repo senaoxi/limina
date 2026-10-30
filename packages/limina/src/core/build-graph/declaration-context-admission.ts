@@ -49,7 +49,7 @@ export function assessDeclarationContexts(
         `${location}: missing declaration context reference to ${selection.config}.`,
       );
   }
-  if (decisions.length > 0) {
+  if (decisions.length > 0 || analysis.declarationValidation !== undefined) {
     const validation = analysis.declarationValidation;
     if (validation === undefined)
       result.unknown.push(pendingDeclarationValidation);

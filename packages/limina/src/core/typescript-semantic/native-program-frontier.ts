@@ -1,15 +1,15 @@
 import { normalizeAbsolutePath } from '#utils/path';
-import {
-  deriveNativeCoverage,
-  type NativeCoverage,
-  type NativeFileIdentity,
-  type SourceConfigCoverageIndex,
+import type {
+  NativeCoverage,
+  NativeFileIdentity,
+  SourceConfigCoverageIndex,
 } from '../../domain/analysis/native-coverage';
 import {
   decideNativeFrontier,
   type NativeFrontierDecision,
 } from '../../domain/analysis/native-evidence';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import { deriveCompilerCoverage } from './compiler-coverage';
 import type { TypeScriptSemanticProject } from './contracts';
 import { NativeIdentityObservations } from './native-identity-observations';
 
@@ -57,7 +57,7 @@ export class NativeProgramFrontier {
     const prior = this.#observations.get(path);
     if (prior !== undefined) return prior;
     const file = this.identities.read(path);
-    const coverage = deriveNativeCoverage(this.index, file);
+    const coverage = deriveCompilerCoverage(this.index, file);
     const observation = {
       file,
       coverage,

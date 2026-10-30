@@ -19,6 +19,16 @@ export interface DeclarationCandidateInput {
   roots: readonly string[];
   configs: readonly string[];
   declarations: readonly string[];
+  /**
+   * Observe mappings without granting additional Program input membership.
+   */
+  referenceInputs?: readonly string[];
+  referenceProjects?: readonly {
+    generatedConfig: string;
+    parsed: ts.ParsedCommandLine;
+    checker: string;
+    preset?: string;
+  }[];
   requiresDelegationProof: boolean;
   metrics?: AnalysisMetricsRecorder;
 }

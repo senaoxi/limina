@@ -1,6 +1,8 @@
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { realpathSync } from 'node:fs';
+import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 
 type Owners = Map<string, Set<string>>;
 
@@ -37,9 +39,12 @@ function addOwner(options: {
 }
 
 /**
-An analysis-local index. Exact membership and canonical fallback stay distinct.
+An analysis-local index. Implementations use compiler keys; declarations retain
+physical identity fallback for declaration-context governance.
 */
 export class FileOwnerLookup {
+  readonly #compiler = new Map<string, Owners>();
+
   readonly #lexical = new Map<string, Owners>();
 
   readonly #canonical = new Map<string, Owners>();
@@ -52,10 +57,10 @@ export class FileOwnerLookup {
 
   #lookup(fileName: string): Owners | undefined {
     const normalized = normalizeAbsolutePath(fileName);
-    return (
-      this.#lexical.get(normalized) ??
-      this.#canonical.get(this.#canonicalPath(normalized))
-    );
+    return isDeclarationFile(normalized)
+      ? (this.#lexical.get(normalized) ??
+          this.#canonical.get(this.#canonicalPath(normalized)))
+      : this.#compiler.get(compilerFileKey(normalized));
   }
 
   #canonicalPath(normalized: string): string {
@@ -71,6 +76,11 @@ export class FileOwnerLookup {
       const normalized = normalizeAbsolutePath(fileName);
       const entry = { configPath: input.configPath, fileName: normalized };
       addOwner({ ...entry, identity: normalized, index: this.#lexical });
+      addOwner({
+        ...entry,
+        identity: compilerFileKey(normalized),
+        index: this.#compiler,
+      });
       addOwner({
         ...entry,
         identity: this.#canonicalPath(normalized),
@@ -94,7 +104,8 @@ export class FileOwnerLookup {
 
   isCanonicalAmbiguous(fileName: string): boolean {
     const normalized = normalizeAbsolutePath(fileName);
-    if (this.#lexical.has(normalized)) return false;
+    if (!isDeclarationFile(normalized) || this.#lexical.has(normalized))
+      return false;
     const owners = this.#lookup(normalized);
     return owners !== undefined && owners.size > 1;
   }

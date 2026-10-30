@@ -5,6 +5,7 @@ import {
   createUnobservedDependencyEvidence,
 } from '../project-dependencies/evidence';
 import { createSourceProjectSemanticContext } from '../project-dependencies/runner';
+import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import { createImportRecordIdentity } from '../typescript-semantic/import-record';
 import { observeNativeFileIdentity } from '../typescript-semantic/native-file-identity';
 import { isCurrentLockedSupplement } from './pending-supplemental-assessment';
@@ -45,6 +46,8 @@ export function collectSupplementalReferenceInputs(input: {
       input.dependencies.some((dependency) => {
         if (
           dependency.referenceRequirement === null ||
+          compilerFileKey(dependency.resolvedFilePath) !==
+            compilerFileKey(assessment.coverage.target.lexicalPath) ||
           createImportRecordIdentity({
             ...dependency.importRecord,
             compilerRequest: undefined,
@@ -67,7 +70,7 @@ export function collectSupplementalReferenceInputs(input: {
       })
     )
       continue;
-    const target = assessment.discovery.target;
+    const target = assessment.coverage.target.lexicalPath;
     dependencies.push({
       supplementalAssessment: assessment,
       evidence: cloneDependencyEvidence({

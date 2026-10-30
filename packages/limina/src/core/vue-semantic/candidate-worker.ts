@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const fromVue = createRequire(input.vueTsc);
 const normalize = file => path.resolve(file).replaceAll('\\', '/');
+const buildInfoFile = input.buildInfoFile && normalize(input.buildInfoFile);
 const files = new Map(input.files.map(([file, text]) => [normalize(file), text]));
 const directories = new Set();
 for (const file of files.keys()) {
@@ -28,6 +29,13 @@ const readdir = fs.readdirSync;
 const realpath = fs.realpathSync;
 const sample = stat(process.cwd());
 fs.readFileSync = (file, encoding) => {
+  // Always construct a fresh candidate. Incremental state is an output that
+  // the subsequent build may replace, not evidence for the Reference Map.
+  if (typeof file === 'string' && normalize(file) === buildInfoFile) {
+    const error = new Error('Candidate observation does not reuse build info.');
+    error.code = 'ENOENT';
+    throw error;
+  }
   const text = typeof file === 'string' ? files.get(normalize(file)) : undefined;
   if (text !== undefined) return encoding ? text : Buffer.from(text);
   const value = read(file, encoding);
@@ -153,7 +161,8 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
     // JSON configuration reads construct the real Reference Map. They are
     // metadata, not source-loading grants. Libraries remain a separate purpose.
     const name = normalize(file);
-    if (roots.has(name) || declarations.has(name) || configs.has(name) || isRetainedDeclaration(name))
+    const mappingOnly = input.declarations.length === 0 && input.referenceInputs?.length;
+    if (configs.has(name) || (!mappingOnly && (roots.has(name) || declarations.has(name) || isRetainedDeclaration(name))))
       return getSource.call(host, file, ...rest);
     return undefined;
   };
@@ -232,11 +241,11 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
     checks: [...checks.values()],
     compilerVersion: ts.version,
     sources: sources.map(source => ({ file: normalize(source.fileName), defaultLibrary: !!source.hasNoDefaultLib })),
-    mappings: [...new Set([...input.declarations, ...requests.flatMap(request => request.target ? [request.target] : [])])].map(file => {
+    mappings: [...new Set([...input.declarations, ...(input.referenceInputs ?? []), ...requests.flatMap(request => request.target ? [request.target] : [])])].map(file => {
       const reference = readReference(file);
       return { file, referenceConfig: reference ? normalize(reference.resolvedRef.sourceFile.fileName) : null,
         declarationOutput: reference?.outputDts ? normalize(reference.outputDts) : null,
-        qualified: !/^5\.9\.[012](?:$|-)/.test(ts.version) };
+        qualified: !isDeclaration(file) || !/^5\.9\.[012](?:$|-)/.test(ts.version) };
     }),
     requests,
     contextId: hash([input.generatedConfig, optionsData(program.getCompilerOptions()), input.files, input.declarations]),

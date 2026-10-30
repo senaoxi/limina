@@ -151,18 +151,29 @@ function collectMember(
   target: NativeFileIdentity,
   version: string,
   view: MemberView,
+  fileKey?: (file: string) => string,
 ) {
   if (config.state !== 'enumerated') return [];
   const member =
     view === undefined
-      ? config.members.find((file) => currentMemberMatch(file, target, version))
-      : view.firstMatch(target);
+      ? config.members.find(
+          (file) =>
+            currentMemberMatch(file, target, version) &&
+            (fileKey === undefined ||
+              fileKey(file.lexicalPath) === fileKey(target.lexicalPath)),
+        )
+      : fileKey === undefined
+        ? view.firstMatch(target)
+        : view.compilerMatch(target, fileKey);
   if (!member) return [];
   return [
     {
       configId: config.configId,
       membershipEvidenceId: config.evidenceId,
-      match: memberMatch(member, target)!,
+      match:
+        fileKey === undefined
+          ? memberMatch(member, target)!
+          : ('lexical' as const),
     },
   ];
 }
@@ -248,9 +259,12 @@ A lexical hit never bypasses examination of other configs/canonical aliases.
 export function deriveNativeCoverage(
   index: SourceConfigCoverageIndex,
   target: NativeFileIdentity,
+  fileKey?: (file: string) => string,
 ): NativeCoverage {
   const ids = new Set(index.universe.sourceConfigIds).values().toArray();
-  const observations = ids.map((id) => observeConfig(index, target, id));
+  const observations = ids.map((id) =>
+    observeConfig(index, target, id, fileKey),
+  );
   const gaps = [
     ...universeGaps(index),
     ...targetIdentityGaps(target, index.inputVersion),
@@ -282,6 +296,7 @@ function observeConfig(
   index: SourceConfigCoverageIndex,
   target: NativeFileIdentity,
   id: string,
+  fileKey?: (file: string) => string,
 ) {
   const configs = currentConfigurations(index, id);
   if (configs.length !== 1)
@@ -294,6 +309,6 @@ function observeConfig(
       ...enumerationGaps(config, target),
       ...identityConflictGaps(config, target, view),
     ],
-    members: collectMember(config, target, index.inputVersion, view),
+    members: collectMember(config, target, index.inputVersion, view, fileKey),
   };
 }
