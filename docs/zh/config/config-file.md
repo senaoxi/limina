@@ -1,26 +1,42 @@
 # 配置文件
 
-Limina 通常读取项目 `package.json` 旁的 `limina.config.mts`。初次接入可以保留默认行为，只在需要改变检查范围或规则时添加字段：
+Limina 会查找项目中的配置文件，例如 `package.json` 旁的 `limina.config.mjs` 或 `limina.config.mts`。初次接入可以保留默认行为，只在需要改变检查范围或规则时添加字段：
 
-```ts
+`limina.config.mjs`：
+
+```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({});
 ```
 
+使用 `.mts` 或 `.ts` 时，配置文件本身也可能进入默认源码范围；如果没有被项目的 `tsconfig` 覆盖，请按[快速开始](../getting-started.md#最小手动配置)调整覆盖或源码范围。
+
 配置模块可以导出对象、`Promise`，或接收 `{ command, mode }` 的函数。`defineConfig` 提供类型提示并保留传入值；实际加载和格式检查由 Limina 完成。各字段的职责见[配置概览](./index.md)。
 
-## 默认治理与迁移 {#default-governance}
+## 默认检查 {#default-governance}
 
 默认 `limina check` 固定计划五个任务：`graph:check`、`source:check`、`proof:check`、`checker:build` 和 `checker:typecheck`。`scope` 选择输入和 Checker；顶层 `graph`、`source`、`proof` 配置规则、例外及可选子能力，省略配置域不会关闭对应任务。`package.entries` 和 `release` 不增加默认任务。
 
 将 `source.knip` 设为 `true` 可增加 Knip 分析。`false` 保留源码归属、tsconfig 治理、导入边界及包依赖授权检查。
 
-导出 `{}` 会按默认输入和策略计划全部五个任务，但不保证检查成功：治理范围内的源码仍须具备合法归属及 Checker 覆盖。空域（`graph: {}`、`source: {}`、`proof: {}`）、未知字段、非对象域值以及显式 `undefined` 均为配置错误；需要缺省时应省略字段。配置 Graph、Proof 时分别必须声明 `rules`、`allowlist`，允许空集合。Source 至少声明 `knip`、`declarations`、`importAuthority` 之一；后两个包装分别要求 `ambient` 和 `allow`，允许 `ambient: []`、`allow: {}`。Knip 对象必须声明 `root` 或 `workspaces`，因此 `knip: {}` 无效。嵌套未知字段及错误元素类型在加载时失败；依赖工作区事实的规则、owner、路径和覆盖诊断仍属于领域检查。
+导出 `{}` 会按默认输入和策略计划全部五个任务，但不保证检查成功：范围内的源码仍需要有合法归属和检查器覆盖。如果要配置 `graph`、`source` 或 `proof`，请提供相应字段，而不是写空对象：
 
-配置函数及 Promise 在校验和任务选择前执行并等待完成。动态缺省应使用条件展开，不应返回 `source: undefined`。治理域必须是自有数据属性，支持非枚举的顶层域；域内字段须为普通对象或数组上的可枚举数据属性。拒绝 accessor、Proxy、继承字段与循环结构；动态值应在配置函数内计算。验证保留 `false` 和空集合，不补默认值、不剥离字段。既有 Knip `Symbol.toStringTag` 字符串标记仅为元数据，不能使空对象有效。
+- `graph` 需要 `rules`，没有额外规则时可写 `rules: {}`。
+- `proof` 需要 `allowlist`，没有例外时可写 `allowlist: []`。
+- `source` 至少需要 `knip`、`declarations` 或 `importAuthority` 之一。其中 `declarations` 需要 `ambient`，`importAuthority` 需要 `allow`；两者可以分别写成 `ambient: []` 和 `allow: {}`。对象形式的 `knip` 至少需要 `root` 或 `workspaces`。
 
-默认治理任务都会进入本次计划。必要准备失败时，依赖任务标记为 `blocked`；已计划但没有目标的框架检查仍为 `disabled`。命名流水线只记录其声明的任务及必要准备。`check --issues` 读取保存的调用而不重新检查；新 attempt 发布前的配置错误不会把上一条历史记录变成本次成功。独立的 `graph check`、`source check`、`proof check` 同样可在缺少顶层域时执行。
+这三个配置域及其内部字段不接受显式 `undefined`；需要使用默认值时，省略对应字段。未知字段、错误的字段类型和空的配置域会在加载时报错；需要结合工作区判断的路径、归属和覆盖问题由相应检查报告。
+
+配置函数和 Promise 会在配置校验、任务选择之前执行。需要按条件省略 `source` 等字段时，可以使用条件对象展开；不要返回 `source: undefined`。动态值应在配置函数中算好，再返回普通数据。
+
+::: details 配置数据有哪些限制
+
+`graph`、`source` 和 `proof` 必须是配置对象自身的数据属性；顶层字段可以是不可枚举属性，内部字段则必须是普通对象或数组上的可枚举数据属性。这些域不接受 getter、setter、Proxy、继承字段或循环结构。校验会保留 `false` 和空集合，不会自动补值或删除字段。Knip 的 `Symbol.toStringTag` 字符串标记只作为元数据，不能让空的 `knip` 对象变为有效配置。
+
+:::
+
+必要准备失败时，依赖它的任务会标记为 `blocked`；没有目标的框架检查会标记为 `disabled`。命名流水线只记录它声明的任务及必要准备。`check --issues` 读取保存的结果，不重新检查；如果错误发生在本次检查尝试登记之前，查询可能仍显示上一次结果，应结合时间和终端输出判断。独立的 `graph check`、`source check` 和 `proof check` 也可以在省略对应顶层配置时执行。
 
 ## 配置发现与治理根 {#治理根}
 
@@ -59,22 +75,38 @@ pnpm exec limina --config ./limina.config.mts check
 - **类型：** `boolean | CacheOptions`
 - **默认值：** `true`
 
-`cache` 控制 Limina 的持久化分析缓存。省略或设为 `true` 都启用缓存及自动模块依赖观测。设为 `false` 则不恢复、不发布持久化分析模型，保留已有 snapshot，继续执行配置加载、普通输入观测和执行期漂移检查。执行期内存缓存、TypeScript／Vue `.tsbuildinfo` 等 checker 构建缓存、issues 记录及其他独立产物仍遵守各自的正常行为。
+`cache` 控制 Limina 是否在不同命令运行之间复用分析结果，默认开启。设为 `false` 后，Limina 不会读取或保存持久化分析结果，但会保留已有缓存文件，并照常加载配置和检查运行期间的输入变化。内存缓存、TypeScript／Vue 的 `.tsbuildinfo`、问题记录等其他数据有各自的行为，不受这个开关控制。
 
-对象形式启用缓存，并要求显式包含 `dependencies: string[]`。空数组合法，`{}` 非法；`enabled`、`force` 等未知字段会报错。`limina` 公开导出 `CacheOptions`。旧顶层 `configDependencies` 已移除，继续使用会产生配置错误；应将其数组移到 `cache.dependencies`。
+对象形式启用缓存，并要求显式包含 `dependencies: string[]`。空数组合法，`{}` 非法；`enabled`、`force` 等未知字段会报错。`limina` 公开导出 `CacheOptions`。
 
-`check` 可以读取并发布具备资格的模型；独立 graph／source 消费者保留原有只读权限。启用 `cache` 不会让所有命令获得发布权限。`limina check [pipeline] --force` 跳过本次恢复，通常仍发布本次具备资格的新结果。配置为 `cache: false` 时，force 在持久化分析缓存层面没有额外效果，也不会开启写入。Force 不删除本配置、其他配置或其他 worktree 的 snapshot，不强制重建 checker，仍不能与 `--issues` 合用。
+`limina check` 可以读取缓存，也可以保存符合条件的新结果；独立的图检查和源码检查只读取缓存。需要跳过本次缓存恢复时，可以运行 `limina check --force`：它通常仍会保存符合条件的新结果。`cache: false` 时，`--force` 不会重新启用缓存写入。
 
-Native 冷分析使用物理截断的 TypeScript Program 收集证据；完整有效的 context/graph 缓存可在新进程中无分析 Program 恢复。输入变化会重新采集受影响 context，实际 Checker 诊断与构建仍单独执行。Schema 9 拒绝旧 Programless 成功快照并按需冷重建，不删除旧缓存、其他命名空间或 Checker 的 `.tsbuildinfo`。类型入口、Coverage、原始 references 和输出投影在恢复时分别验证。
+`--force` 不删除本项目、其他配置或其他 Git 工作树的缓存，也不强制重建检查器自己的缓存；它不能与只查询结果的 `--issues` 一起使用。
+
+缓存有效时，Limina 可以复用已保存的分析结果；输入变化时会重新分析受影响的部分。恢复缓存时仍会检查类型入口、源码覆盖、项目引用和输出配置等输入。实际类型诊断和构建由检查器另行执行。
 
 ### `cache.dependencies` {#cache-dependencies}
 
 - **类型：** `string[]`（对象形式必填）
 - **默认值：** 省略 `cache` 或 `cache: true` 时不声明额外文件
 
-启用缓存时，warm 表示复用通过有效性检查的持久化分析模型，cold 表示重新建立当前分析；两者都会在新的 CLI 进程中求值配置。用它声明绕过 Node 模块系统读取、但会影响配置或检查结果的明确本地文件。例如，通过 `fs.readFileSync()` 读取的 JSON 文件需要显式声明：
+如果配置通过 Node 模块系统之外的方式读取本地文件，并且文件内容会影响配置或检查结果，请在 `cache.dependencies` 中声明它。
 
-```ts
+例如，在 Limina 配置文件旁创建 `rules.json`：
+
+```json
+{
+  "browser": {
+    "deny": {
+      "deps": [{ "name": "node:*", "reason": "浏览器代码不能依赖 Node 内置模块" }]
+    }
+  }
+}
+```
+
+下面的 `limina.config.mjs` 用 `fs.readFileSync()` 读取该文件，并将它声明为缓存依赖：
+
+```js
 import { defineConfig } from 'limina';
 import { readFileSync } from 'node:fs';
 
@@ -86,23 +118,27 @@ export default defineConfig({
 });
 ```
 
+如果项目已有 Limina 配置，请将这些字段合并进去。`browser` 规则只作用于使用该标签的源码配置，具体设置方式见[图规则](./graph-rules.md)。
+
 声明的文件不要求被配置代码实际读取；策略文件、人工维护的失效标记文件也会参与有效性判断。`cache: { dependencies: [] }` 启用缓存但不声明额外文件。
 
 相对路径以选定的配置文件所在目录为基准，即使该目录不同于治理根。支持绝对路径和 `../`；路径会归一化、合并重复声明，并保留符号链接绑定。已作为模块观测的文件保留模块角色。声明允许文件暂时不存在，但不会让直接调用的 `readFileSync()` 自动容忍缺失。缺失状态同样被记录：创建、删除、符号链接改指及声明集合变化都会参与缓存失效判定。目录、glob、URL、空路径和非字符串元素会报错；暂不支持递归监视或回调。
 
-声明文件与模块共用配置输入快照。文件 mtime 相同时复用旧 content hash；mtime 变化时重新计算该文件的 hash。因此，只 touch 而字节相同可继续 warm；字节不同则使整个配置的旧 analysis model 失效，即使最终配置值没有变化。恢复旧 mtime 和绑定可能掩盖内容变化；不满足这一信任条件时，使用 `--force` 重建分析快照。
+Limina 使用文件修改时间和内容哈希判断缓存是否可复用：修改时间不变时会复用已有哈希；修改时间变化时会重新计算。只是更新时间、内容没有变化，可以继续复用；内容变化会使该配置的分析缓存失效，即使最终配置值相同。如果外部操作可能在改变内容后恢复原来的修改时间和文件绑定，应使用 `--force` 重新分析。
 
 Limina 在配置求值后注册声明，并在分析使用及分析快照发布前重新读取已观测文件，并检查绑定。这些调用内检查直接比较捕获的字节，独立于跨进程的 mtime／hash 快捷判断。发生漂移会中止命令，不重放已完成的 checker 或写操作。这无法证明用户此前直接调用 `fs` 时读到的字节与注册依赖时相同。应协调外部文件生产者，让文件在配置求值和检查期间保持稳定。
 
 ### 自动模块观测及其边界
 
-每个独立 CLI 进程都会求值当前配置。同步 Node Runtime Hook 在这一加载阶段观测实际 ESM import、执行到的 `import(variable)`、CJS 与 `createRequire()` 请求，包括原始 specifier、解析目标、conditions、attributes、文件绑定及可观测的 Loader 输出。实际加载的模块或解析关系变化会使旧分析失效。未执行的动态 import 不产生依赖，也不会仅因表达式存在而禁止 warm。
+每次启动 CLI 都会重新求值配置。Limina 会在加载阶段观察实际执行的 ESM、CommonJS 和动态导入，以及相应的解析结果。已加载模块或解析关系变化时，缓存会失效；没有执行的动态导入不会因为写在代码里就成为缓存依赖。
 
-这套机制只覆盖能够可靠观测的模块加载事实，不自动发现所有 JavaScript 副作用。通过模块系统之外的方式读取 JSON、YAML、文本等本地文件时，需要显式声明；普通配置无需接受完整的 JavaScript I/O 审计才能使用缓存。源码未观测、不透明模块 scheme 或其他 Loader 证据不足仍使分析 cold。保留 native 和 tsx 执行能力；tsx CommonJS 的 extension hook 绕过源码观测时仍 cold。无法识别的自定义 Node 启动 `--require`、`--import`、`--loader` 及对应 `NODE_OPTIONS` 覆盖会在求值前被拒绝，因为它们可能留下过期的模块解析状态。移除这些覆盖；需要受支持的转换加载时，运行 `pnpm exec limina --config-loader tsx check`。
+自动观察只覆盖能够可靠识别的模块加载，不会发现所有 JavaScript 副作用。通过其他方式读取 JSON、YAML 或文本文件时，请使用 `cache.dependencies`。如果加载器无法提供足够的源码或模块信息，Limina 会重新分析；例如 `tsx` 的 CommonJS 扩展钩子绕过源码观察时就是如此。
 
-配置工厂可以在返回数据前执行 import；返回的配置中保留的可执行回调和不透明值无法取得稳定的有效配置版本，因此不恢复或发布持久化 analysis model。观测结束后的模块加载没有自动依赖保证。支持的模型是每条命令使用新的 CLI 进程，不承诺嵌入进程内的配置热更新。
+无法识别的 Node 启动选项 `--require`、`--import`、`--loader` 及对应的 `NODE_OPTIONS` 覆盖会在配置求值前被拒绝，因为它们可能保留过期的模块解析状态。需要受支持的转换加载时，可使用 `pnpm exec limina --config-loader tsx check`。
 
-`cache.dependencies` 只描述文件，不能覆盖环境变量、网络请求、时间、随机值或外部服务。有效配置版本只保护它实际表示的结果，无法代表隐藏行为。能够表达时，应把这些输入的影响体现在求值后的数据中；无法建立有效性时，沿用 cold／unknown 策略或使用 `--force`。只查询记录的 `check --issues` 仍不执行配置。
+配置函数可以在返回数据前执行导入；如果返回的配置仍包含可执行回调或无法可靠识别的值，Limina 不会读取或保存持久化分析结果。观察结束后才加载的模块不在自动依赖范围内。每条 CLI 命令使用新的进程，不提供嵌入进程内的配置热更新保证。
+
+`cache.dependencies` 只描述文件，不能直接记录环境变量、网络请求、时间、随机值或外部服务。可能的话，应让这些输入的影响体现在返回的配置数据中；无法判断缓存是否有效时，使用 `--force` 重新分析。只查询记录的 `check --issues` 仍不执行配置。
 
 ## `mode`
 
@@ -126,18 +162,21 @@ Limina 在配置求值后注册声明，并在分析使用及分析快照发布�
 | `checker build <config>`、`build <config>`          | `'build'`                               |
 | `limina-migrate`                                    | `'migration'`                           |
 
-只有独立包检查和发布检查需要的输出条目，可以按命令族提供：
+包输出条目不仅供包检查和发布检查使用，`outDir` 还会参与工作区输出范围的识别和源码过滤。如果日常检查也需要把目录识别为输出，应在日常检查时保留对应条目。
+
+如果项目不需要在日常检查时声明这些输出，可以按命令族提供条目：
 
 ```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig(({ command }) => ({
-  package:
-    command === 'package' || command === 'release'
-      ? {
+  ...(command === 'package' || command === 'release'
+    ? {
+        package: {
           entries: [{ name: '@acme/core', outDir: 'packages/core/dist' }],
-        }
-      : undefined,
+        },
+      }
+    : {}),
 }));
 ```
 
@@ -149,32 +188,8 @@ export default defineConfig(({ command }) => ({
 
 公开 `limina` 入口导出 `defineConfig`、配置与问题类型，以及验证错误类。`limina/internal/*` 仅供仓库内部使用，其源码导出会从发布包移除，不属于消费者 API。
 
-## 配置结构迁移 {#config-domains-migration}
+## 配置结构 {#config-domains-migration}
 
-这是对已有 beta 公共配置 API 的破坏性变更。旧字段和新旧混合配置都会被拒绝，并给出迁移路径；不会静默忽略或自动转换旧字段。整体移动各字段的原值，保留其中未在示例中列出的选项。
+`scope` 选择治理区域、源码和检查器入口。`graph`、`source`、`proof`、`package`、`release`、`pipelines`、`concurrency` 和 `cache` 都是顶层字段；可以按需要逐项配置，未填写的字段使用相应默认行为。
 
-| 旧路径                       | 新路径                         |
-| ---------------------------- | ------------------------------ |
-| `config.source`              | `scope.source`                 |
-| `config.checkers`            | `scope.checkers`               |
-| `regions`                    | `scope.regions`                |
-| `graph`                      | `graph`                        |
-| `source`                     | `source`                       |
-| `proof`                      | `proof`                        |
-| `package`                    | `package`                      |
-| `release`                    | `release`                      |
-| `pipelines`                  | `pipelines`                    |
-| `execution.tasks`            | `concurrency.tasks`            |
-| `execution.checkerBuild`     | `concurrency.checkerBuild`     |
-| `execution.checkerTypecheck` | `concurrency.checkerTypecheck` |
-| `execution.packageEntries`   | `concurrency.packageEntries`   |
-| `execution.releaseEntries`   | `concurrency.releaseEntries`   |
-| `cache`                      | `cache`                        |
-
-`scope`、`pipelines`、`concurrency`、`cache` 和各检查字段均可省略。只有治理边界归入 `scope`；`graph`、`source`、`proof`、`package`、`release` 和 `pipelines` 保留顶层路径，`concurrency` 替代原来的 `execution` 字段。不接受 `checks` 或 `execution` 包装层。`scope.source.exclude: []` 仍不合法；省略字段才使用默认排除规则，`...` 仍用于把默认规则带入显式数组。
-
-保留的子字段继续由原消费方处理，包括 `graph.rules`、`source.declarations`、包 entry 的工具选项和 `release.npmPackageJsonLint`。`package.entries[].outDir` 仍参与 workspace 输出根发现、边界校验和源码过滤，即使没有运行 `package:check`。
-
-配置模块仍可导出对象、Promise 或接收 `{ command, mode }` 的函数。文件选择器仍相对于解析后的治理根 `config.rootDir`；`cache.dependencies` 仍相对于所选配置文件所在目录。CLI 命令、pipeline 步骤和并发默认值不变。旧分析实现的快照会冷启动重建；不会清空其他配置、worktree 或 checker 缓存。
-
-旧的 `SharedLiminaConfig` 类型由 `ScopeConfig` 取代。`ExecutionConfig` 继续描述五个并发参数，现用于 `concurrency`。
+配置路径的基准并不完全相同：源码和区域选择器相对于治理根 `config.rootDir`，而 `cache.dependencies` 相对于配置文件所在目录。`package.entries[].outDir` 即使在没有运行包检查时，也会参与输出目录发现和源码过滤。各字段的用途见[配置概览](./index.md)。

@@ -1,40 +1,37 @@
 # Package Checks
 
-Package checks run against the output directories consumers actually install. Build the project first, then select outputs through `package.entries`:
+When publishing a package, consumers see the built package manifest, JavaScript, and declarations. They may differ from the source: for example, a file named in `exports` may be missing from the artifact. Package checks help find such problems.
 
-```sh
-pnpm build
-pnpm exec limina package check --package @acme/core
-```
+Suppose `packages/core/dist` is an installable package directory containing `package.json` after your build. Register it in the Limina config first. If you already have a config, merge the `package` field into it:
 
-The example below shows a full configuration. If you provide only `name` and `outDir`, all three tools are enabled by default. publint and ATTW must be installed separately and are skipped when absent; see [tool selection](#checks).
+`limina.config.mjs`:
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   package: {
-    entries: [
-      {
-        name: '@acme/core',
-        outDir: 'packages/core/dist',
-        checks: ['publint', 'attw', 'boundary'],
-        publint: {
-          level: 'warning',
-        },
-        attw: {
-          profile: 'esm-only',
-          ignoreRules: ['false-cjs'],
-        },
-        boundary: {
-          environment: 'browser',
-          ignoredExternalPackages: ['@acme/runtime-polyfill'],
-        },
-      },
-    ],
+    entries: [{ name: '@acme/core', outDir: 'packages/core/dist' }],
   },
 });
 ```
+
+Run the project's production build at the workspace root, then check the output by entry name:
+
+```sh
+pnpm build
+pnpm exec limina package check --package @acme/core
+```
+
+`publint`, `attw`, and `boundary` are enabled by default. Install `publint` and `@arethetypeswrong/core` separately. If an analyzer is missing, its check is `skipped`; a skipped analyzer alone can still yield a successful exit. Check the report to see which tools actually ran, especially when CI requires them. See [tool selection](#checks).
+
+For example, install the two analyzers supported by this source version in a single-package project:
+
+```sh
+pnpm add -D 'publint@^0.3.0' '@arethetypeswrong/core@^0.18.3'
+```
+
+At a pnpm workspace root, add `-w`. Run the package check again and confirm both analyzers executed.
 
 ::: tip
 Package checks analyze metadata and types in the packed artifact, and scan import boundaries in the configured output directory. Results cover the analyzers that ran and the files scanned; they do not prove every runtime or consumer environment. [Release Checks](./release-checks.md) inspect required files and release content separately.
@@ -147,7 +144,7 @@ These fields are passed directly to ATTW's `checkPackage`. Use `'.'` for the roo
 | `entrypoints`        | `string[]`             | Specifies the complete entrypoint set, disables automatic discovery, and overrides the inclusion and exclusion options below |
 | `includeEntrypoints` | `string[]`             | Adds entries to those discovered automatically                                                                               |
 | `excludeEntrypoints` | `(string \| RegExp)[]` | Excludes matching entries from checking                                                                                      |
-| `entrypointsLegacy`  | `boolean`              | Lets ATTW infer legacy entries from published files when no other entries have been discovered or configured                 |
+| `entrypointsLegacy`  | `boolean`              | Passes the option to ATTW to configure its entrypoint discovery                                                              |
 
 The exact discovery and filtering behavior depends on the installed supported ATTW version. Set `entrypoints` directly when you need explicit coverage. Limina does not expand it to all workspace packages or all exported files.
 
@@ -173,7 +170,14 @@ Suppose the build leaves an incorrect type entry and a Node import in browser ou
 // packages/core/dist/package.json
 {
   "name": "@acme/core",
-  "exports": "./index.js",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./missing.d.ts",
+      "import": "./index.js",
+    },
+  },
   "types": "./missing.d.ts",
 }
 ```
@@ -181,8 +185,10 @@ Suppose the build leaves an incorrect type entry and a Node import in browser ou
 ```js
 // packages/core/dist/index.js
 import { readFileSync } from 'node:fs';
+
+export const ok = true;
 ```
 
-After running `limina package check --package @acme/core` on this output, enabled publint / ATTW analyzers that actually run can report type-entry problems; exact diagnostics depend on the tool versions and checked entries. Independently, `boundary.environment: 'browser'` reports the `node:fs` import.
+After running `limina package check --package @acme/core` on this output, enabled publint / ATTW analyzers that actually run can report type-entry problems; exact diagnostics depend on the tool versions and checked entries. The root `index.js` is treated as browser output by default, so the boundary check also reports its `node:fs` import. You can explicitly set `boundary.environment: 'browser'` when appropriate for the whole entry.
 
 If publint is disabled or skipped because it is missing, export-target existence remains unchecked. Passing the boundary scan cannot replace type-resolution checks; inspect the execution status of every tool.

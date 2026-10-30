@@ -1,8 +1,10 @@
 # 覆盖证明允许清单
 
-`proof.allowlist` 为留在源码治理范围内、却有意没有检查器或生成图覆盖的具体文件记录例外。它只影响覆盖证明，不改变检查器输入、不隐藏类型诊断，也不授予跨包导入权限。
+当 Limina 报告源码文件没有被配置的检查器或生成图覆盖时，先判断是否应把它加入合适的 `tsconfig`。如果文件需要留在治理范围内，但当前有意不让它获得覆盖，可以用 `proof.allowlist` 为具体文件记录例外和原因。例外只影响覆盖检查，不会把文件加入检查器，也不会隐藏类型错误或授予跨包导入权限。
 
-省略 `proof` 仍执行没有例外的 Proof Check。配置 `proof` 时必须声明 `allowlist`；`allowlist: []` 表示没有例外，`proof: {}` 和 `coverage` 字段均无效。独立 `limina proof check` 及显式流水线步骤保留相同的覆盖检查。
+省略 `proof` 时，Limina 仍会执行覆盖检查，不设置例外。配置 `proof` 时必须声明 `allowlist`，其中 `allowlist: []` 表示没有例外。单独运行 `limina proof check` 或在流水线中添加该步骤时，覆盖检查的规则相同。
+
+例如，假设下面的生成声明文件存在于源码范围内，并且有意不让普通检查覆盖：
 
 ```ts
 import { defineConfig } from 'limina';
@@ -12,7 +14,7 @@ export default defineConfig({
     allowlist: [
       {
         file: 'packages/core/src/generated/runtime.d.ts',
-        reason: '由运行时构建步骤生成；本次类型检查不消费该文件。',
+        reason: '由运行时构建步骤生成，本次类型检查不使用该文件。',
       },
     ],
   },
@@ -43,4 +45,4 @@ export default defineConfig({
 
 以上配置中的 `runtime.d.ts` 若位于 `scope.source` 范围内，却既没有检查器覆盖，也没有生成图项目覆盖，`proof check` 会将其报告为未覆盖源码。有效的允许清单条目让覆盖证明接受这一例外，并在配置中保留原因。
 
-这不表示文件已经通过类型检查。后来若某个检查器入口开始覆盖它，允许清单会变为多余条目；应移除例外，再按普通覆盖规则维护。
+这不表示文件已经通过类型检查。后来若某个检查器入口开始覆盖它，这条允许清单就变得多余，应将其移除，再按普通覆盖规则维护。

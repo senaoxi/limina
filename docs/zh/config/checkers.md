@@ -1,28 +1,76 @@
 # 检查器配置
 
-`scope.checkers` 选择默认 `tsconfig.json` 入口，并确定由哪个检查器负责它们可达的源码叶子配置。未配置时自动发现已经启用；只有需要固定检查器或排除直接入口时，才需要填写这个字段。
+当 Limina 检查或构建项目时，需要知道每份 TypeScript 配置由哪个检查器处理。`scope.checkers` 用来选择项目的 `tsconfig.json` 入口，并在需要时指定检查器。
 
-检查器使用以下固定名称：
+大多数项目**不需要配置这个字段**。Limina 会在已激活的[治理区域](./regions.md)中自动寻找入口，根据项目使用的文件和框架选择检查器。只有想要修改默认检查器、排除自动发现的入口，或明确指定某个入口使用的检查器时，才需要填写它。
 
-| 键名           | 执行方式                     | 生成声明 |
-| -------------- | ---------------------------- | -------- |
-| `tsc`          | 生成 TypeScript 构建目标     | 是       |
-| `tsgo`         | 生成原生 TypeScript 构建目标 | 是       |
-| `vue-tsc`      | 生成 Vue/TypeScript 构建目标 | 是       |
-| `svelte-check` | 按叶子配置执行框架类型检查   | 否       |
-| `astro`        | 按叶子配置执行框架类型检查   | 否       |
+Limina 支持以下固定名称：
 
-源码归属、生成路径、执行工具和缓存都用键名标识检查器，不支持 `preset` 字段或自定义检查器别名。
+| 配置键         | 适用场景                 | 生成内部声明文件 |
+| -------------- | ------------------------ | ---------------- |
+| `tsc`          | TypeScript 项目          | 是               |
+| `tsgo`         | 使用原生 TypeScript 构建 | 是               |
+| `vue-tsc`      | Vue 和 TypeScript 项目   | 是               |
+| `svelte-check` | Svelte 项目的类型检查    | 否               |
+| `astro`        | Astro 项目的类型检查     | 否               |
 
-`vue-tsc`、`svelte-check` 与 `@typescript/native-preview` 是可选的外部检查器对等依赖。它们的对等依赖版本范围表达 Limina 支持的检查器版本，每个检查器都从其目标实际执行的包作用域解析。`svelte2tsx` 是独立的可选检查器工具链对等依赖：请在每个 Svelte 叶子包中与 `svelte-check` 一并安装；Limina 不会把它作为生产依赖发布。`typescript` 仍是 Limina 必需的运行时对等依赖，从运行 Limina 的工作区安装环境解析。
+这些键名同时标识检查器、执行工具和相关缓存。这里的声明文件是 Limina 内部构建使用的产物。关于命令的用途，见 [CLI 参考](../cli.md)。
 
-自动发现始终启用。具名检查器范围先接管命中的入口；未被具名范围接管的入口仍然自动分析：
+## 自动发现模式 {#auto-模式}
+
+自动发现始终启用，即使你同时配置了具名检查器也是如此。没有其他检查器要求时，普通 TypeScript 项目默认使用 `tsc`。Limina 也会根据项目中的框架配置、实际文件和依赖关系识别 Vue、Astro 或 Svelte 项目。
+
+| 项目中的情况             | 通常使用的检查器 |
+| ------------------------ | ---------------- |
+| 普通 TypeScript 项目     | `tsc`            |
+| 需要 Vue 检查器的项目    | `vue-tsc`        |
+| 需要 Astro 检查器的项目  | `astro`          |
+| 需要 Svelte 检查器的项目 | `svelte-check`   |
+
+如果希望普通 TypeScript 项目默认使用 `tsgo`，可以单独设置：
+
+```ts
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  scope: { checkers: { auto: { useTsgo: true } } },
+});
+```
+
+`useTsgo` 默认为 `false`。设为 `true` 后，尚未因框架或声明构建关系确定检查器的普通 TypeScript 项目默认使用 `tsgo`。它不会把 Astro 或 Svelte 项目改成 `tsgo`。使用前需要在检查器的执行作用域安装受支持的 `@typescript/native-preview`。
+
+如果只想从自动发现的入口中排除 `packages/playground/tsconfig.json`，则可以单独使用 `exclude`：
 
 ```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   scope: {
+    checkers: {
+      auto: { exclude: ['packages/playground/tsconfig.json'] },
+    },
+  },
+});
+```
+
+路径和模式相对于 `config.rootDir`。这只排除**自动发现入口**：具名检查器仍可选择该入口，其他已选入口的项目引用也仍可到达它。这不等同于从期望覆盖的源码中排除文件。排除源码文件的方法见[源码边界](./source-boundary.md)。
+
+如果没有其他已选入口覆盖 playground 的源码，`proof:check` 可能报告这些文件未被覆盖。可以为它们选择合适的检查器入口。如果这些文件不应属于本次治理，也可以调整源码范围。调整时还要检查其他已选配置是否仍包含这些文件。
+
+Vue 项目使用了自定义组件扩展时，仅有 `vueCompilerOptions` 提示还不够：Limina 还会检查这些配置实际解析出的文件。只有确实存在匹配的 Vue 文件时，自定义扩展才会促使项目使用 `vue-tsc`。
+
+## 为入口指定检查器 {#named-入口约束与-solution-closure}
+
+如果需要明确指定某个入口，可以使用检查器名称作为键。下面假设 `apps/web` 是已纳入治理的工作区包，且已在检查器执行作用域安装受支持的 `vue-tsc`。以下配置让它的入口使用 `vue-tsc`：
+
+```ts
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  scope: {
+    source: {
+      include: ['...', 'apps/web/**/*.vue'],
+    },
     checkers: {
       'vue-tsc': {
         include: ['apps/web/tsconfig.json'],
@@ -32,234 +80,143 @@ export default defineConfig({
 });
 ```
 
-上例固定 Web 入口使用 `vue-tsc`，其余入口继续自动发现。不要仅为“写完整”而给共享 TypeScript 项目固定另一个检查器：需要共享声明缓存的相连项目必须使用同一个构建检查器，冲突会导致图准备失败。
+`apps/web/tsconfig.json` 会按指定的 `vue-tsc` 处理。其他没有被具名规则选中的入口仍由自动发现处理。如果 Web 入口是聚合配置，这项指定也适用于它引用到的所有终端源码配置。
 
-每个具名检查器范围的 `include` 都必须是非空数组，`exclude` 可省略。只配置框架检查器也合法。同一个入口不能同时匹配两个具名检查器范围。
+示例还把 `apps/web` 的 Vue 组件加入 `scope.source`，同时保留默认的 TypeScript 范围。它不会改变 `tsconfig` 的文件列表：负责 Vue 的源码配置仍需包含这些组件。如果检查器包含了组件，但源码范围没有包含，覆盖检查可能报告范围不一致。已有配置时，请合并这两个字段，并按项目实际范围调整匹配模式。
 
-## 自动发现模式 {#auto-模式}
+每个具名检查器都使用相同的字段：
 
-- **类型：** `{ exclude?: string[]; useTsgo?: boolean }`
-- **默认值：** 无论是否存在具名检查器范围都启用
+| 字段      | 作用                                                      |
+| --------- | --------------------------------------------------------- |
+| `include` | 必填的非空字符串数组，选择要交给该检查器的入口。          |
+| `exclude` | 可选的字符串数组，从该检查器的 `include` 结果中移除入口。 |
 
-默认情况下，普通 TypeScript 项目由 `tsc` 负责；框架证据会在采用默认检查器前确定对应的框架检查器归属：
+例如，`include: ['apps/*/tsconfig.json']` 可以选择多个应用入口，再用 `exclude: ['apps/playground/tsconfig.json']` 将其中一个从该检查器的范围移除。移除后，这个入口仍可能被自动发现或其他具名规则选中。这与 `auto.exclude` 的作用不同。两种排除方式都不会截断已选入口的有效引用。
+
+选择器的路径相对于 `config.rootDir`。它们只直接选择默认名称的 `tsconfig.json`，不能直接选择 `tsconfig.lib.json` 或 `tsconfig.test.json` 等其他名称。后者需要由已选入口通过项目引用纳入。对于已激活的外部包，路径可以使用 `../`。选择器不能激活区域或跨越工作区边界。
+
+同一个直接入口不能同时由两个不同的具名检查器选中。即使入口不同，如果它们最终引用了同一份源码配置，也不能对那份配置指定不同的检查器。出现冲突时，图准备会失败。只配置框架检查器是允许的，无需为了补齐配置而为其他项目指定 `tsc`。
+
+### 聚合配置如何影响选择
+
+有些 `tsconfig.json` 不直接检查源码，只通过 `references` 组织其他配置。本文称它为**聚合配置**，被最终找到并负责源码的配置称为**源码配置**。例如：
 
 ```text
-普通 TypeScript -> tsc
-Vue             -> vue-tsc
-Astro           -> astro
-Svelte          -> svelte-check
+apps/web/tsconfig.json          聚合入口
+├── tsconfig.app.json           Vue 源码配置
+└── tsconfig.node.json          普通 TypeScript 源码配置
 ```
 
-设置 `useTsgo: true` 后，只有普通 TypeScript 项目默认改由 `tsgo` 负责，框架检查器归属不变。
+如果这个入口由自动发现选中，Limina 会分别确定两个源码配置的检查器。假设它们没有需要共享声明构建缓存的依赖，前者可以使用 `vue-tsc`，后者可以使用 `tsc`。它们属于同一个聚合配置，本身不会要求它们使用同一个检查器。
 
-```js
-export default defineConfig({
-  scope: {
-    checkers: {
-      auto: {
-        useTsgo: true,
-        exclude: ['packages/playground/tsconfig.json'],
-      },
-    },
-  },
-});
-```
+如果你像前面的例子一样，通过 `vue-tsc.include` 显式选择这个聚合入口，则两个源码配置都必须使用 `vue-tsc`。显式选择会约束整个引用链，不会被框架配置、实际文件或自动发现改写。
 
-`useTsgo` 只改变框架分析后仍未确定检查器身份的构建连通分量（必须共享声明缓存的一组相连配置）所使用的默认检查器。在生成检查器路径之前，Limina 会合并必须共享声明缓存、且能生成声明的叶子配置：同一聚合配置下的叶子配置，以及被有效源码导入或 `liminaOptions.implicitRefs` 连接的配置。连通分量中只有一个已知的 `tsc`、`tsgo` 或 `vue-tsc` 身份时，该身份会传播到整个连通分量；尚无身份时使用默认检查器；存在两个不同身份时，`graph prepare` 失败。
+Limina 会递归展开嵌套的聚合配置，并对重复到达的源码配置去重。默认 `tsconfig.json` 可以直接引用 `tsconfig.node.json` 这样的源码配置。如果引用链中还有一层聚合配置，中间那层也必须叫 `tsconfig.json`，例如 `tsconfig.json → packages/lib/tsconfig.json → packages/lib/tsconfig.lib.json`。声明了引用的命名配置不能充当中间聚合配置。
 
-Vue 能力由检查器实际解析出的文件集合确认，不能只看 `vueCompilerOptions`。Limina 会先遍历入口、聚合配置、被引用的叶子配置和有效 `extends`，再让 Vue 解析器解析真实扩展名和文件。只有确实存在匹配文件时，自定义 Vue 扩展才会切到 `vue-tsc`；只有配置提示而没有实际模块时，不会改变归属。
-
-`auto.exclude` 只过滤已激活[治理区域](./regions.md)中的入口选择，不会裁剪从已选入口到达的有效项目引用，也不同于控制源码覆盖的 `scope.source.exclude`。
-
-旧 `{ mode: 'auto' }` 结构会被拒绝。请把 `exclude` 与 `useTsgo` 移到 `auto` 下。
-
-## 具名入口约束与聚合配置闭包 {#named-入口约束与-solution-closure}
-
-所有具名检查器范围使用同一个结构：
-
-```ts
-interface CheckerScope {
-  include: string[];
-  exclude?: string[];
-}
-```
-
-`include` 只选择相对 `config.rootDir` 的直接默认 `tsconfig.json` 入口，不能直接选择 `tsconfig.lib.json`、`tsconfig.test.json` 或其他命名配置；这些配置只能通过受管引用闭包进入。外部激活包可以使用 `../`，但选择器不能把未激活路径或工作区边界后的路径拉入图中。`exclude` 在 `include` 之后移除直接入口，不会截断正常的项目引用闭包。
-
-Limina 区分聚合配置与终端类型配置。聚合配置只组织引用，本身不是 Astro、Svelte 或 Vue 的执行目标。Limina 会递归展开嵌套聚合配置，用规范化路径对终端类型配置去重，并对每个叶子配置执行一次选定的检查器。
-
-具名检查器选择决定完整终端叶子闭包的检查器归属。配置提示、有效根文件、依赖需求与 Vue 检查器提升都不会改写这个范围。同一检查器的重叠具名范围会合并证据；不同检查器身份覆盖同一终端叶子配置时，`graph prepare` 失败。
-
-默认聚合配置可以直接引用命名终端配置，例如 `tsconfig.json -> tsconfig.node.json`。嵌套聚合配置自身必须使用默认名称，例如 `tsconfig.json -> packages/lib/tsconfig.json -> packages/lib/tsconfig.lib.json`。声明了引用的命名配置不能作为中间聚合配置。
-
-`tsconfig.lib.json`、`tsconfig.test.json` 等非入口配置，只有被已选 `tsconfig.json` 入口引用时才会进入治理图。生成配置都位于 Limina 的 `.limina` 命名空间；用户配置和诊断继续使用源码配置路径。
+合法的空聚合配置可以保留，但它没有检查器归属或构建目标。对它运行 `limina checker build <config>` 不会启动检查器。
 
 ## 框架前置条件
 
-框架检查器命令及其运行时都从拥有源码配置的叶子包解析：
+使用框架检查器前，除了安装 Limina，还需要在对应的执行作用域提供检查器及其依赖。这里的执行作用域是 Limina 查找检查器依赖的包范围。缺少依赖时，可以参考错误信息给出的作用域。版本需要落在 Limina 支持的范围内。安装 Limina 不会替每个框架项目安装这些依赖。
 
-- Astro 需要 `astro`、`@astrojs/check` 和 `typescript`，以及叶子包已生成的 `.astro/types.d.ts`。Limina 执行 `astro check --noSync --root <leaf> --tsconfig <source-config>`，不会运行 `astro sync`。
-- Svelte 需要 `svelte-check`、`svelte2tsx`、`svelte` 和 `typescript`。Limina 执行 `svelte-check --workspace <leaf> --tsconfig <source-config>`，不会运行 SvelteKit 同步、启用增量模式、写入 `.svelte-check` 缓存或覆盖输出格式。
+- **Vue：**在 `vue-tsc` 的构建执行作用域安装受支持的 `vue-tsc`。如果遇到工具链兼容问题，参见下方的 [Vue 说明](#vue-语义-import-分析)。
+- **Astro：**每个由 Astro 检查器负责的包需要 `astro`、`@astrojs/check` 和 `typescript`，以及事先生成好的 `.astro/types.d.ts`。Limina 运行的是 `astro check --noSync --root <leaf> --tsconfig <source-config>`，不会替项目执行 `astro sync`。如果缺少生成文件，请先在对应的 Astro 项目中运行项目使用的同步步骤。
+- **Svelte：**每个由 Svelte 检查器负责的包需要 `svelte-check`、`svelte2tsx`、`svelte` 和 `typescript`。Limina 运行 `svelte-check --workspace <leaf> --tsconfig <source-config>`，不会替项目执行 SvelteKit 同步，也不会启用增量模式、写入 `.svelte-check` 缓存或覆盖输出格式。
 
-`@astrojs/check` 是 Limina 的可选对等依赖。请在每个由 Astro 检查器负责的叶子包中主动安装受支持版本；安装 Limina 不会替该叶子包安装它。
+`@astrojs/check`、`vue-tsc`、`svelte-check`、`svelte2tsx` 和 `@typescript/native-preview` 都是 Limina 的可选对等依赖。`typescript` 是必需的运行时对等依赖。框架依赖缺失时，Limina 会在启动对应检查器进程前报错。Astro 与 Svelte 的命令和运行时从负责源码配置的包解析。其他外部检查器从目标实际执行的作用域解析。
 
-框架依赖收集使用所属检查器生成的 TypeScript 表示。Astro 只从已安装的 `@astrojs/check` → `@astrojs/language-server` 工具链解析编译器；Limina 不再直接依赖 `@astrojs/compiler`，也不再将其声明为对等依赖，不会回退到工作区安装，叶子包中其他编译器实例无法覆盖语言服务器所属的实例。Svelte 语义分析从所属叶子包解析公共 `svelte/compiler`、`svelte2tsx` 与 TypeScript。框架检查器依赖缺失时，预检仍会在启动检查器进程前失败。
+Astro 和 Svelte 检查器负责类型检查，不生成声明项目。如果某些 TypeScript 源码还需要生成声明，应将这部分源码放入由 `tsc`、`tsgo` 或 `vue-tsc` 负责的独立配置。更多执行方式见[工作流](../workflows.md)。
 
-`checker typecheck` 是完整重跑，不是框架监听模式。稳定的目标 ID 只表示多次运行之间的目标身份稳定，不提供增量失效能力。
+`limina checker typecheck` 有适用目标且准备成功时，每次都会重新运行 Astro 和 Svelte 检查，不是监听模式。如果没有这两类检查目标，它会记录 `disabled` 并正常退出。这表示没有适用工作，不代表框架检查已经执行。命令在判断是否有目标之前仍会检查工作区并准备生成图，因此这些步骤也可能先报错。
 
 ## 框架检查器归属与依赖边界 {#framework-ownership-与-dependency-boundary}
 
-Limina 为每个项目分别记录：
+理解检查器归属时，可以把两个问题分开看：
 
-- **解析源码时确定的语义判定依据**（后文简称“语义判定依据”）决定使用哪一种与检查器兼容的模块语义解释项目依赖。
-- **最终负责该配置的检查器**决定由哪个检查器执行构建或类型检查目标。
+1. **如何理解源码中的导入？** Limina 根据项目的 TypeScript 或框架语义分析依赖。
+2. **最终由哪个检查器执行构建或类型检查？** 这还会受到声明构建关系的影响。
 
-例如，普通 TypeScript 项目与 Vue 项目需要共享声明缓存时，可以统一由 `vue-tsc` 构建；普通项目的导入仍按其已确定的 TypeScript 语义解释。
+例如，一个普通 TypeScript 项目与 Vue 项目需要共享声明构建缓存时，两者可能都由 `vue-tsc` 构建。普通 TypeScript 项目的导入仍按其原本确定的 TypeScript 语义分析。
 
-::: details 检查器归属与依赖证据的判定边界
+显式选择 `astro` 时，检查器覆盖 TypeScript 和 `.astro` 文件；`svelte-check` 覆盖 TypeScript 和 `.svelte` 文件；`vue-tsc` 覆盖 TypeScript 和检查器实际识别的 Vue 扩展。选择一种框架检查器不会让它自动覆盖其他框架的文件。若源码位于覆盖证明的源码范围内，但负责该配置的检查器无法处理它，`limina proof check` 会报告 `LIMINA_PROOF_UNCOVERED_SOURCE_FILE`；文件的存在本身不会使 `graph prepare` 直接失败。
 
-只有显式检查器选择、检查器专属配置证据、有效根文件证据，以及已确认的待定框架依赖可以锁定语义判定依据。Limina 收集完待定依赖需求后会冻结该依据。Vue 检查器提升、声明连通分量的检查器身份传播、TypeScript 默认选择与 `finalOwner` 可以选择或传播构建检查器归属，但不能重新解释项目依赖。因此，采用 TypeScript 语义的项目可以在构建检查器身份传播后由 `vue-tsc` 构建，同时继续使用 TypeScript 模块语义。
+::: details 依赖分析遇到不确定情况时
 
-检查器归属尚未确定的自动范围先使用 TypeScript 语义。Limina 从已解析的 TypeScript 项目及其 TypeScript AST 枚举依赖，再对每条源于用户源码的依赖执行检查器类型证据校验。`ambient`、`concrete-declaration` 与 `checker-source` 证据都停在 TypeScript 边界；不受支持的语义证据会使分析失败并停止。只有 `missing` 证据可以调用 Oxc，而且 Oxc 在这里仅用于在归属推断时识别物理框架源码候选。候选必须恰好属于一个受治理配置的有效文件集合，并且只属于一个框架语义域。普通 TypeScript 文件、资源、被排除文件与有歧义的目标都不能用来确定检查器身份。Limina 会先收集完整需求集合，再确定待定的检查器归属，因此 Astro/Svelte/Vue 冲突是确定性的，不受导入顺序影响。
+Limina 根据显式选择、配置、实际文件和已确认的框架依赖确定分析语义。语义一旦确定，后续为共享声明缓存而调整构建检查器，不会改变已经确定的导入解释方式。
 
-语义判定依据一旦锁定，所有依赖项目上下文的分析方都使用对应的 TypeScript、Vue、Astro 或 Svelte 语义数据提供组件。检查器语义解析失败的最终结果仍是 `missing`；工具链、物化、源码映射、歧义与解析宿主故障都会使分析失败并停止。已锁定项目的依赖解析不会把 Oxc 或轻量收集器当作后备方案。
+对于尚未确定框架的项目，Limina 先使用 TypeScript 分析依赖。只有 TypeScript 明确未找到类型证据（`missing`）时，才可能借助 Oxc 寻找实际的框架源码，以辅助判断检查器。普通文件、资源、排除的文件或归属不明确的文件不能据此指定框架。框架要求存在冲突时，Limina 会报错，而不是按导入顺序选择。
 
-`SourceEvidence` 继续提供仅来自源码的语法、诊断与源码坐标，但不能作为图或检查器的判定依据。架构分析方只接受源于用户源码、且具有 `direct-source` 或严格 `mapped-source` 来源证明的 `ProjectDependency`。无法唯一映射到源码依赖的生成依赖只能成为观察记录，绝不会创建源码推导边；有歧义的反向映射会直接报错。
+确定框架后，依赖解析使用对应框架的工具链。无法可靠解析依赖、确认源码位置或使用工具链时，Limina 会报告失败，不会用近似结果补出项目依赖。框架工具生成但无法唯一对应到用户源码的导入不会凭空创建源码依赖关系。
 
 :::
 
-显式选定 Astro 检查器时会观测 TypeScript 文件与 `.astro`；显式选定 Svelte 检查器时会观测 TypeScript 文件与 `.svelte`；显式选定 `vue-tsc` 时会观测 TypeScript 文件与检查器实际解析出的 Vue 扩展。一个框架名称不会顺带加入其他框架扩展。位于覆盖证明源码边界内、但最终负责该配置的检查器无法观测的文件，不会仅因存在就阻断 `graph prepare`；`proof check` 会以 `LIMINA_PROOF_UNCOVERED_SOURCE_FILE` 报告。
-
-Astro/Svelte 检查器不生成声明项目、包装配置或透明构建聚合配置。`checker:typecheck` 会对其完整类型配置按叶子执行一次。需要生成声明的 TypeScript 源码必须拆到独立的 `tsc`、`tsgo` 或 `vue-tsc` 配置中。
-
-如果 `checker:typecheck` 没有由框架检查器负责的叶子配置，它会被记录为 `disabled` 并正常退出，不运行目标对等依赖预检或检查器进程。命令仍先验证工作区并物化生成图，之后才判断是否存在目标；图准备或物化也可能先失败。`disabled` 结果不能证明执行过框架类型检查。
+想进一步了解导入、声明构建和执行顺序之间的关系，可以阅读[从导入解析到声明构建图](../import-resolution-to-declaration-build-graph.md)。
 
 ## Astro 语义导入解析 {#astro-语义-import-解析}
 
-对于语义判定依据已锁定的 Astro 项目，Limina 从官方 Astro/Volar 上下文物化主 TypeScript 服务脚本及附加服务脚本，并使用该工具链的 TypeScript 实例枚举依赖。每条生成依赖必须先严格反向映射到唯一用户源码范围，随后才由 Astro 增强的 TypeScript 宿主解析。这里不再使用独立 Astro 收集器，也不再往返于源码优先的解析流程。
+Limina 使用 Astro 工具链理解 `.astro` 文件中的导入，再根据真实源码依赖安排其他项目的检查或构建。比如 `A.astro` 导入 `B.vue` 时，`A.astro` 中的导入由 Astro 工具链分析。只有继续分析 `B.vue` 自身时才使用 Vue 工具链。
 
-只有严格的源码映射才能形成已映射依赖。Limina 先尝试完整的生成字面量词元；只有该严格查询没有结果时才尝试字面量内部内容，两次查询都不允许后备匹配。生成的合成导入即使解析到受治理工作区源码，也只能成为 `unmapped-generated` 观察记录，绝不会创建图边。损坏、歧义或相互冲突的映射、工具链不兼容、服务脚本故障与解析宿主故障都会使分析失败并停止。已锁定的解析路径不会调用 Oxc，也不会回退到工作区 TypeScript 导出解析。
+Astro 检查器不生成声明文件，但跨项目导入仍可能影响执行顺序。生成文件中的导入必须能够可靠对应到用户源码，才能用于建立源码依赖。映射有误、存在歧义或工具链不兼容时，Limina 会停止并报告问题。
 
-Astro 适配器支持以下组件版本：
+Astro 适配器要求以下版本组合：
 
-| 组件                                        | 支持契约                                    |
-| ------------------------------------------- | ------------------------------------------- |
-| Astro                                       | `>=7.0.0 <8.0.0`                            |
-| `@astrojs/check`                            | `>=0.9.6 <0.10.0`                           |
-| `@astrojs/language-server`                  | `2.16.13`                                   |
-| 语言服务器所属的 `@astrojs/compiler`        | `2.13.1`                                    |
-| `@volar/language-core`                      | `2.4.28`                                    |
-| `@volar/kit`                                | `2.4.28`                                    |
-| `@volar/typescript`                         | `2.4.28`                                    |
-| 叶子包与 `@astrojs/check` 可见的 TypeScript | Limina 已声明的 TypeScript 对等依赖版本范围 |
+| 组件                                      | 支持的版本                            |
+| ----------------------------------------- | ------------------------------------- |
+| Astro                                     | `>=7.0.0 <8.0.0`                      |
+| `@astrojs/check`                          | `>=0.9.6 <0.10.0`                     |
+| `@astrojs/language-server`                | `2.16.13`                             |
+| 语言服务器使用的 `@astrojs/compiler`      | `2.13.1`                              |
+| `@volar/language-core`                    | `2.4.28`                              |
+| `@volar/kit`                              | `2.4.28`                              |
+| `@volar/typescript`                       | `2.4.28`                              |
+| 项目和 `@astrojs/check` 可见的 TypeScript | `>=5.4.0 <5.10.0` 或 `>=6.0.0 <6.1.0` |
 
-TypeScript 对等依赖版本范围是 `>=5.4.0 <5.10.0 || >=6.0.0 <6.1.0`。Astro `7.0.0` 是受支持版本的下限，不是唯一可接受版本。适配器还会检查内部 API 结构，因此版本字符串匹配但导出不兼容时，仍然会失败并停止。
+Astro `7.0.0` 是支持范围的下限，不是唯一支持的版本。Limina 也会检查实际工具链的 API。即使版本号符合表格，导出不兼容时仍会报错。对 `@astrojs/check`，运行时版本判断允许满足范围的预发布版本，例如 `0.9.7-beta.1` 和 `0.10.0-beta.1`。安装时还需满足各依赖包自身的对等依赖要求。
 
-`@astrojs/check` 版本范围准入还要求表中其他组件和受支持的内部 API 结构全部满足。Limina 运行时的 `@astrojs/check` 版本准入使用 `includePrerelease: true`，因此 `0.9.7-beta.1`、`0.10.0-beta.1` 可以满足该范围。运行时准入不验证每个已安装包自身的对等依赖声明；实际消费方的安装环境仍须满足这些声明。
-
-依赖解析遵循包归属。Limina 依次从所属叶子包、`@astrojs/check`、语言服务器、`@volar/kit` 创建解析作用域。依赖必须由所属作用域声明；按归属作用域解析失败后，不会改从工作区根目录重试。解析出的文件可以位于 pnpm 存储目录、提升安装目录或其他符号链接布局。路径只记录为来源信息，并用于隔离不同模块实例；物理路径相等永远不是兼容条件。因此，两份受支持的 TypeScript 可以来自不同的真实路径，甚至可以是范围内不同版本。
-
-语义数据提供组件只确认源于用户源码的依赖与目标；源码归属、提供者选择、调度与图策略仍由 Limina 决定：
-
-| Astro 源码目标 | 图策略                                                      |
-| -------------- | ----------------------------------------------------------- |
-| `.astro`       | 框架调度                                                    |
-| `.svelte`      | 框架调度                                                    |
-| `.vue`         | Astro 确认物理目标，再记录到负责目标的 Vue 检查器的框架调度 |
-| `.ts` / `.tsx` | 到负责目标构建的检查器的框架调度                            |
-
-对于 `A.astro -> B.vue -> C.ts`，`A -> B` 始终由 Astro 分析流程负责。只有独立分析 `B.vue` 源码时才使用 Vue 语义解析，因此 Vue 不会重新解释写在 `A.astro` 中的导入。`.astro` 与 `.svelte` 仍不会进入生成声明的 `files`；它们真实的跨检查器导入仍可形成框架调度，而 `declaration-provider`（声明提供者）边始终位于同一个构建检查器身份内。
+Astro 编译器由 `@astrojs/check` 所使用的语言服务器提供，Limina 不直接依赖它，也不会用工作区根目录或项目中另一份编译器替代。依赖按所属包的作用域解析，不要求所有依赖位于相同的物理路径。不同位置的 TypeScript 版本只要各自在支持范围内即可。
 
 ## Vue 语义导入分析 {#vue-语义-import-分析}
 
-Vue 导入收集不再提供配置字段。独立导入 API 不接受框架文件：`.vue` 依赖语义必须使用带项目上下文的 `vue-tsc` 分析环境。源码特征配置只作为适配器内部输入，用于选择官方服务脚本表示，不形成第二套依赖判定依据。
+Limina 使用项目的 `vue-tsc` 工具链分析 `.vue` 文件中的依赖。由于 Vue 工具链会转换组件中的代码，报告里的导入路径有时可能与源码写法不同。例如，源码写的是 `<script src="./entry.ts">`，报告可能显示 `./entry.js`，但文件和行号仍指向原来的 `.vue` 文件。
 
-对于语义判定依据已锁定的 Vue 项目，Limina 先从检查器执行作用域解析 `vue-tsc`，再从这份已安装 `vue-tsc` 的依赖环境解析 Vue Language Core、Volar TypeScript 和工具链使用的 TypeScript。它会物化 Vue 服务脚本，全程使用同一工具链的 TypeScript 枚举生成依赖，严格反投影每条依赖，再通过支持 Volar 的宿主解析生成的语义字面量。语义身份由生成的 `semanticSpecifier`、解析模式、检查器目标、解析器、依赖种类与规范类型证据构成；源码中的原始写法不再是第二套判定依据。因此源码 `<script src="./entry.ts">` 的 `ImportRecord.specifier` 与报告中的 `importedSpecifier` 可能显示为 `./entry.js`，但文件与行号仍指向 `.vue` 源码。合成的服务脚本导入只能成为观察记录，绝不会形成图边，也不会由 Oxc 或工作区解析器补救。仅适用于 TypeScript 的源码指令保留有界的直接源码 TypeScript 语义。
-
-Vue 适配器支持以下组件组合：
+Vue 适配器支持以下工具链组合：
 
 | `vue-tsc` 版本系列 | 对应 `@vue/language-core` | `@volar/typescript` | TypeScript           |
 | ------------------ | ------------------------- | ------------------- | -------------------- |
 | 2.2.0–2.2.12       | 与 `vue-tsc` 版本相同     | 2.4.11–2.4.28       | 5.4.x–5.9.x 或 6.0.x |
 | 3.2.0–3.2.4        | 与 `vue-tsc` 版本相同     | 2.4.27              | 5.4.x–5.9.x 或 6.0.x |
 
-发布包只将 `vue-tsc` 声明为 Vue 可选检查器对等依赖。`@vue/language-core` 与 `@volar/typescript` 是检查器内部工具链包：应用无需为 Limina 安装它们，Limina 也不再将它们发布为对等依赖。`vue-tsc` 对等依赖版本范围表达受支持的外部检查器版本；Limina 仍按上表校验实际安装的完整组件版本组合。顶层检查器缺失或版本越界时分别报告 `Missing external checker` 或 `Unsupported external checker`；内部组件组合不完整或不兼容时报告 `Unsupported vue-tsc toolchain`，修复方式是在对应检查器作用域升级、降级或重装 `vue-tsc`，而不是直接安装内部包。
+`@vue/language-core` 和 `@volar/typescript` 是 `vue-tsc` 的内部工具链依赖，不需要为了 Limina 单独安装。Limina 会检查实际安装的完整组合：
 
-该 Vue 组件组合使用的 TypeScript 属于检查器工具链，通过 `vue-tsc` 解析；它不要求与 Limina 自身必需的 TypeScript 运行时是同一个物理安装。
+- 遇到 `Missing external checker` 或 `Unsupported external checker`，请检查执行作用域中的 `vue-tsc` 是否存在、版本是否受支持。
+- 遇到 `Unsupported vue-tsc toolchain`，请在该作用域升级、降级或重新安装受支持的 `vue-tsc`，以修复不完整或不兼容的内部依赖组合。
 
-不受支持的组件组合会使带项目上下文的 Vue 依赖准备失败并停止。独立 API 不会回退到轻量 Vue 收集器或近似的 Vue 扩展解析器。
+Vue 工具链使用的 TypeScript 从 `vue-tsc` 解析，不要求与 Limina 自身使用的 TypeScript 是同一份物理安装。工具链不受支持时，项目的 Vue 依赖分析会失败，不会改用近似解析。独立导入 API 也不能脱离项目上下文处理 `.vue` 文件。
+
+重复脚本块或 `<script setup src>` 等 Vue 单文件组件结构问题由 Vue 检查器和编辑器工具负责。Limina 负责自身依赖分析中的源码位置、解析和图问题。
 
 ## Svelte 语义依赖分析 {#svelte-语义-dependency-分析}
 
-对于语义判定依据已锁定的 Svelte 项目，Limina 从所属叶子包解析公共 `svelte/compiler`、受支持的公共 `svelte2tsx` 对等依赖与 TypeScript。适配器把原始组件转成生成的 TSX 与 Source Map v3 源码映射；Limina 不会为非 Svelte 消费方打包或安装这个 Svelte 专用适配器。依赖由同一 TypeScript 实例枚举。只有解码后的映射段显式覆盖生成依赖范围内每个 UTF-16 偏移，并且单调、连续地映射到当前源码时，来源证明才成立；稀疏、部分、未映射、跨源码、倒退或跳跃的范围会使分析失败并停止，不会用最近的较小或相等偏移处的映射段补齐缺口。
+Limina 从 Svelte 项目所在包解析 `svelte/compiler`、`svelte2tsx` 和 TypeScript，并使用转换后的 TypeScript 表示分析组件依赖。只有能可靠对应到原始组件源码的依赖才用于建立项目关系。源码映射不完整或不明确时，分析会报错。
 
-这条有界路径不会加载 `svelte.config.js`，不会执行预处理或默认语言钩子，不会导入 `svelte-check` 或语言服务器的私有子路径，也不会复刻快照与语言服务生命周期。它只用一个极小的检测器识别显式 `lang="ts"` 或 `lang="typescript"`，为公共 `svelte2tsx.isTsFile` 提供输入；依赖图策略不区分实例脚本与模块脚本。有界 TypeScript `Program` 的叠加层只能为已枚举字面量查询环境声明的类型检查器证据，不能成为第二套 `.svelte` 模块解析器。生成的合成依赖只能成为观察记录，已锁定的 Svelte 解析永不回退到 Oxc。
-
-对所有语义判定依据已锁定的框架，准备阶段会同时记录检查器目标与现有 `TypeEvidence`。受管源码目标形成项目依赖，具体声明停在声明边界，`target = null` 且具有环境声明证据时形成有类型的非源码观察记录，`target = null` 且证据为 `missing` 时仍为缺失。文件是否存在、资源扩展名、虚拟模块允许清单、工作区导出解析与 Oxc 都不能把检查器解析失败变成新目标。
-
-### 从 `config.imports.vue` 迁移的破坏性变更 {#从-config-imports-vue-迁移的-breaking-change}
-
-删除 `config.imports.vue`，不需要添加替代字段。仍包含 `config.imports` 的配置会在加载时直接报告这项迁移。公共 `VueImportParser` 类型以及 Limina 对 `@vue/compiler-sfc` 的直接/可选依赖也已删除。
-
-Limina 不再提供 `compiler-sfc` 专属的重复脚本块或 `<script setup src>` 结构诊断；单文件组件是否有效由 Vue 检查器与编辑器工具负责。Limina 只在自身分析边界内报告源码来源、解析与图错误。
+这一步不会加载 `svelte.config.js`，也不会运行预处理或默认语言钩子。它只识别显式的 `lang="ts"` 或 `lang="typescript"` 作为转换输入。如果项目依赖其他预处理行为，不应假设这一步会执行它们。Svelte 类型检查命令本身仍按上文所述运行。
 
 ## 声明依赖与检查器身份 {#声明依赖与检查器-identity}
 
-Limina 会区分声明依赖和框架调度依赖：
+当 Limina 确定两个受管项目存在需要共享缓存的声明构建关系时，提供声明的一方需要先于使用它的一方运行，并且两者必须使用相同的构建检查器：`tsc`、`tsgo` 或 `vue-tsc`。这样它们才能共享对应的声明构建缓存。只是消费已有的声明产物，并不一定会形成这样的构建关系，应以 Limina 识别出的关系为准。
 
-- `declaration-provider` 表示真实的编译器声明关系，可以成为生成的 TypeScript 项目引用。
-- `framework-schedule` 只用于排列框架检查或构建顺序，绝不会写成生成的 `tsconfig` 项目引用。
+例如，如果库项目已经确定使用 `vue-tsc`，而依赖它的项目也需要共享同一声明缓存，Limina 可以让后者使用 `vue-tsc`。但如果两个需要共享缓存的项目被显式指定为不同检查器，`limina graph prepare` 会报错。应检查具名规则和项目间的声明关系，消除冲突，而不是为每个项目机械地指定检查器。
 
-提供方会先于消费方运行。纯框架调度循环会作为一个调度连通分量执行；声明循环仍然失败。
+合格的声明依赖、已选定的声明上下文和有效的 `liminaOptions.implicitRefs` 都可能形成这种要求。对于一组需要共享缓存的相连配置：已有一个确定的构建检查器时，Limina 会将它用于整组；尚未确定时，使用 `tsc` 或 `auto.useTsgo` 选定的默认检查器；存在不同的已确定检查器时则报错。聚合关系本身不会产生这种要求。
 
-每条成功生成的 `declaration-provider`（声明提供者）边两端都具有完全相同的 `tsc`、`tsgo` 或 `vue-tsc` 身份，并在版本 6 的生成清单中记录 `cacheReuse: "reusable"`。因此，规范声明关系会在生成配置与目标物化前，把检查器身份传播到整个构建连通分量。需要共享声明缓存的一组相连配置已包含不同构建检查器身份时，`graph prepare` 会失败，不再保留跨检查器引用，也不再发出缓存反复失效警告。`framework-schedule` 不是编译器项目引用，因此仍可跨检查器身份。
-
-## 从别名与 `preset` 迁移 {#从-alias-与-preset-迁移}
-
-把旧条目移到与其 `preset` 同名的固定键名下，再删除 `preset`：
-
-```js
-// 修改前
-checkers: {
-  typescript: {
-    preset: 'tsgo',
-    include: ['packages/**/tsconfig.json'],
-  },
-  vue: {
-    preset: 'vue-tsc',
-    include: ['apps/web/tsconfig.json'],
-  },
-}
-
-// 修改后
-checkers: {
-  tsgo: {
-    include: ['packages/**/tsconfig.json'],
-  },
-  'vue-tsc': {
-    include: ['apps/web/tsconfig.json'],
-  },
-}
-```
-
-如果多个别名以前使用同一个 `preset`，需要把不重叠的选择器合并到一个固定键名下。需要显式处理重叠的选择器或冲突的策略；Limina 不为旧别名分配优先级。配置文件是 TypeScript/MTS，因此 Limina 会给出确定的配置结构诊断，但不会自动改写。
+框架检查或构建之间也可能需要确定先后顺序，但这类**框架调度关系**可以跨检查器，并不会变成 TypeScript 项目引用。只有框架调度关系构成循环时，相关目标会作为一组调度。声明依赖构成循环仍会报错。
 
 ## 生成图与生成清单 {#生成图与-manifest}
 
-运行 `limina graph prepare` 会物化 `.limina/manifest.json` 和生成的检查器配置。受管构建和类型检查命令与流水线会按需物化；只读的图检查、源码检查和覆盖证明检查只在内存中计算图。
+通常无需手动生成检查器配置：受 Limina 管理的构建、类型检查和流水线会在需要时准备它们。如果需要单独刷新磁盘上的文件，可以在项目中运行 `limina graph prepare`。该命令会生成 `.limina/manifest.json` 和检查器配置。图检查、源码检查与覆盖证明检查只在内存中计算图。
 
-当前生成清单为版本 5。它同时持久化归属计划（配置角色、最终负责该配置的检查器与聚合配置叶子闭包）、稳定排序的带类型 `dependencyEdges`，以及构建和框架执行目标。版本 1 到 4 只作为旧生成产物的归属台账，用于安全清理后写入版本 5。未来版本或格式错误的生成清单会导致处理失败并停止。
+生成清单记录源码配置的检查器归属、聚合配置引用到的源码配置，以及依赖和执行目标。格式错误或不受支持的清单会报错。配置文件和诊断使用项目中的源码配置路径。
 
-声明支撑输入可以贡献其明确表达的合法依赖，但不会自动成为 Source Config。Limina 不从任意 `.d.ts` 反推生产 tsconfig、Bundler 或任务；额外生产关系由用户显式声明。
+生成声明或输出配置时，Limina 保留源码配置实际选中的 `compilerOptions.types`，包括相对路径和继承得到的 `typeRoots`。源码和输出可以使用不同的 `target`，包括由 `vue-tsc` 负责的项目。默认库也可能不同。但输出实际需要的受治理依赖必须已被输出关系覆盖。无法完整分析或发现依赖未被覆盖时，Limina 会报告限制和来源，不会自动扩大源码图或添加源码引用。
 
-生成的声明／输出配置保持源配置实际选中的 `compilerOptions.types` 入口，包括相对入口和有效继承的 `typeRoots`。这不要求完整类型环境机械相同：现有 `liminaOptions.outputs.target` 及默认目标继续有效，默认库集合可以不同。输出实际引入的治理依赖必须被既有输出关系覆盖；未覆盖或无法完整观察时会报告能力限制及来源，不自动扩大源图。
-
-`vue-tsc` 负责的项目可以为源和输出配置不同的 `target`。Limina 使用独立 Vue 语义 context 观察有效输出编译选项，覆盖原生 TypeScript 文件及映射后的 Vue 组件。输出依赖必须被既有输出引用覆盖，不会为了使输出通过而补充源码引用。不支持的观察或未覆盖的输出依赖仍会停止图准备。
-
-明确项目引用的预期声明输出可以尚未存在；实际 `tsc -b` 按依赖顺序生成它们。此许可不适用于任意缺失声明，也不会以陈旧输出补充源码发现。
-
-### Solution 与 Checker 分组
-
-自动发现的 solution 可以包含由不同 Checker 执行的独立项目。Limina 穿过嵌套 solution 收集所有终端 source config，并按最终归属生成独立的 Checker 构建入口；聚合关系本身不要求项目使用同一个 Checker。真实声明构建依赖仍必须满足精确 Checker 身份和缓存兼容性约束。
-
-显式通过 `scope.checkers.<checker>.include` 选择 solution，仍表示其全部终端 source config 必须使用指定 Checker。不同显式入口对共享 source 提出冲突要求时会报错。合法空 solution 不产生构建目标；对它执行 `limina checker build <config>` 不启动 Checker。
+明确的项目引用所需的预期声明文件可以在有序构建开始前尚不存在，由后续构建按引用顺序生成，例如通过 `tsc -b`。这不适用于任意缺失的声明文件，也不会使用过期输出代替源码发现。Limina 也不会仅凭一个 `.d.ts` 文件推断生成它的项目、构建工具或任务。额外的产物依赖关系需要明确声明。

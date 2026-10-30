@@ -1,8 +1,8 @@
 # 流水线
 
-流水线把团队共用的步骤保存在配置中，通过 `limina check <name>` 按顺序运行。下面的 `publish` 只做发布前检查，假设项目已有 `pnpm build` 和 `pnpm test` 脚本，并已配置待检查的 `package.entries`：
+流水线把团队需要一起运行的步骤保存在配置中。例如，发布前先运行项目的生产构建，再检查构建后的包。下面假设项目已有 `pnpm build` 脚本，并已配置[包输出条目](./package-checks.md)。请将 `pipelines` 字段合并到现有 Limina 配置中，保留这些包条目：
 
-命名流水线按顺序执行全部声明步骤，独立于固定的默认工作流。省略 `graph`、`source` 或 `proof` 不会移除显式声明的检查。
+`limina.config.mjs`：
 
 ```js
 import { defineConfig } from 'limina';
@@ -10,31 +10,27 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   pipelines: {
     publish: [
-      'graph:check',
-      'source:check',
-      'proof:check',
-      'checker:build',
-      'checker:typecheck',
       { type: 'command', command: 'pnpm', args: ['build'] },
       'package:check',
       'release:check',
-      {
-        type: 'command',
-        command: 'pnpm',
-        args: ['test'],
-      },
     ],
   },
 });
 ```
 
-运行 `pnpm exec limina check publish --package @acme/core` 即可选择这条流水线及同名包输出。`checker:build` 生成 `.limina` 内部声明，示例中的 `pnpm build` 才负责准备消费者产物。
+在项目根目录运行：
+
+```sh
+pnpm exec limina check publish --package @acme/core
+```
+
+`publish` 只是这条流水线的名称，示例不会执行发布。构建命令和检查按声明顺序执行。如果构建命令失败，后续步骤会被跳过。命名流水线只包含显式写出的任务，不会自动附带默认的五项检查。需要默认检查时，另行运行 `pnpm exec limina check`，或将需要的内置任务写入流水线。
 
 ## `pipelines`
 
 - **类型：** `Record<string, PipelineStep[]>`
 
-`pipelines` 把名称映射到一组有序步骤。`pnpm exec limina check <name>` 会按数组顺序调度该流水线的步骤，每一步都依赖前一步完成。它和默认 `limina check` 不同：默认检查会把内置任务作为可并发的独立任务调度；命名流水线会保留你写下来的顺序。
+`pipelines` 把名称对应到一组有序步骤。`pnpm exec limina check <name>` 会按数组顺序运行这些步骤，前一步结束后才开始下一步。默认 `limina check` 则把内置任务作为独立任务调度，可以并发运行。内置任务失败后，命名流水线仍可能继续执行，具体行为见下文。
 
 名称只选择 `pipelines[name]`。例如，`limina check graph` 要求配置中存在 `pipelines.graph`，不会隐式运行 `limina graph check` 或 `graph:check` 任务。如果该工作流需要图检查，应在流水线中显式包含 `graph:check`。
 
@@ -57,13 +53,19 @@ Configure the pipeline in the Limina config under `pipelines.lint`.
 
 [配置文件](./config-file.md)是运行时加载并求值的 JS/TS 模块。模块求值和导出的配置函数可以动态构造工作流配置。读取 `process.argv` 以转发额外参数不属于 CLI 契约。`commit-msg` 消息文件这类需要每次调用输入的集成，应使用拥有独立输入契约的专用入口。
 
-连续的内置任务构成一个“任务段”，外部命令将任务段分开。Limina 在每个任务段前插入共享准备步骤 `workspace:validate`。包含 `graph:prepare`、`checker:build` 或 `checker:typecheck` 的任务段，还会在全部内置任务前获得共享准备步骤 `graph:materialize`。准备步骤自动注入，不是可配置的 `BuiltinTaskName` 步骤。必要准备步骤失败时，依赖任务会在消费拓扑或生成文件前记录为 `blocked`（被阻塞）。
+运行内置任务前，Limina 会自动执行必要的准备，例如验证工作区或生成检查器配置。如果准备失败，依赖它的任务会标记为 `blocked`（被阻塞）。
+
+::: details 准备步骤的执行时机
+
+连续的内置任务构成一个任务段，外部命令将任务段分开。Limina 在每个任务段前执行 `workspace:validate`。如果任务段包含 `graph:prepare`、`checker:build` 或 `checker:typecheck`，还会在该任务段的全部内置任务前执行 `graph:materialize`。这些准备步骤由 Limina 自动添加，不能作为 `BuiltinTaskName` 单独配置。准备失败时，依赖任务不会继续使用工作区拓扑或生成文件。
+
+:::
 
 已执行内置任务失败会让最终结果失败，但后续步骤仍按顺序尝试。准备步骤失败只阻塞依赖它的内置任务，不自动取消后面的外部命令。
 
-例如 `checker:build → pnpm build → package:check` 中，第一段准备失败会使 `checker:build` 被阻塞，`pnpm build` 仍会尝试运行；它成功后，后一段会重新进行工作区准备，再尝试包检查。前面的失败仍保留在最终结果中。只有外部命令失败才停止剩余步骤，并将它们记为 `skipped`（已跳过）。
+例如，在 `checker:build → pnpm build → package:check` 中，第一段准备失败会使 `checker:build` 被阻塞，但 `pnpm build` 仍会尝试运行。如果构建成功，后一段会重新进行工作区准备，再尝试包检查。前面的失败仍保留在最终结果中。只有外部命令失败才停止剩余步骤，并将它们记为 `skipped`（已跳过）。
 
-外部命令会分隔分析代次。Limina 在进入下一代次前等待当前工作结束，释放默认输入数据提供组件，并重新创建数据提供与查询缓存，以及产物命名空间。下一代次仍复用已加载的配置对象，命令后不会重新执行配置模块或函数。
+外部命令可能改变后续任务需要读取的文件。因此，进入后续任务前，Limina 会等待当前工作结束并重新建立分析上下文。它仍使用本次运行开始时加载的配置对象，不会在外部命令后重新执行配置模块或函数。
 
 ## 字符串步骤
 
@@ -78,9 +80,11 @@ Configure the pipeline in the Limina config under `pipelines.lint`.
 - `release:check`
 - `source:check`
 
-也可以是简单外部命令。简单命令会按空白拆分；当参数里有空格、需要 `cwd` 或环境变量时，应使用对象形式。
+也可以是简单外部命令。简单命令会按空白拆分。当参数里有空格、需要 `cwd` 或环境变量时，应使用对象形式。
 
-`graph:prepare` 会验证输入并物化图文件，但不执行图治理检查或编译器。只做验证的流程可使用 `graph:check`，它在内存中计算图，不物化检查器配置。检查器任务会自动获得物化准备步骤。`checker:build` 产出 Limina 内部声明；如果需要生成消费者产物，应在 `package:check` 或 `release:check` 前添加项目自己的构建命令。
+`graph:prepare` 会验证输入并生成图文件，但不执行完整的图检查或运行编译器。只做检查的流程可使用 `graph:check`，它在内存中计算图，不生成检查器配置。检查器任务会自动获得所需的准备步骤。
+
+`checker:build` 产出 Limina 内部使用的声明文件。如果需要生成供消费者使用的产物，应在 `package:check` 或 `release:check` 前添加项目自己的构建命令。
 
 ## 对象命令步骤
 
@@ -115,13 +119,21 @@ Configure the pipeline in the Limina config under `pipelines.lint`.
 }
 ```
 
-配置后，`pnpm exec limina check publish` 会按数组顺序运行。假设某次改动让源码出现跨包相对导入：
+例如，某次改动让源码出现跨包相对导入：
 
 ```ts
 // packages/app/src/main.ts
 import { createClient } from '../../core/src/index';
 ```
 
-流水线会在 `source:check` 阶段记录失败，后面的构建、包检查和外部测试命令仍会按顺序尝试执行。最终结果会失败。修正源码导入后，再重新运行流水线。
+本页开头的 `publish` 流水线没有包含 `source:check`，所以不会因为这条导入运行源码检查。需要在发布前检查源码时，可以先单独运行 `pnpm exec limina check`，也可以在流水线的步骤数组中加入 `source:check`。
 
-应改用已授权的 `@acme/core` 包导出，并在导入方源码所属包的清单中声明依赖。生成的引用由 Limina 根据检查器证据和图规则推导，源码叶子配置无需手写 `references`。
+如果把 `source:check` 加在构建命令之前，它发现问题后，后面的构建和包检查仍会按顺序尝试执行，但流水线最终会失败。如果希望源码检查失败时不启动构建，请先单独运行检查，并只在检查通过后运行发布流水线。
+
+例如，在工作区根目录运行：
+
+```sh
+pnpm exec limina check && pnpm exec limina check publish --package @acme/core
+```
+
+修复这条导入时，应改用已授权的 `@acme/core` 包导出，并在导入方源码所属包的清单中声明依赖。Limina 根据检查器证据推导需要的声明引用，再检查图规则。源码配置无需手写这些引用。

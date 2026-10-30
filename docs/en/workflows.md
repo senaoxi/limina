@@ -68,9 +68,11 @@ pnpm exec limina check publish
 
 ## Migrate Existing Configs
 
-Configuration migration uses the separate `limina-migrate` package at the same version as `limina`. After installing the matching version, run:
+Configuration migration uses the separate `limina-migrate` package. For the development version described here, use the migration tool built from the same source as `limina`; see [Getting Started](./getting-started.md#migrate-existing-project-references-first) for installation. Preview the plan before deciding to write:
 
 ```sh
+pnpm exec limina-migrate --dry-run --yes
+# Review the plan before migrating.
 pnpm exec limina-migrate
 pnpm exec limina check
 ```
@@ -81,29 +83,20 @@ When dependency comparison is incomplete, migration preserves explicit relations
 
 ## CI Example
 
-This example runs the default check. It assumes the repository pins pnpm and has committed its lockfile and Limina config. Complete prerequisites such as framework-generated types before checking, as required by the project.
+If your project installs the development version through `file:../limina/packages/limina/dist` as in [Getting Started](./getting-started.md), CI also needs the Limina source built at that relative location. Checking out only the project leaves the local dependency unavailable. pnpm may report `ERR_PNPM_OUTDATED_LOCKFILE`; check whether the local build directory exists before deciding to update the lockfile.
 
-```yaml
-name: ci
+For example, have CI check out the project as `project` and the matching Limina source commit as its sibling `limina`. Starting in `project`, run:
 
-on:
-  pull_request:
-  push:
-    branches: [main]
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.22.3
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec limina check
+```sh
+cd ../limina
+pnpm install --frozen-lockfile
+pnpm run build
+cd ../project
+pnpm install --frozen-lockfile
+pnpm exec limina check
 ```
+
+Both repositories need their lockfiles. CI also needs compatible Node.js and pnpm versions, plus any project prerequisites such as generated framework types before the check. If using a published release, follow that release's installation instructions.
 
 ## Best Practices
 
@@ -128,7 +121,7 @@ They inspect the selected entry's `outDir` and need the manifest and files that 
 
 ### Can workspace exports point to dist?
 
-Yes. Consuming existing declarations does not infer references back to source projects or automatically refresh the declarations. The consumer's build workflow must still prepare artifacts. See [Source Edges, Declaration Edges, and Artifact Edges](./concepts.md#source-edges-declaration-edges-and-artifact-edges).
+Yes. When `dist` contains a built declaration artifact, consuming it does not identify the source project that produced it or automatically refresh it. The consumer's build workflow must still prepare the artifact. A declaration managed as source follows the separate checking-context rules. See [Source Edges, Declaration Edges, and Artifact Edges](./concepts.md#source-edges-declaration-edges-and-artifact-edges).
 
 ### Should `Vue` or `Svelte` files be placed in the TypeScript graph?
 
@@ -140,7 +133,7 @@ A function config can read `mode` when it needs to distinguish local, CI, or rel
 
 ## Maintainer Release Checklist
 
-Before publishing, complete project tests, applicable Limina checks, the production build, artifact checks, and real consumer tests, and review disabled and skipped work. The Limina repository itself must also follow its same-version paired-artifact and CI gates. The commands above do not perform publication.
+Before publishing, complete project tests, applicable Limina checks, the production build, artifact checks, and real consumer tests, and review disabled and skipped work. The commands above do not perform publication.
 
 ## See Also
 

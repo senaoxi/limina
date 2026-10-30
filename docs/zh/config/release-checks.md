@@ -1,21 +1,23 @@
 # 发布检查
 
-`limina release check` 根据 `package.entries` 选择输出，生成 npm 打包文件，检查发布文件，并根据 npm 注册表内容校验工作区发布依赖的一致性。它与 `package check` 分别运行，不执行构建或发布。
+准备发布包时，可以用 `limina release check` 检查配置的输出：它会生成 npm 打包文件，检查发布内容，并将工作区发布依赖与注册表中的内容比较。这个命令与 `package check` 分别运行，不会替项目构建或发布包。下面假设项目已有生产构建脚本 `pnpm build`：
 
 ```sh
 pnpm build
 pnpm exec limina release check --package @acme/core
 ```
 
-先在 [`package.entries`](./package-checks.md#entries) 配置对应输出。打包使用 `pnpm pack --ignore-scripts`，因此需要可用的 pnpm；工作区依赖的基线比较还需要访问所选注册表。
+先在 [`package.entries`](./package-checks.md#entries) 配置对应输出。打包使用 `pnpm pack --ignore-scripts`，因此需要可用的 pnpm。比较工作区依赖的基线还需要访问所选注册表。
 
 内置发布检查属于此命令，不需要启用可选分析器。输出清单无效或标记为私有包（`private: true`）等早期失败，可能使该条目在打包与后续检查前停止。可选的 `release.npmPackageJsonLint` 集成会额外使用 `npm-package-json-lint` 检查打包后的 `package.json`。
 
-对于工作区发布依赖，Limina 会把本地打包内容与 npm 发布标签基线（`release.contentHash.baselineTag`，默认 `latest`）比较，报告 `changed`（已更改）、`local-only`（仅本地存在）、`remote-only`（仅远程存在）文件。存在未被忽略的差异时，发布检查会失败。按配置忽略后内容相同，只表示该次比较没有内容差异诊断；其余发布检查仍适用。
+对于工作区发布依赖，Limina 会把本地打包内容与 npm 发布标签基线（`release.contentHash.baselineTag`，默认 `latest`）比较，报告 `changed`（已更改）、`local-only`（仅本地存在）、`remote-only`（仅远程存在）文件。存在未被忽略的差异时，发布检查会失败。按配置忽略后内容相同，只表示该次比较没有内容差异诊断。其余发布检查仍然适用。
 
-只有输出清单的 `name` 命中具有名称的激活源码包时，才启动工作区遍历。它读取该源码所属包清单的 `dependencies`、`optionalDependencies` 与 `peerDependencies` 中的 `workspace:` 依赖，并拒绝 `link:` 条目。普通语义化版本依赖不会仅因本地存在同名包而被遍历。未命中源码包时，发布文件与清单检查仍执行，但不遍历工作区依赖。对每个工作区依赖，Limina 使用首个 `name` 等于**该依赖包名称**的配置输出条目；没有条目时使用该依赖源码包目录下的 `dist`，不会逐一比较全部同名依赖输出。
+只有输出清单的 `name` 命中具有名称的激活源码包时，才启动工作区遍历。Limina 会读取该源码包清单中 `dependencies`、`optionalDependencies` 与 `peerDependencies` 的 `workspace:` 依赖，并拒绝 `link:` 条目。普通语义化版本依赖不会仅因本地存在同名包而被遍历。未命中源码包时，发布文件与清单检查仍执行，但不遍历工作区依赖。
 
-在解包或比较注册表基线的打包文件之前，Limina 会先使用 `dist.integrity` 校验它；若该字段缺失，则回退使用 SHA-1 `dist.shasum`。完整性校验元数据缺失、格式错误或摘要不匹配都会让 `release check` 失败，且不能跳过这项校验。
+对每个工作区依赖，Limina 使用第一个 `name` 等于**该依赖包名称**的配置输出条目。如果没有对应条目，则使用该依赖源码包目录下的 `dist`。Limina 不会逐一比较全部同名依赖输出。
+
+在解包或比较注册表基线的打包文件之前，Limina 会先使用 `dist.integrity` 校验它。若该字段缺失，则回退使用 SHA-1 `dist.shasum`。完整性校验元数据缺失、格式错误或摘要不匹配都会让 `release check` 失败，且不能跳过这项校验。
 
 ::: warning 发布文件要求
 发布检查会拒绝私有输出（`private: true`）、缺失 `README.md` 或 `LICENSE.md`、源码映射文件（`.map`）、JavaScript 中的 `sourceMappingURL` 注释，以及不覆盖本地工作区版本的发布依赖范围。
@@ -48,7 +50,7 @@ registry=https://packages.example.com/npm/default/
 
 注册表和打包文件 URL 必须是绝对 HTTPS URL，且不得包含凭据、查询参数或片段。打包文件必须与所选注册表同源（协议、主机与有效端口相同）。显式配置的企业内部 HTTPS 注册表可以成为受信任的请求来源。元数据与打包文件请求都拒绝所有重定向，包括同源重定向。跨源 CDN 打包文件、带签名查询参数的 URL 和 HTTP 注册表不在允许范围内。注册表选择能力不包括 `.npmrc` 认证、自定义 CA 或代理配置支持。
 
-元数据响应体上限为 **16 MiB**，打包文件响应体上限为 **128 MiB**。Limina 在 `Content-Length` 有效时检查声明长度，同时累计 HTTP 内容解码后响应流的实际字节数；超限后立即取消读取，不进入解析或完整性校验。限制同样适用于分块传输与 HTTP 压缩响应，恰好达到上限的响应仍可接受。原有超时与打包文件完整性校验继续生效。`LIMINA_RELEASE_REGISTRY` 会报告注册表信任范围无效、打包文件 URL 不允许、元数据或打包文件超限等结构化原因，并包含字节上限及可用的实际读取字节数。
+元数据响应体上限为 **16 MiB**，打包文件响应体上限为 **128 MiB**。Limina 在 `Content-Length` 有效时检查声明长度，同时累计 HTTP 内容解码后响应流的实际字节数；超限后立即取消读取，不进入解析或完整性校验。限制同样适用于分块传输与 HTTP 压缩响应，恰好达到上限的响应仍可接受。请求超时与打包文件完整性校验也会生效。`LIMINA_RELEASE_REGISTRY` 会报告注册表信任范围无效、打包文件 URL 不允许、元数据或打包文件超限等结构化原因，并包含字节上限及可用的实际读取字节数。
 
 这些上限约束下载响应体，不代表 tar 归档解压后的内容大小或进程总内存上限。下载体积未超限的打包文件，解压后仍可能很大。
 
@@ -59,25 +61,28 @@ registry=https://packages.example.com/npm/default/
 
 `npmPackageJsonLint: true` 会使用 Limina 的默认发布规则，让 `npm-package-json-lint` 检查打包后的发布清单。对象形式同样会启用集成，并把 `rules` 合并到默认规则上。将单条规则设为 `off` 可以关闭它；设为 `warning` 时会显示问题，但不会让发布检查失败。
 
-`RuleConfig` 可以是 `off`、`warning`、`error`，也可以是所选规则支持的 `[severity, options]` 元组。
+`RuleConfig` 可以是 `off`、`warning`、`error`，也可以是所选规则支持的 `[severity, options]` 元组。例如，项目希望显示属性顺序问题，但不让它阻止发布检查时，可以将该规则设为警告：
 
 ```ts
+import { defineConfig } from 'limina';
+
 export default defineConfig({
   release: {
     npmPackageJsonLint: {
       rules: {
-        'prefer-property-order': 'warning',
-        'require-types': 'off',
+        'prefer-property-order': ['warning', []],
       },
     },
   },
 });
 ```
 
-`npm-package-json-lint` 是 Limina 的可选对等依赖。需要启用这项集成时，请在运行 Limina 的工作区中安装它：
+如果已有包含 `package.entries` 的 Limina 配置，请将上面的 `release` 字段合并进去。`prefer-property-order` 需要数组选项，这里的空数组表示使用工具的默认属性顺序。需要自定义顺序时，可以在数组中填写属性名称。只写 `'warning'` 会使这个规则的配置无效。
+
+`npm-package-json-lint` 是 Limina 的可选对等依赖。需要启用这项集成时，请在运行 Limina 的项目中安装它。以下以 pnpm 工作区根目录为例；单包项目去掉 `-w`：
 
 ```sh
-pnpm add -D npm-package-json-lint@^9.1.0
+pnpm add -D -w npm-package-json-lint@^9.1.0
 ```
 
 如果已经启用集成但没有安装这个包，`release check` 会失败并给出安装提示。不需要这项集成时，可以省略该字段或显式设为 `false`。Limina 直接读取这里的规则覆盖，不会搜索单独的 `npm-package-json-lint` 配置文件。

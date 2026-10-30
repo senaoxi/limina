@@ -1,6 +1,6 @@
 # Release Checks
 
-`limina release check` uses `package.entries` to select outputs, packs them into an npm tarball, checks release files, and compares workspace publish dependencies against npm registry content. It runs separately from `package check` and does not build or publish.
+Before publishing a package, use `limina release check` to check its configured output. Limina creates an npm tarball, checks the release contents, and compares workspace publish dependencies with the registry. This command runs separately from `package check`; it does not build or publish the package. The following assumes the project has its own `pnpm build` script:
 
 ```sh
 pnpm build
@@ -59,25 +59,28 @@ These caps bound downloaded response bodies, not the expanded contents of a tar 
 
 `npmPackageJsonLint: true` enables `npm-package-json-lint` for the packed publish manifest with Limina's default release rules. The object form also enables the integration and merges `rules` over those defaults. Set an individual rule to `off` to disable it, or use `warning` when the finding should be shown without failing the release check.
 
-`RuleConfig` is `off`, `warning`, `error`, or a `[severity, options]` tuple accepted by the selected rule.
+`RuleConfig` is `off`, `warning`, `error`, or a `[severity, options]` tuple accepted by the selected rule. For example, to report property-order findings without failing the release check:
 
 ```ts
+import { defineConfig } from 'limina';
+
 export default defineConfig({
   release: {
     npmPackageJsonLint: {
       rules: {
-        'prefer-property-order': 'warning',
-        'require-types': 'off',
+        'prefer-property-order': ['warning', []],
       },
     },
   },
 });
 ```
 
-`npm-package-json-lint` is an optional peer dependency of Limina. Install it in the workspace that runs the enabled integration:
+Merge the `release` field into an existing Limina config containing `package.entries`. `prefer-property-order` requires an array option; the empty array uses the tool's default property order. Add property names to customize it. A bare `'warning'` is invalid for this rule.
+
+`npm-package-json-lint` is an optional peer dependency of Limina. Install it in the project that runs the integration. This example uses a pnpm workspace root; omit `-w` for a single-package project:
 
 ```sh
-pnpm add -D npm-package-json-lint@^9.1.0
+pnpm add -D -w npm-package-json-lint@^9.1.0
 ```
 
 If the integration is enabled but the package is not installed, `release check` fails with an installation hint. Omit the field or set it to `false` when the workspace does not want this integration. Limina reads rule overrides directly from this field and does not search for a separate `npm-package-json-lint` config file.

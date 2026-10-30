@@ -1,6 +1,8 @@
 # Monorepo Constraints
 
-In a monorepo, Limina requires clear package and type-checking ownership for implementation source before checking cross-package imports, declaration references, and artifact consumption. The directory layout is up to the project, but a leaf config cannot combine implementation files from multiple packages into its own inputs.
+Suppose a workspace has `app` and `ui` packages. `app` should use `ui` through its public entry and declare the dependency in its own `package.json`. The `ui` source belongs to its own type config. Limina uses this information to check cross-package imports, declaration references, and artifact consumption.
+
+Here, a “source config” is a `tsconfig` that directly includes source, also called a source leaf. One source config cannot combine implementation files from multiple packages as its own input. A checker reading another package's file because of an import does not mean the importing config owns it.
 
 This page explains the constraints through common structural problems. See [Core Concepts](./concepts.md) for config roles and [Configuration Reference](./config/index.md) for exact matching rules.
 
@@ -72,7 +74,7 @@ In the diagram, `Module` means a source module, `tsconfig scope` means a source 
 
 Users maintain two kinds of input: leaves describe source scopes and type environments, while aggregators organize leaves with `references`. A default `tsconfig.json` is a supported Limina aggregator only when its checker-resolved file set is empty and it directly declares `references`.
 
-An ordinary source leaf cannot directly declare native `references`, including an empty array. Limina derives declaration references under `.limina` from source relationships. `liminaOptions.implicitRefs` on a leaf supplements real requirements that static analysis cannot see.
+An ordinary source leaf cannot directly declare native `references`, including an empty array. Limina derives declaration references under `.limina` from source relationships and managed declaration contexts. `liminaOptions.implicitRefs` on a leaf supplements real requirements that static analysis cannot see.
 
 ```text
 User tsconfig.json: aggregates leaf members
@@ -90,7 +92,7 @@ Cross-package relative imports bypass package names and public entries:
 import { Button } from '../../ui/src/Button';
 ```
 
-This import bypasses `ui`'s public entry and `app`'s dependency declaration. Declare the dependency and import through the package name:
+This import bypasses `ui`'s public entry. TypeScript may still resolve the target even if `app` has not declared a dependency on `ui`. Declare the dependency in `app` and import through the package name:
 
 ```json [packages/app/package.json]
 {
@@ -146,18 +148,18 @@ Whether an import needs a TypeScript project reference depends on the declaratio
 import { createClient } from '@acme/core';
 ```
 
-If the checker resolves this to an existing `.d.ts` file from `core`, this is declaration-file consumption and does not force a source project reference. A consumed source relationship maps to a declaration build config under `.limina` only when semantic evidence requires a declaration provider and the other managed config has a valid provider. Framework scheduling dependencies remain a separate relationship.
+If the checker resolves this to an existing `.d.ts` file from `core`, it consumes that declaration rather than inferring its producer from the path. If the declaration is itself managed as source, Limina may still generate a reference to its selected checking context. An implementation-source relationship maps to a declaration build config under `.limina` only when semantic evidence requires a declaration provider and the other managed config has a valid provider. Framework scheduling dependencies remain a separate relationship.
 
 Resolution results affect references as follows:
 
-| TypeScript type resolution result                     | Limina project-reference handling                                                                                                    |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `.d.ts` / `.d.mts` / `.d.cts`                         | Managed source declarations select a configuration context; generated and third-party declarations retain their consumption boundary |
-| Source code inside the current source leaf config     | Treat as an internal relationship within the current scope; do not generate a TypeScript project reference                           |
-| Source file governed by another Limina-managed module | May generate a project reference to the target declaration build config                                                              |
-| TypeScript cannot resolve it                          | Do not use Oxc to infer a project reference; emit diagnostics or let relevant checks surface the issue                               |
+| TypeScript type resolution result                     | Limina project-reference handling                                                                                |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `.d.ts` / `.d.mts` / `.d.cts`                         | A managed declaration may need a checking context. Its path alone does not identify the project that produced it |
+| Source code inside the current source leaf config     | Treat as an internal relationship within the current scope; do not generate a TypeScript project reference       |
+| Source file governed by another Limina-managed module | May generate a project reference to the target declaration build config                                          |
+| TypeScript cannot resolve it                          | Do not use Oxc to infer a project reference; emit diagnostics or let relevant checks surface the issue           |
 
-If a real declaration-build relationship is invisible to static analysis, such as a connection created by code generation, declare it through `liminaOptions.implicitRefs` with a clear reason.
+If a real declaration-build relationship is invisible to static analysis, such as a connection created by code generation, declare it through `liminaOptions.implicitRefs` with a clear reason. This example assumes `app` and `core` are workspace packages, their source configs are reachable from checker entries, and `app` declares a dependency on `core`. It also assumes a `tsconfig.base.json` at the workspace root; retain your project's actual `extends` and other settings.
 
 ```json [packages/app/tsconfig.lib.json]
 {
@@ -168,7 +170,7 @@ If a real declaration-build relationship is invisible to static analysis, such a
     "implicitRefs": [
       {
         "path": "../core/tsconfig.lib.json",
-        "reason": "The app route manifest is generated by a build plugin and loads core after generation; there is no static import in source."
+        "reason": "The app's generated route declarations need core's types; the source contains no import for this relationship."
       }
     ]
   }
@@ -179,27 +181,41 @@ If a real declaration-build relationship is invisible to static analysis, such a
 
 ## Choose a declaration configuration context
 
-An external consumer of a managed `.d.ts`, `.d.mts` or `.d.cts` uses its sole covering source config when Coverage is current and complete. Limina generates a reference even for a pure declaration project. With multiple covering configs, the consumer branch waits for an explicit choice:
+When a consumer uses a managed `.d.ts`, `.d.mts`, or `.d.cts`, Limina needs to know which source config should check that declaration. If complete coverage identifies one config, Limina selects it automatically. This can also create a reference to a project that contains only declarations. If multiple configs cover the declaration, an external consumer must choose one.
+
+For example, suppose `packages/app` depends on the workspace package `@acme/types`, which exposes `packages/types/api.d.ts`. That file is included by `packages/types/tsconfig.json`. You can add this field to the consumer's `packages/app/tsconfig.json` to select that config explicitly:
 
 ```json
 {
   "liminaOptions": {
-    "declarationContexts": [{ "file": "../shared/api.d.ts", "config": "../types/tsconfig.json" }]
+    "declarationContexts": [{ "file": "../types/api.d.ts", "config": "../types/tsconfig.json" }]
   }
 }
 ```
 
-Both paths are relative to the consuming ordinary source tsconfig. Use an exact declaration file and a currently covering managed source config; globs are unsupported. A project's own declaration roots remain local, including shared roots. This option does not assign a repository-wide owner, and implicitRefs does not select a declaration context.
+In this example, the selection is optional when `packages/types/tsconfig.json` is the only config that covers the declaration. Both paths are relative to the consuming ordinary source tsconfig. Use an exact declaration file and a currently covering managed source config; globs are unsupported. A project's own declaration roots remain local, including shared roots. This option does not assign a repository-wide owner, and `implicitRefs` does not select a declaration context.
 
-Only requests eligible to introduce a declaration contribute to its external context selection. `noResolve` suppresses module imports and per-file path/type directives without turning them into unresolved requests. Such requests do not create policy references merely because a resolver finds the file; roots and configured or automatic type entries retain their independent input responsibility.
+Choosing a context does not bypass [source ownership rules](./config/source-boundary.md). For example, an ordinary declaration cannot belong to two source governance configs or be covered by a config owned by another package. Ambient declarations have their own [sharing rules](./config/source-checks.md#declarations-ambient).
 
-The selected project analyzes its own declaration dependencies. Limina validates actual generated reference mappings and compares declaration requests with an independent observation of the selected context. An externally consumed declaration may have multiple reachable covering configurations, provided its explicit selection matches the actual mapping and the requests agree. Sorting references does not select a context; reference cycles remain invalid. Responsibility follows declaration requests, including nested declarations, rather than every private declaration used inside a referenced implementation. Own ambient modules retain their compiler-proven context when no resolver callback is needed. Pending or unavailable consumed contexts block the affected generated candidate and Checker admission; unused shared declarations do not cause global failure.
+::: details Declaration checking and toolchain requirements
 
-Native `tsc` and Vue `vue-tsc` use the same declaration governance rules, with separate qualified compiler observations and execution commands. The toolchain must expose the actual declaration input association; Native TypeScript 5.9.0–5.9.2 lack that association. Vue candidate validation uses its resolved `vue-tsc` toolchain to preserve Vue declaration output mappings. Missing observation capabilities and command overrides cannot obtain admission. Custom Vue plugins retain local analysis, but cross-project declaration delegation is currently unavailable because their arbitrary inputs cannot yet be qualified. Ordinary local declaration consumption retains its checking options and mapping protection. A config selected as an external owner must not skip declaration checking with skipLibCheck/noCheck, or skipDefaultLibCheck where applicable. Existing outputs and Checker identity rules still apply.
+This choice lets another project take responsibility for checking a consumed declaration. The following limitations refer to that arrangement as cross-project declaration delegation.
 
-References can select module-resolution options for a declaration consumed by A; A still uses its own TypeChecker. B's independent checking is a separate responsibility. Incremental builds can reuse a previous check rather than run it again.
+Not every request that resolves to a declaration triggers context selection. For example, `noResolve` suppresses module imports and per-file path or type references. These requests do not create a reference merely because a resolver finds the file. Configured root files and explicit or automatically discovered type entries still follow their own input rules.
 
-Existing framework checking of its own declaration roots remains available. Svelte and Astro retain their current loading behavior but cannot use Native or Vue credentials to qualify cross-project declaration delegation.
+The selected project analyzes its own declaration dependencies. Limina checks that generated reference mappings and declaration requests agree with that analysis, including nested declarations. An explicit choice must match the actual mapping. Changing reference order cannot replace an explicit choice, and reference cycles remain invalid.
+
+If a declaration is actually consumed but its selected context is missing or unavailable, the affected build is blocked. An unused shared declaration does not fail the whole project for that reason. Responsibility follows actual declaration requests; it does not transfer every private declaration dependency of a referenced implementation to the consumer. Local ambient modules retain their compiler-proven context.
+
+`tsc` and `vue-tsc` use the same declaration rules, but their toolchains must provide the necessary declaration-input information. Native TypeScript 5.9.0–5.9.2 lacks that information. Overriding the checker command or using a custom Vue plugin also prevents cross-project declaration delegation; local analysis with a custom Vue plugin remains available.
+
+A config selected to handle declarations for an external consumer must actually check them. It cannot skip declaration checking through `skipLibCheck`, `noCheck`, or an applicable `skipDefaultLibCheck`. Ordinary local declaration consumption keeps its own checking options. Output and checker-identity rules still apply.
+
+Project references can affect module-resolution options used for a consumed declaration, but the consumer still uses its own type checker. The selected project's independent check is a separate responsibility. Incremental builds can reuse a previous result rather than run that check again.
+
+Framework checkers can still check declaration roots in their own projects. Svelte and Astro cannot use TypeScript or Vue analysis results to qualify for cross-project declaration delegation.
+
+:::
 
 ## Graph Rules Must Apply to Real Imports
 

@@ -9,7 +9,6 @@ export default defineConfig({
   scope: {
     source: {
       include: ['...', 'packages/**/src/**/*.vue'],
-      exclude: ['...', 'packages/**/src/generated/**'],
     },
   },
 });
@@ -19,7 +18,9 @@ export default defineConfig({
 
 - **Type:** `string[]`
 
-`include` is the global set of source globs Limina needs to check. Explicit `include` and `exclude` values must be non-empty arrays of non-empty strings, with at most one `...` in each array. When omitted, Limina uses the default TypeScript source globs. An explicit value replaces the defaults; use the exact string `...` where you want to expand the default set.
+`include` uses glob patterns to select source files that need checking. When omitted, Limina uses the default TypeScript patterns. An explicit value replaces them; retain the defaults by including `...` in the array as shown above.
+
+Explicit `include` and `exclude` values must be non-empty arrays of non-empty strings, with at most one `...` in each array.
 
 Patterns are relative to `config.rootDir` and may contain `../`. They only filter source candidates already discovered within each activated package's independent governance scope, or package island. Patterns cannot make inactive directories or paths behind an owner-local boundary visible. Default discovery also runs for external activated packages.
 
@@ -29,13 +30,29 @@ Patterns are relative to `config.rootDir` and may contain `../`. They only filte
 
 Checker extensions are not added automatically. To govern both the default TypeScript source and Vue files under `packages/**/src`, expand the defaults and explicitly add the Vue glob. New matching files then enter source and coverage-proof checks automatically.
 
+This only changes the files Limina expects to be covered. A suitable `tsconfig` and a compatible checker must also include them. See [Getting Started](../getting-started.md#using-vue-astro-or-svelte) for the Vue setup.
+
 ## `exclude`
 
 - **Type:** `string[]`
 
-`exclude` lists directories or globs that stay outside the governed source set. Use it for fixtures, generated caches, and other files that should not be treated as checked source. When omitted, Limina uses the default exclusions.
+`exclude` lists directories or globs that stay outside the governed source set. Use it for fixtures, generated caches, and other files that should not be treated as checked source. When omitted, Limina uses the default exclusions. To add a generated directory to those exclusions:
 
-An explicit `exclude` replaces the default set and stops using the root `.gitignore`. Use the exact string `...` where you want to expand the defaults, including the root `.gitignore`. An explicit array without `...` disables default file filters; structural region boundaries, fixed discovery ignores, and validated output roots still constrain the candidate set. The root `.gitignore` applies only to candidates inside `config.rootDir`, never to external activated packages.
+`limina.config.mjs`:
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  scope: {
+    source: {
+      exclude: ['...', 'packages/**/src/generated/**'],
+    },
+  },
+});
+```
+
+An explicit `exclude` replaces the default set. Use the exact string `...` to retain those defaults, including the root `.gitignore`, as in the example. Without `...`, the default file filters are not expanded; structural region boundaries, fixed discovery ignores, and validated output roots still constrain the candidate set. The root `.gitignore` applies only to candidates inside `config.rootDir`, never to external activated packages.
 
 ::: details Default exclusions
 `node_modules`, `bower_components`, `jspm_packages`, validated output roots from `package.entries` and currently visible `liminaOptions.outputs` declarations, and the root `.gitignore` for candidates inside `config.rootDir` only.

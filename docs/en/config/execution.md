@@ -1,22 +1,20 @@
 # Execution Concurrency
 
-`concurrency` limits how much work Limina starts at the same time. It changes scheduling limits, not what gets checked.
+`concurrency` controls how many tasks or checks Limina runs at once. If checks consume too many resources, reduce the concurrency. This does not change what gets checked.
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   concurrency: {
-    tasks: 'auto',
-    checkerBuild: 'auto',
-    checkerTypecheck: 2,
-    packageEntries: 'auto',
-    releaseEntries: 2,
+    tasks: 1,
   },
 });
 ```
 
-A concurrency value can be a positive integer or `'auto'`. Explicit numbers are clamped to the number of runnable tasks or entries at the corresponding level; for example, if only 3 tasks can run, `tasks: 10` still starts at most 3 tasks.
+This example runs the default check's top-level tasks one at a time. Set concurrency within each task separately.
+
+A concurrency value can be a positive integer or `'auto'`. Actual concurrency cannot exceed the corresponding task or entry count. For example, if only 3 tasks can run, `tasks: 10` still starts at most 3 at once.
 
 ## Fields
 
@@ -28,7 +26,7 @@ A concurrency value can be a positive integer or `'auto'`. Explicit numbers are 
 | `concurrency.packageEntries`   | `'auto'` | How many package output entries `package:check` checks at once.                                                |
 | `concurrency.releaseEntries`   | `2`      | How many release entries `release:check` checks at once.                                                       |
 
-`'auto'` uses the machine's available parallelism as follows:
+The calculation for `'auto'` depends on the field. Here, `availableParallelism` is the parallelism available to the Node.js process:
 
 - `concurrency.tasks` and `packageEntries` use `max(2, floor(availableParallelism / 2))`;
 - `checkerBuild` uses available parallelism;

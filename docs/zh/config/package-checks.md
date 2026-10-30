@@ -1,40 +1,37 @@
 # 包检查
 
-包检查针对消费者实际安装的输出目录运行。先完成项目构建，再用 `package.entries` 指定输出：
+准备发布一个包时，消费者看到的是构建后的包清单、JavaScript 和类型声明。这些文件可能与源码中的内容不同。例如，`exports` 指向的文件可能没有被打进产物。包检查帮助发现这类问题。
 
-```sh
-pnpm build
-pnpm exec limina package check --package @acme/core
-```
+假设项目构建后，`packages/core/dist` 是带有 `package.json` 的可安装包目录。先在 Limina 配置中登记它。如果已有配置，请将 `package` 字段合并进去：
 
-下面示例展示完整配置。若只填写 `name` 和 `outDir`，三项工具默认都会启用；其中 publint 和 ATTW 需要另行安装，缺失时会跳过，见下方[工具选择](#checks)。
+`limina.config.mjs`：
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   package: {
-    entries: [
-      {
-        name: '@acme/core',
-        outDir: 'packages/core/dist',
-        checks: ['publint', 'attw', 'boundary'],
-        publint: {
-          level: 'warning',
-        },
-        attw: {
-          profile: 'esm-only',
-          ignoreRules: ['false-cjs'],
-        },
-        boundary: {
-          environment: 'browser',
-          ignoredExternalPackages: ['@acme/runtime-polyfill'],
-        },
-      },
-    ],
+    entries: [{ name: '@acme/core', outDir: 'packages/core/dist' }],
   },
 });
 ```
+
+在工作区根先运行项目自己的生产构建，再按条目名称检查输出：
+
+```sh
+pnpm build # 示例：使用项目已有的构建脚本
+pnpm exec limina package check --package @acme/core
+```
+
+默认启用 `publint`、`attw` 和 `boundary`。其中 `publint` 和 `@arethetypeswrong/core` 需要另行安装。工具缺失时，相应检查显示 `skipped`，仅发生跳过也可能返回成功退出码。请在报告中核对每项工具是否实际运行，尤其是 CI 要求这些检查时。字段和选择方式见下方[工具选择](#checks)。
+
+例如，在安装 Limina 的单包项目中，可以安装当前源码版支持的两个分析器：
+
+```sh
+pnpm add -D 'publint@^0.3.0' '@arethetypeswrong/core@^0.18.3'
+```
+
+如果在 pnpm 工作区根目录安装，请加上 `-w`。安装后重新运行包检查，确认报告中的两项检查已经执行。
 
 ::: tip 提示
 包检查分析打包产物的元数据和类型，并扫描配置输出目录的导入边界。结果覆盖实际运行的分析器和扫描的文件，不保证所有运行时或消费环境都可用。[发布检查](./release-checks.md)另行检查必需文件和发布内容。
@@ -46,13 +43,15 @@ export default defineConfig({
 
 `entries` 列出要检查的构建后包输出。每个条目都是独立的输出产物：多个条目可以同名，一个源码包可以产出多个条目，条目名称也不必等于源码包名。Limina 不会从这段配置推断或校验源码与输出之间的绑定关系。
 
-`--package <name>` 选择全部同名配置条目。不带该选项时，通过已验证的激活包索引解析当前工作目录，也支持 `config.rootDir` 外的词法路径。当前工作目录所属的激活包有名称且命中条目时，选择全部同名条目；未命中时，`package check` 回退到全部配置条目。所属包无名称或当前工作目录不在激活包内时，也选择全部条目。附近未激活的 `package.json` 不能用来选择条目。`release check` 要求命中当前工作目录所属的具名激活包，不会回退。
+`--package <name>` 选择全部同名配置条目。不带该选项时，Limina 根据已激活的包确定当前工作目录的归属，也支持 `config.rootDir` 外的路径。
+
+如果所属包有名称，且名称命中配置条目，`package check` 会选择全部同名条目。未命中、所属包没有名称或当前目录不在激活包内时，则选择全部配置条目。附近未激活的 `package.json` 不能用来选择条目。`release check` 要求命中当前工作目录所属的具名激活包，不会回退到全部条目。
 
 ## `name`
 
 - **类型：** `string`
 
-`name` 是选择这个输出产物时使用的名称。CLI 的 `--package <name>` 会使用它；重复名称会选中多个产物。
+`name` 是选择这个输出产物时使用的名称。CLI 的 `--package <name>` 会使用它。如果多个产物使用相同名称，会同时选中它们。
 
 ## `outDir`
 
@@ -68,7 +67,7 @@ export default defineConfig({
 
 Limina 也会拒绝在 `exports` 根同时使用子路径键（如 `"."`、`"./foo"`）与条件键（如 `"import"`）。这些声明检查独立于可选工具的选择，不解析或枚举全部导出目标。
 
-打包产物中的导出目标缺失检查委托给 publint。关闭或跳过 publint 时，目标存在性尚未检查；其余检查通过不代表完整发布契约通过。ATTW 检查运行时与类型的兼容性，不决定哪些入口应该公开，也不改变消费者图的结果。包检查不会自动选择全部工作区包或扩展 ATTW 的检查入口集合。
+打包产物中的导出目标缺失检查委托给 publint。关闭或跳过 publint 时，目标存在性尚未检查，即使其余检查通过，也不能认为完整的发布契约已经通过。ATTW 检查运行时与类型的兼容性，不决定哪些入口应该公开，也不改变消费者图的结果。包检查不会自动选择全部工作区包或扩展 ATTW 的检查入口集合。
 
 ## `checks`
 
@@ -81,7 +80,9 @@ Limina 也会拒绝在 `exports` 根同时使用子路径键（如 `"."`、`"./f
 - `attw`：用 `Are The Types Wrong` 检查类型解析；
 - `boundary`：扫描构建后的 `JavaScript` 导入，检查运行时和依赖边界。
 
-`checks` 先决定基础工具集合。省略 `publint` 或 `attw` 时，保留这个集合；显式 `false` 从集合中移除工具，显式 `true` 或对象则把工具加入集合。CLI `--tool` 只筛选最终已启用集合，不能重新启用被关闭的工具。筛选后没有检查的条目不会运行；全部条目都没有检查时，`package check` 失败。
+`checks` 先决定基础工具集合。省略 `publint` 或 `attw` 时，保留这个集合。将工具显式设为 `false` 会从集合中移除它，设为 `true` 或对象则会把它加入集合。
+
+CLI 的 `--tool` 只筛选最终已启用的工具，不能重新启用被关闭的工具。筛选后没有检查的条目不会运行。如果全部条目都没有检查，`package check` 会失败。
 
 ::: warning 注意
 `publint` 和 `@arethetypeswrong/core` 是 Limina 的可选对等依赖。已启用的分析器未安装时，Limina 会把对应检查记为 `skipped`（已跳过），并继续其他包检查；即使用 `--tool` 单独选择它，仅发生跳过也不会让 `package check` 以非零状态退出。如果持续集成必须覆盖这两项检查，应显式安装并校验对应包。
@@ -142,12 +143,12 @@ Limina 也会拒绝在 `exports` 根同时使用子路径键（如 `"."`、`"./f
 
 以下字段直接传给 ATTW 的 `checkPackage`，入口根使用 `'.'`，子入口可写为 `'./client'`：
 
-| 字段                 | 类型                   | 作用                                                               |
-| -------------------- | ---------------------- | ------------------------------------------------------------------ |
-| `entrypoints`        | `string[]`             | 指定完整入口集合，关闭自动发现，并覆盖下面的包含与排除选项         |
-| `includeEntrypoints` | `string[]`             | 在自动发现的入口上补充入口                                         |
-| `excludeEntrypoints` | `(string \| RegExp)[]` | 从待检查入口中排除匹配项                                           |
-| `entrypointsLegacy`  | `boolean`              | 没有其他已发现或已配置入口时，允许 ATTW 按旧方式从发布文件推导入口 |
+| 字段                 | 类型                   | 作用                                                       |
+| -------------------- | ---------------------- | ---------------------------------------------------------- |
+| `entrypoints`        | `string[]`             | 指定完整入口集合，关闭自动发现，并覆盖下面的包含与排除选项 |
+| `includeEntrypoints` | `string[]`             | 在自动发现的入口上补充入口                                 |
+| `excludeEntrypoints` | `(string \| RegExp)[]` | 从待检查入口中排除匹配项                                   |
+| `entrypointsLegacy`  | `boolean`              | 传递给 ATTW，用于配置它的入口发现行为                      |
 
 自动发现和筛选的具体行为取决于所安装的受支持 ATTW 版本。需要明确覆盖哪些入口时，直接设置 `entrypoints`；Limina 不会替你扩展为全部工作区包或全部导出文件。
 
@@ -173,7 +174,14 @@ Limina 也会拒绝在 `exports` 根同时使用子路径键（如 `"."`、`"./f
 // packages/core/dist/package.json
 {
   "name": "@acme/core",
-  "exports": "./index.js",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./missing.d.ts",
+      "import": "./index.js",
+    },
+  },
   "types": "./missing.d.ts",
 }
 ```
@@ -181,8 +189,10 @@ Limina 也会拒绝在 `exports` 根同时使用子路径键（如 `"."`、`"./f
 ```js
 // packages/core/dist/index.js
 import { readFileSync } from 'node:fs';
+
+export const ok = true;
 ```
 
-对这个输出运行 `limina package check --package @acme/core` 后，已启用且实际运行的 publint / ATTW 可以报告类型入口问题，具体诊断取决于工具版本与检查入口。`boundary.environment: 'browser'` 则会独立报告 `node:fs` 导入。
+对这个输出运行 `limina package check --package @acme/core` 后，已启用且实际运行的 publint / ATTW 可以报告类型入口问题。具体诊断取决于工具版本和检查入口。根目录下的 `index.js` 默认按浏览器产物处理，因此边界检查也会报告 `node:fs` 导入。如果整个产物条目都面向浏览器，也可以显式设置 `boundary.environment: 'browser'`。
 
 如果 publint 被禁用或因缺失而跳过，导出目标存在性仍未得到检查。边界扫描通过也不能替代类型解析检查；应同时查看每项工具的执行状态。

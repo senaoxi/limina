@@ -304,8 +304,8 @@ function link(path: string) {
       <p>
         {{
           chinese
-            ? '可以先接入增量构建，再按需启用治理检查。'
-            : 'Start with incremental builds, then enable governance checks as needed.'
+            ? '可以先运行默认检查，再按项目需要调整规则和工作流。'
+            : 'Start with the default check, then tailor rules and workflows to your project.'
         }}
       </p>
       <a :href="link('built-in-tasks')"

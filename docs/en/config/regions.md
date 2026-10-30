@@ -1,10 +1,34 @@
 # Regions
 
-`scope.regions` determines which packages and nested package scopes belong to the current run. Establish package scope here first, then use `scope.source` to select files within it and `scope.checkers` to select checker entries.
+`scope.regions` determines which packages and nested package scopes Limina manages in the current run. This page calls that the governed region. Once you choose packages, use `scope.source` to select files within them and `scope.checkers` to select checker entries.
 
 ::: warning
-`scope.regions.exclude` does not replace `scope.source.exclude`. Package kinds remove package authority; checker `exclude` only changes entry selection. Use the exact `tsconfig` kind to isolate a config before output declarations are read, while leaving its package activated. It does not hide source files or make incoming references valid; migration must also prune those relations.
+These exclusions have different effects: `scope.regions.exclude` can remove a package from governance, `scope.source.exclude` removes source files, and a checker's `exclude` only changes entry selection. An exact `tsconfig` exclusion isolates the config without hiding source files or automatically repairing references to it.
 :::
+
+For example, if the workspace contains `packages/legacy-app` but another checking workflow handles it, exclude it by package directory:
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  scope: {
+    regions: {
+      exclude: [
+        {
+          kind: 'workspace-package',
+          include: ['packages/legacy-app'],
+          reason: 'This package is governed by a separate Limina run.',
+        },
+      ],
+    },
+  },
+});
+```
+
+This only excludes the named workspace package. Use it when another checking scope is responsible for that package; the current run will not check its source. Configure `extendNestedPackageScopes` below only when you need to extend eligible nested package scopes.
+
+::: details Configuration field types
 
 ```ts
 interface RegionsConfig {
@@ -19,24 +43,7 @@ interface RegionExcludeConfig {
 }
 ```
 
-```js
-import { defineConfig } from 'limina';
-
-export default defineConfig({
-  scope: {
-    regions: {
-      extendNestedPackageScopes: true,
-      exclude: [
-        {
-          kind: 'workspace-package',
-          include: ['packages/legacy-app'],
-          reason: 'This package is governed by a separate Limina run.',
-        },
-      ],
-    },
-  },
-});
-```
+:::
 
 ## Default Governed Region
 
@@ -53,7 +60,7 @@ Workspace package discovery follows the selected manager's policy. Its traversal
 
 `test` and `tests` are ordinary candidate directories when matched. Glob selection is manager-specific: for example, later positive patterns can re-include packages in npm and Bun, while pnpm and Yarn retain exclusions. An exact exclusion of a package need not exclude its descendants; declare subtree exclusions when that is intended. Root manifests are included independently of the globs, and names are optional.
 
-Limina uses `packageManager` to identify the package manager and applies the selection policy above. The version suffix does not select historical discovery behavior, including behavior later corrected upstream. Projects requiring exact workspace-membership parity with a historical release need to check the resulting raw package set; Limina does not guarantee that parity.
+Limina selects the strategy from the governance root's workspace declaration and package-manager metadata. The version in `packageManager` does not change these selection rules. If your project depends on discovery behavior specific to a package-manager version, compare the governed scope with your actual workspace members. See [Config File](./config-file.md#governance-root) for how the manager is identified.
 
 These supported discovery rules do not certify the manager's full configuration. Limina keeps the hard ignores above even where a manager version accepts an explicit metadata-directory shortcut.
 
@@ -111,7 +118,7 @@ An extended package scope does not become a new source owner. Its source continu
 - **Type:** `RegionExcludeConfig[]`
 - **Default:** `[]`
 
-Every rule requires `kind`, a non-empty `include` array, and a non-empty `reason`. There is no kind inference or legacy kind-less form.
+Every rule requires `kind`, a non-empty `include` array, and a non-empty `reason`. Limina does not infer the kind from a path.
 
 For `workspace-package` and `package-scope`, `include` patterns match only config-root-relative lexical candidate root directories. They may use `../` for activated packages outside `config.rootDir`. They do not match package names, `package.json` paths, `pnpm-workspace.yaml` paths, canonical filesystem paths, or arbitrary files. For a package or package-scope root at `packages/app/fixtures/local`, select the root with `packages/app/fixtures/local` or a root glob such as `packages/**/fixtures/**`; `**/package.json` does not select it.
 
@@ -129,6 +136,8 @@ Every package-kind rule must match at least one candidate of its declared kind. 
 `kind: 'tsconfig'` takes exact config-root-relative `tsconfig.json` or `tsconfig.*.json` file paths. It accepts `../` but not directory/glob selectors. Matching uses the projected canonical file identity, before output declarations and descriptor stability. It removes only matching config descriptors; package activation and source-file authority remain unchanged. Missing excluded files remain harmless, so deleting an isolated broken file does not invalidate its exclusion. Package-kind candidate-match and overlap rules do not apply to this kind.
 
 ```js
+import { defineConfig } from 'limina';
+
 export default defineConfig({
   scope: {
     regions: {
