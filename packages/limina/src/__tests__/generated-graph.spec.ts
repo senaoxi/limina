@@ -9673,7 +9673,17 @@ describe('ambient references and compiler membership', () => {
     }
   });
 
-  it.each(['unlisted', 'listed', 'disabled', 'path'] as const)(
+  it.each([
+    'unlisted',
+    'listed',
+    'disabled',
+    'path',
+    'transitive',
+    'transitive-path',
+    'transitive-listed',
+    'transitive-noResolve',
+    'external',
+  ] as const)(
     'requires explicit local JSON membership before emit: %s',
     async (variant) => {
       const fixture = await createFixture({
@@ -9686,21 +9696,42 @@ describe('ambient references and compiler membership', () => {
             types: [],
             noEmit: true,
             resolveJsonModule: variant !== 'disabled',
+            noResolve: variant === 'transitive-noResolve',
           },
           files: [
             'src/index.ts',
-            ...(variant === 'listed' ? ['src/data.json'] : []),
+            ...(['listed', 'transitive-listed'].includes(variant)
+              ? ['src/data.json']
+              : []),
           ],
         }),
         'packages/pkg/src/index.ts':
-          variant === 'path'
-            ? '/// <reference path="./data.json" />\nexport const value = 1;'
-            : 'import data from "./data.json"; export const value: number = data.value;',
+          variant === 'external'
+            ? 'export type { Value } from "env";'
+            : variant.startsWith('transitive')
+              ? 'export type { Value } from "./bridge.js";'
+              : variant === 'path'
+                ? '/// <reference path="./data.json" />\nexport const value = 1;'
+                : 'import data from "./data.json"; export const value: number = data.value;',
+        'packages/pkg/src/bridge.d.ts':
+          variant === 'transitive-path'
+            ? '/// <reference path="./data.json" />\nexport type Value = number;'
+            : 'import data from "./data.json"; export type Value = typeof data;',
         'packages/pkg/src/data.json': '{"value":1}',
+        'packages/pkg/node_modules/env/package.json': json({
+          name: 'env',
+          types: 'index.d.ts',
+        }),
+        'packages/pkg/node_modules/env/index.d.ts':
+          'import data from "../../src/data.json"; export type Value = typeof data;',
       });
       try {
         const preparation = prepareGeneratedTsconfigGraph(fixture.config);
-        if (variant === 'unlisted' || variant === 'path')
+        if (
+          ['unlisted', 'path', 'transitive', 'transitive-path'].includes(
+            variant,
+          )
+        )
           await expect(preparation).rejects.toThrow(
             'Generated JSON input is outside source membership',
           );
@@ -9710,7 +9741,7 @@ describe('ambient references and compiler membership', () => {
           const entry = graph.sourceToDts
             .get('tsc')!
             .get(fixture.path('packages/pkg/tsconfig.json'))!;
-          if (variant === 'listed')
+          if (['listed', 'transitive-listed', 'external'].includes(variant))
             expect(
               ts
                 .createSolutionBuilder(
@@ -9733,6 +9764,9 @@ describe('ambient references and compiler membership', () => {
     'unversioned',
     'older',
     'explicit-condition',
+    'transitive',
+    'transitive-same-target',
+    'transitive-typeonly',
   ] as const)(
     'qualifies tsgo version-sensitive module conditions: %s',
     async (variant) => {
@@ -9742,8 +9776,9 @@ describe('ambient references and compiler membership', () => {
           : variant === 'older'
             ? { 'types@<6.1': './src/v6.ts', types: './src/v7.ts' }
             : {
-                'types@>=6.1':
-                  variant === 'same-target' ? './src/v6.ts' : './src/v7.ts',
+                'types@>=6.1': variant.endsWith('same-target')
+                  ? './src/v6.ts'
+                  : './src/v7.ts',
                 types: './src/v6.ts',
               };
       const compilerOptions = {
@@ -9776,8 +9811,13 @@ describe('ambient references and compiler membership', () => {
             json({ compilerOptions, files: [`src/${name}.ts`] }),
           ]),
         ),
-        'src/a.ts':
-          'import { value } from "#version"; export const result: number = value;',
+        'src/a.ts': variant.startsWith('transitive')
+          ? 'export type { Value } from "./bridge.js";'
+          : 'import { value } from "#version"; export const result: number = value;',
+        'src/bridge.d.ts':
+          variant === 'transitive-typeonly'
+            ? 'export type Value = typeof import("#version").value;'
+            : 'import { value } from "#version"; export type Value = typeof value;',
         'src/v6.ts': 'export const value: number = 6;',
         'src/v7.ts': 'export const value: number = 7;',
       });
@@ -9789,7 +9829,11 @@ describe('ambient references and compiler membership', () => {
           rootDir: fixture.rootDir,
         });
         const preparation = prepareGeneratedTsconfigGraph(fixture.config);
-        if (variant === 'divergent' || variant === 'older')
+        if (
+          ['divergent', 'older', 'transitive', 'transitive-typeonly'].includes(
+            variant,
+          )
+        )
           await expect(preparation).rejects.toThrow(
             'Checker version condition is not qualified',
           );
@@ -9818,7 +9862,18 @@ describe('ambient references and compiler membership', () => {
     },
   );
 
-  it.each(['imports', 'exports', 'missing', 'bundler', 'source'] as const)(
+  it.each([
+    'imports',
+    'exports',
+    'missing',
+    'bundler',
+    'source',
+    'transitive',
+    'transitive-missing',
+    'transitive-exports',
+    'transitive-bundler',
+    'transitive-source',
+  ] as const)(
     'validates package output remapping after relocation: %s',
     async (variant) => {
       const compilerOptions = {
@@ -9827,27 +9882,31 @@ describe('ambient references and compiler membership', () => {
         types: [],
         rootDir: './src',
         outDir: './dist',
-        module: variant === 'bundler' ? 'ESNext' : 'NodeNext',
-        moduleResolution: variant === 'bundler' ? 'Bundler' : 'NodeNext',
+        module: variant.endsWith('bundler') ? 'ESNext' : 'NodeNext',
+        moduleResolution: variant.endsWith('bundler') ? 'Bundler' : 'NodeNext',
       };
       const fixture = await createFixture({
         'package.json': json({
           name: 'fixture',
           private: true,
           type: 'module',
-          ...(variant === 'exports'
+          ...(variant.endsWith('exports')
             ? { exports: { '.': './dist/b.js' } }
             : {
                 imports: {
-                  '#b': variant === 'source' ? './src/b.ts' : './dist/b.js',
+                  '#b': variant.endsWith('source')
+                    ? './src/b.ts'
+                    : './dist/b.js',
                 },
               }),
         }),
         'tsconfig.json': json({
           files: [],
-          references: ['a', 'b', ...(variant === 'missing' ? [] : ['c'])].map(
-            (name) => ({ path: `./tsconfig.${name}.json` }),
-          ),
+          references: [
+            'a',
+            'b',
+            ...(variant.endsWith('missing') ? [] : ['c']),
+          ].map((name) => ({ path: `./tsconfig.${name}.json` })),
         }),
         ...Object.fromEntries(
           ['a', 'b'].map((name) => [
@@ -9863,16 +9922,19 @@ describe('ambient references and compiler membership', () => {
           },
           files: ['dist/b.ts'],
         }),
-        'src/a.ts': `import { value } from '${variant === 'exports' ? 'fixture' : '#b'}'; export const result: number = value;`,
+        'src/a.ts': variant.startsWith('transitive')
+          ? 'export type { Value } from "./bridge.js";'
+          : `import { value } from '${variant === 'exports' ? 'fixture' : '#b'}'; export const result: number = value;`,
+        'src/bridge.d.ts': `export type Value = typeof import('${variant.endsWith('exports') ? 'fixture' : '#b'}').value;`,
         'src/b.ts': 'export const value: number = 1;',
-        ...(variant !== 'missing' && {
+        ...(!variant.endsWith('missing') && {
           'dist/b.ts': 'export const value: number = 2;',
         }),
       });
       fixture.config.scope!.checkers = { tsc: { include: ['tsconfig.json'] } };
       try {
         const preparation = prepareGeneratedTsconfigGraph(fixture.config);
-        if (variant === 'source') {
+        if (variant.endsWith('source')) {
           const graph = await preparation;
           expect(
             graph.dependencyEdges.map((edge) => edge.toConfigPath),
@@ -10065,7 +10127,13 @@ describe('ambient references and compiler membership', () => {
     },
   );
 
-  it.each(['unknown', 'implementation', 'same-target', 'unowned'] as const)(
+  it.each([
+    'unknown',
+    'implementation',
+    'same-target',
+    'unowned',
+    'listed',
+  ] as const)(
     'admits output-only obligations by candidate impact: %s',
     async (variant) => {
       const extension = variant === 'implementation' ? 'ts' : 'json';
@@ -10084,12 +10152,17 @@ describe('ambient references and compiler membership', () => {
           files: [],
           references: [
             { path: './tsconfig.a.json' },
-            ...(variant === 'unowned' ? [] : [{ path: './tsconfig.b.json' }]),
+            ...(['unowned', 'listed'].includes(variant)
+              ? []
+              : [{ path: './tsconfig.b.json' }]),
           ],
         }),
         'tsconfig.a.json': json({
           compilerOptions,
-          files: ['src/a.ts'],
+          files: [
+            'src/a.ts',
+            ...(variant === 'listed' ? ['src/value.json'] : []),
+          ],
           liminaOptions: {
             outputs: {
               target: variant === 'same-target' ? 'ES2020' : 'ES2022',
@@ -10117,15 +10190,44 @@ describe('ambient references and compiler membership', () => {
       fixture.config.scope!.checkers = { tsc: { include: ['tsconfig.json'] } };
       try {
         const preparation = prepareGeneratedTsconfigGraph(fixture.config);
-        if (variant === 'unknown')
-          await expect(preparation).rejects.toThrow(
-            'Unproved output compilation relation',
-          );
-        else if (variant === 'implementation')
-          await expect(preparation).rejects.toThrow(
-            'not covered by existing output references',
-          );
-        else expect((await preparation).dependencyEdges).toEqual([]);
+        switch (variant) {
+          case 'unowned': {
+            await expect(preparation).rejects.toThrow(
+              'Generated JSON input is outside source membership',
+            );
+            break;
+          }
+          case 'unknown': {
+            await expect(preparation).rejects.toThrow(
+              'Unproved output compilation relation',
+            );
+            break;
+          }
+          case 'implementation': {
+            await expect(preparation).rejects.toThrow(
+              'not covered by existing output references',
+            );
+            break;
+          }
+          default: {
+            const graph = await preparation;
+            expect(graph.dependencyEdges).toEqual([]);
+            const source = fixture.path('tsconfig.a.json');
+            const entries = [
+              graph.sourceToDts.get('tsc')!.get(source)!,
+              graph.configToOutputBuild.get('tsc')!.get(source)!.path,
+            ];
+            expect(
+              ts
+                .createSolutionBuilder(
+                  ts.createSolutionBuilderHost(ts.sys),
+                  entries,
+                  { force: true },
+                )
+                .build(),
+            ).toBe(0);
+          }
+        }
       } finally {
         await fixture.cleanup();
       }

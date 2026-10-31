@@ -1,11 +1,14 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
 import type { NativeRequest } from '../../domain/analysis/native-evidence';
-import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { DeclarationObservationUnavailable } from '../declaration-governance/candidate';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import { resolveVersionQualifiedModule } from './checker-version-conditions';
+import {
+  jsonMembershipInputs,
+  validateJsonInputMembership,
+} from './json-input-membership';
 import type { DependencyAnalysisResult } from './types';
 
 interface ModuleProjectionInput {
@@ -32,6 +35,7 @@ export function moduleProjectionInputs(
       )
         continue;
       const entries = inputs.get(context.inputs.config) ?? [];
+      const jsonInputs = jsonMembershipInputs(snapshot, context.id);
       for (const request of snapshot.requests) {
         if (
           request.consumerContextId !== context.id ||
@@ -44,15 +48,7 @@ export function moduleProjectionInputs(
         );
         if (resolution?.state !== 'resolved' || resolution.target === null)
           continue;
-        const requiresJsonMembership =
-          resolution.target.lexicalPath.endsWith('.json') &&
-          resolution.externalLibrary !== true &&
-          snapshot.obligations.some(
-            (obligation) =>
-              obligation.requestIds.includes(request.id) &&
-              obligation.targetConfigId === null &&
-              summarizeCompilationObligation(obligation) === 'unknown',
-          );
+        const requiresJsonMembership = jsonInputs.has(request.id);
         if (
           !requiresJsonMembership &&
           (request.channel !== 'module' ||
@@ -86,14 +82,18 @@ export function validateModuleProjection(input: {
     observedResolutionHost(ts, input.generatedConfig),
     input.files,
   );
-  const roots = new Set(input.parsed.fileNames.map(normalizeAbsolutePath));
+  validateJsonInputMembership(
+    input.requests
+      .filter((entry) => entry.requiresJsonMembership)
+      .map((entry) => entry.target),
+    input.parsed.fileNames,
+    input.generatedConfig,
+  );
   for (const entry of input.requests) {
     const file = entry.request.sourceFile!.lexicalPath;
-    if (!roots.has(file)) continue;
-    if (entry.requiresJsonMembership && !roots.has(entry.target))
-      throw new DeclarationObservationUnavailable(
-        `Generated JSON input is outside source membership: ${entry.target}; consumer: ${input.generatedConfig}. Include the JSON input in the source config files/include before generating an emitting project.`,
-      );
+    // The locked inventory already enforces the declaration frontier. A
+    // consumer-retained declaration need not be a parsed root; do not drop its
+    // requests or expand a delegated provider's private closure here.
     if (
       entry.request.channel !== 'module' ||
       ts.isExternalModuleNameRelative(entry.request.specifier)
