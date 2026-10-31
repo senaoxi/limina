@@ -50,6 +50,80 @@ const cases = [
 ] as const;
 
 describe('path selection survives physical truncation', () => {
+  it.each([
+    { module: 'ESNext', moduleResolution: 'Bundler' },
+    { module: 'NodeNext', moduleResolution: 'NodeNext' },
+    { module: 'Node16', moduleResolution: 'Node16', resolveJsonModule: true },
+    { module: 'ESNext', moduleResolution: 'Bundler', resolveJsonModule: false },
+  ])('uses compiler JSON path defaults for %o', async (overrides) => {
+    const compilerOptions = { ...options, ...overrides, noLib: true };
+    const fixture = await createSemanticRepairFixture({
+      'tsconfig.json': config(['a.ts'], { compilerOptions }),
+      'tsconfig.b.json': config(['b.json'], { compilerOptions }),
+      'a.ts': '/// <reference path="./b.json" />\nexport {};',
+      'b.json': '{"value":1}',
+    });
+    try {
+      const parsed = fixture.parse();
+      const coverage = readFixtureSourceCoverage([
+        fixture.path('tsconfig.json'),
+        fixture.path('tsconfig.b.json'),
+      ]);
+      const project = {
+        configPath: fixture.path('tsconfig.json'),
+        fileNames: parsed.fileNames,
+        options: parsed.options,
+        workspaceSourceBoundary: createWorkspaceSourceBoundary(
+          parsed.fileNames,
+          undefined,
+          coverage,
+        ),
+      };
+      const context = createNativeObservationContext({
+        project,
+        coverage,
+        epoch: '1',
+        collectionId: 'json-path',
+        sourceVersion: '1',
+        typescriptVersion: ts.version,
+        typescriptImplementation: 'installed',
+        toolchain: 'test',
+        authority: {
+          phase: 'locked',
+          family: 'typescript',
+          selectionEvidenceIds: ['selection'],
+        },
+      });
+      const adapter = new NativeObservationAdapter(
+        { project, coverage, context },
+        ts,
+      );
+      const oracle = ts.createProgram({
+        rootNames: parsed.fileNames,
+        options: parsed.options,
+      });
+      const isSelected =
+        oracle.getSourceFile(fixture.path('b.json')) !== undefined;
+      const resolution = adapter.snapshot.resolutions.find(
+        (item) => item.pathSelection !== undefined,
+      )!;
+      expect(resolution.pathSelection!.logicalTarget).toBe(
+        isSelected ? fixture.path('b.json') : null,
+      );
+      expect(adapter.snapshot.obligations[0]!.existence.state).toBe(
+        isSelected ? 'unknown' : 'absent',
+      );
+      if (isSelected)
+        assertPathAdmission(
+          adapter.snapshot,
+          project.configPath,
+          'unavailable',
+        );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it.each(cases)(
     '%s preserves selection, sources, requests and their ancestry',
     async (mode) => {
