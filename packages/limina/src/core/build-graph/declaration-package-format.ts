@@ -99,7 +99,9 @@ export function validateDeclarationPackageFormat(input: {
   const actual = compiler.getImpliedNodeFormatForFile(
     input.outputFile,
     undefined,
-    host,
+    // Emit creates these directories. Observe physical package.json lookups,
+    // including misses, without freezing the output directory's absence.
+    withVirtualResolutionFiles(host, undefined, [input.outputFile]),
     options,
   );
   if (expected === undefined || actual !== expected)
