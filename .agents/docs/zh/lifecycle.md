@@ -205,9 +205,11 @@ Pending 受控补充发现仅属于当前 collection。[分析缓存](../../../p
 
 提前产生的循环 issue 保留按确定顺序排列的第一个 generated config 作为 `filePath`；仅当全部循环成员属于同一个 checker 时填写 `checkerName`。暂存与恢复验证都从图映射获取 checker 身份，不依赖生成路径的拼写；跨 checker 的循环不归属于某一个 checker。[Generated-graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)、[恢复引用回归](../../../packages/limina/src/__tests__/reference-validation.spec.ts)和 [detector fixture](../../../packages/limina/fixtures/detectors/graph/reference-cycle-mutual/case.mts)保护结构化诊断归属，同时保留物化前拒绝。
 
-Analysis adapter v27、Vue adapter v8、Native Program adapter v12、generated-graph identity v9 与 storage schema 12 拒绝旧声明加载及证据合同。Checker-qualified evidence 为版本 5，声明验证 receipt 为版本 3；旧记录直接冷启动，不做转换。Compiler-source inventory、request inventory 和 obligation query 分别拥有合格 replay coverage，runtime syntax cache 不会升级为编译证明。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护恢复与当前候选重新验证；被拒绝的数据回退分析。
+Analysis adapter v27、Vue adapter v8、Native Program adapter v12、generated-graph identity v16 与 storage schema 12 拒绝旧声明加载及证据合同。Checker-qualified evidence 为版本 5，声明验证 receipt 为版本 3；旧记录直接冷启动，不做转换。Compiler-source inventory、request inventory 和 obligation query 分别拥有合格 replay coverage，runtime syntax cache 不会升级为编译证明。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护恢复与当前候选重新验证；被拒绝的数据回退分析。
 
 生成的声明目录与增量缓存路径在既有 checker 和目录分区内保留完整源配置文件名，包括 `tsconfig.` 和 `.json`，因此 `tsconfig.json` 与 `tsconfig.tsconfig.json` 不再共享路径。规划阶段拒绝不同源配置占用同一路径。重新生成会更新受管配置；过期清理只依据原有所有权清单，不递归删除未登记的编译缓存或用户文件。[Namespace 守卫](../../../packages/limina/src/__tests__/artifact-namespace.spec.ts)与[图重新生成测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖路径冲突、旧所有权清单和重复规划。
+
+声明 package-format 标记是各受管声明目录中的普通 owned generated artifacts，复用生成配置的 plan、namespace、manifest-last 发布和过期文件清单。恢复候选根据当前源包作用域和编译器输出路径重新计算所需标记；仅有缓存准入一致不足以通过。Generated-graph epoch 撤销旧的无标记图。
 
 [materializer](../../../packages/limina/src/core/build-graph/materializer.ts) 的生产路径：
 
