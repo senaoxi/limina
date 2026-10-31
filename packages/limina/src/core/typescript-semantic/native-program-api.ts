@@ -5,7 +5,7 @@ import {
 } from '../../dependency-contract';
 import { NativeObservationError } from './native-observation-failure';
 
-export const NATIVE_PROGRAM_ADAPTER = 'bounded-program-ts5.4-6.0-v11';
+export const NATIVE_PROGRAM_ADAPTER = 'bounded-program-ts5.4-6.0-v12';
 
 /**
  * Internal observations adapted across TypeScript 5.4–5.9 and 6.0. No collector,
