@@ -10,6 +10,8 @@ import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resol
 export interface EffectiveTypeInput {
   name: string;
   target: string | null;
+  originalPath: string | null;
+  isExternalLibraryImport: boolean;
 }
 
 export function collectConfigTypeInputs(input: {
@@ -61,10 +63,18 @@ export function collectConfigTypeInputs(input: {
         host,
       ),
     );
-    const target = result.resolvedTypeReferenceDirective?.resolvedFileName;
+    const resolved = result.resolvedTypeReferenceDirective as
+      | (ts.ResolvedTypeReferenceDirective & { originalPath?: string })
+      | undefined;
+    const target = resolved?.resolvedFileName;
     return {
       name,
       target: target === undefined ? null : normalizeAbsolutePath(target),
+      originalPath:
+        resolved?.originalPath === undefined
+          ? null
+          : normalizeAbsolutePath(resolved.originalPath),
+      isExternalLibraryImport: resolved?.isExternalLibraryImport === true,
     };
   });
 }

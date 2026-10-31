@@ -157,9 +157,11 @@ Vue 语义上下文中的原生文件使用同一套 Vue 所属 TypeScript 实�
 
 输出 target 的继承保留 TypeScript 数组顺序，即使同级分支共享祖先也一样。继承解析、环诊断和有效选项由 TypeScript 配置解析器负责。框架意图读取实际解析得到的配置闭包，包括包的 `tsconfig` 入口、带点文件名和无后缀文件；解析失败不能静默回退为默认 target。[Compiler target 回归测试](../../../packages/limina/src/__tests__/compiler-target.spec.ts) 将菱形、深层、重复、反向顺序和自身覆盖情形与 TypeScript parser 对照。
 
-生成配置将有效 `baseUrl`、`paths`、`rootDirs` 和显式 `typeRoots` 固定到源解析器的路径基准。继承的 `${configDir}` 不会在 `.limina` 下重新展开；有序相对 `paths` 回退按编译器保留的 `pathsBasePath` 重定基准。Graph parity 比较这些有效路径。类型入口回执通过编译器重新解析生成配置的继承与覆盖，不再合并旧解析选项；版本 3 撤销旧投影。
+生成配置将有效 `baseUrl`、`paths`、`rootDirs` 和显式 `typeRoots` 固定到源解析器的路径基准。继承的 `${configDir}` 不会在 `.limina` 下重新展开；有序相对 `paths` 回退按编译器保留的 `pathsBasePath` 重定基准。Graph parity 比较这些有效路径。类型入口回执通过编译器重新解析生成配置的继承与覆盖，不再合并旧解析选项；版本 4 撤销旧投影并要求加载身份证据。
 
 [Compiler overrides](../../../packages/limina/src/core/build-graph/compiler-overrides.ts) 通过[类型入口投影](../../../packages/limina/src/core/build-graph/type-input-projection.ts)保持源配置实际选中的 config type-directive 入口。不能直接重定位相对字符串：竞争的 `typeRoots` 候选可能先被源配置选中。直接、继承、绝对和自动／通配入口保留编译器选择，源 miss 不得变成无关 generated hit；不补多余边、扩张 roots 或删除 `typeRoots` 掩盖偏差。
+
+固定 symlink 类型入口时，类型投影保留编译器的 lexical `originalPath`，并同时证明解析目标和 `isExternalLibraryImport`。仅 realpath 相等不能保持 external-library 加载身份及传递输入的编译义务。选择和分类已一致的裸名入口保留原拼写。
 
 [标准库投影](../../../packages/limina/src/core/build-graph/library-projection.ts)在生成配置改变查找起点时保持 TypeScript 的库选择。它通过已有适配层复用当前编译器的 `libMap`、Program 库请求与 `resolveLibrary`，不另建 Resolver 或 Checker hook。不加载源码的目录探测向编译器查询全部合法库名，使显式、隐式及声明引入的库请求保持逐名称的选择；这些探测不增加源 roots、Native facts 或 references。`outputs.target` 仍可激活不同的默认库集合。受影响的包族通过生成的 package manifest，将 `types` 指向原来选中的文件，包括同族入口的内置库回退。TypeScript 仍以库角色加载这些文件，保留文件身份、相对依赖及 `skipDefaultLibCheck` 行为。不复制声明内容、不把库改成普通 configured type，`libReplacement` 继续继承。
 

@@ -9471,6 +9471,85 @@ describe('ambient references and compiler membership', () => {
       }
     },
   );
+  it.each(['import', 'path', 'physical', 'bare'] as const)(
+    'preserves external type entry loading identity: %s',
+    async (variant) => {
+      const compilerOptions = {
+        composite: true,
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        target: 'ES2020',
+        rootDir: '.',
+        types: [],
+      };
+      const fixture = await createFixture({
+        'tsconfig.json': json({
+          files: [],
+          references: [{ path: './a' }, { path: './b' }],
+        }),
+        'a/tsconfig.json': json({
+          compilerOptions: {
+            ...compilerOptions,
+            types: [
+              variant === 'bare'
+                ? 'env/index'
+                : './node_modules/env/index.d.ts',
+            ],
+          },
+          files: ['index.ts'],
+        }),
+        'b/tsconfig.json': json({ compilerOptions, files: ['index.ts'] }),
+        'a/index.ts': 'export const value: number = 1;',
+        'b/index.ts': 'export interface Value { value: number }',
+      });
+      fixture.config.scope!.checkers = { tsc: { include: ['tsconfig.json'] } };
+      try {
+        const target = variant === 'physical' ? 'a/node_modules/env' : 'vendor';
+        await writeText(
+          fixture.path(target, 'index.d.ts'),
+          variant === 'path'
+            ? `/// <reference path="${fixture.path('b/index.ts')}" />\nexport {};`
+            : `import type { Value } from '${fixture.path('b/index')}'; export type Ambient = Value;`,
+        );
+        if (variant !== 'physical') {
+          await mkdir(fixture.path('a/node_modules'), { recursive: true });
+          await symlink(
+            fixture.path('vendor'),
+            fixture.path('a/node_modules/env'),
+            'junction',
+          );
+        }
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const generated = graph.sourceToDts
+          .get('tsc')!
+          .get(fixture.path('a/tsconfig.json'))!;
+        expect(graph.dependencyEdges).toEqual([]);
+        const parsed = parseProject(fixture.config, generated);
+        const program = ts.createProgram({
+          rootNames: parsed.fileNames,
+          options: parsed.options,
+        });
+        const importedSource = program.getSourceFile(
+          fixture.path('b/index.ts'),
+        )!;
+        expect(program.isSourceFileFromExternalLibrary(importedSource)).toBe(
+          true,
+        );
+        expect(
+          ts
+            .createSolutionBuilder(
+              ts.createSolutionBuilderHost(ts.sys),
+              [generated],
+              { force: true },
+            )
+            .build(),
+        ).toBe(0);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each(['direct', 'inherited', 'base-url', 'relative'] as const)(
     'preserves relocated config path semantics: %s',
     async (variant) => {
