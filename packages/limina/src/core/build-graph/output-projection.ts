@@ -1,4 +1,5 @@
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
+import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { analysisHash, nativeContextId } from '../analysis-cache/identity';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { createTypeScriptDependencyContext } from '../typescript-semantic';
@@ -7,6 +8,7 @@ import type {
   TypeScriptSemanticProject,
 } from '../typescript-semantic/contracts';
 import { projectNativeDeclarationClosure } from '../typescript-semantic/native-closure';
+import { hasCandidateImpact } from './analysis-admission';
 import { retainNativeAnalysis } from './native-analysis-evidence';
 import { outputSemanticProject } from './output-projection-context';
 import type { GeneratedGraphPreparationState } from './prepare-state';
@@ -15,7 +17,7 @@ import { collectVueOutputDependencies } from './vue-output-projection';
 // Independent of config-type-directives receipts: covers output governance.
 export interface OutputProjectionReceipt {
   scope: 'existing-output-relations';
-  version: 1;
+  version: 2;
   sourceConfig: string;
   generatedConfig: string;
   sourceTarget: number | null;
@@ -36,6 +38,22 @@ function dependencies(
   context: TypeScriptSemanticDependencyContext,
   project: TypeScriptSemanticProject,
 ): Map<string, string> {
+  const snapshot = context.nativeEvidence;
+  if (snapshot === undefined)
+    throw new Error(
+      `Output compilation evidence is unavailable: ${project.configPath}`,
+    );
+  for (const obligation of snapshot.obligations) {
+    if (
+      obligation.consumerConfigId === project.configPath &&
+      summarizeCompilationObligation(obligation) === 'unknown' &&
+      obligation.structure.state !== 'satisfied' &&
+      hasCandidateImpact(snapshot, obligation)
+    )
+      throw new Error(
+        `Unproved output compilation relation: ${project.configPath}: ${obligation.id}`,
+      );
+  }
   const projection = projectNativeDeclarationClosure(context, project);
   return new Map(
     projection.requirements.map(({ occurrence, requirement }) => [
@@ -50,7 +68,7 @@ function baseReceipt(
 ): OutputProjectionReceipt {
   return {
     scope: 'existing-output-relations',
-    version: 1,
+    version: 2,
     sourceConfig: project.configPath,
     generatedConfig: project.outputConfigPath,
     sourceTarget: project.options.target ?? null,
@@ -204,7 +222,7 @@ export function isValidOutputProjection(
   if (
     ![
       receipt.scope === 'existing-output-relations',
-      receipt.version === 1,
+      receipt.version === 2,
     ].every(Boolean)
   )
     return false;

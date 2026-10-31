@@ -192,7 +192,7 @@ function hasReference(
   ].every(Boolean);
 }
 
-function hasCandidateImpact(
+export function hasCandidateImpact(
   snapshot: NativeEvidenceSnapshot,
   obligation: NativeCompilationObligation,
 ): boolean {
