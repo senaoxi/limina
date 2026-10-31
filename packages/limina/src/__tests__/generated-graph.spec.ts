@@ -27,10 +27,14 @@ import { promisify } from 'node:util';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import * as versionConditions from '../core/build-graph/checker-version-conditions';
 import { projectSupplementalPrerequisite } from '../core/build-graph/compilation-prerequisite';
 import { hasValidRestoredDeclarationContexts } from '../core/build-graph/declaration-context-candidate';
 import * as generatedConfigs from '../core/build-graph/generated-configs';
-import type { DependencyAnalysisResult } from '../core/build-graph/types';
+import type {
+  DependencyAnalysisResult,
+  GeneratedTsconfigGraphResult,
+} from '../core/build-graph/types';
 import type { SupplementalResolutionRequest } from '../core/import-analysis/supplemental-resolution';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
@@ -9767,10 +9771,23 @@ describe('ambient references and compiler membership', () => {
     'transitive',
     'transitive-same-target',
     'transitive-typeonly',
+    'unresolved',
+    'unresolved-missing',
+    'unresolved-exports',
+    'unresolved-multiple',
+    'unresolved-inactive',
+    'restored-unresolved',
+    'transitive-unresolved',
+    'default-same-target',
+    'import-same-target',
+    'ranges-same-target',
+    'unresolved-same-target',
+    'ordinary-unresolved',
+    'ordinary-type-error',
   ] as const)(
     'qualifies tsgo version-sensitive module conditions: %s',
     async (variant) => {
-      const imports =
+      const imports: Record<string, string> =
         variant === 'unversioned'
           ? { types: './src/v6.ts' }
           : variant === 'older'
@@ -9781,6 +9798,58 @@ describe('ambient references and compiler membership', () => {
                   : './src/v7.ts',
                 types: './src/v6.ts',
               };
+      switch (variant) {
+        case 'unresolved':
+        case 'unresolved-exports':
+        case 'transitive-unresolved':
+        case 'restored-unresolved': {
+          delete imports.types;
+          break;
+        }
+        case 'unresolved-multiple': {
+          delete imports.types;
+          imports['types@>=8'] = './src/v7.ts';
+          break;
+        }
+        case 'unresolved-inactive': {
+          delete imports.types;
+          imports.require = './src/v7.ts';
+          break;
+        }
+        case 'unresolved-missing': {
+          imports.types = './src/missing.ts';
+          break;
+        }
+        case 'default-same-target':
+        case 'import-same-target':
+        case 'ranges-same-target': {
+          imports[
+            variant === 'default-same-target'
+              ? 'default'
+              : variant === 'import-same-target'
+                ? 'import'
+                : 'types@<6.1'
+          ] = imports.types!;
+          delete imports.types;
+          break;
+        }
+        case 'unresolved-same-target': {
+          for (const key of Object.keys(imports))
+            imports[key] = './src/missing.ts';
+          break;
+        }
+        case 'ordinary-unresolved':
+        case 'ordinary-type-error': {
+          delete imports['types@>=6.1'];
+          imports.types =
+            variant === 'ordinary-unresolved'
+              ? './src/missing.ts'
+              : './src/v6.ts';
+          break;
+        }
+      }
+      const specifier =
+        variant === 'unresolved-exports' ? 'fixture' : '#version';
       const compilerOptions = {
         composite: true,
         target: 'ES2020',
@@ -9797,7 +9866,9 @@ describe('ambient references and compiler membership', () => {
           name: 'fixture',
           private: true,
           type: 'module',
-          imports: { '#version': imports },
+          ...(variant === 'unresolved-exports'
+            ? { exports: { '.': imports } }
+            : { imports: { '#version': imports } }),
         }),
         'tsconfig.json': json({
           files: [],
@@ -9813,7 +9884,7 @@ describe('ambient references and compiler membership', () => {
         ),
         'src/a.ts': variant.startsWith('transitive')
           ? 'export type { Value } from "./bridge.js";'
-          : 'import { value } from "#version"; export const result: number = value;',
+          : `import { value } from "${specifier}"; export const result: ${variant === 'ordinary-type-error' ? 'string' : 'number'} = value;`,
         'src/bridge.d.ts':
           variant === 'transitive-typeonly'
             ? 'export type Value = typeof import("#version").value;'
@@ -9828,11 +9899,52 @@ describe('ambient references and compiler membership', () => {
           packageName: '@typescript/native-preview',
           rootDir: fixture.rootDir,
         });
+        if (variant === 'restored-unresolved') {
+          // Construct the candidate accepted by the old guard; restoration
+          // must requalify its completed miss without recollecting a Program.
+          const legacyGuard = vi
+            .spyOn(versionConditions, 'resolveVersionQualifiedModule')
+            .mockReturnValue(undefined);
+          let graph: GeneratedTsconfigGraphResult;
+          try {
+            graph = await prepareGeneratedTsconfigGraph(fixture.config);
+          } finally {
+            legacyGuard.mockRestore();
+          }
+          expect(graph.dependencyEdges).toEqual([]);
+          expect(
+            hasValidRestoredDeclarationContexts(
+              graph,
+              undefined,
+              fixture.rootDir,
+            ),
+          ).toBe(false);
+          expect(graph.dependencyAnalysis?.declarationValidation).toMatchObject(
+            {
+              state: 'unavailable',
+              diagnostics: [
+                expect.stringContaining(
+                  'Checker version condition is not qualified',
+                ),
+              ],
+            },
+          );
+          return;
+        }
         const preparation = prepareGeneratedTsconfigGraph(fixture.config);
         if (
-          ['divergent', 'older', 'transitive', 'transitive-typeonly'].includes(
-            variant,
-          )
+          [
+            'divergent',
+            'older',
+            'transitive',
+            'transitive-typeonly',
+            'unresolved',
+            'unresolved-missing',
+            'unresolved-exports',
+            'unresolved-multiple',
+            'unresolved-inactive',
+            'transitive-unresolved',
+          ].includes(variant)
         )
           await expect(preparation).rejects.toThrow(
             'Checker version condition is not qualified',
@@ -9850,11 +9962,23 @@ describe('ambient references and compiler membership', () => {
             ),
             'bin/tsgo',
           );
-          await execFileAsync(
+          const build = execFileAsync(
             process.execPath,
             [executable, '-b', generated, '--pretty', 'false'],
             { cwd: fixture.rootDir },
           );
+          if (variant === 'ordinary-type-error')
+            await expect(build).rejects.toMatchObject({
+              stdout: expect.stringContaining('TS2322'),
+            });
+          else if (
+            variant === 'ordinary-unresolved' ||
+            variant === 'unresolved-same-target'
+          )
+            await expect(build).rejects.toMatchObject({
+              stdout: expect.stringContaining('TS2307'),
+            });
+          else await build;
         }
       } finally {
         await fixture.cleanup();
