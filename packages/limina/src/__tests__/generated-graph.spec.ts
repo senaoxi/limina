@@ -9471,6 +9471,97 @@ describe('ambient references and compiler membership', () => {
       }
     },
   );
+  it.each([
+    'divergent',
+    'same-target',
+    'unversioned',
+    'older',
+    'explicit-condition',
+  ] as const)(
+    'qualifies tsgo version-sensitive module conditions: %s',
+    async (variant) => {
+      const imports =
+        variant === 'unversioned'
+          ? { types: './src/v6.ts' }
+          : variant === 'older'
+            ? { 'types@<6.1': './src/v6.ts', types: './src/v7.ts' }
+            : {
+                'types@>=6.1':
+                  variant === 'same-target' ? './src/v6.ts' : './src/v7.ts',
+                types: './src/v6.ts',
+              };
+      const compilerOptions = {
+        composite: true,
+        target: 'ES2020',
+        types: [],
+        rootDir: './src',
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        ...(variant === 'explicit-condition' && {
+          customConditions: ['types@>=6.1'],
+        }),
+      };
+      const fixture = await createFixture({
+        'package.json': json({
+          name: 'fixture',
+          private: true,
+          type: 'module',
+          imports: { '#version': imports },
+        }),
+        'tsconfig.json': json({
+          files: [],
+          references: ['a', 'v6', 'v7'].map((name) => ({
+            path: `./tsconfig.${name}.json`,
+          })),
+        }),
+        ...Object.fromEntries(
+          ['a', 'v6', 'v7'].map((name) => [
+            `tsconfig.${name}.json`,
+            json({ compilerOptions, files: [`src/${name}.ts`] }),
+          ]),
+        ),
+        'src/a.ts':
+          'import { value } from "#version"; export const result: number = value;',
+        'src/v6.ts': 'export const value: number = 6;',
+        'src/v7.ts': 'export const value: number = 7;',
+      });
+      fixture.config.scope!.checkers = { tsgo: { include: ['tsconfig.json'] } };
+      try {
+        await linkInstalledPackage({
+          installedName: '@typescript/native-preview',
+          packageName: '@typescript/native-preview',
+          rootDir: fixture.rootDir,
+        });
+        const preparation = prepareGeneratedTsconfigGraph(fixture.config);
+        if (variant === 'divergent' || variant === 'older')
+          await expect(preparation).rejects.toThrow(
+            'Checker version condition is not qualified',
+          );
+        else {
+          const graph = await preparation;
+          const generated = graph.sourceToDts
+            .get('tsgo')!
+            .get(fixture.path('tsconfig.a.json'))!;
+          const executable = path.join(
+            path.dirname(
+              requireFromTest.resolve(
+                '@typescript/native-preview/package.json',
+              ),
+            ),
+            'bin/tsgo',
+          );
+          await execFileAsync(
+            process.execPath,
+            [executable, '-b', generated, '--pretty', 'false'],
+            { cwd: fixture.rootDir },
+          );
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each(['imports', 'exports', 'missing', 'bundler', 'source'] as const)(
     'validates package output remapping after relocation: %s',
     async (variant) => {

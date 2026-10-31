@@ -17,7 +17,9 @@ export function validateStagedDeclarationContexts(
         sourceConfig: project.configPath,
         generatedConfig: project.dtsConfigPath,
         checker: project.checkerName,
-        executionRoot: project.context.vueSemanticIdentity?.projectRootDir,
+        executionRoot:
+          project.context.vueSemanticIdentity?.projectRootDir ??
+          state.writeContext.rootDir,
         executionIdentity: project.context.vueSemanticIdentity,
         preset: project.context.checkerPresets[0],
       });
@@ -27,7 +29,9 @@ export function validateStagedDeclarationContexts(
         sourceConfig: project.configPath,
         generatedConfig: project.outputConfigPath,
         checker: project.checkerName,
-        executionRoot: project.context.vueSemanticIdentity?.projectRootDir,
+        executionRoot:
+          project.context.vueSemanticIdentity?.projectRootDir ??
+          state.writeContext.rootDir,
         executionIdentity: project.context.vueSemanticIdentity,
         preset: project.context.checkerPresets[0],
       });
@@ -57,6 +61,7 @@ export function hasValidRestoredDeclarationContexts(
     | 'governedSources'
   >,
   metrics?: AnalysisMetricsRecorder,
+  executionRoot?: string,
 ): boolean {
   const analysis = graph.dependencyAnalysis;
   if (analysis === undefined) return false;
@@ -67,6 +72,7 @@ export function hasValidRestoredDeclarationContexts(
         checker,
         sourceConfig,
         generatedConfig,
+        executionRoot,
         ...restoredAuthority(graph, checker, sourceConfig),
       });
   for (const [checker, sources] of graph.configToOutputBuild)
@@ -76,6 +82,7 @@ export function hasValidRestoredDeclarationContexts(
           checker,
           sourceConfig,
           generatedConfig: module.path,
+          executionRoot,
           ...restoredAuthority(graph, checker, sourceConfig),
         });
   validateDeclarationContexts({
@@ -100,7 +107,9 @@ function restoredAuthority(
 ) {
   const context = graph.governedSources.get(checker)?.get(source)?.context;
   return {
-    executionRoot: context?.vueSemanticIdentity?.projectRootDir,
+    ...(context?.vueSemanticIdentity !== undefined && {
+      executionRoot: context.vueSemanticIdentity.projectRootDir,
+    }),
     executionIdentity: context?.vueSemanticIdentity,
     preset: context?.checkerPresets[0],
   };
