@@ -7,6 +7,7 @@ type Compiler = typeof ts;
 interface PathCompiler extends Compiler {
   hasExtension(file: string): boolean;
   getSupportedExtensions(options: ts.CompilerOptions): string[][];
+  getResolveJsonModule(options: ts.CompilerOptions): boolean;
 }
 export interface NativePathReceipt {
   readonly selection: NativePathSelection;
@@ -140,9 +141,11 @@ function pathCandidates(
     : supportedCandidates(input, compiler, lexical);
 }
 function hasCandidateApi(compiler: PathCompiler): boolean {
-  return [compiler.hasExtension, compiler.getSupportedExtensions].every(
-    (method) => typeof method === 'function',
-  );
+  return [
+    compiler.hasExtension,
+    compiler.getSupportedExtensions,
+    compiler.getResolveJsonModule,
+  ].every((method) => typeof method === 'function');
 }
 function supportedCandidates(
   input: PathInput,
@@ -161,7 +164,9 @@ function explicitCandidate(
 ): string[] {
   const extensions = [
     ...supported,
-    ...(input.options.resolveJsonModule ? ['.json'] : []),
+    ...((input.compiler as PathCompiler).getResolveJsonModule(input.options)
+      ? ['.json']
+      : []),
   ];
   const canonical = input.host.getCanonicalFileName(lexical);
   return extensions.some((extension) => canonical.endsWith(extension))
