@@ -23,6 +23,10 @@ import { observedCompilerSystem } from '../typescript-semantic/observed-resoluti
 import { observeVueDeclarationCandidate } from '../vue-semantic/declaration-candidate';
 import { declarationFileKey } from './declaration-context-decisions';
 import {
+  declarationPackageFiles,
+  validateDeclarationPackageFormat,
+} from './declaration-package-format';
+import {
   implementationReferenceInputs,
   validateImplementationMappings,
 } from './implementation-reference-mapping';
@@ -73,12 +77,6 @@ export function validateDeclarationContexts(
     canObserveImplementations ? (input.dependencyEdges ?? []) : [],
   );
   const moduleInputs = moduleProjectionInputs(input.analysis);
-  if (
-    decisions.length === 0 &&
-    referenceInputs.size === 0 &&
-    moduleInputs.size === 0
-  )
-    return;
   const result: NonNullable<DependencyAnalysisResult['declarationValidation']> =
     {
       state: 'admitted',
@@ -98,6 +96,17 @@ export function validateDeclarationContexts(
       fileKey: (file) => fileKey(input, file),
     });
     for (const project of projects.values()) {
+      const packageFiles = declarationPackageFiles({
+        ...project,
+        files: input.files,
+        compiler: project.executionIdentity?.toolchain.tsModule,
+        vueProfiles: project.executionIdentity?.profilesByFileName,
+      });
+      for (const [file, content] of packageFiles)
+        if (input.files.get(file) !== content)
+          throw new UnavailableDeclarationContext(
+            `Declaration package format projection changed: ${file}`,
+          );
       validateModuleProjection({
         ...project,
         files: input.files,
@@ -362,6 +371,27 @@ function validateProject(
     metrics: input.metrics,
   });
   validateImplementationMappings(implementations, closure, observation);
+  for (const mapping of observation.mappings) {
+    if (
+      !mapping.qualified ||
+      mapping.declarationOutput === null ||
+      isDeclarationFile(mapping.file)
+    )
+      continue;
+    const provider = closure.find(
+      (member) => member.generatedConfig === mapping.referenceConfig,
+    );
+    if (provider === undefined || !provider.parsed.options.emitDeclarationOnly)
+      continue;
+    validateDeclarationPackageFormat({
+      sourceConfig: provider.sourceConfig,
+      sourceFile: mapping.file,
+      outputFile: mapping.declarationOutput,
+      files: input.files,
+      compiler: provider.executionIdentity?.toolchain.tsModule,
+      vueProfiles: provider.executionIdentity?.profilesByFileName,
+    });
+  }
   const sources = new Map(
     observation.sources.map((source) => [source.file, source]),
   );

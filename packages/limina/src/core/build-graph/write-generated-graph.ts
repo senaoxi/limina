@@ -4,6 +4,7 @@ import type {
 } from '#config/runner';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { writeGeneratedContent, writeGeneratedJson } from './artifact-writer';
+import { declarationPackageFiles } from './declaration-package-format';
 import {
   createCheckerBuildConfig,
   createGeneratedDtsConfig,
@@ -33,17 +34,42 @@ function writeDtsProjects(options: {
   return getArrayValue(
     options.state.projectsByChecker,
     options.checkerName,
-  ).map((project) =>
-    writeGeneratedJson({
+  ).map(async (project) => {
+    const value = createGeneratedDtsConfig({
+      cache: options.cache,
+      config: options.config,
+      project,
+    });
+    await writeGeneratedJson({
       context: options.state.writeContext,
       filePath: project.dtsConfigPath,
-      value: createGeneratedDtsConfig({
-        cache: options.cache,
-        config: options.config,
-        project,
-      }),
-    }),
-  );
+      value,
+    });
+    const receipt = project.typeInputProjections?.findLast(
+      (candidate) => candidate.generatedConfig === project.dtsConfigPath,
+    );
+    if (receipt === undefined)
+      throw new Error(
+        `Declaration output options are unavailable: ${project.dtsConfigPath}`,
+      );
+    const files = declarationPackageFiles({
+      sourceConfig: project.configPath,
+      parsed: {
+        fileNames: project.fileNames,
+        options: receipt.generatedOptions,
+        errors: [],
+      },
+      files: project.virtualFiles,
+      compiler: project.context.vueSemanticIdentity?.toolchain.tsModule,
+      vueProfiles: project.context.vueSemanticIdentity?.profilesByFileName,
+    });
+    for (const [filePath, content] of files)
+      await writeGeneratedContent({
+        context: options.state.writeContext,
+        filePath,
+        content,
+      });
+  });
 }
 
 function writeSolutions(options: {

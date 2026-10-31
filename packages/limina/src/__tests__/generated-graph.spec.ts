@@ -28,6 +28,7 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { projectSupplementalPrerequisite } from '../core/build-graph/compilation-prerequisite';
+import { hasValidRestoredDeclarationContexts } from '../core/build-graph/declaration-context-candidate';
 import * as generatedConfigs from '../core/build-graph/generated-configs';
 import type { DependencyAnalysisResult } from '../core/build-graph/types';
 import type { SupplementalResolutionRequest } from '../core/import-analysis/supplemental-resolution';
@@ -9471,6 +9472,207 @@ describe('ambient references and compiler membership', () => {
       }
     },
   );
+  it.each(['node16', 'nodenext', 'mts', 'nested', 'output'] as const)(
+    'preserves declaration package formats after relocation: %s',
+    async (variant) => {
+      const extension = variant === 'mts' ? 'mts' : 'ts';
+      const module = variant === 'nodenext' ? 'NodeNext' : 'Node16';
+      const files: Record<string, string> = {
+        'package.json': json({ name: 'root', private: true, type: 'commonjs' }),
+        'packages/a/src/index.ts': `export type { Value } from '../../b/src/index.${extension === 'mts' ? 'mjs' : 'js'}';`,
+        [`packages/b/src/index.${extension}`]:
+          'export type { Value } from "../../c/src/index.mjs";',
+        'packages/c/src/index.mts': 'export interface Value { value: number }',
+      };
+      for (const name of ['a', 'b', 'c']) {
+        files[`packages/${name}/package.json`] = json({
+          name: `@example/${name}`,
+          type: 'module',
+          dependencies:
+            name === 'a'
+              ? { '@example/b': 'workspace:*' }
+              : name === 'b'
+                ? { '@example/c': 'workspace:*' }
+                : undefined,
+        });
+        files[`packages/${name}/tsconfig.json`] = json({
+          compilerOptions: {
+            composite: true,
+            module,
+            moduleResolution: module,
+            target: 'ES2020',
+            types: [],
+          },
+          files: [
+            `src/index.${name === 'c' ? 'mts' : name === 'b' ? extension : 'ts'}`,
+            ...(name === 'b' && variant === 'nested'
+              ? ['src/inner/helper.ts']
+              : []),
+          ],
+          ...(variant === 'output' && {
+            liminaOptions: {
+              outputs: { rootDir: './src', outDir: './dist', target: 'ES2020' },
+            },
+          }),
+        });
+      }
+      if (variant === 'nested') {
+        files['pnpm-workspace.yaml'] =
+          'packages:\n  - packages/*\n  - packages/b/src/inner\n';
+        files['packages/b/src/inner/package.json'] = json({
+          name: '@example/inner',
+          type: 'commonjs',
+        });
+        files['packages/b/src/inner/helper.ts'] = 'export const value = 1;';
+      }
+      const fixture = await createFixture(files);
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const a = graph.sourceToDts
+          .get('tsc')!
+          .get(fixture.path('packages/a/tsconfig.json'))!;
+        const b = graph.sourceToDts
+          .get('tsc')!
+          .get(fixture.path('packages/b/tsconfig.json'))!;
+        expect(
+          ts
+            .createSolutionBuilder(ts.createSolutionBuilderHost(ts.sys), [a], {
+              force: true,
+            })
+            .build(),
+        ).toBe(0);
+        const parsed = parseProject(fixture.config, b);
+        const bOutput = ts
+          .getOutputFileNames(
+            { ...parsed, errors: [] },
+            fixture.path(`packages/b/src/index.${extension}`),
+            !ts.sys.useCaseSensitiveFileNames,
+          )
+          .find((file) => /\.d\.m?ts$/.test(file))!;
+        expect(
+          ts.getImpliedNodeFormatForFile(
+            bOutput,
+            undefined,
+            ts.sys,
+            parsed.options,
+          ),
+        ).toBe(ts.ModuleKind.ESNext);
+        if (variant === 'nested') {
+          const nested = toPortablePath(
+            path.join(path.dirname(bOutput), 'inner/package.json'),
+          );
+          expect(JSON.parse(await readFile(nested, 'utf8')).type).toBe(
+            'commonjs',
+          );
+          const changed = new Map(graph.generatedFiles);
+          changed.delete(nested);
+          expect(
+            hasValidRestoredDeclarationContexts({
+              ...graph,
+              generatedFiles: changed,
+            }),
+          ).toBe(false);
+          await writeText(
+            fixture.path('packages/b/src/inner/package.json'),
+            json({ type: 'module' }),
+          );
+          await prepareGeneratedTsconfigGraph(fixture.config);
+          expect(existsSync(nested)).toBe(false);
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('preserves Vue-only declaration package format', async () => {
+    const files: Record<string, string> = {
+      'package.json': json({ name: 'root', private: true, type: 'commonjs' }),
+      'packages/a/src/index.ts':
+        'export { default as Component } from "../../b/src/index.vue";',
+      'packages/b/src/index.vue':
+        '<script setup lang="ts">\nimport type { Value } from "../../c/src/index.mjs";\ndefineProps<{value:Value}>();\n</script>',
+      'packages/c/src/index.mts': 'export interface Value { value: number }',
+    };
+    for (const name of ['a', 'b', 'c']) {
+      files[`packages/${name}/package.json`] = json({
+        name: `@example/${name}`,
+        type: 'module',
+        dependencies:
+          name === 'a'
+            ? { '@example/b': 'workspace:*' }
+            : name === 'b'
+              ? { '@example/c': 'workspace:*' }
+              : undefined,
+      });
+      files[`packages/${name}/tsconfig.json`] = json({
+        compilerOptions: {
+          composite: true,
+          module: 'Node16',
+          moduleResolution: 'Node16',
+          target: 'ES2020',
+          rootDir: 'src',
+          types: [],
+        },
+        include: ['src/**/*'],
+      });
+    }
+    const fixture = await createFixture(files);
+    try {
+      await linkInstalledPackage({
+        installedName: 'vue',
+        packageName: 'vue',
+        rootDir: fixture.rootDir,
+      });
+      const dom = createRequire(
+        requireFromTest.resolve('vue/package.json'),
+      ).resolve('@vue/runtime-dom/package.json');
+      const core = createRequire(dom).resolve('@vue/runtime-core/package.json');
+      await linkInstalledPackage({
+        installedName: path.dirname(core),
+        packageName: '@vue/runtime-core',
+        rootDir: fixture.rootDir,
+      });
+      fixture.config.scope!.checkers = {
+        'vue-tsc': { include: ['packages/**/tsconfig.json'] },
+      };
+      const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+      const a = graph.sourceToDts
+        .get('vue-tsc')!
+        .get(fixture.path('packages/a/tsconfig.json'))!;
+      const b = graph.sourceToDts
+        .get('vue-tsc')!
+        .get(fixture.path('packages/b/tsconfig.json'))!;
+      await execFileAsync(
+        process.execPath,
+        [
+          requireFromTest.resolve('vue-tsc/bin/vue-tsc.js'),
+          '-b',
+          a,
+          '--pretty',
+          'false',
+        ],
+        { cwd: fixture.rootDir },
+      );
+      const generatedConfig = JSON.parse(await readFile(b, 'utf8'));
+      const declaration = toPortablePath(
+        path.resolve(
+          path.dirname(b),
+          generatedConfig.compilerOptions.declarationDir,
+          'index.vue.d.ts',
+        ),
+      );
+      expect(existsSync(declaration)).toBe(true);
+      expect(
+        ts.getImpliedNodeFormatForFile(declaration, undefined, ts.sys, {
+          moduleResolution: ts.ModuleResolutionKind.Node16,
+        }),
+      ).toBe(ts.ModuleKind.ESNext);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it.each(['unlisted', 'listed', 'disabled', 'path'] as const)(
     'requires explicit local JSON membership before emit: %s',
     async (variant) => {

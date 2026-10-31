@@ -1837,7 +1837,7 @@ export default {scope: {checkers: {
           rootDir,
         });
 
-        expect(unwrapReport(output)).toContain('symbolic link or junction');
+        expect(unwrapReport(output)).toContain('symbolic link');
         await expect(
           readFile(path.join(rootDir, 'tsc-args.txt')),
         ).rejects.toMatchObject({
@@ -1846,6 +1846,9 @@ export default {scope: {checkers: {
         await expect(readFile(markerPath, 'utf8')).resolves.toBe(
           'external marker bytes\n',
         );
+        await expect(readdir(externalDirectory)).resolves.toEqual([
+          'marker.txt',
+        ]);
         await expect(
           lstat(path.join(externalDirectory, 'lib.tsbuildinfo')),
         ).rejects.toMatchObject({ code: 'ENOENT' });
