@@ -181,9 +181,9 @@ Managed-output lookup 可解释明确管理的输出，但不能将声明消费�
 
 tsgo 执行保留 TypeScript 分析权威，但实际访问的 `types@` 版本条件需要独立的兼容性检查。编译器 trace 标识已求值条件，其版本范围解析器比较分析和已安装 Checker 的版本。匹配变化仅在该条件对象的所有分支完全相同，或显式 custom condition 固定匹配时接纳；否则准备／恢复拒绝无法证明的组合。这是保守的条件资格检查，不是 tsgo Resolver，也不声明两个编译器的全部语义可互换；prerelease／release 歧义同样保持未取得资格。普通无版本条件和匹配一致的条件继续支持。
 
-已观察到、但不属于任何源配置的本地 JSON 输入不能静默进入生成的 emit leaf。候选验证在物化前拒绝真实 root 的 module／path 请求中未确定的输入成员关系，并要求项目通过源 `files`／`include` 声明 JSON；不扩大 roots、不虚构 provider。已列入的 JSON 和编译器证明已禁用的输入保持独立行为；普通类型错误仍由 Checker 负责。
+已观察到、但不属于任何源配置的 Native 本地 JSON 输入不能静默进入生成的 emit leaf。候选验证在物化前检查 locked 有界清单中 roots 及 consumer 保留声明的 module／path 请求，并要求项目通过源 `files`／`include` 声明 JSON。独立 Native output 观察执行同样的成员检查，即使不存在候选 owner 也不能跳过，包括仅由输出库引入的输入。Output receipt 使用版本 3，旧证明不能授予准入。这些检查不扩大 roots、不虚构 provider。已列入的 JSON、external-library 输入和编译器证明已禁用的输入保持独立行为；普通类型错误仍由 Checker 负责。
 
-生成 Native root 的非相对模块请求必须保持 locked 编译器选择的目标及 external-library 分类。候选验证使用同一编译器、已解析的生成选项和暂存文件重放这些实际请求，不发现新源码请求、不新增引用。这会捕获搬迁后本地 package imports／self-exports 的输出到源码反向映射变化，包括生成目标无法解析的情况。冷准备和恢复均在物化前拒绝无法证明的搬迁；正确的 provider Reference Map 本身并不足够。
+生成 Native 的非相对模块请求，包括 consumer 保留的非 root 声明中的请求，必须保持 locked 编译器选择的目标及 external-library 分类。候选验证使用同一编译器、已解析的生成选项和暂存文件重放这些实际请求，不发现新源码请求、不新增引用。Locked 声明 frontier 保持权威：委派 provider 的请求仍留在其自身上下文，consumer 保留的声明请求无需 root 成员资格也必须接受搬迁及 Checker 版本资格检查。这会捕获搬迁后本地 package imports／self-exports 的输出到源码反向映射变化，包括生成目标无法解析的情况。冷准备和恢复均在物化前拒绝无法证明的搬迁；正确的 provider Reference Map 本身并不足够。
 
 实现文件 provider 选择使用实际 Checker 目标及源码配置解析输入中的编译器文件键成员关系。物理身份用于 Region 准入和身份一致性，不授予实现文件编译归属。Native 成员匹配遵循编译器 Host 的大小写规则；不能通过 inode/realpath 等价补出 alias owner，也不能用先出现的物理别名掩盖后面的精确成员。声明上下文的物理匹配保持独立。已知必要输入没有有效编译单元时拒绝准入，不能因没有生成边而被忽略。补充解析得到的别名若对应具有实际自定义 Vue profile 的输入，缺少编译归属时仍保持 unavailable；物理身份只揭示这一证明缺口，不能据此选择 provider 或提升 consumer Checker。没有这类 profile 的普通不受支持资源仍交由 Checker 诊断。编译器通过 own ambient module、augmentation 或 `noResolve` 已证明输入义务不存在时，补充资格缺口不能重新引入该义务；独立观察到的解析结果和有效归属仍然保留。
 

@@ -4,8 +4,8 @@ pageClass: limina-home limina-en-source-home
 
 hero:
   name: Limina
-  text: Make TypeScript <span class="hero-accent">dependencies and checking scope</span> clearer
-  tagline: Find uncovered source and cross-package dependencies, and derive declaration build references from source relationships. This site documents the development version; follow Getting Started to install it.
+  text: TypeScript project graph and <span class="hero-accent">architecture governance</span>
+  tagline: Derive declaration build relationships from source configs and continuously check source ownership and package boundaries
   actions:
     - theme: brand
       text: Get Started

@@ -482,36 +482,41 @@ describe('persistent Vue and mixed graph analysis', () => {
     expectRestored(f.run());
   });
 
-  it('rejects a Vue output receipt rebound to a source context', () => {
-    const f = fixture();
-    const config = JSON.parse(
-      readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
-    );
-    config.liminaOptions = {
-      outputs: { target: 'ES2020', rootDir: 'src', outDir: 'build' },
-    };
-    f.write('vue/tsconfig.json', JSON.stringify(config));
-    expectCold(f.run());
-    expectRestored(f.run());
-    const snapshot = f.snapshot();
-    const [sourceId] = Object.entries(snapshot.vueContexts).find(
-      ([, context]) =>
-        context.project.configPath === f.path('vue/tsconfig.json'),
-    )!;
-    const graph = Object.values(snapshot.graphs)[0]!;
-    const { decodeData, encodeData } = snapshotCodec;
-    const data = decodeData(graph.data) as {
-      outputProjections: { vueContextId?: string }[];
-    };
-    data.outputProjections[0]!.vueContextId = sourceId;
-    graph.data = encodeData(data);
-    f.writeSnapshot(snapshot);
-    const rebuilt = f.run();
-    expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
-    expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
-    expect(rebuilt.passed).toBe(true);
-    expectRestored(f.run());
-  });
+  it.each(['source-context', 'old-membership-proof'] as const)(
+    'rejects an invalid output receipt: %s',
+    (corruption) => {
+      const f = fixture();
+      const config = JSON.parse(
+        readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
+      );
+      config.liminaOptions = {
+        outputs: { target: 'ES2020', rootDir: 'src', outDir: 'build' },
+      };
+      f.write('vue/tsconfig.json', JSON.stringify(config));
+      expectCold(f.run());
+      expectRestored(f.run());
+      const snapshot = f.snapshot();
+      const [sourceId] = Object.entries(snapshot.vueContexts).find(
+        ([, context]) =>
+          context.project.configPath === f.path('vue/tsconfig.json'),
+      )!;
+      const graph = Object.values(snapshot.graphs)[0]!;
+      const { decodeData, encodeData } = snapshotCodec;
+      const data = decodeData(graph.data) as {
+        outputProjections: { vueContextId?: string; version: number }[];
+      };
+      if (corruption === 'source-context')
+        data.outputProjections[0]!.vueContextId = sourceId;
+      else data.outputProjections[0]!.version = 2;
+      graph.data = encodeData(data);
+      f.writeSnapshot(snapshot);
+      const rebuilt = f.run();
+      expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
+      expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
+      expect(rebuilt.passed).toBe(true);
+      expectRestored(f.run());
+    },
+  );
 
   it.each([
     'source',
