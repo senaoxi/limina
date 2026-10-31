@@ -177,6 +177,8 @@ Vue 输出投影复用现有 `vue-tsc`／Vue Language Core／Volar provider 和�
 
 Managed-output lookup 可解释明确管理的输出，但不能将声明消费升级为源码关系。Locked ownership 和 coloring 保留有资格的已解析实现需求，真实 reference redirect 不提升 consumer Checker。框架调度使用合法源码需求及既有 Checker 能力。修改这些边界时应联合检查 [I03–I07](./invariants.md)，包括实际生成配置构建，不能只看 Resolver 命中。
 
+生成 Native root 的非相对模块请求必须保持 locked 编译器选择的目标及 external-library 分类。候选验证使用同一编译器、已解析的生成选项和暂存文件重放这些实际请求，不发现新源码请求、不新增引用。这会捕获搬迁后本地 package imports／self-exports 的输出到源码反向映射变化，包括生成目标无法解析的情况。冷准备和恢复均在物化前拒绝无法证明的搬迁；正确的 provider Reference Map 本身并不足够。
+
 实现文件 provider 选择使用实际 Checker 目标及源码配置解析输入中的编译器文件键成员关系。物理身份用于 Region 准入和身份一致性，不授予实现文件编译归属。Native 成员匹配遵循编译器 Host 的大小写规则；不能通过 inode/realpath 等价补出 alias owner，也不能用先出现的物理别名掩盖后面的精确成员。声明上下文的物理匹配保持独立。已知必要输入没有有效编译单元时拒绝准入，不能因没有生成边而被忽略。补充解析得到的别名若对应具有实际自定义 Vue profile 的输入，缺少编译归属时仍保持 unavailable；物理身份只揭示这一证明缺口，不能据此选择 provider 或提升 consumer Checker。没有这类 profile 的普通不受支持资源仍交由 Checker 诊断。编译器通过 own ambient module、augmentation 或 `noResolve` 已证明输入义务不存在时，补充资格缺口不能重新引入该义务；独立观察到的解析结果和有效归属仍然保留。
 
 冷生成和恢复均证明最终生成配置的输入与引用投影。TypeScript 6.0.3 的普通 `.ts` 输入，在已解析引用闭包中具有唯一匹配 provider 时，使用 TypeScript 自身的声明输出计算完成证明，无需另建 Program。成员重叠、其他编译器版本或扩展名以及 Vue 继续使用实际候选 Reference Map 观察。已经需要声明候选观察时复用该观察。这些检查不增加 roots 或图边，不要求声明产物已存在，也不执行源码类型检查。Vue 候选排除增量构建信息作为证据。Coverage adapter 和图缓存身份阻止旧归属事实授予准入。[实现映射回归](../../../packages/limina/src/__tests__/implementation-reference-mapping.spec.ts)覆盖提前拒绝别名、共享物理文件的精确 owner、Oxc 与编译器路径不同时的自动 Vue 选择、双拼写、产物独立性及恢复输入漂移。
