@@ -149,7 +149,7 @@ const outputProjection = z.object({
 });
 const typeInputProjection = z.object({
   scope: z.literal('config-type-directives'),
-  version: z.literal(2),
+  version: z.literal(3),
   compilerVersion: text,
   sourceConfig: text,
   generatedConfig: text,

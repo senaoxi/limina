@@ -2,6 +2,8 @@ import path from 'pathe';
 import ts from 'typescript';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
+import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
+import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import {
   collectConfigTypeInputs,
   type EffectiveTypeInput,
@@ -11,7 +13,7 @@ import type { SourceProject } from './types';
 
 export interface TypeInputProjectionReceipt {
   scope: 'config-type-directives';
-  version: 2;
+  version: 3;
   compilerVersion: string;
   sourceConfig: string;
   generatedConfig: string;
@@ -30,15 +32,27 @@ function projectedOptions(
   overrides: Record<string, unknown>,
 ): ts.CompilerOptions {
   const compiler = compilerFor(project);
-  return effectiveCompilerOptions({
-    ...effectiveCompilerOptions(project.options),
-    ...compiler.convertCompilerOptionsFromJson(
-      overrides,
-      path.dirname(generatedConfig),
-      generatedConfig,
-    ).options,
-    configFilePath: generatedConfig,
-  });
+  const host = withVirtualResolutionFiles(
+    observedCompilerSystem(compiler, project.configPath),
+    project.virtualFiles,
+  );
+  const parsed = compiler.parseJsonConfigFileContent(
+    {
+      extends: project.configPath,
+      compilerOptions: overrides,
+      files: project.fileNames,
+      include: [],
+    },
+    host,
+    path.dirname(generatedConfig),
+    undefined,
+    generatedConfig,
+  );
+  if (parsed.errors.length > 0)
+    throw new Error(
+      `Cannot parse generated compiler options: ${generatedConfig}: ${parsed.errors.map((error) => compiler.flattenDiagnosticMessageText(error.messageText, '\n')).join('\n')}`,
+    );
+  return effectiveCompilerOptions(parsed.options);
 }
 
 /**
@@ -119,7 +133,7 @@ export function proveTypeInputProjection(
   }
   return {
     scope: 'config-type-directives',
-    version: 2,
+    version: 3,
     compilerVersion: compiler.version,
     sourceConfig: project.configPath,
     generatedConfig,
@@ -138,7 +152,7 @@ export function isValidTypeInputProjection(
   if (
     ![
       receipt.scope === 'config-type-directives',
-      receipt.version === 2,
+      receipt.version === 3,
       receipt.compilerVersion === ts.version,
     ].every(Boolean)
   )

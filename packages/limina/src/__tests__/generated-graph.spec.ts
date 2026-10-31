@@ -702,7 +702,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('does not override explicitly configured typeRoots in generated declarations', async () => {
+  it('preserves explicitly configured typeRoots in generated declarations', async () => {
     const fixture = await createFixture({
       'packages/pkg/package.json': json({
         name: '@example/pkg',
@@ -741,10 +741,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(generatedConfigPath).toBeDefined();
       if (generatedConfigPath === undefined) return;
 
-      const generatedConfig = JSON.parse(
-        await readFile(generatedConfigPath, 'utf8'),
-      ) as { compilerOptions: Record<string, unknown> };
-      expect(generatedConfig.compilerOptions.typeRoots).toBeUndefined();
       expect(
         parseProject(fixture.config, generatedConfigPath).options.typeRoots,
       ).toEqual([
@@ -805,10 +801,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(generatedConfigPath).toBeDefined();
       if (generatedConfigPath === undefined) return;
 
-      const generatedConfig = JSON.parse(
-        await readFile(generatedConfigPath, 'utf8'),
-      ) as { compilerOptions: Record<string, unknown> };
-      expect(generatedConfig.compilerOptions.typeRoots).toBeUndefined();
       expect(
         parseProject(fixture.config, generatedConfigPath).options.typeRoots,
       ).toEqual([
@@ -859,10 +851,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(generatedConfigPath).toBeDefined();
       if (generatedConfigPath === undefined) return;
 
-      const generatedConfig = JSON.parse(
-        await readFile(generatedConfigPath, 'utf8'),
-      ) as { compilerOptions: Record<string, unknown> };
-      expect(generatedConfig.compilerOptions.typeRoots).toBeUndefined();
       expect(
         parseProject(fixture.config, generatedConfigPath).options.typeRoots,
       ).toEqual([]);
@@ -9483,6 +9471,93 @@ describe('ambient references and compiler membership', () => {
       }
     },
   );
+  it.each(['direct', 'inherited', 'base-url', 'relative'] as const)(
+    'preserves relocated config path semantics: %s',
+    async (variant) => {
+      const compilerOptions = {
+        composite: true,
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        target: 'ES2020',
+        types: [],
+        ignoreDeprecations: '6.0',
+      };
+      const paths = {
+        '@dep': [
+          variant === 'relative' ? './b/index.ts' : '${configDir}/b/index.ts',
+          variant === 'inherited' ? '../c/index.ts' : './c/index.ts',
+        ],
+      };
+      const fixture = await createFixture({
+        'tsconfig.json': json({
+          files: [],
+          references: ['a', 'b', 'c'].map((name) => ({
+            path: `./tsconfig.${name}.json`,
+          })),
+        }),
+        'shared/base.json': json({ compilerOptions: { paths } }),
+        'tsconfig.a.json': json({
+          ...(variant === 'inherited' && { extends: './shared/base.json' }),
+          compilerOptions: {
+            ...compilerOptions,
+            rootDir: './a',
+            ...(variant === 'base-url'
+              ? {
+                  baseUrl: '${configDir}',
+                  paths: { '@dep': ['./b/index.ts', './c/index.ts'] },
+                }
+              : variant === 'inherited'
+                ? {}
+                : { paths }),
+          },
+          files: ['a/index.ts'],
+          liminaOptions: { outputs: { rootDir: './a', outDir: './out/a' } },
+        }),
+        ...Object.fromEntries(
+          ['b', 'c'].map((name) => [
+            `tsconfig.${name}.json`,
+            json({
+              compilerOptions: { ...compilerOptions, rootDir: `./${name}` },
+              files: [`${name}/index.ts`],
+              liminaOptions: {
+                outputs: { rootDir: `./${name}`, outDir: `./out/${name}` },
+              },
+            }),
+          ]),
+        ),
+        'a/index.ts': 'export { value } from "@dep";',
+        'b/index.ts': 'export const value: number = 1;',
+        'c/index.ts': 'export const value: string = "wrong provider";',
+      });
+      fixture.config.scope!.checkers = { tsc: { include: ['tsconfig.json'] } };
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const source = fixture.path('tsconfig.a.json');
+        expect(graph.dependencyEdges.map((edge) => edge.toConfigPath)).toEqual([
+          fixture.path('tsconfig.b.json'),
+        ]);
+        const configs = [
+          graph.sourceToDts.get('tsc')!.get(source)!,
+          graph.configToOutputBuild.get('tsc')!.get(source)!.path,
+        ];
+        expect(
+          ts
+            .createSolutionBuilder(
+              ts.createSolutionBuilderHost(ts.sys),
+              configs,
+              { force: true },
+            )
+            .build(),
+        ).toBe(0);
+        expect(
+          await readFile(fixture.path('out/a/index.d.ts'), 'utf8'),
+        ).toContain('@dep');
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each(['unknown', 'implementation', 'same-target', 'unowned'] as const)(
     'admits output-only obligations by candidate impact: %s',
     async (variant) => {
