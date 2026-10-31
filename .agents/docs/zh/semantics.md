@@ -189,4 +189,6 @@ Vue 分析 Adapter 在屏蔽 Program 加载前观察 Volar 原始解析结果，
 
 B 的项目检查与 A 的模块解析重定向是两个承诺。A 保留自己的 TypeChecker 选项。增量构建可以复用此前检查；候选 receipt 证明配置/解析绑定，不表示本轮 Checker 已重新检查成功。Generated-graph、full-analysis-cache 和 execution-admission 回归分别保护这些边界。
 
+Native 候选观察先把已加载声明文件名规范化为与 Native 请求证据相同的词法可移植键，再比较成员资格或保留嵌套请求。这会消除 `node_modules/../b/index.d.ts` 一类点路径段，但不合并 realpath 别名，也不折叠大小写。加载、Coverage、选定上下文与 reference-map 保护仍独立成立；generated-graph 回归覆盖 configured types、源码 type 指令、嵌套请求及未观察到声明时的拒绝。
+
 迁移比较独立保留未解析依赖观察。即使 Compiler 已判定当前编译关系，源请求仍未解析时，也不能据此删除用户显式引用。这些观察随图 DTO 恢复；迁移将比较标记为不完整，不改写编译义务证明。
