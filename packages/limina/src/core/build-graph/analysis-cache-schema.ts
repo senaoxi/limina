@@ -136,7 +136,7 @@ const effectiveTypeInputs = z.array(effectiveTypeInput);
 const compilerOptions = z.record(text, z.json());
 const outputProjection = z.object({
   scope: z.literal('existing-output-relations'),
-  version: z.literal(1),
+  version: z.literal(2),
   sourceConfig: text,
   generatedConfig: text,
   sourceTarget: z.number().nullable(),

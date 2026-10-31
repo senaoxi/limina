@@ -9483,6 +9483,73 @@ describe('ambient references and compiler membership', () => {
       }
     },
   );
+  it.each(['unknown', 'implementation', 'same-target', 'unowned'] as const)(
+    'admits output-only obligations by candidate impact: %s',
+    async (variant) => {
+      const extension = variant === 'implementation' ? 'ts' : 'json';
+      const compilerOptions = {
+        composite: true,
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        target: 'ES2020',
+        types: [],
+        resolveJsonModule: true,
+        libReplacement: true,
+        rootDir: './src',
+      };
+      const fixture = await createFixture({
+        'tsconfig.json': json({
+          files: [],
+          references: [
+            { path: './tsconfig.a.json' },
+            ...(variant === 'unowned' ? [] : [{ path: './tsconfig.b.json' }]),
+          ],
+        }),
+        'tsconfig.a.json': json({
+          compilerOptions,
+          files: ['src/a.ts'],
+          liminaOptions: {
+            outputs: {
+              target: variant === 'same-target' ? 'ES2020' : 'ES2022',
+              rootDir: './src',
+              outDir: './out/a',
+            },
+          },
+        }),
+        'tsconfig.b.json': json({
+          compilerOptions,
+          files: [`src/value.${extension}`],
+          liminaOptions: {
+            outputs: { target: 'ES2020', rootDir: './src', outDir: './out/b' },
+          },
+        }),
+        'src/a.ts': 'export const a = 1;',
+        [`src/value.${extension}`]:
+          extension === 'ts' ? 'export default 1;' : '{"value":1}',
+        'node_modules/@typescript/lib-es2022/package.json': json({
+          name: '@typescript/lib-es2022',
+          types: '../../../library/es2022.d.ts',
+        }),
+        'library/es2022.d.ts': `/// <reference lib="es2020" />\nimport value from '../src/value.${extension}'; export type Value = typeof value;`,
+      });
+      fixture.config.scope!.checkers = { tsc: { include: ['tsconfig.json'] } };
+      try {
+        const preparation = prepareGeneratedTsconfigGraph(fixture.config);
+        if (variant === 'unknown')
+          await expect(preparation).rejects.toThrow(
+            'Unproved output compilation relation',
+          );
+        else if (variant === 'implementation')
+          await expect(preparation).rejects.toThrow(
+            'not covered by existing output references',
+          );
+        else expect((await preparation).dependencyEdges).toEqual([]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each([
     {
       sourceTarget: 'ES2022',
