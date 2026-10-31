@@ -10176,6 +10176,72 @@ describe('declaration configuration governance', () => {
 });
 
 describe('declaration context candidate legality', () => {
+  it.each(['configured', 'directive'] as const)(
+    'preserves loaded declaration keys and nested requests for %s types',
+    async (channel) => {
+      const options = managedOutputCompilerOptions();
+      const fixture = await createFixture({
+        'a/tsconfig.json': json({
+          compilerOptions: {
+            ...options,
+            types: channel === 'configured' ? ['../b'] : [],
+          },
+          files: ['index.ts'],
+        }),
+        'a/index.ts': `${channel === 'directive' ? '/// <reference types="../b" />\n' : ''}export const value: SharedValue = { n: 1 };`,
+        'b/tsconfig.json': json({
+          compilerOptions: { ...options, types: [] },
+          files: ['index.d.ts', 'part.d.ts'],
+        }),
+        'b/index.d.ts':
+          'import type { Value } from "./part"; declare global { type SharedValue = Value; }',
+        'b/part.d.ts': 'export interface Value { n: number }',
+      });
+      fixture.config.scope!.checkers = {
+        tsc: { include: ['a/tsconfig.json', 'b/tsconfig.json'] },
+      };
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(graph.dependencyEdges).toEqual([
+          expect.objectContaining({
+            fromConfigPath: fixture.path('a/tsconfig.json'),
+            toConfigPath: fixture.path('b/tsconfig.json'),
+          }),
+        ]);
+        const receipt =
+          graph.dependencyAnalysis!.declarationValidation!.receipts.find(
+            (item) => item.sourceConfig === fixture.path('a/tsconfig.json'),
+          )!;
+        expect(receipt.mappings).toContainEqual(
+          expect.objectContaining({
+            file: fixture.path('b/index.d.ts'),
+            loaded: true,
+          }),
+        );
+        expect(receipt.requests).toContainEqual(
+          expect.objectContaining({
+            file: fixture.path('b/index.d.ts'),
+            specifier: './part',
+            target: fixture.path('b/part.d.ts'),
+          }),
+        );
+        await execFileAsync(
+          process.execPath,
+          [
+            requireFromTest.resolve('typescript/bin/tsc'),
+            '-b',
+            graph.checkerEntries.get('tsc')!,
+            '--pretty',
+            'false',
+          ],
+          { cwd: fixture.rootDir },
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each(['skipLibCheck', 'noCheck'] as const)(
     'refuses an owner that disables declaration checking with %s',
     async (option) => {
@@ -10493,6 +10559,7 @@ describe('declaration consumption responsibilities', () => {
 
 describe('declaration candidate evidence failures', () => {
   it.each([
+    ['not-loaded', 'Selected declaration was not loaded'],
     ['target', 'Declaration request context differs'],
     ['redirect', 'did not use the selected reference'],
     ['unavailable', 'Unavailable declaration request'],
@@ -10518,6 +10585,18 @@ describe('declaration candidate evidence failures', () => {
             project.declarationContextValidation?.sourceConfig ===
             fixture.path('packages/a/tsconfig.json')
           ) {
+            if (kind === 'not-loaded') {
+              const sources = context.program.getSourceFiles();
+              Object.defineProperty(context.program, 'getSourceFiles', {
+                value: () =>
+                  sources.filter(
+                    (source) =>
+                      normalizeAbsolutePath(source.fileName) !==
+                      fixture.path('packages/b/b.d.ts'),
+                  ),
+              });
+              return context;
+            }
             const snapshot = context.nativeEvidence!;
             const request = snapshot.requests.find(
               (item) => item.specifier === './part',

@@ -1,3 +1,4 @@
+import { normalizeAbsolutePath } from '#utils/path';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
@@ -49,11 +50,12 @@ export function observeNativeDeclarationCandidate(
         snapshot.failures[0]?.detail ??
           'Candidate declaration observation is incomplete.',
       );
+    // Match Native evidence lexical keys without realpath or case folding.
     const declarations = new Set(
       context.program
         .getSourceFiles()
         .filter((source) => isDeclarationFile(source.fileName))
-        .map((source) => source.fileName),
+        .map((source) => normalizeAbsolutePath(source.fileName)),
     );
     const resolutions = new Map(
       snapshot.resolutions.map((resolution) => [
@@ -74,7 +76,7 @@ export function observeNativeDeclarationCandidate(
       contextId: snapshot.contexts[0]!.id,
       compilerVersion: ts.version,
       sources: context.program.getSourceFiles().map((source) => ({
-        file: source.fileName,
+        file: normalizeAbsolutePath(source.fileName),
         defaultLibrary: source.hasNoDefaultLib,
       })),
       mappings: [
