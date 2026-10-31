@@ -9,7 +9,10 @@ import { toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
-import { canImportTsExtensions } from '../core/typescript-semantic/compiler-options';
+import {
+  absoluteCompilerPaths,
+  canImportTsExtensions,
+} from '../core/typescript-semantic/compiler-options';
 import {
   comparableTypecheckOptions,
   formatCompilerOptionValue,
@@ -164,11 +167,15 @@ function addOptionParityProblems(
     const buildValue =
       optionName === 'allowImportingTsExtensions'
         ? canImportTsExtensions(context.dtsProject.options)
-        : context.dtsProject.options[optionName];
+        : optionName === 'paths'
+          ? absoluteCompilerPaths(context.dtsProject.options)
+          : context.dtsProject.options[optionName];
     const typecheckValue =
       optionName === 'allowImportingTsExtensions'
         ? canImportTsExtensions(typecheckProject.options)
-        : typecheckProject.options[optionName];
+        : optionName === 'paths'
+          ? absoluteCompilerPaths(typecheckProject.options)
+          : typecheckProject.options[optionName];
 
     if (!isCompilerOptionEquals(optionName, buildValue, typecheckValue)) {
       context.findings.push(
