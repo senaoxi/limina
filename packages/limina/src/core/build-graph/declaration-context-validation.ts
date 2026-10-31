@@ -26,6 +26,10 @@ import {
   implementationReferenceInputs,
   validateImplementationMappings,
 } from './implementation-reference-mapping';
+import {
+  moduleProjectionInputs,
+  validateModuleProjection,
+} from './module-projection';
 import type {
   DependencyAnalysisResult,
   GeneratedDependencyEdge,
@@ -68,7 +72,13 @@ export function validateDeclarationContexts(
   const referenceInputs = implementationReferenceInputs(
     canObserveImplementations ? (input.dependencyEdges ?? []) : [],
   );
-  if (decisions.length === 0 && referenceInputs.size === 0) return;
+  const moduleInputs = moduleProjectionInputs(input.analysis);
+  if (
+    decisions.length === 0 &&
+    referenceInputs.size === 0 &&
+    moduleInputs.size === 0
+  )
+    return;
   const result: NonNullable<DependencyAnalysisResult['declarationValidation']> =
     {
       state: 'admitted',
@@ -88,6 +98,11 @@ export function validateDeclarationContexts(
       fileKey: (file) => fileKey(input, file),
     });
     for (const project of projects.values()) {
+      validateModuleProjection({
+        ...project,
+        files: input.files,
+        requests: moduleInputs.get(project.sourceConfig) ?? [],
+      });
       const applicable = scope(project.sourceConfig);
       const localInputs = relevantDeclarationRoots(input, project, decisions);
       const implementations = referenceInputs.get(project.sourceConfig) ?? [];

@@ -9471,6 +9471,87 @@ describe('ambient references and compiler membership', () => {
       }
     },
   );
+  it.each(['imports', 'exports', 'missing', 'bundler', 'source'] as const)(
+    'validates package output remapping after relocation: %s',
+    async (variant) => {
+      const compilerOptions = {
+        composite: true,
+        target: 'ES2020',
+        types: [],
+        rootDir: './src',
+        outDir: './dist',
+        module: variant === 'bundler' ? 'ESNext' : 'NodeNext',
+        moduleResolution: variant === 'bundler' ? 'Bundler' : 'NodeNext',
+      };
+      const fixture = await createFixture({
+        'package.json': json({
+          name: 'fixture',
+          private: true,
+          type: 'module',
+          ...(variant === 'exports'
+            ? { exports: { '.': './dist/b.js' } }
+            : {
+                imports: {
+                  '#b': variant === 'source' ? './src/b.ts' : './dist/b.js',
+                },
+              }),
+        }),
+        'tsconfig.json': json({
+          files: [],
+          references: ['a', 'b', ...(variant === 'missing' ? [] : ['c'])].map(
+            (name) => ({ path: `./tsconfig.${name}.json` }),
+          ),
+        }),
+        ...Object.fromEntries(
+          ['a', 'b'].map((name) => [
+            `tsconfig.${name}.json`,
+            json({ compilerOptions, files: [`src/${name}.ts`] }),
+          ]),
+        ),
+        'tsconfig.c.json': json({
+          compilerOptions: {
+            ...compilerOptions,
+            rootDir: './dist',
+            outDir: './out/c',
+          },
+          files: ['dist/b.ts'],
+        }),
+        'src/a.ts': `import { value } from '${variant === 'exports' ? 'fixture' : '#b'}'; export const result: number = value;`,
+        'src/b.ts': 'export const value: number = 1;',
+        ...(variant !== 'missing' && {
+          'dist/b.ts': 'export const value: number = 2;',
+        }),
+      });
+      fixture.config.scope!.checkers = { tsc: { include: ['tsconfig.json'] } };
+      try {
+        const preparation = prepareGeneratedTsconfigGraph(fixture.config);
+        if (variant === 'source') {
+          const graph = await preparation;
+          expect(
+            graph.dependencyEdges.map((edge) => edge.toConfigPath),
+          ).toEqual([fixture.path('tsconfig.b.json')]);
+          const entry = graph.sourceToDts
+            .get('tsc')!
+            .get(fixture.path('tsconfig.a.json'))!;
+          expect(
+            ts
+              .createSolutionBuilder(
+                ts.createSolutionBuilderHost(ts.sys),
+                [entry],
+                { force: true },
+              )
+              .build(),
+          ).toBe(0);
+        } else
+          await expect(preparation).rejects.toThrow(
+            'Generated module resolution changes a compiler request',
+          );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each(['import', 'path', 'physical', 'bare'] as const)(
     'preserves external type entry loading identity: %s',
     async (variant) => {
