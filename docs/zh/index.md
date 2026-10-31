@@ -4,8 +4,8 @@ pageClass: limina-home limina-zh-source-home
 
 hero:
   name: Limina
-  text: 让 TypeScript 项目的<span class="hero-accent">依赖和检查范围</span>更清楚
-  tagline: 检查遗漏的源码和跨包依赖，并根据源码关系生成声明构建引用。本文档介绍源码开发版，请按快速开始准备安装。
+  text: TypeScript 项目图与<span class="hero-accent">架构治理</span>工具
+  tagline: 从源码配置生成声明构建关系，持续检查源码归属与包边界
   actions:
     - theme: brand
       text: 开始接入

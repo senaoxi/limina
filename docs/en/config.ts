@@ -147,7 +147,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         link: '/cli',
       },
       {
-        text: `Development ${pkg.version}`,
+        text: pkg.version,
         items: [
           {
             text: 'Changelog',

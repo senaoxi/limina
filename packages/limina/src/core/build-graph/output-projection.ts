@@ -9,6 +9,10 @@ import type {
 } from '../typescript-semantic/contracts';
 import { projectNativeDeclarationClosure } from '../typescript-semantic/native-closure';
 import { hasCandidateImpact } from './analysis-admission';
+import {
+  jsonMembershipInputs,
+  validateJsonInputMembership,
+} from './json-input-membership';
 import { retainNativeAnalysis } from './native-analysis-evidence';
 import { outputSemanticProject } from './output-projection-context';
 import type { GeneratedGraphPreparationState } from './prepare-state';
@@ -17,7 +21,7 @@ import { collectVueOutputDependencies } from './vue-output-projection';
 // Independent of config-type-directives receipts: covers output governance.
 export interface OutputProjectionReceipt {
   scope: 'existing-output-relations';
-  version: 2;
+  version: 3;
   sourceConfig: string;
   generatedConfig: string;
   sourceTarget: number | null;
@@ -43,6 +47,13 @@ function dependencies(
     throw new Error(
       `Output compilation evidence is unavailable: ${project.configPath}`,
     );
+  for (const context of snapshot.contexts)
+    if (context.inputs.config === project.configPath)
+      validateJsonInputMembership(
+        jsonMembershipInputs(snapshot, context.id).values(),
+        project.fileNames,
+        project.configPath,
+      );
   for (const obligation of snapshot.obligations) {
     if (
       obligation.consumerConfigId === project.configPath &&
@@ -68,7 +79,7 @@ function baseReceipt(
 ): OutputProjectionReceipt {
   return {
     scope: 'existing-output-relations',
-    version: 2,
+    version: 3,
     sourceConfig: project.configPath,
     generatedConfig: project.outputConfigPath,
     sourceTarget: project.options.target ?? null,
@@ -222,7 +233,7 @@ export function isValidOutputProjection(
   if (
     ![
       receipt.scope === 'existing-output-relations',
-      receipt.version === 2,
+      receipt.version === 3,
     ].every(Boolean)
   )
     return false;
