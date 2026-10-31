@@ -1,6 +1,7 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
 import type { NativeRequest } from '../../domain/analysis/native-evidence';
+import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { DeclarationObservationUnavailable } from '../declaration-governance/candidate';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
@@ -12,6 +13,7 @@ interface ModuleProjectionInput {
   target: string;
   external: boolean | null;
   compilerVersion: string;
+  requiresJsonMembership: boolean;
 }
 
 /** Only actual locked requests supply the expected selection. These probes
@@ -33,9 +35,8 @@ export function moduleProjectionInputs(
       for (const request of snapshot.requests) {
         if (
           request.consumerContextId !== context.id ||
-          request.channel !== 'module' ||
-          request.sourceFile === null ||
-          ts.isExternalModuleNameRelative(request.specifier)
+          !['module', 'path-directive'].includes(request.channel) ||
+          request.sourceFile === null
         )
           continue;
         const resolution = snapshot.resolutions.find(
@@ -43,11 +44,27 @@ export function moduleProjectionInputs(
         );
         if (resolution?.state !== 'resolved' || resolution.target === null)
           continue;
+        const requiresJsonMembership =
+          resolution.target.lexicalPath.endsWith('.json') &&
+          resolution.externalLibrary !== true &&
+          snapshot.obligations.some(
+            (obligation) =>
+              obligation.requestIds.includes(request.id) &&
+              obligation.targetConfigId === null &&
+              summarizeCompilationObligation(obligation) === 'unknown',
+          );
+        if (
+          !requiresJsonMembership &&
+          (request.channel !== 'module' ||
+            ts.isExternalModuleNameRelative(request.specifier))
+        )
+          continue;
         entries.push({
           request,
           target: resolution.target.lexicalPath,
           external: resolution.externalLibrary,
           compilerVersion: context.inputs.typescriptVersion,
+          requiresJsonMembership,
         });
       }
       if (entries.length > 0) inputs.set(context.inputs.config, entries);
@@ -73,6 +90,15 @@ export function validateModuleProjection(input: {
   for (const entry of input.requests) {
     const file = entry.request.sourceFile!.lexicalPath;
     if (!roots.has(file)) continue;
+    if (entry.requiresJsonMembership && !roots.has(entry.target))
+      throw new DeclarationObservationUnavailable(
+        `Generated JSON input is outside source membership: ${entry.target}; consumer: ${input.generatedConfig}. Include the JSON input in the source config files/include before generating an emitting project.`,
+      );
+    if (
+      entry.request.channel !== 'module' ||
+      ts.isExternalModuleNameRelative(entry.request.specifier)
+    )
+      continue;
     const mode = resolutionMode(entry);
     const resolved =
       (input.preset ?? input.checker) === 'tsgo'
