@@ -131,7 +131,12 @@ const dependencyAnalysis = z.object({
   facts: z.array(relation),
 });
 const coveredOutput = z.object({ file: text, owner: text, outputConfig: text });
-const effectiveTypeInput = z.object({ name: text, target: text.nullable() });
+const effectiveTypeInput = z.object({
+  name: text,
+  target: text.nullable(),
+  originalPath: text.nullable(),
+  isExternalLibraryImport: z.boolean(),
+});
 const effectiveTypeInputs = z.array(effectiveTypeInput);
 const compilerOptions = z.record(text, z.json());
 const outputProjection = z.object({
@@ -149,7 +154,7 @@ const outputProjection = z.object({
 });
 const typeInputProjection = z.object({
   scope: z.literal('config-type-directives'),
-  version: z.literal(3),
+  version: z.literal(4),
   compilerVersion: text,
   sourceConfig: text,
   generatedConfig: text,

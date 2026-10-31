@@ -63,12 +63,22 @@ it('restores real type entry queries without resolving again and prunes unused q
   f.write('types/env/index.d.ts', 'export {};');
   const first = new NativeAnalysisCache('fixture', undefined, 'config');
   expect(f.collect(first, ['./env'])).toEqual([
-    { name: './env', target: f.file('types/env/index.d.ts') },
+    {
+      name: './env',
+      target: f.file('types/env/index.d.ts'),
+      originalPath: null,
+      isExternalLibraryImport: false,
+    },
   ]);
   expect(f.resolve).toHaveBeenCalledTimes(1);
   const warm = restored(first);
   expect(f.collect(warm, ['./env'])).toEqual([
-    { name: './env', target: f.file('types/env/index.d.ts') },
+    {
+      name: './env',
+      target: f.file('types/env/index.d.ts'),
+      originalPath: null,
+      isExternalLibraryImport: false,
+    },
   ]);
   expect(f.resolve).toHaveBeenCalledTimes(1);
   const empty = restored(warm);
@@ -81,14 +91,31 @@ it('invalidates a complete miss when the typeRoots candidate appears', () => {
   f.write('env.d.ts', 'export {};');
   const first = new NativeAnalysisCache('fixture', undefined, 'config');
   expect(f.collect(first, ['./env'])).toEqual([
-    { name: './env', target: null },
+    {
+      name: './env',
+      target: null,
+      originalPath: null,
+      isExternalLibraryImport: false,
+    },
   ]);
   const warm = restored(first);
-  expect(f.collect(warm, ['./env'])).toEqual([{ name: './env', target: null }]);
+  expect(f.collect(warm, ['./env'])).toEqual([
+    {
+      name: './env',
+      target: null,
+      originalPath: null,
+      isExternalLibraryImport: false,
+    },
+  ]);
   expect(f.resolve).toHaveBeenCalledTimes(1);
   f.write('types/env/index.d.ts', 'export {};');
   expect(f.collect(restored(warm), ['./env'])).toEqual([
-    { name: './env', target: f.file('types/env/index.d.ts') },
+    {
+      name: './env',
+      target: f.file('types/env/index.d.ts'),
+      originalPath: null,
+      isExternalLibraryImport: false,
+    },
   ]);
   expect(f.resolve).toHaveBeenCalledTimes(2);
 });
@@ -98,15 +125,30 @@ it('observes wildcard type enumeration independently of unchanged selected entri
   f.write('types/one/index.d.ts', 'export {};');
   const first = new NativeAnalysisCache('fixture', undefined, 'config');
   expect(f.collect(first, ['*'])).toEqual([
-    { name: 'one', target: f.file('types/one/index.d.ts') },
+    {
+      name: 'one',
+      target: f.file('types/one/index.d.ts'),
+      originalPath: null,
+      isExternalLibraryImport: false,
+    },
   ]);
   const warm = restored(first);
   f.collect(warm, ['*']);
   expect(f.resolve).toHaveBeenCalledTimes(1);
   f.write('types/two/index.d.ts', 'export {};');
   expect(f.collect(restored(warm), ['*'])).toEqual([
-    { name: 'one', target: f.file('types/one/index.d.ts') },
-    { name: 'two', target: f.file('types/two/index.d.ts') },
+    {
+      name: 'one',
+      target: f.file('types/one/index.d.ts'),
+      originalPath: null,
+      isExternalLibraryImport: false,
+    },
+    {
+      name: 'two',
+      target: f.file('types/two/index.d.ts'),
+      originalPath: null,
+      isExternalLibraryImport: false,
+    },
   ]);
   expect(f.resolve).toHaveBeenCalledTimes(2);
 });

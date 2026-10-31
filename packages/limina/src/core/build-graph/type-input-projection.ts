@@ -13,7 +13,7 @@ import type { SourceProject } from './types';
 
 export interface TypeInputProjectionReceipt {
   scope: 'config-type-directives';
-  version: 3;
+  version: 4;
   compilerVersion: string;
   sourceConfig: string;
   generatedConfig: string;
@@ -87,7 +87,9 @@ export function projectTypeDirectiveNames(
     files: projection.files,
   });
   return source.map((entry, index) =>
-    shouldPinTypeInput(entry, generated[index]) ? entry.target! : entry.name,
+    shouldPinTypeInput(entry, generated[index])
+      ? (entry.originalPath ?? entry.target!)
+      : entry.name,
   );
 }
 
@@ -125,7 +127,7 @@ export function proveTypeInputProjection(
   });
   if (
     source.length !== generated.length ||
-    source.some((entry, index) => entry.target !== generated[index]?.target)
+    source.some((entry, index) => !hasSameTypeInput(entry, generated[index]))
   ) {
     throw new Error(
       `Type input projection cannot preserve config-type-directives:\n  source: ${project.configPath}\n  generated: ${generatedConfig}\n  source entries: ${JSON.stringify(source)}\n  generated entries: ${JSON.stringify(generated)}`,
@@ -133,7 +135,7 @@ export function proveTypeInputProjection(
   }
   return {
     scope: 'config-type-directives',
-    version: 3,
+    version: 4,
     compilerVersion: compiler.version,
     sourceConfig: project.configPath,
     generatedConfig,
@@ -152,7 +154,7 @@ export function isValidTypeInputProjection(
   if (
     ![
       receipt.scope === 'config-type-directives',
-      receipt.version === 3,
+      receipt.version === 4,
       receipt.compilerVersion === ts.version,
     ].every(Boolean)
   )
@@ -180,5 +182,15 @@ function shouldPinTypeInput(
   entry: EffectiveTypeInput,
   generated: EffectiveTypeInput | undefined,
 ): boolean {
-  return entry.target !== null && entry.target !== generated?.target;
+  return entry.target !== null && !hasSameTypeInput(entry, generated);
+}
+
+function hasSameTypeInput(
+  entry: EffectiveTypeInput,
+  generated: EffectiveTypeInput | undefined,
+): boolean {
+  return (
+    entry.target === generated?.target &&
+    entry.isExternalLibraryImport === generated?.isExternalLibraryImport
+  );
 }
