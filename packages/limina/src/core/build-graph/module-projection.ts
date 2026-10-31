@@ -4,6 +4,7 @@ import type { NativeRequest } from '../../domain/analysis/native-evidence';
 import { DeclarationObservationUnavailable } from '../declaration-governance/candidate';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
+import { resolveVersionQualifiedModule } from './checker-version-conditions';
 import type { DependencyAnalysisResult } from './types';
 
 interface ModuleProjectionInput {
@@ -60,6 +61,9 @@ export function validateModuleProjection(input: {
   parsed: ts.ParsedCommandLine;
   files: ReadonlyMap<string, string>;
   requests: readonly ModuleProjectionInput[];
+  checker: string;
+  preset?: string;
+  executionRoot?: string;
 }): void {
   const host = withVirtualResolutionFiles(
     observedResolutionHost(ts, input.generatedConfig),
@@ -70,15 +74,25 @@ export function validateModuleProjection(input: {
     const file = entry.request.sourceFile!.lexicalPath;
     if (!roots.has(file)) continue;
     const mode = resolutionMode(entry);
-    const resolved = ts.resolveModuleName(
-      entry.request.specifier,
-      file,
-      input.parsed.options,
-      host,
-      undefined,
-      undefined,
-      mode,
-    ).resolvedModule;
+    const resolved =
+      (input.preset ?? input.checker) === 'tsgo'
+        ? resolveVersionQualifiedModule({
+            specifier: entry.request.specifier,
+            file,
+            options: input.parsed.options,
+            host,
+            mode,
+            executionRoot: input.executionRoot,
+          })
+        : ts.resolveModuleName(
+            entry.request.specifier,
+            file,
+            input.parsed.options,
+            host,
+            undefined,
+            undefined,
+            mode,
+          ).resolvedModule;
     if (
       resolved === undefined ||
       normalizeAbsolutePath(resolved.resolvedFileName) !== entry.target ||

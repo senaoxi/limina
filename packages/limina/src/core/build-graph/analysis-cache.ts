@@ -169,6 +169,7 @@ export async function restoreGeneratedGraph(
     !hasValidRestoredDeclarationContexts(
       data,
       options.preparation.projectDependencyCaches?.metrics,
+      options.config.rootDir,
     )
     ? undefined
     : rebindArtifacts(data, options);
