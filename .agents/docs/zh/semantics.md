@@ -163,7 +163,7 @@ Vue 语义上下文中的原生文件使用同一套 Vue 所属 TypeScript 实�
 
 库回执独立于类型指令回执，绑定实际编译器、源／生成配置及选中目标。源查找查询保留已观察的正负候选；投影探测验证暂存映射，不把生成目录物化前的状态保留为不可变的源证据。持久图恢复要求这些回执及准确的暂存 manifest；缺少回执的旧图重新采集。执行前检查已物化 manifest 的字节，并重新计算源／生成配置的实际库选择，之后才允许 Checker 启动。恢复和准入也会运行这些不加载源码的投影探测；Native context 缓存命中不表示整条命令完全不创建 Program。[标准库回归](../../../packages/limina/src/__tests__/library-projection.spec.ts)覆盖真实 Checker 产物、默认库检查、配置／指令／默认入口、输出 target、跨进程恢复、候选变化及 manifest 篡改拒绝。
 
-`TypeInputProjectionReceipt` 仅证明 `config-type-directives` 入口保持，不代表完整类型环境或全部请求关系等价。现有 `outputs.target` 选择及默认值继续有效，默认库集合不同本身不是错误。独立的[输出投影](../../../packages/limina/src/core/build-graph/output-projection.ts)检查实际输出治理依赖是否被既有输出关系覆盖；未覆盖或无法观察的输入报告能力限制和来源链，不扩张源图、不推断任意声明生产者。新进程分别校验类型入口保持与输出有效性。类型入口选择和证明查询使用同一观察解析缓存；图回执保留生成入口选择所用的查询，使后续局部变化在干净恢复后仍可复用它们。
+`TypeInputProjectionReceipt` 仅证明 `config-type-directives` 入口保持，不代表完整类型环境或全部请求关系等价。现有 `outputs.target` 选择及默认值继续有效，默认库集合不同本身不是错误。独立的[输出投影](../../../packages/limina/src/core/build-graph/output-projection.ts)检查实际输出治理依赖是否被既有输出关系覆盖；未覆盖或无法观察的输入报告能力限制和来源链，不扩张源图、不推断任意声明生产者。Native 输出观察同时保留 unknown 义务：发布前按当前 output context 身份、候选影响与编译器证明的引用满足状态执行准入，不能因只过滤 source config 而丢弃。版本 2 输出回执撤销缺少此检查的旧准入。新进程分别校验类型入口保持与输出有效性。类型入口选择和证明查询使用同一观察解析缓存；图回执保留生成入口选择所用的查询，使后续局部变化在干净恢复后仍可复用它们。
 
 Vue 输出投影复用现有 `vue-tsc`／Vue Language Core／Volar provider 和共享声明闭包策略。[独立输出 identity](../../../packages/limina/src/core/vue-semantic/output-identity.ts)保留源 roots、profiles、配置闭包及工具链，并应用有效输出编译选项。Vue Owner 下的原生文件和映射后的 SFC 依赖均通过该 provider 重新收集；源与输出 target 可以不同，但每个受治理输出需求必须已有输出引用。缺失 identity、不支持的观察及未覆盖依赖继续 fail closed。[生成图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)通过真实 `vue-tsc -b` 产物检验两个 target 方向，并独立移除输出关系作为负例。不新增依赖或第二套框架 Resolver。
 
