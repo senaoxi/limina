@@ -13,7 +13,7 @@ import type { DependencyAnalysisResult } from './types';
 
 interface ModuleProjectionInput {
   request: NativeRequest;
-  target: string;
+  target: string | null;
   external: boolean | null;
   compilerVersion: string;
   requiresJsonMembership: boolean;
@@ -46,7 +46,10 @@ export function moduleProjectionInputs(
         const resolution = snapshot.resolutions.find(
           (item) => item.requestId === request.id,
         );
-        if (resolution?.state !== 'resolved' || resolution.target === null)
+        if (
+          resolution?.state !== 'unresolved' &&
+          (resolution?.state !== 'resolved' || resolution.target === null)
+        )
           continue;
         const requiresJsonMembership = jsonInputs.has(request.id);
         if (
@@ -57,7 +60,7 @@ export function moduleProjectionInputs(
           continue;
         entries.push({
           request,
-          target: resolution.target.lexicalPath,
+          target: resolution.target?.lexicalPath ?? null,
           external: resolution.externalLibrary,
           compilerVersion: context.inputs.typescriptVersion,
           requiresJsonMembership,
@@ -83,9 +86,11 @@ export function validateModuleProjection(input: {
     input.files,
   );
   validateJsonInputMembership(
-    input.requests
-      .filter((entry) => entry.requiresJsonMembership)
-      .map((entry) => entry.target),
+    input.requests.flatMap((entry) =>
+      entry.requiresJsonMembership && entry.target !== null
+        ? [entry.target]
+        : [],
+    ),
     input.parsed.fileNames,
     input.generatedConfig,
   );
@@ -119,13 +124,17 @@ export function validateModuleProjection(input: {
             undefined,
             mode,
           ).resolvedModule;
+    // A completed miss still needs Checker qualification: another compiler
+    // version may select an implementation and require a project reference.
+    // A preserved miss is an ordinary Checker diagnostic, not a graph defect.
+    if (resolved === undefined && entry.target === null) continue;
     if (
       resolved === undefined ||
       normalizeAbsolutePath(resolved.resolvedFileName) !== entry.target ||
       Boolean(resolved.isExternalLibraryImport) !== entry.external
     )
       throw new DeclarationObservationUnavailable(
-        `Generated module resolution changes a compiler request: ${input.generatedConfig}\n  ${file}: ${entry.request.specifier}\n  source: ${entry.target}\n  generated: ${resolved?.resolvedFileName ?? 'unresolved'}. Preserve the source package mapping before generating references.`,
+        `Generated module resolution changes a compiler request: ${input.generatedConfig}\n  ${file}: ${entry.request.specifier}\n  source: ${entry.target ?? 'unresolved'}\n  generated: ${resolved?.resolvedFileName ?? 'unresolved'}. Preserve the source package mapping before generating references.`,
       );
   }
 }

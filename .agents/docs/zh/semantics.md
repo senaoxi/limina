@@ -173,13 +173,15 @@ Vue 输出投影复用现有 `vue-tsc`／Vue Language Core／Volar provider 和�
 
 受管声明输出目录通过必要的逐目录 `package.json` 标记保持源 package format。现有编译器计算各 Native 声明输出及源包格式；嵌套源作用域保留独立标记，`.d.mts`／`.d.cts` 继续使用显式格式。合格的 Vue profile 也保持源 package scope，不要求额外存在 Native 根文件。仅用于元数据的编译器探测使用原始目录；实际 CLI Reference Map 独立验证声明输出位置的 package format。不创建伪造 SourceFile 或源分析事实。这些元数据不改变引用拓扑，也不把整个 `.limina` 标记为同一模块类型。冷准备及恢复候选校验准确的标记内容，生成产物所有权与过期清理包含这些文件。
 
+输出格式探针根据编译器已确认的输出映射提供目录祖先的可见性，不伪造声明文件或 Program 成员。实际 package.json 查询（包括缺失的嵌套标记及其路径绑定）仍受观察，因此正常 Checker emit 创建目录不会使分析 epoch 失效，同时保留真实包格式冲突和输入漂移拒绝。冷检查与恢复检查使用同一探针，analysis adapter 使旧观察模型失效。[格式回归](../../../packages/limina/src/__tests__/declaration-package-format.spec.ts)与[完整检查回归](../../../packages/limina/integration/tests/declaration-output-freshness.spec.ts)覆盖 emit、真实包变化、最终发布和跨进程恢复。
+
 推断引用可以前向指向随后由有序 `tsc -b` 创建的声明。不要求构建前 Checker 诊断成功或产物已存在，也不许可陈旧输出成为 discovery 证据。生成配置不能建立源 Checker 权威。
 
 治理层的 source type leaf 不允许手写 `references`；[config reader](../../../packages/limina/src/core/build-graph/generated/config-reader-basics.ts) 拒绝该形状，solution 负责聚合，`implicitRefs` 记录明确动态/虚拟关系。底层 semantic context 支持 raw references，不等于治理层放宽 leaf shape。[generated-configs](../../../packages/limina/src/core/build-graph/generated-configs.ts) 将 declaration outDir/declarationDir 指向同一 managed dts root，防继承输出改写；`rewriteRelativeImportExtensions` 仅在 effective source 启用时覆盖，避免无条件引入旧 compiler 不认识的 option。为声明输出关闭 rewrite 时，必须通过启用 `allowImportingTsExtensions` 保留其隐含的 TS 扩展名导入许可，包括 source 未设置该选项或显式设置为 false 的情况。TypeScript 以这两个选项的逻辑或计算有效许可，声明专用输出允许显式开启该许可。[generated-graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts) 通过真实 `tsc -b` 覆盖 source 许可的三种状态，并检查声明中的模块标识符保留 TS 扩展名。[Graph parity](../../../packages/limina/src/graph-check/dts-typecheck-parity.ts) 与 [Proof parity](../../../packages/limina/src/proof/declaration-parity.ts) 比较该有效许可，而非原始写法，包括两份配置都没有显式许可键的情况。真实的许可增加或丢失仍产生诊断，不将该选项豁免于一致性校验。支持的 solution 不带 outputs。
 
 Managed-output lookup 可解释明确管理的输出，但不能将声明消费升级为源码关系。Locked ownership 和 coloring 保留有资格的已解析实现需求，真实 reference redirect 不提升 consumer Checker。框架调度使用合法源码需求及既有 Checker 能力。修改这些边界时应联合检查 [I03–I07](./invariants.md)，包括实际生成配置构建，不能只看 Resolver 命中。
 
-tsgo 执行保留 TypeScript 分析权威，但实际访问的 `types@` 版本条件需要独立的兼容性检查。编译器 trace 标识已求值条件，其版本范围解析器比较分析和已安装 Checker 的版本。匹配变化仅在该条件对象的所有分支完全相同，或显式 custom condition 固定匹配时接纳；否则准备／恢复拒绝无法证明的组合。这是保守的条件资格检查，不是 tsgo Resolver，也不声明两个编译器的全部语义可互换；prerelease／release 歧义同样保持未取得资格。普通无版本条件和匹配一致的条件继续支持。
+tsgo 执行保留 TypeScript 分析权威，但已解析请求和已完成的未解析请求中，实际访问的 `types@` 版本条件都需要独立的兼容性检查。编译器 trace 标识已求值条件，其条件选择与版本范围解析器比较分析和已安装 Checker 的版本。匹配变化仅在该条件对象的所有分支完全相同、且每个比较版本至少匹配一个分支，或显式 custom condition 固定匹配时接纳。目标相同本身不能涵盖“无匹配”结果。已激活的普通条件、默认分支和互补版本范围可以在不解析新目标的情况下证明覆盖；否则准备／恢复拒绝无法证明的组合。恢复会重新检查保留的请求清单，而不信任先前准入；[生成图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)使用先前已准入的未解析候选覆盖这一入口。这是保守的条件资格检查，不是 tsgo Resolver，也不声明两个编译器的全部语义可互换；prerelease／release 歧义同样保持未取得资格。普通无版本条件和匹配一致的条件继续支持。保持未解析的请求与普通类型不匹配一样，仍由 Checker 诊断；资格检查不要求类型检查成功，也不合成引用。
 
 已观察到、但不属于任何源配置的 Native 本地 JSON 输入不能静默进入生成的 emit leaf。候选验证在物化前检查 locked 有界清单中 roots 及 consumer 保留声明的 module／path 请求，并要求项目通过源 `files`／`include` 声明 JSON。独立 Native output 观察执行同样的成员检查，即使不存在候选 owner 也不能跳过，包括仅由输出库引入的输入。Output receipt 使用版本 3，旧证明不能授予准入。这些检查不扩大 roots、不虚构 provider。已列入的 JSON、external-library 输入和编译器证明已禁用的输入保持独立行为；普通类型错误仍由 Checker 负责。
 

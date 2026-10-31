@@ -4,6 +4,10 @@ import ts from 'typescript';
 import { DeclarationObservationUnavailable } from '../declaration-governance/candidate';
 
 interface VersionCompiler {
+  getConditions(
+    options: ts.CompilerOptions,
+    mode: ts.ResolutionMode,
+  ): readonly string[];
   VersionRange: {
     tryParse(text: string): { test(version: string): boolean } | undefined;
   };
@@ -50,10 +54,30 @@ export function resolveVersionQualifiedModule(input: {
   ).resolvedModule;
   if (conditions.size === 0) return result;
   const version = nativeVersion(input.executionRoot, input.host);
-  const ranges = (ts as unknown as VersionCompiler).VersionRange;
-  if (typeof ranges?.tryParse !== 'function')
+  const compiler = ts as unknown as VersionCompiler;
+  const ranges = compiler.VersionRange;
+  if (
+    typeof ranges?.tryParse !== 'function' ||
+    typeof compiler.getConditions !== 'function'
+  )
     throw new DeclarationObservationUnavailable(
       'Compiler version-condition qualification is unavailable.',
+    );
+  const activeConditions = new Set(
+    compiler.getConditions(input.options, input.mode),
+  );
+  // Include the absence of a matching branch in equivalence. The compiler
+  // supplies request conditions and version matching; no target is resolved here.
+  const hasVersionCoverage = (keys: readonly string[]): boolean =>
+    [ts.version, version, version.replace(/[-+].*$/, '')].every((value) =>
+      keys.some(
+        (key) =>
+          key === 'default' ||
+          activeConditions.has(key) ||
+          (activeConditions.has('types') &&
+            key.startsWith('types@') &&
+            ranges.tryParse(key.slice('types@'.length))?.test(value)),
+      ),
     );
   for (const condition of conditions) {
     if (input.options.customConditions?.includes(condition)) continue;
@@ -69,7 +93,9 @@ export function resolveVersionQualifiedModule(input: {
       continue;
     if (
       manifests.length > 0 &&
-      manifests.every((manifest) => hasEquivalentBranches(manifest, condition))
+      manifests.every((manifest) =>
+        hasEquivalentBranches(manifest, condition, hasVersionCoverage),
+      )
     )
       continue;
     throw new DeclarationObservationUnavailable(
@@ -101,14 +127,21 @@ function nativeVersion(
   );
 }
 
-function hasEquivalentBranches(value: unknown, condition: string): boolean {
+function hasEquivalentBranches(
+  value: unknown,
+  condition: string,
+  hasVersionCoverage: (keys: readonly string[]) => boolean,
+): boolean {
   if (value === null || typeof value !== 'object') return true;
   const entries = Object.entries(value);
-  const hasDifferentBranches =
+  const hasUnprovedOutcomes =
     Object.hasOwn(value, condition) &&
-    new Set(entries.map(([, target]) => JSON.stringify(target))).size > 1;
+    (new Set(entries.map(([, target]) => JSON.stringify(target))).size > 1 ||
+      !hasVersionCoverage(entries.map(([key]) => key)));
   return (
-    !hasDifferentBranches &&
-    entries.every(([, target]) => hasEquivalentBranches(target, condition))
+    !hasUnprovedOutcomes &&
+    entries.every(([, target]) =>
+      hasEquivalentBranches(target, condition, hasVersionCoverage),
+    )
   );
 }
