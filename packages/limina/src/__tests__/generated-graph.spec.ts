@@ -9471,6 +9471,60 @@ describe('ambient references and compiler membership', () => {
       }
     },
   );
+  it.each(['unlisted', 'listed', 'disabled', 'path'] as const)(
+    'requires explicit local JSON membership before emit: %s',
+    async (variant) => {
+      const fixture = await createFixture({
+        'packages/pkg/tsconfig.json': json({
+          compilerOptions: {
+            composite: true,
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            target: 'ES2020',
+            types: [],
+            noEmit: true,
+            resolveJsonModule: variant !== 'disabled',
+          },
+          files: [
+            'src/index.ts',
+            ...(variant === 'listed' ? ['src/data.json'] : []),
+          ],
+        }),
+        'packages/pkg/src/index.ts':
+          variant === 'path'
+            ? '/// <reference path="./data.json" />\nexport const value = 1;'
+            : 'import data from "./data.json"; export const value: number = data.value;',
+        'packages/pkg/src/data.json': '{"value":1}',
+      });
+      try {
+        const preparation = prepareGeneratedTsconfigGraph(fixture.config);
+        if (variant === 'unlisted' || variant === 'path')
+          await expect(preparation).rejects.toThrow(
+            'Generated JSON input is outside source membership',
+          );
+        else {
+          const graph = await preparation;
+          expect(graph.dependencyEdges).toEqual([]);
+          const entry = graph.sourceToDts
+            .get('tsc')!
+            .get(fixture.path('packages/pkg/tsconfig.json'))!;
+          if (variant === 'listed')
+            expect(
+              ts
+                .createSolutionBuilder(
+                  ts.createSolutionBuilderHost(ts.sys),
+                  [entry],
+                  { force: true },
+                )
+                .build(),
+            ).toBe(0);
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each([
     'divergent',
     'same-target',
