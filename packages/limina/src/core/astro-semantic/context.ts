@@ -16,6 +16,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import type { GovernanceRootBase } from '#utils/workspace-root';
 import type ts from 'typescript';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
+import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
 import type { ImportAnalysisMetricsRecorder } from '../import-analysis/types';
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
 import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
@@ -51,6 +52,7 @@ export class AstroSemanticContext {
   #program: ts.Program | undefined;
   #disposed = false;
   readonly identity: string;
+  readonly compilerRequests: FrameworkCompilerRequests;
   readonly language: AstroLanguage;
   readonly languageServiceHost: ts.LanguageServiceHost;
   readonly project: AstroMaterializedProject;
@@ -60,6 +62,10 @@ export class AstroSemanticContext {
     toolchain: AstroSemanticToolchain;
   }) {
     this.project = options.project;
+    this.compilerRequests = new FrameworkCompilerRequests(
+      options.toolchain.tsModule,
+      options.project.seed.configPath,
+    );
     this.toolchain = options.toolchain;
     this.identity = createAstroMaterializedIdentity(options);
     this.language = createAstroLanguage({
@@ -84,6 +90,9 @@ export class AstroSemanticContext {
     );
     this.languageServiceHost = host;
     this.#boundedHost = createBoundedLanguageServiceHost({
+      observeModule: (input) => this.compilerRequests.observe(input),
+      observeType: (input) => this.compilerRequests.observeType(input),
+      observeOptions: (input) => this.compilerRequests.observeOptions(input),
       host,
       tsModule: options.toolchain.tsModule,
       project: {
@@ -199,6 +208,7 @@ export class AstroSemanticContext {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.compilerRequests.dispose();
     this.#disposeLanguageService();
     this.#program = undefined;
     this.#deleteRegisteredScripts();

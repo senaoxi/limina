@@ -445,7 +445,7 @@ async function createHarness(
 }
 
 describe('Astro bounded semantic resolution', () => {
-  it('admits only reverse-mapped source dependencies from generated service scripts', async () => {
+  it('rejects detached mapped syntax when Compiler inventory is unavailable', async () => {
     const harness = await createHarness();
     const source = "---\nimport './target.d.ts';\n---\n";
     const sourceFile = harness.fixture.path('src', 'entry.astro');
@@ -477,18 +477,9 @@ describe('Astro bounded semantic resolution', () => {
     });
 
     expect(preparation).toMatchObject({
-      kind: 'supported',
-      facts: [
-        {
-          importRecord: { filePath: sourceFile, specifier: './target.d.ts' },
-          semanticSpecifier: './target.d.ts',
-        },
-      ],
-      unmapped: [
-        {
-          semanticSpecifier: './synthetic-helper',
-        },
-      ],
+      kind: 'unsupported',
+      stage: 'service-script-materialization',
+      reason: expect.stringContaining('Language Service creation is forbidden'),
     });
   });
 

@@ -1,7 +1,7 @@
 import type ts from 'typescript';
 
 export const SVELTE_SEMANTIC_ADAPTER_VERSION =
-  'svelte2tsx-0.7.61-v2-occurrence-mode';
+  'svelte2tsx-0.7.61-v3-compiler-requests';
 
 export interface SvelteSemanticProject {
   adapterVersion: typeof SVELTE_SEMANTIC_ADAPTER_VERSION;

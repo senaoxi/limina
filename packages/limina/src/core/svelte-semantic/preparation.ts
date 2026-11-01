@@ -1,5 +1,6 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
+import { frameworkCompilationObligation } from '../framework-semantic/compilation-obligation';
 import type {
   FrameworkSemanticDependencyPreparation,
   PreparedDependencyFact,
@@ -17,7 +18,10 @@ import {
   createBoundedProgram,
   createGeneratedSemanticScript,
 } from './generated-script';
-import { resolveSvelteModuleOccurrence } from './module-resolution';
+import {
+  createSvelteModuleTarget,
+  resolveSvelteModuleOccurrence,
+} from './module-resolution';
 import { collectSvelteMappedCandidates } from './projection';
 import { isSvelteTypeScriptSource } from './source-records';
 import type { SvelteSemanticToolchain } from './toolchain';
@@ -92,6 +96,16 @@ function prepareProjectedCandidates(options: {
   if (direct.kind === 'unsupported') return direct;
   let program: ts.Program | undefined;
   const getProgram = () => (program ??= getStructuralProgram(options));
+  if (
+    options.resolved.some(
+      (item) =>
+        item.target === null && item.compilationObligation?.state === 'unknown',
+    )
+  )
+    return createFailure(
+      'Svelte compiler request has no qualified resolution observation.',
+      'toolchain-compatibility',
+    );
   const prepared = prepareResolvedFrameworkCandidates({
     checkerName: 'svelte-check',
     framework: 'svelte',
@@ -132,11 +146,19 @@ function prepareUnchecked(options: {
     project: options.project,
     toolchain: options.toolchain,
   });
-  const dependencies = enumerateGeneratedSemanticDependencies({
-    generatedFilePath: generated.filePath,
-    sourceFile: generated.sourceFile,
-    tsModule: options.toolchain.tsModule,
-  });
+  const program = createBoundedProgram({ ...options, generated });
+  const requests = generated.compilerRequests.collect(
+    program,
+    generated.sourceFile,
+  );
+  const dependencies = [
+    ...requests,
+    ...enumerateGeneratedSemanticDependencies({
+      generatedFilePath: generated.filePath,
+      sourceFile: generated.sourceFile,
+      tsModule: options.toolchain.tsModule,
+    }).filter((dependency) => dependency.literal === null),
+  ];
   const directSourceRecords: Extract<
     FrameworkSemanticDependencyPreparation,
     { kind: 'supported' }
@@ -157,13 +179,63 @@ function prepareUnchecked(options: {
     unmapped,
   });
   if (projected.kind === 'unsupported') return projected;
+  if (
+    !options.project.options.noResolve &&
+    projected.resolved.some(
+      (item) =>
+        item.candidate.sourceRecord.compilerRequest?.role === 'import' &&
+        item.target?.resolvedBy === 'checker-source' &&
+        item.candidate.provenance === 'compiler-request',
+    )
+  )
+    return createFailure(
+      'Svelte generated component consumption has no qualified source association.',
+      'toolchain-compatibility',
+    );
   return prepareProjectedCandidates({
     supportInputBoundary: options.supportInputBoundary,
     directSourceRecords,
     generated,
     managedOutputLookup: options.managedOutputLookup,
     project: options.project,
-    resolved: projected.resolved,
+    resolved: projected.resolved.map((item) => ({
+      ...item,
+      ...(!(
+        !options.project.options.noResolve &&
+        item.candidate.sourceRecord.compilerRequest?.role === 'import' &&
+        item.target?.resolvedBy === 'checker-source' &&
+        item.candidate.provenance === 'strict-source-map'
+      ) && {
+        target: createSvelteModuleTarget(
+          requests.find((request) => request.literal === item.candidate.literal)
+            ?.raw?.resolvedModule,
+          options.toolchain.tsModule,
+        ),
+        resolutionMode: String(
+          requests.find((request) => request.literal === item.candidate.literal)
+            ?.mode,
+        ),
+      }),
+      // Component schedules retain the adapter's source-consumption contract;
+      // a TypeScript declaration surrogate is not a native implementation input.
+      compilationObligation:
+        !options.project.options.noResolve &&
+        item.candidate.sourceRecord.compilerRequest?.role === 'import' &&
+        item.target?.resolvedBy === 'checker-source' &&
+        item.candidate.provenance === 'strict-source-map'
+          ? undefined
+          : frameworkCompilationObligation(
+              {
+                program,
+                tsModule: options.toolchain.tsModule,
+                compilerRequests: generated.compilerRequests,
+                configPath: options.project.configPath,
+              },
+              requests.filter(
+                (request) => request.literal === item.candidate.literal,
+              ),
+            ),
+    })),
     toolchain: options.toolchain,
     unmapped,
   });

@@ -51,7 +51,7 @@ function getMode(options: {
       );
 }
 
-function createTarget(
+export function createSvelteModuleTarget(
   resolved: ts.ResolvedModuleFull | undefined,
   tsModule: typeof ts,
 ): ResolvedCheckerModuleName | null {
@@ -97,7 +97,7 @@ export function resolveSvelteModuleOccurrence(options: {
   ).resolvedModule;
   return {
     resolutionMode: String(mode),
-    target: createTarget(resolved, options.tsModule),
+    target: createSvelteModuleTarget(resolved, options.tsModule),
   };
 }
 

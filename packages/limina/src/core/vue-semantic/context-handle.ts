@@ -15,9 +15,9 @@ import { observeVueExecutionSystem } from '../analysis-cache/vue-execution-input
 import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import { declarationLoadingCeiling } from '../declaration-governance/loading';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
+import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
 import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
-import { VueCompilerRequests } from './compiler-requests';
 import {
   createMeasuredProgram,
   getCachedSemanticSourceFile,
@@ -166,7 +166,7 @@ export class VueSemanticContext {
       ) => ts.ResolvedModuleWithFailedLookupLocations)
     | undefined;
 
-  readonly compilerRequests: VueCompilerRequests;
+  readonly compilerRequests: FrameworkCompilerRequests;
 
   readonly identity: VueProjectSemanticIdentity;
 
@@ -197,7 +197,7 @@ export class VueSemanticContext {
     this.analysisTrace = analysisTrace;
     this.#onProgramCreated = onProgramCreated;
     this.tsModule = identity.toolchain.tsModule;
-    this.compilerRequests = new VueCompilerRequests(
+    this.compilerRequests = new FrameworkCompilerRequests(
       this.tsModule,
       identity.configPath,
     );

@@ -11549,6 +11549,68 @@ it('retains competing-reference protection for a local declaration root with ski
 
 describe('compiler requests and final reference admission', () => {
   it.each([
+    { framework: 'astro', noResolve: false },
+    { framework: 'astro', noResolve: true },
+    { framework: 'svelte', noResolve: false },
+    { framework: 'svelte', noResolve: true },
+  ] as const)(
+    'qualifies generated $framework compiler inputs with noResolve=$noResolve',
+    async ({ framework, noResolve }) => {
+      const compilerOptions = {
+        composite: true,
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        types: [],
+        skipLibCheck: true,
+      };
+      const specifier = framework === 'astro' ? 'astro/jsx-runtime' : 'tslib';
+      const fixture = await createFixture({
+        'packages/a/tsconfig.json': json({
+          compilerOptions: {
+            ...compilerOptions,
+            noResolve,
+            importHelpers: framework === 'svelte',
+            paths: { [specifier]: ['../b/runtime.ts'] },
+          },
+          files: [`App.${framework}`],
+        }),
+        [`packages/a/App.${framework}`]:
+          framework === 'astro'
+            ? '---\nexport const n = 1;\n---\n<p>{n}</p>'
+            : '<script lang="ts">export const n = 1;</script><p>{n}</p>',
+        'packages/b/tsconfig.json': json({
+          compilerOptions,
+          files: ['runtime.ts'],
+        }),
+        'packages/b/runtime.ts': 'export const n = 1;',
+      });
+      fixture.config.scope!.checkers = {
+        [framework === 'astro' ? 'astro' : 'svelte-check']: {
+          include: ['packages/a/tsconfig.json'],
+        },
+        tsc: { include: ['packages/b/tsconfig.json'] },
+      };
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const edges = graph.dependencyEdges.filter(
+          (edge) =>
+            edge.fromConfigPath === fixture.path('packages/a/tsconfig.json') &&
+            edge.toConfigPath === fixture.path('packages/b/tsconfig.json'),
+        );
+        expect(edges).toHaveLength(noResolve ? 0 : 1);
+        if (!noResolve)
+          expect(edges[0]).toMatchObject({
+            kind: 'framework-schedule',
+            importedSpecifier: specifier,
+          });
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([
     { name: 'SFC-only JSX request', jsx: true, references: 1 },
     { name: 'SFC-only helper request', jsx: false, references: 1 },
     {
