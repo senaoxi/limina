@@ -1,4 +1,6 @@
 import type ts from 'typescript';
+import type { CompilationObligationProof } from '../dependency-semantics';
+import { compilerRequestCandidate } from '../framework-semantic/compiler-candidate';
 import type {
   FrameworkSemanticCandidate,
   FrameworkSemanticDependencyPreparation,
@@ -21,6 +23,7 @@ type SvelteCandidate = FrameworkSemanticCandidate<
 >;
 
 export interface MappedCandidate {
+  compilationObligation?: CompilationObligationProof;
   candidate: SvelteCandidate;
   resolutionMode: string;
   target: ReturnType<typeof resolveSvelteModuleOccurrence>['target'];
@@ -55,6 +58,7 @@ function createSourceRecord(options: {
     specifier: options.generatedRecord.specifier,
   });
   return {
+    compilerRequest: options.generatedRecord.compilerRequest,
     domain: collected.domain,
     filePath: collected.filePath,
     kind: collected.kind,
@@ -165,6 +169,26 @@ function projectDependency(options: {
     sourceLineStarts: options.sourceLineStarts,
     trace: options.generated.trace,
   });
+  if (mapping.kind !== 'mapped') {
+    const candidate = compilerRequestCandidate({
+      dependency: options.dependency,
+      framework: 'svelte',
+      identityId: options.identity,
+      filePath: options.sourceFilePath,
+    });
+    if (candidate !== undefined)
+      return {
+        candidate,
+        ...resolveSvelteModuleOccurrence({
+          host: options.generated.resolutionHost,
+          cache: options.generated.resolutionCache,
+          sourceFile: candidate.containingSourceFile,
+          literal: candidate.literal,
+          project: options.project,
+          tsModule: options.toolchain.tsModule,
+        }),
+      };
+  }
   if (mapping.kind === 'source-map-mismatch') {
     return createFailure(mapping.reason);
   }

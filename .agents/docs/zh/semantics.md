@@ -110,11 +110,11 @@ JSDoc 定位将既有 occurrence 绑定到真实解析 AST 节点，并覆盖所
 
 ## Locked resolution 与 framework preparation
 
-Vue 的 compiler-purpose 发现枚举既有 Vue Program 的模块请求与输入指令，包括普通 TS/JS 支撑文件和实际 SFC service script。[编译器请求记录](../../../packages/limina/src/core/vue-semantic/compiler-requests.ts)保留 occurrence、role 与 resolution mode；面向 Program 的 Bounded Host 在屏蔽外部实现文件前观测解析。支撑准备和手动 runtime 解析不能填充该回执。编译器复用时保留跨 bounded pass 的观测；没有回执的 masked miss 保持 unknown。隐式 JSX 与 importHelpers 元数据只装饰已有编译器请求，不创造请求。
+Vue 的 compiler-purpose 发现枚举既有 Vue Program 的模块请求与输入指令，包括普通 TS/JS 支撑文件和实际 SFC service script。[编译器请求记录](../../../packages/limina/src/core/framework-semantic/compiler-requests.ts)保留 occurrence、role 与 resolution mode；面向 Program 的 Bounded Host 在屏蔽外部实现文件前观测解析。支撑准备和手动 runtime 解析不能填充该回执。编译器复用时保留跨 bounded pass 的观测；没有回执的 masked miss 保持 unknown。隐式 JSX 与 importHelpers 元数据只装饰已有编译器请求，不创造请求。
 
-[Vue 编译义务](../../../packages/limina/src/core/vue-semantic/compilation-obligation.ts)独立于 TypeEvidence 和 membership，区分 present、absent 与 unknown。有效 noResolve、augmentation、consumer roots、输入/emit 资格和真实 redirect 分别限定请求。框架目标必须具有实际 service script；consumer 的 root profiles 不代表外部目标能力。已有映射的 SFC 请求保留严格源码映射与候选一致性。普通 TS require 仅是运行时语法，而编译器收录的 JS require 不因词法遮蔽而丢失。缺少证明时不能退回 resolution-only 推导。[建图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖这些差分、import-equals、路径指令与隐式 JSX 输入；各框架 Program 和治理边界保持独立。
+[Vue 编译义务](../../../packages/limina/src/core/vue-semantic/compilation-obligation.ts)独立于 TypeEvidence 和 membership，区分 present、absent 与 unknown。有效 noResolve、augmentation、consumer roots、输入/emit 资格和真实 redirect 分别限定请求。框架目标必须具有实际 service script；consumer 的 root profiles 不代表外部目标能力。已有映射的 SFC 请求在源码关联之外保留 Compiler Request 身份；候选一致性按 Compiler Request 检查。普通 TS require 仅是运行时语法，而编译器收录的 JS require 不因词法遮蔽而丢失。缺少证明时不能退回 resolution-only 推导。[建图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖这些差分、import-equals、路径指令与隐式 JSX 输入；各框架 Program 和治理边界保持独立。
 
-模块输入资格使用 resolver 的实际 extension，因此物理 `.vue` 路径不能让 JS service script 绕过生效的 `allowJs` 或 JS emit 规则。框架正向证明还要求 service extension、ScriptKind 与解析结果一致，仅存在 service script 不足以证明义务。已有映射的 SFC 请求继续遵守严格源码映射与候选一致性要求。
+模块输入资格使用 resolver 的实际 extension，因此物理 `.vue` 路径不能让 JS service script 绕过生效的 `allowJs` 或 JS emit 规则。框架正向证明还要求 service extension、ScriptKind 与解析结果一致，仅存在 service script 不足以证明义务。已有映射的 SFC 请求仍按 Compiler Request 检查候选一致性。
 
 没有源码字符映射的真实 compiler inventory 条目保留 `compiler-request` 来源及明确的无范围 locator。其 context、生成文件、role、mode、kind、specifier 和 occurrence 保持独立，包括同时存在的 JSX/runtime 与 helper import。义务证明保留原 Program literal 和原始解析；惰性 TypeEvidence 通过 inventory 成员身份重新绑定，不使用 AST 位置。未映射的源码语法不会获得该权威，inventory 绑定失败保持 unknown。[SFC-only 建图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖合成请求和 noResolve 控制。
 
@@ -126,7 +126,9 @@ TS 5.4/5.5 的 Vue adapter 保留面向 Program 的 module/type 回调选项，�
 
 [PreparedDependencyFact](../../../packages/limina/src/core/framework-semantic/contracts.ts) 保留 occurrence、mapping、原始解析及结构 redirect 证据。Native 使用独立编译义务证明，框架保留自身适配器判定，完整 observed miss 不同于观察不可用。Pending 观察产生 dependency-semantics failure，不能发布完整图。不同 provider 必须有可归因的 Checker 结构；路径和扩展不能制造 positive TypeEvidence。
 
-[框架支持贡献](../../../packages/limina/src/core/framework-semantic/support-contributions.ts)在 Astro/Svelte 的完整依赖 preparation 中从各适配器现有 Program 和 Resolver 收集。物理非 Root 支持输入保留 direct-source 来源；生成代码继续要求既有源码映射。模块 import 和合法 path/types 指令可以贡献义务，但不会成为 Roots。已归属其他 Scope 的实现内部依赖由其自身分析。治理层排除外部支持目标，保留 workspace 目标；声明文件中的 JSDoc 示例不属于编译 occurrence。仅解析的 preparation 仍保持惰性。
+[框架支持贡献](../../../packages/limina/src/core/framework-semantic/support-contributions.ts)在 Astro/Svelte 的完整依赖 preparation 中从各适配器现有 Program 和 Resolver 收集。物理非 Root 支持输入保留 direct-source 来源；生成模块请求独立于源码关联，使用实际 Compiler inventory；源码指令保留既有映射规则。模块 import 和合法 path/types 指令可以贡献义务，但不会成为 Roots。已归属其他 Scope 的实现内部依赖由其自身分析。治理层排除外部支持目标，保留 workspace 目标；声明文件中的 JSDoc 示例不属于编译 occurrence。仅解析的 preparation 仍保持惰性。
+
+Astro/Svelte 模块发现使用现有 bounded Program 与共享 Compiler 请求收据。Host 回调在屏蔽外部实现前记录原始解析；preparation 不因此授权加载这些实现。生成请求通过独立于映射的 Native 输入义务判断，包括 noResolve 和声明负例。Svelte 已映射组件的调度保留适配器源码消费合同：组件声明代理不等于 Native 实现输入。独立的 noResolve 和 augmentation absence 仍然生效；无映射组件目标缺少合格框架消费证明时保持 unsupported。Resolver 收据保留声明闭包准入需要的 resolutionOrigin。既有 direct-source support 贡献继续使用闭包限定的框架策略，不附加 Native emit 义务。请求观察不受支持或缺失时保持不可用。Astro/Svelte 仍采用 cold fallback；请求与来源分组变化会使 Vue 持久身份失效。
 
 统一的是依赖事实与编译义务，解析器、虚拟文件映射和 Program 生命周期仍由各适配器管理。Vue→Vue 继续依据能力选择 declaration-provider；Astro/Svelte 的组件关系可由治理层选择 framework-schedule。Limina 观察真实 Project Reference Redirect 结构，不重新推断其生产者，不把推断引用回灌 discovery，也不持久化 Program、AST 或 Symbol。
 
@@ -145,7 +147,7 @@ Toolchain 来源、accepted versions 和 capability checks 以 [checker](../../.
 
 截至 **2026-10-01**，Astro check 准入使用共享的 external-checker 契约 `>=0.9.6 <0.10.0`，并保留既有 `includePrerelease: true` 策略。Language Server、compiler 和 Volar 继续要求精确 tuple 与 internal API shape；不受支持的组合仍按 [I04](./invariants.md) fail closed。[Astro toolchain 守卫](../../../packages/limina/src/__tests__/astro-semantic-toolchain.spec.ts)覆盖版本与预发布边界，[打包消费者守卫](../../../smoke/consumer.spec.ts)覆盖实际安装的 `0.9.6` 搭配 TypeScript `5.9.3`，以及 `0.9.10` 搭配 TypeScript `6.0.3`。这些样例不能证明未来所有补丁或预发布版本都兼容。
 
-Svelte [source-mapping](../../../packages/limina/src/core/svelte-semantic/source-mapping.ts) 要求 generated dependency 每个 UTF-16 offset 被明确 segments 连续、单调映射到当前 source；部分覆盖、cross-source 或非连续映射产生 mismatch，完全未映射保留 unmapped observation。[generated-script](../../../packages/limina/src/core/svelte-semantic/generated-script.ts) 构造 TraceMap 不加 map URL，避免 absolute Windows source drive 被再次 rebasing。Vue/Astro 则通过自身 mapping 算法处理 full-token/inner-content、ambiguity 与 mismatch，不能把一种框架的 map 条件套给全部框架。
+Svelte [source-mapping](../../../packages/limina/src/core/svelte-semantic/source-mapping.ts) 要求 generated dependency 每个 UTF-16 offset 被明确 segments 连续、单调映射到当前 source；部分覆盖、cross-source 或非连续映射产生 mismatch，完全未映射的源码语法保留 observation；具有独立 Compiler 身份的模块请求保留无范围 locator 的依赖事实。[generated-script](../../../packages/limina/src/core/svelte-semantic/generated-script.ts) 构造 TraceMap 不加 map URL，避免 absolute Windows source drive 被再次 rebasing。Vue/Astro 则通过自身 mapping 算法处理 full-token/inner-content、ambiguity 与 mismatch，不能把一种框架的 map 条件套给全部框架。
 
 实际消费者 occurrence 提供 package exports 解析。Graph check 与 graph export 消费同一套保留的 checker facts；两者都不构建 eager exports index、不尝试第二个 profile，也不以 runtime evidence 修复 checker miss。Self-name、conditions 与框架映射遵循所选 checker。[Vue 守卫](../../../packages/limina/src/__tests__/vue-semantic.spec.ts)及 [Astro/native 守卫](../../../packages/limina/src/__tests__/workspace-export-resolution.spec.ts)使用真实消费者；Svelte 守卫使用组件生成依赖。条件行为仍取决于工具链版本。
 

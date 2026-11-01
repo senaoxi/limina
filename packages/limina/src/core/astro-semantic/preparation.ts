@@ -1,4 +1,5 @@
 import type ts from 'typescript';
+import { frameworkCompilationObligation } from '../framework-semantic/compilation-obligation';
 import type {
   FrameworkSemanticCandidate,
   FrameworkSemanticDependencyPreparation,
@@ -57,7 +58,16 @@ function collectServiceCandidates(options: {
   >['unmapped'];
 }): PreparationFailure | { candidates: AstroCandidate[]; kind: 'supported' } {
   const candidates: AstroCandidate[] = [];
-  for (const service of options.services) {
+  for (const detached of options.services) {
+    const sourceFile = options.context.program.getSourceFile(
+      detached.sourceFile.fileName,
+    );
+    if (sourceFile === undefined)
+      return createFailure(
+        'Astro service script is absent from the Compiler Program.',
+        'service-script-materialization',
+      );
+    const service = { ...detached, sourceFile };
     const mapped = mapAstroServiceCandidates({ ...options, service });
     if (mapped.kind === 'unsupported') return mapped;
     candidates.push(...mapped.candidates);
@@ -69,8 +79,15 @@ function resolveCandidates(
   context: AstroSemanticContext,
   candidates: readonly AstroCandidate[],
 ) {
-  const byLiteral = context.resolveModuleNameLiterals(
-    candidates.map((candidate) => candidate.literal),
+  const requests = [
+    ...new Set(candidates.map((candidate) => candidate.containingSourceFile)),
+  ].flatMap((source) =>
+    context.compilerRequests.collect(context.program, source),
+  );
+  const byLiteral = new Map(
+    requests
+      .filter((request) => request.raw !== undefined)
+      .map((request) => [request.literal, request.raw!]),
   );
   return candidates.map((candidate) => {
     const result = createResolvedAstroCandidate({
@@ -80,6 +97,22 @@ function resolveCandidates(
     });
     return {
       candidate,
+      compilationObligation:
+        candidate.sourceRecord.compilerRequest === undefined
+          ? undefined
+          : frameworkCompilationObligation(
+              {
+                program: context.program,
+                tsModule: context.toolchain.tsModule,
+                compilerRequests: context.compilerRequests,
+                configPath: context.project.seed.configPath,
+                getService: (fileName) =>
+                  context.getServiceScripts(fileName)[0]?.serviceScript,
+              },
+              requests.filter(
+                (request) => request.literal === candidate.literal,
+              ),
+            ),
       resolutionMode: result.mode,
       target: result.resolution,
     };
@@ -128,6 +161,16 @@ function prepareMappedServices(options: {
   const direct = mergePreparedDirectSourceRecords(options.directSourceRecords);
   if (direct.kind === 'unsupported') return direct;
   const resolved = resolveCandidates(options.context, options.candidates);
+  if (
+    resolved.some(
+      (item) =>
+        item.target === null && item.compilationObligation?.state === 'unknown',
+    )
+  )
+    return createFailure(
+      'Astro compiler request has no qualified resolution observation.',
+      'toolchain-compatibility',
+    );
   const prepared = prepareResolvedFrameworkCandidates({
     checkerName: 'astro',
     framework: 'astro',

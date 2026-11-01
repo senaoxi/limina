@@ -5,6 +5,7 @@ import type {
   CompilerMembership,
   ProjectReferenceRedirect,
 } from '../dependency-semantics';
+import { isMatchingFrameworkCompilerRequest } from '../framework-semantic/compiler-requests';
 import { rangeIdentity } from '../framework-semantic/generated-dependencies';
 import {
   canonicalTypeEvidenceIdentity,
@@ -15,7 +16,6 @@ import type { TypeEvidence } from '../type-evidence/cache';
 import { observeCompilerMembership } from '../typescript-semantic/compiler-membership';
 import { observeProjectReferenceRedirect } from '../typescript-semantic/reference-redirect';
 import { vueCompilationObligation } from './compilation-obligation';
-import { isMatchingVueCompilerRequest } from './compiler-requests';
 import type { VueSemanticContext } from './context';
 import {
   collectSemanticDependencyEvidence,
@@ -151,7 +151,7 @@ function graphObligation(
     .collect(context.program, source)
     .filter((request) => {
       if (importRecord.compilerRequest !== undefined)
-        return isMatchingVueCompilerRequest(request, importRecord);
+        return isMatchingFrameworkCompilerRequest(request, importRecord);
       const { sourceStart, sourceEnd } = request.record.locator;
       return (
         request.literal.text === importRecord.specifier &&

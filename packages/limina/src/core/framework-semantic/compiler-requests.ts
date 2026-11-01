@@ -1,6 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
-import type { GeneratedSemanticDependency } from '../framework-semantic/generated-dependencies';
 import type { ImportRecord } from '../import-analysis/records';
 import { compilerModuleRecord } from '../typescript-semantic/compiler-module-record';
 import {
@@ -8,8 +7,9 @@ import {
   nativeProgramSource,
 } from '../typescript-semantic/native-program-api';
 import { syntheticModuleMetadata } from '../typescript-semantic/native-program-synthetic';
+import type { GeneratedSemanticDependency } from './generated-dependencies';
 
-export interface VueTypeResolution {
+export interface FrameworkTypeResolution {
   source: ts.SourceFile | undefined;
   reference: ts.FileReference | string;
   options: ts.CompilerOptions;
@@ -25,7 +25,7 @@ interface Resolution {
   redirect: ts.ResolvedProjectReference | undefined;
   result: ts.ResolvedModuleWithFailedLookupLocations;
 }
-export interface VueCompilerRequest extends GeneratedSemanticDependency {
+export interface FrameworkCompilerRequest extends GeneratedSemanticDependency {
   literal: ts.StringLiteralLike;
   role: 'import' | 'augmentation';
   mode: ts.ResolutionMode;
@@ -48,13 +48,13 @@ function key(
 /**
 Only the Program-facing bounded host records raw resolution here.
 */
-export class VueCompilerRequests {
+export class FrameworkCompilerRequests {
   #raw = new WeakMap<
     ts.SourceFile,
     Map<string, ts.ResolvedModuleWithFailedLookupLocations>
   >();
-  #files = new WeakMap<ts.SourceFile, VueCompilerRequest[]>();
-  readonly typeResolutions: VueTypeResolution[] = [];
+  #files = new WeakMap<ts.SourceFile, FrameworkCompilerRequest[]>();
+  readonly typeResolutions: FrameworkTypeResolution[] = [];
   readonly moduleResolutions: Resolution[] = [];
   readonly optionsBySource: Map<ts.SourceFile, ts.CompilerOptions> = new Map();
   readonly compiler: typeof ts;
@@ -78,7 +78,7 @@ export class VueCompilerRequests {
     this.#raw = new WeakMap();
     this.#files = new WeakMap();
   }
-  observeType(input: VueTypeResolution): void {
+  observeType(input: FrameworkTypeResolution): void {
     this.typeResolutions.push(input);
     if (input.source !== undefined)
       this.observeOptions({ ...input, source: input.source });
@@ -95,7 +95,10 @@ export class VueCompilerRequests {
     raw.set(key(input.source, input.literal, mode), input.result);
     this.#raw.set(input.source, raw);
   }
-  collect(program: ts.Program, source: ts.SourceFile): VueCompilerRequest[] {
+  collect(
+    program: ts.Program,
+    source: ts.SourceFile,
+  ): FrameworkCompilerRequest[] {
     const cached = this.#files.get(source);
     if (cached !== undefined) return cached;
     const inventory = nativeProgramSource(source);
@@ -173,8 +176,8 @@ function reusedResolution(
   return result?.resolvedModule === undefined ? undefined : result;
 }
 
-export function isMatchingVueCompilerRequest(
-  request: VueCompilerRequest,
+export function isMatchingFrameworkCompilerRequest(
+  request: FrameworkCompilerRequest,
   record: ImportRecord,
 ): boolean {
   const identity = record.compilerRequest;

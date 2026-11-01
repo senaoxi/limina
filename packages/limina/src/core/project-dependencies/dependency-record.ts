@@ -184,7 +184,9 @@ export function collectPreparedProjectDependencyFact(
 function collectDecidedFact(options: CollectFactOptions): void {
   const decision = decideReferenceRequirement({
     ...options.fact,
-    requireCompilationObligation: options.fact.framework === 'vue',
+    requireCompilationObligation:
+      options.fact.framework === 'vue' ||
+      options.fact.provenance === 'compiler-request',
   });
   if (isRecordPendingFact(options, decision)) return;
   if (decision.state === 'decided') collectFactTarget(options, decision.value);

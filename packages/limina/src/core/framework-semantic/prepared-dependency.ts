@@ -42,8 +42,12 @@ function occurrenceIdentity(fact: PreparedDependencyFact): string {
           fact.importRecord.kind,
           fact.importRecord.specifier,
         ],
-    fact.importRecord.locator.sourceStart,
-    fact.importRecord.locator.sourceEnd,
+    fact.importRecord.compilerRequest === undefined
+      ? fact.importRecord.locator.sourceStart
+      : null,
+    fact.importRecord.compilerRequest === undefined
+      ? fact.importRecord.locator.sourceEnd
+      : null,
   ]);
 }
 
@@ -207,7 +211,22 @@ function mergePreparedGroup(options: {
       stage: 'source-map-mismatch',
     };
   }
-  return clonePreparedFact(options.group[0]!);
+  const fact = clonePreparedFact(options.group[0]!);
+  const locations = new Set(
+    options.group.map((item) =>
+      JSON.stringify([
+        item.importRecord.locator.sourceStart,
+        item.importRecord.locator.sourceEnd,
+      ]),
+    ),
+  );
+  if (fact.importRecord.compilerRequest !== undefined && locations.size > 1) {
+    fact.provenance = 'compiler-request';
+    fact.importRecord.line = 0;
+    fact.importRecord.locator.sourceStart = -1;
+    fact.importRecord.locator.sourceEnd = -1;
+  }
+  return fact;
 }
 
 function mergePreparedGroups(options: {

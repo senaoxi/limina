@@ -2,8 +2,10 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { TraceMap } from '@jridgewell/trace-mapping';
 import path from 'node:path';
 import type ts from 'typescript';
+import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
 import { buildLineStarts } from '../import-analysis/records';
 import { TypeScriptInclusionLedger } from '../typescript-semantic/admission';
+import { resolveModuleWithOrigin } from '../typescript-semantic/resolution-origin';
 import { prepareTypeScriptSupportInputs } from '../typescript-semantic/support-inputs';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import { createSvelteResolutionHost } from './module-resolution';
@@ -11,6 +13,8 @@ import type { SvelteSemanticToolchain } from './toolchain';
 import type { SvelteSemanticProject } from './types';
 
 export interface GeneratedSemanticScript {
+  compilerRequests: FrameworkCompilerRequests;
+  program?: ts.Program;
   resolutionHost: ts.ModuleResolutionHost;
   resolutionCache: ts.ModuleResolutionCache;
   filePath: string;
@@ -42,6 +46,10 @@ export function createGeneratedSemanticScript(options: {
       options.project.options,
     );
   return {
+    compilerRequests: new FrameworkCompilerRequests(
+      options.toolchain.tsModule,
+      options.project.configPath,
+    ),
     resolutionHost,
     resolutionCache: options.toolchain.tsModule.createModuleResolutionCache(
       path.dirname(options.project.configPath),
@@ -84,6 +92,7 @@ export function createBoundedProgram(options: {
   project: SvelteSemanticProject;
   toolchain: SvelteSemanticToolchain;
 }): ts.Program {
+  if (options.generated.program !== undefined) return options.generated.program;
   const nativeRoots = options.project.fileNames.filter(
     (fileName) => !/\.(?:astro|svelte|vue)$/iu.test(fileName),
   );
@@ -115,7 +124,8 @@ export function createBoundedProgram(options: {
         sourceFile,
       ] = arguments_;
       return literals.map((literal) => {
-        const result = tsModule.resolveModuleName(
+        const result = resolveModuleWithOrigin(
+          tsModule,
           literal.text,
           containingFile,
           compilerOptions,
@@ -128,6 +138,13 @@ export function createBoundedProgram(options: {
             compilerOptions,
           ),
         );
+        options.generated.compilerRequests.observe({
+          source: sourceFile,
+          literal,
+          options: compilerOptions,
+          redirect: redirected,
+          result,
+        });
         const target = result.resolvedModule;
         if (
           target === undefined ||
@@ -150,6 +167,7 @@ export function createBoundedProgram(options: {
     });
     prepareTypeScriptSupportInputs({ admission, host: raw, project, tsModule });
   } while (admission.needsProgramRebuild());
+  options.generated.program = program;
   return program;
 }
 

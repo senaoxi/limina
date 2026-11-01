@@ -63,7 +63,10 @@ function handleMappedProjection(options: {
     literal: options.dependency.literal,
     provenance: 'strict-source-map',
     semanticSpecifier: options.dependency.record.specifier,
-    sourceRecord: options.projection.sourceRecord,
+    sourceRecord: {
+      ...options.projection.sourceRecord,
+      compilerRequest: options.dependency.record.compilerRequest,
+    },
   };
 }
 
@@ -109,6 +112,11 @@ function projectDependency(options: {
     sourceFilePath: options.filePath,
     sourceText: options.sourceText,
   });
+  if (
+    projection.kind !== 'mapped' &&
+    options.dependency.record.compilerRequest !== undefined
+  )
+    return compilerRequestCandidate(options);
   if (projection.kind !== 'unmapped') {
     return handleNonUnmappedProjection({ ...options, projection });
   }

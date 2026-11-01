@@ -78,6 +78,77 @@ function prepare(
 }
 
 describe('prepared framework dependency canonical merge', () => {
+  it('keeps independent Compiler requests sharing one source range distinct', () => {
+    const candidates = ['/generated/a.mts', '/generated/b.cts'].map(
+      (generatedFilePath) => {
+        const candidate = createCandidate({ generatedFilePath });
+        candidate.sourceRecord.compilerRequest = {
+          contextConfig: '/source/tsconfig.json',
+          fileName: generatedFilePath,
+          role: 'import',
+          mode: undefined,
+          occurrence: 0,
+          start: 0,
+          end: 20,
+        };
+        return candidate;
+      },
+    );
+    const result = prepare(
+      candidates.map((candidate, index) => ({
+        candidate,
+        resolutionMode: String(index),
+        target: {
+          ...createTarget(),
+          resolvedFileName: `/source/target${index}.ts`,
+        },
+      })),
+    );
+    expect(result.kind).toBe('supported');
+    if (result.kind === 'supported') expect(result.facts).toHaveLength(2);
+  });
+
+  it('retains one Compiler request without choosing a conflicting source association', () => {
+    const first = createCandidate({ generatedFilePath: '/generated/a.ts' });
+    first.sourceRecord.compilerRequest = {
+      contextConfig: '/source/tsconfig.json',
+      fileName: '/generated/a.ts',
+      role: 'import',
+      mode: undefined,
+      occurrence: 0,
+      start: 0,
+      end: 20,
+    };
+    const second = {
+      ...first,
+      sourceRecord: {
+        ...first.sourceRecord,
+        locator: {
+          ...first.sourceRecord.locator,
+          sourceStart: 40,
+          sourceEnd: 52,
+        },
+      },
+    };
+    const result = prepare(
+      [first, second].map((candidate) => ({
+        candidate,
+        resolutionMode: 'undefined',
+        target: createTarget(),
+      })),
+    );
+    expect(result.kind).toBe('supported');
+    if (result.kind !== 'supported') {
+      return;
+    }
+
+    expect(result.facts).toHaveLength(1);
+    expect(result.facts[0]).toMatchObject({
+      provenance: 'compiler-request',
+      importRecord: { line: 0, locator: { sourceStart: -1, sourceEnd: -1 } },
+    });
+  });
+
   it('deduplicates equivalent facts from multiple service scripts', () => {
     const result = prepare([
       {

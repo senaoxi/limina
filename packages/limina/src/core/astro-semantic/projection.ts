@@ -1,4 +1,5 @@
 import type ts from 'typescript';
+import { compilerRequestCandidate } from '../framework-semantic/compiler-candidate';
 import type {
   FrameworkSemanticCandidate,
   FrameworkSemanticDependencyPreparation,
@@ -67,7 +68,10 @@ function handleMappedProjection(options: {
     literal: options.dependency.literal,
     provenance: 'strict-source-map',
     semanticSpecifier: options.dependency.record.specifier,
-    sourceRecord: options.projection.sourceRecord,
+    sourceRecord: {
+      ...options.projection.sourceRecord,
+      compilerRequest: options.dependency.record.compilerRequest,
+    },
   };
 }
 
@@ -111,6 +115,15 @@ function projectDependency(options: {
     sourceFilePath: options.filePath,
     sourceText: options.sourceText,
   });
+  if (projection.kind !== 'mapped') {
+    const independent = compilerRequestCandidate({
+      dependency: options.dependency,
+      framework: 'astro',
+      identityId: options.context.identity,
+      filePath: options.filePath,
+    });
+    if (independent !== undefined) return independent;
+  }
   if (projection.kind !== 'unmapped') {
     return handleNonUnmappedProjection({ ...options, projection });
   }
@@ -147,11 +160,17 @@ export function mapAstroServiceCandidates(options: {
     options.service.sourceScript,
   );
   const candidates: AstroCandidate[] = [];
-  const dependencies = enumerateGeneratedSemanticDependencies({
-    generatedFilePath: options.service.sourceFile.fileName,
-    sourceFile: options.service.sourceFile,
-    tsModule: options.context.toolchain.tsModule,
-  });
+  const dependencies = [
+    ...options.context.compilerRequests.collect(
+      options.context.program,
+      options.service.sourceFile,
+    ),
+    ...enumerateGeneratedSemanticDependencies({
+      generatedFilePath: options.service.sourceFile.fileName,
+      sourceFile: options.service.sourceFile,
+      tsModule: options.context.toolchain.tsModule,
+    }).filter((dependency) => dependency.literal === null),
+  ];
   for (const dependency of dependencies) {
     const failure = appendProjectedCandidate(
       candidates,

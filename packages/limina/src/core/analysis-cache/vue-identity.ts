@@ -5,7 +5,7 @@ import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { type DataNode, encodeData } from './data-codec';
 import { analysisHash } from './identity';
 
-export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v9-compiler-membership';
+export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v10-compiler-request-identity';
 
 function hasPlugins(plugins: unknown): boolean {
   return plugins !== undefined && hasPluginEntries(plugins);

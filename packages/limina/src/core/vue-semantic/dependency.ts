@@ -2,10 +2,10 @@ import type { VolarSourceScript, VueSourceProfile } from '#checkers';
 import type { ImportRecord } from '#core/import-analysis/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
+import { isMatchingFrameworkCompilerRequest } from '../framework-semantic/compiler-requests';
 import type { FrameworkSemanticCandidate } from '../framework-semantic/contracts';
 import { rangeIdentity } from '../framework-semantic/generated-dependencies';
 import { findSourceFileLiterals } from '../typescript-semantic/source-file-literals';
-import { isMatchingVueCompilerRequest } from './compiler-requests';
 import type { VueSemanticContext } from './context';
 
 export type SemanticDependencyEvidence = FrameworkSemanticCandidate<
@@ -288,7 +288,7 @@ function collectCompilerDependency(options: {
       : context.compilerRequests
           .collect(context.program, source)
           .filter((request) =>
-            isMatchingVueCompilerRequest(request, importRecord),
+            isMatchingFrameworkCompilerRequest(request, importRecord),
           );
   if (requests.length !== 1)
     return createUnsupported(
