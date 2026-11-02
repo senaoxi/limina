@@ -1,4 +1,4 @@
-import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
+import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
 import type { LiminaPreflightManager } from '../../preflight';
 import type { ExecutionPermit, ExecutionStage } from './types';
 
@@ -10,7 +10,7 @@ export interface PermitBinding {
   owner: object;
   target: string;
   stage: ExecutionStage;
-  graph: GeneratedTsconfigGraphResult;
+  graph: PreparedTsconfigGraph;
   providers: LiminaPreflightManager['providers'];
   namespace: LiminaPreflightManager['artifactNamespace'];
   snapshot: string;

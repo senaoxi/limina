@@ -69,6 +69,7 @@ function createGraph(
 ): GeneratedTsconfigGraphResult {
   const artifactPlan = createArtifactPlan(namespace, changes, ownedPaths);
   return {
+    purpose: 'complete',
     artifactPlan,
     changed: artifactPlan.changes.length > 0,
   } as GeneratedTsconfigGraphResult;

@@ -43,6 +43,7 @@ export interface TypecheckTarget {
 }
 
 export interface TypecheckTargetResult {
+  sourceConfigPath?: string;
   blockedBy?: readonly CheckerTargetId[];
   configPath: string;
   durationMs: number;

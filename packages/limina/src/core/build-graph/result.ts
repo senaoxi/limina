@@ -16,6 +16,7 @@ import type {
   GeneratedTsconfigGraphManifest,
   GeneratedTsconfigGraphResult,
   GovernedSourceUnit,
+  PreparedTsconfigGraph,
 } from './types';
 
 function toAbsolutePath(rootDirectory: string, relativePath: string): string {
@@ -213,9 +214,11 @@ export function createResult(options: {
   >;
   ownershipPlan: CheckerOwnershipPlan;
   rootDir: string;
-}): GeneratedTsconfigGraphResult {
+  purpose?: PreparedTsconfigGraph['purpose'];
+}): PreparedTsconfigGraph {
   const maps = createResultMaps(options);
   return {
+    purpose: options.purpose ?? 'complete',
     artifactPlan: options.artifactPlan,
     changed: options.changed,
     checkers: options.checkers,
@@ -250,7 +253,7 @@ export function collectGeneratedSourceConfigPaths(
   return uniqueSortedStrings(
     generatedGraph.sourceToBuild
       .values()
-      .flatMap((sourceToBuild) => sourceToBuild.keys().toArray())
+      .flatMap((sources) => sources.keys())
       .toArray(),
   );
 }

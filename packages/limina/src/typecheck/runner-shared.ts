@@ -146,7 +146,7 @@ function formatFailedResult(options: {
 }): string {
   const path = toRelativePath(
     options.projectRootDir,
-    options.result.configPath,
+    options.result.sourceConfigPath ?? options.result.configPath,
   );
   if (options.result.blockedBy !== undefined) {
     return `  ${path} blocked by ${options.result.blockedBy.join(', ')}`;
@@ -186,7 +186,7 @@ function createFailureTarget(options: {
   return {
     blockedByTarget: options.result.blockedBy,
     checkerName: options.target?.checkerName,
-    configPath: options.result.configPath,
+    configPath: options.result.sourceConfigPath ?? options.result.configPath,
     exitCode: options.result.status,
     id: options.result.id,
     message:

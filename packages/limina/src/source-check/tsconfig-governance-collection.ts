@@ -1,6 +1,7 @@
 import {
   type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
+  isBuildCapablePreset,
   normalizeExtensions,
 } from '#checkers';
 import { getActiveCheckers, type ResolvedLiminaConfig } from '#config/runner';
@@ -43,7 +44,11 @@ function getSourceGovernanceContext(
       : getActiveCheckers(config);
 
   return {
-    checkerPresets: uniqueValues(checkers.map((checker) => checker.name)),
+    checkerPresets: uniqueValues(
+      checkers.map((checker) =>
+        isBuildCapablePreset(checker.name) ? checker.name : 'tsc',
+      ),
+    ),
     extensions: normalizeExtensions(
       checkers.flatMap((checker) => checker.extensions),
     ),
@@ -244,18 +249,24 @@ function collectConfig(options: {
   }
 
   options.base.checks.add();
-  const project = parseProject(
-    options.base.config,
-    options.configPath,
-    options.collection.context,
-    undefined,
-    options.base.projectConfigCache,
-  );
+  const governed = options.base.generatedGraph.governedSources
+    .values()
+    .map((units) => units.get(options.configPath))
+    .find((unit) => unit !== undefined);
+  const fileNames =
+    governed?.ownedFileNames ??
+    parseProject(
+      options.base.config,
+      options.configPath,
+      options.collection.context,
+      undefined,
+      options.base.projectConfigCache,
+    ).fileNames;
   options.collection.projectFileSetsByConfigPath.set(
     options.configPath,
-    new Set(project.fileNames),
+    new Set(fileNames),
   );
-  for (const fileName of project.fileNames) {
+  for (const fileName of fileNames) {
     collectProjectFile({
       base: options.base,
       collection: options.collection,

@@ -181,6 +181,7 @@ const libraryProjection = z.object({
   families: texts,
 });
 const graph = z.object({
+  purpose: z.literal('complete'),
   libraryProjections: z.array(libraryProjection),
   sourceConfigCoverage: nativeCoverageIndexSchema.optional(),
   outputProjections: z.array(outputProjection),

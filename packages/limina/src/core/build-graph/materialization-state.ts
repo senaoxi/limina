@@ -25,6 +25,11 @@ export const materializationMarkerRelativePath: string = path.join(
   'generated-artifacts',
   'in-progress.json',
 );
+export const materializationLedgerRelativePath: string = path.join(
+  '.state',
+  'generated-artifacts',
+  'manifest.json',
+);
 
 export interface MaterializationInProgressMarker {
   version: 1;
@@ -178,7 +183,10 @@ async function readManifestOwnedPaths(
   namespace: LiminaArtifactNamespace,
 ): Promise<string[]> {
   const manifestPath = path.join(namespace.rootDir, 'manifest.json');
-  const text = await readOptionalText(manifestPath);
+  const text =
+    (await readOptionalText(
+      path.join(namespace.rootDir, materializationLedgerRelativePath),
+    )) ?? (await readOptionalText(manifestPath));
   if (text === null) return [];
   try {
     return parseManifest(text);

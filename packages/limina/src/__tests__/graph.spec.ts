@@ -289,6 +289,7 @@ function createManualGeneratedGraph(
     rootDir: rootDirectory,
   });
   return {
+    purpose: 'complete',
     artifactPlan: createArtifactPlan(artifactNamespace, [], []),
     changed: false,
     checkerEntries: new Map([
@@ -322,7 +323,8 @@ function createManualGeneratedGraph(
       ownership: { configs: [], solutions: [] },
       targets: { build: [], framework: [] },
       dependencyEdges: [],
-      version: 6,
+      version: 7,
+      purpose: 'complete',
     },
     manifestPath: path.join(rootDirectory, '.limina/manifest.json'),
     outputDeclarationCopies: new Map(),

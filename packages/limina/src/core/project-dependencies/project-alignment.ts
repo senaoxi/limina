@@ -10,6 +10,7 @@ function getUnitProjectPaths(unit: GovernedSourceUnit): string[] {
   const projection = unit.buildProjection;
   return [
     unit.configPath,
+    unit.checkConfigPath,
     'buildConfigPath' in projection ? projection.buildConfigPath : undefined,
     'dtsConfigPath' in projection ? projection.dtsConfigPath : undefined,
   ].filter((value): value is string => value !== undefined);
@@ -69,6 +70,7 @@ export function alignProjectWithFrozenSemanticAuthority(options: {
   if (unit === undefined) return alignWithoutGovernedUnit(options.project);
   return {
     ...options.project,
+    ...checkExecutionView(unit, options.generatedGraph),
     astroSemanticProject: unit.astroSemanticProject,
     semanticAuthority: { ...unit.semanticAuthority },
     svelteSemanticProject: unit.svelteSemanticProject,
@@ -85,9 +87,33 @@ export function alignProjectsWithFrozenSemanticAuthority(options: {
     if (unit === undefined) return alignWithoutGovernedUnit(project);
     return {
       ...project,
+      ...checkExecutionView(unit, options.generatedGraph),
       astroSemanticProject: unit.astroSemanticProject,
       semanticAuthority: { ...unit.semanticAuthority },
       svelteSemanticProject: unit.svelteSemanticProject,
     };
   });
+}
+
+function checkExecutionView(
+  unit: GovernedSourceUnit,
+  graph: GeneratedTsconfigGraphResult,
+): Partial<ProjectInfo> {
+  const semantic = unit.svelteSemanticProject;
+  if (semantic === undefined || unit.checkConfigPath === undefined) return {};
+  return {
+    options: semantic.options,
+    executionConfigPath: unit.checkConfigPath,
+    virtualFiles: graph.generatedFiles,
+    // Project identity and Source Coverage remain original; references point at
+    // the executable configurations used by this same final semantic view.
+    references: new Set(
+      [...(unit.checkReferences ?? [])].map((reference) => {
+        for (const units of graph.governedSources.values())
+          for (const target of units.values())
+            if (target.checkConfigPath === reference) return target.configPath;
+        return reference;
+      }),
+    ),
+  };
 }

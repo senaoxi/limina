@@ -88,6 +88,12 @@ function createFrameworkTarget(options: {
     {
       checker: options.unit.primaryCheckerName,
       config: toManifestPath(options.rootDir, options.unit.configPath),
+      ...(options.unit.checkConfigPath !== undefined && {
+        executionConfig: toManifestPath(
+          options.rootDir,
+          options.unit.checkConfigPath,
+        ),
+      }),
       packageRoot: toManifestPath(options.rootDir, options.unit.packageRootDir),
     },
   ];

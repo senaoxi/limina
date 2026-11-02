@@ -114,7 +114,8 @@ function isTargetHasExpectedShape(
   return [
     target.checkerFamily === descriptor.family,
     target.command === frameworkCommands[descriptor.family],
-    target.configPath === descriptor.sourceConfigPath,
+    target.configPath ===
+      (descriptor.executionConfigPath ?? descriptor.sourceConfigPath),
     target.cwd === descriptor.packageRootDir,
     target.dependencyRootDir === descriptor.packageRootDir,
     target.executionKind === 'typecheck',

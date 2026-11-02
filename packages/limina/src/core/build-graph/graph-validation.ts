@@ -1,3 +1,4 @@
+import { isBuildCapablePreset } from '#checkers';
 import type {
   ResolvedCheckerConfig,
   ResolvedLiminaInputs,
@@ -133,7 +134,13 @@ function addInferredReferences(options: {
   state: GeneratedGraphPreparationState;
 }): void {
   for (const checker of options.checkers) {
+    if (
+      options.state.purpose === 'producer-build' &&
+      !isBuildCapablePreset(checker.name)
+    )
+      continue;
     const collection = inferProjectReferences({
+      svelteConsumerView: options.state.svelteConsumerView,
       activatedRegions: options.activatedRegions,
       config: options.config,
       importAnalysisContext: options.importAnalysisContext,
@@ -256,13 +263,30 @@ export function analyzeAndCompleteGeneratedGraph(options: {
     allGovernedSources,
     allProjects,
   });
+  if (options.state.purpose === 'producer-build') {
+    const producers = new Set<string>(
+      options.checkers
+        .filter((checker) => isBuildCapablePreset(checker.name))
+        .map((checker) => checker.name),
+    );
+    for (const edge of options.state.dependencyEdges) {
+      if (producers.has(edge.fromChecker) && !producers.has(edge.toChecker))
+        options.state.problems.push(
+          `Producer build closure requires a non-emitting checker: ${edge.fromConfigPath} -> ${edge.toConfigPath} (${edge.toChecker}).`,
+        );
+    }
+  }
   synchronizeBuildProjectionSolutions(options.state);
   addDeclarationCheckerInvariantProblems(options);
   addCheckerOutputGraphs({ ...options, allProjects });
   options.state.dependencyEdges.sort(compareDependencyEdges);
   const { dependencyAnalysis: analysis } = options.state;
   analysis.candidate = createCandidateBuildPlan(
-    allGovernedSources,
+    options.state.purpose === 'producer-build'
+      ? allGovernedSources.filter((source) =>
+          isBuildCapablePreset(source.primaryCheckerName),
+        )
+      : allGovernedSources,
     options.state.dependencyEdges,
   );
   analysis.diagnostics.push(...options.state.problems);

@@ -50,7 +50,10 @@ function createTargetNameMap(
   return new Map(
     result.targetResults.map((targetResult) => [
       targetResult.id,
-      formatCheckerEntryName(result.projectRootDir, targetResult.configPath),
+      formatCheckerEntryName(
+        result.projectRootDir,
+        targetResult.sourceConfigPath ?? targetResult.configPath,
+      ),
     ]),
   );
 }
@@ -103,7 +106,7 @@ function createTargetStatsItem(options: {
     issues: options.targetResult.status === 0 ? 0 : 1,
     name: formatCheckerEntryName(
       options.projectRootDir,
-      options.targetResult.configPath,
+      options.targetResult.sourceConfigPath ?? options.targetResult.configPath,
     ),
     total: 1,
   });
@@ -129,14 +132,53 @@ export function createCheckerTaskStats(
   }
   if (result.rootConfigPaths.length === 0) return createPreflightStats(result);
   const targetNamesById = createTargetNameMap(result);
+  for (const target of result.failedTargets)
+    if (target.id !== undefined)
+      targetNamesById.set(
+        target.id,
+        formatCheckerEntryName(result.projectRootDir, target.configPath),
+      );
+  const notRun = (result.targetOutcomes ?? []).filter(
+    (outcome) =>
+      outcome.status === 'blocked' || outcome.status === 'admission-rejected',
+  );
   return {
-    items: result.targetResults.map((targetResult) =>
-      createTargetStatsItem({
-        projectRootDir: result.projectRootDir,
-        targetNamesById,
-        targetResult,
-      }),
-    ),
+    items: [
+      ...notRun.map((outcome) => ({
+        ...createCheckItemStats({
+          name: targetNamesById.get(outcome.id) ?? outcome.id,
+          total: 0,
+        }),
+        id: outcome.id,
+        itemKind: 'checker-target' as const,
+        status:
+          outcome.status === 'blocked'
+            ? ('blocked' as const)
+            : ('failed' as const),
+        ...(outcome.status === 'blocked' && {
+          blockedBy: createBlockedBy({
+            blockedBy: outcome.blockedBy,
+            targetNamesById,
+          }),
+        }),
+      })),
+      ...(result.reusedTargetResults ?? []).map((target) => ({
+        ...createCheckItemStats({
+          name: `reused ${formatCheckerEntryName(result.projectRootDir, target.sourceConfigPath ?? target.configPath)}`,
+          total: 0,
+        }),
+        id: target.id,
+        itemKind: 'checker-target' as const,
+        status: 'skipped' as const,
+      })),
+      ...result.targetResults.map((targetResult) =>
+        createTargetStatsItem({
+          projectRootDir: result.projectRootDir,
+          targetNamesById,
+          targetResult,
+        }),
+      ),
+    ],
     passed: countPassedTargets(result.targetResults),
     total: result.targetResults.length,
   };

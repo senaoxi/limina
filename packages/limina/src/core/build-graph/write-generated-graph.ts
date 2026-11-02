@@ -188,6 +188,17 @@ export async function writeGeneratedGraphConfigs(options: {
   generatedKnip: GeneratedKnipPreparation;
   state: GeneratedGraphPreparationState;
 }): Promise<void> {
+  const consumers = options.state.svelteConsumerView;
+  if (consumers !== undefined)
+    for (const filePath of [
+      ...consumers.checkFiles,
+      ...consumers.bindings.keys(),
+    ])
+      await writeGeneratedContent({
+        context: options.state.writeContext,
+        filePath,
+        content: consumers.files.get(filePath)!,
+      });
   assertDistinctGeneratedProjectPaths({
     rootDir: options.config.rootDir,
     projects: options.state.projectsByChecker.values().toArray().flat(),

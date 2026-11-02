@@ -260,6 +260,7 @@ function compareKnipDiagnostics(
 }
 
 export function createManifest(options: {
+  purpose?: GeneratedTsconfigGraphManifest['purpose'];
   checkerEntries: Map<string, string>;
   checkers: ResolvedCheckerConfig[];
   configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
@@ -276,6 +277,7 @@ export function createManifest(options: {
   const checkers = createManifestCheckers(options);
   return {
     version: generatedGraphManifestVersion,
+    purpose: options.purpose ?? 'complete',
     generatedBy: 'limina',
     checkers,
     knip: {

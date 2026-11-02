@@ -11,6 +11,7 @@ import type {
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { FileOwnerLookup } from './file-owner-lookup';
+import type { SvelteConsumerView } from './svelte-consumer-view';
 import type {
   DependencyAnalysisResult,
   GeneratedDependencyEdge,
@@ -31,6 +32,7 @@ export type ResolvedProvider =
     };
 
 export interface ReferenceImportContext {
+  svelteConsumerView?: SvelteConsumerView;
   analysis?: DependencyAnalysisResult;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;

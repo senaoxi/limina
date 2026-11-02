@@ -25,7 +25,10 @@ import type {
 } from '../source-check/report';
 import type { LiminaCheckIssue } from '../source-check/snapshot';
 import type { CheckerFailureTarget } from '../typecheck/runner';
-import type { TypecheckTargetResult } from '../typecheck/targets';
+import type {
+  CheckerTargetOutcome,
+  TypecheckTargetResult,
+} from '../typecheck/targets';
 
 export interface RunPipelineOptions {
   checkRunRecorder?: CheckRunRecorder;
@@ -76,6 +79,8 @@ export interface BuiltinTaskResult {
 }
 
 export interface CheckerTaskStatsInput {
+  targetOutcomes?: readonly CheckerTargetOutcome[];
+  reusedTargetResults?: readonly TypecheckTargetResult[];
   disabled?: boolean;
   failedTargets: readonly CheckerFailureTarget[];
   passed: boolean;

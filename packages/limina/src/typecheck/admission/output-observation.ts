@@ -1,7 +1,7 @@
 import { readAnalysisInput } from '#utils/analysis-input';
 import ts from 'typescript';
 import { EpochInputs } from '../../core/analysis-cache/epoch-inputs';
-import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
+import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
 import { isDeclarationInputFile } from '../output/plan';
 
 /**
@@ -15,9 +15,7 @@ export function observeManagedOutput(file: string): EpochInputs {
   return observation;
 }
 
-export function protectedInputPaths(
-  graph: GeneratedTsconfigGraphResult,
-): Set<string> {
+export function protectedInputPaths(graph: PreparedTsconfigGraph): Set<string> {
   const roots = graph.governedSources
     .values()
     .flatMap((units) => units.values())

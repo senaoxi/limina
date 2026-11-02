@@ -1,6 +1,6 @@
 import type {
   GeneratedDependencyEdge,
-  GeneratedTsconfigGraphResult,
+  PreparedTsconfigGraph,
 } from '#core/build-graph/runner';
 import {
   collectOutputDeclarationCopyContexts,
@@ -16,7 +16,7 @@ import { missingExecutionInputs } from './missing-execution-inputs';
 type BuildOptions = Parameters<typeof executeCheckerBuildTargets>[0];
 type Outputs = ReadonlyMap<TypecheckTarget, ReadonlySet<string>>;
 export interface ProducerPreparation {
-  graph: GeneratedTsconfigGraphResult;
+  graph: PreparedTsconfigGraph;
   coordinator: ManagedCheckerMutationCoordinator;
 }
 interface ProducerProof {

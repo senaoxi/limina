@@ -33,6 +33,7 @@ interface GeneratedBuildTargetManifest {
 }
 
 interface GeneratedFrameworkTargetManifest {
+  executionConfig?: string;
   checker: Extract<ResolvedCheckerConfig['name'], 'astro' | 'svelte-check'>;
   config: string;
   packageRoot: string;
@@ -61,10 +62,20 @@ interface FrameworkScheduleEdgeManifest
 
 type GeneratedDependencyEdgeManifest =
   | DeclarationProviderEdgeManifest
-  | FrameworkScheduleEdgeManifest;
+  | FrameworkScheduleEdgeManifest
+  | (GeneratedDependencyEdgeManifestBase & { kind: 'framework-declaration' });
 
 export interface GeneratedTsconfigGraphManifest {
-  version: 6;
+  declarationBindings?: {
+    sourceConfig: string;
+    sourceFile: string;
+    outputFile: string;
+    mirrorFile: string;
+    contentIdentity: string;
+    receipt: string;
+  }[];
+  version: 7;
+  purpose: 'complete' | 'producer-build';
   generatedBy: 'limina';
   checkers: Record<string, GeneratedCheckerManifest>;
   knip: {

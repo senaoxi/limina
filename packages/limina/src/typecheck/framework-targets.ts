@@ -66,6 +66,7 @@ function normalizeDescriptor(
   capability: FrameworkCapabilityDescriptor,
 ): FrameworkCapabilityDescriptor {
   return {
+    executionConfigPath: capability.executionConfigPath,
     family: capability.family,
     packageRootDir: normalizeAbsolutePath(capability.packageRootDir),
     sourceConfigPath: normalizeAbsolutePath(capability.sourceConfigPath),
@@ -144,7 +145,7 @@ function createFrameworkCommandTarget(
       '--workspace',
       descriptor.packageRootDir,
       '--tsconfig',
-      descriptor.sourceConfigPath,
+      descriptor.executionConfigPath ?? descriptor.sourceConfigPath,
     ],
     command: 'svelte-check',
     label: `svelte-check: ${descriptor.sourceConfigPath}`,
@@ -175,7 +176,7 @@ export function createFrameworkCheckerTarget(options: {
     ...commandTarget,
     checkerFamily: descriptor.family,
     checkerName,
-    configPath: descriptor.sourceConfigPath,
+    configPath: descriptor.executionConfigPath ?? descriptor.sourceConfigPath,
     cwd: descriptor.packageRootDir,
     dependencyRequirements: frameworkRequirements[descriptor.family],
     dependencyRootDir: descriptor.packageRootDir,

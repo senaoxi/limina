@@ -1,5 +1,8 @@
 import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
-import { collectGeneratedSourceConfigPaths } from '#core/build-graph/runner';
+import {
+  collectGeneratedSourceConfigPaths,
+  collectGovernedSourceConfigPaths,
+} from '#core/build-graph/runner';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { createSourceDiagnosticFinding } from './finding-utilities';
 import { addImportAuthorityOwnerConfigProblems } from './import-authority-config-findings';
@@ -69,7 +72,12 @@ async function runTsconfigGovernancePhase(
     ambientDeclarations: state.ambientDeclarations.index,
     checks: state.checks,
     config: state.config,
-    configPaths: collectGeneratedSourceConfigPaths(state.generatedGraph),
+    configPaths: [
+      ...new Set([
+        ...collectGeneratedSourceConfigPaths(state.generatedGraph),
+        ...collectGovernedSourceConfigPaths(state.generatedGraph),
+      ]),
+    ],
     findings: state.findings,
     generatedGraph: state.generatedGraph,
     projectConfigCache: state.core.projectConfigs,

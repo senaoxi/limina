@@ -30,7 +30,7 @@ function targetFailure(
   return {
     id: result.id,
     checkerName: target.checkerName,
-    configPath: target.configPath,
+    configPath: target.sourceConfigPath ?? target.configPath,
     ...(result.status === 'admission-rejected'
       ? {
           admission: result,

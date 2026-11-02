@@ -1,4 +1,4 @@
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type { PreparedTsconfigGraph } from '#core/build-graph/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
@@ -128,7 +128,7 @@ export function parseConfigWithDependencyProof(
 }
 
 function addUserOutputBuilds(options: {
-  buildsBySource: GeneratedTsconfigGraphResult['configToOutputBuild'] extends Map<
+  buildsBySource: PreparedTsconfigGraph['configToOutputBuild'] extends Map<
     string,
     infer T
   >
@@ -148,7 +148,7 @@ function addUserOutputBuilds(options: {
 }
 
 function addUserOutputClassifications(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   classifications: Map<string, ManagedLeafClassification>,
 ): void {
   for (const [checkerName, buildsBySource] of graph.configToOutputBuild) {
@@ -157,7 +157,7 @@ function addUserOutputClassifications(
 }
 
 function addInternalDtsClassifications(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   classifications: Map<string, ManagedLeafClassification>,
 ): void {
   for (const [checkerName, dtsToSource] of graph.dtsToSource) {
@@ -172,7 +172,7 @@ function addInternalDtsClassifications(
 }
 
 export function collectLeafClassifications(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
 ): Map<string, ManagedLeafClassification> {
   const classifications = new Map<string, ManagedLeafClassification>();
   addUserOutputClassifications(graph, classifications);

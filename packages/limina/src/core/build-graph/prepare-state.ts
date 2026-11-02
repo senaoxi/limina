@@ -2,6 +2,7 @@ import { isBuildCapablePreset } from '#checkers';
 import type { ResolvedCheckerConfig } from '#config/runner';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
+import type { SvelteConsumerView } from './svelte-consumer-view';
 import type {
   CheckerSourceConfigCollection,
   DependencyAnalysisResult,
@@ -17,6 +18,8 @@ import type {
 } from './types';
 
 export interface GeneratedGraphPreparationState {
+  svelteConsumerView?: SvelteConsumerView;
+  purpose: 'complete' | 'producer-build';
   sourceConfigCoverage?: SourceConfigCoverageIndex;
   dependencyAnalysis: DependencyAnalysisResult;
   checkerOwnershipPlan: CheckerOwnershipPlan;
@@ -43,8 +46,10 @@ export interface GeneratedGraphPreparationState {
 export function createGeneratedGraphPreparationState(
   rootDirectory: string,
   checkerOwnershipPlan: CheckerOwnershipPlan,
+  purpose: GeneratedGraphPreparationState['purpose'] = 'complete',
 ): GeneratedGraphPreparationState {
   return {
+    purpose,
     dependencyAnalysis: { complete: true, facts: [], diagnostics: [] },
     checkerOwnershipPlan,
     checkerCollectionsByName: new Map(),

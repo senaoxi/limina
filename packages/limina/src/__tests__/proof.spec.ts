@@ -423,6 +423,7 @@ function createCheckerGraphCoverageProofGeneratedGraph(
   );
 
   return {
+    purpose: 'complete',
     artifactPlan: createArtifactPlan(artifactNamespace, [], []),
     changed: false,
     checkerEntries: new Map([['tsc', checkerEntryPath]]),
@@ -451,7 +452,8 @@ function createCheckerGraphCoverageProofGeneratedGraph(
       ownership: { configs: [], solutions: [] },
       targets: { build: [], framework: [] },
       dependencyEdges: [],
-      version: 6,
+      version: 7,
+      purpose: 'complete',
     },
     manifestPath: path.join(rootDirectory, '.limina/manifest.json'),
     outputDeclarationCopies: new Map(),

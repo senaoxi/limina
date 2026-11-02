@@ -4,7 +4,7 @@ import {
   graphExecutionInputScope,
   isExecutionScopeStable,
 } from '../../core/analysis-cache/execution-inputs';
-import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
+import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
 import type { LiminaPreflightManager } from '../../preflight';
 import type { TypecheckTarget } from '../targets';
 import {
@@ -26,8 +26,8 @@ import {
 Invocation-local reservations coordinate existing input proofs and managed output producers.
 */
 export class ExecutionInputCoordinator {
-  #graph: GeneratedTsconfigGraphResult;
-  readonly #original: GeneratedTsconfigGraphResult;
+  #graph: PreparedTsconfigGraph;
+  readonly #original: PreparedTsconfigGraph;
   readonly #preflight: LiminaPreflightManager;
   #snapshot: string;
   readonly #baselines = new Map<string, ExecutionInputScope>();
@@ -43,10 +43,7 @@ export class ExecutionInputCoordinator {
   #refresh: Promise<void> | undefined;
   readonly #reservation = new AsyncLocalStorage<Reservation>();
   readonly #validation = new ExecutionInputValidation();
-  constructor(
-    preflight: LiminaPreflightManager,
-    graph: GeneratedTsconfigGraphResult,
-  ) {
+  constructor(preflight: LiminaPreflightManager, graph: PreparedTsconfigGraph) {
     this.#preflight = preflight;
     this.#graph = graph;
     this.#original = graph;
@@ -92,7 +89,9 @@ export class ExecutionInputCoordinator {
         'Managed output handoff could not establish fresh evidence.',
       );
     this.#refreshedBatch = this.#writeBatch;
-    this.#graph = (await this.#preflight.refreshAfterManagedOutputs()).graph;
+    this.#graph = (
+      await this.#preflight.refreshAfterManagedOutputs(this.#graph.purpose)
+    ).graph;
     this.#snapshot = this.#preflight.run.snapshotToken;
     this.#validation.invalidate();
   }
@@ -157,7 +156,7 @@ export class ExecutionInputCoordinator {
   #resumeReservation(
     target: TypecheckTarget,
     outputs: ReadonlySet<string> | (() => Promise<ReadonlySet<string>>),
-    view: GeneratedTsconfigGraphResult,
+    view: PreparedTsconfigGraph,
   ): Promise<boolean> {
     if (this.#refresh !== undefined) return Promise.resolve(false);
     return view === this.#graph
@@ -227,7 +226,7 @@ export class ExecutionInputCoordinator {
     const active = this.#active.get(target.id);
     return active !== undefined && this.#reservation.getStore() === active;
   }
-  get graph(): GeneratedTsconfigGraphResult {
+  get graph(): PreparedTsconfigGraph {
     return this.#graph;
   }
   assertLifecycle(): void {
@@ -278,19 +277,31 @@ export class ExecutionInputCoordinator {
   }
 }
 
+const coordinatorGenerations = new WeakMap<
+  LiminaPreflightManager,
+  LiminaPreflightManager['run']['generation']
+>();
 const coordinators = new WeakMap<
   LiminaPreflightManager,
-  ExecutionInputCoordinator
+  Map<PreparedTsconfigGraph['purpose'], ExecutionInputCoordinator>
 >();
 export function executionInputCoordinator(
   preflight: LiminaPreflightManager,
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
 ): ExecutionInputCoordinator {
-  const previous = coordinators.get(preflight);
+  if (coordinatorGenerations.get(preflight) !== preflight.run.generation) {
+    coordinators.delete(preflight);
+    coordinatorGenerations.set(preflight, preflight.run.generation);
+  }
+  const group =
+    coordinators.get(preflight) ??
+    new Map<PreparedTsconfigGraph['purpose'], ExecutionInputCoordinator>();
+  const previous = group.get(graph.purpose);
   // A preflight owns one invocation, including the interval between publishing
   // a refreshed graph and releasing its reservation barrier.
   if (previous !== undefined) return previous;
   const current = new ExecutionInputCoordinator(preflight, graph);
-  coordinators.set(preflight, current);
+  group.set(graph.purpose, current);
+  coordinators.set(preflight, group);
   return current;
 }

@@ -2,11 +2,15 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { TraceMap } from '@jridgewell/trace-mapping';
 import path from 'node:path';
 import type ts from 'typescript';
-import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
+import {
+  type FrameworkCompilerRequest,
+  FrameworkCompilerRequests,
+} from '../framework-semantic/compiler-requests';
 import { buildLineStarts } from '../import-analysis/records';
 import { TypeScriptInclusionLedger } from '../typescript-semantic/admission';
 import { resolveModuleWithOrigin } from '../typescript-semantic/resolution-origin';
 import { prepareTypeScriptSupportInputs } from '../typescript-semantic/support-inputs';
+import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import { createSvelteResolutionHost } from './module-resolution';
 import type { SvelteSemanticToolchain } from './toolchain';
@@ -30,7 +34,10 @@ export function createGeneratedSemanticScript(options: {
   project: SvelteSemanticProject;
 }): GeneratedSemanticScript {
   const filePath = `${options.filePath}.tsx`;
-  const resolutionHost = createSvelteResolutionHost(options.toolchain.tsModule);
+  const resolutionHost = withVirtualResolutionFiles(
+    createSvelteResolutionHost(options.toolchain.tsModule),
+    options.project.virtualFiles,
+  );
   const sourceFile = options.toolchain.tsModule.createSourceFile(
     filePath,
     options.generated.code,
@@ -70,21 +77,89 @@ function createOverlayHost(options: {
 }): ts.CompilerHost {
   const tsModule = options.toolchain.tsModule;
   const generatedPath = normalizeAbsolutePath(options.generated.filePath);
-  const host = tsModule.createCompilerHost(options.project.options, true);
+  const host = withVirtualResolutionFiles(
+    tsModule.createCompilerHost(options.project.options, true),
+    options.project.virtualFiles,
+  );
+  if (options.project.references !== undefined)
+    (
+      host as ts.CompilerHost & {
+        useSourceOfProjectReferenceRedirect(): boolean;
+      }
+    ).useSourceOfProjectReferenceRedirect = () => true;
   const readFile = host.readFile.bind(host);
   const fileExists = host.fileExists.bind(host);
   const getSourceFile = host.getSourceFile.bind(host);
+  const componentHost = createSvelteResolutionHost(tsModule);
   host.fileExists = (fileName) =>
-    normalizeAbsolutePath(fileName) === generatedPath || fileExists(fileName);
+    normalizeAbsolutePath(fileName) === generatedPath ||
+    fileExists(fileName) ||
+    componentHost.fileExists(fileName);
   host.readFile = (fileName) =>
     normalizeAbsolutePath(fileName) === generatedPath
       ? options.generated.sourceFile.text
       : readFile(fileName);
-  host.getSourceFile = (...arguments_) =>
-    normalizeAbsolutePath(arguments_[0]) === generatedPath
-      ? options.generated.sourceFile
-      : getSourceFile(...arguments_);
+  host.getSourceFile = (...arguments_) => {
+    const name = normalizeAbsolutePath(arguments_[0]);
+    if (name === generatedPath) return options.generated.sourceFile;
+    const text = options.project.virtualFiles?.get(name);
+    return text === undefined
+      ? getSourceFile(...arguments_)
+      : tsModule.createSourceFile(name, text, arguments_[1], true);
+  };
   return host;
+}
+
+/** Native roots in a Svelte execution view still issue real Compiler requests.
+ * The component host qualifies source associations without loading foreign
+ * implementations into the bounded Program. */
+export function observeSvelteNativeComponentRequests(
+  project: SvelteSemanticProject,
+  toolchain: SvelteSemanticToolchain,
+): FrameworkCompilerRequest[] {
+  if (project.options.noResolve) return [];
+  return project.fileNames
+    .filter(
+      (file) => /\.[cm]?[jt]sx?$/iu.test(file) && !/\.d\.[cm]?ts$/iu.test(file),
+    )
+    .flatMap((file) => {
+      const sourceFile = toolchain.tsModule.createSourceFile(
+        file,
+        toolchain.tsModule.sys.readFile(file)!,
+        toolchain.tsModule.ScriptTarget.Latest,
+        true,
+      );
+      const generated: GeneratedSemanticScript = {
+        compilerRequests: new FrameworkCompilerRequests(
+          toolchain.tsModule,
+          project.configPath,
+        ),
+        filePath: file,
+        sourceFile,
+        lineStarts: buildLineStarts(sourceFile.text),
+        resolutionHost: withVirtualResolutionFiles(
+          createSvelteResolutionHost(toolchain.tsModule),
+          project.virtualFiles,
+        ),
+        resolutionCache: toolchain.tsModule.createModuleResolutionCache(
+          path.dirname(project.resolverConfigPath),
+          (name) => name,
+          project.options,
+        ),
+        trace: new TraceMap({
+          version: 3,
+          sources: [],
+          names: [],
+          mappings: '',
+        }),
+      };
+      const program = createBoundedProgram({ generated, project, toolchain });
+      return generated.compilerRequests
+        .collect(program, sourceFile)
+        .filter(
+          (request) => request.role === 'import' && request.raw !== undefined,
+        );
+    });
 }
 
 export function createBoundedProgram(options: {
@@ -112,7 +187,10 @@ export function createBoundedProgram(options: {
     ...raw,
     getSourceFile: (...arguments_) => {
       const file = arguments_[0];
-      const isAllowed = isAdmittedSource(admission, file);
+      const isAllowed =
+        (file.endsWith('.json') &&
+          options.project.virtualFiles?.has(normalizeAbsolutePath(file))) ||
+        isAdmittedSource(admission, file);
       return isAllowed ? raw.getSourceFile(...arguments_) : undefined;
     },
     resolveModuleNameLiterals: (...arguments_) => {
@@ -164,6 +242,10 @@ export function createBoundedProgram(options: {
       host,
       options: project.options,
       rootNames: project.fileNames,
+      projectReferences:
+        options.project.references === undefined
+          ? undefined
+          : [...options.project.references],
     });
     prepareTypeScriptSupportInputs({ admission, host: raw, project, tsModule });
   } while (admission.needsProgramRebuild());

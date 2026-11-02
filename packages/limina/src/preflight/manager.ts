@@ -1,6 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type {
+  GeneratedTsconfigGraphResult,
+  PreparedTsconfigGraph,
+  ProducerBuildPlan,
+} from '#core/build-graph/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import type * as CheckerRoutes from '#core/tsconfig/actions';
 import type * as Workspace from '#core/workspace/actions';
@@ -8,6 +12,10 @@ import type {
   AnalysisMetricsRecorder,
   AnalysisRun,
 } from '../application/analysis/analysis-run';
+import {
+  assertProducerBuildReceipt,
+  type ProducerBuildReceipt,
+} from '../core/build-graph/producer-receipt';
 import type { WorkspaceDependencyDeclaration } from '../core/packages/authority';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionBoundary } from '../core/workspace/regions';
@@ -20,7 +28,10 @@ import type { PackageEntrySelectionPlan } from '../package-check/entry/selection
 import type { AnalysisCacheController } from './analysis-cache';
 import { PreflightGenerationCache } from './cache';
 import { registerPreflightGenerationAdvancer } from './generation';
-import { ensurePreflightGraphMaterialized } from './materialization';
+import {
+  ensurePreflightGraphMaterialized,
+  materializeProducerDeclarationMirrors,
+} from './materialization';
 import * as queries from './queries';
 import * as setup from './setup';
 import type {
@@ -42,6 +53,10 @@ export class LiminaPreflightManager {
   #analysisCache: AnalysisCacheController | undefined;
   readonly #configuration: { assertStable(): void };
   #disposed = false;
+  #producerReceipt: ProducerBuildReceipt | undefined;
+  #consumerPreparation:
+    | { receipt: ProducerBuildReceipt; promise: Promise<void> }
+    | undefined;
   artifactNamespace: LiminaArtifactNamespace;
   readonly config: ResolvedLiminaConfig;
   providers: AnalysisProviderSet;
@@ -86,6 +101,18 @@ export class LiminaPreflightManager {
       'Custom analysis providers support generation 0 only and cannot advance.',
     );
   }
+  #refreshProducerDiscovery(): void {
+    // A prior read-only full-graph observation may predate artifact replanning.
+    // Start the new phase with fresh discovery, without resolving consumers.
+    if (
+      !this.#usesCustomProviders &&
+      this.#cache.materializationSlot.receipt === undefined &&
+      this.#cache.producerBuildPlan === undefined &&
+      this.#cache.generatedGraph !== undefined &&
+      this.#producerReceipt === undefined
+    )
+      this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
+  }
   #refreshProviderGenerationForMaterialization(): void {
     this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
   }
@@ -98,7 +125,10 @@ export class LiminaPreflightManager {
     this.#assertDefaultProvidersCanAdvance();
     this.#disposeProviders();
     const analysisCache = this.#refreshAnalysis();
-    if (isAdvance) this.#generation += 1;
+    if (isAdvance) {
+      this.#generation += 1;
+      this.#producerReceipt = undefined;
+    }
     this.#providerGeneration += 1;
     this.#cache = new PreflightGenerationCache(this.#generation, slot);
     this.artifactNamespace = createLiminaArtifactNamespace({
@@ -111,6 +141,8 @@ export class LiminaPreflightManager {
       this.#profilingMetrics,
       { analysisCache },
     );
+    if (this.#producerReceipt !== undefined)
+      this.providers.buildGraph.useProducerBuildReceipt(this.#producerReceipt);
     this.run = this.#createRun();
   }
   #disposeProviders(): void {
@@ -137,10 +169,27 @@ export class LiminaPreflightManager {
     this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
     this.#cache.generatedGraph = pending;
   }
+  async #prepareConsumerPhase(receipt: ProducerBuildReceipt): Promise<void> {
+    const generation = this.run.generation;
+    await materializeProducerDeclarationMirrors(
+      receipt,
+      this.artifactNamespace,
+      this.config.rootDir,
+    );
+    this.assertExecutionConfigurationStable();
+    if (generation !== this.run.generation)
+      throw new Error('Consumer preparation generation changed.');
+    assertProducerBuildReceipt(receipt);
+    this.#producerReceipt = receipt;
+    this.#replaceProviderGeneration(false);
+  }
   get profilingMetrics(): AnalysisMetricsRecorder | undefined {
     return this.#profilingMetrics;
   }
-  async refreshAfterManagedOutputs(): Promise<MaterializationReceipt> {
+  async refreshAfterManagedOutputs(
+    purpose: PreparedTsconfigGraph['purpose'] = 'complete',
+  ): Promise<MaterializationReceipt> {
+    const generation = this.run.generation;
     this.assertExecutionConfigurationStable();
     this.#assertDefaultProvidersCanAdvance();
     const pending = new LiminaPreflightManager(
@@ -156,9 +205,20 @@ export class LiminaPreflightManager {
     pending.#generation = this.#generation;
     pending.#providerGeneration = this.#providerGeneration + 1;
     pending.run = pending.#createRun();
+    if (purpose === 'complete' && this.#producerReceipt !== undefined) {
+      pending.#producerReceipt = this.#producerReceipt;
+      pending.providers.buildGraph.useProducerBuildReceipt(
+        this.#producerReceipt,
+      );
+    }
     try {
-      const receipt = await pending.ensureGeneratedArtifactsMaterialized();
+      const receipt =
+        await pending.ensureExecutionArtifactsMaterialized(purpose);
       this.assertExecutionConfigurationStable();
+      if (generation !== this.run.generation)
+        throw new Error(
+          'Managed output refresh generation changed before publication.',
+        );
       // Publish one execution view only after its graph and artifacts are ready.
       this.#disposeProviders();
       this.#cache = pending.#cache;
@@ -203,19 +263,98 @@ export class LiminaPreflightManager {
     });
     return this.#cache.generatedGraph;
   }
+  async hasSvelteCheckProjects(): Promise<boolean> {
+    const materialized = this.#cache.materializationSlot.receipt?.graph;
+    if (materialized !== undefined)
+      return (materialized.governedSources.get('svelte-check')?.size ?? 0) > 0;
+    this.#refreshProducerDiscovery();
+    await this.ensureWorkspaceValidated();
+    return this.providers.buildGraph.hasSvelteCheckProjects();
+  }
+  async ensureProducerBuildPlan(): Promise<ProducerBuildPlan> {
+    this.#refreshProducerDiscovery();
+    await this.ensureWorkspaceValidated();
+    this.#cache.producerBuildPlan ??=
+      this.providers.buildGraph.getProducerBuildPlan();
+    return this.#cache.producerBuildPlan;
+  }
+  async prepareConsumerPhase(receipt: ProducerBuildReceipt): Promise<void> {
+    assertProducerBuildReceipt(receipt);
+    if (this.#producerReceipt === receipt) return;
+    if (this.#consumerPreparation !== undefined) {
+      if (this.#consumerPreparation.receipt !== receipt)
+        throw new Error(
+          'A different producer receipt is already preparing consumers.',
+        );
+      await this.#consumerPreparation.promise;
+      return;
+    }
+    const pending = { receipt, promise: this.#prepareConsumerPhase(receipt) };
+    this.#consumerPreparation = pending;
+    try {
+      await pending.promise;
+    } finally {
+      if (this.#consumerPreparation === pending)
+        this.#consumerPreparation = undefined;
+    }
+  }
+  assertProducerReceiptCurrent(): void {
+    if (this.#producerReceipt !== undefined)
+      assertProducerBuildReceipt(this.#producerReceipt);
+  }
+  ensureExecutionGraph(
+    purpose: PreparedTsconfigGraph['purpose'],
+  ): Promise<PreparedTsconfigGraph> {
+    return purpose === 'producer-build'
+      ? this.ensureProducerBuildPlan()
+      : this.ensureGeneratedGraph();
+  }
+  ensureExecutionArtifactsMaterialized(
+    purpose: PreparedTsconfigGraph['purpose'],
+  ): Promise<MaterializationReceipt> {
+    if (purpose === 'complete')
+      return this.ensureGeneratedArtifactsMaterialized();
+    const currentNamespace = () => this.artifactNamespace;
+    const currentRun = () => this.run;
+    const slot = this.#cache.producerMaterializationSlot;
+    return ensurePreflightGraphMaterialized({
+      getCurrentSlot: () => this.#cache.producerMaterializationSlot,
+      refreshProviders: () => {
+        this.#replaceProviderGeneration(false);
+        this.#cache.producerMaterializationSlot = slot;
+      },
+      slot,
+      source: {
+        get artifactNamespace() {
+          return currentNamespace();
+        },
+        get run() {
+          return currentRun();
+        },
+        ensureGeneratedGraph: () => this.ensureProducerBuildPlan(),
+      },
+    });
+  }
   ensureWorkspaceValidated(): Promise<ValidatedWorkspace.ValidatedWorkspaceContext> {
     this.#cache.validatedWorkspaceContext ??=
       this.providers.workspace.getValidatedContext();
     return this.#cache.validatedWorkspaceContext;
   }
-  ensureGeneratedArtifactsMaterialized(): Promise<MaterializationReceipt> {
-    return ensurePreflightGraphMaterialized({
+  async ensureGeneratedArtifactsMaterialized(): Promise<
+    MaterializationReceipt<GeneratedTsconfigGraphResult>
+  > {
+    const receipt = await ensurePreflightGraphMaterialized({
       getCurrentSlot: () => this.#cache.materializationSlot,
       refreshProviders: () =>
         this.#refreshProviderGenerationForMaterialization(),
       slot: this.#cache.materializationSlot,
       source: this,
     });
+    if (receipt.graph.purpose !== 'complete')
+      throw new Error(
+        'Final graph materialization requires complete admission.',
+      );
+    return receipt as MaterializationReceipt<GeneratedTsconfigGraphResult>;
   }
   ensureWorkspacePackages(): Promise<Workspace.WorkspacePackage[]> {
     this.#cache.workspacePackages ??= queries.loadWorkspacePackages(

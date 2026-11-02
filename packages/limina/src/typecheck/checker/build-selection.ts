@@ -1,6 +1,6 @@
 import { getCheckerAdapter } from '#checkers';
 import type { BuildCheckerPreset, ResolvedCheckerConfig } from '#config/runner';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type { PreparedTsconfigGraph } from '#core/build-graph/runner';
 import { uniqueSortedStrings } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import {
@@ -90,7 +90,7 @@ export function selectManagedCheckerBuildTargets(options: {
   checker: BuildCheckerPreset | undefined;
   configPath: string;
   cwd: string;
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   projectRootDir: string;
 }): ManagedCheckerBuildSelection {
   const sourceConfigPath = resolveBuildConfigPath({
@@ -156,7 +156,7 @@ export function createManagedCheckerBuildTargets(options: {
 export function createGeneratedCheckerBuildTargets(options: {
   checkers: readonly ResolvedCheckerConfig[];
   commandOverride: string | undefined;
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   projectRootDir: string;
 }): TypecheckTarget[] {
   return options.checkers.map((checker) => {

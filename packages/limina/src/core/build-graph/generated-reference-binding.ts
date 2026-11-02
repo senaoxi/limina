@@ -150,7 +150,14 @@ class GeneratedReferenceBinding {
           : undefined;
     if (buildPath !== undefined && this.#build(identity)?.path !== buildPath)
       throw new Error(`Unbound source build projection: ${identity.source}`);
-    if (declaration === undefined) return;
+    if (declaration === undefined) {
+      if (unit.checkConfigPath !== undefined)
+        this.#assertReferences(
+          unit.checkConfigPath,
+          unit.checkReferences ?? [],
+        );
+      return;
+    }
     this.#assertReferences(declaration, unit.declarationReferences);
     this.#assertImplicitReferences(identity, unit);
     this.#assertLeafOutput(identity, unit);

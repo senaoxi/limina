@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { assertExecutionLibraryProjections } from '../../core/build-graph/library-projection';
 import { withMaterializedPlanReadLease } from '../../core/build-graph/materialization-read-lease';
-import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
+import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
 import type { GraphFinding } from '../../graph-check/findings';
 import { adjudicateReferences } from '../../graph-check/reference-governance';
 import type { LiminaPreflightManager } from '../../preflight';
@@ -95,7 +95,7 @@ function refused(
   };
 }
 function assertMaterializedInput(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   file: string,
 ): void {
   const expected = graph.generatedFiles.get(file);
@@ -115,7 +115,7 @@ export class ExecutionAdmission {
   readonly preflight: LiminaPreflightManager;
   constructor(
     preflight: LiminaPreflightManager,
-    graph: GeneratedTsconfigGraphResult,
+    graph: PreparedTsconfigGraph,
     targets: readonly TypecheckTarget[],
   ) {
     this.preflight = preflight;
@@ -132,12 +132,16 @@ export class ExecutionAdmission {
     if (this.#selectionIds !== JSON.stringify(this.#selection))
       throw new Error('Execution target selection changed.');
     this.preflight.assertExecutionConfigurationStable();
+    this.preflight.assertProducerReceiptCurrent();
     this.#inputs.assertLifecycle();
     assertTargetIdentity(
       this.#targets.get(target.id),
       captureTarget(target, this.graph, this.preflight.config.rootDir),
     );
-    if ((await this.preflight.ensureGeneratedGraph()) !== this.graph)
+    if (
+      (await this.preflight.ensureExecutionGraph(this.graph.purpose)) !==
+      this.graph
+    )
       throw new Error('Execution graph changed.');
   }
   async #check(
@@ -208,6 +212,24 @@ export class ExecutionAdmission {
       }),
     };
   }
+  #withArtifactLeases<T>(action: () => Promise<T>): Promise<T> {
+    const plans = [
+      {
+        namespace: this.preflight.artifactNamespace,
+        plan: this.graph.artifactPlan,
+      },
+      ...(this.graph.auxiliaryArtifacts ?? []),
+    ].sort((a, b) => a.namespace.rootDir.localeCompare(b.namespace.rootDir));
+    const enter = (index: number): Promise<T> =>
+      index === plans.length
+        ? action()
+        : withMaterializedPlanReadLease(
+            plans[index]!.namespace,
+            plans[index]!.plan,
+            () => enter(index + 1),
+          );
+    return enter(0);
+  }
   async assertPermit(
     permit: ExecutionPermit,
     target: TypecheckTarget,
@@ -227,7 +249,7 @@ export class ExecutionAdmission {
       );
     }
   }
-  get graph(): GeneratedTsconfigGraphResult {
+  get graph(): PreparedTsconfigGraph {
     return this.#inputs.graph;
   }
   withReadOnlyValidation<T>(action: () => Promise<T>): Promise<T> {
@@ -241,14 +263,10 @@ export class ExecutionAdmission {
     action: () => Promise<T>,
   ): Promise<T> {
     return this.withManagedWrites(target, new Set(), () =>
-      withMaterializedPlanReadLease(
-        this.preflight.artifactNamespace,
-        this.graph.artifactPlan,
-        async () => {
-          await this.#currentInputs(target);
-          return action();
-        },
-      ),
+      this.#withArtifactLeases(async () => {
+        await this.#currentInputs(target);
+        return action();
+      }),
     );
   }
   async withAuthorizedTarget<T>(
@@ -263,22 +281,18 @@ export class ExecutionAdmission {
     const { stage } = normalizeAuthorization(authorization);
     let isStarted = false;
     try {
-      return await withMaterializedPlanReadLease(
-        this.preflight.artifactNamespace,
-        this.graph.artifactPlan,
-        async () => {
-          const { closure, refusal } = await this.#check(target);
-          if (refusal !== undefined) return refused(target, stage, refusal);
-          isStarted = true;
-          return {
-            state: 'executed',
-            value: await withExecutionPermit(
-              this.#permitBinding(target, authorization, closure),
-              action,
-            ),
-          };
-        },
-      );
+      return await this.#withArtifactLeases(async () => {
+        const { closure, refusal } = await this.#check(target);
+        if (refusal !== undefined) return refused(target, stage, refusal);
+        isStarted = true;
+        return {
+          state: 'executed',
+          value: await withExecutionPermit(
+            this.#permitBinding(target, authorization, closure),
+            action,
+          ),
+        };
+      });
     } catch (error) {
       rethrowLaunchedError({ isStarted, stage, error });
       return refused(target, stage, inputRefusal(error));

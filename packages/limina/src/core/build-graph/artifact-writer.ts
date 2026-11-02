@@ -9,7 +9,11 @@ import { stringifyJson } from './problems';
 import type { GeneratedGraphWriteContext } from './types';
 
 function getGeneratedArtifactKind(filePath: string): ArtifactKind {
-  if (filePath.endsWith(generatedManifestPath)) {
+  if (
+    filePath.endsWith(generatedManifestPath) ||
+    filePath.endsWith('/generated-artifacts/manifest.json') ||
+    filePath.endsWith('/producer-manifest.json')
+  ) {
     return 'generated-manifest';
   }
   return filePath.includes('/knip/') ? 'tool-config' : 'generated-config';

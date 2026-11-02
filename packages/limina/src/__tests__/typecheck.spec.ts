@@ -31,6 +31,7 @@ import type {
   TypecheckRunnerResult,
   TypecheckTarget,
 } from '../typecheck/targets';
+import { createDefaultRunner } from '../typecheck/targets';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
@@ -543,7 +544,7 @@ describe('runCheckerBuild', () => {
     }
   });
 
-  it('preflights framework-owned typecheck targets even without build targets', async () => {
+  it('prepares producer declarations before rejecting unavailable framework tools', async () => {
     const buildCalls: TypecheckTarget[] = [];
     const typecheckCalls: TypecheckTarget[] = [];
     const typecheckIssues: LiminaCheckIssue[] = [];
@@ -577,12 +578,25 @@ describe('runCheckerBuild', () => {
       packageName === 'typescript' ? packageName : undefined;
 
     try {
+      for (const [packageName, installedName] of [
+        ['svelte', 'svelte-v4-min'],
+        ['svelte2tsx', 'svelte2tsx'],
+        ['typescript', 'typescript'],
+      ] as const)
+        await linkInstalledPackage({
+          packageName,
+          installedName,
+          rootDir: fixture.rootDir,
+        });
       await expect(
         runCheckerBuildCommand({
           checkerPackageResolver: resolveOnlyTypeScript,
           config,
           cwd: fixture.rootDir,
-          runner: passingRunner(buildCalls),
+          runner: async (target, options) => {
+            buildCalls.push(target);
+            return createDefaultRunner({ stdio: 'ignore' })(target, options);
+          },
         }),
       ).resolves.toMatchObject({ passed: true });
       await expect(
@@ -591,7 +605,10 @@ describe('runCheckerBuild', () => {
           config,
           configPath: 'tsconfig.json',
           cwd: fixture.rootDir,
-          runner: passingRunner(buildCalls),
+          runner: async (target, options) => {
+            buildCalls.push(target);
+            return createDefaultRunner({ stdio: 'ignore' })(target, options);
+          },
         }),
       ).resolves.toMatchObject({ passed: true });
       await expect(
@@ -613,8 +630,51 @@ describe('runCheckerBuild', () => {
         process.execPath,
         process.execPath,
       ]);
-      expect(typecheckCalls).toEqual([]);
+      expect(typecheckCalls.map((target) => target.checkerName)).toEqual([
+        'tsc',
+      ]);
       expect(typecheckIssues).toHaveLength(1);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('builds a selected producer without resolving unrelated Svelte consumers', async () => {
+    const fixture = await createFixture({
+      'native/src/index.ts': 'export const value: number = 1;',
+      'native/tsconfig.json': tsconfig({
+        compilerOptions: { composite: true, types: [] },
+        include: ['src'],
+      }),
+      'svelte/src/App.svelte':
+        '<script lang="ts">import Missing from "./missing.svelte";</script><Missing />',
+      'svelte/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+    });
+    const calls: TypecheckTarget[] = [];
+    try {
+      const result = await runCheckerBuild({
+        config: withFixtureGovernanceRoot({
+          rootDir: fixture.rootDir,
+          configPath: fixture.path('limina.config.mjs'),
+          scope: {
+            checkers: {
+              tsc: { include: ['native/tsconfig.json'] },
+              'svelte-check': { include: ['svelte/tsconfig.json'] },
+            },
+          },
+        }),
+        configPath: 'native/tsconfig.json',
+        cwd: fixture.rootDir,
+        runner: async (target, options) => {
+          calls.push(target);
+          return createDefaultRunner({ stdio: 'ignore' })(target, options);
+        },
+      });
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.sourceConfigPath)).toEqual([
+        fixture.path('native/tsconfig.json'),
+      ]);
+      expect(existsSync(fixture.path('.limina/manifest.json'))).toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3459,37 +3519,48 @@ describe('runBuild', () => {
 });
 
 describe('runCheckerTypecheck', () => {
-  it('runs framework-owned checker entries', async () => {
-    const calls: TypecheckTarget[] = [];
-    const fixture = await createFixture({
-      'svelte/src/App.svelte': '<script lang="ts">const value = 1;</script>\n',
-      'svelte/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
-      'tsconfig.build.json': tsconfig({ files: [] }),
-      'tsconfig.svelte.build.json': tsconfig({ files: [] }),
-      'tsconfig.vue.build.json': tsconfig({ files: [] }),
-    });
-
-    try {
-      const result = await runCheckerTypecheck({
-        config: createLiminaConfig(fixture.rootDir),
-        cwd: fixture.rootDir,
-        runner: passingRunner(calls),
+  it.each([0, 1])(
+    'runs framework-owned checker entries with exit status %s and original diagnostic identity',
+    async (status) => {
+      const calls: TypecheckTarget[] = [];
+      const fixture = await createFixture({
+        'svelte/src/App.svelte':
+          '<script lang="ts">const value = 1;</script>\n',
+        'svelte/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+        'tsconfig.build.json': tsconfig({ files: [] }),
+        'tsconfig.svelte.build.json': tsconfig({ files: [] }),
+        'tsconfig.vue.build.json': tsconfig({ files: [] }),
       });
 
-      expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command)).toEqual(['svelte-check']);
-      expect(calls.map((target) => target.args)).toEqual([
-        [
-          '--workspace',
-          toPortablePath(fixture.rootDir),
-          '--tsconfig',
-          toPortablePath(path.join(fixture.rootDir, 'svelte/tsconfig.json')),
-        ],
-      ]);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+      try {
+        const result = await runCheckerTypecheck({
+          config: createLiminaConfig(fixture.rootDir),
+          cwd: fixture.rootDir,
+          runner: async (target) => {
+            calls.push(target);
+            return { configPath: target.configPath, status };
+          },
+        });
+
+        expect(result.passed).toBe(status === 0);
+        if (status !== 0)
+          expect(
+            result.failedTargets?.map((target) => target.configPath),
+          ).toEqual([fixture.path('svelte/tsconfig.json')]);
+        expect(calls.map((target) => target.command)).toEqual(['svelte-check']);
+        expect(calls.map((target) => target.args)).toEqual([
+          [
+            '--workspace',
+            toPortablePath(fixture.rootDir),
+            '--tsconfig',
+            fixture.path('svelte/.limina/check/tsconfig.check.json'),
+          ],
+        ]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('discovers framework targets without checking build-only peers', async () => {
     const calls: TypecheckTarget[] = [];
@@ -3530,6 +3601,54 @@ describe('runCheckerTypecheck', () => {
 });
 
 describe('checker targets after materialization', () => {
+  it('removes an excluded consumer check configuration through its local managed namespace', async () => {
+    const fixture = await createFixture({
+      'packages/a/src/App.svelte': '<p>a</p>',
+      'packages/a/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+      'packages/b/src/App.svelte': '<p>b</p>',
+      'packages/b/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+    });
+    const createConfig = (include: string[], exclude: string[] = []) =>
+      withFixtureGovernanceRoot({
+        rootDir: fixture.rootDir,
+        configPath: fixture.path('limina.config.mjs'),
+        scope: { checkers: { auto: { exclude }, 'svelte-check': { include } } },
+      });
+    try {
+      const first = await runCheckerTypecheck({
+        config: createConfig(['packages/*/tsconfig.json']),
+        cwd: fixture.rootDir,
+        runner: passingRunner(),
+      });
+      expect(first.passed).toBe(true);
+      expect(
+        existsSync(
+          fixture.path('packages/b/.limina/check/tsconfig.check.json'),
+        ),
+      ).toBe(true);
+      // The source remains on disk; only its selected execution target leaves.
+      const second = await runCheckerTypecheck({
+        config: createConfig(['packages/a/tsconfig.json'], ['packages/b/**']),
+        cwd: fixture.rootDir,
+        runner: passingRunner(),
+      });
+      expect(second.passed).toBe(true);
+      expect(
+        existsSync(
+          fixture.path('packages/a/.limina/check/tsconfig.check.json'),
+        ),
+      ).toBe(true);
+      expect(
+        existsSync(
+          fixture.path('packages/b/.limina/check/tsconfig.check.json'),
+        ),
+      ).toBe(false);
+      expect(existsSync(fixture.path('packages/b/src/App.svelte'))).toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it.each(['checker', 'selected-checker', 'output'] as const)(
     'rejects changed artifact revisions before a %s build starts',
     async (entry) => {
@@ -3735,7 +3854,7 @@ describe('checker targets after materialization', () => {
     },
   );
 
-  it('rejects a receipt replaced before its read lease without starting a checker', async () => {
+  it('rejects changed source inputs behind a stale consumer receipt without launching Svelte', async () => {
     const fixture = await createFixture({
       'svelte/src/App.svelte': '<p>hello</p>',
       'svelte/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
@@ -3745,11 +3864,8 @@ describe('checker targets after materialization', () => {
     const second = new LiminaPreflightManager({ config });
     try {
       const receipt = await first.ensureGeneratedArtifactsMaterialized();
-      await writeText(fixture.path('src/index.ts'), 'export const value = 1;');
-      await writeText(
-        fixture.path('tsconfig.json'),
-        tsconfig({ include: ['src/**/*'] }),
-      );
+      await writeText(fixture.path('svelte/src/Added.svelte'), '<p>added</p>');
+
       await second.ensureGeneratedArtifactsMaterialized();
       vi.spyOn(first, 'ensureGeneratedArtifactsMaterialized').mockResolvedValue(
         receipt,
@@ -3769,8 +3885,8 @@ describe('checker targets after materialization', () => {
             admission: expect.objectContaining({
               status: 'admission-rejected',
             }),
-            message: expect.stringContaining(
-              'revision changed after materialization',
+            message: expect.stringMatching(
+              /Analysis input changed during analysis/u,
             ),
           }),
         ],

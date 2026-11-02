@@ -39,6 +39,10 @@ import type { GeneratedTsconfigGraphManifest } from './manifest-types';
 import type { NativeAnalysisEvidence } from './native-analysis-evidence';
 import type { OutputProjectionReceipt } from './output-projection';
 import type { SupplementalAssessment } from './pending-supplemental-assessment';
+import type {
+  ProducerBuildReceipt,
+  ProducerOutputMapping,
+} from './producer-receipt';
 import type { ReferenceValidation } from './reference-validation';
 import type { AutoFrameworkEvidence } from './source-capabilities';
 import type { SourceConfigDiscovery } from './source-config-discovery';
@@ -65,10 +69,14 @@ export interface DeclarationProviderEdge extends GeneratedDependencyEdgeBase {
 export interface FrameworkScheduleEdge extends GeneratedDependencyEdgeBase {
   kind: 'framework-schedule';
 }
+export interface FrameworkDeclarationEdge extends GeneratedDependencyEdgeBase {
+  kind: 'framework-declaration';
+}
 
 export type GeneratedDependencyEdge =
   | DeclarationProviderEdge
-  | FrameworkScheduleEdge;
+  | FrameworkScheduleEdge
+  | FrameworkDeclarationEdge;
 
 export type GeneratedBuildModuleKind = 'project' | 'solution';
 
@@ -88,7 +96,15 @@ export interface GeneratedOutputDeclarationCopyContext {
   rootDir: string;
   sourceConfigPath: string;
 }
-export interface GeneratedTsconfigGraphResult {
+/**
+Shared artifact data does not establish complete workspace admission.
+*/
+interface TsconfigGraphArtifacts {
+  producerBuildReceipt?: ProducerBuildReceipt;
+  auxiliaryArtifacts?: {
+    namespace: LiminaArtifactNamespace;
+    plan: ArtifactPlan;
+  }[];
   dependencyAnalysis?: DependencyAnalysisResult;
   sourceConfigCoverage?: SourceConfigCoverageIndex;
   outputProjections?: OutputProjectionReceipt[];
@@ -116,7 +132,21 @@ export interface GeneratedTsconfigGraphResult {
   generatedFiles: ReadonlyMap<string, string>;
 }
 
+export interface GeneratedTsconfigGraphResult extends TsconfigGraphArtifacts {
+  purpose: 'complete';
+}
+
+export interface ProducerBuildPlan extends TsconfigGraphArtifacts {
+  declarationOutputs?: readonly ProducerOutputMapping[];
+  purpose: 'producer-build';
+}
+
+export type PreparedTsconfigGraph =
+  | GeneratedTsconfigGraphResult
+  | ProducerBuildPlan;
+
 export interface PrepareGeneratedTsconfigGraphOptions {
+  producerBuildReceipt?: ProducerBuildReceipt;
   artifactNamespace: LiminaArtifactNamespace;
   importAnalysisContext?: ImportAnalysisContext;
   projectDependencyCaches?: ProjectDependencyCaches;
@@ -126,6 +156,7 @@ export interface PrepareGeneratedTsconfigGraphOptions {
 }
 
 export interface SourceProject {
+  executionConfigPath?: string;
   outputProjections?: OutputProjectionReceipt[];
   typeInputProjections?: TypeInputProjectionReceipt[];
   libraryProjections?: LibraryProjectionReceipt[];
@@ -148,6 +179,7 @@ export interface SourceProject {
 }
 
 export interface FrameworkCapabilityDescriptor {
+  executionConfigPath?: string;
   family: 'astro' | 'svelte';
   packageRootDir: string;
   sourceConfigPath: string;
@@ -172,6 +204,8 @@ export type SourceBuildProjection =
     };
 
 export interface GovernedSourceUnit {
+  checkConfigPath?: string;
+  checkReferences?: Set<string>;
   astroSemanticProject?: AstroSemanticProject;
   buildProjection: SourceBuildProjection;
   configPath: string;

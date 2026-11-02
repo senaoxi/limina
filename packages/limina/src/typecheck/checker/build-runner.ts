@@ -1,6 +1,13 @@
 import type { ResolvedCheckerConfig } from '#config/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
+import {
+  assertProducerBuildReceipt,
+  captureProducerBuildInputs,
+  issueProducerBuildReceipt,
+  type ProducerBuildReceipt,
+} from '../../core/build-graph/producer-receipt';
+import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
 import { TypecheckLogger } from '../../logger';
 import { resolvePreflight } from '../../preflight';
 import { shouldLogCheckReport } from '../runner-shared';
@@ -29,13 +36,7 @@ interface CheckerBuildContext {
   buildCheckers: readonly ResolvedCheckerConfig[];
   cwd: string;
   flowDepth: number;
-  generatedGraph: Awaited<
-    ReturnType<
-      ReturnType<
-        typeof resolvePreflight
-      >['ensureGeneratedArtifactsMaterialized']
-    >
-  >['graph'];
+  generatedGraph: PreparedTsconfigGraph;
   options: RunCheckerBuildOptions;
   preflight: ReturnType<typeof resolvePreflight>;
   projectRootDir: string;
@@ -215,9 +216,12 @@ async function runGeneratedCheckerBuild(
 
 async function createCheckerBuildContext(
   options: RunCheckerBuildOptions,
+  purpose: PreparedTsconfigGraph['purpose'] = 'complete',
 ): Promise<CheckerBuildContext> {
   const preflight = resolvePreflight(options.config, options);
-  const generated = await preflight.ensureGeneratedArtifactsMaterialized();
+  const generated = await preflight.ensureExecutionArtifactsMaterialized(
+    options.watch ? 'complete' : purpose,
+  );
   const workspaceContext = await preflight.ensureWorkspaceValidated();
   const allCheckers = generated.graph.checkers;
   return {
@@ -239,8 +243,111 @@ async function createCheckerBuildContext(
 export async function runCheckerBuildImpl(
   options: RunCheckerBuildOptions,
 ): Promise<RunCheckerBuildResult> {
+  if (options.watch) return runBuild(options);
+  const preflight = resolvePreflight(options.config, options);
+  if (!(await preflight.hasSvelteCheckProjects()))
+    return runBuild({ ...options, preflight });
+  if (options.configPath !== undefined)
+    return runSelectedCheckerBuild(
+      await createCheckerBuildContext(
+        { ...options, preflight },
+        'producer-build',
+      ),
+    );
+  const built = await ensureBuilt({ ...options, preflight });
+  if (
+    built.receipt !== undefined &&
+    (built.receipt.plan.governedSources.get('svelte-check')?.size ?? 0) > 0
+  )
+    await preflight.prepareConsumerPhase(built.receipt);
+  return built.reused
+    ? {
+        ...built.result,
+        targetResults: [],
+        targetOutcomes: [],
+        reusedTargetResults: built.result.targetResults,
+      }
+    : built.result;
+}
+
+async function runBuild(
+  options: RunCheckerBuildOptions,
+): Promise<RunCheckerBuildResult> {
   const context = await createCheckerBuildContext(options);
   return options.configPath === undefined
     ? runGeneratedCheckerBuild(context)
     : runSelectedCheckerBuild(context);
+}
+
+interface BuiltProducers {
+  reused: boolean;
+  result: RunCheckerBuildResult;
+  receipt?: ProducerBuildReceipt;
+}
+const builds = new WeakMap<
+  ReturnType<typeof resolvePreflight>,
+  Promise<BuiltProducers>
+>();
+const buildCommands = new WeakMap<
+  ReturnType<typeof resolvePreflight>,
+  string | undefined
+>();
+const buildGenerations = new WeakMap<
+  ReturnType<typeof resolvePreflight>,
+  unknown
+>();
+
+export async function ensureBuilt(
+  options: RunCheckerBuildOptions,
+): Promise<BuiltProducers> {
+  const preflight = resolvePreflight(options.config, options);
+  if (
+    buildGenerations.get(preflight) !== preflight.run.generation ||
+    buildCommands.get(preflight) !== options.tscCommand
+  ) {
+    builds.delete(preflight);
+    buildCommands.set(preflight, options.tscCommand);
+    buildGenerations.set(preflight, preflight.run.generation);
+  }
+  const existing = builds.get(preflight);
+  if (existing !== undefined) {
+    const built = await existing;
+    if (built.receipt !== undefined) assertProducerBuildReceipt(built.receipt);
+    return { ...built, reused: true };
+  }
+  const generation = preflight.run.generation;
+  const pending = (async () => {
+    const context = await createCheckerBuildContext(
+      { ...options, preflight },
+      'producer-build',
+    );
+    if (context.generatedGraph.purpose !== 'producer-build')
+      throw new Error('Expected a producer build plan.');
+    const baseline = captureProducerBuildInputs(context.generatedGraph);
+    const result = await runGeneratedCheckerBuild(context);
+    if (generation !== preflight.run.generation)
+      throw new Error(
+        'Producer build generation changed before receipt publication.',
+      );
+    if (!result.passed) return { result, reused: false };
+    return {
+      result,
+      reused: false,
+      receipt: issueProducerBuildReceipt(
+        context.generatedGraph,
+        baseline,
+        context.projectRootDir,
+      ),
+    };
+  })();
+  builds.set(preflight, pending);
+  try {
+    const built = await pending;
+    if (!built.result.passed && builds.get(preflight) === pending)
+      builds.delete(preflight);
+    return built;
+  } catch (error) {
+    if (builds.get(preflight) === pending) builds.delete(preflight);
+    throw error;
+  }
 }

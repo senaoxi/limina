@@ -1,5 +1,5 @@
 import { parseCheckerProjectConfigForContext } from '#checkers';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type { PreparedTsconfigGraph } from '#core/build-graph/runner';
 import ts from 'typescript';
 import type { CandidateBuildPlan } from '../../core/build-graph/analysis-admission';
 import { projections } from '../../core/build-graph/compilation-projection';
@@ -14,7 +14,7 @@ import type { ExecutionAdmission } from './execution-admission';
 import { collectExecutionReferenceClosure } from './reference-closure';
 
 interface MissingInput {
-  graph: GeneratedTsconfigGraphResult;
+  graph: PreparedTsconfigGraph;
   target: TypecheckTarget;
   root: string;
 }
@@ -150,10 +150,7 @@ export function missingExecutionInputs(
   );
 }
 
-function currentContext(
-  graph: GeneratedTsconfigGraphResult,
-  contextId: string,
-) {
+function currentContext(graph: PreparedTsconfigGraph, contextId: string) {
   const candidate = graph.dependencyAnalysis?.candidate;
   return candidate === undefined
     ? undefined

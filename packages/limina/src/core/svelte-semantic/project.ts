@@ -9,6 +9,9 @@ import {
 } from './types';
 
 export function createSvelteSemanticProject(options: {
+  virtualFiles?: SvelteSemanticProject['virtualFiles'];
+  references?: SvelteSemanticProject['references'];
+  svelteOptions?: SvelteSemanticProject['svelteOptions'];
   configClosure?: SvelteSemanticProject['configClosure'];
   configPath: string;
   extensions: readonly string[];
@@ -19,6 +22,9 @@ export function createSvelteSemanticProject(options: {
   resolverConfigPath?: string;
 }): SvelteSemanticProject {
   return {
+    virtualFiles: options.virtualFiles,
+    references: options.references,
+    svelteOptions: options.svelteOptions,
     adapterVersion: SVELTE_SEMANTIC_ADAPTER_VERSION,
     configClosure: options.configClosure,
     packageIdentity: createPackageIdentity(options.packageRootDir),

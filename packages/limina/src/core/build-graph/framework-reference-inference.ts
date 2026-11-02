@@ -1,5 +1,6 @@
 import { isBuildCapablePreset } from '#checkers';
 import type { formatImportRecordLocation } from '#core/import-graph/context';
+import { formatImportRecordLocation as importLocation } from '#core/import-graph/context';
 import { uniqueCodeUnitSortedStrings } from '#utils/collections';
 import { collectFrameworkExecutionInputs } from '../analysis-cache/framework-execution-inputs';
 import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
@@ -8,6 +9,9 @@ import {
   createSourceProjectSemanticContext,
   type ProjectDependency,
 } from '../project-dependencies/runner';
+import { observeSvelteNativeComponentRequests } from '../svelte-semantic/generated-script';
+import { createSvelteModuleTarget } from '../svelte-semantic/module-resolution';
+import { resolveSvelteSemanticToolchain } from '../svelte-semantic/toolchain';
 import { shouldUseDeclarationProvider } from './compilation-prerequisite';
 import {
   addAmbiguousFrameworkSourceOwnerProblem,
@@ -201,6 +205,32 @@ function processFrameworkDependency(options: {
   project: SourceProject;
   projectDependency: ProjectDependency;
 }): void {
+  if (
+    options.base.context.svelteConsumerView !== undefined &&
+    options.base.source.primaryCheckerName === 'svelte-check' &&
+    options.projectDependency.targetKind === 'source' &&
+    !options.project.options.noResolve
+  ) {
+    const target = resolveLegacyFrameworkTarget({
+      ...options.base,
+      fileName: options.projectDependency.importRecord.filePath,
+      importRecord: options.projectDependency.importRecord,
+      project: options.project,
+      projectDependency: options.projectDependency,
+    });
+    if (target !== null)
+      recordFrameworkSchedulingDependency(
+        {
+          ...options.base,
+          fileName: options.projectDependency.importRecord.filePath,
+          importRecord: options.projectDependency.importRecord,
+          project: options.project,
+          projectDependency: options.projectDependency,
+        },
+        target,
+      );
+    return;
+  }
   if (!hasFrameworkCompilationRequirement(options.projectDependency)) return;
   const fileName = options.projectDependency.importRecord.filePath;
   if (!isFrameworkContribution({ ...options, context: options.base.context }))
@@ -261,8 +291,46 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
       project,
       analysis: options.context.importAnalysis,
     },
-    () =>
-      collectProjectDependencies({
+    () => {
+      const semantic = options.source.svelteSemanticProject;
+      if (
+        semantic !== undefined &&
+        options.context.svelteConsumerView !== undefined
+      ) {
+        const toolchain = resolveSvelteSemanticToolchain(
+          semantic.packageRootDir,
+        );
+        for (const request of observeSvelteNativeComponentRequests(
+          semantic,
+          toolchain,
+        )) {
+          const target = createSvelteModuleTarget(
+            request.raw?.resolvedModule,
+            toolchain.tsModule,
+          );
+          if (target?.resolvedBy !== 'checker-source') continue;
+          const owners =
+            options.context.fileOwnerLookup.get(target.resolvedFileName) ?? [];
+          if (owners.length !== 1)
+            throw new Error(
+              `Svelte Compiler request has no unique owner: ${request.record.specifier}`,
+            );
+          const owner = options.buildOwnersByConfigPath.get(owners[0]!)!;
+          if (owners[0] !== options.source.configPath)
+            recordFrameworkDependencyEdge(
+              options.context,
+              createFrameworkDependencyEdge({
+                context: options.context,
+                source: options.source,
+                importRecord: request.record,
+                resolvedFilePath: target.resolvedFileName,
+                targetCheckerName: owner.checkerName,
+                targetConfigPath: owners[0]!,
+              }),
+            );
+        }
+      }
+      return collectProjectDependencies({
         compilationObligationScope: 'generated-declaration-project-v1',
         caches: options.context.projectDependencyCaches,
         context: createSourceProjectSemanticContext({
@@ -272,11 +340,41 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
           workspaceSourceBoundary: options.context.workspaceSourceBoundary,
         }),
         importAnalysis: options.context.importAnalysis,
-      }),
+      });
+    },
   );
+  if (options.source.primaryCheckerName === 'svelte-check') {
+    for (const dependency of collection.dependencies) {
+      if (dependency.targetKind !== 'declaration') continue;
+      const bindings = options.context.svelteConsumerView?.bindings;
+      const binding =
+        bindings?.get(dependency.resolvedFilePath) ??
+        [...(bindings?.values() ?? [])].find(
+          (entry) => entry.outputFile === dependency.resolvedFilePath,
+        );
+      if (binding === undefined) continue;
+      const edge = {
+        kind: 'framework-declaration' as const,
+        file: importLocation(
+          options.context.config.rootDir,
+          dependency.importRecord,
+        ),
+        fromChecker: options.source.primaryCheckerName,
+        fromConfigPath: options.source.configPath,
+        importedSpecifier: dependency.importRecord.specifier,
+        resolvedFilePath: dependency.resolvedFilePath,
+        toChecker: binding.checker,
+        toConfigPath: binding.sourceConfig,
+      };
+      options.context.dependencyEdgesByKey.set(JSON.stringify(edge), edge);
+    }
+  }
   processFrameworkDependencies({
     base: options,
-    dependencies: effectiveReferenceInputs(collection),
+    dependencies:
+      options.context.svelteConsumerView === undefined
+        ? effectiveReferenceInputs(collection)
+        : collection.dependencies,
     frameworkFiles,
     project,
   });

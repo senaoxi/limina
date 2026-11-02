@@ -12,10 +12,12 @@ import { prepareGeneratedKnipPackageConfigs } from './generated-knip';
 import { assertGeneratedReferenceBinding } from './generated-reference-binding';
 import { observeOutputProjections } from './observe-output-projections';
 import type { createGeneratedGraphPreparationState } from './prepare-state';
+import { assertProducerBuildReceipt } from './producer-receipt';
 import { validateStagedReferences } from './reference-validation';
 import type {
   DependencyAnalysisResult,
   GeneratedTsconfigGraphResult,
+  PreparedTsconfigGraph,
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { writeGeneratedGraphConfigs } from './write-generated-graph';
@@ -28,7 +30,7 @@ export async function finishPreparedGraph(input: {
   workspaceContext: ValidatedWorkspaceContext;
   options: PrepareGeneratedTsconfigGraphOptions;
   projectDependencyCaches: ProjectDependencyCaches;
-}): Promise<GeneratedTsconfigGraphResult | DependencyAnalysisResult> {
+}): Promise<PreparedTsconfigGraph | DependencyAnalysisResult> {
   const {
     config,
     checkers,
@@ -70,17 +72,23 @@ export async function finishPreparedGraph(input: {
     generatedKnip,
     state,
   });
-  assertReferenceBinding(result, config);
-  await completeFrameworkExecutionInputs(result, config);
   result.dependencyAnalysis = state.dependencyAnalysis;
   result.sourceConfigCoverage = projectDependencyCaches.sourceConfigCoverage;
-  capturePreparedGraph({
-    config,
-    options,
-    workspaceContext,
-    result,
-    analysis: state.dependencyAnalysis,
-  });
+  assertReferenceBinding(result, config);
+  if (options.producerBuildReceipt !== undefined) {
+    assertProducerBuildReceipt(options.producerBuildReceipt, result);
+    result.producerBuildReceipt = options.producerBuildReceipt;
+  }
+  if (result.purpose === 'complete')
+    await completeFrameworkExecutionInputs(result, config);
+  if (result.purpose === 'complete')
+    capturePreparedGraph({
+      config,
+      options,
+      workspaceContext,
+      result,
+      analysis: state.dependencyAnalysis,
+    });
   return result;
 }
 function prepareGeneratedKnip(options: {
@@ -122,7 +130,7 @@ function capturePreparedGraph(input: {
 }
 
 function assertReferenceBinding(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   config: ResolvedLiminaInputs,
 ): void {
   assertGeneratedReferenceBinding(graph, config);
