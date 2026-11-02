@@ -8,7 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-### Changed
+## [0.5.0-beta.2] - 2026-11-02
+
+### Breaking Changes
 
 - **BREAKING:** collect Native compiler evidence with a physical Coverage-bounded Program.
   TypeScript runtime `require`, `createRequire`, and `require.resolve` no longer automatically
@@ -28,6 +30,128 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   Old analysis implementation snapshots rebuild on demand without clearing checker caches.
   See the current [English configuration structure](../../docs/en/config/config-file.md#configuration-structure)
   or [中文配置结构](../../docs/zh/config/config-file.md#configuration-structure).
+
+### Features
+
+- feat(checker): build producers before Svelte consumer checks ([f8f4f80](https://github.com/senaoxi/limina/commit/f8f4f80))
+- feat(checker)!: assign ownership per source config ([be7b2bc](https://github.com/senaoxi/limina/commit/be7b2bc))
+- feat: unify declaration context governance ([8f406ed](https://github.com/senaoxi/limina/commit/8f406ed))
+- feat(checker): qualify Pending resolution supplements ([f0d743d](https://github.com/senaoxi/limina/commit/f0d743d))
+- feat!: govern declaration configuration contexts ([9ebdaf0](https://github.com/senaoxi/limina/commit/9ebdaf0))
+- feat!: select default checks from configured domains ([dbedd0a](https://github.com/senaoxi/limina/commit/dbedd0a))
+- feat!: select default checks from configured domains ([e7f9737](https://github.com/senaoxi/limina/commit/e7f9737))
+- feat(native)!: collect bounded compiler evidence ([d1ee8a8](https://github.com/senaoxi/limina/commit/d1ee8a8))
+- feat: extend declaration dependency resolution ([817a4a7](https://github.com/senaoxi/limina/commit/817a4a7))
+- feat(graph)!: persist programless dependency graphs ([af74018](https://github.com/senaoxi/limina/commit/af74018))
+- feat(migrate)!: support defaults and migration previews ([3866f4d](https://github.com/senaoxi/limina/commit/3866f4d))
+- feat(graph)!: remove condition-domain governance ([24c8c95](https://github.com/senaoxi/limina/commit/24c8c95))
+- feat(config)!: reorganize configuration domains ([f46f054](https://github.com/senaoxi/limina/commit/f46f054))
+- feat(config): configure persistent analysis caching ([70130d5](https://github.com/senaoxi/limina/commit/70130d5))
+- feat(cache): observe configuration module inputs ([126f21d](https://github.com/senaoxi/limina/commit/126f21d))
+- feat(cli)!: replace cache opt-out with forced refresh ([09459c6](https://github.com/senaoxi/limina/commit/09459c6))
+- feat(docs): refine article typography and code blocks ([13d14aa](https://github.com/senaoxi/limina/commit/13d14aa))
+- feat(analysis): restore complete native analysis models ([97f8121](https://github.com/senaoxi/limina/commit/97f8121))
+- feat(analysis): persist native TypeScript analysis ([94334d5](https://github.com/senaoxi/limina/commit/94334d5))
+- feat(release): enable independent publication ([0dc3bcb](https://github.com/senaoxi/limina/commit/0dc3bcb))
+- feat(docs): unify article reading theme ([349dad5](https://github.com/senaoxi/limina/commit/349dad5))
+
+### Bug Fixes
+
+- fix(checker): preserve Svelte drive resolution ([f228c1d](https://github.com/senaoxi/limina/commit/f228c1d))
+- fix(checker): reject unproved compiler input admission ([8f5698e](https://github.com/senaoxi/limina/commit/8f5698e))
+- fix(checker): retain compiler requests without source maps ([62ec273](https://github.com/senaoxi/limina/commit/62ec273))
+- fix(checker): qualify unresolved versioned requests ([64c4cd4](https://github.com/senaoxi/limina/commit/64c4cd4))
+- fix(graph): validate retained declaration and JSON inputs ([d9f2226](https://github.com/senaoxi/limina/commit/d9f2226))
+- fix(graph): preserve declaration package formats ([7f71920](https://github.com/senaoxi/limina/commit/7f71920))
+- fix(graph): require declared local JSON emit inputs ([27cadd9](https://github.com/senaoxi/limina/commit/27cadd9))
+- fix(graph): qualify tsgo versioned type conditions ([c817e8b](https://github.com/senaoxi/limina/commit/c817e8b))
+- fix(graph): reject changed package module projections ([4819a7a](https://github.com/senaoxi/limina/commit/4819a7a))
+- fix(graph): preserve external type entry loading identity ([c95df43](https://github.com/senaoxi/limina/commit/c95df43))
+- fix(graph): preserve effective config path semantics ([deea259](https://github.com/senaoxi/limina/commit/deea259))
+- fix(graph): reject unproved output compilation relations ([bccc59d](https://github.com/senaoxi/limina/commit/bccc59d))
+- fix(graph): honor effective JSON path defaults ([0012aa8](https://github.com/senaoxi/limina/commit/0012aa8))
+- fix(checker): normalize Native candidate path keys ([87f83b7](https://github.com/senaoxi/limina/commit/87f83b7))
+- fix(graph): prove compiler coverage before graph admission ([fb76936](https://github.com/senaoxi/limina/commit/fb76936))
+- fix!: restore fixed default governance checks ([830337d](https://github.com/senaoxi/limina/commit/830337d))
+- fix: preserve cycle attribution and bound CI tests ([f08aa9e](https://github.com/senaoxi/limina/commit/f08aa9e))
+- fix: preserve compiler reference obligations ([020ee30](https://github.com/senaoxi/limina/commit/020ee30))
+- fix: enforce project reference semantics ([cdf7583](https://github.com/senaoxi/limina/commit/cdf7583))
+- fix(checker): preserve TypeScript library selections ([27b6838](https://github.com/senaoxi/limina/commit/27b6838))
+- fix: preserve TS extension imports in dts builds ([f6d8e03](https://github.com/senaoxi/limina/commit/f6d8e03))
+- fix: normalize portable configuration identities ([a0db590](https://github.com/senaoxi/limina/commit/a0db590))
+- fix: restore portable CI validation ([2319bf2](https://github.com/senaoxi/limina/commit/2319bf2))
+- fix(graph): correct declaration context validation ([7855fb9](https://github.com/senaoxi/limina/commit/7855fb9))
+- fix: recheck source consumers and reuse analysis ([63d05ae](https://github.com/senaoxi/limina/commit/63d05ae))
+- fix(cache): restore Vue references from qualified contexts ([f9c394f](https://github.com/senaoxi/limina/commit/f9c394f))
+- fix: qualify native compilation obligation proofs ([39f6463](https://github.com/senaoxi/limina/commit/39f6463))
+- fix(checker): bind execution admission to current inputs ([fd8393d](https://github.com/senaoxi/limina/commit/fd8393d))
+- fix: preserve Vue output analysis and cache validity ([07d919d](https://github.com/senaoxi/limina/commit/07d919d))
+- fix(cache): validate pnpm multi-document lock coverage ([be6f8c4](https://github.com/senaoxi/limina/commit/be6f8c4))
+- fix(proof): preserve the active project-config cache ([3a8e673](https://github.com/senaoxi/limina/commit/3a8e673))
+- fix(migrate): verify commands in fresh processes ([6fe4b84](https://github.com/senaoxi/limina/commit/6fe4b84))
+- fix: repair security audit and Windows path roots ([c6ce2be](https://github.com/senaoxi/limina/commit/c6ce2be))
+- fix(cli): reject pipeline runtime arguments ([d5c83f2](https://github.com/senaoxi/limina/commit/d5c83f2))
+- fix(git): preserve commit message paths on Windows ([9039fa6](https://github.com/senaoxi/limina/commit/9039fa6))
+- fix(release): correct prerelease channel planning ([92cd92f](https://github.com/senaoxi/limina/commit/92cd92f))
+- fix(docs): prevent private attribution in context records ([6d8d7e5](https://github.com/senaoxi/limina/commit/6d8d7e5))
+- fix(docs): prevent private paths in published artifacts ([a6cbb15](https://github.com/senaoxi/limina/commit/a6cbb15))
+
+### Documentation
+
+- docs: refresh references after privacy history rewrite ([daca311](https://github.com/senaoxi/limina/commit/daca311))
+- docs: remove historical interface explanations ([7999093](https://github.com/senaoxi/limina/commit/7999093))
+- docs: clarify bilingual user documentation ([d74c2d1](https://github.com/senaoxi/limina/commit/d74c2d1))
+- docs: define dependency delivery policy ([14c22d5](https://github.com/senaoxi/limina/commit/14c22d5))
+- docs(native): document Program evidence boundaries ([a82d952](https://github.com/senaoxi/limina/commit/a82d952))
+- docs: explain programless graph contracts ([af00cd5](https://github.com/senaoxi/limina/commit/af00cd5))
+- docs(skills): limina skill ([87a3cf5](https://github.com/senaoxi/limina/commit/87a3cf5))
+- docs(config): explain configuration cache dependencies ([e23c8d5](https://github.com/senaoxi/limina/commit/e23c8d5))
+- docs: clarify bilingual adoption and checking guides ([6ef3cce](https://github.com/senaoxi/limina/commit/6ef3cce))
+- docs(deps): define dependency admission workflow ([dff4c4f](https://github.com/senaoxi/limina/commit/dff4c4f))
+- docs: reorganize repository guidance ([a1738d6](https://github.com/senaoxi/limina/commit/a1738d6))
+- docs: define commit message convention ([e920264](https://github.com/senaoxi/limina/commit/e920264))
+
+### Maintenance
+
+- ci: restore complete platform validation ([1e62268](https://github.com/senaoxi/limina/commit/1e62268))
+- build: upgrade Vercel and rebalance Windows CI ([4b9ff03](https://github.com/senaoxi/limina/commit/4b9ff03))
+- test: separate framework compiler control budgets ([8609fca](https://github.com/senaoxi/limina/commit/8609fca))
+- refactor: consolidate modules by capability and lifetime ([7e68d2f](https://github.com/senaoxi/limina/commit/7e68d2f))
+- build: check generated declarations after bundling ([6090e51](https://github.com/senaoxi/limina/commit/6090e51))
+- test: extend real Astro semantic test deadlines ([0349e9c](https://github.com/senaoxi/limina/commit/0349e9c))
+- build(deps): upgrade Vercel to 65.2.0 ([dc7dec8](https://github.com/senaoxi/limina/commit/dc7dec8))
+- build: unify Astro test dependency baselines ([39d98a5](https://github.com/senaoxi/limina/commit/39d98a5))
+- refactor: consolidate modules and relax size lint rules ([71a79a3](https://github.com/senaoxi/limina/commit/71a79a3))
+- chore: bump deps ([9882052](https://github.com/senaoxi/limina/commit/9882052))
+- build(deps): raise Vite floor to 8.3.4 ([f671644](https://github.com/senaoxi/limina/commit/f671644))
+- chore(agents): remove legacy HTML publisher shim ([eabb98e](https://github.com/senaoxi/limina/commit/eabb98e))
+- chore(agents): add shared HTML publisher compatibility ([f829e3e](https://github.com/senaoxi/limina/commit/f829e3e))
+- test: stabilize cache and dependency regressions ([51a4376](https://github.com/senaoxi/limina/commit/51a4376))
+- build(migrate): refresh bundled license notices ([3d6f769](https://github.com/senaoxi/limina/commit/3d6f769))
+- chore(docs): sidebar layout adjustment of docs ([80ee306](https://github.com/senaoxi/limina/commit/80ee306))
+- build!: raise Node.js floors and upgrade pnpm ([c8e4558](https://github.com/senaoxi/limina/commit/c8e4558))
+- test(cache): isolate gates and fix process paths ([ccfcea8](https://github.com/senaoxi/limina/commit/ccfcea8))
+- chore(git): limit commit body and footer line lengths ([037f65a](https://github.com/senaoxi/limina/commit/037f65a))
+- test(migrate): corrupt embedded versions through the AST ([c37e479](https://github.com/senaoxi/limina/commit/c37e479))
+- test: bound unit test subprocess concurrency ([4313262](https://github.com/senaoxi/limina/commit/4313262))
+- test(gates): exclude dependencies from fixture commits ([0c8e3ed](https://github.com/senaoxi/limina/commit/0c8e3ed))
+- build(gates): centralize repository governance ([ecd003a](https://github.com/senaoxi/limina/commit/ecd003a))
+- chore: route repository checks through Limina pipelines ([820947d](https://github.com/senaoxi/limina/commit/820947d))
+
+### Other Changes
+
+- perf: reduce repeated startup analysis work ([efb4086](https://github.com/senaoxi/limina/commit/efb4086))
+- perf(cache): reuse immutable analysis facts and graph views ([9e2660f](https://github.com/senaoxi/limina/commit/9e2660f))
+- perf: reuse admission proofs and cache coverage ([10b9fa5](https://github.com/senaoxi/limina/commit/10b9fa5))
+- perf(checker): reuse input reads within prerequisite phases ([17f79d0](https://github.com/senaoxi/limina/commit/17f79d0))
+- perf(cache): avoid duplicate publication input scans ([fc02919](https://github.com/senaoxi/limina/commit/fc02919))
+- perf(cache): index bounded evidence during validation ([b58b0ec](https://github.com/senaoxi/limina/commit/b58b0ec))
+- perf(vue): index declaration closure dependency facts ([80a4ca4](https://github.com/senaoxi/limina/commit/80a4ca4))
+- perf(cache): shard analysis snapshots by project scope ([ee1ae5b](https://github.com/senaoxi/limina/commit/ee1ae5b))
+- perf(cache): reuse verified installation coverage ([c2f3ac2](https://github.com/senaoxi/limina/commit/c2f3ac2))
+- perf: bound file identity hashing memory ([cc176ae](https://github.com/senaoxi/limina/commit/cc176ae))
+- perf(cache): reuse persistent Vue and mixed graph analysis ([2618645](https://github.com/senaoxi/limina/commit/2618645))
+- perf(analysis): reuse reads within bounded analysis scopes ([7dfe87c](https://github.com/senaoxi/limina/commit/7dfe87c))
 
 ## [0.5.0-beta.1] - 2026-10-04
 
