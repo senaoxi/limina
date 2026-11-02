@@ -29,7 +29,10 @@ import type { ExecutionPlan } from '../../src/execution/tasks';
 import { LiminaFlowReporter } from '../../src/flow';
 import {
   type CommandProcessDependencies,
+  createDefaultExecutionPlan,
   createExecutionPlan,
+  runDefaultCheckWithResult,
+  type RunPipelineOptions,
   runPipelineWithResult,
 } from '../../src/pipeline/runner';
 import { LiminaPreflightManager } from '../../src/preflight';
@@ -667,10 +670,14 @@ async function main(): Promise<void> {
       controller,
       definitions,
     });
-    const plan = createExecutionPlan(config, 'fault-injection', {
+    const isDefault = arguments_.command.length === 1;
+    const planOptions = {
       ...(commandProcess && { commandProcess }),
       preflight,
-    });
+    };
+    const plan = isDefault
+      ? createDefaultExecutionPlan(config, planOptions)
+      : createExecutionPlan(config, 'fault-injection', planOptions);
     injectExecutionBoundaryFault(plan, controller, planDocument.fault);
     injectProtocolFault({
       boundaryErrors,
@@ -696,7 +703,7 @@ async function main(): Promise<void> {
     baseRecorder = createCheckRunRecorder({
       command: commandText(arguments_.command),
       configPath: config.configPath,
-      pipeline: 'fault-injection',
+      ...(!isDefault && { pipeline: 'fault-injection' }),
       plannedTasks: plan.tasks,
       rootDir: config.rootDir,
     });
@@ -731,7 +738,7 @@ async function main(): Promise<void> {
         outro: (message) => flow.outro(message),
       },
       async () => {
-        execution = await runPipelineWithResult(config, 'fault-injection', {
+        const options: RunPipelineOptions = {
           checkIssueReport: {
             command: commandText(arguments_.command),
             defer: true,
@@ -742,7 +749,10 @@ async function main(): Promise<void> {
           flow,
           preflight,
           ...(snapshotWriters && { snapshotWriters }),
-        });
+        };
+        execution = isDefault
+          ? await runDefaultCheckWithResult(config, options)
+          : await runPipelineWithResult(config, 'fault-injection', options);
         return execution.passed;
       },
     );

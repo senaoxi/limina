@@ -127,12 +127,19 @@ it('builds independent producers before resolving all Svelte consumers and repai
       `@ECHO OFF\r\n"${process.execPath}" "${binary}" %*\r\n`,
     );
     const check = async (commandArguments: string[]) => {
+      const timeout = 180_000;
       const result = await runLimina({
         fixtureName: 'mixed-svelte-producers',
         cwd: fixture.root,
         args: commandArguments,
-        timeout: 90_000,
+        // Cold graph preparation, all five framework checks and finalization
+        // can exceed two minutes on Windows even when every checker succeeds.
+        timeout,
       });
+      expect(
+        result.timedOut,
+        `limina ${commandArguments.join(' ')} exceeded ${timeout}ms\n${result.stdout}${result.stderr}`,
+      ).toBe(false);
       expect(result.code, result.stdout + result.stderr).toBe(0);
       return result.stdout + result.stderr;
     };
@@ -195,4 +202,5 @@ it('builds independent producers before resolving all Svelte consumers and repai
   } finally {
     await fixture.cleanup();
   }
-}, 180_000);
+  // Both real CLI invocations keep finite budgets, plus setup and cleanup.
+}, 420_000);

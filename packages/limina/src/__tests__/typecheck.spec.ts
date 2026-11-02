@@ -552,9 +552,11 @@ describe('runCheckerBuild', () => {
       'src/index.ts': 'export const value = 1;\n',
       'svelte/src/index.ts': 'export const svelteValue = 1;\n',
       'svelte/tsconfig.json': tsconfig({
+        compilerOptions: { lib: ['ES5'], types: [] },
         include: ['src/**/*.ts'],
       }),
       'tsconfig.json': tsconfig({
+        compilerOptions: { lib: ['ES5'], types: [] },
         include: ['src/**/*.ts'],
       }),
       'tsconfig.build.json': tsconfig({ files: [] }),

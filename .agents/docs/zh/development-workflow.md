@@ -82,4 +82,8 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 fixture 转换 `load` Hook 返回的二进制源码前，先按 UTF-8 解码。Node 22.18.0 和 24.11.0 可能返回 `Uint8Array`；`String(source)` 会生成逗号分隔的字节值，而非 JavaScript 文本，导致配置导出丢失。配置模块缓存回归保留字符串源码，通过 `TextDecoder` 解码二进制源码，并在断言 warm 恢复前确认新发布的源码来源及摘要。旧快照的 complete 状态本身不能证明转换后的配置已发布。将转换开关的两个方向放入使用新 fixture 的独立用例，各自保留变更前后的正向恢复控制，使四次 runner 启动能在未调整的单例时限内完成。
 
+[Checker 执行测试](../../../packages/limina/src/__tests__/typecheck.spec.ts)中的框架工具缺失用例，为只导出数值的项目使用 ES5 标准库和空 `types` 列表。它保留两次真实生产者编译器执行及随后对框架工具缺失的拒绝，沿用每例 30 秒时限。超出这些输入所需范围的默认标准库发现与该合同无关；缺失工具控制和生产时限均未放宽。
+
+[混合 Svelte 生产者集成用例](../../../packages/limina/integration/tests/mixed-svelte-producers.spec.ts)为每次真实 CLI 调用设置 180 秒 watchdog，整个用例使用 420 秒以容纳两次调用、setup 和 cleanup。[Windows / Node 22 CI 日志](https://github.com/senaoxi/limina/actions/runs/41402156307/job/125136109626)中，全部五个 Svelte 检查及 Source 检查均已通过，但在原有 120 秒子进程预算下于 122.318 秒停止。先检查 `timedOut`，再检查退出码：Windows 进程树终止可能返回退出码 1，却没有 checker 诊断。保留八个项目的关系、全部五个框架 target、严格标准库检查、缺失输出修复和新的 invocation。这些夹具预算不改变生产时限或其他用例；本地受控终止与计时不证明原生 Windows 验收。
+
 交付或获授权提交前复核预期 diff。PCR 与保存的审计结果按 [project-context-writing](../../skills/project-context-writing/SKILL.md) 复核两种语言的隐私与技术含义；凭据只报告位置／类别。最后运行 `git diff --check`、检查 Git 状态，并明确列出已执行和未执行的验证，包括失败与剩余不确定性。本地成功不代表满足[迁移与外部门禁](./migration.md)。

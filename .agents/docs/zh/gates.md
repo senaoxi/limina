@@ -46,4 +46,6 @@
 
 [暂存区门禁测试](../../../packages/gates/src/commit/staged.spec.ts)执行真实的 Git 拒绝／接受提交，覆盖 index authority、损坏输入以及 HEAD／index／工作区保持不变。既有 [Git 钩子](../../../scripts/git/hooks.spec.ts)、[发布](../../../scripts/release/publication.spec.ts)、[Tag CLI](../../../scripts/release/check-tag-cli.spec.ts)、[Workflow](../../../scripts/release/workflow.spec.ts)和[隐私](../../../scripts/docs/privacy.spec.ts)测试保留进程与集成边界，并消费该包。包内 ESLint 测试保留已有 parser／规则回归。[根配置测试](../../../packages/gates/src/eslint/__tests__/root-config.spec.ts)使用实际根配置，覆盖内聚产品代码、脚本／测试覆盖顺序、正确性检查、portable path 和既有排除范围。根 `test:tooling` 执行这些测试。
 
+根配置测试中的生产代码规模用例使用 30 秒预算，因为首次真实 lint 还会初始化根配置、Prettier worker 和 TypeScript project service。[Windows / Node 22 失败日志](https://github.com/senaoxi/limina/actions/runs/41402156307/job/125136109658)在该首例耗尽原有 10 秒预算。保留实际 lint 诊断，以及全部规模、正确性、import、path 和忽略范围断言；不得通过禁用 project service 或 lint 规则规避启动成本。其他用例保留默认 10 秒预算，测试池保留两个 worker。本地可用受控的慢配置加载触发此失败，但不证明原生 Windows 耗时。
+
 Fixture 仓库在暂存基线前忽略已安装的 `node_modules`。Git 可能将 Windows 目录 junction 遍历为依赖文件，而 POSIX 目录符号链接本身也可能进入 index。暂存区门禁回归检查 Git 的实际 index 中不存在运行依赖，使提交只测试 fixture 自己持有的输入。真实钩子和暂存空白检查保持启用。

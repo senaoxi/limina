@@ -54,6 +54,9 @@ describe('repository ESLint composition', () => {
       const result = await lintSource(cohesiveSource(310), filePath);
       expect(result.messages).toEqual([]);
     },
+    // The first production lint also loads the real config, Prettier worker
+    // and TypeScript project service. Keep the other cases' default budget.
+    30_000,
   );
 
   it('preserves advisory size budgets for tooling', async () => {

@@ -50,7 +50,9 @@ docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开�
 
 既有 Windows focused job 还选择路径 helper、框架配置收集和 type-evidence 回归，随后执行两个 Svelte 执行准入用例，覆盖已消费输入及受管刷新间的实时 CommonJS 证明。[`ci-workflow.spec.ts`](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)保护这一选择。快速 job 补充完整平台 matrix；macOS 或 Linux 上的合成 Windows 路径不能替代原生 Windows loader、文件系统和进程验收。
 
-完整矩阵的 Unit Tests 步骤通过 `VITEST_MAX_WORKERS` 将 Vitest 限制为两个 worker，为 CLI 子进程和框架宿主留出资源。隔离 CLI 夹具实际复制运行时源码，排除 `__tests__` 目录；依赖链接、编译器 shim 和仓库边界仍由夹具自身持有。测试选择和安全断言保持不变。
+完整矩阵的 Unit Tests 步骤通过 `VITEST_MAX_WORKERS` 将 Vitest 限制为两个 worker，为 CLI 子进程和框架宿主留出资源。独立的 integration 步骤不会继承这个步骤级环境，因此 [integration 配置](../../../packages/limina/vitest.integration.config.ts)也直接将 worker 限制为两个。每个 worker 可能启动多个真实编译器进程；本地复现应使用同一上限，不依赖宿主 CPU 数量。这项限制约束进程扇出，不改变测试选择、默认时限或 invocation 内部的 checker 并发。隔离 CLI 夹具实际复制运行时源码，排除 `__tests__` 目录；依赖链接、编译器 shim 和仓库边界仍由夹具自身持有。安全断言保持不变。
+
+集成夹具遵循生产者优先的默认计划，以及命名 pipeline 的步骤内准备。[故障 launcher](../../../packages/limina/integration/helpers/fault-injection-launcher.ts)通过真实默认计划覆盖默认物化；命名步骤故障不要求存在该独立支撑任务。[默认工作流授权夹具](../../../packages/limina/integration/tests/default-check-workflow.spec.ts)提供物理可解析但未声明的包，防止编译器失败遮蔽 Source 权限拒绝。[构建缓存夹具](../../../packages/limina/integration/tests/config-process-cache.spec.ts)区分已恢复的完整图与生产者阶段的新 Program，并在 force 和禁用分析缓存时保留精确的 build-info 字节及 mtime 检查。
 
 [Vue 跨项目矩阵夹具](../../../packages/limina/fixtures/vue-semantic-matrix/cross-project.mjs)在临时源码 owner 的开发依赖中声明 `vue`，版本取自已安装的 tuple。即使手写 SFC 没有 bare import，Vue 编译器生成的类型导入也需要这项声明。仅有物理 package link 不授予 Source import authority；保留完整默认检查及所有精确 checker tuple。
 
@@ -70,7 +72,7 @@ macOS 将 Limina 单元测试文件拆成两份互补分片，显式提供分片
 
 文档工作区固定 Vercel CLI 65.4.0。[部署 workflow](../../../.github/workflows/deploy-docs.yml) 继续通过 `VERCEL_CLI_USE_NATIVE_BINARY=0` 选择 Node 24.22.1 上的 JavaScript CLI，使用 workspace 冻结依赖图。它在 Vercel 命令前用 Bash `unset` 清除 HTTP、HTTPS、ALL 的六个大小写代理变量。GitHub 会在创建 job 前拒绝仅大小写不同的重复 YAML `env` 键。[Workflow 回归](../../../scripts/release/workflow.spec.ts)检查该执行边界，并以无外部操作的 pnpm 替身执行实际 Bash 步骤，验证三次 Vercel 调用均不接收代理变量。发布包代理 chunk 内嵌 Undici 5.29.0；这些变量会绕过 workspace override 激活它。此路径要求 runner 可以直连网络；用于依赖代理的环境前必须重新评估。[Workspace 配置](../../../pnpm-workspace.yaml)已不再排除 `@vercel/vc-native-*` 可选分发包，因此锁文件中包含平台二进制，安装时也可能引入它们。其内嵌依赖无法继承 JavaScript 补丁或依赖 overrides；二进制、运行时、内嵌依赖与平台审查仍独立于 workflow 的 JavaScript 选择。产品 Node 支持范围保持不变。
 
-Vercel 65.4.0 保持未打补丁状态。已删除内嵌 Zod 版本及超限容器提前拒绝的专项测试，以及仅服务于它的私有 chunk 加载代码与测试 schema 类型。该检查依赖带 hash 的内部产物，而非稳定公开接口。新增第三方 CI 门禁应优先采用受支持的公开接口与实际使用行为。删除后会失去对 Vercel 内嵌副本的专项预警，但不改变产品或部署执行逻辑；此前实验未证明实际部署路径存在可利用漏洞。[Gates 测试池](../../../packages/gates/vitest.config.ts)将 worker 限制为两个，避免 lockfile／准入检查放大并发 ESLint project-service 启动；既有每例 timeout 保持不变。
+Vercel 65.4.0 保持未打补丁状态。已删除内嵌 Zod 版本及超限容器提前拒绝的专项测试，以及仅服务于它的私有 chunk 加载代码与测试 schema 类型。该检查依赖带 hash 的内部产物，而非稳定公开接口。新增第三方 CI 门禁应优先采用受支持的公开接口与实际使用行为。删除后会失去对 Vercel 内嵌副本的专项预警，但不改变产品或部署执行逻辑；此前实验未证明实际部署路径存在可利用漏洞。[Gates 测试池](../../../packages/gates/vitest.config.ts)将 worker 限制为两个，避免 lockfile／准入检查放大并发 ESLint project-service 启动；默认 timeout 保持不变，[根配置冷启动用例](./gates.md#回归归属)单独持有其限定预算。
 
 [Smoke 测试池](../../../smoke/vitest.config.ts)也将 worker 限为两个，约束并发消费者安装和语义 checker 进程，不增加子进程或测试时限。其 pnpm launcher 同时识别点号与连字符形式的原生可执行文件名，使临时消费者在尚无清单时仍沿用调用方固定的版本。消费者 workspace 使用 `packageImportMethod: copy`：其他安装或清理可能在内容与 `mtime` 不变时修改共享硬链接的 `ctime`，使物理身份证据失效。夹具使用独立 inode，避免这种跨测试变更，同时保留 inode、时间戳及同 mtime 篡改检查。
 
