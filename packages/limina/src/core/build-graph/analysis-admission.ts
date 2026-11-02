@@ -150,9 +150,27 @@ function assessUnknown(
   unknown: string[],
 ): void {
   const { snapshot, candidate } = input;
-  if (hasReference(snapshot, candidate, obligation)) return;
-  if (hasCandidateImpact(snapshot, obligation))
-    unknown.push(`Unproved necessary compilation relation: ${obligation.id}`);
+  if (
+    hasReference(snapshot, candidate, obligation) ||
+    !hasCandidateImpact(snapshot, obligation)
+  )
+    return;
+  const targets = snapshot.resolutions
+    .filter((resolution) =>
+      obligation.requestIds.includes(resolution.requestId),
+    )
+    .flatMap((resolution) =>
+      resolution.target === null ? [] : [resolution.target.lexicalPath],
+    );
+  const membership =
+    obligation.existence.state === 'present' &&
+    obligation.existence.proof.ruleOrObservation ===
+      'local-type-implementation-input-requires-membership'
+      ? `\nLocal types implementation input requires declared source membership or a qualified provider reference: ${targets.join(', ')}. Declare the input in source files/include or provide a supported project mapping.`
+      : '';
+  unknown.push(
+    `Unproved necessary compilation relation: ${obligation.id}${membership}`,
+  );
 }
 
 function isCandidateObligation(

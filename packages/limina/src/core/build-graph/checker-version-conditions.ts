@@ -25,14 +25,26 @@ export function resolveVersionQualifiedModule(input: {
 }): ts.ResolvedModuleFull | undefined {
   const conditions = new Set<string>();
   const manifests: unknown[] = [];
+  const versionMaps: unknown[] = [];
+  let hasVersionMapping = false;
   const host = {
     ...input.host,
     trace: (text: string) => {
+      if (text.includes("has a 'typesVersions' field"))
+        hasVersionMapping = true;
       const condition = /condition '(types@[^']+)'/.exec(text)?.[1];
       if (condition !== undefined) conditions.add(condition);
     },
     readFile: (file: string) => {
       const text = input.host.readFile(file);
+      if (file.endsWith('/package.json')) {
+        try {
+          const map: unknown = JSON.parse(text ?? '{}').typesVersions;
+          if (map !== undefined) versionMaps.push(map);
+        } catch {
+          // Invalid package metadata remains the compiler's responsibility.
+        }
+      }
       if (file.endsWith('/package.json') && text?.includes('types@')) {
         try {
           manifests.push(JSON.parse(text));
@@ -52,7 +64,7 @@ export function resolveVersionQualifiedModule(input: {
     undefined,
     input.mode,
   ).resolvedModule;
-  if (conditions.size === 0) return result;
+  if (!hasVersionMapping && conditions.size === 0) return result;
   const version = nativeVersion(input.executionRoot, input.host);
   const compiler = ts as unknown as VersionCompiler;
   const ranges = compiler.VersionRange;
@@ -63,6 +75,33 @@ export function resolveVersionQualifiedModule(input: {
     throw new DeclarationObservationUnavailable(
       'Compiler version-condition qualification is unavailable.',
     );
+  // A resolver can read a parent manifest after caching a nested manifest.
+  // Trace does not bind the mapping to a filename: never use the last read
+  // as authority. Qualify all observed maps when this request uses the channel.
+  if (hasVersionMapping && versionMaps.length === 0)
+    throw new DeclarationObservationUnavailable(
+      'Cannot observe visited typesVersions metadata.',
+    );
+  const applicableVersionMaps = hasVersionMapping ? versionMaps : [];
+  for (const map of applicableVersionMaps) {
+    if (map === null || typeof map !== 'object')
+      throw new DeclarationObservationUnavailable(
+        'Cannot qualify visited typesVersions metadata.',
+      );
+    const selected = (value: string) =>
+      Object.entries(map).find(([range]) =>
+        ranges.tryParse(range)?.test(value),
+      )?.[1];
+    const expected = JSON.stringify(selected(ts.version));
+    if (
+      [version, version.replace(/[-+].*$/, '')].some(
+        (value) => JSON.stringify(selected(value)) !== expected,
+      )
+    )
+      throw new DeclarationObservationUnavailable(
+        `Checker typesVersions selection is not qualified: TypeScript ${ts.version}, tsgo ${version}; ${input.file}: ${input.specifier}. Use equivalent type branches or the matching TypeScript Checker.`,
+      );
+  }
   const activeConditions = new Set(
     compiler.getConditions(input.options, input.mode),
   );

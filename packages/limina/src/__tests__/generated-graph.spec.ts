@@ -12515,3 +12515,165 @@ describe('checker-neutral declaration governance', () => {
     }
   }, 60_000);
 });
+
+it.each(['missing', 'listed', 'declaration', 'noResolve'])(
+  'qualifies local type implementation membership: %s',
+  async (variant) => {
+    const extension = variant === 'declaration' ? 'd.ts' : 'ts';
+    const fixture = await createFixture({
+      'package.json': json({
+        name: 'root',
+        private: true,
+        type: 'commonjs',
+        types: `./env/env.${extension}`,
+      }),
+      'src/tsconfig.json': json({
+        compilerOptions: {
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          noEmit: true,
+          types: [],
+          rootDir: '..',
+          noResolve: variant === 'noResolve',
+        },
+        files: ['main.ts', ...(variant === 'listed' ? ['../env/env.ts'] : [])],
+      }),
+      'src/main.ts': '/// <reference types="../" />\nexport const value=1;',
+      [`env/env.${extension}`]: 'export interface Env {}',
+    });
+    fixture.config.scope!.checkers = {
+      tsc: { include: ['src/tsconfig.json'] },
+    };
+    try {
+      if (variant === 'missing') {
+        await expect(
+          prepareGeneratedTsconfigGraph(fixture.config),
+        ).rejects.toThrow('Unproved necessary compilation relation');
+      } else {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(
+          ts
+            .createSolutionBuilder(
+              ts.createSolutionBuilderHost(ts.sys),
+              graph.checkerEntries.values().toArray(),
+              { force: true },
+            )
+            .build(),
+        ).toBe(0);
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+it.each([
+  'divergent',
+  'equivalent',
+  'no-match',
+  'relative',
+  'nested-package',
+  'exports',
+])('qualifies tsgo typesVersions branches: %s', async (variant) => {
+  const fixture = await createFixture({
+    'packages/a/package.json': json({ name: 'a', private: true }),
+    'packages/a/tsconfig.json': json({
+      compilerOptions: {
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        noEmit: true,
+        types: [],
+        paths: { shared: ['../shared'] },
+      },
+      files: ['main.ts'],
+    }),
+    'packages/a/main.ts': `import {value} from "${variant === 'relative' ? '../shared' : ['nested-package', 'exports'].includes(variant) ? 'versioned/sub' : 'shared'}"; export const result=value;`,
+    'packages/shared/package.json': json({
+      name: 'shared',
+      private: true,
+      types: 'v6.ts',
+      typesVersions:
+        variant === 'no-match'
+          ? { '>=6.1': { '*': ['v7.ts'] } }
+          : {
+              '>=6.1': {
+                '*': [variant === 'equivalent' ? 'v6.ts' : 'v7.ts'],
+              },
+              '*': { '*': ['v6.ts'] },
+            },
+    }),
+    'packages/shared/tsconfig.json': json({
+      files: [],
+      references: [
+        { path: './tsconfig.v6.json' },
+        { path: './tsconfig.v7.json' },
+      ],
+    }),
+    ...Object.fromEntries(
+      ['v6', 'v7'].flatMap((v) => [
+        [`packages/shared/${v}.ts`, 'export const value=1;'],
+        [
+          `packages/shared/tsconfig.${v}.json`,
+          json({
+            compilerOptions: {
+              module: 'ESNext',
+              moduleResolution: 'Bundler',
+              noEmit: true,
+              types: [],
+            },
+            files: [`${v}.ts`],
+          }),
+        ],
+      ]),
+    ),
+  });
+  if (['nested-package', 'exports'].includes(variant)) {
+    await writeText(
+      fixture.path('node_modules/versioned/package.json'),
+      json({
+        name: 'versioned',
+        typesVersions: { '*': { '*': ['same.d.ts'] } },
+        ...(variant === 'exports' && { exports: { './sub': './stable.d.ts' } }),
+      }),
+    );
+    await writeText(
+      fixture.path('node_modules/versioned/stable.d.ts'),
+      'export declare const value: number;',
+    );
+    await writeText(
+      fixture.path('node_modules/versioned/sub/package.json'),
+      json({
+        types: 'v6.d.ts',
+        typesVersions: {
+          '>=6.1': { '*': ['v7.d.ts'] },
+          '*': { '*': ['v6.d.ts'] },
+        },
+      }),
+    );
+    for (const version of ['v6', 'v7'])
+      await writeText(
+        fixture.path(`node_modules/versioned/sub/${version}.d.ts`),
+        'export declare const value: number;',
+      );
+  }
+  fixture.config.scope!.checkers = {
+    tsgo: { include: ['packages/**/tsconfig.json'] },
+  };
+  try {
+    await linkInstalledPackage({
+      installedName: '@typescript/native-preview',
+      packageName: '@typescript/native-preview',
+      rootDir: fixture.rootDir,
+    });
+    if (['equivalent', 'exports'].includes(variant))
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).resolves.toBeDefined();
+    else
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow('typesVersions selection is not qualified');
+  } finally {
+    await fixture.cleanup();
+  }
+});

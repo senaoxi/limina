@@ -115,7 +115,12 @@ export function createNativeProgramSnapshot(options: {
   const entries = requests.entries;
   const obligations = [
     ...options.obligations,
-    ...remainingNativeObligations(entries, options.obligations),
+    ...remainingNativeObligations(
+      entries,
+      options.obligations,
+      program,
+      frontier,
+    ),
   ];
   const failures = [
     ...options.failures,
