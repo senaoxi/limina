@@ -36,7 +36,7 @@ Config factories and Promises are evaluated before validation and task selection
 
 :::
 
-Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
+Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; use terminal output to diagnose configuration-loading errors. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
 
 ## Config Discovery and Governance Root {#governance-root}
 
@@ -182,9 +182,9 @@ A named pipeline loads the config once with `command: 'check'`. Its `package:che
 
 ## Public API
 
-The public `limina` entry exports `defineConfig`, config and issue types, and validation error classes. `limina/internal/*` is for repository-internal use; its source exports are removed from published packages and are not consumer APIs.
+The public `limina` entry exports `defineConfig`, config and issue types, and validation error classes.
 
-## Configuration structure {#config-domains-migration}
+## Configuration structure {#configuration-structure}
 
 `scope` selects governance regions, source, and checker entries. `graph`, `source`, `proof`, `package`, `release`, `pipelines`, `concurrency`, and `cache` are top-level fields. Configure them as needed; omitted fields use their respective defaults.
 

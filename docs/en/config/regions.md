@@ -6,7 +6,7 @@
 These exclusions have different effects: `scope.regions.exclude` can remove a package from governance, `scope.source.exclude` removes source files, and a checker's `exclude` only changes entry selection. An exact `tsconfig` exclusion isolates the config without hiding source files or automatically repairing references to it.
 :::
 
-For example, if the workspace contains `packages/legacy-app` but another checking workflow handles it, exclude it by package directory:
+For example, if the workspace contains `packages/playground` but another checking workflow handles it, exclude it by package directory:
 
 ```js
 import { defineConfig } from 'limina';
@@ -17,7 +17,7 @@ export default defineConfig({
       exclude: [
         {
           kind: 'workspace-package',
-          include: ['packages/legacy-app'],
+          include: ['packages/playground'],
           reason: 'This package is governed by a separate Limina run.',
         },
       ],

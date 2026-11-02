@@ -38,6 +38,14 @@ Vercel 部署 CLI 是既有私有 `docs` workspace 的开发依赖，通过 dev 
 
 命令、配置、检查器支持、根发现、缓存或包行为变化时，随源码 owner 同步维护对应技能参考。保留任务指南定位，不另建完整 Schema 或 issue code 目录。[Init 安装命令](../../../packages/limina/src/commands/init/shared.ts)以及[英文](../../../docs/en/cli.md)、[中文](../../../docs/zh/cli.md) CLI 指南均指向 `senaoxi/limina --skill limina`。既有 [init 测试](../../../packages/limina/src/__tests__/init.spec.ts)覆盖接受安装时的命令及跳过安装时的提示；拒绝提示和安装失败继续使用各自独立的用例。技能迁移改变安装目标，不改变治理身份、关系或缓存生命周期。
 
+## 公共文档内容
+
+公共站点介绍当前受支持的能力、接口、工作流和使用约束。页面、示例、导航与搜索内容不介绍已移除的 API、废弃入口、字段新旧对照、内部兼容分支或实现格式演进。直接说明当前行为，并同步维护中英文内容。
+
+影响当前使用的接入工作流、工具链要求、能力限制和恢复操作应予保留。标识符包含 `legacy` 本身不代表受支持的选项已过时；应根据公开契约及消费实现判断其状态。历史背景保留在更新日志和内部记录中。替换历史标题或锚点时，同步更新仓库内的入站链接，不新增公共兼容说明。修改公共文案不代表可以移除运行时兼容代码。
+
+[文档共写流程](../../skills/doc-coauthoring/SKILL.md)负责源码依据、语言一致性和站点检查。当前 [CLI 注册](../../../packages/limina/src/cli/register/setup.ts)、[公开导出](../../../packages/limina/src/index.ts)和[配置 Schema](../../../packages/limina/src/config/schema.ts)建立对应接口边界；[公共配置参考](../../../docs/zh/config/index.md)负责使用说明。
+
 ## 文档命令输出
 
 首页由 `HomeFeatures.vue` 负责功能导航，`CommandTerminal.vue` 负责命令输出与控件，`use-command-playback.ts` 负责回放状态。组件文件按职责命名；props、data attributes 和样式中的命令选项及索引使用命令术语。英文与中文文案共享同一份 CLI 运行记录。选择其他命令或功能组时，完整输出保持展开，方便读者对照。其阅读区在当前视口下采用固定高度：运行记录的长短不得改变粘性终端的高度并反向触发滚动驱动的功能选择。输出保留实际打印的列布局，窄屏通过横向滚动阅读。

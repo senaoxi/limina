@@ -72,7 +72,7 @@ External commands separate consecutive built-in tasks into segments. Each segmen
 
 ### Task Status
 
-Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
+Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; use terminal output to diagnose configuration-loading errors. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
 
 | Status     | Meaning                                                                             |
 | ---------- | ----------------------------------------------------------------------------------- |

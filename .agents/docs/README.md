@@ -23,6 +23,7 @@ Read the relevant paired records before edits. For architecture work, use the Li
 | Check reconstruction evidence, corrections and verification limits  | [Architecture audit](./architecture-audit.md)                            |
 | Change package distribution or repository integration boundaries    | [Repository architecture](./architecture.md)                             |
 | Maintain the installable consumer skill and its installation entry  | [Distributable agent skill](./architecture.md#distributable-agent-skill) |
+| Maintain current public docs without historical interfaces          | [Public docs content](./architecture.md#public-documentation-content)    |
 | Change the documentation reading theme or sidebar                   | [Documentation sidebar](./architecture.md#documentation-sidebar)         |
 | Evaluate reuse for a requirement, or add/replace a dependency       | [Dependency admission](./dependency-admission.md)                        |
 | Choose dependency fields and bundled/external delivery              | [Dependency placement and bundling](./dependency-placement.md)           |

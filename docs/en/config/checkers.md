@@ -16,7 +16,7 @@ Limina supports these fixed names:
 
 The key identifies the checker, its execution tool, and its associated caches. These declaration files are internal build artifacts used by Limina. See [CLI Reference](../cli.md) for the commands.
 
-## Automatic discovery {#auto-mode}
+## Automatic discovery {#automatic-discovery}
 
 Automatic discovery is always enabled, even when you also configure named checkers. Ordinary TypeScript projects use `tsc` by default when no other checker is required. Limina also identifies Vue, Astro, and Svelte projects from framework configuration, actual files, and dependencies.
 

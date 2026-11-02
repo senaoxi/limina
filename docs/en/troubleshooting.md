@@ -142,7 +142,7 @@ Merge this field into an existing Limina config. `...` retains the default TypeS
 
 Every exclusion must declare one kind: `workspace-package`, `package-scope`, or `tsconfig`. Limina does not infer the kind from the path. The first two select candidate root directories; `tsconfig` selects exact config-root-relative `tsconfig.json` or `tsconfig.*.json` paths, without globs, and keeps the package activated.
 
-### `scope.regions.exclude[...] does not match an exact governance candidate.` {#regions-exclude-rule-does-not-match-a-recognized-governance-root}
+### `scope.regions.exclude[...] does not match an exact governance candidate.` {#regions-exclude-no-match}
 
 The diagnostic is `scope.regions.exclude[index] does not match an exact governance candidate.`, where `index` identifies the unmatched rule. Check:
 
@@ -150,9 +150,9 @@ The diagnostic is `scope.regions.exclude[index] does not match an exact governan
 2. For `workspace-package` or `package-scope`, `include` selects the candidate root directory relative to `config.rootDir`, including `../` when needed, not its package name or config path.
 3. The directory is not a fixed discovery ignore such as `node_modules`, `.git`, `.limina`, or a configured output directory.
 
-For example, select an activated package rooted at `packages/legacy-app` with `kind: 'workspace-package'` and `include: ['packages/legacy-app']`.
+For example, select an activated package rooted at `packages/playground` with `kind: 'workspace-package'` and `include: ['packages/playground']`.
 
-### `Multiple scope.regions.exclude rules match` {#multiple-regions-exclude-rules-match-the-same-governance-root}
+### `Multiple scope.regions.exclude rules match` {#regions-exclude-overlap}
 
 The diagnostic lists the candidate kind and path after `Multiple scope.regions.exclude rules match`. Make the patterns for that `kind` non-overlapping. Rule order does not choose a winning reason.
 
