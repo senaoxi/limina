@@ -189,6 +189,10 @@ Managed-output lookup 可解释明确管理的输出，但不能将声明消费�
 
 tsgo 执行保留 TypeScript 分析权威，但已解析请求和已完成的未解析请求中，实际访问的 `types@` 版本条件都需要独立的兼容性检查。编译器 trace 标识已求值条件，其条件选择与版本范围解析器比较分析和已安装 Checker 的版本。匹配变化仅在该条件对象的所有分支完全相同、且每个比较版本至少匹配一个分支，或显式 custom condition 固定匹配时接纳。目标相同本身不能涵盖“无匹配”结果。已激活的普通条件、默认分支和互补版本范围可以在不解析新目标的情况下证明覆盖；否则准备／恢复拒绝无法证明的组合。恢复会重新检查保留的请求清单，而不信任先前准入；[生成图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)使用先前已准入的未解析候选覆盖这一入口。这是保守的条件资格检查，不是 tsgo Resolver，也不声明两个编译器的全部语义可互换；prerelease／release 歧义同样保持未取得资格。普通无版本条件和匹配一致的条件继续支持。保持未解析的请求与普通类型不匹配一样，仍由 Checker 诊断；资格检查不要求类型检查成功，也不合成引用。
 
+实际访问的 `typesVersions`元数据也必须通过 tsgo 资格检查。复用 TypeScript 版本区间解析器，比较分析版本、预览版本和正式版本首次匹配的映射；选中的映射不同（包括仅一方无匹配）时保持 unavailable。这是保守的映射等价检查，不是第二套 resolver。Native types 指令保留本地实现输入的编译器加载尝试证据：生成 composite 候选需要成员归属，而消费者 root 及被 noResolve 禁用的源码指令不需要 provider。结构满足性未知时仍不可准入，不增加 files 或虚构 references。分析 adapter 使旧回执失效。生成图回归覆盖不同／相同／无匹配映射，以及未归属／已列入／声明／noResolve types 输入。未新增依赖；版本解析与输入观察复用既有编译器能力。
+
+版本映射资格检查覆盖非相对和相对模块请求。编译器 trace 未将映射绑定到 manifest 文件名；若同一查找读取多个 manifest，保守检查所有已观察映射，不能把最后读取的父包元数据当作嵌套包的权威。未使用该通道的 exports 解析不受 typesVersions 限制。
+
 已观察到、但不属于任何源配置的 Native 本地 JSON 输入不能静默进入生成的 emit leaf。候选验证在物化前检查 locked 有界清单中 roots 及 consumer 保留声明的 module／path 请求，并要求项目通过源 `files`／`include` 声明 JSON。独立 Native output 观察执行同样的成员检查，即使不存在候选 owner 也不能跳过，包括仅由输出库引入的输入。Output receipt 使用版本 3，旧证明不能授予准入。这些检查不扩大 roots、不虚构 provider。已列入的 JSON、external-library 输入和编译器证明已禁用的输入保持独立行为；普通类型错误仍由 Checker 负责。
 
 生成 Native 的非相对模块请求，包括 consumer 保留的非 root 声明中的请求，必须保持 locked 编译器选择的目标及 external-library 分类。候选验证使用同一编译器、已解析的生成选项和暂存文件重放这些实际请求，不发现新源码请求、不新增引用。Locked 声明 frontier 保持权威：委派 provider 的请求仍留在其自身上下文，consumer 保留的声明请求无需 root 成员资格也必须接受搬迁及 Checker 版本资格检查。这会捕获搬迁后本地 package imports／self-exports 的输出到源码反向映射变化，包括生成目标无法解析的情况。冷准备和恢复均在物化前拒绝无法证明的搬迁；正确的 provider Reference Map 本身并不足够。

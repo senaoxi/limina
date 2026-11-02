@@ -52,12 +52,7 @@ export function moduleProjectionInputs(
         )
           continue;
         const requiresJsonMembership = jsonInputs.has(request.id);
-        if (
-          !requiresJsonMembership &&
-          (request.channel !== 'module' ||
-            ts.isExternalModuleNameRelative(request.specifier))
-        )
-          continue;
+        if (!requiresJsonMembership && request.channel !== 'module') continue;
         entries.push({
           request,
           target: resolution.target?.lexicalPath ?? null,
@@ -101,7 +96,8 @@ export function validateModuleProjection(input: {
     // requests or expand a delegated provider's private closure here.
     if (
       entry.request.channel !== 'module' ||
-      ts.isExternalModuleNameRelative(entry.request.specifier)
+      (ts.isExternalModuleNameRelative(entry.request.specifier) &&
+        (input.preset ?? input.checker) !== 'tsgo')
     )
       continue;
     const mode = resolutionMode(entry);
