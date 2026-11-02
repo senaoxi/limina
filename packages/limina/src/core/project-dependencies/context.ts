@@ -175,10 +175,11 @@ export function createSourceProjectSemanticContext(options: {
       ),
       packageRootDir: options.project.packageRootDir,
       references: getRawProjectReferences(
-        options.project.configPath,
+        options.project.executionConfigPath ?? options.project.configPath,
         options.project.virtualFiles,
       ),
-      resolverConfigPath: options.project.configPath,
+      resolverConfigPath:
+        options.project.executionConfigPath ?? options.project.configPath,
       svelteSemanticProject: getSourceSvelteProject(options.source),
       vueSemanticIdentity: options.project.context.vueSemanticIdentity,
       workspaceSourceBoundary: options.workspaceSourceBoundary,
@@ -209,10 +210,13 @@ export function createParsedProjectSemanticContext(options: {
       ),
       packageRootDir: options.packageRootDir,
       references: getRawProjectReferences(
-        options.project.resolverConfigPath,
+        options.project.executionConfigPath ??
+          options.project.resolverConfigPath,
         options.project.virtualFiles,
       ),
-      resolverConfigPath: options.project.resolverConfigPath,
+      resolverConfigPath:
+        options.project.executionConfigPath ??
+        options.project.resolverConfigPath,
       svelteSemanticProject: options.project.svelteSemanticProject,
       vueSemanticIdentity: options.project.vueSemanticIdentity,
       workspaceSourceBoundary: options.workspaceSourceBoundary,

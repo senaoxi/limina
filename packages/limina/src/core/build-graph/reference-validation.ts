@@ -34,7 +34,7 @@ function captureValidation(
 }
 
 interface ReferenceProject {
-  kind: 'declaration' | 'solution' | 'output' | 'root';
+  kind: 'declaration' | 'solution' | 'output' | 'root' | 'check';
   checkerName: string;
   sourceConfig: string;
 }
@@ -127,7 +127,12 @@ function validateReferences(
     );
     for (const [from, targets] of graph) {
       for (const to of targets) {
-        if (sources.get(from)!.checkerName !== sources.get(to)!.checkerName)
+        if (
+          (sources.get(from)!.kind !== 'check' &&
+            sources.get(to)!.kind === 'check') ||
+          (sources.get(from)!.kind !== 'check' &&
+            sources.get(from)!.checkerName !== sources.get(to)!.checkerName)
+        )
           diagnostics.push(
             `Cross-checker generated reference: ${from} -> ${to}`,
           );
@@ -259,6 +264,14 @@ function validateStagedGraph(
   state: GeneratedGraphPreparationState,
 ): ReferenceValidation {
   const sources = new Map<string, ReferenceProject>();
+  for (const units of state.governedSourcesByChecker.values())
+    for (const unit of units)
+      if (unit.checkConfigPath !== undefined)
+        addIdentity(sources, unit.checkConfigPath, {
+          kind: 'check',
+          checkerName: unit.primaryCheckerName,
+          sourceConfig: unit.configPath,
+        });
   for (const [checkerName, projects] of state.projectsByChecker)
     for (const project of projects)
       addIdentity(sources, project.dtsConfigPath, {

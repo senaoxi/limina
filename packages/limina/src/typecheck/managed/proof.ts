@@ -1,5 +1,5 @@
 import type { ResolvedCheckerConfig } from '#config/runner';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type { PreparedTsconfigGraph } from '#core/build-graph/runner';
 import { compareCodeUnits } from '#utils/collections';
 import ts from 'typescript';
 import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
@@ -170,7 +170,7 @@ function createCombinedProof(options: {
 export async function proveManagedCheckerMutationContext(options: {
   artifactNamespace: LiminaArtifactNamespace;
   checkers: readonly ResolvedCheckerConfig[];
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   projectRootDir: string;
   target: TypecheckTarget;
   workspaceContext: ValidatedWorkspaceContext;
@@ -209,6 +209,12 @@ export async function proveManagedCheckerMutationContext(options: {
         checker,
         classification,
         configPath,
+        expectedDeclarationOutputs:
+          options.generatedGraph.purpose === 'producer-build'
+            ? options.generatedGraph.declarationOutputs
+                ?.filter((output) => output.generatedConfig === configPath)
+                .map((output) => output.outputFile)
+            : undefined,
         projectRootDir: options.projectRootDir,
         requiresFullCheck: fullCheckConsumers.has(
           classification.sourceConfigPath,

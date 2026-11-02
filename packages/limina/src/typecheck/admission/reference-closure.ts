@@ -1,13 +1,15 @@
 import { parseCheckerProjectConfigForContext } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { normalizeAbsolutePath } from '#utils/path';
+import path from 'pathe';
 import { EpochInputs } from '../../core/analysis-cache/epoch-inputs';
 import { frameworkExecutionInputs } from '../../core/analysis-cache/framework-execution-inputs';
 import { vueExecutionInputs } from '../../core/analysis-cache/vue-execution-inputs';
 import { readGraphRules } from '../../core/build-graph/generated/config-readers';
 import { libraryProjectionFiles } from '../../core/build-graph/library-projection';
 import type {
-  GeneratedTsconfigGraphResult,
   GovernedSourceUnit,
+  PreparedTsconfigGraph,
 } from '../../core/build-graph/types';
 import type { GovernedReference } from '../../graph-check/reference-governance';
 import {
@@ -29,7 +31,7 @@ export interface ReferenceIdentity {
   to: ProjectKey;
   fromConfigPath: string;
   toConfigPath: string;
-  kind: 'declaration' | 'output' | 'solution-member' | 'wrapper';
+  kind: 'declaration' | 'output' | 'solution-member' | 'wrapper' | 'check';
 }
 export interface ExecutionReferenceClosure {
   observations?: EpochInputs;
@@ -44,7 +46,7 @@ export interface ExecutionReferenceClosure {
 }
 function addBuildIdentities(
   identities: Map<string, MappedProject>,
-  builds: GeneratedTsconfigGraphResult['sourceToBuild'],
+  builds: PreparedTsconfigGraph['sourceToBuild'],
   isLeaf: boolean,
 ): void {
   for (const [checkerName, sources] of builds)
@@ -57,7 +59,7 @@ function addBuildIdentities(
       });
 }
 function projectIdentities(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
 ): Map<string, MappedProject> {
   const identities = new Map<string, MappedProject>();
   addBuildIdentities(identities, graph.sourceToBuild, false);
@@ -73,7 +75,7 @@ function projectIdentities(
   return identities;
 }
 function frameworkSource(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   target: TypecheckTarget,
 ): GovernedSourceUnit {
   const sources = graph.governedSources
@@ -93,11 +95,13 @@ function frameworkSource(
   return source;
 }
 function frameworkClosure(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   target: TypecheckTarget,
   config: ResolvedLiminaConfig,
 ): ExecutionReferenceClosure {
   const source = frameworkSource(graph, target);
+  if (source.checkConfigPath !== undefined)
+    return svelteCheckClosure(graph, source, config);
   const parsed = parseCheckerProjectConfigForContext({
     allowNoInputDiagnostics: true,
     configPath: source.configPath,
@@ -124,15 +128,106 @@ function frameworkClosure(
     governed: [],
   };
 }
+
+function svelteCheckClosure(
+  graph: PreparedTsconfigGraph,
+  source: GovernedSourceUnit,
+  config: ResolvedLiminaConfig,
+): ExecutionReferenceClosure {
+  const identities = projectIdentities(graph);
+  const aliases = referenceAliases(graph);
+  for (const units of graph.governedSources.values())
+    for (const unit of units.values())
+      if (unit.checkConfigPath !== undefined) {
+        identities.set(unit.checkConfigPath, {
+          sourceConfigPath: unit.configPath,
+          checkerName: unit.primaryCheckerName,
+          role: 'check',
+          isLeaf: true,
+        });
+        appendAlias(aliases, unit.configPath, unit.checkConfigPath);
+      }
+  const result: ExecutionReferenceClosure = {
+    observations: new EpochInputs(),
+    projects: [],
+    configs: new Set(),
+    executedConfigs: new Set(),
+    inputs: new Set(),
+    references: [],
+    governed: [],
+  };
+  const pending = [source.checkConfigPath!];
+  while (pending.length > 0) {
+    const file = pending.pop()!;
+    if (result.executedConfigs.has(file)) continue;
+    result.executedConfigs.add(file);
+    result.inputs.add(file);
+    const identity = identities.get(file);
+    if (identity === undefined)
+      throw new Error(`Unbound Svelte check reference: ${file}`);
+    const unit = governedSource(graph, identity)!;
+    result.projects!.push(identity);
+    result.configs.add(unit.configPath);
+    result.inputs.add(unit.configPath);
+    for (const input of unit.ownedFileNames) result.inputs.add(input);
+    if (unit.frameworkCapabilities.length > 0)
+      result.observations!.append(frameworkExecutionInputs(unit));
+    const configClosure =
+      unit.context.vueSemanticIdentity?.configClosure ??
+      parseCheckerProjectConfigForContext({
+        allowNoInputDiagnostics: true,
+        configPath: unit.configPath,
+        context: unit.context,
+        projectRootDir: config.rootDir,
+      }).configClosure;
+    for (const entry of configClosure) result.inputs.add(entry.filePath);
+    const text = graph.generatedFiles.get(file);
+    if (text === undefined)
+      throw new Error(`Missing Svelte check execution config: ${file}`);
+    const value = JSON.parse(text) as { references?: { path: string }[] };
+    const references = value.references ?? [];
+    for (const reference of references) {
+      const to = normalizeAbsolutePath(
+        path.resolve(path.dirname(file), reference.path),
+      );
+      const target = identities.get(to);
+      if (target === undefined)
+        throw new Error(`Unbound Svelte check reference: ${file} -> ${to}`);
+      result.references.push({
+        from: identity,
+        to: target,
+        fromConfigPath: file,
+        toConfigPath: to,
+        kind: identity.role,
+      });
+      result.governed.push({
+        aliases,
+        reference: {
+          checkerName: identity.checkerName,
+          from: file,
+          to,
+          labels: readGraphRules(config, unit.configPath),
+        },
+      });
+      pending.push(to);
+    }
+  }
+  for (const file of result.observations!.paths) result.inputs.add(file);
+  const declarations = graph.producerBuildReceipt?.declarations ?? [];
+  for (const output of declarations)
+    if (result.configs.has(output.sourceConfig))
+      result.inputs.add(output.outputFile);
+  return result;
+}
 interface ClosureContext {
-  graph: GeneratedTsconfigGraphResult;
+  graph: PreparedTsconfigGraph;
   config: ResolvedLiminaConfig;
   identities: Map<string, MappedProject>;
   aliases: Map<string, string[]>;
   result: ExecutionReferenceClosure;
 }
 export function collectExecutionReferenceClosure(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   target: TypecheckTarget,
   config: ResolvedLiminaConfig,
 ): ExecutionReferenceClosure {
@@ -141,7 +236,7 @@ export function collectExecutionReferenceClosure(
     : frameworkClosure(graph, target, config);
 }
 function nativeClosure(options: {
-  graph: GeneratedTsconfigGraphResult;
+  graph: PreparedTsconfigGraph;
   target: TypecheckTarget;
   config: ResolvedLiminaConfig;
 }): ExecutionReferenceClosure {
@@ -204,7 +299,7 @@ function appendVueInputs(
     );
 }
 function declarationConfig(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   identity: ProjectKey,
 ): string {
   const config = graph.sourceToDts
@@ -261,7 +356,7 @@ function isLeafBuild(hasLeafProjection: boolean, kind: string): boolean {
 }
 
 function governedSource(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   identity: ProjectKey,
 ): GovernedSourceUnit | undefined {
   return graph.governedSources
@@ -279,9 +374,7 @@ function containerReferenceKind(kind: string): ReferenceIdentity['kind'] {
   return kind === 'solution' ? 'solution-member' : 'wrapper';
 }
 
-function referenceAliases(
-  graph: GeneratedTsconfigGraphResult,
-): Map<string, string[]> {
+function referenceAliases(graph: PreparedTsconfigGraph): Map<string, string[]> {
   const aliases = new Map<string, string[]>();
   for (const projects of graph.sourceToDts.values())
     for (const [source, declaration] of projects)

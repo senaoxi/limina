@@ -110,21 +110,22 @@ lexical exact cache 仍位于 canonicalization 之前；未命中才使用原 ca
 
 ```mermaid
 flowchart TB
-  CLI["CLI 与配置验证"] --> Plan["Execution plan：任务与 command 分段"]
-  Plan --> Workspace["当前 generation 的 validated workspace"]
-  Workspace --> Ownership["roots 与 dependency facts → authority lock / freeze"]
-  Ownership --> Graph["color / finalize → typed graph 与 artifact plan"]
-  Graph --> Checks["graph / source / proof 按各自阶段读取事实"]
-  Graph --> Materialize["需要文件的任务：materialization prerequisite"]
-  Materialize --> Checker["checker build / typecheck"]
-  Materialize -->|"含文件任务的 segment，其余 tasks 也等待"| Checks
-  Checks --> Result["task outcomes 与 issue freshness"]
-  Checker --> Result
-  Plan --> Command["command step：执行后推进 generation"]
+  CLI["CLI / configuration"] --> Workspace["Validated workspace"]
+  Workspace --> Ownership["Checker ownership / frozen semantic authority"]
+  Ownership --> Producers["Independent producer admission"]
+  Producers --> Build["Vue / TypeScript declaration build"]
+  Build --> Receipt["Current inputs / actual declaration outputs"]
+  Receipt --> Resolution["Svelte compiler consumption / check projection"]
+  Resolution --> Final["Complete graph admission / producer stability"]
+  Final --> Checks["Graph / Source / Proof"]
+  Final --> Svelte["Per-config Svelte checks"]
+  CLI --> Command["Ordered command boundary"]
   Command --> Workspace
 ```
 
-箭头表示依赖，不表示所有任务逐个串行执行。[steps](../../../packages/limina/src/pipeline/steps.ts) 定义固定的 Graph、Source、Proof、Checker Build 和 Framework Typecheck 默认任务，省略治理域不会移除对应任务。准备失败可阻塞已计划任务，没有目标的 Framework Typecheck 仍为 disabled；[plan](../../../packages/limina/src/pipeline/plan.ts) 将默认 tasks 标为 independent，named pipeline 标为 ordered。`after` 表示等待结束，`requiresSuccessOf` 表示成功前提。命令划分 generation；需要文件的 segment 插入 materialization prerequisite，该 segment 的 tasks 等它成功。仓库的命名 pipeline 属于配置选择，与默认工作流分开。
+箭头表示依赖，不表示所有任务逐个串行执行。[steps](../../../packages/limina/src/pipeline/steps.ts) 定义固定的 Graph、Source、Proof、Checker Build 和 Framework Typecheck 默认任务，省略治理域不会移除对应任务。准备失败可阻塞已计划任务，没有目标的 Framework Typecheck 仍为 disabled；[plan](../../../packages/limina/src/pipeline/plan.ts) 将默认 tasks 标为 independent，named pipeline 标为 ordered。`after` 表示等待结束，`requiresSuccessOf` 表示成功前提。命令划分 generation。默认计划先完成生产者构建，再物化完整图；Graph/Source/Proof 与框架检查消费最终视图。有序 pipeline 保留步骤顺序，各步骤在执行时准备，不依赖后续构建。仓库的命名 pipeline 属于配置选择，与默认工作流分开。
+
+Svelte 混合构建使用独立的 `ProducerBuildPlan`，不能以部分准入冒充完整图。全局 Source Config Coverage 与既有归属算法保持不变。生产者准备检查全部有效出边；必要依赖进入不具备声明构建能力的项目时拒绝构建。取得生产者 receipt 后，Svelte 执行视图才解析实际声明消费。最终准入比较生产者编译语义与已构建计划，仅增加合法消费者入边不要求重建。`GeneratedTsconfigGraphResult` 仍表示完整准入。[准备流程](../../../packages/limina/src/core/build-graph/prepare.ts)、[receipt 验证](../../../packages/limina/src/core/build-graph/producer-receipt.ts)与 [pipeline 回归](../../../packages/limina/src/__tests__/pipeline.spec.ts)拥有这些边界。显式指定配置的 Checker Build 同样使用生产者准备，但仅执行选中目标的引用闭包，不签发整个生产者集合的 receipt。Astro 与 watch 保留各自合同。
 
 **CLI 工作流输入边界**：[check 注册入口](../../../packages/limina/src/cli/register/check.ts)只接受一个 pipeline 选择器，以及已声明的全局／check 选项。`limina graph check` 调度领域命令及其 builtin task；`limina check graph` 只选择 `config.pipelines.graph`。额外的位置参数、未知选项和 `--` 在 CLI 校验阶段被拒绝，先于配置模块求值、计划创建与 attempt 发布。已加载的 JS/TS 模块产生完整工作流配置；外部 `command`、`args`、`cwd` 和 `env` 归该配置所有，不转发运行时 argv。此输入边界仍允许动态模块／函数求值。[CLI 契约守卫](../../../packages/limina/src/__tests__/cli-check-contract.spec.ts)覆盖拒绝时不求值配置或替换快照、独立命令调度，以及有序多命令步骤的选项归属。I09 的 generation／provider 生命周期不变；I12 仍允许在任何新 check attempt 创建前拒绝 CLI 调用。
 
@@ -158,19 +159,19 @@ flowchart TB
 
 [Native Evidence 合同](./semantics.md#独立-native-evidence-合同)将 `resolved-project-use`、`compiler-reference-obligation`、`declaration-consumption`、`explicit-reference`、`framework-schedule` 和 `runtime-use` 分开。Native 编译投影只消费合格 locked 义务；use relation 不因 owner 命中成为编译边，引用结构满足不证明产物就绪。Runtime source/package 治理拥有独立入口和请求目的。Schema 11 保留原始证据及各状态，`FileOwnerLookup` 算法不变。
 
-| Relation                     | Producer / 意义                                                                                                 | 下游权限与边界                                                                               |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| raw tsconfig reference       | source config 的 TypeScript 输入关系                                                                            | 可影响原生语义与 solution closure；inferred/generated refs 不倒灌回该输入                    |
-| solution discovery           | 原始 solution DAG 的终端 source 集合                                                                            | 聚合不产生同色边；显式 Checker 选择直接约束每个终端 source                                   |
-| native occurrence resolution | TS 的 module/path/type/lib/JSX channels                                                                         | 只证明该 occurrence 的解释结果；admission 与 TypeEvidence 独立                               |
-| referenceRequirement         | Native 合格编译义务；framework 自身适配器判定                                                                   | 不能由解析、owner、加载尝试或 TypeEvidence 单独生成；不代表产物可用                          |
-| 声明上下文政策               | 完整唯一 Coverage 或按消费者指定的 file/config 选择                                                             | 独立于 NativeCompilationObligation，复用 declaration-provider 投影；需要最终映射和执行验证   |
-| `implicitRefs`               | 用户 liminaOptions 声明的 config relation                                                                       | 可生成 references，拥有自己的合法性约束；无需虚构 import evidence                            |
-| declaration-provider         | [reference-recording](../../../packages/limina/src/core/build-graph/reference-recording.ts)                     | 生成 TypeScript references、声明构建依赖；成功边 exact checker 相同且 reusable               |
-| framework-schedule           | [framework-reference-inference](../../../packages/limina/src/core/build-graph/framework-reference-inference.ts) | 证明的 source implementation 顺序；不生成 tsconfig reference，不赋予 declaration cache reuse |
-| output/artifact attribution  | managed output lookup 与 output declarations                                                                    | 支持 concrete declaration evidence/diagnostics；不能回推源码建边                             |
-| configured governance rule   | graph labels/rules、source package/import/ambient policy、proof boundaries                                      | 可以判定观察到的关系违法；不能创造缺失的 compiler fact                                       |
-| exported dependency edge     | [dependency-graph](../../../packages/limina/src/dependency-graph) 的 package source/artifact evidence           | 用于架构观察；export schema 没有完整 task/resource/cache model，不是 execution plan          |
+| Relation                     | Producer / 意义                                                                                                 | 下游权限与边界                                                                                                 |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| raw tsconfig reference       | source config 的 TypeScript 输入关系                                                                            | 可影响原生语义与 solution closure；inferred/generated refs 不倒灌回该输入                                      |
+| solution discovery           | 原始 solution DAG 的终端 source 集合                                                                            | 聚合不产生同色边；显式 Checker 选择直接约束每个终端 source                                                     |
+| native occurrence resolution | TS 的 module/path/type/lib/JSX channels                                                                         | 只证明该 occurrence 的解释结果；admission 与 TypeEvidence 独立                                                 |
+| referenceRequirement         | Native 合格编译义务；framework 自身适配器判定                                                                   | 不能由解析、owner、加载尝试或 TypeEvidence 单独生成；不代表产物可用                                            |
+| 声明上下文政策               | 完整唯一 Coverage 或按消费者指定的 file/config 选择                                                             | 独立于 NativeCompilationObligation，复用 declaration-provider 投影；需要最终映射和执行验证                     |
+| `implicitRefs`               | 用户 liminaOptions 声明的 config relation                                                                       | 可生成 references，拥有自己的合法性约束；无需虚构 import evidence                                              |
+| declaration-provider         | [reference-recording](../../../packages/limina/src/core/build-graph/reference-recording.ts)                     | 生成 TypeScript references、声明构建依赖；成功边 exact checker 相同且 reusable                                 |
+| framework-schedule           | [framework-reference-inference](../../../packages/limina/src/core/build-graph/framework-reference-inference.ts) | 证明的 source implementation 顺序；Svelte check 视图将已证明关系投影为检查引用，不赋予 declaration cache reuse |
+| output/artifact attribution  | managed output lookup 与 output declarations                                                                    | 支持 concrete declaration evidence/diagnostics；不能回推源码建边                                               |
+| configured governance rule   | graph labels/rules、source package/import/ambient policy、proof boundaries                                      | 可以判定观察到的关系违法；不能创造缺失的 compiler fact                                                         |
+| exported dependency edge     | [dependency-graph](../../../packages/limina/src/dependency-graph) 的 package source/artifact evidence           | 用于架构观察；export schema 没有完整 task/resource/cache model，不是 execution plan                            |
 
 生成引用的包依赖与 deny-dependency 检查通过两端项目原始的 `resolverConfigPath` 查找包。生成的 `.limina` 路径保留图与诊断身份，但不提供 package/importer 身份。此规则也覆盖没有源码 import 的 `implicitRefs`，并保留无名包检查。[Graph 回归测试](../../../packages/limina/src/__tests__/graph.spec.ts)覆盖已声明、未声明、禁止依赖与无名端点，并包含激活根包的控制组。
 

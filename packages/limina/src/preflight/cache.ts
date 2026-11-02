@@ -1,4 +1,7 @@
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type {
+  GeneratedTsconfigGraphResult,
+  ProducerBuildPlan,
+} from '#core/build-graph/runner';
 import type {
   CheckerRouteSnapshotCollection,
   CollectCheckerGraphProjectRoutesResult,
@@ -20,6 +23,8 @@ export class PreflightGenerationCache {
   checkerRouteSnapshot?: Promise<CheckerRouteSnapshotCollection>;
   expectedSourceFiles?: Promise<Set<string>>;
   generatedGraph?: Promise<GeneratedTsconfigGraphResult>;
+  producerBuildPlan?: Promise<ProducerBuildPlan>;
+  producerMaterializationSlot: MaterializationSlot;
   graphProjectRoutes?: Promise<CollectCheckerGraphProjectRoutesResult>;
   importers?: Promise<ImporterInfo[]>;
   materializationSlot: MaterializationSlot;
@@ -37,5 +42,6 @@ export class PreflightGenerationCache {
     materializationSlot: MaterializationSlot = { generation },
   ) {
     this.materializationSlot = materializationSlot;
+    this.producerMaterializationSlot = { generation };
   }
 }

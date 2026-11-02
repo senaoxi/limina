@@ -248,6 +248,7 @@ export async function runTargetWithMeasuredDuration(
 
   return {
     ...result,
+    sourceConfigPath: target.sourceConfigPath,
     durationMs: result.durationMs ?? performance.now() - startedAt,
     id: target.id,
   };

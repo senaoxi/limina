@@ -1,7 +1,7 @@
 import { assessCompilationPrerequisites } from '../../core/build-graph/analysis-admission';
 import { bindExecutionCompilationProjection } from '../../core/build-graph/compilation-prerequisite';
 import { assessDeclarationContexts } from '../../core/build-graph/declaration-context-admission';
-import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
+import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
 import type { TypecheckTarget } from '../target-types';
 import { declarationExecutionGaps } from './declaration-contexts';
 import type { ExecutionReferenceClosure } from './reference-closure';
@@ -11,7 +11,7 @@ import type { ExecutionAdmissionDiagnostic } from './types';
 Reassess the selected invocation against live-qualified facts and actual reference identities.
 */
 export function executionCompilationDiagnostics(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   closure: ExecutionReferenceClosure,
   target?: TypecheckTarget,
 ):
@@ -60,7 +60,7 @@ export function executionCompilationDiagnostics(
   );
   return compilationRefusal(result);
 }
-function requireAnalysis(graph: GeneratedTsconfigGraphResult) {
+function requireAnalysis(graph: PreparedTsconfigGraph) {
   const analysis = graph.dependencyAnalysis;
   if (analysis?.candidate === undefined)
     throw new Error('Execution compilation evidence is unavailable.');
@@ -82,7 +82,7 @@ function compilationRefusal(
 }
 
 function isCurrentReference(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   edge: ExecutionReferenceClosure['references'][number],
 ): boolean {
   if (!['declaration', 'output'].includes(edge.kind)) return false;
@@ -95,7 +95,7 @@ function isCurrentReference(
 }
 
 function referenceConfig(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   input: {
     identity: ExecutionReferenceClosure['references'][number]['from'];
     kind: string;
@@ -109,7 +109,7 @@ function referenceConfig(
   return source?.get(identity.sourceConfigPath);
 }
 function outputPaths(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   checker: string,
 ): Map<string, string> {
   return new Map(

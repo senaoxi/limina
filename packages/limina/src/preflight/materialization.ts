@@ -1,6 +1,11 @@
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type { PreparedTsconfigGraph } from '#core/build-graph/runner';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
 import { materializeGeneratedArtifactPlan } from '../core/build-graph/materializer';
+import { prepareProducerDeclarationMirrors } from '../core/build-graph/producer-declaration-mirrors';
+import {
+  assertProducerBuildReceipt,
+  type ProducerBuildReceipt,
+} from '../core/build-graph/producer-receipt';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import type { MaterializationReceipt } from './types';
 
@@ -100,7 +105,7 @@ export function ensureMaterialization(
 
 interface PreflightMaterializationSource {
   artifactNamespace: LiminaArtifactNamespace;
-  ensureGeneratedGraph: () => Promise<GeneratedTsconfigGraphResult>;
+  ensureGeneratedGraph: () => Promise<PreparedTsconfigGraph>;
   run: { metrics: AnalysisMetricsRecorder };
 }
 
@@ -130,7 +135,7 @@ export function ensurePreflightGraphMaterialized(options: {
 }
 
 async function materializePreflightGraph(options: {
-  getGraph: () => Promise<GeneratedTsconfigGraphResult>;
+  getGraph: () => Promise<PreparedTsconfigGraph>;
   getNamespace: () => LiminaArtifactNamespace;
   metrics: AnalysisMetricsRecorder;
   refreshProviders: () => void;
@@ -154,5 +159,26 @@ async function materializePreflightGraph(options: {
       'Materialization selected a plan outside the preflight graph generation.',
     );
   }
+  const auxiliaryArtifacts = graph.auxiliaryArtifacts ?? [];
+  for (const auxiliary of auxiliaryArtifacts)
+    await materializeGeneratedArtifactPlan(
+      auxiliary.namespace,
+      auxiliary.plan,
+      { metrics: options.metrics },
+    );
   return { changed: graph.changed, generation: options.slot.generation, graph };
+}
+
+export async function materializeProducerDeclarationMirrors(
+  receipt: ProducerBuildReceipt,
+  namespace: LiminaArtifactNamespace,
+  rootDirectory: string,
+): Promise<void> {
+  const plan = await prepareProducerDeclarationMirrors(
+    receipt,
+    namespace,
+    rootDirectory,
+  );
+  await materializeGeneratedArtifactPlan(namespace, plan);
+  assertProducerBuildReceipt(receipt);
 }

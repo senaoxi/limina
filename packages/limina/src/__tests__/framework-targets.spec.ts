@@ -152,6 +152,8 @@ function createGraph(options: {
     governedSources.set(checkerName, units);
   }
   return {
+    purpose: 'complete',
+    dependencyEdges: [],
     artifactPlan: createArtifactPlan(namespace, [], []),
     changed: false,
     checkerEntries: new Map(),

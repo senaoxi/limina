@@ -1,4 +1,4 @@
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type { PreparedTsconfigGraph } from '#core/build-graph/runner';
 import { compareCodeUnits } from '#utils/collections';
 import {
   type MutationBoundarySnapshot,
@@ -21,7 +21,7 @@ import {
  * grants no reference, producer, output authority or additional process target.
  */
 export function sourceInputConsumers(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
 ): ReadonlySet<string> {
   const consumers = new Set<string>();
   const evidence = graph.dependencyAnalysis?.nativeEvidence ?? [];

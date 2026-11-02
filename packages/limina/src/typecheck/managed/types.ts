@@ -2,7 +2,7 @@ import type {
   ResolvedCheckerConfig,
   ResolvedLiminaConfig,
 } from '#config/runner';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type { PreparedTsconfigGraph } from '#core/build-graph/runner';
 import type { MutationBoundaryTarget } from '#utils/mutation-boundary';
 import type ts from 'typescript';
 import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
@@ -63,7 +63,7 @@ export interface ManagedMutationCoordinatorOptions {
   artifactNamespace: LiminaArtifactNamespace;
   checkers: readonly ResolvedCheckerConfig[];
   config: ResolvedLiminaConfig;
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   targets: readonly TypecheckTarget[];
   workspaceContext: ValidatedWorkspaceContext;
 }

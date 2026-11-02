@@ -26,6 +26,7 @@ function getFrameworkFamily(filePath: string): FrameworkFamily | undefined {
 function expectedFrameworkFamilies(
   unit: GovernedSourceUnit,
 ): FrameworkFamily[] {
+  if (unit.primaryCheckerName === 'svelte-check') return ['svelte'];
   return uniqueCodeUnitSortedStrings(
     unit.ownedFileNames.flatMap((filePath) => {
       const family = getFrameworkFamily(filePath);

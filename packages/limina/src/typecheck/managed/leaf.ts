@@ -98,12 +98,6 @@ function createBuildStateProof(options: {
   requiresFullCheck: boolean;
   tsBuildInfoFile: string | undefined;
 }): ManagedLeafMutationProof['buildStateProof'] {
-  if (
-    options.classification.kind !== 'user-output' &&
-    !options.requiresFullCheck
-  ) {
-    return { outputPaths: [] };
-  }
   if (options.tsBuildInfoFile === undefined) {
     return { outputPaths: options.outputPaths };
   }
@@ -145,6 +139,7 @@ function createLeafResult(options: {
 }
 
 export async function proveLeafMutation(options: {
+  expectedDeclarationOutputs?: readonly string[];
   artifactNamespace: LiminaArtifactNamespace;
   checker: ResolvedCheckerConfig;
   classification: ManagedLeafClassification;
@@ -172,6 +167,9 @@ export async function proveLeafMutation(options: {
     fileNames: preparation.parsed.fileNames,
     projectReferences: preparation.parsedProof.parsed.projectReferences,
   });
+  const expectedDeclarations = options.expectedDeclarationOutputs ?? [];
+  for (const output of expectedDeclarations)
+    projection.projectedOutputs.add(output);
   const tsBuildInfoFile = getBuildInfoFile(preparation.parsed);
   removeBuildInfoFromProjection(projection, tsBuildInfoFile);
   assertProjectionInside({

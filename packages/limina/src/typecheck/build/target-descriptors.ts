@@ -3,7 +3,7 @@ import type { BuildCheckerPreset, ResolvedCheckerConfig } from '#config/runner';
 import type {
   GeneratedBuildModule,
   GeneratedOutputDeclarationCopyContext,
-  GeneratedTsconfigGraphResult,
+  PreparedTsconfigGraph,
 } from '#core/build-graph/runner';
 import { isOrdinarySourceTypecheckConfigPath } from '#core/tsconfig/actions';
 
@@ -40,7 +40,7 @@ export function createRawBuildChecker(options: {
 
 export function collectManagedDeclarationBuildTargets(options: {
   allCheckers: readonly ResolvedCheckerConfig[];
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   sourceConfigPath: string;
 }): BuildTargetDescriptor[] {
   return options.allCheckers.flatMap((checker) => {
@@ -60,7 +60,7 @@ export function collectManagedDeclarationBuildTargets(options: {
 
 export function getManagedConfigCheckers(options: {
   allCheckers: readonly ResolvedCheckerConfig[];
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   sourceConfigPath: string;
 }): ResolvedCheckerConfig[] {
   const plan = options.generatedGraph.ownershipPlan;
@@ -83,7 +83,7 @@ function cloneCopyContexts(
 
 export function getOutputDeclarationCopyContexts(options: {
   checkerName: string;
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   sourceConfigPath: string;
 }): GeneratedOutputDeclarationCopyContext[] | undefined {
   return cloneCopyContexts(
@@ -95,7 +95,7 @@ export function getOutputDeclarationCopyContexts(options: {
 
 function collectManagedOutputBuildTargets(options: {
   allCheckers: readonly ResolvedCheckerConfig[];
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   sourceConfigPath: string;
 }): BuildTargetDescriptor[] {
   return options.allCheckers.flatMap((checker) => {
@@ -120,7 +120,7 @@ function collectManagedOutputBuildTargets(options: {
 
 export function getManagedBuildTargets(options: {
   allCheckers: readonly ResolvedCheckerConfig[];
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   rootDir: string;
   sourceConfigPath: string;
 }): {

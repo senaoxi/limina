@@ -39,6 +39,13 @@ function createIdentity(options: {
     configClosure: options.project.configClosure,
     packageIdentity: options.project.packageIdentity,
     compilerOptions: options.project.options,
+    executionConfig: options.project.resolverConfigPath,
+    executionFiles:
+      options.project.virtualFiles === undefined
+        ? undefined
+        : [...options.project.virtualFiles],
+    references: options.project.references,
+    svelteOptions: options.project.svelteOptions,
     generation: options.project.generation,
     transformPath: options.toolchain.transformPath,
     transformVersion: options.toolchain.transformVersion,
@@ -139,6 +146,7 @@ function prepareUnchecked(options: {
     isTsFile: isSvelteTypeScriptSource(options.sourceText),
     parse: options.toolchain.compiler.parse as never,
     version: options.toolchain.compilerVersion,
+    namespace: options.project.svelteOptions?.namespace,
   });
   const generated = createGeneratedSemanticScript({
     filePath,

@@ -1,15 +1,17 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { readAnalysisInput } from '#utils/analysis-input';
+import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
 import type {
-  GeneratedTsconfigGraphResult,
   GovernedSourceUnit,
+  PreparedTsconfigGraph,
   SourceProject,
 } from '../build-graph/types';
 import type { ImportAnalysisContext } from '../import-analysis/types';
 import type { ProjectDependencyCollection } from '../project-dependencies/contracts';
 import { observeNativeHostInputs } from '../typescript-semantic/native-host-inputs';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
+import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import { EpochInputs } from './epoch-inputs';
 import {
   collectFrameworkConfigInputs,
@@ -43,14 +45,20 @@ function resolveRecord(
     record.specifier,
     record.filePath,
     input.project.options,
-    observedResolutionHost(ts, input.project.configPath),
+    withVirtualResolutionFiles(
+      observedResolutionHost(
+        ts,
+        input.project.executionConfigPath ?? input.project.configPath,
+      ),
+      input.project.virtualFiles,
+    ),
   );
 }
 function collectFrameworkImports(
   input: FrameworkInput,
   file: string,
 ): string[] {
-  readContent(file);
+  if (!input.project.virtualFiles?.has(file)) readContent(file);
   if (!/\.(?:svelte|astro)$/u.test(file)) return [];
   const { source } = input;
   const preparation = input.analysis.prepareCheckerSemanticDependencies({
@@ -58,7 +66,8 @@ function collectFrameworkImports(
     context: {
       ...source.context,
       configPath: source.configPath,
-      resolverConfigPath: source.configPath,
+      resolverConfigPath:
+        input.project.executionConfigPath ?? source.configPath,
       semanticFamily: source.semanticAuthority.family,
       svelteSemanticProject: source.svelteSemanticProject,
       astroSemanticProject: source.astroSemanticProject,
@@ -96,8 +105,21 @@ function collectConsumption(
   for (const entry of [...result.dependencies, ...result.observations])
     if ('importRecord' in entry) resolveRecord(input, entry.importRecord);
   collectFrameworkClosure(input, roots);
-  const host = ts.createCompilerHost(input.project.options, true);
-  observeNativeHostInputs(host);
+  const physicalHost = ts.createCompilerHost(input.project.options, true);
+  observeNativeHostInputs(physicalHost);
+  const host = withVirtualResolutionFiles(
+    physicalHost,
+    input.project.virtualFiles,
+  );
+  const original = host.getSourceFile.bind(host);
+  host.getSourceFile = (...arguments_) => {
+    const virtual = input.project.virtualFiles?.get(
+      normalizeAbsolutePath(arguments_[0]),
+    );
+    return virtual === undefined
+      ? original(...arguments_)
+      : ts.createSourceFile(arguments_[0], virtual, arguments_[1], true);
+  };
   // Input-only Program: no Native facts, project references or execution targets are produced.
   ts.createProgram({
     rootNames: [...roots].filter(
@@ -150,7 +172,7 @@ export function retainFrameworkExecutionInputs(
 }
 
 export async function completeFrameworkExecutionInputs(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   config: ResolvedLiminaInputs,
 ): Promise<void> {
   const loads = frameworkConfigLoads(config);

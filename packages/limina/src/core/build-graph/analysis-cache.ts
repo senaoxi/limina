@@ -33,7 +33,7 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-const key = 'generated-graph-declaration-governance-v16';
+const key = 'generated-graph-declaration-governance-v17';
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
@@ -277,6 +277,8 @@ function captureGraphData(
   } = { ...options.result, dependencyAnalysis: options.analysis };
   delete value.artifactPlan;
   delete value.changed;
+  delete value.producerBuildReceipt;
+  delete value.auxiliaryArtifacts;
   // Runtime authority never crosses the persistence boundary.
   const stored = storeGraphContexts(value as CachedGraphData);
   if (

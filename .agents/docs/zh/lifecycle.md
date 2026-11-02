@@ -20,7 +20,7 @@ flowchart TB
 
 [executor](../../../packages/limina/src/execution/executor.ts) 是当前生产 generation controller 创建入口；[scheduler-loop](../../../packages/limina/src/execution/scheduler-loop.ts) 在 command settlement 标记推进后先 join running，再 startNextGeneration。manager 的 [materialization slot](../../../packages/limina/src/preflight/materialization.ts) 检查当前 slot 和 promise identity，防止旧异步结果覆盖新 receipt，失败后允许新尝试。命令可以改变 filesystem，因此不能只清一个查询结果继续复用旧 providers。
 
-manager 保留 generated artifact application 的所有权。它的 `ensureGraphMaterialized()` 委托给 [materialization](../../../packages/limina/src/preflight/materialization.ts) 中的 `ensurePreflightGraphMaterialized()`，后者是 `materializeGeneratedArtifactPlan()` 唯一的生产调用方。[架构边界守卫](../../../packages/limina/src/__tests__/architecture-boundaries.spec.ts)检查两条调用边：helper 承担实现，但只有 manager 可以调用该 helper。这次提取不改变 generation 推进、replan authority、slot identity 或 receipt publication。
+manager 保留 generated artifact application 的所有权。它的 `ensureGraphMaterialized()` 委托给 [materialization](../../../packages/limina/src/preflight/materialization.ts) 中的 `ensurePreflightGraphMaterialized()`，该模块拥有 `materializeGeneratedArtifactPlan()` 的生产调用，包括生产者声明镜像的发布。[架构边界守卫](../../../packages/limina/src/__tests__/architecture-boundaries.spec.ts)检查两条调用边：helper 承担实现，但只有 manager 可以调用该 helper。这次提取不改变 generation 推进、replan authority、slot identity 或 receipt publication。
 
 注入 custom providers 的 manager 只支持 generation zero；advance/replan 的检查发生在 dispose 和 replacement 之前，失败不会静默换成默认 providers。`dispose()` 幂等；但 manager 多数 `ensure*` 方法没有统一 disposed guard，不能宣称所有事后 API 调用都会被拒绝。生产调用方负责在 run 生命周期结束后不继续使用它；是否将该限制机械化是[审计风险](./architecture-audit.md#findings)。
 
@@ -201,11 +201,17 @@ Pending 受控补充发现仅属于当前 collection。[分析缓存](../../../p
 
 ## Generated artifacts 的发布与恢复
 
-[最终引用验证](../../../packages/limina/src/core/build-graph/reference-validation.ts)在 declaration、solution/wrapper、checker entry 与 output 引用全部写入后读取 staged tsconfig JSON。验证完成前，candidate admission 保持 unavailable。所有实际生成引用均参与，包括 implicitRefs；自引用和循环分量在创建 artifact plan 前被拒绝。Framework scheduling 不是 tsconfig reference。同一验证器在缓存准入和 artifact 重新绑定前读取恢复后的 JSON，不信任已存储的 admitted 标志。Graph Check 共享循环算法并保留 `LIMINA_GRAPH_REFERENCE_CYCLE`；prepare、check 和 build 在此结构边界停止，不删除必要边。既有物化事务和旧产物保留独立的所有权合同。
+生产者 receipt 保留实际 Compiler 观察到的外部声明等输入内容；根文件清单不能替代该闭包。内存中的计划与最终声明上下文也必须保持一致。[receipt 回归](../../../packages/limina/src/__tests__/producer-receipt.spec.ts)覆盖外部声明改写、计划漂移及恢复控制。
+
+生产者与完整图准备使用独立的 in-flight 槽及物化 receipt。`ensureBuilt` 在当前任务 generation 内共享实际构建执行；失败可重试，外部命令使 generation 失效。生产者成功签发本次调用的输入／输出证据，不能持久化为 `built: true` 权限。声明发布先于消费者 provider 替换，使 unresolved 观察不能进入最终解析视图。输入或输出变化在消费者准入和启动前撤销 receipt。
+
+内部产物所有权清单与完整 manifest 分离。生产者准备保留其他阶段拥有的产物，不发布完整图 manifest。源目录下的检查配置使用各自认证的 namespace 和 plan，执行时与根 plan 一起持有读租约。完整图发布记录检查执行路径和声明绑定；运行时 producer receipt 与 namespace capability 不进入持久化图。受支持的 Native/Vue 缓存恢复与 Svelte 完整图冷回退保持分离。
+
+[最终引用验证](../../../packages/limina/src/core/build-graph/reference-validation.ts)在 declaration、solution/wrapper、checker entry 与 output 引用全部写入后读取 staged tsconfig JSON。验证完成前，candidate admission 保持 unavailable。所有实际生成引用均参与，包括 implicitRefs；自引用和循环分量在创建 artifact plan 前被拒绝。Framework scheduling 本身不是 tsconfig reference；已准入的 Svelte 检查投影保留经独立证明的有效引用。同一验证器在缓存准入和 artifact 重新绑定前读取恢复后的 JSON，不信任已存储的 admitted 标志。Graph Check 共享循环算法并保留 `LIMINA_GRAPH_REFERENCE_CYCLE`；prepare、check 和 build 在此结构边界停止，不删除必要边。既有物化事务和旧产物保留独立的所有权合同。
 
 提前产生的循环 issue 保留按确定顺序排列的第一个 generated config 作为 `filePath`；仅当全部循环成员属于同一个 checker 时填写 `checkerName`。暂存与恢复验证都从图映射获取 checker 身份，不依赖生成路径的拼写；跨 checker 的循环不归属于某一个 checker。[Generated-graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)、[恢复引用回归](../../../packages/limina/src/__tests__/reference-validation.spec.ts)和 [detector fixture](../../../packages/limina/fixtures/detectors/graph/reference-cycle-mutual/case.mts)保护结构化诊断归属，同时保留物化前拒绝。
 
-Analysis adapter v27、Vue adapter v8、Native Program adapter v12、generated-graph identity v16 与 storage schema 12 拒绝旧声明加载及证据合同。Checker-qualified evidence 为版本 5，声明验证 receipt 为版本 3；旧记录直接冷启动，不做转换。Compiler-source inventory、request inventory 和 obligation query 分别拥有合格 replay coverage，runtime syntax cache 不会升级为编译证明。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护恢复与当前候选重新验证；被拒绝的数据回退分析。
+Analysis adapter v27、Vue adapter v8、Native Program adapter v12、generated-graph identity v17 与 storage schema 12 拒绝旧声明加载及证据合同。Checker-qualified evidence 为版本 5，声明验证 receipt 为版本 3；旧记录直接冷启动，不做转换。Compiler-source inventory、request inventory 和 obligation query 分别拥有合格 replay coverage，runtime syntax cache 不会升级为编译证明。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护恢复与当前候选重新验证；被拒绝的数据回退分析。
 
 生成的声明目录与增量缓存路径在既有 checker 和目录分区内保留完整源配置文件名，包括 `tsconfig.` 和 `.json`，因此 `tsconfig.json` 与 `tsconfig.tsconfig.json` 不再共享路径。规划阶段拒绝不同源配置占用同一路径。重新生成会更新受管配置；过期清理只依据原有所有权清单，不递归删除未登记的编译缓存或用户文件。[Namespace 守卫](../../../packages/limina/src/__tests__/artifact-namespace.spec.ts)与[图重新生成测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖路径冲突、旧所有权清单和重复规划。
 
@@ -221,7 +227,7 @@ Analysis adapter v27、Vue adapter v8、Native Program adapter v12、generated-g
 
 失败后 marker 保留，reader lease 报 recovery required；下一个 writer 用完整新 plan 恢复并验证后解除 marker。manifest-last 是协议的一环，不是 filesystem 多文件原子事务。恢复没有通用 journal 或 backup tree。Checker typecheck 在可能的重新规划完成后，从物化 receipt 选择目标，包括判断是否没有目标；其[读租约](../../../packages/limina/src/core/build-graph/materialization-read-lease.ts)在启动 checker 前检查当前产物 revision 仍匹配 receipt，漂移时明确失败并要求重新执行命令。Checker build、选定 checker build 和 managed output build 在编译器执行前使用同一 receipt/revision 握手。单独的 reader lease 不能授权旧的内存 classification 消费更新的 generated closure；其他无关产物消费者仍遵循各自协议。[回归覆盖](../../../packages/limina/src/__tests__/typecheck.spec.ts)在规划与物化之间改变 leaf 和 package root，并在取得读租约前替换 receipt。
 
-[manifest version](../../../packages/limina/src/core/build-graph/manifest-version.ts) / [ownership](../../../packages/limina/src/core/build-graph/manifest-ownership.ts) 允许旧格式仅作为 cleanup ownership ledger；当前 schema 定义在生产 types。当前格式为 v6，v1–5 不作为当前 graph 重用。future/非法版本拒绝。ordering 使用 code-unit comparison；运行时能力描述和 live source descriptors 不因此变成持久化 graph。
+[manifest version](../../../packages/limina/src/core/build-graph/manifest-version.ts) / [ownership](../../../packages/limina/src/core/build-graph/manifest-ownership.ts) 允许旧格式仅作为 cleanup ownership ledger；当前 schema 定义在生产 types。当前格式为 v7，v1–6 不作为当前 graph 重用。future/非法版本拒绝。ordering 使用 code-unit comparison；运行时能力描述和 live source descriptors 不因此变成持久化 graph。
 
 这套 namespace materialization 管的是 managed generated artifacts。graph export 的用户目标文件、`build --raw` 的外部工具输出和 migration 有不同 writer contract；不能写成“全部磁盘写入都经过 materializer”。managed checker output 另经 [managed-mutation](../../../packages/limina/src/typecheck/managed-mutation.ts) 与 [output](../../../packages/limina/src/typecheck/output) 校验 authority。
 
@@ -237,7 +243,7 @@ Holder 发布的 rename 返回 `EEXIST` 或 `ENOTEMPTY` 时已经证明发生争
 
 Native external-library implementation input 可以为消费者提供类型，却不建立消费者 emit 义务或生成 Project Reference。源码包变化后，编译器 solution builder 因而可能跳过未变化的消费者。[受管构建状态证明](../../../packages/limina/src/typecheck/managed/build-info.ts)保守地将带有该 locked Native absence proof 的消费者标记为完整检查。既有写入授权边界在启动前只删除这些消费者已认证的 build-info 文件，同时适用于内部声明和用户输出构建。该策略参与 mutation fingerprint；无关 leaf 保留增量状态及既有缺失输出恢复规则。不解析编译器私有 build-info 格式，不虚构 producer 或 reference，也不额外选择进程目标。即使输入未变，这些消费者也会重建；选择性复用需要独立的已消费输入证明。[独立进程回归](../../../packages/limina/integration/tests/source-package-incremental.spec.ts)覆盖公共类型变化、保留 mtime 的传递变化、analysis force、无关 leaf 复用及受管输出构建。
 
-[引用闭包](../../../packages/limina/src/typecheck/admission/reference-closure.ts) 从本次命令的实际配置开始。生成声明／输出配置的 alias 保留源配置与 Checker 身份。实际引用（包括传递 `implicitRefs`）决定可达性，依赖调度边不能替代它。solution 与 wrapper 只提供可达性，不满足声明义务，也不引入容器标签政策。框架源码命令使用自身 source config 和能力 context；schedule 不变成 Project Reference，也不选择额外进程。[纯引用治理](../../../packages/limina/src/graph-check/reference-governance.ts) 复用既有规则规范化、标签匹配、alias 与 finding，只裁定该执行范围内适用的 `deny.refs`。规则规范化认识所有合法 Checker 映射，匹配仍针对当前边；无关的合法跨 Checker 规则目标不是 unavailable 映射。
+[引用闭包](../../../packages/limina/src/typecheck/admission/reference-closure.ts) 从本次命令的实际配置开始。生成声明／输出配置的 alias 保留源配置与 Checker 身份。实际引用（包括传递 `implicitRefs`）决定可达性，依赖调度边不能替代它。solution 与 wrapper 只提供可达性，不满足声明义务，也不引入容器标签政策。Astro 源码命令继续使用自身 source config 和能力 context。Svelte 命令保留原始源码身份，消费已准入的检查配置及其完整 Project References。仅有 schedule 不选择额外进程。[纯引用治理](../../../packages/limina/src/graph-check/reference-governance.ts) 复用既有规则规范化、标签匹配、alias 与 finding，只裁定该执行范围内适用的 `deny.refs`。规则规范化认识所有合法 Checker 映射，匹配仍针对当前边；无关的合法跨 Checker 规则目标不是 unavailable 映射。
 
 拒绝以实际进程 target 为单位。单个命令覆盖多个项目时整体拒绝，独立 target 继续。仅有调度顺序不传播进程失败。[调度器](../../../packages/limina/src/typecheck/build/dependency-plan.ts) 单独接收明确的执行前提，只传播这些前提的失败 target 身份，包括经过 blocked target 的传递。进程集合只包含已选命令。受管入口消费自身 Project Reference 闭包，并承接其覆盖项目的输出复制责任。[前提证明](../../../packages/limina/src/typecheck/admission/execution-prerequisites.ts) 只有在当前缺失输入唯一映射到已选 producer 的已认证输出或复制计划、且 consumer 不能自行提供时，才能建立硬执行依赖。交付完成包括必要复制；schedule 或普通引用不足以构成该证明。已有可消费声明不会仅因选中了 provider 就新增源码同步要求。这不是缺失外部生成器的规划器。[Target outcome](../../../packages/limina/src/typecheck/target-types.ts) 区分 `admission-rejected`、`blocked` 与真实进程结果。准入失败没有伪造退出码；命令失败使用 `execution-admission`，存在真实进程失败时保留 process 分类。输出复制拒绝保留 Checker 的成功结果。Checker 自有的准入 issue code 保留治理详情，不冒称执行了 `graph:check`。deferred 报告即使隐藏进程输出，也保留准入 decision、stage、target 身份与输入诊断。
 
@@ -311,7 +317,7 @@ Vue 上下文身份包含 Coverage 和加载用途。graph、output、type-provi
 
 ## Source ownership 恢复与入口覆盖
 
-Manifest v6 将 source 单值 owner 与 solution 的 sources/checkers 元数据分开。Graph cache v9 要求 coloring 前的 seeds；恢复从当前选择、root/config 证据和绑定 facts 重建 seeds，然后重放 promotion、coloring 与 finalization。缺失证据或结果不同即冷回退；不使用缓存 finalOwner 作为 seed。Native storage schema 12 不变。
+Manifest v7 将 source 单值 owner 与 solution 的 sources/checkers 元数据分开。Graph cache v9 要求 coloring 前的 seeds；恢复从当前选择、root/config 证据和绑定 facts 重建 seeds，然后重放 promotion、coloring 与 finalization。缺失证据或结果不同即冷回退；不使用缓存 finalOwner 作为 seed。Native storage schema 12 不变。
 
 最终序列化校验独立从完整 ownership 与 build projections 求 Required，并检查生成 root 的实际可达覆盖、精确 Checker 身份、绑定及环。结构失败不交付可执行产物计划；deny.refs 仍对选中闭包执行准入，不删除事实。旧 manifest 仅保留受限产物清理用途。
 

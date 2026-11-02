@@ -20,6 +20,7 @@ import {
   processProjectReferenceImports,
   type ReferenceImportContext,
 } from './reference-imports';
+import type { SvelteConsumerView } from './svelte-consumer-view';
 import type {
   DependencyAnalysisResult,
   GeneratedBuildModule,
@@ -132,6 +133,7 @@ function resolveProjectDependencyCaches(
 }
 
 export function inferProjectReferences(options: {
+  svelteConsumerView?: SvelteConsumerView;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   governedSources: GovernedSourceUnit[];
@@ -190,6 +192,7 @@ export function inferProjectReferences(options: {
       };
     }
   const context: ReferenceImportContext = {
+    svelteConsumerView: options.svelteConsumerView,
     analysis,
     activatedRegions: options.activatedRegions,
     config: options.config,

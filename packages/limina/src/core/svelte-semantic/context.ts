@@ -26,6 +26,12 @@ function projectIdentity(project: SvelteSemanticProject): string {
     generation: project.generation,
     packageRootDir: project.packageRootDir,
     resolverConfigPath: project.resolverConfigPath,
+    virtualFiles:
+      project.virtualFiles === undefined
+        ? undefined
+        : [...project.virtualFiles],
+    references: project.references,
+    svelteOptions: project.svelteOptions,
   });
 }
 

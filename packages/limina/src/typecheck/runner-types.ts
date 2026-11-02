@@ -51,6 +51,7 @@ export type CheckerFailureKind =
   | 'target-selection';
 
 export interface RunCheckerBuildResult {
+  reusedTargetResults?: readonly TypecheckTargetResult[];
   failedTargets: CheckerFailureTarget[];
   failureKind?: CheckerFailureKind;
   passed: boolean;
@@ -121,6 +122,7 @@ export interface RunCheckerTypecheckOptions {
 }
 
 export interface RunCheckerTypecheckResult {
+  reusedTargetResults?: readonly TypecheckTargetResult[];
   targetOutcomes?: CheckerTargetOutcome[];
   checkerNames?: string[];
   failedTargets: CheckerFailureTarget[];

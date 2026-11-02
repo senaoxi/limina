@@ -1,5 +1,8 @@
 export { resolveGeneratedGraphCheckers } from './checker-resolution';
-export { prepareGeneratedTsconfigGraph } from './prepare';
+export {
+  prepareGeneratedTsconfigGraph,
+  prepareProducerBuildPlan,
+} from './prepare';
 export {
   collectGeneratedSourceConfigPaths,
   collectGovernedSourceConfigPaths,
@@ -15,5 +18,7 @@ export type {
   GeneratedTsconfigGraphResult,
   GovernedSourceUnit,
   PrepareGeneratedTsconfigGraphOptions,
+  PreparedTsconfigGraph,
+  ProducerBuildPlan,
   SourceBuildProjection,
 } from './types';

@@ -1,7 +1,7 @@
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import type {
   DependencyAnalysisResult,
-  GeneratedTsconfigGraphResult,
+  PreparedTsconfigGraph,
 } from '../build-graph/types';
 import type { EpochInputs } from './epoch-inputs';
 import { EpochInputReplay } from './epoch-inputs';
@@ -12,7 +12,7 @@ interface ContextReads {
   inputs: EpochInputs;
 }
 const contexts = new WeakMap<NativeEvidenceSnapshot, ContextReads>();
-const graphs = new WeakMap<GeneratedTsconfigGraphResult, EpochInputs>();
+const graphs = new WeakMap<PreparedTsconfigGraph, EpochInputs>();
 
 export function retainContextExecutionInputs(
   snapshot: NativeEvidenceSnapshot | undefined,
@@ -22,7 +22,7 @@ export function retainContextExecutionInputs(
   if (snapshot !== undefined) contexts.set(snapshot, { configPath, inputs });
 }
 export function retainGraphExecutionInputs(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   inputs: EpochInputs,
 ): void {
   if (!graphs.has(graph)) graphs.set(graph, inputs);
@@ -53,7 +53,7 @@ export async function isExecutionScopeStable(
 Select existing observations; never read a new baseline to bless stale evidence.
 */
 export function graphExecutionInputScope(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   configs: ReadonlySet<string>,
   selection:
     | ReadonlySet<string>
@@ -79,7 +79,7 @@ export function graphExecutionInputScope(
   };
 }
 function requireGraphInputs(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   configs: ReadonlySet<string>,
 ): EpochInputs {
   const inputs = graphs.get(graph);
@@ -98,7 +98,7 @@ function assertObservedConfigs(
       throw new Error(`Unobserved execution config: ${config}`);
 }
 function selectedContextInputs(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   configs: ReadonlySet<string>,
 ): EpochInputs[] {
   const evidence = nativeEntries(graph).filter((entry) =>
@@ -122,7 +122,7 @@ async function validateSelected(
   for (const input of inputs) await input.assertStable(except, replay);
 }
 export async function bindRestoredGraphExecutionInputs(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   cache: NativeAnalysisCache,
 ): Promise<void> {
   retainGraphExecutionInputs(graph, cache.epoch);
@@ -154,7 +154,7 @@ function contextIdentity(
   return record.native?.snapshot.contexts[0]?.id;
 }
 
-function nativeEntries(graph: GeneratedTsconfigGraphResult) {
+function nativeEntries(graph: PreparedTsconfigGraph) {
   return graph.dependencyAnalysis?.nativeEvidence ?? [];
 }
 

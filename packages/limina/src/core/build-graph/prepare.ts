@@ -1,4 +1,5 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { EpochInputs } from '../analysis-cache/epoch-inputs';
 import { retainGraphExecutionInputs } from '../analysis-cache/execution-inputs';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
@@ -35,10 +36,18 @@ import {
   createGeneratedGraphPreparationState,
   registerPreparedChecker,
 } from './prepare-state';
+import { observeProducerOutputMappings } from './producer-receipt';
+import { inferProjectReferences } from './reference-inference';
+import {
+  createSvelteConsumerView,
+  projectSvelteConsumerConfigs,
+} from './svelte-consumer-view';
 import type {
   DependencyAnalysisResult,
   GeneratedTsconfigGraphResult,
+  PreparedTsconfigGraph,
   PrepareGeneratedTsconfigGraphOptions,
+  ProducerBuildPlan,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
 
@@ -56,7 +65,8 @@ async function prepareGraph(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
   isAnalysisOnly: boolean,
-): Promise<GeneratedTsconfigGraphResult | DependencyAnalysisResult> {
+  purpose: PreparedTsconfigGraph['purpose'] = 'complete',
+): Promise<PreparedTsconfigGraph | DependencyAnalysisResult> {
   const workspaceContext = await getBuildGraphWorkspace({
     config,
     workspaceContext: options.workspaceContext,
@@ -102,6 +112,7 @@ async function prepareGraph(
     const state = createGeneratedGraphPreparationState(
       config.rootDir,
       checkerResolution.ownershipPlan,
+      purpose,
     );
     analysis = state.dependencyAnalysis;
     prepareAndRegisterCheckers(
@@ -114,6 +125,14 @@ async function prepareGraph(
       },
       state,
     );
+    if (purpose === 'complete' && options.producerBuildReceipt !== undefined) {
+      createSvelteConsumerView(
+        state,
+        options.producerBuildReceipt,
+        config.rootDir,
+      );
+      projectSvelteConsumerConfigs(state, config);
+    }
     completePreparedGraph(isAnalysisOnly, {
       activatedRegions,
       checkers,
@@ -123,6 +142,53 @@ async function prepareGraph(
       projectConfigCache: options.projectConfigCache,
       state,
     });
+    if (state.svelteConsumerView !== undefined) {
+      const first = state.dependencyEdges.filter(
+        (edge) => edge.fromChecker === 'svelte-check',
+      );
+      projectSvelteConsumerConfigs(state, config);
+      const confirmed = inferProjectReferences({
+        activatedRegions,
+        config,
+        importAnalysisContext,
+        governedSources:
+          state.governedSourcesByChecker.get('svelte-check') ?? [],
+        ownerGovernedSources: state.governedSourcesByChecker
+          .values()
+          .toArray()
+          .flat(),
+        ownerProjects: state.projectsByChecker.values().toArray().flat(),
+        primaryProjects:
+          state.primaryProjectsByChecker.get('svelte-check') ?? [],
+        projects: state.projectsByChecker.get('svelte-check') ?? [],
+        projectDependencyCaches,
+        sourceToBuildByChecker: state.sourceToBuildByChecker,
+        svelteConsumerView: state.svelteConsumerView,
+      });
+      const identity = (edges: typeof first) =>
+        JSON.stringify(
+          [
+            ...new Set(
+              edges.map((edge) =>
+                JSON.stringify([edge.fromConfigPath, edge.toConfigPath]),
+              ),
+            ),
+          ].sort(compareCodeUnits),
+        );
+      if (
+        confirmed.problems.length > 0 ||
+        identity(first) !== identity(confirmed.dependencyEdges)
+      )
+        throw new Error(
+          `Final Svelte execution view changes consumer bindings: ${confirmed.problems.join('\n')}\nCandidate: ${JSON.stringify(first)}\nFinal: ${JSON.stringify(confirmed.dependencyEdges)}`,
+        );
+      state.dependencyEdges = [
+        ...state.dependencyEdges.filter(
+          (edge) => edge.fromChecker !== 'svelte-check',
+        ),
+        ...confirmed.dependencyEdges,
+      ];
+    }
     return await finishPreparedGraph({
       isAnalysisOnly,
       checkers,
@@ -275,6 +341,25 @@ export async function prepareGeneratedTsconfigGraph(
   const inputs = new EpochInputs();
   const graph = await inputs.collect(() =>
     prepareCurrentGraph(config, options),
+  );
+  retainGraphExecutionInputs(graph, inputs);
+  return graph;
+}
+
+export async function prepareProducerBuildPlan(
+  config: ResolvedLiminaInputs,
+  options: PrepareGeneratedTsconfigGraphOptions,
+): Promise<ProducerBuildPlan> {
+  const inputs = new EpochInputs();
+  const graph = await inputs.collect(() =>
+    prepareGraph(config, options, false, 'producer-build'),
+  );
+  if (!('purpose' in graph) || graph.purpose !== 'producer-build')
+    throw new Error(
+      'Producer preparation did not establish a producer build plan.',
+    );
+  graph.declarationOutputs = await inputs.collect(() =>
+    observeProducerOutputMappings(graph, config.rootDir),
   );
   retainGraphExecutionInputs(graph, inputs);
   return graph;

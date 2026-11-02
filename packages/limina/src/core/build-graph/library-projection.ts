@@ -7,7 +7,7 @@ import {
 } from '../typescript-semantic/library-selection';
 import { createRelativePath } from './generated/paths';
 import { stringifyJson } from './problems';
-import type { GeneratedTsconfigGraphResult, SourceProject } from './types';
+import type { PreparedTsconfigGraph, SourceProject } from './types';
 
 export interface LibraryProjectionReceipt {
   scope: 'library-selection';
@@ -154,7 +154,7 @@ export function isValidLibraryProjection(input: {
 
 export function hasValidLibraryProjections(
   graph: Pick<
-    GeneratedTsconfigGraphResult,
+    PreparedTsconfigGraph,
     'libraryProjections' | 'typeInputProjections' | 'generatedFiles'
   >,
   cache: NativeAnalysisCache,
@@ -181,7 +181,7 @@ export function hasValidLibraryProjections(
 }
 
 export function assertExecutionLibraryProjections(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   inputs: ReadonlySet<string>,
 ): void {
   const receipts = graph.libraryProjections ?? [];

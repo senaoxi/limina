@@ -8,7 +8,11 @@ import type { LiminaFlowTask } from '../../flow';
 import { TypecheckLogger } from '../../logger';
 import { resolvePreflight } from '../../preflight';
 import { ExecutionAdmission } from '../admission/execution-admission';
-import { rejectedBeforeLaunch } from '../admission/reporting';
+import {
+  admissionFailureTargets,
+  rejectedBeforeLaunch,
+} from '../admission/reporting';
+import { createBuildDependencyPlan } from '../build/dependency-plan';
 import {
   completeCheckerTargetTask,
   createPlannedCheckerTargetTasks,
@@ -24,11 +28,13 @@ import type { BuildTargetCompletion } from '../target-types';
 import {
   type CheckerTargetId,
   createCheckerTarget,
+  createFrameworkCheckerTarget,
   createFrameworkCheckerTargets,
   getExecutionCheckers,
   type TypecheckTarget,
   type TypecheckTargetResult,
 } from '../targets';
+import { ensureBuilt } from './build-runner';
 import { executeAuthorizedTypecheck } from './typecheck-execution';
 import { collectTypecheckPeerFailure } from './typecheck-preflight';
 import {
@@ -190,34 +196,43 @@ async function executeTypecheckTargets(options: {
     }),
   );
   const runner = resolveTypecheckRunner(options.context.options);
-  return runPool<TypecheckTarget, BuildTargetCompletion>({
-    concurrency: resolveCheckerTypecheckConcurrency({
-      config: options.context.options.config,
-      itemCount: options.targets.length,
-    }),
-    items: options.targets,
-    onError: normalizeTargetError,
-    onResult: (target, result) => {
-      if (typeof result.status === 'number')
-        completeTargetTask({ result, target, tasks });
-      else tasks.get(target.id)?.fail();
-    },
-    run: async (target) => {
-      try {
-        startTargetTask({ context: options.context, target, tasks });
-      } catch (error) {
-        return rejectedBeforeLaunch(target, error);
-      }
-      return executeAuthorizedTypecheck(
-        {
-          admission: options.admission,
-          signal: options.context.options.signal,
+  const plan = createBuildDependencyPlan(
+    [...options.targets],
+    options.admission.graph.dependencyEdges,
+  );
+  const completions: BuildTargetCompletion[] = [];
+  for (const layer of plan.layers)
+    completions.push(
+      ...(await runPool<TypecheckTarget, BuildTargetCompletion>({
+        concurrency: resolveCheckerTypecheckConcurrency({
+          config: options.context.options.config,
+          itemCount: options.targets.length,
+        }),
+        items: layer.flatMap((index) => plan.components[index]!),
+        onError: normalizeTargetError,
+        onResult: (target, result) => {
+          if (typeof result.status === 'number')
+            completeTargetTask({ result, target, tasks });
+          else tasks.get(target.id)?.fail();
         },
-        target,
-        runner,
-      );
-    },
-  });
+        run: async (target) => {
+          try {
+            startTargetTask({ context: options.context, target, tasks });
+          } catch (error) {
+            return rejectedBeforeLaunch(target, error);
+          }
+          return executeAuthorizedTypecheck(
+            {
+              admission: options.admission,
+              signal: options.context.options.signal,
+            },
+            target,
+            runner,
+          );
+        },
+      })),
+    );
+  return completions;
 }
 
 function createContext(
@@ -294,5 +309,61 @@ export async function runCheckerTypecheckImpl(
 ): Promise<RunCheckerTypecheckResult> {
   const preflight = resolvePreflight(options.config, options);
   await preflight.ensureWorkspaceValidated();
-  return runConfiguredTypecheck(options, preflight);
+  if (!(await preflight.hasSvelteCheckProjects()))
+    return runConfiguredTypecheck(options, preflight);
+  const producers = await ensureBuilt({ ...options, preflight });
+  if (!producers.result.passed) {
+    const plan = await preflight.ensureProducerBuildPlan();
+    const targets = [
+      ...(plan.governedSources.get('svelte-check')?.values() ?? []),
+    ].map((unit) =>
+      createFrameworkCheckerTarget({
+        descriptor: {
+          family: 'svelte',
+          packageRootDir: unit.packageRootDir,
+          sourceConfigPath: unit.configPath,
+        },
+        workspaceRootDir: options.config.rootDir,
+      }),
+    );
+    const blockedBy = producers.result.failedTargets.flatMap((target) =>
+      target.id === undefined ? [] : [target.id],
+    );
+    const blocked = targets.map((target) => ({
+      id: target.id,
+      status: 'blocked' as const,
+      blockedBy,
+    }));
+    return {
+      ...producers.result,
+      disabled: false,
+      rootConfigPaths: [
+        ...producers.result.rootConfigPaths,
+        ...targets.map((target) => target.sourceConfigPath!),
+      ],
+      failedTargets: [
+        ...producers.result.failedTargets,
+        ...admissionFailureTargets(targets, blocked),
+      ],
+      targetOutcomes: [...(producers.result.targetOutcomes ?? []), ...blocked],
+    };
+  }
+  await preflight.prepareConsumerPhase(producers.receipt!);
+  const result = await runConfiguredTypecheck(options, preflight);
+  if (producers.reused)
+    return { ...result, reusedTargetResults: producers.result.targetResults };
+  return {
+    ...result,
+    rootConfigPaths: [
+      ...new Set([
+        ...producers.result.rootConfigPaths,
+        ...result.rootConfigPaths,
+      ]),
+    ],
+    targetResults: [...producers.result.targetResults, ...result.targetResults],
+    targetOutcomes: [
+      ...(producers.result.targetOutcomes ?? []),
+      ...(result.targetOutcomes ?? []),
+    ],
+  };
 }

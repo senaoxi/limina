@@ -3,7 +3,10 @@ import type {
   ResolvedLiminaConfig,
 } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type {
+  GeneratedTsconfigGraphResult,
+  PreparedTsconfigGraph,
+} from '#core/build-graph/runner';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
 import type { LiminaPreflightManager } from './manager';
 
@@ -30,8 +33,10 @@ export interface PreflightCapableOptions {
   providers?: AnalysisProviderSet;
 }
 
-export interface MaterializationReceipt {
+export interface MaterializationReceipt<
+  G extends PreparedTsconfigGraph = PreparedTsconfigGraph,
+> {
   changed: boolean;
   generation: number;
-  graph: GeneratedTsconfigGraphResult;
+  graph: G;
 }

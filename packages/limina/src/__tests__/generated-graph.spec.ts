@@ -5155,7 +5155,7 @@ export default component;
         references?: { path: string }[];
       };
 
-      expect(result.manifest.version).toBe(6);
+      expect(result.manifest.version).toBe(7);
       expect(result.manifest.checkers.tsc?.configToOutputBuild).toMatchObject({
         [sourcePath]: {
           kind: 'project',
@@ -8199,7 +8199,7 @@ export default className;
             'utf8',
           ),
         ) as { version: number };
-        expect(manifest.version).toBe(6);
+        expect(manifest.version).toBe(7);
       } finally {
         await fixture.cleanup();
       }
@@ -8215,7 +8215,7 @@ export default className;
       manifest: json({
         generatedBy: 'limina',
         ownedArtifacts: ['manifest.json'],
-        version: 7,
+        version: 8,
       }),
       name: 'a future version',
     },

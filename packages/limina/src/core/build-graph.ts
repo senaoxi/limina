@@ -4,8 +4,12 @@ import {
   type GeneratedDependencyEdge,
   type GeneratedTsconfigGraphResult,
   prepareGeneratedTsconfigGraph,
+  prepareProducerBuildPlan,
+  type ProducerBuildPlan,
 } from '#core/build-graph/runner';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
+import { resolveGeneratedGraphCheckers } from './build-graph/checker-resolution';
+import type { ProducerBuildReceipt } from './build-graph/producer-receipt';
 import type { ImportCore } from './imports';
 import type { ProjectDependencyCaches } from './project-dependencies/contracts';
 import { mapPromise } from './promise';
@@ -27,6 +31,9 @@ export class BuildGraphCore {
   readonly #onGraphPrepared: (graph: GeneratedTsconfigGraphResult) => void;
 
   #graphPromise: Promise<GeneratedTsconfigGraphResult> | undefined;
+  #producerPromise: Promise<ProducerBuildPlan> | undefined;
+  #svelteProjects: Promise<boolean> | undefined;
+  #producerReceipt: ProducerBuildReceipt | undefined;
 
   constructor(options: {
     artifactNamespace: LiminaArtifactNamespace;
@@ -55,6 +62,7 @@ export class BuildGraphCore {
       workspacePromise,
       ([topology, workspacePathIndex]) =>
         prepareGeneratedTsconfigGraph(this.#config, {
+          producerBuildReceipt: this.#producerReceipt,
           artifactNamespace: this.#artifactNamespace,
           importAnalysisContext: this.#imports.context,
           projectDependencyCaches: this.#projectDependencies,
@@ -69,10 +77,54 @@ export class BuildGraphCore {
     });
   }
 
+  async #prepareProducers(): Promise<ProducerBuildPlan> {
+    const [workspaceContext, workspacePathIndex] = await Promise.all([
+      this.#workspace.getValidatedContext(),
+      this.#workspace.getPathIndex(),
+    ]);
+    return prepareProducerBuildPlan(this.#config, {
+      artifactNamespace: this.#artifactNamespace,
+      importAnalysisContext: this.#imports.context,
+      projectConfigCache: this.#projectConfigs,
+      workspaceContext,
+      workspacePathIndex,
+    });
+  }
+
   getGraph(): Promise<GeneratedTsconfigGraphResult> {
     this.#graphPromise ??= this.#prepareGraph();
 
     return this.#graphPromise;
+  }
+
+  useProducerBuildReceipt(receipt: ProducerBuildReceipt): void {
+    if (this.#graphPromise !== undefined)
+      throw new Error(
+        'Cannot replace producer receipt after final graph preparation.',
+      );
+    this.#producerReceipt = receipt;
+  }
+
+  hasSvelteCheckProjects(): Promise<boolean> {
+    this.#svelteProjects ??= (async () => {
+      const [workspaceContext, workspacePathIndex] = await Promise.all([
+        this.#workspace.getValidatedContext(),
+        this.#workspace.getPathIndex(),
+      ]);
+      const checkers = await resolveGeneratedGraphCheckers(this.#config, {
+        workspaceContext,
+        workspacePathIndex,
+        importAnalysisContext: this.#imports.context,
+        projectConfigCache: this.#projectConfigs,
+      });
+      return checkers.some((checker) => checker.name === 'svelte-check');
+    })();
+    return this.#svelteProjects;
+  }
+
+  getProducerBuildPlan(): Promise<ProducerBuildPlan> {
+    this.#producerPromise ??= this.#prepareProducers();
+    return this.#producerPromise;
   }
 
   async getSourceToDts(checkerName: string): Promise<Map<string, string>> {

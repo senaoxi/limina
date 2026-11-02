@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import ts from 'typescript';
 import { resolveVueSemanticToolchain } from '../../checker/vue-semantic-toolchain';
-import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
+import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
 import { nativeFingerprint } from '../../core/typescript-semantic/native-file-identity';
 import type { TypecheckTarget } from '../target-types';
 import type { ExecutionReferenceClosure } from './reference-closure';
@@ -13,7 +13,7 @@ const requireFromLimina = createRequire(import.meta.url);
 Only the matching concrete checker build command can redeem a context receipt.
 */
 export function declarationExecutionGaps(
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   closure: ExecutionReferenceClosure,
   target: TypecheckTarget | undefined,
 ): string[] {
@@ -76,7 +76,7 @@ function hasQualifiedBuildArguments(target: TypecheckTarget): boolean {
 function hasMatchingAuthority(
   receipt: NonNullable<
     NonNullable<
-      GeneratedTsconfigGraphResult['dependencyAnalysis']
+      PreparedTsconfigGraph['dependencyAnalysis']
     >['declarationValidation']
   >['receipts'][number],
   target: TypecheckTarget,

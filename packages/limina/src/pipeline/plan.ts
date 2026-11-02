@@ -178,6 +178,7 @@ function isFilesystemDependentTask(task: ExecutionTask): boolean {
 
 function addPreparationTasks(options: {
   config: ResolvedLiminaConfig;
+  dependencyMode: 'independent' | 'ordered';
   output: ExecutionTask[];
   segment: TaskSegment;
 }): void {
@@ -190,6 +191,9 @@ function addPreparationTasks(options: {
   attachValidationPredecessors(validation, options.segment.tasks);
   requireTaskSuccess(options.segment.tasks, validation);
   options.output.push(validation);
+  // Ordered steps own their preparation at execution time. A later build must
+  // never become a prerequisite of an earlier Graph/Source/Proof step.
+  if (options.dependencyMode === 'ordered') return;
   const dependentTasks = options.segment.tasks.filter(
     isFilesystemDependentTask,
   );
@@ -198,14 +202,24 @@ function addPreparationTasks(options: {
     generation: options.segment.generation,
     segment: options.segment.index,
   });
-  materialization.after = [validation.id];
-  materialization.requiresSuccessOf = [validation.id];
-  requireTaskSuccess(options.segment.tasks, materialization);
+  const builds = options.segment.tasks.filter(
+    (task) => task.issueTask === 'checker:build',
+  );
+  materialization.after = [validation.id, ...builds.map((task) => task.id)];
+  materialization.requiresSuccessOf = [
+    validation.id,
+    ...builds.map((task) => task.id),
+  ];
+  requireTaskSuccess(
+    options.segment.tasks.filter((task) => task.issueTask !== 'checker:build'),
+    materialization,
+  );
   options.output.push(materialization);
 }
 
 function appendSegment(options: {
   config: ResolvedLiminaConfig;
+  dependencyMode: 'independent' | 'ordered';
   output: ExecutionTask[];
   segment: TaskSegment;
 }): void {
@@ -229,7 +243,12 @@ function buildExecutionPlan(options: {
   const userTasks = createUserTasks(options);
   const tasks: ExecutionTask[] = [];
   for (const segment of partitionTaskSegments(userTasks)) {
-    appendSegment({ config: options.config, output: tasks, segment });
+    appendSegment({
+      config: options.config,
+      dependencyMode: options.dependencyMode,
+      output: tasks,
+      segment,
+    });
   }
   assignTaskOrder(tasks);
   const plan = { tasks, userTaskCount: userTasks.length };

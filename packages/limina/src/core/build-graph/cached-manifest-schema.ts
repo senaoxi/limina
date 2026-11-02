@@ -51,7 +51,8 @@ const targets = z.object({
 });
 const knip = z.object({ diagnostics: jsonRecords, packages: jsonRecords });
 export const manifestSchema: z.ZodType<unknown> = z.object({
-  version: z.literal(6),
+  version: z.literal(7),
+  purpose: z.literal('complete'),
   generatedBy: z.literal('limina'),
   ownedArtifacts: texts,
   checkers: z.record(text, checkerManifest),

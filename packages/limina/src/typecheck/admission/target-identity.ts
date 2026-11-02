@@ -1,5 +1,5 @@
 import { compareCodeUnits } from '#utils/collections';
-import type { GeneratedTsconfigGraphResult } from '../../core/build-graph/types';
+import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
 import { frameworkCheckerName } from '../framework-targets';
 import { getCheckerImplementationFingerprint } from '../managed/identity';
 import type { TypecheckTarget } from '../targets';
@@ -7,7 +7,7 @@ import type { ExecutionReferenceClosure } from './reference-closure';
 
 export function captureExecutionBinding(options: {
   target: TypecheckTarget;
-  graph: GeneratedTsconfigGraphResult;
+  graph: PreparedTsconfigGraph;
   projectRootDir: string;
   closure: ExecutionReferenceClosure;
   authority?: object;
@@ -16,6 +16,11 @@ export function captureExecutionBinding(options: {
   return JSON.stringify([
     captureTarget(target, graph, projectRootDir),
     graph.artifactPlan.desiredRevision,
+    graph.producerBuildReceipt?.identity,
+    graph.auxiliaryArtifacts?.map(({ namespace, plan }) => [
+      namespace.rootDir,
+      plan.desiredRevision,
+    ]),
     closure.references,
     [...closure.inputs].sort(compareCodeUnits),
     [...(closure.observations?.paths ?? [])].sort(compareCodeUnits),
@@ -25,7 +30,7 @@ export function captureExecutionBinding(options: {
 
 export function captureTarget(
   target: TypecheckTarget,
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
   projectRootDirectory: string,
 ): string | Error {
   try {
@@ -65,7 +70,7 @@ function assertIdentityAvailable(identity: string | Error | undefined): void {
 
 function selectedChecker(
   target: TypecheckTarget,
-  graph: GeneratedTsconfigGraphResult,
+  graph: PreparedTsconfigGraph,
 ) {
   return target.checkerFamily === undefined
     ? graph.checkers.find((item) => item.name === target.checkerName)

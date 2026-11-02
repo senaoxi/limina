@@ -1,5 +1,5 @@
 import type { ResolvedCheckerConfig } from '#config/runner';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type { PreparedTsconfigGraph } from '#core/build-graph/runner';
 import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
 import type { TaskProgressItem } from '../../execution/progress';
 import type { LiminaFlowTask } from '../../flow';
@@ -106,7 +106,7 @@ export async function executeCheckerBuildTargets(options: {
   allCheckers: readonly ResolvedCheckerConfig[];
   config: RunCheckerBuildOptions['config'];
   flowDepth: number;
-  generatedGraph: GeneratedTsconfigGraphResult;
+  generatedGraph: PreparedTsconfigGraph;
   label: string;
   preflight: LiminaPreflightManager;
   projectRootDir: string;

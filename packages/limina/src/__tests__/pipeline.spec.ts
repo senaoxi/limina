@@ -31,7 +31,9 @@ import {
   runPipeline,
   runPipelineWithResult,
 } from '../pipeline/runner';
+import { createCheckerTaskStats } from '../pipeline/stats';
 import { LiminaPreflightManager } from '../preflight/manager';
+import { createCheckerTargetId } from '../typecheck/targets';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 const green = (message: string): string => `\u{1B}[32m${message}\u{1B}[0m`;
@@ -41,7 +43,7 @@ function deferred<T>() {
 }
 
 describe('ExecutionPlan construction', () => {
-  it('inserts one generation-specific materializer per filesystem segment', async () => {
+  it('preserves ordered steps across filesystem generations without a premature full graph barrier', async () => {
     const fixture = await createConfig();
     fixture.config.pipelines = {
       demo: [
@@ -63,21 +65,18 @@ describe('ExecutionPlan construction', () => {
         })),
       ).toEqual([
         { generation: 0, kind: 'preparation', label: 'workspace:validate' },
-        { generation: 0, kind: 'preparation', label: 'graph:materialize' },
         { generation: 0, kind: 'task', label: 'checker:build' },
         { generation: 0, kind: 'command', label: 'command-a' },
         { generation: 1, kind: 'preparation', label: 'workspace:validate' },
-        { generation: 1, kind: 'preparation', label: 'graph:materialize' },
         { generation: 1, kind: 'task', label: 'checker:typecheck' },
         { generation: 1, kind: 'command', label: 'command-b' },
         { generation: 2, kind: 'preparation', label: 'workspace:validate' },
-        { generation: 2, kind: 'preparation', label: 'graph:materialize' },
         { generation: 2, kind: 'task', label: 'checker:build' },
       ]);
       const materializers = plan.tasks.filter(
         (task) => task.issueTask === 'graph:materialize',
       );
-      expect(new Set(materializers.map((task) => task.id)).size).toBe(3);
+      expect(materializers).toHaveLength(0);
       for (const checker of plan.tasks) {
         if (!checker.issueTask.startsWith('checker:')) continue;
         expect(checker.requiresSuccessOf).toHaveLength(1);
@@ -91,7 +90,7 @@ describe('ExecutionPlan construction', () => {
     }
   });
 
-  it('makes every default segment task depend on one materializer', async () => {
+  it('builds producers before the default full graph barrier', async () => {
     const fixture = await createConfig();
     try {
       const plan = createDefaultExecutionPlan(fixture.config);
@@ -109,7 +108,6 @@ describe('ExecutionPlan construction', () => {
             'graph:check',
             'source:check',
             'proof:check',
-            'checker:build',
             'checker:typecheck',
           ].map((issueTask) => [issueTask, [materializer[0]!.id]]),
         ),
@@ -134,7 +132,7 @@ describe('ExecutionPlan construction', () => {
     }
   });
 
-  it('does not start any segment user task while materialization is deferred', async () => {
+  it('runs producers but holds graph consumers while final materialization is deferred', async () => {
     const fixture = await createConfig();
     const plan = createDefaultExecutionPlan(fixture.config);
     const materializerStarted = deferred<void>();
@@ -159,7 +157,7 @@ describe('ExecutionPlan construction', () => {
           run();
           return { issues: [], status: 'passed' };
         };
-        return run;
+        return { run, isProducer: task.issueTask === 'checker:build' };
       });
     const preflight = new LiminaPreflightManager({ config: fixture.config });
 
@@ -171,11 +169,14 @@ describe('ExecutionPlan construction', () => {
         tasks: plan.tasks,
       });
       await materializerStarted.promise;
-      for (const run of userRuns) expect(run).not.toHaveBeenCalled();
+      for (const { run, isProducer } of userRuns) {
+        if (isProducer) expect(run).toHaveBeenCalledOnce();
+        else expect(run).not.toHaveBeenCalled();
+      }
 
       releaseMaterializer.resolve();
       await expect(execution).resolves.toMatchObject({ passed: true });
-      for (const run of userRuns) expect(run).toHaveBeenCalledOnce();
+      for (const { run } of userRuns) expect(run).toHaveBeenCalledOnce();
     } finally {
       preflight.dispose();
       await fixture.cleanup();
@@ -782,11 +783,6 @@ describe('runPipeline', () => {
               state: 'passed',
             },
             {
-              issueTask: 'graph:materialize',
-              kind: 'preparation',
-              state: 'passed',
-            },
-            {
               checkItems: expect.arrayContaining([
                 expect.objectContaining({
                   name: 'reference completeness',
@@ -1388,10 +1384,17 @@ describe('fixed default tasks', () => {
           'graph:materialize',
         ]);
         const [validation, materializer] = preparations;
-        expect(materializer!.requiresSuccessOf).toEqual([validation!.id]);
+        const build = tasks.find((task) => task.issueTask === 'checker:build')!;
+        expect(materializer!.requiresSuccessOf).toEqual([
+          validation!.id,
+          build.id,
+        ]);
+        expect(build.requiresSuccessOf).toEqual([validation!.id]);
         expect(
           tasks.every(
-            (task) => task.requiresSuccessOf?.[0] === materializer!.id,
+            (task) =>
+              task.requiresSuccessOf?.[0] ===
+              (task === build ? validation!.id : materializer!.id),
           ),
         ).toBe(true);
       } finally {
@@ -1435,4 +1438,63 @@ describe('fixed default tasks', () => {
       await fixture.cleanup();
     }
   });
+});
+
+it('counts actual processes once while retaining reused and blocked target identities', () => {
+  const producer = createCheckerTargetId(['producer']);
+  const consumer = createCheckerTargetId(['consumer']);
+  const result = {
+    projectRootDir: '/workspace',
+    rootConfigPaths: ['/workspace/b.json'],
+    failedTargets: [],
+    passed: true,
+    targetResults: [],
+    reusedTargetResults: [
+      {
+        id: producer,
+        configPath: '/workspace/b.json',
+        durationMs: 4,
+        status: 0,
+      },
+    ],
+  };
+  const reused = createCheckerTaskStats(result);
+  expect(reused).toMatchObject({
+    total: 0,
+    passed: 0,
+    items: [{ id: producer, status: 'skipped', checksTotal: 0 }],
+  });
+  const blocked = createCheckerTaskStats({
+    ...result,
+    passed: false,
+    reusedTargetResults: [],
+    targetResults: [
+      {
+        id: producer,
+        configPath: '/workspace/b.json',
+        durationMs: 4,
+        status: 1,
+      },
+    ],
+    failedTargets: [
+      {
+        id: consumer,
+        configPath: '/workspace/a.json',
+        blockedByTarget: [producer],
+      },
+    ],
+    targetOutcomes: [
+      { id: consumer, status: 'blocked', blockedBy: [producer] },
+    ],
+  });
+  expect(blocked.total).toBe(1);
+  expect(blocked.passed).toBe(0);
+  expect(blocked.items).toContainEqual(
+    expect.objectContaining({
+      id: consumer,
+      status: 'blocked',
+      checksTotal: 0,
+      blockedBy: [{ id: producer, name: 'b.json' }],
+    }),
+  );
 });
