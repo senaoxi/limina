@@ -2,7 +2,7 @@ import { defineDetectorFixture } from '../../../../integration/helpers/detector-
 import { LIMINA_CHECK_ISSUE_CODES } from '../../../../src/check-reporting/codes';
 
 export default defineDetectorFixture({
-  command: ['check', 'fault-injection'],
+  command: ['check'],
   expected: {
     exitCode: 1,
     issues: [
@@ -15,7 +15,8 @@ export default defineDetectorFixture({
     runOutcome: 'blocked',
     snapshot: { complete: true, expected: true },
     taskStates: {
-      'checker:build': 'blocked',
+      'checker:build': 'passed',
+      'graph:check': 'blocked',
       'graph:materialize': 'failed',
       'workspace:validate': 'passed',
     },

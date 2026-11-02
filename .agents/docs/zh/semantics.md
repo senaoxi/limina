@@ -161,6 +161,8 @@ Svelte `.check` 配置继承原配置，显式投影 references 和解析结果�
 
 真实生产者输出映射决定声明镜像文件名和内容。增加的 `rootDirs` 支持相对路径解析，但不授予归属或构建权限。Svelte 源码重定向保持开启，普通 TypeScript 依赖也可能重定向到源码。Vue 组件请求必须选中 receipt 绑定的声明；通配 ambient 垫片和生产者构建成功均不能证明消费者实际绑定。最终消费者重采集核对最终 references，原始 roots 与 Source/Proof 身份仍与生成文件分离。
 
+Svelte 执行投影在 `rootDirs` 中保留 Windows 盘符的两种大小写：其 URI 层将盘符转为小写，但 TypeScript 即使使用大小写不敏感的 Host，也按大小写匹配这些前缀。别名保持目录拼写并指向同一盘符，不改变 canonical source key、归属或声明权限。映射回归使用真实 TypeScript resolver，覆盖两种盘符拼写、无关 root 拒绝和大小写敏感的 POSIX 对照。这些与宿主无关的检查不替代原生 Windows Svelte 执行。
+
 输出 target 的继承保留 TypeScript 数组顺序，即使同级分支共享祖先也一样。继承解析、环诊断和有效选项由 TypeScript 配置解析器负责。框架意图读取实际解析得到的配置闭包，包括包的 `tsconfig` 入口、带点文件名和无后缀文件；解析失败不能静默回退为默认 target。[Compiler target 回归测试](../../../packages/limina/src/__tests__/compiler-target.spec.ts) 将菱形、深层、重复、反向顺序和自身覆盖情形与 TypeScript parser 对照。
 
 生成配置将有效 `baseUrl`、`paths`、`rootDirs` 和显式 `typeRoots` 固定到源解析器的路径基准。继承的 `${configDir}` 不会在 `.limina` 下重新展开；有序相对 `paths` 回退按编译器保留的 `pathsBasePath` 重定基准。Graph parity 比较这些有效路径。类型入口回执通过编译器重新解析生成配置的继承与覆盖，不再合并旧解析选项；版本 4 撤销旧投影并要求加载身份证据。

@@ -51,6 +51,26 @@ function sourcePathOptions(
   };
 }
 
+function declarationRootDirectories(input: SvelteCheckConfigInput): string[] {
+  const roots = [...(input.options.rootDirs ?? []), ...input.declarationRoots];
+  return [
+    ...new Set(
+      roots.flatMap((root) => {
+        if (!/^[A-Za-z]:\//u.test(root)) return [root];
+        // Svelte's URI paths lowercase drive letters, while TypeScript matches
+        // rootDirs prefixes case-sensitively even with a case-insensitive Host.
+        // Both spellings name the same drive; directory spelling stays intact.
+        const drive = root.charAt(0);
+        const alias =
+          drive === drive.toLowerCase()
+            ? drive.toUpperCase()
+            : drive.toLowerCase();
+        return [root, `${alias}${root.slice(1)}`];
+      }),
+    ),
+  ];
+}
+
 export function createSvelteCheckConfig(
   input: SvelteCheckConfigInput,
 ): Record<string, unknown> {
@@ -63,12 +83,7 @@ export function createSvelteCheckConfig(
     compilerOptions: {
       ...sourcePathOptions(input),
       disableSourceOfProjectReferenceRedirect: false,
-      rootDirs: [
-        ...new Set([
-          ...(input.options.rootDirs ?? []),
-          ...input.declarationRoots,
-        ]),
-      ],
+      rootDirs: declarationRootDirectories(input),
     },
     references: input.references.map((reference) => ({
       path: createRelativePath(input.checkConfigPath, reference),

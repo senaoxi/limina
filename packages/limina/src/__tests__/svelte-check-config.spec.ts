@@ -30,6 +30,94 @@ function parse(config: string): ts.ParsedCommandLine {
 
 describe('Svelte check project reference output identity', () => {
   it.each([
+    { sourceDrive: 'C:', importerDrive: 'c:' },
+    { sourceDrive: 'c:', importerDrive: 'C:' },
+    { sourceDrive: 'C:', importerDrive: 'C:' },
+    { sourceDrive: 'c:', importerDrive: 'c:' },
+  ])(
+    'resolves declaration mirrors from $importerDrive with $sourceDrive configuration paths',
+    ({ sourceDrive, importerDrive }) => {
+      const root = `${sourceDrive}/Workspace/Project`;
+      const mirror = `${root}/.limina/declarations/svelte`;
+      const declaration = `${mirror}/b/b.vue.d.ts`;
+      const files = new Map([
+        [
+          declaration.toLowerCase(),
+          'declare const component: unknown; export default component;',
+        ],
+      ]);
+      const projected = createSvelteCheckConfig({
+        sourceConfigPath: `${root}/tsconfig.a.json`,
+        checkConfigPath: `${root}/.limina/check/tsconfig.a.check.json`,
+        fileNames: [`${root}/a/a.svelte`],
+        options: {},
+        references: [],
+        declarationRoots: [root, mirror],
+      });
+      const host: ts.ModuleResolutionHost = {
+        directoryExists: () => true,
+        fileExists: (file) => files.has(file.toLowerCase()),
+        readFile: (file) => files.get(file.toLowerCase()),
+        useCaseSensitiveFileNames: false,
+      };
+      const resolve = (importer: string) =>
+        ts.resolveModuleName(
+          '../b/b.vue',
+          importer,
+          {
+            moduleResolution: ts.ModuleResolutionKind.Bundler,
+            rootDirs: (projected.compilerOptions as ts.CompilerOptions)
+              .rootDirs,
+          },
+          host,
+        ).resolvedModule?.resolvedFileName;
+      expect(resolve(`${importerDrive}/Workspace/Project/a/a.svelte.ts`)).toBe(
+        declaration,
+      );
+      expect(
+        resolve(`${importerDrive}/Workspace/Other/a/a.svelte.ts`),
+      ).toBeUndefined();
+    },
+  );
+
+  it('preserves case-sensitive POSIX declaration roots', () => {
+    const root = '/Workspace/Project';
+    const mirror = `${root}/.limina/declarations/svelte`;
+    const declaration = `${mirror}/b/b.vue.d.ts`;
+    const files = new Map([
+      [
+        declaration,
+        'declare const component: unknown; export default component;',
+      ],
+    ]);
+    const projected = createSvelteCheckConfig({
+      sourceConfigPath: `${root}/tsconfig.a.json`,
+      checkConfigPath: `${root}/.limina/check/tsconfig.a.check.json`,
+      fileNames: [`${root}/a/a.svelte`],
+      options: {},
+      references: [],
+      declarationRoots: [root, mirror],
+    });
+    const resolve = (importer: string) =>
+      ts.resolveModuleName(
+        '../b/b.vue',
+        importer,
+        {
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+          rootDirs: (projected.compilerOptions as ts.CompilerOptions).rootDirs,
+        },
+        {
+          directoryExists: () => true,
+          fileExists: (file) => files.has(file),
+          readFile: (file) => files.get(file),
+          useCaseSensitiveFileNames: true,
+        },
+      ).resolvedModule?.resolvedFileName;
+    expect(resolve(`${root}/a/a.svelte.ts`)).toBe(declaration);
+    expect(resolve('/workspace/Project/a/a.svelte.ts')).toBeUndefined();
+  });
+
+  it.each([
     {
       name: 'implicit composite root with outDir',
       options: { outDir: './dist' },

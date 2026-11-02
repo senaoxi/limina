@@ -7,6 +7,8 @@ const config: ViteUserConfig = defineConfig({
     globals: true,
     hookTimeout: 30_000,
     include: ['integration/tests/**/*.spec.ts'],
+    // Each integration worker can also launch real compiler processes.
+    maxWorkers: 2,
     restoreMocks: true,
     testTimeout: 120_000,
     watch: false,

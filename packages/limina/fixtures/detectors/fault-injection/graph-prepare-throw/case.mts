@@ -15,7 +15,6 @@ export default defineDetectorFixture({
     runOutcome: 'failed',
     snapshot: { complete: true, expected: true },
     taskStates: {
-      'graph:materialize': 'passed',
       'graph:prepare': 'failed',
       'workspace:validate': 'passed',
     },

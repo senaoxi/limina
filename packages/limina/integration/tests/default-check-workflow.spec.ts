@@ -125,6 +125,13 @@ it.each([undefined, { knip: false }])(
   'fails base source authorization with source=%j',
   async (sourceConfig) => {
     const f = await fixture('detectors/source/package-import-unauthorized');
+    // Resolve the import for the producer compiler without declaring Source
+    // authority for it. Missing-module errors would block the Source task.
+    await symlink(
+      path.dirname(createRequire(import.meta.url).resolve('zod/package.json')),
+      f.file('node_modules/zod'),
+      'junction',
+    );
     await f.config({
       scope,
       ...(sourceConfig !== undefined && { source: sourceConfig }),
@@ -132,6 +139,9 @@ it.each([undefined, { knip: false }])(
     const result = await f.run(['check']);
     expect(result.code).toBe(1);
     const snapshot = await inventory(f);
+    expect(snapshot.run!.tasks).toContainEqual(
+      expect.objectContaining({ label: 'checker:build', state: 'passed' }),
+    );
     expect(snapshot.issues).toContainEqual(
       expect.objectContaining({ code: codes.sourcePackageImportUnauthorized }),
     );

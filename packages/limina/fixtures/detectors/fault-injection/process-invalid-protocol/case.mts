@@ -10,7 +10,6 @@ export default defineDetectorFixture({
     stdout: { linesInOrder: ['helper-success'] },
     taskStates: {
       'checker:build': 'passed',
-      'graph:materialize': 'passed',
       'workspace:validate': 'passed',
     },
   },

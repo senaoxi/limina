@@ -16,7 +16,6 @@ export default defineDetectorFixture({
     snapshot: { complete: true, expected: true },
     taskStates: {
       'checker:typecheck': 'failed',
-      'graph:materialize': 'passed',
       'workspace:validate': 'passed',
     },
   },

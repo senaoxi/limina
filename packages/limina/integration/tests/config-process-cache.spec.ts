@@ -731,7 +731,9 @@ pipelines:{probe:['graph:check','checker:build']}};`,
   );
   const seed = await check(f, 'native');
   const warm = await check(f, 'native');
-  expect(count(warm.events, 'semanticPrograms')).toBe(0);
+  // Producer admission creates its own Program after restoring the full graph.
+  expect(count(warm.events, 'graphBuilds')).toBe(0);
+  expect(count(warm.events, 'restoredContexts')).toBeGreaterThan(0);
   expect(count(warm.events, 'graphHits')).toBeGreaterThan(0);
   const buildInfo = readdirSync(f.root, { recursive: true })
     .map(String)
@@ -758,7 +760,10 @@ pipelines:{probe:['graph:check','checker:build']}};`,
         profile.events.some((event) => event.name === 'analysis-cache'),
       ).toBe(false);
     } else {
-      expectRebuiltGraph(profile.events);
+      // Producer preparation may reuse this invocation's freshly built graph.
+      // Force still rebuilds without loading a persisted graph.
+      expect(count(profile.events, 'semanticPrograms')).toBeGreaterThan(0);
+      expect(count(profile.events, 'graphBuilds')).toBeGreaterThan(0);
       expect(count(profile.events, 'read-block')).toBe(0);
     }
   }
