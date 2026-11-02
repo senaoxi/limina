@@ -28,4 +28,4 @@ npm 发布仍受产物、CI 和 publisher 检查约束，不再要求迁移启�
 
 ## 历史证据
 
-迁移报告与来源映射于 2026-10-02 从当前文件树移除，完整的删除前快照仍保存在 Git 提交 `b1f11505487361bf8f925c3ccef2d384f80cda4c` 中。可运行 `git show b1f11505487361bf8f925c3ccef2d384f80cda4c:migration/VALIDATION.md` 获取报告，将文件名替换为 `ESLINT-10.md`、`LOGARIA-0.0.4.md`、`SYNC-a6f79bcb.md`、`upstream-a6f79bcb.json`、`commit-map`、`tag-map.json` 或 `imports.json` 可获取对应归档。历史报告保留原环境、日期及覆盖限制；发布命令和当前 PCR 链接不能依赖这些文件存在于工作树。
+迁移报告与来源映射于 2026-10-02 从当前文件树移除，完整的删除前快照仍保存在 Git 提交 `6d04d5657d6164151cb3605491a541a59763a423` 中。可运行 `git show 6d04d5657d6164151cb3605491a541a59763a423:migration/VALIDATION.md` 获取报告，将文件名替换为 `ESLINT-10.md`、`LOGARIA-0.0.4.md`、`SYNC-a6f79bcb.md`、`upstream-a6f79bcb.json`、`commit-map`、`tag-map.json` 或 `imports.json` 可获取对应归档。历史报告保留技术环境、日期及覆盖限制；个人路径与私人执行元数据已脱敏。发布命令和当前 PCR 链接不能依赖这些文件存在于工作树。

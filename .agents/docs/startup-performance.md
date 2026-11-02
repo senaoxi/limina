@@ -6,7 +6,7 @@ The measured implementation improves startup on the repository workload, but nei
 
 ## Reproduction boundary
 
-Measured on 2026-10-29/30 with Apple M1 (8 CPU cores, 16 GiB), macOS 27.0.1 / 26A434 arm64, Node 26.13.0, pnpm 12.10.1, TypeScript 6.0.3, Vue 3.5.43, vue-tsc 3.2.4 and tsx 4.23.15. Baseline is clean `main` at `dbefa8d5210539f730749bd3d0557915c32180df`; optimized source is the change containing this record. The source CLI entry is selected by the repository launcher.
+Measured on 2026-10-29/30 with Apple M1 (8 CPU cores, 16 GiB), macOS 27.0.1 / 26A434 arm64, Node 26.13.0, pnpm 12.10.1, TypeScript 6.0.3, Vue 3.5.43, vue-tsc 3.2.4 and tsx 4.23.15. Baseline is clean `main` at `830337dfca121ea56155b608e6d9af2f4be09b78`; optimized source is the change containing this record. The source CLI entry is selected by the repository launcher. The baseline pointer follows sanitized history; these measurements predate the rewrite and have not been rerun.
 
 Each round uses the entire root `pnpm check --force`, followed by `pnpm check` in a new process, five pairs after a separate excluded full prewarm. Force bypasses the complete Limina analysis model; OS file pages, tsx and independent Checker caches remain. No governance scope, required validation or command is removed. Start/end source hashes guard every formal sample. All attempts and slow samples remain recorded. The default root workflow retains its existing disabled `checker:typecheck` task; the separate required `pnpm run typecheck` command was actually executed and passed.
 

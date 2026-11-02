@@ -33,41 +33,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Bug Fixes
 
-- fix(docs): replay recorded interactive terminal output ([b7f09e4f](https://github.com/senaoxi/limina/commit/b7f09e4f67a5bfec3a6aaacb9700a68ca2daca4c))
-- fix(release): wait for new npm metadata and preserve first-package latest ([a17d287a](https://github.com/senaoxi/limina/commit/a17d287ae2c282274ae48b77d6090b91938b719a), [d8c86b3e](https://github.com/senaoxi/limina/commit/d8c86b3e5dc4e2b04e2553e6930956faa6b39950))
-- fix(ci): build private release tools before cold tag checks ([170de4ca](https://github.com/senaoxi/limina/commit/170de4ca5486c584954cd775466513c2abfba669))
+- fix(docs): replay recorded interactive terminal output ([9812c6d4](https://github.com/senaoxi/limina/commit/9812c6d4fdfcbf3dd006c35ac104d033a599ebb8))
+- fix(release): wait for new npm metadata and preserve first-package latest ([43e07e19](https://github.com/senaoxi/limina/commit/43e07e1945f39ea8d711aaac587435a4b340facd), [23c1df5a](https://github.com/senaoxi/limina/commit/23c1df5a59d3d27260629388fb19c9b194a503f2))
+- fix(ci): build private release tools before cold tag checks ([c0ed626c](https://github.com/senaoxi/limina/commit/c0ed626c55f82f4dced5f8bbc69e402d4e81c55b))
 
 ## [0.5.0-beta.0] - 2026-10-03
 
 ### Features
 
-- feat(docs): enhanced console effect demonstration ([51b72d88](https://github.com/senaoxi/limina/commit/51b72d88))
-- feat(migrate): checkpoint standalone distribution for cloud validation ([a62b7752](https://github.com/senaoxi/limina/commit/a62b7752))
-- feat: upgrade to eslint 10 ([723e13e0](https://github.com/senaoxi/limina/commit/723e13e0))
-- feat: upgrade to eslint 10 ([92e5ab6c](https://github.com/senaoxi/limina/commit/92e5ab6c))
-- feat: extract migration into standalone limina-migrate package ([342b04e5](https://github.com/senaoxi/limina/commit/342b04e5))
-- feat(limina): preserve input topology during migration ([a69a05c9](https://github.com/senaoxi/limina/commit/a69a05c9))
+- feat(docs): enhanced console effect demonstration ([63636b38](https://github.com/senaoxi/limina/commit/63636b38))
+- feat(migrate): checkpoint standalone distribution for cloud validation ([ca7d9fd0](https://github.com/senaoxi/limina/commit/ca7d9fd0))
+- feat: upgrade to eslint 10 ([c899258a](https://github.com/senaoxi/limina/commit/c899258a))
+- feat: upgrade to eslint 10 ([2a044eef](https://github.com/senaoxi/limina/commit/2a044eef))
+- feat: extract migration into standalone limina-migrate package ([797df8d8](https://github.com/senaoxi/limina/commit/797df8d8))
+- feat(limina): preserve input topology during migration ([55089e2b](https://github.com/senaoxi/limina/commit/55089e2b))
 - feat(limina): enforce registry authority and response limits ([d54e133c](https://github.com/senaoxi/limina/commit/d54e133c))
 
 ### Bug Fixes
 
-- fix(ci): restore read-only formatting script ([8d89fca6](https://github.com/senaoxi/limina/commit/8d89fca6))
-- fix(migrate): preserve healthy sources and native relations ([6af8f716](https://github.com/senaoxi/limina/commit/6af8f716))
+- fix(ci): restore read-only formatting script ([9bae0228](https://github.com/senaoxi/limina/commit/9bae0228))
+- fix(migrate): preserve healthy sources and native relations ([dcee83a1](https://github.com/senaoxi/limina/commit/dcee83a1))
 
 ### Documentation
 
-- docs(home): add scroll-synced terminal landing page ([b1f11505](https://github.com/senaoxi/limina/commit/b1f11505))
-- docs: record monorepo migration and validation ([2b41945a](https://github.com/senaoxi/limina/commit/2b41945a))
+- docs(home): add scroll-synced terminal landing page ([6d04d565](https://github.com/senaoxi/limina/commit/6d04d565))
+- docs: record monorepo migration and validation ([2996cb3c](https://github.com/senaoxi/limina/commit/2996cb3c))
 
 ### Maintenance
 
-- chore: finalize standalone repository migration ([772e3c1c](https://github.com/senaoxi/limina/commit/772e3c1c))
-- refactor: replace migration bridge with internal module exports ([fa9a25eb](https://github.com/senaoxi/limina/commit/fa9a25eb))
-- chore: harden tests and patch Astro dependencies ([bfe3bfa2](https://github.com/senaoxi/limina/commit/bfe3bfa2))
-- build(checker): allow the @astrojs/check 0.9 peer range ([f550fbb6](https://github.com/senaoxi/limina/commit/f550fbb6))
-- chore: update documentation links and redact local paths ([35e25e29](https://github.com/senaoxi/limina/commit/35e25e29))
-- chore: document site path updated ([e640f007](https://github.com/senaoxi/limina/commit/e640f007))
-- build: integrate standalone monorepo infrastructure ([2d54c028](https://github.com/senaoxi/limina/commit/2d54c028))
+- chore: finalize standalone repository migration ([eb6ae071](https://github.com/senaoxi/limina/commit/eb6ae071))
+- refactor: replace migration bridge with internal module exports ([bb3a8549](https://github.com/senaoxi/limina/commit/bb3a8549))
+- chore: harden tests and patch Astro dependencies ([58ced243](https://github.com/senaoxi/limina/commit/58ced243))
+- build(checker): allow the @astrojs/check 0.9 peer range ([5d34ef02](https://github.com/senaoxi/limina/commit/5d34ef02))
+- chore: update documentation links and redact local paths ([ab35f06c](https://github.com/senaoxi/limina/commit/ab35f06c))
+- chore: document site path updated ([1774ab17](https://github.com/senaoxi/limina/commit/1774ab17))
+- build: integrate standalone monorepo infrastructure ([32bae75e](https://github.com/senaoxi/limina/commit/32bae75e))
 - build: configure standalone monorepo ([5dd3022d](https://github.com/senaoxi/limina/commit/5dd3022d))
 - refactor: move Limina product to repository root ([5ad61842](https://github.com/senaoxi/limina/commit/5ad61842))
 - refactor(limina): separate dependency and package export validation ([ba7b926a](https://github.com/senaoxi/limina/commit/ba7b926a))
