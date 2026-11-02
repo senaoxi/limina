@@ -4,6 +4,8 @@
 
 本记录负责独立仓库依赖自动化、协作、安全、CI 报告及外部工作流集成。源码建立行为事实；本地结果不证明远程启用或平台验收。
 
+本记录的提交引用指向脱敏后的历史。CI 与审计结果仍属于原有执行；重写提交不会重新运行检查，也不会转移原有 CI 状态。
+
 ## 依赖与安全
 
 [Astro 测试基线与兼容性下限策略](./technology-stack.md#astro-测试基线与兼容性下限)负责基线升级与冻结的最低版本 fixture。Checker 分组匹配依赖名，使 npm 别名继续遵循预期的自动化策略。
@@ -22,9 +24,9 @@
 
 2026-10-01，registry 审计针对 Astro 宿主依赖返回了六项 devalue advisory。`astro@^7.0.0>devalue` override 从该 catalog 选择 [5.9.3 安全补丁](https://github.com/sveltejs/devalue/releases/tag/v5.9.3)，满足两个已安装 Astro 版本声明的 `^5.8.1` 范围。Astro 7.0.0、7.3.2 和独立兼容性夹具工作区保留各自版本与边界。所选补丁使用 MIT 许可证，未被 deprecated，发布于 2026-09-18。冻结安装和本地全类别审计通过，在相同 18 个排除项下返回零项 advisory；未增加策略例外。
 
-2026-10-03，对 main `772e3c1cb2c58de42a3ae0055580cba69dc6296b` 的本地与远程审计在未变更的排除项下返回两项新的 high advisory：经 Astro 引入的 [http-cache-semantics](https://github.com/advisories/GHSA-ch52-4w7c-c8xp)和经清理／部署开发工具引入的 [braces](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)。当时 registry 的最新版本分别为 4.2.0 和 3.0.3，两项 advisory 均未列出已修复发布版。两个实际 bundle inventory 中均未出现这些包。但全 workspace 的 Security 门禁仍失败；这项观察不授权新增排除或越过失败门禁发布。
+2026-10-03，对 main `eb6ae0715203650b9c393eb284e5aa0cfdbe0de7` 的本地与远程审计在未变更的排除项下返回两项新的 high advisory：经 Astro 引入的 [http-cache-semantics](https://github.com/advisories/GHSA-ch52-4w7c-c8xp)和经清理／部署开发工具引入的 [braces](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)。当时 registry 的最新版本分别为 4.2.0 和 3.0.3，两项 advisory 均未列出已修复发布版。两个实际 bundle inventory 中均未出现这些包。但全 workspace 的 Security 门禁仍失败；这项观察不授权新增排除或越过失败门禁发布。
 
-docs 隐私审查从远程 main `c70906655486fded56178e95ec5120175532a9d3` 开始，该基线在此前 18 项之外已经排除这两项 advisory。它的 Security workflow 和采用相同政策的本地审计通过。仅移除这两项排除的独立 manifest／lockfile 控制审计再次返回两项 high advisory；截至 2026-10-03，上游公告仍未列出修复版本。继承的排除是现有门禁的限制，不证明有漏洞的依赖已得到修复。隐私守卫独立于安全排除项和依赖版本；通过该守卫不授权 npm 发布或手动部署。
+docs 隐私审查从远程 main `8f8892f6a491adc2933bee1e438d19d166ad064b` 开始，该基线在此前 18 项之外已经排除这两项 advisory。它的 Security workflow 和采用相同政策的本地审计通过。仅移除这两项排除的独立 manifest／lockfile 控制审计再次返回两项 high advisory；截至 2026-10-03，上游公告仍未列出修复版本。继承的排除是现有门禁的限制，不证明有漏洞的依赖已得到修复。隐私守卫独立于安全排除项和依赖版本；通过该守卫不授权 npm 发布或手动部署。
 
 2026-10-06 的审计返回了一项高危 [sharp advisory](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) 和一项严重 [shell-quote advisory](https://github.com/advisories/GHSA-pqg4-j6r4-53mv)。Workspace 现在在 dev catalog 固定 shell-quote 1.11.0，并从 `security-patches` 将 sharp 0.35.5 限定用于 Astro 7 宿主。最低／当前 Astro 版本与独立夹具工作区保留各自版本和边界。Sharp 补丁将平台包更新到 0.35.5、libvips 包更新到 1.3.4，提供 librsvg 2.63.2。当两个 Astro 宿主无需 override 即可选择安全的 sharp 版本时，移除此限定 override。未增加 audit、release-age、trust、peer 或脚本审批例外。
 
@@ -122,4 +124,4 @@ PR 标题通过仅处理 metadata 的 workflow 检查，不 checkout PR。模板
 
 发布回归还用成功、错误 SHA／branch／event、provenance 事件 SHA 不符、pending、失败／取消／skipped、缺失及查询失败响应执行实际精确 SHA Bash 门禁；获准 CLI 在包操作前拒绝不支持可信 dist-tag 的 npm 版本。本地 HTTP registry 覆盖部分上传／渠道推进后的恢复、tarball 证据保留、上传已被接受但客户端收到失败响应、收到成功响应但渠道缺失、不可变内容不一致，以及 beta 推进时保持 `latest`。这个夹具证明编排行为，不证明 npm 账户授权或真实 registry 发布。
 
-`c33aea9497aca78fde77b02fb738348623ca0439` 的 Windows CI 完成了两个产品的单测，随后组合发布恢复用例在 60 秒后超时。现在每种 registry 故障分别使用新的夹具和独立用例，保持相同的每例 60 秒预算及既有单条命令 45 秒时限。全部失败／恢复断言保留；不跳过 Windows 路径，也不增加 timeout。
+[历史 Windows CI 运行](https://github.com/senaoxi/limina/actions/runs/37103605023/job/111147752777)完成了两个产品的单测，随后组合发布恢复用例在 60 秒后超时。现在每种 registry 故障分别使用新的夹具和独立用例，保持相同的每例 60 秒预算及既有单条命令 45 秒时限。全部失败／恢复断言保留；不跳过 Windows 路径，也不增加 timeout。

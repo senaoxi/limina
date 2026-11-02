@@ -6,7 +6,7 @@
 
 ## 复现边界
 
-测量环境为 2026-10-29/30 的 Apple M1（8 核、16 GiB）、macOS 27.0.1 / 26A434 arm64、Node 26.13.0、pnpm 12.10.1、TypeScript 6.0.3、Vue 3.5.43、vue-tsc 3.2.4、tsx 4.23.15。基线为干净 `main` 的 `dbefa8d5210539f730749bd3d0557915c32180df`；优化实现为包含本记录的改动。仓库 launcher 选择源码 CLI 入口。
+测量环境为 2026-10-29/30 的 Apple M1（8 核、16 GiB）、macOS 27.0.1 / 26A434 arm64、Node 26.13.0、pnpm 12.10.1、TypeScript 6.0.3、Vue 3.5.43、vue-tsc 3.2.4、tsx 4.23.15。基线为干净 `main` 的 `830337dfca121ea56155b608e6d9af2f4be09b78`；优化实现为包含本记录的改动。仓库 launcher 选择源码 CLI 入口。基线引用指向脱敏后的历史；这些测量早于历史重写，本次未重新运行。
 
 每轮在独立、不计入统计的完整预热后，执行 5 组完整根命令 `pnpm check --force`，随后新进程 `pnpm check`。Force 绕过整个 Limina 分析模型；OS 文件页、tsx 和独立 Checker 缓存保留。治理范围、必要校验和命令均未删减。每个正式样本的开始/结束源码摘要必须一致；所有尝试和慢样本均保留。根默认工作流保留原有禁用的 `checker:typecheck` task；另行要求的 `pnpm run typecheck` 已实际执行并通过。
 
