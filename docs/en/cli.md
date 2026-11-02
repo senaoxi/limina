@@ -67,7 +67,7 @@ The default `limina check` schedules five tasks: `graph:check`, `source:check`, 
 
 Set `source.knip: true` to add Knip analysis. `false` retains source ownership, tsconfig governance, import boundaries, and package dependency authorization.
 
-Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; a configuration error before a new attempt leaves the previous record historical. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
+Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; use terminal output to diagnose configuration-loading errors. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
 
 Tasks in the default group are scheduled independently according to available resources. Named pipelines come from configured `pipelines` and run through `limina check <name>`, with steps executed in configured order. Pipeline steps may be built-in tasks or external commands. External commands support object-form configuration with `command`, `args`, `cwd`, and `env`.
 
@@ -108,13 +108,7 @@ A query can exit successfully even when the saved check failed and contains issu
 
 If the current error occurred during config discovery, loading, or execution-plan setup, the attempt may not have been registered yet and the query may still return the previous completed record. Compare its timestamp with the current terminal error. An unavailable current result does not mean zero issues.
 
-::: details Latest Attempts, Snapshot Versions, and Recovery
-
-The unqualified query checks freshness. Once an attempt has been published, `--issues` returns its inventory only when the same attempt completed and its metadata matches the current-format snapshot. A running, interrupted, aborted, or persistence-failed latest attempt, or corrupt or mismatched freshness metadata, makes the query exit with code `1`; it never falls back to older completed issues. Missing required metadata also causes failure. When both freshness metadata records are absent, the reader attempts compatible reading. Human, JSON, and NDJSON output report unavailable explicitly; a machine response with unavailable `status` and zero issues is not a successful zero-issue check.
-
-Configuration discovery, validation, and execution-plan failures that happen before an attempt is published do not replace the previous completed inventory. If a process stops between the `last-run.json` and freshness-index writes, a later successful check with a higher sequence rewrites both files and restores query availability automatically.
-
-:::
+If the latest registered attempt is incomplete or its issue record cannot be read reliably, `--issues` reports an unavailable result and exits with code `1`. An unavailable result is not a zero-issue check. Run `limina check` again to produce a completed record.
 
 Issue output is progressive:
 
@@ -138,8 +132,6 @@ On POSIX systems the command is labeled `Query:`. On Windows, Limina prints a `P
 An invocation is a selector, not an issue filter, so it promotes the default human view to compact. Its human header shows the invocation ID, kind, result, and completion time. Generated refine, detailed, complete, JSON, and filter-help commands retain the same invocation ID, active filters, and explicit global config context. The recorded original command remains metadata and is not reused to construct a new query.
 
 `--file` performs exact matching, while `--scope` accepts a directory or `glob`. Both accept workspace-relative paths, `./` paths, absolute paths, and either slash style. They match only path-bearing candidates such as issue files and package manifests; diagnostic labels such as config field scopes are not treated as paths. Repeated values within one filter use OR semantics.
-
-If a saved check record uses an incompatible format, the query reports it as unavailable. A successfully completed check writes a record in the current format.
 
 Helper queries:
 
@@ -221,7 +213,7 @@ After a successful non-watch managed build, Limina supplements TypeScript emit b
 
 ### limina checker build [config]
 
-`checker build` only builds Limina's internal declaration graph. Supported build checker identities are `tsc`, `tsgo`, and `vue-tsc`; the command-line selector remains named `--preset`.
+`checker build` only builds Limina's internal declaration graph. Supported build checkers are `tsc`, `tsgo`, and `vue-tsc`. Use `--preset` to select one for a specific config.
 
 ```sh
 pnpm exec limina checker build
@@ -379,7 +371,7 @@ For Applied verification, separate fresh workers use the confirmed real config, 
 
 The terminal summary includes isolation, outside-reference removal, comparison completeness, diagnostic and failed/skipped-group counts, and the audit path. Planning phases and output-candidate counts expose progress. The audit report is `.limina/migration/latest.json`. It records targets, isolation, pruned relations, comparison completeness, output decisions, writes and final verification, phase timings and fatal attempts when the report location remains writable. Report publication failure warns without undoing committed configs. Neither core nor later migration runs use this report as input authority.
 
-Migration does not install framework dependencies, run `astro sync`, or rewrite framework sources. Generated graphs use manifest version 6; no migration readiness or partial-graph state is persisted there.
+Migration does not install framework dependencies, run `astro sync`, or rewrite framework sources.
 
 ## Troubleshooting
 

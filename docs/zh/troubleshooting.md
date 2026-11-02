@@ -142,7 +142,7 @@ export default defineConfig({
 
 每条排除规则必须声明一种 `kind`：`workspace-package`、`package-scope` 或 `tsconfig`。Limina 不根据路径推断类型。前两者选择候选根目录；`tsconfig` 选择相对于配置根的精确 `tsconfig.json` 或 `tsconfig.*.json` 文件路径，不接受通配模式，并保持包激活。
 
-### 排除规则未匹配精确治理候选 {#regions-exclude-rule-does-not-match-a-recognized-governance-root}
+### 排除规则未匹配精确治理候选 {#regions-exclude-no-match}
 
 诊断格式为 `scope.regions.exclude[索引] does not match an exact governance candidate.`，其中“索引”是未匹配规则的位置。根据诊断检查三点：
 
@@ -150,9 +150,9 @@ export default defineConfig({
 2. 对于 `workspace-package` 或 `package-scope`，`include` 选择相对于 `config.rootDir` 的候选词法目录，必要时包含 `../`，而不是包名或配置描述文件路径。
 3. 该目录不是 `node_modules`、`.git`、`.limina` 或明确配置的输出目录等固定发现排除项。
 
-例如，要选择根目录位于 `packages/legacy-app` 的激活包，应使用 `kind: 'workspace-package'` 和 `include: ['packages/legacy-app']`。
+例如，要选择根目录位于 `packages/playground` 的激活包，应使用 `kind: 'workspace-package'` 和 `include: ['packages/playground']`。
 
-### 多条排除规则匹配同一治理候选 {#multiple-regions-exclude-rules-match-the-same-governance-root}
+### 多条排除规则匹配同一治理候选 {#regions-exclude-overlap}
 
 诊断以 `Multiple scope.regions.exclude rules match` 开头，并列出候选的 `kind` 和路径。让同一 `kind` 的模式互不重叠；规则顺序不会决定哪条 `reason` 生效。
 

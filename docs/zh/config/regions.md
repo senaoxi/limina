@@ -6,7 +6,7 @@
 这几种排除的作用不同：`scope.regions.exclude` 可以让包退出治理，`scope.source.exclude` 排除源码文件，检查器的 `exclude` 只改变入口选择。精确的 `tsconfig` 排除只隔离配置，不会隐藏源码文件或自动修复指向该配置的引用。
 :::
 
-例如，当前工作区包含 `packages/legacy-app`，但这个包由另一套检查流程负责，可以按包目录排除它：
+例如，当前工作区包含 `packages/playground`，但这个包由另一套检查流程负责，可以按包目录排除它：
 
 ```js
 import { defineConfig } from 'limina';
@@ -17,7 +17,7 @@ export default defineConfig({
       exclude: [
         {
           kind: 'workspace-package',
-          include: ['packages/legacy-app'],
+          include: ['packages/playground'],
           reason: '这个包由另一套 Limina 运行独立治理。',
         },
       ],

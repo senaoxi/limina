@@ -36,7 +36,7 @@ export default defineConfig({});
 
 :::
 
-必要准备失败时，依赖它的任务会标记为 `blocked`；没有目标的框架检查会标记为 `disabled`。命名流水线只记录它声明的任务及必要准备。`check --issues` 读取保存的结果，不重新检查；如果错误发生在本次检查尝试登记之前，查询可能仍显示上一次结果，应结合时间和终端输出判断。独立的 `graph check`、`source check` 和 `proof check` 也可以在省略对应顶层配置时执行。
+必要准备失败时，依赖它的任务会标记为 `blocked`；没有目标的框架检查会标记为 `disabled`。命名流水线只记录它声明的任务及必要准备。`check --issues` 读取保存的结果，不重新检查；配置加载错误应根据终端输出排查。独立的 `graph check`、`source check` 和 `proof check` 也可以在省略对应顶层配置时执行。
 
 ## 配置发现与治理根 {#治理根}
 
@@ -186,9 +186,9 @@ export default defineConfig(({ command }) => ({
 
 ## 公开 API
 
-公开 `limina` 入口导出 `defineConfig`、配置与问题类型，以及验证错误类。`limina/internal/*` 仅供仓库内部使用，其源码导出会从发布包移除，不属于消费者 API。
+公开 `limina` 入口导出 `defineConfig`、配置与问题类型，以及验证错误类。
 
-## 配置结构 {#config-domains-migration}
+## 配置结构 {#configuration-structure}
 
 `scope` 选择治理区域、源码和检查器入口。`graph`、`source`、`proof`、`package`、`release`、`pipelines`、`concurrency` 和 `cache` 都是顶层字段；可以按需要逐项配置，未填写的字段使用相应默认行为。
 

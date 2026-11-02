@@ -26,8 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   Old fields and mixed structures are rejected with migration guidance. Existing values, path bases,
   command contracts, and defaults are preserved. Replace `SharedLiminaConfig` with `ScopeConfig`.
   Old analysis implementation snapshots rebuild on demand without clearing checker caches.
-  See [English migration instructions](../../docs/en/config/config-file.md#config-domains-migration)
-  or [中文迁移说明](../../docs/zh/config/config-file.md#config-domains-migration).
+  See the current [English configuration structure](../../docs/en/config/config-file.md#configuration-structure)
+  or [中文配置结构](../../docs/zh/config/config-file.md#configuration-structure).
 
 ## [0.5.0-beta.1] - 2026-10-04
 
