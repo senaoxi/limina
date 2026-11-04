@@ -49,6 +49,8 @@ Output projection uses actual generated options, roots, references and an indepe
 
 Generated output mapping also requires supported source options: effective `outFile` is rejected before constructing a project with declaration/output projection. Non-emitting framework checks retain `outFile`. The [semantic boundary](./semantics.md) and [admission regression](../../packages/limina/src/__tests__/generated-outfile.spec.ts) preserve source options without silently converting bundled declarations to per-file output.
 
+Checker qualification must cover actual type directives as well as module requests. A completed TypeScript miss cannot authorize tsgo to select a different input without qualification. Source and generated type contexts retain their resolution modes and are checked before publication and on restoration; the [type-directive regressions](../../packages/limina/src/__tests__/type-directive-checker-qualification.spec.ts) protect this boundary without creating roots or references.
+
 **Shared declaration responsibility**: Native and Vue use the same Coverage, context selection, retained-consumer/delegated boundary and candidate-validation rules. Their hosts only execute checker-qualified loading permissions. Unmanaged declarations retain the real consumer environment without granting non-root implementation expansion. Vue candidate evidence comes from the actual `vue-tsc` compiler path, not an interchangeable Language Service map. Raw resolution success survives loading refusal; refusal cannot prove absence of an obligation. See [declaration governance](./semantics.md#managed-declaration-configuration-contexts).
 
 ## I04 — Locked dependency facts preserve checker occurrences and provenance

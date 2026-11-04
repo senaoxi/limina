@@ -13,16 +13,57 @@ interface VersionCompiler {
   };
 }
 
-/** Compatibility guard, not a second resolver. Only conditions visited by the
- * compiler's actual request probe can limit the Native Checker qualification. */
-export function resolveVersionQualifiedModule(input: {
+interface VersionQualifiedRequest {
   specifier: string;
   file: string;
   options: ts.CompilerOptions;
   host: ts.ModuleResolutionHost;
   mode: ts.ResolutionMode;
   executionRoot?: string;
-}): ts.ResolvedModuleFull | undefined {
+}
+
+export function resolveVersionQualifiedModule(
+  input: VersionQualifiedRequest,
+): ts.ResolvedModuleFull | undefined {
+  return resolveVersionQualified(
+    input,
+    (options, host) =>
+      ts.resolveModuleName(
+        input.specifier,
+        input.file,
+        options,
+        host,
+        undefined,
+        undefined,
+        input.mode,
+      ).resolvedModule,
+  );
+}
+
+export function resolveVersionQualifiedTypeDirective(
+  input: VersionQualifiedRequest,
+): ts.ResolvedTypeReferenceDirective | undefined {
+  return resolveVersionQualified(
+    input,
+    (options, host) =>
+      ts.resolveTypeReferenceDirective(
+        input.specifier,
+        input.file,
+        options,
+        host,
+        undefined,
+        undefined,
+        input.mode,
+      ).resolvedTypeReferenceDirective,
+  );
+}
+
+/** Compatibility guard, not a second resolver. Only conditions visited by the
+ * compiler's actual request probe can limit the Native Checker qualification. */
+function resolveVersionQualified<T>(
+  input: VersionQualifiedRequest,
+  resolve: (options: ts.CompilerOptions, host: ts.ModuleResolutionHost) => T,
+): T {
   const conditions = new Set<string>();
   const manifests: unknown[] = [];
   const versionMaps: unknown[] = [];
@@ -55,15 +96,7 @@ export function resolveVersionQualifiedModule(input: {
       return text;
     },
   };
-  const result = ts.resolveModuleName(
-    input.specifier,
-    input.file,
-    { ...input.options, traceResolution: true },
-    host,
-    undefined,
-    undefined,
-    input.mode,
-  ).resolvedModule;
+  const result = resolve({ ...input.options, traceResolution: true }, host);
   if (!hasVersionMapping && conditions.size === 0) return result;
   const version = nativeVersion(input.executionRoot, input.host);
   const compiler = ts as unknown as VersionCompiler;

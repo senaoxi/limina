@@ -195,7 +195,7 @@ tsgo 执行保留 TypeScript 分析权威，但已解析请求和已完成的未
 
 实际访问的 `typesVersions`元数据也必须通过 tsgo 资格检查。复用 TypeScript 版本区间解析器，比较分析版本、预览版本和正式版本首次匹配的映射；选中的映射不同（包括仅一方无匹配）时保持 unavailable。这是保守的映射等价检查，不是第二套 resolver。Native types 指令保留本地实现输入的编译器加载尝试证据：生成 composite 候选需要成员归属，而消费者 root 及被 noResolve 禁用的源码指令不需要 provider。结构满足性未知时仍不可准入，不增加 files 或虚构 references。分析 adapter 使旧回执失效。生成图回归覆盖不同／相同／无匹配映射，以及未归属／已列入／声明／noResolve types 输入。未新增依赖；版本解析与输入观察复用既有编译器能力。
 
-版本映射资格检查覆盖非相对和相对模块请求。编译器 trace 未将映射绑定到 manifest 文件名；若同一查找读取多个 manifest，保守检查所有已观察映射，不能把最后读取的父包元数据当作嵌套包的权威。未使用该通道的 exports 解析不受 typesVersions 限制。
+版本映射资格检查覆盖非相对和相对模块请求，以及实际观察到的 Type Reference Directive，包括配置 types、通配符类型根入口及消费者保留声明中的请求。已完成的解析未命中仍需资格检查；noResolve 禁用的源码指令不虚构请求，配置 types 则保持独立。通过既有类型输入投影回执检查原解析模式及源码／生成配置两侧的类型上下文，生成的 typeRoots 或固定后的名称不能掩盖源码实际访问的 exports 条件。发布和恢复均拒绝未证明的 Checker 选择，图缓存身份撤销先前准入。[类型指令回归](../../../packages/limina/src/__tests__/type-directive-checker-qualification.spec.ts)保留等价分支构建、普通类型缺失诊断、按解析模式选择的 exports 及恢复检查。编译器 trace 未将映射绑定到 manifest 文件名；若同一查找读取多个 manifest，保守检查所有已观察映射，不能把最后读取的父包元数据当作嵌套包的权威。未使用该通道的 exports 解析不受 typesVersions 限制。
 
 已观察到、但不属于任何源配置的 Native 本地 JSON 输入不能静默进入生成的 emit leaf。候选验证在物化前检查 locked 有界清单中 roots 及 consumer 保留声明的 module／path 请求，并要求项目通过源 `files`／`include` 声明 JSON。独立 Native output 观察执行同样的成员检查，即使不存在候选 owner 也不能跳过，包括仅由输出库引入的输入。Output receipt 使用版本 3，旧证明不能授予准入。这些检查不扩大 roots、不虚构 provider。已列入的 JSON、external-library 输入和编译器证明已禁用的输入保持独立行为；普通类型错误仍由 Checker 负责。
 
