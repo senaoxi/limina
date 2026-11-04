@@ -16,7 +16,34 @@
 - **PCR or saved technical audit results:** use [project-context-writing](.agents/skills/project-context-writing/SKILL.md) and follow [bilingual maintenance](.agents/docs/README.md#bilingual-publishing-and-maintenance) and [writing/privacy review](.agents/docs/README.md#writing-and-privacy-review).
 - **Local migration, publication or documentation deployment:** follow [the migration scope and gates](.agents/docs/migration.md).
 - **Commit messages or PR titles:** follow [the commit convention](.github/commit-convention.md).
-- **Online HTML explainers:** follow the global `answer-me-with-html` skill's default shared Vercel publication workflow; preserve the local HTML and return its path when publication fails or is unsuitable.
+- **Explicitly requested online HTML explainers:** follow the global `answer-me-with-html` skill's default shared Vercel publication workflow; preserve the local HTML and return its path when publication fails or is unsuitable. Do not invoke this skill for ordinary replies.
+
+## Codex engineering workflow routing
+
+Select skills by the task; read only the relevant entry and references. Simple
+edits and single-fact lookups do not require the full Pstack workflow.
+
+| Task                                                                                                    | Workflow owner                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nontrivial feature, bug fix, refactor, or multi-stage implementation                                    | Use `$pstack-mode` when installed; it coordinates investigation, design, implementation, and evidence within the authorized scope.                          |
+| Read-only Limina implementation or production call-chain question                                       | Use [$limina-source-investigation](.agents/skills/limina-source-investigation/SKILL.md); keep the task read-only.                                           |
+| Cross-module design, architecture change, or architecture review                                        | Use [$limina-architecture-review](.agents/skills/limina-architecture-review/SKILL.md).                                                                      |
+| TypeScript semantics, Checker behavior, declarations, Project References, or generated reference graphs | Use [$limina-typescript-semantics](.agents/skills/limina-typescript-semantics/SKILL.md).                                                                    |
+| Test/fixture changes, Checker/build validation, or empirical confirmation                               | Use [$limina-change-verification](.agents/skills/limina-change-verification/SKILL.md); [$test-audit](.agents/skills/test-audit/SKILL.md) owns test quality. |
+| PCR or saved technical audit                                                                            | Use [$project-context-writing](.agents/skills/project-context-writing/SKILL.md).                                                                            |
+| Public or bilingual documentation                                                                       | Use [$doc-coauthoring](.agents/skills/doc-coauthoring/SKILL.md).                                                                                            |
+
+The [PCR map](.agents/docs/README.md) and [Limina map](.agents/docs/limina.md)
+locate each sole knowledge owner. Project skills apply those records to current
+source; global Pstack skills supply general methods. Reuse completed investigation
+and validation rather than restarting the same step through multiple skills.
+These routes do not authorize additional writes, external actions, or delegation
+for its own sake; use supported Codex capabilities and the active permission scope.
+
+Global skills are optional. If absent, perform the same scoped phases directly
+using the linked project skills and development/architecture workflows. Keep
+[`skills/limina`](skills/limina/SKILL.md) as the separate consumer skill; repository
+maintenance skills do not replace it or apply to unrelated consumer projects.
 
 <!-- PCR:START -->
 

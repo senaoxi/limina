@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Limina Typescript Semantics'
+  short_description: 'Trace Limina compiler evidence and references'
+  default_prompt: 'Use $limina-typescript-semantics for this task within its stated scope.'
+
+policy:
+  allow_implicit_invocation: true

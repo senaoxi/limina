@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Limina Architecture Review'
+  short_description: 'Review Limina invariants and reachable failures'
+  default_prompt: 'Use $limina-architecture-review for this task within its stated scope.'
+
+policy:
+  allow_implicit_invocation: true

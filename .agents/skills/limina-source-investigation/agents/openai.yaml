@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Limina Source Investigation'
+  short_description: 'Trace Limina production calls and ownership'
+  default_prompt: 'Use $limina-source-investigation for this task within its stated scope.'
+
+policy:
+  allow_implicit_invocation: true
