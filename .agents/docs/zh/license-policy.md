@@ -16,6 +16,8 @@
 
 bundle 门禁将许可证 metadata 与列表逐字匹配，不解析多许可证表达式。列入支持范围不豁免署名、notices、再分发义务，也不豁免[依赖准入][dependency-admission]对非宽松许可证要求的明确审查。[仓库门禁](./gates.md)要求独立的 [GitHub dependency-review 配置][dependency-review]包含完全相同的集合：pre-commit 读取两个已暂存文件，CI 检查工作区。它拒绝漂移与无效数据，通过检查保障一致性，不依赖注释，也不改写文件。
 
+生产构建中，插件在生成 `LICENSE.md` 前校验依赖记录，校验不依赖序列化后的 inventory 文件。两个产品均不再生成或发布 `bundled-dependencies.json`。生成器包含可取得的许可证正文，但 metadata 位于允许列表内，并不能证明每项必要 notice 或源码分发义务均已履行。当前上游 collector 在交付记录前按包名去重，被抑制的副本可能隐藏冲突或禁止的 metadata。Renderer 不单独渲染 NOTICE 正文，也不拒绝缺少许可证正文的记录。这些采集与渲染边界仍须由依赖准入独立审查；metadata 门禁通过不等于全部许可证义务已履行。
+
 [发布工具测试][license-tests]通过编译后的模块覆盖列表修改与损坏的策略数据，并保留已有的 bundled-license 缺失、冲突与禁止项检查。
 
 ## Parser 依赖

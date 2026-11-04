@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -180,6 +180,15 @@ describe('limina published package smoke', () => {
         manifest,
         tarballPath: packedDistribution.tarballPath,
       });
+
+      await expect(
+        access(
+          path.join(
+            fixture.fixtureDir,
+            'node_modules/limina/bundled-dependencies.json',
+          ),
+        ),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
 
       const installedManifest = JSON.parse(
         await readFile(

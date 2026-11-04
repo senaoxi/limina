@@ -1,7 +1,4 @@
-import {
-  type BundledDependency,
-  collectBundledDependencies,
-} from '@limina/gates/license-policy';
+import { collectBundledDependencies } from '@limina/gates/license-policy';
 import { createElapsedTimer } from 'logaria/helper';
 import fs from 'node:fs';
 import type { Plugin } from 'rolldown';
@@ -24,10 +21,9 @@ export default function licensePlugin(
   coreLicenseFilePath: string,
 ): Plugin {
   const updateElapsed = createElapsedTimer();
-  let bundledDependencies: BundledDependency[] = [];
   const originalPlugin = license({
     thirdParty(dependencies) {
-      bundledDependencies = collectBundledDependencies(dependencies);
+      collectBundledDependencies(dependencies);
       // https://github.com/rollup/rollup/blob/master/build-plugins/generate-license-file.js
       // MIT Licensed https://github.com/rollup/rollup/blob/master/LICENSE-CORE.md
       const coreLicense = fs.readFileSync(coreLicenseFilePath, 'utf8');
@@ -132,14 +128,9 @@ ${bundledLicensesText}
     this: PluginContext,
     ...arguments_: unknown[]
   ) {
-    if (this.meta.watchMode) return null;
-    const result = (originalGenerateBundle as Function).apply(this, arguments_);
-    this.emitFile({
-      type: 'asset',
-      fileName: 'bundled-dependencies.json',
-      source: `${JSON.stringify({ packageName, dependencies: bundledDependencies }, null, 2)}\n`,
-    });
-    return result;
+    return this.meta.watchMode
+      ? null
+      : (originalGenerateBundle as Function).apply(this, arguments_);
   };
   return originalPlugin;
 }

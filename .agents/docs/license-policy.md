@@ -27,6 +27,8 @@ Keep exactly one top-level fenced code block with the `json` language tag. Its v
 
 The bundle gate matches license metadata exactly against this list; it does not interpret multiple-license expressions. Membership does not waive attribution, notices, redistribution obligations or the explicit review required for non-permissive licenses under [dependency admission][dependency-admission]. The [repository gate](./gates.md) requires the separate [GitHub dependency-review configuration][dependency-review] to contain exactly the same set: pre-commit reads both staged files, and CI checks the working tree. It rejects drift and invalid data rather than relying on comments or rewriting files.
 
+In production builds, the plugin validates the dependency records before generating `LICENSE.md`; validation does not depend on a serialized inventory file. Neither product generates or publishes `bundled-dependencies.json`. The generator includes available license text, but metadata membership alone does not prove that every required notice or source-distribution obligation is fulfilled. The current upstream collector deduplicates packages by name before delivering records, so suppressed copies can hide conflicting or prohibited metadata. The renderer does not independently render NOTICE text or reject a missing license body. These collection and rendering limits require separate admission review; a passing metadata gate is not proof of exhaustive license fulfillment.
+
 The [release tooling tests][license-tests] exercise list changes and malformed policy data through the compiled module, together with the existing missing, conflicting and prohibited bundled-license checks.
 
 ## Parser dependency
