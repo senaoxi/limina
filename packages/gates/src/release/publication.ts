@@ -97,7 +97,6 @@ function validateMigrationBuild(
     'migration-verify-process.js',
     'flow-renderer-process.js',
     'LICENSE.md',
-    'bundled-dependencies.json',
   ]) {
     if (!existsSync(path.join(config.publishDir, resource))) {
       throw new Error(

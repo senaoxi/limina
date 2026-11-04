@@ -107,9 +107,11 @@ it('consumes defaults and neutral inputs with only the packed migrate product, p
       'migration-verify-process.js',
       'flow-renderer-process.js',
       'LICENSE.md',
-      'bundled-dependencies.json',
     ])
       await access(path.join(migrateRoot, resource));
+    await expect(
+      access(path.join(migrateRoot, 'bundled-dependencies.json')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
     for (const section of [
       'dependencies',
       'devDependencies',

@@ -66,7 +66,7 @@ macOS 将 Limina 单元测试文件拆成两份互补分片，显式提供分片
 
 六个使用真实 Astro 声明图的跨领域用例各有 120 秒时限，分别覆盖 package imports、核心治理域、两类跨配置边、Proof 的观察集合以及 Build 目标选择。[Windows / Node 22.22.3 日志](https://github.com/senaoxi/limina/actions/runs/40097787173/job/120883562891)记录了 31.713–93.150 秒耗时，超出默认 30 秒预算。全局时限、两 worker 上限、原断言和 Svelte 核心治理用例的 30 秒时限保留。较大的有限时限适用于这些真实工具链用例，在所有平台一致执行；它不修复或证明 Windows 性能，也不替代修改后的原生 Windows CI 验收。
 
-[License plugin](../../../packages/build-tools/src/license.ts)保留来自实际 bundler 输入的 bundled-dependencies.json，包含实际打包的开发依赖，拒绝缺失／冲突／禁止的 metadata。安全工作流为 `pnpm licenses list --prod --json` 显式选择 limina 和 limina-migrate；这份基于源码 manifest 的依赖报告不替代 bundle license 门禁。构建两个产品后，固定版本的 Anchore／Syft Action 扫描工作目录，在 .reports/sbom 生成 CycloneDX SBOM。扫描范围是目录，不是逐 tarball 依赖 inventory，也不保证消费者最终解析结果。原始审计数据与 Markdown 报告位于 .reports/security，许可证数据与报告位于 .reports/licenses。自制的包体积、SHA-512 和逐包 SBOM 报告已移除。
+[License plugin](../../../packages/build-tools/src/license.ts)校验 bundler 提供的依赖记录，包含实际打包的开发依赖，并生成各产品的 `LICENSE.md`。它拒绝这些记录中缺失／冲突／禁止的 metadata，不再生成或发布 `bundled-dependencies.json`。这保留 bundle license 门禁与 notices，同时移除独立的机器可读版本清单；其他报告并未因此等价于逐产物 bundle inventory。安全工作流为 `pnpm licenses list --prod --json` 显式选择 limina 和 limina-migrate；这份基于源码 manifest 的依赖报告不替代 bundle license 门禁。构建两个产品后，固定版本的 Anchore／Syft Action 扫描工作目录，在 .reports/sbom 生成 CycloneDX SBOM。扫描范围是目录，不是逐 tarball 依赖 inventory，也不保证消费者最终解析结果。原始审计数据与 Markdown 报告位于 .reports/security，许可证数据与报告位于 .reports/licenses。自制的包体积、SHA-512 和逐包 SBOM 报告已移除。
 
 仓库报告与管理的 .limina namespace 分开。产品不变量 I01–I12 及 guards 不变，不将 I10／I11 推广到任意报告／外部服务。Audit／license／SBOM 报告失败会使 Security 工作流失败。发布和部署分别要求原生依赖审计通过。发布还直接核对 tagged SHA 的完整 CI、Security 和 CodeQL workflows；合并时的 required checks 仍由仓库管理负责。
 

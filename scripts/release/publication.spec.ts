@@ -64,6 +64,78 @@ it('rejects missing, conflicting and prohibited bundled license evidence', () =>
   );
 });
 
+it('validates bundled metadata and preserves license text without emitting an inventory', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'limina-license-plugin-'));
+  const moduleUrl = new URL(
+    '../../packages/build-tools/dist/license.js',
+    import.meta.url,
+  ).href;
+  try {
+    const { stdout } = await promisify(execFile)(process.execPath, [
+      '--input-type=module',
+      '--eval',
+      `
+        import assert from 'node:assert/strict';
+        import fs from 'node:fs';
+        import path from 'node:path';
+        import licensePlugin from ${JSON.stringify(moduleUrl)};
+        const root = process.argv[1];
+        const coreLicense = path.join(root, 'CORE-LICENSE');
+        fs.writeFileSync(coreLicense, 'Fixture core copyright and permission.\\n');
+        for (const [label, license, failure] of [
+          ['allowed', 'MIT', null],
+          ['missing', undefined, /require/],
+          ['prohibited', 'GPL-3.0', /Prohibited/],
+        ]) {
+          const cwd = path.join(root, label);
+          const dependency = path.join(cwd, 'node_modules/fixture-dependency');
+          fs.mkdirSync(dependency, { recursive: true });
+          fs.writeFileSync(path.join(dependency, 'package.json'), JSON.stringify({
+            name: 'fixture-dependency', version: '1.0.0', license,
+          }));
+          fs.writeFileSync(path.join(dependency, 'LICENSE'), 'Fixture third-party copyright and permission.\\n');
+          const entry = path.join(dependency, 'index.js');
+          fs.writeFileSync(entry, 'export const value = 1;\\n');
+          fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({
+            name: 'fixture-product', version: '1.0.0', license: 'MIT',
+          }));
+          process.chdir(cwd);
+          const output = path.join(cwd, 'LICENSE.md');
+          const assets = [];
+          const context = { meta: { watchMode: false }, emitFile(asset) { assets.push(asset); } };
+          const plugin = licensePlugin(output, 'Fixture license', 'fixture-product', coreLicense);
+          const generate = () => {
+            plugin.renderChunk.call(context, 'export const value = 1;', {
+              modules: { [entry]: { renderedLength: 1 } },
+            }, { sourcemap: false });
+            plugin.generateBundle.call(context);
+          };
+          if (failure) {
+            assert.throws(generate, failure);
+            assert.equal(fs.existsSync(output), false);
+          } else {
+            generate();
+            const text = fs.readFileSync(output, 'utf8');
+            assert.match(text, /Fixture core copyright and permission/);
+            assert.match(text, /## fixture-dependency/);
+            assert.match(text, /License: MIT/);
+            assert.match(text, /> Fixture third-party copyright and permission/);
+          }
+          assert.deepEqual(assets, []);
+        }
+        process.stdout.write('LICENSE_PLUGIN_CONTRACT_OK');
+      `,
+      root,
+    ]);
+    assert.equal(
+      stdout.trim().split(/\r?\n/u).at(-1),
+      'LICENSE_PLUGIN_CONTRACT_OK',
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 async function createLicensePolicyFixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'limina-license-policy-'));
   const modulePath = path.join(root, 'packages/gates/dist/license-policy.js');
@@ -265,7 +337,6 @@ it('rejects leaked product dependencies, mismatched embedded sources and missing
       'migration-verify-process.js',
       'flow-renderer-process.js',
       'LICENSE.md',
-      'bundled-dependencies.json',
     ])
       await put(`packages/migrate/dist/${resource}`, 'fixture');
     const publication = (await import(
