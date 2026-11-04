@@ -47,6 +47,8 @@ This page registers 12 properties that affect system correctness. They come from
 
 Output projection uses actual generated options, roots, references and an independent context after all generated configurations have been staged. It cannot change frozen source-context facts; unmet projection capability cannot qualify successful publication.
 
+Generated output mapping also requires supported source options: effective `outFile` is rejected before constructing a project with declaration/output projection. Non-emitting framework checks retain `outFile`. The [semantic boundary](./semantics.md) and [admission regression](../../packages/limina/src/__tests__/generated-outfile.spec.ts) preserve source options without silently converting bundled declarations to per-file output.
+
 **Shared declaration responsibility**: Native and Vue use the same Coverage, context selection, retained-consumer/delegated boundary and candidate-validation rules. Their hosts only execute checker-qualified loading permissions. Unmanaged declarations retain the real consumer environment without granting non-root implementation expansion. Vue candidate evidence comes from the actual `vue-tsc` compiler path, not an interchangeable Language Service map. Raw resolution success survives loading refusal; refusal cannot prove absence of an obligation. See [declaration governance](./semantics.md#managed-declaration-configuration-contexts).
 
 ## I04 — Locked dependency facts preserve checker occurrences and provenance

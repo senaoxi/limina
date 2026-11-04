@@ -147,6 +147,8 @@ packages/core/tsconfig.tools.json
 
 声明文件会写到 `.limina/dts/checkers/<checker>/...`，构建缓存会写到 `.limina/tsbuildinfo/checkers/<checker>/...`。生成的声明配置会把 `outDir` 和 `declarationDir` 同时设为这个受管根目录，因此源码配置继承的 `declarationDir` 不会把检查器输出重定向到用户目录。这些路径属于 Limina 的内部输出，不应该手工编辑，也不应该写进用户维护的源码配置。
 
+生成声明或用户产物的 Checker 当前不支持有效的 `compilerOptions.outFile`，包括继承得到的值：合并声明输出与这种逐文件投影不兼容。Limina 会在写入生成配置前停止图准备，保留源选项不变。不进行这种输出投影的框架检查保留 `outFile`。
+
 声明目录和缓存分区保留完整源码配置文件名，避免同目录下的叶子共用输出。生成文件由 Limina 维护。需要刷新时运行 `graph prepare` 或相应检查器命令。
 
 生成的 `references` 可以来自通过验证的源码编译关系、受管声明选定的配置上下文，或显式 `liminaOptions.implicitRefs`。对于实现源码之间的关系，仅有源码目标还不足以生成引用：关系还需要非空的编译关系需求、有效的声明提供者归属和声明生成能力，以及相同的最终检查器身份。图规则另行检查关系是否允许，禁止的关系不会通过从分析中删除它来掩盖。声明文件按声明消费，不能仅凭其路径判断由哪个项目生成。受管声明仍可能需要引用负责检查它的配置。
