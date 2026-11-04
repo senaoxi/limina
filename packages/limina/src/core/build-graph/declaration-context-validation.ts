@@ -34,6 +34,7 @@ import {
   moduleProjectionInputs,
   validateModuleProjection,
 } from './module-projection';
+import type { TypeInputProjectionReceipt } from './type-input-projection';
 import type {
   DependencyAnalysisResult,
   GeneratedDependencyEdge,
@@ -42,6 +43,7 @@ import type {
 export interface DeclarationValidationTarget {
   sourceConfig: string;
   generatedConfig: string;
+  typeInputProjection?: TypeInputProjectionReceipt;
   checker: string;
   executionRoot?: string;
   executionIdentity?: VueProjectSemanticIdentity;

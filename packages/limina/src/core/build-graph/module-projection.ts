@@ -1,14 +1,19 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import path from 'pathe';
 import ts from 'typescript';
 import type { NativeRequest } from '../../domain/analysis/native-evidence';
 import { DeclarationObservationUnavailable } from '../declaration-governance/candidate';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
-import { resolveVersionQualifiedModule } from './checker-version-conditions';
+import {
+  resolveVersionQualifiedModule,
+  resolveVersionQualifiedTypeDirective,
+} from './checker-version-conditions';
 import {
   jsonMembershipInputs,
   validateJsonInputMembership,
 } from './json-input-membership';
+import type { TypeInputProjectionReceipt } from './type-input-projection';
 import type { DependencyAnalysisResult } from './types';
 
 interface ModuleProjectionInput {
@@ -39,8 +44,10 @@ export function moduleProjectionInputs(
       for (const request of snapshot.requests) {
         if (
           request.consumerContextId !== context.id ||
-          !['module', 'path-directive'].includes(request.channel) ||
-          request.sourceFile === null
+          !['module', 'path-directive', 'type-directive'].includes(
+            request.channel,
+          ) ||
+          (request.sourceFile === null && request.channel !== 'type-directive')
         )
           continue;
         const resolution = snapshot.resolutions.find(
@@ -52,7 +59,8 @@ export function moduleProjectionInputs(
         )
           continue;
         const requiresJsonMembership = jsonInputs.has(request.id);
-        if (!requiresJsonMembership && request.channel !== 'module') continue;
+        if (!requiresJsonMembership && request.channel === 'path-directive')
+          continue;
         entries.push({
           request,
           target: resolution.target?.lexicalPath ?? null,
@@ -67,7 +75,8 @@ export function moduleProjectionInputs(
   return inputs;
 }
 
-export function validateModuleProjection(input: {
+interface ProjectionValidationInput {
+  sourceConfig: string;
   generatedConfig: string;
   parsed: ts.ParsedCommandLine;
   files: ReadonlyMap<string, string>;
@@ -75,7 +84,12 @@ export function validateModuleProjection(input: {
   checker: string;
   preset?: string;
   executionRoot?: string;
-}): void {
+  typeInputProjection?: TypeInputProjectionReceipt;
+}
+
+export function validateModuleProjection(
+  input: ProjectionValidationInput,
+): void {
   const host = withVirtualResolutionFiles(
     observedResolutionHost(ts, input.generatedConfig),
     input.files,
@@ -90,6 +104,11 @@ export function validateModuleProjection(input: {
     input.generatedConfig,
   );
   for (const entry of input.requests) {
+    if (entry.request.channel === 'type-directive') {
+      if ((input.preset ?? input.checker) === 'tsgo')
+        qualifyTypeDirective(entry, input, host);
+      continue;
+    }
     const file = entry.request.sourceFile!.lexicalPath;
     // The locked inventory already enforces the declaration frontier. A
     // consumer-retained declaration need not be a parsed root; do not drop its
@@ -135,16 +154,76 @@ export function validateModuleProjection(input: {
   }
 }
 
+function qualifyTypeDirective(
+  entry: ModuleProjectionInput,
+  input: ProjectionValidationInput,
+  generatedHost: ts.ModuleResolutionHost,
+): void {
+  const receipt = input.typeInputProjection;
+  if (
+    receipt?.sourceConfig !== input.sourceConfig ||
+    receipt.generatedConfig !== input.generatedConfig ||
+    receipt.compilerVersion !== entry.compilerVersion
+  )
+    throw new DeclarationObservationUnavailable(
+      'Type directive projection identity is unavailable.',
+    );
+  const source = entry.request.sourceFile?.lexicalPath;
+  const mode = resolutionMode(entry);
+  // Projected typeRoots or pinned names can hide the source's visited exports
+  // conditions. Qualify both real contexts without discovering new requests.
+  resolveVersionQualifiedTypeDirective({
+    specifier: entry.request.specifier,
+    file:
+      source ??
+      path.join(path.dirname(input.sourceConfig), '__inferred type names__.ts'),
+    options: receipt.sourceOptions,
+    host: withVirtualResolutionFiles(
+      observedResolutionHost(ts, input.sourceConfig),
+      input.files,
+    ),
+    mode,
+    executionRoot: input.executionRoot,
+  });
+  const index =
+    source === undefined
+      ? receipt.source.findIndex(
+          (value) => value.name === entry.request.specifier,
+        )
+      : -1;
+  const projected =
+    source === undefined
+      ? receipt.generated[index]?.name
+      : entry.request.specifier;
+  if (projected === undefined)
+    throw new DeclarationObservationUnavailable(
+      'Type directive projection has no corresponding config entry.',
+    );
+  resolveVersionQualifiedTypeDirective({
+    specifier: projected,
+    file:
+      source ??
+      path.join(
+        path.dirname(input.generatedConfig),
+        '__inferred type names__.ts',
+      ),
+    options: input.parsed.options,
+    host: generatedHost,
+    mode,
+    executionRoot: input.executionRoot,
+  });
+}
+
 function resolutionMode(entry: ModuleProjectionInput): ts.ResolutionMode {
   if (entry.compilerVersion !== ts.version)
     throw new DeclarationObservationUnavailable(
-      'Module projection compiler identity changed.',
+      'Compiler request projection identity changed.',
     );
   const mode = entry.request.resolutionMode;
   if (mode === null) return undefined;
   if (mode === String(ts.ModuleKind.CommonJS)) return ts.ModuleKind.CommonJS;
   if (mode === String(ts.ModuleKind.ESNext)) return ts.ModuleKind.ESNext;
   throw new DeclarationObservationUnavailable(
-    `Unqualified module resolution mode: ${mode}`,
+    `Unqualified request resolution mode: ${mode}`,
   );
 }
