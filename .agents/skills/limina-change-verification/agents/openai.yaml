@@ -1,0 +1,7 @@
+interface:
+  display_name: 'Limina Change Verification'
+  short_description: 'Select and run evidence for Limina changes'
+  default_prompt: 'Use $limina-change-verification for this task within its stated scope.'
+
+policy:
+  allow_implicit_invocation: true
