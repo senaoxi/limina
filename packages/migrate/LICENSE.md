@@ -5,7 +5,7 @@ limina-migrate is released under the MIT license:
 
 MIT License
 
-Copyright (c) 2025-present, Senao Xi. and docs islands contributors.
+Copyright (c) 2025-present, Senao Xi. and limina contributors.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -282,7 +282,7 @@ Repository: git+https://github.com/senaoxi/limina.git
 >
 > MIT License
 >
-> Copyright (c) 2025-present, Senao Xi. and docs islands contributors.
+> Copyright (c) 2025-present, Senao Xi. and limina contributors.
 >
 > Permission is hereby granted, free of charge, to any person obtaining a copy
 > of this software and associated documentation files (the "Software"), to deal

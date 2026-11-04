@@ -130,8 +130,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
   label: 'English',
   lang: 'en-US',
   title: 'Limina',
-  description:
-    'TypeScript project graph and architecture governance for single-package projects and workspaces.',
+  description: 'TypeScript project graph and architecture governance',
   themeConfig: {
     nav: [
       {

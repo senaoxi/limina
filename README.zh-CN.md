@@ -14,13 +14,11 @@
 
 [English](./README.md) | 简体中文
 
-> TypeScript 项目图与架构治理工具。
+> TypeScript 项目图与架构治理工具
 
 先接入增量构建，再逐步打开架构治理。
 
 Limina 支持单包项目，以及 pnpm、npm、Yarn 和 Bun 工作区，帮助团队把容易漂移的工程约束变成显式、可审查、可运行的检查。它基于现有 TypeScript 配置和源码依赖关系生成可复用的类型构建配置，并逐步覆盖依赖图、源码边界、检查覆盖和发布前校验。
-
-配置迁移由同版本独立包 `limina-migrate` 提供：`pnpm exec limina-migrate`，或 `pnpm dlx limina-migrate@<version>`。旧 `limina migration` 入口保留为弃用转调命令。
 
 ## 能力概览
 
@@ -46,4 +44,4 @@ Limina 不是 bundler、测试框架或发布工具，也不会替代 TypeScript
 
 ## 开发
 
-workspace 开发流程见[贡献说明](./CONTRIBUTING.md)；Logaria 依赖与发布门见[迁移状态](./.agents/docs/zh/migration.md)。
+workspace 开发流程见[贡献说明](./CONTRIBUTING.md)。
