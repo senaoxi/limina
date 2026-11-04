@@ -1,4 +1,5 @@
 import { compareCodeUnits } from '#utils/collections';
+import { spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -44,6 +45,116 @@ afterEach(() => {
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
+
+it('encodes repeated private evidence within a bounded heap', () => {
+  const encoder = new URL(
+    '../core/analysis-cache/snapshot-receipts.ts',
+    import.meta.url,
+  ).href;
+  const publication = new URL(
+    '../domain/analysis/native-evidence-freeze.ts',
+    import.meta.url,
+  ).href;
+  const script = `
+    import { encodeAnalysisRecords, decodeAnalysisRecords } from ${JSON.stringify(encoder)};
+    import { freezeNativeData } from ${JSON.stringify(publication)};
+    const proof = freezeNativeData({
+      dependencies: [{ inputId: 'proof-input', expectedVersion: 'proof-version' }],
+      queryIds: ['proof-query', 'proof-query'],
+      members: Array.from({ length: 1024 }, (_, index) => ({
+        lexicalPath: '/fixture/source-' + index + '.ts',
+        physical: { state: 'verified', inputVersion: 'version-' + index },
+      })),
+    });
+    const records = Object.fromEntries(Array.from({ length: 2000 }, (_, index) => [
+      'context-' + index,
+      { proof, dependencies: [{ inputId: 'input', expectedVersion: 'version-' + index }] },
+    ]));
+    const encoded = encodeAnalysisRecords({ contexts: records });
+    const restored = decodeAnalysisRecords({
+      ...encoded,
+      contexts: { first: encoded.contexts['context-0'], last: encoded.contexts['context-1999'] },
+    });
+    console.log(JSON.stringify({
+      count: Object.keys(encoded.contexts).length,
+      first: restored.contexts.first.proof.members[0],
+      last: restored.contexts.last.proof.members.at(-1),
+      proofDependencies: restored.contexts.first.proof.dependencies,
+      proofQueries: restored.contexts.last.proof.queryIds,
+      versions: [restored.contexts.first, restored.contexts.last].map(record => record.dependencies[0].expectedVersion),
+    }));
+  `;
+  expect(runWithBoundedHeap(script, 128)).toEqual({
+    count: 2000,
+    first: {
+      lexicalPath: '/fixture/source-0.ts',
+      physical: { state: 'verified', inputVersion: 'version-0' },
+    },
+    last: {
+      lexicalPath: '/fixture/source-1023.ts',
+      physical: { state: 'verified', inputVersion: 'version-1023' },
+    },
+    proofDependencies: [
+      { inputId: 'proof-input', expectedVersion: 'proof-version' },
+    ],
+    proofQueries: ['proof-query', 'proof-query'],
+    versions: ['version-0', 'version-1999'],
+  });
+});
+
+it('packs repeated scope references within a bounded heap', () => {
+  const packer = new URL(
+    '../core/analysis-cache/shared-record-table.ts',
+    import.meta.url,
+  ).href;
+  const reader = new URL(
+    '../core/analysis-cache/record-table.ts',
+    import.meta.url,
+  ).href;
+  const script = `
+    import { packSharedRecordTables } from ${JSON.stringify(packer)};
+    import { unpackRecordTable } from ${JSON.stringify(reader)};
+    const values = ['left', 'right'].map(scope => Array.from(
+      { length: 1500 },
+      (_, index) => [...Array(2048).fill('common'), scope + '-' + index],
+    ));
+    const packed = packSharedRecordTables(values);
+    const shared = unpackRecordTable(packed.shared);
+    const decoded = packed.tables.map(table => unpackRecordTable(table, shared));
+    console.log(JSON.stringify({
+      rows: decoded.map(value => value.length),
+      first: decoded[0][0].at(-1),
+      last: decoded[1].at(-1).at(-1),
+      repeated: decoded[1][0].slice(0, 2),
+      width: decoded[1][0].length,
+    }));
+  `;
+  expect(runWithBoundedHeap(script, 256)).toEqual({
+    rows: [1500, 1500],
+    first: 'left-0',
+    last: 'right-1499',
+    repeated: ['common', 'common'],
+    width: 2049,
+  });
+});
+
+function runWithBoundedHeap(script: string, megabytes: number): unknown {
+  const result = spawnSync(
+    process.execPath,
+    [
+      `--max-old-space-size=${megabytes}`,
+      '--import',
+      'tsx',
+      '--input-type=module',
+      '--eval',
+      script,
+    ],
+    { encoding: 'utf8', timeout: 20_000 },
+  );
+  expect(result.error).toBeUndefined();
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout);
+}
 
 it('keeps unavailable projection blocks outside the context-fact read closure', () => {
   const f = fixture();
