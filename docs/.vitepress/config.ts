@@ -14,8 +14,7 @@ export default defineConfig({
     ? { hostname: new URL(base, documentationOrigin).href }
     : undefined,
   title: 'Limina',
-  description:
-    'TypeScript project graph and architecture governance for single-package projects and workspaces',
+  description: 'TypeScript project graph and architecture governance',
   cleanUrls: true,
   lastUpdated: true,
   markdown: {

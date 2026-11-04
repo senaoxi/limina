@@ -4,20 +4,21 @@
   "type": "module",
   "license": "MIT",
   "author": "Senao Xi",
-  "description": "TypeScript project graph and architecture governance for single-package projects and workspaces",
+  "description": "TypeScript project graph and architecture governance",
   "files": [
     "bin",
     "LICENSE.md",
     "README.md",
-    "README.zh-CN.md",
     "schemas"
   ],
   "keywords": [
-    "monorepo",
     "typescript",
     "project-references",
+    "project-graph",
+    "architecture",
+    "monorepo",
     "workspace",
-    "architecture"
+    "limina"
   ],
   "engines": {
     "node": "^22.22.3 || ^24.15.0 || >=26.0"
@@ -30,7 +31,7 @@
   "bugs": {
     "url": "https://github.com/senaoxi/limina/issues"
   },
-  "homepage": "https://senao.me/repos/limina/",
+  "homepage": "https://senao.me/repos/limina",
   "publishConfig": {
     "access": "public"
   },
