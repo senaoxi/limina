@@ -57,25 +57,40 @@ function remap(
   reference: RecordReference,
   scope: number,
   index: Partition,
+  references?: Map<number, [number]>,
 ): RecordReference {
   if (!Array.isArray(reference)) return reference;
   const id = index.ids[reference[0]]!;
-  return [scope !== -1 && index.owners[reference[0]] === -1 ? -id - 1 : id];
+  const target =
+    scope !== -1 && index.owners[reference[0]] === -1 ? -id - 1 : id;
+  const prior = references?.get(target);
+  if (prior !== undefined) return prior;
+  const result: [number] = [target];
+  references?.set(target, result);
+  return result;
 }
 function mapEntries(
   entries: RecordEntry[],
   scope: number,
   index: Partition,
 ): RecordEntry[] {
+  // Preserve reference interning when partitioning the global table. One
+  // destination needs one tuple per index, not one allocation per occurrence.
+  const references = new Map<number, [number]>();
   return entries.map((entry): RecordEntry => {
     if (entry[0] === 'string') return entry;
     return entry[0] === 'array'
-      ? ['array', entry[1].map((reference) => remap(reference, scope, index))]
+      ? [
+          'array',
+          entry[1].map((reference) =>
+            remap(reference, scope, index, references),
+          ),
+        ]
       : [
           'object',
           entry[1].map(([key, reference]) => [
             key,
-            remap(reference, scope, index),
+            remap(reference, scope, index, references),
           ]),
         ];
   });

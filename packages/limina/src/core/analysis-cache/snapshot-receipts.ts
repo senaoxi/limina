@@ -31,17 +31,21 @@ interface VisitOptions {
   transform: Transform;
   shouldSortKeys?: boolean;
   decoded?: WeakMap<object, object>;
+  canonical?: WeakMap<object, object>;
 }
 function visit(value: unknown, options: VisitOptions): unknown {
   // These JSON proofs are privately owned and recursively immutable. Snapshot
   // isolation needs no second copy; persistence still applies canonical order.
   if (!options.shouldSortKeys && isPublishedNativeData(value)) return value;
   if (!Array.isArray(value) && !isPlainRecord(value)) return value;
-  const previous = options.decoded?.get(value);
+  const previous = options.canonical?.get(value) ?? options.decoded?.get(value);
   if (previous !== undefined) return previous;
   const result = Array.isArray(value)
     ? value.map((item) => visit(item, options))
     : visitRecord(value, options);
+  // One encoding may encounter the same published proof many times. Retain
+  // its canonical view without branding transformed receipt data as evidence.
+  if (isPublishedNativeData(value)) options.canonical?.set(value, result);
   if (
     isDecodedRecord(value) &&
     !options.shouldSortKeys &&
@@ -197,11 +201,13 @@ function encodeRecords(
   shouldSortKeys: boolean,
 ): Record<string, unknown> {
   const encoder = new ReceiptEncoder();
+  const canonical = shouldSortKeys ? new WeakMap<object, object>() : undefined;
   const encoded = mapAnalysisRecords(records, (record) =>
     encodeRecord(
       visit(record, {
         transform: (key, item) => encoder.field(key, item),
         shouldSortKeys,
+        canonical,
       }),
     ),
   );

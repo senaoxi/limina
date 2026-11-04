@@ -135,6 +135,8 @@ Clean 调用仍先校验全部旧输入，再由[失效传播](../../../packages
 
 持久化发布前，默认 provider 集合释放可重建的依赖 collection memo。Compiler 事实、Coverage、输入观察与执行凭据继续保留；后续查询可从这些事实重建 collection。这避免在编码快照时同时保留 collection 副本。缓存编码仅共享私有拥有的不可变证据和规范记录表引用；调用方的可变数据仍须复制与校验。
 
+单次 receipt 编码在不同记录间复用每个私有已发布不可变 Native 值的规范视图。视图仍是普通编码数据，不取得已发布证据标记，因此嵌套 receipt 仍按正常流程解码。可变值与调用方自行冻结的值不使用该 memo。跨作用域重新映射时，各目标表也复用引用元组，而非按出现次数逐个分配。这些改动避免展开重复证明与引用，不新增持久化字段，也不改变校验、顺序、作用域本地／共享索引或新鲜度。[存储回归](../../../packages/limina/src/__tests__/analysis-cache-shards.spec.ts)在受限堆内存的子进程中验证重复私有证明、嵌套 receipt、不同 expected version 及跨作用域往返。
+
 [带标签数据校验](../../../packages/limina/src/core/analysis-cache/data-codec.ts)遍历与解码相同的语法，在完整模型校验时不构造随即丢弃的图副本。元组长度、标量类型、有限数字、嵌套条目和 object／map 重复键检查均保留。后续恢复通过私有不可变节点共享解码自己的图，重复引用无需重复构造。外部可变对象不会取得可复用的资格标记。[Codec 测试](../../../packages/limina/src/__tests__/analysis-data-codec.spec.ts)在两个入口比较合法嵌套值与畸形编码；该优化不跳过 schema 或语义资格校验。
 
 恢复在读取任何旧块前先校验小型 index。Identity／schema／配置版本／模块证据不匹配以及 force 均跳过全部旧 scope 块。合格恢复先加载并验证必需的 context-fact 闭包，之后才采用普通输入。图投影块显式区分 unloaded、loaded 和 unavailable，仅在请求时解码；未加载不等于空。每份投影仍须通过 schema、完整性与关系检查后才可采用。缺失或损坏的投影从独立合格的 context facts 重建，必要事实缺失则触发冷采集。这不代表已支持任意 context 的按需延迟恢复。当前 provider／ownership 身份、输出回执、query 覆盖和全部原有输入／新鲜度检查继续有效。存储 scope 不授予合并语义上下文的权限。
