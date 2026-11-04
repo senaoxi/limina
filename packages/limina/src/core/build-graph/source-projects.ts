@@ -1,6 +1,7 @@
 import {
   type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
+  isBuildCapablePreset,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
@@ -51,6 +52,19 @@ export function createSourceProject(options: {
     projectRootDir: options.config.rootDir,
     virtualFiles: options.config.virtualFiles,
   });
+  if (
+    isBuildCapablePreset(options.checkerName) &&
+    parsed.options.outFile !== undefined
+  ) {
+    throw new Error(
+      [
+        'outFile is not supported in generated projects:',
+        `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
+        '  reason: bundled output cannot preserve the managed per-file declaration mapping.',
+        '  Remove outFile from the source configuration before generating the Reference Graph.',
+      ].join('\n'),
+    );
+  }
   const context: CheckerProjectParseContext = {
     ...parseContext,
     extensions: [...parsed.extensions],

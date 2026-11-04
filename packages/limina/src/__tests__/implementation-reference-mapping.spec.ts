@@ -19,6 +19,8 @@ const compilerOptions = {
   moduleResolution: 'Bundler',
   target: 'ES2022',
   types: [],
+  // Library checking has its own projection tests; keep real Vue/app checking here.
+  skipDefaultLibCheck: true,
 };
 
 async function fixture(checker: 'tsc' | 'vue-tsc', isAlias: boolean) {
