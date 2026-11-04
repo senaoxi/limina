@@ -177,7 +177,7 @@ function resolveVersionQualified<T>(
   return result;
 }
 
-function nativeVersion(
+export function nativeVersion(
   root: string | undefined,
   host: ts.ModuleResolutionHost,
 ): string {

@@ -39,6 +39,8 @@ export default defineConfig({
 
 `useTsgo` defaults to `false`. When enabled, ordinary TypeScript projects whose checker has not already been determined by a framework or declaration-build relationship default to `tsgo`. It does not change Astro or Svelte projects to `tsgo`. Install a supported `@typescript/native-preview` in the checker's execution scope first.
 
+Limina preserves each Checker’s resolution semantics. A relative import such as `../node_modules/../shared/index` can reach the same file but behave differently during loading or emit. Normal relative implementation imports in dependencies can proceed when actual Native observations establish the required input and external-library exclusion. The current observer supports explicit module requests in configurations without Project References; missing capabilities or incomplete proof produce `Unverified`, while an observed target or exclusion difference produces `Incompatible`. Both refuse the affected tsgo command before it starts, preserving the graph and independent commands. Native Program membership is not reported as the unavailable raw resolution flag. Correct the reported difference or supply the missing observation capability; adding `implicitRefs` alone does not prove compatibility. Ordinary type errors remain the checker’s responsibility.
+
 To exclude `packages/playground/tsconfig.json` only from automatic discovery, use `exclude`:
 
 ```ts

@@ -39,6 +39,8 @@ export default defineConfig({
 
 `useTsgo` 默认为 `false`。设为 `true` 后，尚未因框架或声明构建关系确定检查器的普通 TypeScript 项目默认使用 `tsgo`。它不会把 Astro 或 Svelte 项目改成 `tsgo`。使用前需要在检查器的执行作用域安装受支持的 `@typescript/native-preview`。
 
+Limina 保留各个 Checker 的真实解析语义。`../node_modules/../shared/index` 这样的相对导入可能指向同一文件，却在加载或 emit 时表现不同。当实际 Native 观察证明所需的输入与外部库排除关系时，依赖内的正常相对实现导入可以继续。当前观察器支持无 Project References 配置中的显式模块请求；能力缺失或证明不完整时报告 `Unverified`，观察到目标或排除关系不同则报告 `Incompatible`。两者均在启动前拒绝受影响的 tsgo 命令，保留图和独立命令。不会把 Native Program 成员状态报告成无法取得的原始解析标志。应修正诊断中的差异或补足缺失观察能力；单独增加 `implicitRefs` 不能证明兼容。普通类型错误仍由检查器负责。
+
 如果只想从自动发现的入口中排除 `packages/playground/tsconfig.json`，则可以单独使用 `exclude`：
 
 ```ts
