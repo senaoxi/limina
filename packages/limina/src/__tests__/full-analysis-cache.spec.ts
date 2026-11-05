@@ -1245,7 +1245,8 @@ describe('production graph snapshots and publication', () => {
         case 'old-graph-key': {
           const key = Object.keys(snapshot.graphs)[0]!;
           delete snapshot.graphs[key];
-          snapshot.graphs['generated-graph-declaration-governance-v8'] = record;
+          snapshot.graphs['generated-graph-declaration-governance-v21'] =
+            record;
           break;
         }
         case 'forged-manifest-roots': {

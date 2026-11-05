@@ -27,14 +27,10 @@ import { promisify } from 'node:util';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
-import * as versionConditions from '../core/build-graph/checker-version-conditions';
 import { projectSupplementalPrerequisite } from '../core/build-graph/compilation-prerequisite';
 import { hasValidRestoredDeclarationContexts } from '../core/build-graph/declaration-context-candidate';
 import * as generatedConfigs from '../core/build-graph/generated-configs';
-import type {
-  DependencyAnalysisResult,
-  GeneratedTsconfigGraphResult,
-} from '../core/build-graph/types';
+import type { DependencyAnalysisResult } from '../core/build-graph/types';
 import type { SupplementalResolutionRequest } from '../core/import-analysis/supplemental-resolution';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
@@ -9785,7 +9781,7 @@ describe('ambient references and compiler membership', () => {
     'ordinary-unresolved',
     'ordinary-type-error',
   ] as const)(
-    'qualifies tsgo version-sensitive module conditions: %s',
+    'retains host authority for version-sensitive module conditions: %s',
     async (variant) => {
       const imports: Record<string, string> =
         variant === 'unversioned'
@@ -9899,40 +9895,68 @@ describe('ambient references and compiler membership', () => {
           packageName: '@typescript/native-preview',
           rootDir: fixture.rootDir,
         });
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const isMissing =
+          variant.startsWith('unresolved') ||
+          [
+            'ordinary-unresolved',
+            'restored-unresolved',
+            'transitive-unresolved',
+          ].includes(variant);
+        expect(
+          graph.dependencyEdges.map((edge) => [
+            edge.fromConfigPath,
+            edge.toConfigPath,
+          ]),
+        ).toEqual(
+          isMissing
+            ? []
+            : [
+                [
+                  fixture.path('tsconfig.a.json'),
+                  fixture.path(
+                    variant === 'explicit-condition'
+                      ? 'tsconfig.v7.json'
+                      : 'tsconfig.v6.json',
+                  ),
+                ],
+              ],
+        );
         if (variant === 'restored-unresolved') {
-          // Construct the candidate accepted by the old guard; restoration
-          // must requalify its completed miss without recollecting a Program.
-          const legacyGuard = vi
-            .spyOn(versionConditions, 'resolveVersionQualifiedModule')
-            .mockReturnValue(undefined);
-          let graph: GeneratedTsconfigGraphResult;
-          try {
-            graph = await prepareGeneratedTsconfigGraph(fixture.config);
-          } finally {
-            legacyGuard.mockRestore();
-          }
-          expect(graph.dependencyEdges).toEqual([]);
           expect(
             hasValidRestoredDeclarationContexts(
               graph,
               undefined,
               fixture.rootDir,
             ),
-          ).toBe(false);
-          expect(graph.dependencyAnalysis?.declarationValidation).toMatchObject(
-            {
-              state: 'unavailable',
-              diagnostics: [
-                expect.stringContaining(
-                  'Checker version condition is not qualified',
-                ),
-              ],
-            },
-          );
-          return;
+          ).toBe(true);
         }
-        const preparation = prepareGeneratedTsconfigGraph(fixture.config);
-        if (
+        const generated = graph.sourceToDts
+          .get('tsgo')!
+          .get(fixture.path('tsconfig.a.json'))!;
+        const executable = path.join(
+          path.dirname(
+            requireFromTest.resolve('@typescript/native-preview/package.json'),
+          ),
+          'bin/tsgo',
+        );
+        const build = execFileAsync(
+          process.execPath,
+          [executable, '-b', generated, '--pretty', 'false'],
+          { cwd: fixture.rootDir },
+        );
+        if (variant === 'ordinary-type-error')
+          await expect(build).rejects.toMatchObject({
+            stdout: expect.stringContaining('TS2322'),
+          });
+        else if (
+          variant === 'ordinary-unresolved' ||
+          variant === 'unresolved-same-target'
+        )
+          await expect(build).rejects.toMatchObject({
+            stdout: expect.stringContaining('TS2307'),
+          });
+        else if (
           [
             'divergent',
             'older',
@@ -9943,43 +9967,14 @@ describe('ambient references and compiler membership', () => {
             'unresolved-exports',
             'unresolved-multiple',
             'unresolved-inactive',
+            'restored-unresolved',
             'transitive-unresolved',
           ].includes(variant)
         )
-          await expect(preparation).rejects.toThrow(
-            'Checker version condition is not qualified',
-          );
-        else {
-          const graph = await preparation;
-          const generated = graph.sourceToDts
-            .get('tsgo')!
-            .get(fixture.path('tsconfig.a.json'))!;
-          const executable = path.join(
-            path.dirname(
-              requireFromTest.resolve(
-                '@typescript/native-preview/package.json',
-              ),
-            ),
-            'bin/tsgo',
-          );
-          const build = execFileAsync(
-            process.execPath,
-            [executable, '-b', generated, '--pretty', 'false'],
-            { cwd: fixture.rootDir },
-          );
-          if (variant === 'ordinary-type-error')
-            await expect(build).rejects.toMatchObject({
-              stdout: expect.stringContaining('TS2322'),
-            });
-          else if (
-            variant === 'ordinary-unresolved' ||
-            variant === 'unresolved-same-target'
-          )
-            await expect(build).rejects.toMatchObject({
-              stdout: expect.stringContaining('TS2307'),
-            });
-          else await build;
-        }
+          await expect(build).rejects.toMatchObject({
+            stdout: expect.stringContaining('TS6307'),
+          });
+        else await build;
       } finally {
         await fixture.cleanup();
       }
@@ -12574,106 +12569,119 @@ it.each([
   'relative',
   'nested-package',
   'exports',
-])('qualifies tsgo typesVersions branches: %s', async (variant) => {
-  const fixture = await createFixture({
-    'packages/a/package.json': json({ name: 'a', private: true }),
-    'packages/a/tsconfig.json': json({
-      compilerOptions: {
-        module: 'ESNext',
-        moduleResolution: 'Bundler',
-        noEmit: true,
-        types: [],
-        paths: { shared: ['../shared'] },
-      },
-      files: ['main.ts'],
-    }),
-    'packages/a/main.ts': `import {value} from "${variant === 'relative' ? '../shared' : ['nested-package', 'exports'].includes(variant) ? 'versioned/sub' : 'shared'}"; export const result=value;`,
-    'packages/shared/package.json': json({
-      name: 'shared',
-      private: true,
-      types: 'v6.ts',
-      typesVersions:
-        variant === 'no-match'
-          ? { '>=6.1': { '*': ['v7.ts'] } }
-          : {
-              '>=6.1': {
-                '*': [variant === 'equivalent' ? 'v6.ts' : 'v7.ts'],
-              },
-              '*': { '*': ['v6.ts'] },
-            },
-    }),
-    'packages/shared/tsconfig.json': json({
-      files: [],
-      references: [
-        { path: './tsconfig.v6.json' },
-        { path: './tsconfig.v7.json' },
-      ],
-    }),
-    ...Object.fromEntries(
-      ['v6', 'v7'].flatMap((v) => [
-        [`packages/shared/${v}.ts`, 'export const value=1;'],
-        [
-          `packages/shared/tsconfig.${v}.json`,
-          json({
-            compilerOptions: {
-              module: 'ESNext',
-              moduleResolution: 'Bundler',
-              noEmit: true,
-              types: [],
-            },
-            files: [`${v}.ts`],
-          }),
-        ],
-      ]),
-    ),
-  });
-  if (['nested-package', 'exports'].includes(variant)) {
-    await writeText(
-      fixture.path('node_modules/versioned/package.json'),
-      json({
-        name: 'versioned',
-        typesVersions: { '*': { '*': ['same.d.ts'] } },
-        ...(variant === 'exports' && { exports: { './sub': './stable.d.ts' } }),
-      }),
-    );
-    await writeText(
-      fixture.path('node_modules/versioned/stable.d.ts'),
-      'export declare const value: number;',
-    );
-    await writeText(
-      fixture.path('node_modules/versioned/sub/package.json'),
-      json({
-        types: 'v6.d.ts',
-        typesVersions: {
-          '>=6.1': { '*': ['v7.d.ts'] },
-          '*': { '*': ['v6.d.ts'] },
+])(
+  'preserves host-selected typesVersions branches for tsgo: %s',
+  async (variant) => {
+    const fixture = await createFixture({
+      'packages/a/package.json': json({ name: 'a', private: true }),
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          noEmit: true,
+          types: [],
+          paths: { shared: ['../shared'] },
         },
+        files: ['main.ts'],
       }),
-    );
-    for (const version of ['v6', 'v7'])
+      'packages/a/main.ts': `import {value} from "${variant === 'relative' ? '../shared' : ['nested-package', 'exports'].includes(variant) ? 'versioned/sub' : 'shared'}"; export const result=value;`,
+      'packages/shared/package.json': json({
+        name: 'shared',
+        private: true,
+        types: 'v6.ts',
+        typesVersions:
+          variant === 'no-match'
+            ? { '>=6.1': { '*': ['v7.ts'] } }
+            : {
+                '>=6.1': {
+                  '*': [variant === 'equivalent' ? 'v6.ts' : 'v7.ts'],
+                },
+                '*': { '*': ['v6.ts'] },
+              },
+      }),
+      'packages/shared/tsconfig.json': json({
+        files: [],
+        references: [
+          { path: './tsconfig.v6.json' },
+          { path: './tsconfig.v7.json' },
+        ],
+      }),
+      ...Object.fromEntries(
+        ['v6', 'v7'].flatMap((v) => [
+          [`packages/shared/${v}.ts`, 'export const value=1;'],
+          [
+            `packages/shared/tsconfig.${v}.json`,
+            json({
+              compilerOptions: {
+                module: 'ESNext',
+                moduleResolution: 'Bundler',
+                noEmit: true,
+                types: [],
+              },
+              files: [`${v}.ts`],
+            }),
+          ],
+        ]),
+      ),
+    });
+    if (['nested-package', 'exports'].includes(variant)) {
       await writeText(
-        fixture.path(`node_modules/versioned/sub/${version}.d.ts`),
+        fixture.path('node_modules/versioned/package.json'),
+        json({
+          name: 'versioned',
+          typesVersions: { '*': { '*': ['same.d.ts'] } },
+          ...(variant === 'exports' && {
+            exports: { './sub': './stable.d.ts' },
+          }),
+        }),
+      );
+      await writeText(
+        fixture.path('node_modules/versioned/stable.d.ts'),
         'export declare const value: number;',
       );
-  }
-  fixture.config.scope!.checkers = {
-    tsgo: { include: ['packages/**/tsconfig.json'] },
-  };
-  try {
-    await linkInstalledPackage({
-      installedName: '@typescript/native-preview',
-      packageName: '@typescript/native-preview',
-      rootDir: fixture.rootDir,
-    });
-    if (['equivalent', 'exports'].includes(variant))
-      await expect(
-        prepareGeneratedTsconfigGraph(fixture.config),
-      ).resolves.toBeDefined();
-    else
-      await expect(
-        prepareGeneratedTsconfigGraph(fixture.config),
-      ).rejects.toThrow('typesVersions selection is not qualified');
-  } finally {
-    await fixture.cleanup();
-  }
-});
+      await writeText(
+        fixture.path('node_modules/versioned/sub/package.json'),
+        json({
+          types: 'v6.d.ts',
+          typesVersions: {
+            '>=6.1': { '*': ['v7.d.ts'] },
+            '*': { '*': ['v6.d.ts'] },
+          },
+        }),
+      );
+      for (const version of ['v6', 'v7'])
+        await writeText(
+          fixture.path(`node_modules/versioned/sub/${version}.d.ts`),
+          'export declare const value: number;',
+        );
+    }
+    fixture.config.scope!.checkers = {
+      tsgo: { include: ['packages/**/tsconfig.json'] },
+    };
+    try {
+      await linkInstalledPackage({
+        installedName: '@typescript/native-preview',
+        packageName: '@typescript/native-preview',
+        rootDir: fixture.rootDir,
+      });
+      const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+      expect(
+        graph.dependencyEdges.map((edge) => [
+          edge.fromConfigPath,
+          edge.toConfigPath,
+        ]),
+      ).toEqual(
+        ['nested-package', 'exports'].includes(variant)
+          ? []
+          : [
+              [
+                fixture.path('packages/a/tsconfig.json'),
+                fixture.path('packages/shared/tsconfig.v6.json'),
+              ],
+            ],
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);

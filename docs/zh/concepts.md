@@ -100,6 +100,8 @@ packages/core/tsconfig.tools.json
 
 自动发现始终启用，即使同时配置了具名检查器范围。它发现普通 `tsconfig.json` 入口，并为每个可达的源码叶子配置在 `tsc`、`tsgo`、`vue-tsc`、`astro`、`svelte-check` 中确定唯一负责的检查器。普通 TypeScript 项目的默认检查器只有在设置 `auto.useTsgo: true` 时才会选择 `tsgo`；具名检查器范围则直接为选中的默认入口提供归属证据。
 
+对于普通 TypeScript 项目，即使构建执行归 tsgo 负责，受支持的宿主 Compiler API 仍是图的语义权威。Checker 归属不代表跨版本解析等价，详见[tsgo 的保证边界](./config/checkers.md)。
+
 例如，默认 `tsconfig.json` 直接包含普通 TypeScript 源码时，可由自动发现交给 `tsc`；若它只引用多个叶子配置，Limina 会沿成员引用递归找到这些叶子，再确定各自的检查器。通常可以先使用默认行为，具体配置见[检查器入口](./config/checkers.md)。
 
 入口选择受治理区域约束。具名检查器范围的 `include` 只选择默认源码 `tsconfig.json` 入口，`auto.exclude` 只过滤自动发现的根入口。不要把 `tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.build.json` 或 `.limina` 下的生成配置直接写进具名检查器范围。`tsconfig.lib.json`、`tsconfig.test.json` 等普通命名源码配置只有经已选中 `tsconfig.json` 的 `references` 触达时才会进入管理范围；保留的 `tsconfig*.build.json`、`tsconfig*.dts.json`、`tsconfig*.base.json` 和 `tsconfig*.check.json` 不属于受管源码入口。`auto.exclude` 与具名检查器范围的 `exclude` 都不会切断已经建立的引用闭包；如果引用触达已激活区域之外的现有普通源码配置，Limina 会报告跨区域引用。

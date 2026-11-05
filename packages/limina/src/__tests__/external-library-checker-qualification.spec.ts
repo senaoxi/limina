@@ -5,9 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LiminaPreflightManager } from '../preflight/manager';
-import { ExecutionAdmission } from '../typecheck/admission/execution-admission';
 import { executeCheckerBuildTargets } from '../typecheck/checker/build-execution';
-import { executeAuthorizedTypecheck } from '../typecheck/checker/typecheck-execution';
 import { createCheckerTarget, createDefaultRunner } from '../typecheck/targets';
 import { prepareAndMaterializeGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
@@ -199,6 +197,7 @@ async function managedBuild(
   fixture: Awaited<ReturnType<typeof createFixture>>,
   checkerName = 'tsgo',
   selected = ['a', 'c'],
+  isOutputBuild = false,
 ) {
   const preflight = new LiminaPreflightManager({ config: fixture.config });
   try {
@@ -209,9 +208,13 @@ async function managedBuild(
     const targets = selected.map((name) =>
       createCheckerTarget({
         checker,
-        configPath: graph.sourceToBuild
-          .get(checkerName)!
-          .get(fixture.path(name, 'tsconfig.json'))!.path,
+        configPath: isOutputBuild
+          ? graph.configToOutputBuild
+              .get(checkerName)!
+              .get(fixture.path(name, 'tsconfig.json'))!.path
+          : graph.sourceToBuild
+              .get(checkerName)!
+              .get(fixture.path(name, 'tsconfig.json'))!.path,
         executionKind: 'build',
         projectRootDir: fixture.root,
         sourceConfigPath: fixture.path(name, 'tsconfig.json'),
@@ -246,8 +249,8 @@ async function managedBuild(
   }
 }
 
-describe('external-library Checker input qualification', () => {
-  it('retains the Reference Graph when tsgo compatibility is unverified', async () => {
+describe('external-library semantic authority and Checker execution', () => {
+  it('retains the host Reference Graph independently of tsgo execution', async () => {
     const fixture = await createFixture('path');
     try {
       const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
@@ -259,7 +262,7 @@ describe('external-library Checker input qualification', () => {
       await fixture.cleanup();
     }
   });
-  it('admits observed ordinary implementation consumption inside node_modules', async () => {
+  it('executes ordinary implementation consumption inside node_modules', async () => {
     const fixture = await createFixture('path');
     try {
       await mkdir(fixture.path('node_modules/external'), { recursive: true });
@@ -283,7 +286,7 @@ describe('external-library Checker input qualification', () => {
   });
 
   it.each(['Bundler', 'NodeNext'])(
-    'admits declaration-to-implementation imports with actual Native proof: %s',
+    'executes declaration-to-implementation imports without a Native observer: %s',
     async (mode) => {
       const fixture = await createFixture('path');
       try {
@@ -298,25 +301,24 @@ describe('external-library Checker input qualification', () => {
     },
   );
 
-  it('does not substitute matching target metadata for the full loading context', async () => {
+  it('delegates downstream JavaScript loading differences to tsgo', async () => {
     const fixture = await createFixture('path');
     try {
       await addNormalDependency(fixture, 'Bundler', true);
       const { result, started } = await managedBuild(fixture);
-      expect(started).toEqual([fixture.path('c/tsconfig.json')]);
-      expect(result.failedTargets[0]?.message).toContain('Unverified');
-      expect(result.failedTargets[0]?.message).toContain(
-        'Program external: true',
-      );
-      expect(result.failedTargets[0]?.message).toContain(
-        'input membership differs',
-      );
+      expect(started).toHaveLength(2);
+      expect(
+        result.targetOutcomes.every(
+          (item) => item.status !== 'admission-rejected',
+        ),
+      ).toBe(true);
+      expect(result.passed).toBe(true);
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('retains Unverified when the actual build has project references', async () => {
+  it('executes referenced projects without requiring Native API redirection proof', async () => {
     const fixture = await createFixture('path');
     try {
       await addNormalDependency(fixture);
@@ -330,11 +332,8 @@ describe('external-library Checker input qualification', () => {
       };
       await writeFile(fixture.path('a/tsconfig.json'), JSON.stringify(config));
       const { graph, result, started } = await managedBuild(fixture);
-      expect(started).toEqual([fixture.path('c/tsconfig.json')]);
-      expect(result.failedTargets[0]?.message).toContain('Unverified');
-      expect(result.failedTargets[0]?.message).toContain(
-        'source-reference redirection',
-      );
+      expect(started).toHaveLength(2);
+      expect(result.passed).toBe(true);
       expect(graph.dependencyAnalysis?.candidate?.references).toContainEqual({
         from: fixture.path('a/tsconfig.json'),
         to: fixture.path('b/tsconfig.json'),
@@ -343,7 +342,7 @@ describe('external-library Checker input qualification', () => {
       await fixture.cleanup();
     }
   });
-  it('qualifies an implementation introduced only by the output library', async () => {
+  it('runs tsgo for an implementation introduced only by the output library', async () => {
     const fixture = await createFixture('path');
     try {
       await writeFile(fixture.path('a/index.ts'), 'export const result = 1;');
@@ -376,45 +375,19 @@ describe('external-library Checker input qualification', () => {
         path.join(directory, 'index.d.ts'),
         `/// <reference path="${libraryPath}" />\nimport '../../../../b/index';`,
       );
-      const preflight = new LiminaPreflightManager({ config: fixture.config });
-      try {
-        const graph = (await preflight.ensureGeneratedArtifactsMaterialized())
-          .graph;
-        const checker = graph.checkers.find((item) => item.name === 'tsgo')!;
-        const source = fixture.path('a/tsconfig.json');
-        const targets = [
-          graph.sourceToDts.get('tsgo')!.get(source)!,
-          graph.configToOutputBuild.get('tsgo')!.get(source)!.path,
-        ].map((configPath) =>
-          createCheckerTarget({
-            checker,
-            configPath,
-            executionKind: 'build',
-            projectRootDir: fixture.root,
-            sourceConfigPath: source,
-          }),
-        );
-        const admission = new ExecutionAdmission(preflight, graph, targets);
-        const started: string[] = [];
-        const outcomes = [];
-        for (const target of targets)
-          outcomes.push(
-            await executeAuthorizedTypecheck({ admission }, target, () => {
-              started.push(target.configPath);
-              return { configPath: target.configPath, status: 0 };
-            }),
-          );
-        expect(started).toEqual([targets[0]!.configPath]);
-        expect(outcomes[0]?.status).toBe(0);
-        expect(outcomes[1]).toMatchObject({
-          status: 'admission-rejected',
-          decision: 'unavailable',
-          stage: 'launch',
-        });
-        expect(JSON.stringify(outcomes[1])).toContain('Incompatible');
-      } finally {
-        preflight.dispose();
-      }
+      const declarations = await managedBuild(fixture, 'tsgo', ['a']);
+      expect(declarations.result.passed).toBe(true);
+      const output = await managedBuild(fixture, 'tsgo', ['a'], true);
+      expect(output.started).toEqual([fixture.path('a/tsconfig.json')]);
+      expect(
+        output.result.targetOutcomes.every(
+          (item) => item.status !== 'admission-rejected',
+        ),
+      ).toBe(true);
+      expect(output.result.passed).toBe(false);
+      expect(output.result.failedTargets[0]?.exitCode).toEqual(
+        expect.any(Number),
+      );
       // The identical source succeeds when it has no output projection.
       await writeFile(
         fixture.path('a/tsconfig.json'),
@@ -430,32 +403,22 @@ describe('external-library Checker input qualification', () => {
   });
 
   it.each<Variant>(['path', 'nodenext', 'library', 'source-lib'])(
-    'rejects only the affected target before mutation and launch: %s',
+    'reports the real tsgo failure without rewriting graph evidence: %s',
     async (variant) => {
       const fixture = await createFixture(variant);
       try {
         const { graph, result, started } = await managedBuild(fixture);
         expect(graph.dependencyEdges).toEqual([]);
-        expect(started).toEqual([fixture.path('c/tsconfig.json')]);
-        expect(result.results).toHaveLength(1);
-        expect(result.results[0]?.status).toBe(0);
-        expect(result.targetOutcomes).toContainEqual(
-          expect.objectContaining({
-            status: 'admission-rejected',
-            decision: 'unavailable',
-            stage: 'mutation',
-          }),
-        );
-        expect(result.failedTargets[0]?.message).toContain(
-          'Checker resolution compatibility: Incompatible',
-        );
-        expect(result.failedTargets[0]?.message).toContain(
-          'isExternalLibraryImport: true',
-        );
-        expect(result.failedTargets[0]?.message).toContain(
-          'Program external: false',
-        );
-        expect(result.failedTargets[0]).not.toHaveProperty('exitCode');
+        expect(started).toHaveLength(2);
+        expect(result.results).toHaveLength(2);
+        expect(
+          result.targetOutcomes.every(
+            (item) => item.status !== 'admission-rejected',
+          ),
+        ).toBe(true);
+        expect(result.passed).toBe(false);
+        expect(result.failedTargets[0]?.exitCode).toEqual(expect.any(Number));
+        expect(result.failedTargets[0]?.exitCode).not.toBe(0);
       } finally {
         await fixture.cleanup();
       }
@@ -463,7 +426,7 @@ describe('external-library Checker input qualification', () => {
   );
 
   it.each<Variant>(['path', 'library'])(
-    'does not treat explicit references or TypeScript maps as tsgo metadata: %s',
+    'preserves explicit prerequisites while executing tsgo: %s',
     async (variant) => {
       const fixture = await createFixture(variant, 'tsgo', true);
       try {
@@ -473,8 +436,8 @@ describe('external-library Checker input qualification', () => {
           from: fixture.path('a/tsconfig.json'),
           to: fixture.path('b/tsconfig.json'),
         });
-        expect(started).toEqual([fixture.path('c/tsconfig.json')]);
-        expect(result.failedTargets[0]?.message).toContain('Incompatible');
+        expect(started).toHaveLength(2);
+        expect(result.passed).toBe(true);
         build(fixture.root, graph.checkerEntries.get('tsgo')!);
       } finally {
         await fixture.cleanup();
@@ -483,7 +446,7 @@ describe('external-library Checker input qualification', () => {
   );
 
   it.each([true, false])(
-    'qualifies implicit JSX runtime requests (escaping: %s)',
+    'preserves host implicit JSX evidence during tsgo execution (escaping: %s)',
     async (isEscaping) => {
       const fixture = await createFixture('path');
       try {
@@ -514,16 +477,13 @@ describe('external-library Checker input qualification', () => {
           }),
         );
         const { result, started } = await managedBuild(fixture);
-        if (isEscaping) {
-          expect(started).toEqual([fixture.path('c/tsconfig.json')]);
-          expect(result.failedTargets[0]?.message).toContain('Unverified');
-          expect(result.failedTargets[0]?.message).toContain(
-            '../node_modules/../b/jsx-runtime',
-          );
-        } else {
-          expect(started).toHaveLength(2);
-          expect(result.passed).toBe(true);
-        }
+        expect(started).toHaveLength(2);
+        expect(
+          result.targetOutcomes.every(
+            (item) => item.status !== 'admission-rejected',
+          ),
+        ).toBe(true);
+        expect(result.passed).toBe(!isEscaping);
       } finally {
         await fixture.cleanup();
       }
@@ -531,7 +491,7 @@ describe('external-library Checker input qualification', () => {
   );
 
   it.each([true, false])(
-    'qualifies inherited external status through a declaration (escaping: %s)',
+    'preserves inherited host external status through a declaration (escaping: %s)',
     async (isEscaping) => {
       const fixture = await createFixture('path');
       try {
@@ -545,20 +505,13 @@ describe('external-library Checker input qualification', () => {
           'export type {Value} from "./index";',
         );
         const { result, started } = await managedBuild(fixture);
-        if (isEscaping) {
-          expect(started).toEqual([fixture.path('c/tsconfig.json')]);
-          expect(result.failedTargets[0]?.message).toContain('Incompatible');
-          expect(result.failedTargets[0]?.message).toContain('module: ./index');
-          expect(result.failedTargets[0]?.message).toContain(
-            'isExternalLibraryImport: false',
-          );
-          expect(result.failedTargets[0]?.message).toContain(
-            fixture.path('b/types.d.ts'),
-          );
-        } else {
-          expect(started).toHaveLength(2);
-          expect(result.passed).toBe(true);
-        }
+        expect(started).toHaveLength(2);
+        expect(
+          result.targetOutcomes.every(
+            (item) => item.status !== 'admission-rejected',
+          ),
+        ).toBe(true);
+        expect(result.passed).toBe(!isEscaping);
       } finally {
         await fixture.cleanup();
       }
@@ -596,7 +549,7 @@ describe('external-library Checker input qualification', () => {
     },
   );
 
-  it('rejects a target whose actual reference closure contains the affected unit', async () => {
+  it('executes the actual reference closure and reports its Checker failure', async () => {
     const fixture = await createFixture('path');
     try {
       await writeFile(
@@ -619,18 +572,21 @@ describe('external-library Checker input qualification', () => {
         from: fixture.path('b/tsconfig.json'),
         to: fixture.path('a/tsconfig.json'),
       });
-      expect(started).toEqual([fixture.path('c/tsconfig.json')]);
-      expect(result.failedTargets[0]?.message).toContain('Incompatible');
-      expect(result.failedTargets[0]?.message).toContain(
-        fixture.path('a/index.ts'),
-      );
+      expect(started).toHaveLength(2);
+      expect(
+        result.targetOutcomes.every(
+          (item) => item.status !== 'admission-rejected',
+        ),
+      ).toBe(true);
+      expect(result.passed).toBe(false);
+      expect(result.failedTargets[0]?.exitCode).not.toBe(0);
     } finally {
       await fixture.cleanup();
     }
   });
 
   it.each([false, true])(
-    'requalifies cached facts and tool capability in a fresh process (compatible: %s)',
+    'restores host facts and checks executor identity without the Native API (succeeds: %s)',
     async (isCompatible) => {
       const fixture = await createFixture('path');
       try {
@@ -660,7 +616,7 @@ import {loadConfig} from ${JSON.stringify(url('config/loader'))};
 import {LiminaPreflightManager} from ${JSON.stringify(url('preflight/manager'))};
 import {ExecutionAdmission} from ${JSON.stringify(url('typecheck/admission/execution-admission'))};
 import {executeAuthorizedTypecheck} from ${JSON.stringify(url('typecheck/checker/typecheck-execution'))};
-import {createCheckerTarget} from ${JSON.stringify(url('typecheck/targets'))};
+import {createCheckerTarget,createDefaultRunner} from ${JSON.stringify(url('typecheck/targets'))};
 const config=await loadConfig({configPath:${JSON.stringify(fixture.path('limina.config.mjs'))}});
 const events=[];
 const preflight=new LiminaPreflightManager({config,analysisCache:true,metrics:{record:e=>events.push(e)}});
@@ -671,7 +627,7 @@ try {
   const target=createCheckerTarget({checker,configPath:graph.sourceToBuild.get('tsgo').get(source).path,executionKind:'build',projectRootDir:config.rootDir,sourceConfigPath:source});
   const admission=new ExecutionAdmission(preflight,graph,[target]);
   let launches=0;
-  const outcome=await executeAuthorizedTypecheck({admission: admission},target,()=>{launches++;return {configPath:target.configPath,status:0};});
+  const outcome=await executeAuthorizedTypecheck({admission: admission},target,(target,options)=>{launches++;return createDefaultRunner({stdio:'ignore'})(target,options);});
   const memoryHit=await preflight.ensureGeneratedGraph()===graph;
   await preflight.publishAnalysisCache();
   console.log(JSON.stringify({events,outcome,launches,memoryHit}));
@@ -689,7 +645,10 @@ try {
             events: { kind: string; count?: number }[];
             launches: number;
             memoryHit: boolean;
-            outcome: { status: string; decision: string };
+            outcome: {
+              status: number | 'admission-rejected';
+              decision?: string;
+            };
           };
         };
         const cold = run();
@@ -738,34 +697,34 @@ try {
         expect(changed.events).toContainEqual(
           expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
         );
-        if (!isCompatible)
-          expect(JSON.stringify(changed.outcome)).toContain(manifest.version);
         for (const result of [cold, restored, changed]) {
-          expect(result.launches).toBe(isCompatible ? 1 : 0);
+          expect(result.launches).toBe(1);
           expect(result.memoryHit).toBe(true);
+          expect(result.outcome.status).toEqual(expect.any(Number));
           if (isCompatible) expect(result.outcome.status).toBe(0);
-          else {
-            expect(result.outcome).toMatchObject({
-              status: 'admission-rejected',
-              decision: 'unavailable',
-            });
-            expect(JSON.stringify(result.outcome)).toContain(
-              'Checker resolution compatibility: Incompatible',
-            );
-          }
+          else expect(result.outcome.status).not.toBe(0);
         }
         if (isCompatible) {
           // Remove only a fixture-owned observation capability. The real binary
-          // and matching target still exist; unavailable evidence must refuse.
+          // and matching target still exist, so the executor remains usable.
           delete manifest.exports['./unstable/sync'];
           await writeFile(
             path.join(alternate, 'package.json'),
             JSON.stringify(manifest),
           );
           const missing = run();
-          expect(missing.launches).toBe(0);
-          expect(JSON.stringify(missing.outcome)).toContain('Unverified');
-          expect(JSON.stringify(missing.outcome)).toContain('not defined by');
+          expect(missing.launches).toBe(1);
+          expect(missing.outcome.status).toBe(0);
+          await writeFile(
+            path.join(alternate, 'dist/unused-observer.js'),
+            'throw new Error("must not load observer");',
+          );
+          const observerChanged = run();
+          expect(observerChanged.events).toContainEqual(
+            expect.objectContaining({ kind: 'graphHits', count: 1 }),
+          );
+          expect(observerChanged.launches).toBe(1);
+          expect(observerChanged.outcome.status).toBe(0);
         }
       } finally {
         await fixture.cleanup();

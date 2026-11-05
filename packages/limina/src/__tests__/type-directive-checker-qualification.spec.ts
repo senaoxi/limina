@@ -1,10 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
-import * as versionConditions from '../core/build-graph/checker-version-conditions';
+import { describe, expect, it } from 'vitest';
 import { hasValidRestoredDeclarationContexts } from '../core/build-graph/declaration-context-candidate';
 import { prepareAndMaterializeGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
@@ -131,7 +129,7 @@ async function updateConsumer(
   await writeFile(fixture.path('a/index.ts'), source);
 }
 
-describe('type directive Checker version qualification', () => {
+describe('host type directive authority with independent Checker execution', () => {
   it.each(['source', 'config'] as const)(
     'retains the compiler noResolve boundary for %s types',
     async (channel) => {
@@ -142,16 +140,10 @@ describe('type directive Checker version qualification', () => {
           { noResolve: true },
           `${channel === 'source' ? '/// <reference types="../b" />\n' : ''}export const result = 1;`,
         );
-        if (channel === 'config') {
-          await expect(
-            prepareAndMaterializeGeneratedTsconfigGraph(fixture.config),
-          ).rejects.toThrow('typesVersions selection is not qualified');
-        } else {
-          const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
-            fixture.config,
-          );
-          expect(graph.dependencyEdges).toEqual([]);
-        }
+        const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
+          fixture.config,
+        );
+        expect(graph.dependencyEdges).toEqual([]);
       } finally {
         await fixture.cleanup();
       }
@@ -159,7 +151,7 @@ describe('type directive Checker version qualification', () => {
   );
 
   it.each(['import', 'require'] as const)(
-    'qualifies only the visited exports conditions in type resolution mode %s',
+    'retains host exports selection in type resolution mode %s',
     async (mode) => {
       const fixture = await createFixture('source', 'equivalent');
       try {
@@ -183,69 +175,77 @@ describe('type directive Checker version qualification', () => {
           fixture.path('node_modules/@example/b'),
           'junction',
         );
-        if (mode === 'import') {
-          await expect(
-            prepareAndMaterializeGeneratedTsconfigGraph(fixture.config),
-          ).rejects.toThrow('Checker version condition is not qualified');
-        } else {
-          const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
-            fixture.config,
-          );
-          const entry = graph.checkerEntries.get('tsgo');
-          const built = spawnSync(
-            process.execPath,
-            [
-              path.join(nativeRoot, 'bin/tsgo'),
-              '-b',
-              entry!,
-              '--pretty',
-              'false',
-            ],
-            { cwd: fixture.root, encoding: 'utf8', timeout: 15_000 },
-          );
-          expect(built.status, built.stdout + built.stderr).toBe(0);
-        }
+        await writeFile(
+          fixture.path('c/v7.ts'),
+          'export interface Value { n: string }',
+        );
+        const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
+          fixture.config,
+        );
+        expect(graph.dependencyEdges).toEqual([]);
+        expect(
+          graph.dependencyAnalysis?.nativeEvidence
+            ?.flatMap(({ snapshot }) => snapshot.resolutions)
+            .some((resolution) =>
+              resolution.target?.lexicalPath.endsWith('/v6.d.ts'),
+            ),
+        ).toBe(true);
+        const entry = graph.checkerEntries.get('tsgo');
+        const built = spawnSync(
+          process.execPath,
+          [
+            path.join(nativeRoot, 'bin/tsgo'),
+            '-b',
+            entry!,
+            '--pretty',
+            'false',
+          ],
+          { cwd: fixture.root, encoding: 'utf8', timeout: 15_000 },
+        );
+        expect(built.error).toBeUndefined();
+        // A versioned branch alone does not imply a failure in the selected
+        // Checker's type-directive path. Keep the actual result of this tuple.
+        expect(built.status, built.stdout + built.stderr).toBe(0);
       } finally {
         await fixture.cleanup();
       }
     },
   );
 
-  it('requalifies a previously admitted unresolved type request on restoration', async () => {
+  it('restores a completed host miss without cross-version qualification', async () => {
     const fixture = await createFixture('config', 'no-match');
-    const legacy = vi
-      .spyOn(versionConditions, 'resolveVersionQualifiedTypeDirective')
-      .mockReturnValue(undefined);
     try {
       const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
         fixture.config,
       );
-      legacy.mockRestore();
       expect(graph.dependencyEdges).toEqual([]);
       expect(
         hasValidRestoredDeclarationContexts(graph, undefined, fixture.root),
-      ).toBe(false);
-      expect(graph.dependencyAnalysis?.declarationValidation).toMatchObject({
-        state: 'unavailable',
-        diagnostics: [
-          expect.stringContaining('typesVersions selection is not qualified'),
-        ],
-      });
+      ).toBe(true);
+      expect(graph.dependencyAnalysis?.declarationValidation?.state).toBe(
+        'admitted',
+      );
     } finally {
-      legacy.mockRestore();
       await fixture.cleanup();
     }
   });
 
   it.each<Channel>(['source', 'config', 'automatic', 'retained'])(
-    'rejects divergent type branches before materialization: %s',
+    'materializes host-selected providers despite divergent type branches: %s',
     async (channel) => {
       const fixture = await createFixture(channel, 'divergent');
       try {
-        await expect(
-          prepareAndMaterializeGeneratedTsconfigGraph(fixture.config),
-        ).rejects.toThrow('typesVersions selection is not qualified');
-        expect(existsSync(fixture.path('.limina/tsconfig'))).toBe(false);
+        const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
+          fixture.config,
+        );
+        expect(
+          graph.dependencyEdges.map((edge) => [
+            edge.fromConfigPath,
+            edge.toConfigPath,
+          ]),
+        ).toEqual([
+          [fixture.path('a/tsconfig.json'), fixture.path('c/tsconfig.v6.json')],
+        ]);
       } finally {
         await fixture.cleanup();
       }
@@ -253,14 +253,14 @@ describe('type directive Checker version qualification', () => {
   );
 
   it.each<Channel>(['source', 'config'])(
-    'qualifies completed misses before another Checker selects an input: %s',
+    'preserves completed host misses when another Checker can select an input: %s',
     async (channel) => {
       const fixture = await createFixture(channel, 'no-match');
       try {
-        await expect(
-          prepareAndMaterializeGeneratedTsconfigGraph(fixture.config),
-        ).rejects.toThrow('typesVersions selection is not qualified');
-        expect(existsSync(fixture.path('.limina/tsconfig'))).toBe(false);
+        const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
+          fixture.config,
+        );
+        expect(graph.dependencyEdges).toEqual([]);
       } finally {
         await fixture.cleanup();
       }

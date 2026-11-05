@@ -78,7 +78,9 @@ These checks help maintainers find differences between code and intended boundar
 
 TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) connect projects through declaration outputs. With `tsc -b`, the compiler can build in dependency order and skip projects that are already up to date. The maintenance question is whether those references still match the current source's build requirements.
 
-With Limina, the team continues to maintain configs that describe source scopes and type environments. Limina derives the required project references from checker analysis of dependencies and type sources, then delegates declaration builds to `tsc`, `tsgo`, or `vue-tsc`.
+With Limina, the team continues to maintain configs that describe source scopes and type environments. Limina derives the required project references from semantic analysis of dependencies and type sources, then delegates declaration builds to `tsc`, `tsgo`, or `vue-tsc`.
+
+For ordinary TypeScript, that analysis uses the supported host Compiler API. Selecting tsgo changes the build executor, not the graph's semantic authority; [cross-version guarantees are limited](./config/checkers.md).
 
 For example, when `client` imports implementation source from `shared`, a source-derived reference requires different managed source configs, evidence that the current build needs declarations from `shared`, and compatible ownership and checkers. If the checker consumes a built `.d.ts` artifact instead, its path alone does not identify the source project that produced it. A declaration managed as source may separately require a checking context.
 

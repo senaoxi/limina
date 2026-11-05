@@ -39,7 +39,16 @@ export default defineConfig({
 
 `useTsgo` 默认为 `false`。设为 `true` 后，尚未因框架或声明构建关系确定检查器的普通 TypeScript 项目默认使用 `tsgo`。它不会把 Astro 或 Svelte 项目改成 `tsgo`。使用前需要在检查器的执行作用域安装受支持的 `@typescript/native-preview`。
 
-Limina 保留各个 Checker 的真实解析语义。`../node_modules/../shared/index` 这样的相对导入可能指向同一文件，却在加载或 emit 时表现不同。当实际 Native 观察证明所需的输入与外部库排除关系时，依赖内的正常相对实现导入可以继续。当前观察器支持无 Project References 配置中的显式模块请求；能力缺失或证明不完整时报告 `Unverified`，观察到目标或排除关系不同则报告 `Incompatible`。两者均在启动前拒绝受影响的 tsgo 命令，保留图和独立命令。不会把 Native Program 成员状态报告成无法取得的原始解析标志。应修正诊断中的差异或补足缺失观察能力；单独增加 `implicitRefs` 不能证明兼容。普通类型错误仍由检查器负责。
+Limina 使用受支持的宿主 `typescript` Compiler API（5.4–6.0）推导 TypeScript Reference Graph。`tsgo` 是独立的构建执行器。Limina 在支持范围内保证引用图符合宿主语义权威的编译关系，但不保证完整类型检查成功，也不保证另一编译器版本的解析、输入归属和 emit 行为一致。如果项目依赖特定 v7 解析行为，当前 Limina 尚不能提供对应的严格语义保证。需要在当前宿主 TypeScript 权威下执行时，应选择 `tsc`。
+
+已观察的 TypeScript 6.0.3 / `@typescript/native-preview` 7.0.0-dev.20260707.2 组合体现了以下两项边界：
+
+| 触发条件                                         | 可能影响                                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `../node_modules/../shared/index` 这样的相对路径 | 两个编译器可以选中同一实现，但对外部输入作不同处理；tsgo 可能报告 composite 文件列表／根目录错误，或产生不同输出。 |
+| 版本化 `typesVersions` 或 `types@>=6.1` 分支     | 每个编译器可以选择对应版本的类型，改变诊断或输入。这属于正常的版本化类型选择。                                     |
+
+这些是有界观察，不代表所有 v7 版本，也不宣称是官方编译器 Bug。Limina 不再仅为证明两个版本等价而拒绝构建，也不为适配 tsgo 改写宿主图。普通引用治理、Checker identity 和声明约束仍生效；实际构建结果由选定 Checker 报告。外部源码类型变化继续受到既有受管增量重检机制保护。
 
 如果只想从自动发现的入口中排除 `packages/playground/tsconfig.json`，则可以单独使用 `exclude`：
 

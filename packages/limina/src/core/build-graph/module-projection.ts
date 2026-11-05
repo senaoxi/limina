@@ -1,19 +1,13 @@
 import { normalizeAbsolutePath } from '#utils/path';
-import path from 'pathe';
 import ts from 'typescript';
 import type { NativeRequest } from '../../domain/analysis/native-evidence';
 import { DeclarationObservationUnavailable } from '../declaration-governance/candidate';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import {
-  resolveVersionQualifiedModule,
-  resolveVersionQualifiedTypeDirective,
-} from './checker-version-conditions';
-import {
   jsonMembershipInputs,
   validateJsonInputMembership,
 } from './json-input-membership';
-import type { TypeInputProjectionReceipt } from './type-input-projection';
 import type { DependencyAnalysisResult } from './types';
 
 interface ModuleProjectionInput {
@@ -44,10 +38,8 @@ export function moduleProjectionInputs(
       for (const request of snapshot.requests) {
         if (
           request.consumerContextId !== context.id ||
-          !['module', 'path-directive', 'type-directive'].includes(
-            request.channel,
-          ) ||
-          (request.sourceFile === null && request.channel !== 'type-directive')
+          !['module', 'path-directive'].includes(request.channel) ||
+          request.sourceFile === null
         )
           continue;
         const resolution = snapshot.resolutions.find(
@@ -76,15 +68,10 @@ export function moduleProjectionInputs(
 }
 
 interface ProjectionValidationInput {
-  sourceConfig: string;
   generatedConfig: string;
   parsed: ts.ParsedCommandLine;
   files: ReadonlyMap<string, string>;
   requests: readonly ModuleProjectionInput[];
-  checker: string;
-  preset?: string;
-  executionRoot?: string;
-  typeInputProjection?: TypeInputProjectionReceipt;
 }
 
 export function validateModuleProjection(
@@ -104,44 +91,23 @@ export function validateModuleProjection(
     input.generatedConfig,
   );
   for (const entry of input.requests) {
-    if (entry.request.channel === 'type-directive') {
-      if ((input.preset ?? input.checker) === 'tsgo')
-        qualifyTypeDirective(entry, input, host);
-      continue;
-    }
+    if (entry.request.channel !== 'module') continue;
     const file = entry.request.sourceFile!.lexicalPath;
     // The locked inventory already enforces the declaration frontier. A
     // consumer-retained declaration need not be a parsed root; do not drop its
     // requests or expand a delegated provider's private closure here.
-    if (
-      entry.request.channel !== 'module' ||
-      (ts.isExternalModuleNameRelative(entry.request.specifier) &&
-        (input.preset ?? input.checker) !== 'tsgo')
-    )
-      continue;
-    const mode = resolutionMode(entry);
-    const resolved =
-      (input.preset ?? input.checker) === 'tsgo'
-        ? resolveVersionQualifiedModule({
-            specifier: entry.request.specifier,
-            file,
-            options: input.parsed.options,
-            host,
-            mode,
-            executionRoot: input.executionRoot,
-          })
-        : ts.resolveModuleName(
-            entry.request.specifier,
-            file,
-            input.parsed.options,
-            host,
-            undefined,
-            undefined,
-            mode,
-          ).resolvedModule;
-    // A completed miss still needs Checker qualification: another compiler
-    // version may select an implementation and require a project reference.
-    // A preserved miss is an ordinary Checker diagnostic, not a graph defect.
+    const resolved = ts.resolveModuleName(
+      entry.request.specifier,
+      file,
+      input.parsed.options,
+      host,
+      undefined,
+      undefined,
+      resolutionMode(entry),
+    ).resolvedModule;
+    // Projection uses the same semantic authority as source observation.
+    // A preserved miss remains the execution Checker's diagnostic; another
+    // compiler's versioned selection cannot change this graph's evidence.
     if (resolved === undefined && entry.target === null) continue;
     if (
       resolved === undefined ||
@@ -152,66 +118,6 @@ export function validateModuleProjection(
         `Generated module resolution changes a compiler request: ${input.generatedConfig}\n  ${file}: ${entry.request.specifier}\n  source: ${entry.target ?? 'unresolved'}\n  generated: ${resolved?.resolvedFileName ?? 'unresolved'}. Preserve the source package mapping before generating references.`,
       );
   }
-}
-
-function qualifyTypeDirective(
-  entry: ModuleProjectionInput,
-  input: ProjectionValidationInput,
-  generatedHost: ts.ModuleResolutionHost,
-): void {
-  const receipt = input.typeInputProjection;
-  if (
-    receipt?.sourceConfig !== input.sourceConfig ||
-    receipt.generatedConfig !== input.generatedConfig ||
-    receipt.compilerVersion !== entry.compilerVersion
-  )
-    throw new DeclarationObservationUnavailable(
-      'Type directive projection identity is unavailable.',
-    );
-  const source = entry.request.sourceFile?.lexicalPath;
-  const mode = resolutionMode(entry);
-  // Projected typeRoots or pinned names can hide the source's visited exports
-  // conditions. Qualify both real contexts without discovering new requests.
-  resolveVersionQualifiedTypeDirective({
-    specifier: entry.request.specifier,
-    file:
-      source ??
-      path.join(path.dirname(input.sourceConfig), '__inferred type names__.ts'),
-    options: receipt.sourceOptions,
-    host: withVirtualResolutionFiles(
-      observedResolutionHost(ts, input.sourceConfig),
-      input.files,
-    ),
-    mode,
-    executionRoot: input.executionRoot,
-  });
-  const index =
-    source === undefined
-      ? receipt.source.findIndex(
-          (value) => value.name === entry.request.specifier,
-        )
-      : -1;
-  const projected =
-    source === undefined
-      ? receipt.generated[index]?.name
-      : entry.request.specifier;
-  if (projected === undefined)
-    throw new DeclarationObservationUnavailable(
-      'Type directive projection has no corresponding config entry.',
-    );
-  resolveVersionQualifiedTypeDirective({
-    specifier: projected,
-    file:
-      source ??
-      path.join(
-        path.dirname(input.generatedConfig),
-        '__inferred type names__.ts',
-      ),
-    options: input.parsed.options,
-    host: generatedHost,
-    mode,
-    executionRoot: input.executionRoot,
-  });
 }
 
 function resolutionMode(entry: ModuleProjectionInput): ts.ResolutionMode {

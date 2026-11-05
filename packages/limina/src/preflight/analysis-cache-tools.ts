@@ -1,6 +1,5 @@
-import { compareCodeUnits } from '#utils/collections';
 import { digestFile } from '#utils/file-digest';
-import { readdirSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'pathe';
@@ -53,21 +52,7 @@ function nativeCheckerFiles(resolver = requireFromLimina): string[] {
       path.join(path.dirname(manifest), 'lib/getExePath.js'),
       platform,
       binary,
-      ...nativeApiFiles(manifest),
     ];
-  } catch {
-    return [];
-  }
-}
-// The optional JS observer is part of the selected Native implementation,
-// alongside its executable. Reuse the existing content identity namespace.
-function nativeApiFiles(manifest: string): string[] {
-  const directory = path.join(path.dirname(manifest), 'dist');
-  try {
-    return readdirSync(directory, { recursive: true, encoding: 'utf8' })
-      .filter((file) => file.endsWith('.js'))
-      .map((file) => path.join(directory, file))
-      .sort(compareCodeUnits);
   } catch {
     return [];
   }

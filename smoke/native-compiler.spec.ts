@@ -20,6 +20,7 @@ describe('packed Native compiler compatibility', () => {
     '5.9.2',
     '5.9.3',
     '6.0.2',
+    '6.0.3',
   ])(
     'collects across processes and builds with TypeScript %s',
     async (version) => {
