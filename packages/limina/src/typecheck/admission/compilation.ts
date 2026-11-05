@@ -1,5 +1,4 @@
 import { assessCompilationPrerequisites } from '../../core/build-graph/analysis-admission';
-import { externalLibraryCompatibilityGaps } from '../../core/build-graph/checker-external-inputs';
 import { bindExecutionCompilationProjection } from '../../core/build-graph/compilation-prerequisite';
 import { assessDeclarationContexts } from '../../core/build-graph/declaration-context-admission';
 import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
@@ -11,17 +10,16 @@ import type { ExecutionAdmissionDiagnostic } from './types';
 /**
 Reassess the selected invocation against live-qualified facts and actual reference identities.
 */
-export async function executionCompilationDiagnostics(
+export function executionCompilationDiagnostics(
   graph: PreparedTsconfigGraph,
   closure: ExecutionReferenceClosure,
   target?: TypecheckTarget,
-): Promise<
+):
   | {
       decision: 'denied' | 'unavailable';
       diagnostics: ExecutionAdmissionDiagnostic[];
     }
-  | undefined
-> {
+  | undefined {
   const analysis = requireAnalysis(graph);
   const candidate = {
     configPaths: analysis.candidate!.configPaths,
@@ -60,26 +58,7 @@ export async function executionCompilationDiagnostics(
     ...declarations.unknown,
     ...declarationExecutionGaps(graph, closure, target),
   );
-  if (target?.checkerName === 'tsgo') {
-    const gaps = await externalLibraryExecutionGaps(graph, closure, target);
-    result.denied.push(...gaps.denied);
-    result.unknown.push(...gaps.unknown);
-  }
   return compilationRefusal(result);
-}
-export function externalLibraryExecutionGaps(
-  graph: PreparedTsconfigGraph,
-  closure: ExecutionReferenceClosure,
-  target: TypecheckTarget,
-): Promise<{ denied: string[]; unknown: string[] }> {
-  return externalLibraryCompatibilityGaps({
-    graph,
-    configs: new Set([...closure.configs, ...closure.executedConfigs]),
-    executedConfigs: closure.executedConfigs,
-    cwd: target.cwd,
-    executionRoot:
-      target.dependencyRootDir ?? target.executionRootDir ?? target.cwd,
-  });
 }
 
 function requireAnalysis(graph: PreparedTsconfigGraph) {
@@ -90,7 +69,7 @@ function requireAnalysis(graph: PreparedTsconfigGraph) {
 }
 function compilationRefusal(
   result: ReturnType<typeof assessCompilationPrerequisites>,
-): Awaited<ReturnType<typeof executionCompilationDiagnostics>> {
+): ReturnType<typeof executionCompilationDiagnostics> {
   const reasons = [...result.denied, ...result.unknown];
   return reasons.length === 0
     ? undefined

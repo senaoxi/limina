@@ -16,9 +16,6 @@ export function validateStagedDeclarationContexts(
       targets.push({
         sourceConfig: project.configPath,
         generatedConfig: project.dtsConfigPath,
-        typeInputProjection: project.typeInputProjections?.findLast(
-          (receipt) => receipt.generatedConfig === project.dtsConfigPath,
-        ),
         checker: project.checkerName,
         executionRoot:
           project.context.vueSemanticIdentity?.projectRootDir ??
@@ -31,9 +28,6 @@ export function validateStagedDeclarationContexts(
       targets.push({
         sourceConfig: project.configPath,
         generatedConfig: project.outputConfigPath,
-        typeInputProjection: project.typeInputProjections?.findLast(
-          (receipt) => receipt.generatedConfig === project.outputConfigPath,
-        ),
         checker: project.checkerName,
         executionRoot:
           project.context.vueSemanticIdentity?.projectRootDir ??
@@ -65,7 +59,6 @@ export function hasValidRestoredDeclarationContexts(
     | 'generatedFiles'
     | 'sourceConfigCoverage'
     | 'governedSources'
-    | 'typeInputProjections'
   >,
   metrics?: AnalysisMetricsRecorder,
   executionRoot?: string,
@@ -79,9 +72,6 @@ export function hasValidRestoredDeclarationContexts(
         checker,
         sourceConfig,
         generatedConfig,
-        typeInputProjection: graph.typeInputProjections?.find(
-          (receipt) => receipt.generatedConfig === generatedConfig,
-        ),
         executionRoot,
         ...restoredAuthority(graph, checker, sourceConfig),
       });
@@ -92,9 +82,6 @@ export function hasValidRestoredDeclarationContexts(
           checker,
           sourceConfig,
           generatedConfig: module.path,
-          typeInputProjection: graph.typeInputProjections?.find(
-            (receipt) => receipt.generatedConfig === module.path,
-          ),
           executionRoot,
           ...restoredAuthority(graph, checker, sourceConfig),
         });

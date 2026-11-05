@@ -39,7 +39,16 @@ export default defineConfig({
 
 `useTsgo` defaults to `false`. When enabled, ordinary TypeScript projects whose checker has not already been determined by a framework or declaration-build relationship default to `tsgo`. It does not change Astro or Svelte projects to `tsgo`. Install a supported `@typescript/native-preview` in the checker's execution scope first.
 
-Limina preserves each Checker’s resolution semantics. A relative import such as `../node_modules/../shared/index` can reach the same file but behave differently during loading or emit. Normal relative implementation imports in dependencies can proceed when actual Native observations establish the required input and external-library exclusion. The current observer supports explicit module requests in configurations without Project References; missing capabilities or incomplete proof produce `Unverified`, while an observed target or exclusion difference produces `Incompatible`. Both refuse the affected tsgo command before it starts, preserving the graph and independent commands. Native Program membership is not reported as the unavailable raw resolution flag. Correct the reported difference or supply the missing observation capability; adding `implicitRefs` alone does not prove compatibility. Ordinary type errors remain the checker’s responsibility.
+Limina derives the TypeScript Reference Graph using the supported host `typescript` Compiler API (5.4–6.0). `tsgo` is an independent build executor. Limina guarantees compilation relationships under that host semantic authority within its supported scope; this does not guarantee a successful type check or equivalent resolution, input membership and emit behavior in a different compiler version. If your project depends on v7-specific resolution, Limina currently cannot provide that strict semantic guarantee. Choose `tsc` when you need execution under the current host TypeScript authority.
+
+The observed TypeScript 6.0.3 / `@typescript/native-preview` 7.0.0-dev.20260707.2 combination illustrates two boundaries:
+
+| Trigger                                                   | Possible effect                                                                                                                                                        |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A relative path such as `../node_modules/../shared/index` | The compilers can select the same implementation but treat external inputs differently; tsgo may report composite file-list/root-directory errors or emit differently. |
+| Versioned `typesVersions` or `types@>=6.1` branches       | Each compiler can select its own version's types, changing diagnostics or inputs. This is normal versioned type selection.                                             |
+
+These are bounded observations, not a claim about every v7 version or an official compiler bug. Limina does not reject a build solely to prove those versions equivalent, and does not rewrite the host graph to fit tsgo. Ordinary reference governance, Checker identity and declaration constraints still apply; the selected Checker reports its actual build result. External source type changes still trigger the existing managed incremental recheck protection.
 
 To exclude `packages/playground/tsconfig.json` only from automatic discovery, use `exclude`:
 

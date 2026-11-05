@@ -152,6 +152,8 @@ const checkerBuildEngines = {
   'vue-tsc': 'vue-tsc',
 } satisfies Record<BuildCheckerName, CheckerBuildEngine>;
 
+// Capability families select analysis behavior, not cross-version execution
+// equivalence. tsgo executes independently of the host TypeScript authority.
 const checkerCapabilityFamilies = {
   astro: 'unknown',
   'svelte-check': 'svelte',

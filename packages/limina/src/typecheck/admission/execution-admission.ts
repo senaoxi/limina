@@ -6,10 +6,7 @@ import type { GraphFinding } from '../../graph-check/findings';
 import { adjudicateReferences } from '../../graph-check/reference-governance';
 import type { LiminaPreflightManager } from '../../preflight';
 import type { TypecheckTarget } from '../targets';
-import {
-  executionCompilationDiagnostics,
-  externalLibraryExecutionGaps,
-} from './compilation';
+import { executionCompilationDiagnostics } from './compilation';
 import {
   assertExecutionPermit,
   InvalidExecutionPermit,
@@ -157,10 +154,7 @@ export class ExecutionAdmission {
     const closure = await this.#currentInputs(target, shouldRefresh);
     const refusal =
       this.#govern(closure.governed) ??
-      (await executionCompilationDiagnostics(this.graph, closure, target));
-    // Native observation yields for input replay. Revalidate the existing graph
-    // and tool baseline after that boundary before issuing a permit.
-    if (target.checkerName === 'tsgo') await this.#currentInputs(target, true);
+      executionCompilationDiagnostics(this.graph, closure, target);
     return { closure, refusal };
   }
 
@@ -303,7 +297,7 @@ export class ExecutionAdmission {
       return refused(target, stage, inputRefusal(error));
     }
   }
-  async withManagedWrites<T>(
+  withManagedWrites<T>(
     target: TypecheckTarget,
     outputs: ReadonlySet<string> | (() => Promise<ReadonlySet<string>>),
     action: (
@@ -311,23 +305,6 @@ export class ExecutionAdmission {
       releaseAtLaunch: () => void,
     ) => Promise<T>,
   ): Promise<T> {
-    // A known qualification gap cannot gain authority by waiting for a write
-    // reservation. Refuse before output preparation or input-handoff side
-    // effects; the permit path still rechecks compilation after live replay.
-    if (target.checkerName === 'tsgo') {
-      const closure = collectExecutionReferenceClosure(
-        this.graph,
-        target,
-        this.preflight.config,
-      );
-      const gaps = await externalLibraryExecutionGaps(
-        this.graph,
-        closure,
-        target,
-      );
-      const messages = [...gaps.denied, ...gaps.unknown];
-      if (messages.length > 0) throw new Error(messages.join('\n\n'));
-    }
     return this.#inputs.withManagedWrites(target, outputs, action);
   }
 }

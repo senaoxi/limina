@@ -243,7 +243,9 @@ Holder 发布的 rename 返回 `EEXIST` 或 `ENOTEMPTY` 时已经证明发生争
 
 物化与执行各自拥有独立准入。诊断候选可以物化，同时适用的 `deny.refs` 阻止受管 Checker target 执行。[Execution Admission](../../../packages/limina/src/typecheck/admission/execution-admission.ts) 由受管 build 和独立的框架 typecheck pool 共用，在物化 revision lease 与当前输入证明下检查 mutation、launch、output-copy 边界。它不调用完整 `graph:check`，不改变 Core 完成状态，不删除关系，也不保证 Checker 最终成功。
 
-外部库 Checker 资格检查复用这些执行边界。Incompatible 或 Unverified 的排除证明在受管写入 reservation 前拒绝，并在授予 permit 前重检。全新的只读 Native 观察可以证明受支持的无引用 Program；其文件系统读取（包括未命中的查找）通过既有 EpochInputs 重放。异步重放后重新验证图／工具基线。范围仅为实际 tsgo 源码／引用闭包及执行的生成 context；独立 target 和未受影响的仅声明命令继续。图物化和 references 不变。缓存恢复事实，不恢复 permit 或观察器决定；既有工具身份现在也覆盖 Native API 的 JavaScript 文件。详见[语义限制](./semantics.md)和[资格回归](../../../packages/limina/src/__tests__/external-library-checker-qualification.spec.ts)。
+执行准入不比较宿主 TypeScript 与 tsgo 的输入集合、版本化类型分支或外部库排除关系。Reservation 和 permit 不再使用 Native preview observer 或其专属异步重放。通用图／输入重放、精确 Checker identity、声明责任、artifact lease 和副作用边界检查保持完整。缓存恢复合格的宿主事实，不恢复执行许可。生成图缓存版本 22 撤销版本 21 的准入；Native evidence DTO、schema 与 adapter 版本不变。工具身份保留 tsgo 包、启动入口／执行文件、平台二进制及宿主编译器，不再扫描未使用的 Native observer JavaScript。详见[语义权威](./semantics.md)。
+
+独立增量链保持为 `native-module-impact` → `compiler-external-library-input-is-not-emitted-by-consumer` → `sourceInputConsumers()` → `requiresFullCheck` → `invalidateStaleBuildInfo()`。完整检查要求属于已认证的 mutation proof，在执行授权之后应用，不是跨版本 Checker 兼容性凭据。
 
 Native external-library implementation input 可以为消费者提供类型，却不建立消费者 emit 义务或生成 Project Reference。源码包变化后，编译器 solution builder 因而可能跳过未变化的消费者。[受管构建状态证明](../../../packages/limina/src/typecheck/managed/build-info.ts)保守地将带有该 locked Native absence proof 的消费者标记为完整检查。既有写入授权边界在启动前只删除这些消费者已认证的 build-info 文件，同时适用于内部声明和用户输出构建。该策略参与 mutation fingerprint；无关 leaf 保留增量状态及既有缺失输出恢复规则。不解析编译器私有 build-info 格式，不虚构 producer 或 reference，也不额外选择进程目标。即使输入未变，这些消费者也会重建；选择性复用需要独立的已消费输入证明。[独立进程回归](../../../packages/limina/integration/tests/source-package-incremental.spec.ts)覆盖公共类型变化、保留 mtime 的传递变化、analysis force、无关 leaf 复用及受管输出构建。
 

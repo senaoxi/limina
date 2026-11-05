@@ -49,9 +49,9 @@
 
 生成输出映射也要求受支持的源选项：有效 `outFile` 在构造具有声明／产物投影的项目之前被拒绝。不输出的框架检查保留 `outFile`。[语义边界](./semantics.md)与[准入回归](../../../packages/limina/src/__tests__/generated-outfile.spec.ts)保护源选项，不能静默将合并声明转换为逐文件输出。
 
-Checker 资格检查必须覆盖真实类型指令和模块请求。已完成的 TypeScript 解析未命中不能授权 tsgo 未经资格检查就选择不同输入。源码与生成配置的类型上下文保留各自解析模式，在发布前及恢复时检查；[类型指令回归](../../../packages/limina/src/__tests__/type-directive-checker-qualification.spec.ts)保护这一边界，不创造 roots 或 references。
+宿主 Compiler API 负责模块／类型解析和编译关系，包括已完成的未命中及外部库 absence proof。选择 tsgo 改变执行器，不改变这些事实。配置投影、类型输入回执、JSON membership 和声明／引用验证保留宿主语义合同；跨版本解析等价不再是准入前提。[语义边界](./semantics.md)区分可用执行器与语义保证。
 
-TypeScript 外部库 absence 本身不能为相对实现请求授予 tsgo 资格。限定范围的 Native 证明必须绑定同一模块目标，并建立一致的 Program 加载／排除事实；文件成员状态不是缺失的原始请求标志。不支持或不完整的观察保持 Unverified。图事实与 references 保持不变，仅拒绝受影响的实际 tsgo 执行闭包。[Checker 输入回归](../../../packages/limina/src/__tests__/external-library-checker-qualification.spec.ts)保护正常依赖准入、对抗性加载、启动前拒绝和缓存隔离；观察限制由[语义记录](./semantics.md)持有。
+删除 Checker 兼容性检查时必须保留外部库 absence：它仍是 Native Compilation Obligation 事实，也是独立[受管增量安全机制](./lifecycle.md#受管-checker-的执行准入)的输入。消费者可以需要重新类型检查，而不需要新增 Project Reference。[Checker 执行回归](../../../packages/limina/src/__tests__/external-library-checker-qualification.spec.ts)和[增量进程回归](../../../packages/limina/integration/tests/source-package-incremental.spec.ts)分别保护这两个合同。
 
 **公共声明责任**：Native 与 Vue 采用同一套 Coverage、上下文选择、消费者保留／委派边界及候选验证规则；宿主仅执行经 Checker 资格化的加载许可。未归属声明保留真实消费者环境，不授权非根实现展开。Vue 候选证据来自实际 `vue-tsc` Compiler 路径，不能替换成 Language Service Map。拒绝加载后仍保留原始解析成功事实，拒绝不能证明编译义务不存在。详见[声明治理](./semantics.md#受管声明的配置上下文)。
 
