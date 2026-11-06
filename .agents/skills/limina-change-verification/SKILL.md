@@ -35,6 +35,8 @@ description: 'Design and execute validation for Limina changes, tests, fixtures,
    checks omit untracked content. Finish with `git diff --check`, status, and a
    boundary review preserving pre-existing work.
 
+For bounded protocol or model drift reviews, follow the [formal verification workflow](../../../verification/formal/README.md) to pair the TLC verdict with an independent implementation replay.
+
 Report repro location, environment/versions, baseline, each adversarial round,
 commands/results, the final bounded conclusion, and uncovered platforms/tuples.
 Distinguish source-established from runtime-tested; no unrun test, skipped job,

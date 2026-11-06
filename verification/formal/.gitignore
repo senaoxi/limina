@@ -1,0 +1,8 @@
+# The repository-wide "cache" ignore is for generated data; this is a model.
+!/models/cache/
+/runs/
+states/
+checkpoints/
+*.jar
+*.hprof
+*_TTrace_*

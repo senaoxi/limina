@@ -1,0 +1,38 @@
+Error: Invariant AcceptedResultUsesActiveEpoch is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ replaced = FALSE
+/\ epoch = 0
+/\ phase = "idle"
+/\ accepted = 0
+/\ captured = 0
+
+State 2: <Begin line 7, col 10 to line 8, col 49 of module EpochValidation>
+/\ replaced = FALSE
+/\ epoch = 0
+/\ phase = "analyzing"
+/\ accepted = 0
+/\ captured = 0
+
+State 3: <IdentityCheck line 9, col 18 to line 11, col 66 of module EpochValidation>
+/\ replaced = FALSE
+/\ epoch = 0
+/\ phase = "validating-inputs"
+/\ accepted = 0
+/\ captured = 0
+
+State 4: <ReplaceEpoch line 12, col 17 to line 16, col 56 of module EpochValidation>
+/\ replaced = TRUE
+/\ epoch = 1
+/\ phase = "validating-inputs"
+/\ accepted = 0
+/\ captured = 0
+
+State 5: <FinishValidation line 17, col 21 to line 20, col 60 of module EpochValidation>
+/\ replaced = TRUE
+/\ epoch = 1
+/\ phase = "completed"
+/\ accepted = 0
+/\ captured = 0
+
+6 states generated, 6 distinct states found, 1 states left on queue.

@@ -1,0 +1,129 @@
+name: Formal verification (observational)
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  mapping:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      admitted: ${{ steps.review.outputs.admitted }}
+      java: ${{ steps.review.outputs.java }}
+      digest: ${{ steps.review.outputs.digest }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22.22.3
+          package-manager-cache: false
+      - run: node verification/formal/run.mjs --check-map
+      - id: review
+        env:
+          REVIEWED_SHA: ${{ vars.LIMINA_TLC_REVIEWED_SHA256 }}
+        run: |
+          set -euo pipefail
+          digest=$(jq -er '.sha256' verification/formal/toolchain.json)
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+          jq -er '"java=" + .ciJava' verification/formal/toolchain.json >> "$GITHUB_OUTPUT"
+          if [[ "$digest" == "$REVIEWED_SHA" ]]; then
+            echo 'admitted=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'admitted=false' >> "$GITHUB_OUTPUT"
+            echo 'TLC not run: distribution review pending. This is not a model verdict.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  observe:
+    needs: mapping
+    if: needs.mapping.outputs.admitted == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22.22.3
+          package-manager-cache: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with:
+          distribution: temurin
+          java-version: ${{ needs.mapping.outputs.java }}
+      - uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0
+        with:
+          path: ${{ runner.temp }}/formal-tools/tla2tools.jar
+          key: formal-tlc-${{ needs.mapping.outputs.digest }}
+      - name: Get and verify the reviewed tool
+        env:
+          DIGEST: ${{ needs.mapping.outputs.digest }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/formal-tools"
+          mkdir -p "$dir"
+          if [[ ! -f "$dir/tla2tools.jar" ]]; then
+            url=$(jq -er '.url' verification/formal/toolchain.json)
+            [[ "$url" == https://github.com/tlaplus/tlaplus/releases/download/*/tla2tools.jar ]]
+            curl --fail --location --proto '=https' --proto-redir '=https' --retry 2 --output "$dir/tla2tools.jar" "$url"
+          fi
+          printf '%s  %s\n' "$DIGEST" "$dir/tla2tools.jar" | sha256sum --check
+      - name: Challenge runner verdicts
+        env:
+          TLA2TOOLS: ${{ runner.temp }}/formal-tools/tla2tools.jar
+        run: node verification/formal/evidence/runner/replay.mjs "$RUNNER_TEMP/runner-controls"
+      - name: Run bounded profiles
+        env:
+          TLA2TOOLS: ${{ runner.temp }}/formal-tools/tla2tools.jar
+          SUITE: ${{ github.event_name == 'pull_request' && 'stable' || 'all' }}
+        run: node verification/formal/run.mjs --suite "$SUITE" --out "$RUNNER_TEMP/formal-results"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: formal-verdicts
+          path: |
+            ${{ runner.temp }}/runner-controls/*.log
+            ${{ runner.temp }}/runner-controls/observations.json
+            ${{ runner.temp }}/formal-results/run.json
+            ${{ runner.temp }}/formal-results/*.model.json
+            ${{ runner.temp }}/formal-results/*/*.tla
+            ${{ runner.temp }}/formal-results/*/*.out
+            ${{ runner.temp }}/formal-results/*/*.cfg
+          retention-days: 14
+          if-no-files-found: warn
+
+  witness:
+    needs: mapping
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-env
+        with:
+          node-version: 22.22.3
+      - name: Replay implementation boundaries
+        run: |
+          node --import tsx verification/formal/evidence/managed-cache/replay.mjs "$RUNNER_TEMP/bridge"
+          node --import tsx verification/formal/evidence/epoch/replay.mjs "$RUNNER_TEMP/epoch"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: formal-implementation-observations
+          path: |
+            ${{ runner.temp }}/bridge/observations.json
+            ${{ runner.temp }}/epoch/observations.json
+          retention-days: 14
+          if-no-files-found: warn

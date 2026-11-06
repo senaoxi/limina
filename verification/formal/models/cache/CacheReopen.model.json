@@ -1,0 +1,114 @@
+{
+  "scope": "Qualified adoption on reopen and cooperative publication (I09–I11). Internal epoch returns belong to EpochValidation.",
+  "sourceMapping": {
+    "packages/limina/src/preflight/analysis-cache.ts": "#refreshedCache",
+    "packages/limina/src/preflight/analysis-cache-store.ts": "physicalRevision",
+    "packages/limina/src/core/build-graph/cached-graph-binding.ts": "bindCachedGraph",
+    "packages/limina/src/core/build-graph/cached-ownership-replay.ts": "hasCurrentOwnership",
+    "packages/limina/src/core/build-graph/analysis-cache.ts": "generated-graph-declaration-governance",
+    "packages/limina/src/core/build-graph/cached-reference-reconstruction.ts": "hasBoundCachedReferences",
+    "verification/formal/evidence/managed-cache/replay.mjs": "writeStoredAnalysisSnapshot",
+    "packages/limina/src/__tests__/analysis-cache-shards.spec.ts": "publishes the index last",
+    "packages/limina/src/__tests__/full-analysis-cache.spec.ts": "consistent-reference-removal",
+    ".agents/docs/lifecycle.md": "Execution",
+    ".agents/docs/invariants.md": "I09",
+    "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/limina.config.mts": "deny:",
+    "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/tsconfig.a.json": "implicitRefs",
+    "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/tsconfig.json": "references",
+    "packages/limina/src/preflight/analysis-cache-decode.ts": "AnalysisSnapshotDecoder",
+    "packages/limina/src/preflight/analysis-cache-tools.ts": "AnalysisToolObservation",
+    "pnpm-workspace.yaml": "typescript:"
+  },
+  "stateVariables": {
+    "writer,lease": "Per-controller read baseline, observed input, phase, retry and cooperative writer lease.",
+    "input,disk,blocks": "Input content version, physical index identity and staged payloads.",
+    "reader,adopted": "One reopened reader; snapshot of qualification at adoption.",
+    "lastCommit": "Baseline, live bytes, input and block existence at commit."
+  },
+  "initialState": "Arbitrary previous envelope in valid storage with independently valid/invalid content, owner evidence and reference binding.",
+  "actions": {
+    "Open": "packages/limina/src/preflight/analysis-cache-store.ts::physicalRevision(bytes)",
+    "Acquire": "packages/limina/src/preflight/analysis-cache-store.ts::#publishChanged",
+    "Stage": "packages/limina/src/preflight/analysis-cache-store.ts::this.#blocks.write",
+    "Publish": "packages/limina/src/preflight/analysis-cache-store.ts::await rename",
+    "Abandon": "packages/limina/src/preflight/analysis-cache-store.ts::lease.release",
+    "Finish": "packages/limina/src/preflight/analysis-cache-store.ts::async publish",
+    "Retry": "packages/limina/src/preflight/analysis-cache.ts::operations.refresh()",
+    "Drift": "packages/limina/src/preflight/analysis-cache.ts::AnalysisInputDriftError",
+    "Reopen": "packages/limina/src/core/build-graph/cached-graph-binding.ts::bindCachedGraph"
+  },
+  "assumptions": "Physical digests abstracted to unique revisions (no ABA); immutable blocks, cooperating writers only. Owner and reference evidence are independent predicates; no OS atomicity or decoder proof.",
+  "safety": {
+    "CurrentAdoption": "Restored graph qualifies against the reader observation.",
+    "PhysicalCAS": "Old baseline cannot replace a competitor index.",
+    "CurrentCommit": "Commit at matching input with write permission.",
+    "IndexLast": "All indexed blocks exist at commit.",
+    "NoPublishedHit": "Reachability control for warm use of a newly published graph."
+  },
+  "liveness": "None: no caller or external-process completion guarantee.",
+  "fairness": "None; terminal stuttering represents quiescence only.",
+  "profiles": {
+    "cover-published-hit.cfg": {
+      "breaks": [
+        "NoPublishedHit"
+      ],
+      "stable": false
+    },
+    "disabled.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "force.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "mutation-ignore-baseline.cfg": {
+      "breaks": [
+        "PhysicalCAS"
+      ],
+      "stable": true
+    },
+    "mutation-index-first.cfg": {
+      "breaks": [
+        "IndexLast"
+      ],
+      "stable": false
+    },
+    "mutation-skip-final.cfg": {
+      "breaks": [
+        "CurrentCommit"
+      ],
+      "stable": false
+    },
+    "mutation-trust-envelope.cfg": {
+      "breaks": [
+        "CurrentAdoption"
+      ],
+      "stable": true
+    },
+    "readonly.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "single-writer.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "write.cfg": {
+      "breaks": [],
+      "stable": true
+    }
+  },
+  "bounds": {
+    "maxStates": 100000,
+    "dimensions": "1–2 writers, 2 input versions, 8 seed envelopes, 1 reader, 1 retry per writer.",
+    "pruning": "None: no state/action constraints, symmetry or view filtering."
+  },
+  "counterexamples": "Mutants discard one independent qualification. Physical faults outside cooperative lease and process crashes are not covered.",
+  "empiricalVerification": "Run evidence/managed-cache/replay.mjs and analysis-cache-{lifecycle,shards}, full-analysis-cache.",
+  "driftReview": {
+    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
+    "sourceHash": "04448057a02f0977672fb6606c6518cf5aeea7a9a4e2878e9c27856dab1f212a",
+    "modelHash": "52c897881003dd6acf31f87241e6f6c2c681499311c4a77c76ab417fa361a5a9"
+  }
+}

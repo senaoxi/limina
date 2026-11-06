@@ -1,0 +1,77 @@
+{
+  "scope": "Analysis retry versus command replay and final publication (I09–I11); retained from preflight experiment.",
+  "sourceMapping": {
+    "packages/limina/src/preflight/analysis-cache.ts": "async analyze",
+    "packages/limina/src/preflight/analysis-cache-store.ts": "#publishChanged",
+    "packages/limina/src/preflight/manager.ts": "publishAnalysisCache",
+    "packages/limina/src/execution/executor.ts": "runExecution",
+    "packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts": "does not replay a completed command",
+    ".agents/docs/lifecycle.md": "Execution",
+    ".agents/docs/invariants.md": "I09",
+    "packages/limina/src/preflight/analysis-cache-decode.ts": "AnalysisSnapshotDecoder",
+    "packages/limina/src/preflight/analysis-cache-tools.ts": "AnalysisToolObservation",
+    "packages/limina/src/core/build-graph/analysis-cache.ts": "generated-graph-declaration-governance"
+  },
+  "stateVariables": {
+    "phase,commands,retries": "Command settled once; only analysis retries.",
+    "input,observed,epoch,capturedEpoch,provider,configStable": "Observed input and identity across retry.",
+    "externalIndex,baseline,index,restored": "One competing physical revision, coarse restore predicate.",
+    "published,badPublish,rejected,storageFailure": "Events at validation, skip and index replacement."
+  },
+  "initialState": "Before command; saved qualification is supplied, not derived.",
+  "actions": {
+    "ExecuteCommand": "packages/limina/src/execution/executor.ts::runExecutionTasks",
+    "BeginAnalysis": "packages/limina/src/preflight/analysis-cache.ts::epoch.epoch.run",
+    "InputDrift": "packages/limina/src/preflight/analysis-cache.ts::AnalysisInputDriftError",
+    "ConfigurationDrift": "packages/limina/src/preflight/analysis-cache.ts::assertConfigurationStable",
+    "RetryAnalysis": "packages/limina/src/preflight/analysis-cache.ts::operations.refresh()",
+    "AcceptAnalysis": "packages/limina/src/preflight/analysis-cache.ts::return result",
+    "AbortAnalysis": "packages/limina/src/preflight/analysis-cache.ts::throw error",
+    "EnterPublication": "packages/limina/src/preflight/analysis-cache.ts::async publish",
+    "OtherIndexWrite": "packages/limina/src/preflight/analysis-cache-store.ts::#isBaselineCurrent",
+    "WriteBlocks": "packages/limina/src/preflight/analysis-cache-store.ts::this.#blocks.write",
+    "CommitIndex": "packages/limina/src/preflight/analysis-cache-store.ts::await rename",
+    "StorageFailure": "packages/limina/src/preflight/analysis-cache-store.ts::isStorageError",
+    "Stay": "packages/limina/src/preflight/analysis-cache-store.ts::async publish"
+  },
+  "assumptions": "OtherIndexWrite is an environment action; actual cooperative leases are in CacheReopen. SavedQualified is not an oracle for decoding.",
+  "safety": {
+    "TypeOK": "Finite phase/counter domains.",
+    "NoEffectReplay": "One command despite analysis retry.",
+    "RestorePolicy": "Policy precondition only.",
+    "PublishPolicy": "Only permitted writers publish.",
+    "NoStalePublication": "Commit under qualified input and baseline."
+  },
+  "liveness": "None: no caller or external-process completion guarantee.",
+  "fairness": "None; terminal stuttering represents quiescence only.",
+  "profiles": {
+    "cache-current.cfg": {
+      "breaks": [],
+      "stable": true
+    },
+    "cache-two-drifts.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "mutation-no-final-validation.cfg": {
+      "breaks": ["NoStalePublication"],
+      "stable": false
+    },
+    "mutation-replay-effects.cfg": {
+      "breaks": ["NoEffectReplay"],
+      "stable": true
+    }
+  },
+  "bounds": {
+    "maxStates": 100000,
+    "dimensions": "One command, one retry, 1–2 input changes.",
+    "pruning": "None: no state/action constraints, symmetry or view filtering."
+  },
+  "counterexamples": "Snapshots distinguish old physical bytes from semantic equivalence.",
+  "empiricalVerification": "Run analysis-cache-lifecycle.spec.ts retry, final validation and physical baseline cases.",
+  "driftReview": {
+    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
+    "sourceHash": "58a7c3b3ea9c269e56825978b21eab077670f7def39f19f7042111ba9bca3600",
+    "modelHash": "25aa9a3e4ba7765cd681d8381f80d389c09409d232ba35f25c33bd429bd56469"
+  }
+}

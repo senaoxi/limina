@@ -1,0 +1,29 @@
+---
+title: "Controller API boundary - epoch replacement during input validation"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Breaks AcceptedResultUsesActiveEpoch
+    lg1: Path to the AcceptedResultUsesActiveEpoch bug
+  }
+  class lg0 breaks
+  class lg1 bugPath
+  s0: idle#59; active epoch 0, captured 0
+  s1: analyzing#59; active epoch 0, captured 0
+  s2: validating-inputs#59; active epoch 0, captured 0
+  s3: completed#59; active epoch 0, captured 0
+  s4: validating-inputs#59; active epoch 1, captured 0
+  s5: completed#59; active epoch 1, captured 0
+  [*] --> s0
+  s0 --> s1: begin analysis in current epoch
+  s1 --> s2: check captured epoch identity
+  s2 --> s3: async input validation completes
+  s2 --> s4: external caller refreshes controller
+  s4 --> s5: async input validation completes
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 bugPath
+  class s1 bugPath
+  class s2 bugPath
+  class s4 bugPath
+  class s5 breaks
+  class s5 bugPath

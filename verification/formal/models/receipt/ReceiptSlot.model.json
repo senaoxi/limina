@@ -1,0 +1,65 @@
+{
+  "scope": "Adoption in one manager materialization slot (I09). Historical callers may still receive an old Promise result.",
+  "sourceMapping": {
+    "packages/limina/src/preflight/manager.ts": "ensureGeneratedArtifactsMaterialized",
+    "packages/limina/src/preflight/materialization.ts": "commitReceipt",
+    "packages/limina/src/execution/executor.ts": "runExecution",
+    "packages/limina/src/__tests__/preflight.spec.ts": "deduplicates in-flight materialization",
+    ".agents/docs/lifecycle.md": "Execution",
+    ".agents/docs/invariants.md": "I09"
+  },
+  "stateVariables": {
+    "g,slot,provider,refreshes": "Generation identity versus provider-only replan.",
+    "state,originSlot,originG,starts": "Per-request tokens rather than JS objects.",
+    "flight,receipt,receiptG": "Current slot fields.",
+    "staleAdopted,cancelledNew": "Event monitors: commit and clear."
+  },
+  "initialState": "New manager, empty slot, generation zero.",
+  "actions": {
+    "Advance": "packages/limina/src/preflight/manager.ts::#replaceProviderGeneration",
+    "Replan": "packages/limina/src/preflight/manager.ts::#refreshProviderGenerationForMaterialization",
+    "Begin": "packages/limina/src/preflight/materialization.ts::createMaterializationPromise",
+    "Success": "packages/limina/src/preflight/materialization.ts::commitReceipt",
+    "Failure": "packages/limina/src/preflight/materialization.ts::clearFailedInFlight",
+    "Stay": "packages/limina/src/preflight/materialization.ts::ensureMaterialization"
+  },
+  "assumptions": "Atomic commit/clear after await. No concurrent managers or filesystem effects.",
+  "safety": {
+    "TypeOK": "Slot and request domains.",
+    "ReceiptCurrentGeneration": "Stored receipt belongs to current generation.",
+    "NoStaleAdoption": "An old completion cannot mutate the active slot.",
+    "OldFailureCannotClearNew": "An older rejection preserves newer work."
+  },
+  "liveness": "None: no caller or external-process completion guarantee.",
+  "fairness": "None; terminal stuttering represents quiescence only.",
+  "profiles": {
+    "mutation-late-failure.cfg": {
+      "breaks": ["OldFailureCannotClearNew"],
+      "stable": true
+    },
+    "mutation-late-receipt.cfg": {
+      "breaks": ["NoStaleAdoption", "ReceiptCurrentGeneration"],
+      "stable": false
+    },
+    "receipt-current.cfg": {
+      "breaks": [],
+      "stable": true
+    },
+    "receipt-expanded.cfg": {
+      "breaks": [],
+      "stable": false
+    }
+  },
+  "bounds": {
+    "maxStates": 100000,
+    "dimensions": "1 advance and provider replan, 2 or 3 attempts.",
+    "pruning": "None: no state/action constraints, symmetry or view filtering."
+  },
+  "counterexamples": "Late-receipt removes three guards together; never infer that each is necessary.",
+  "empiricalVerification": "Run preflight.spec.ts (in-flight materialization and replacement cases).",
+  "driftReview": {
+    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
+    "sourceHash": "6efca64366b823b6c9f1f7e8039b13b8c672ae2dbeaa7f2fba260d0de507b4cf",
+    "modelHash": "61191d69107a73678261b55ce4352b571d7d7c528f933a9d3157a6cd6c214afb"
+  }
+}

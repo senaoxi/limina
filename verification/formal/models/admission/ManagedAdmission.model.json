@@ -1,0 +1,107 @@
+{
+  "scope": "Selected managed build effects (I05–I10). Excludes raw, diagnostic materialization, watch progress and non-selected labels.",
+  "sourceMapping": {
+    "packages/limina/src/typecheck/admission/execution-admission.ts": "assertPermit",
+    "packages/limina/src/typecheck/admission/input-coordinator.ts": "executionInputCoordinator",
+    "packages/limina/src/typecheck/managed-build-copy.ts": "output-copy",
+    "packages/limina/src/typecheck/checker/managed-execution.ts": "executeAuthorizedBuild",
+    "packages/limina/src/typecheck/admission/reference-closure.ts": "collectExecutionReferenceClosure",
+    "packages/limina/src/graph-check/reference-governance.ts": "adjudicateReferences",
+    "packages/limina/src/core/build-graph/implicit-references.ts": "addImplicitProjectReferences",
+    "packages/limina/src/core/build-graph/prepare.ts": "prepareProducerBuildPlan",
+    "verification/formal/evidence/managed-cache/replay.mjs": "executeCheckerBuildTargets",
+    "packages/limina/src/__tests__/execution-admission.spec.ts": "governs transitive",
+    "packages/limina/src/__tests__/execution-input-handoff.spec.ts": "blocks a missing-input",
+    ".agents/docs/lifecycle.md": "Execution",
+    ".agents/docs/invariants.md": "I09",
+    "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/limina.config.mts": "deny:",
+    "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/tsconfig.a.json": "implicitRefs",
+    "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/tsconfig.json": "references",
+    "pnpm-workspace.yaml": "typescript:"
+  },
+  "stateVariables": {
+    "view": "Manager/provider/graph/input identity changes abstracted to a version.",
+    "pc": "Each target has its own next stage; completed effects are historical.",
+    "held": "One live target/stage permit, releases on callback return.",
+    "effect": "Most recent protected effect, its basis and identity at the boundary."
+  },
+  "initialState": "Two new targets at mutation; selectable source policy, no permit.",
+  "actions": {
+    "Issue": "packages/limina/src/typecheck/admission/execution-admission.ts::withAuthorizedTarget",
+    "Release": "packages/limina/src/typecheck/admission/execution-admission.ts::withExecutionPermit",
+    "Consume": "packages/limina/src/typecheck/checker/managed-execution.ts::assertPermit",
+    "Finish": "packages/limina/src/typecheck/checker/managed-execution.ts::return launched.state",
+    "Refresh": "packages/limina/src/typecheck/admission/input-coordinator.ts::#handoff"
+  },
+  "assumptions": "Two-edge chain, applying the middle source label denies its provider edge. The independent target has no such label. Output-copy is a separate stage in the output workflow, not part of every build.",
+  "safety": {
+    "DeniedHasNoEffect": "No effect of a forbidden target at the event view.",
+    "ScopedEffect": "Issued identity and stage match the actual effect.",
+    "NoIndependentCompletion": "Reachability control for independent completion despite refusal.",
+    "NoLateCopyRefusal": "Reachability control for refusing copy after legal launch."
+  },
+  "liveness": "None: no caller or external-process completion guarantee.",
+  "fairness": "None; terminal stuttering represents quiescence only.",
+  "profiles": {
+    "cover-independent.cfg": {
+      "breaks": ["NoIndependentCompletion"],
+      "stable": true
+    },
+    "cover-late-refusal.cfg": {
+      "breaks": ["NoLateCopyRefusal"],
+      "stable": false
+    },
+    "current.cfg": {
+      "breaks": [],
+      "stable": true
+    },
+    "deny-selected.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "label-refresh.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "mutation-old-graph.cfg": {
+      "breaks": ["DeniedHasNoEffect"],
+      "stable": true
+    },
+    "mutation-old-permit.cfg": {
+      "breaks": ["DeniedHasNoEffect", "ScopedEffect"],
+      "stable": false
+    },
+    "mutation-one-hop.cfg": {
+      "breaks": ["DeniedHasNoEffect"],
+      "stable": false
+    },
+    "mutation-schedule.cfg": {
+      "breaks": ["DeniedHasNoEffect"],
+      "stable": false
+    },
+    "mutation-wrong-stage.cfg": {
+      "breaks": ["ScopedEffect"],
+      "stable": false
+    },
+    "mutation-wrong-target.cfg": {
+      "breaks": ["DeniedHasNoEffect", "ScopedEffect"],
+      "stable": false
+    },
+    "two-refreshes.cfg": {
+      "breaks": [],
+      "stable": false
+    }
+  },
+  "bounds": {
+    "maxStates": 100000,
+    "dimensions": "2 targets, 1 intermediate, 1 provider, 1–2 view changes, one callback at a time.",
+    "pruning": "None: no state/action constraints, symmetry or view filtering."
+  },
+  "counterexamples": "Mutants model integration errors. Cover profiles intentionally negate observable legal states.",
+  "empiricalVerification": "Run evidence/managed-cache/replay.mjs; execution-admission, execution-input-handoff and checker/admission-denied-reference.",
+  "driftReview": {
+    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
+    "sourceHash": "c64daf7bf534a0eb01ce4e0c5a1d6c907ff7640a42c9a00d8468cfdd86d69807",
+    "modelHash": "4b51a4294bf89b36441ba5e704f1705d209a878aeb50b5c008569ca785615b3a"
+  }
+}

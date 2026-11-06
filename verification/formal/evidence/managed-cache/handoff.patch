@@ -1,0 +1,21 @@
+--- a/packages/limina/src/core/build-graph/analysis-cache.ts
++++ b/packages/limina/src/core/build-graph/analysis-cache.ts
+@@ -205,6 +205,18 @@
+   options: Parameters<typeof restoreGeneratedGraph>[0],
+ ): Promise<GeneratedTsconfigGraphResult> {
+   const namespace = options.preparation.artifactNamespace;
++  // Fault injection only: discard a bound reference at the restore -> materializer handoff.
++  for (const [file, text] of data.generatedFiles) {
++    if (!file.endsWith('.dts.json')) continue;
++    const generated = JSON.parse(text);
++    if (!generated.references?.length) continue;
++    generated.references = [];
++    data = {
++      ...data,
++      generatedFiles: new Map(data.generatedFiles).set(file, JSON.stringify(generated)),
++    };
++    break;
++  }
+   for (const file of data.generatedFiles.keys())
+     assertArtifactPathLexicallyContained(namespace, file);
+   assertArtifactPathLexicallyContained(namespace, data.manifestPath);
