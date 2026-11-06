@@ -6,8 +6,17 @@
     "lib": ["ESNext"],
     "types": ["node"],
   },
+  // The shared excludes match directory names ending in "cache".
+  "files": [
+    "verification/formal/evidence/managed-cache/replay.mjs",
+    "verification/formal/models/cache/CacheReopen.model.json",
+  ],
   "include": [
     "scripts/**/*.ts",
+    "verification/formal/*.mjs",
+    "verification/formal/evidence/*/*.mjs",
+    "verification/formal/models/*/*.model.json",
+    "verification/formal/toolchain.json",
     ".github/*.json",
     ".vscode/*.json",
     "limina.config.mts",

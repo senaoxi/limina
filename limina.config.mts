@@ -42,7 +42,24 @@ export default defineConfig({
     },
     regions: { extendNestedPackageScopes: true },
   },
-  source: { knip: true },
+  source: {
+    knip: {
+      workspaces: {
+        limina: {
+          entry: [
+            {
+              files: [
+                'packages/limina/integration/formal/epoch.mjs',
+                'packages/limina/integration/formal/managed-cache.mjs',
+              ],
+              reason:
+                'The formal replay commands launch these scripts in Node child processes.',
+            },
+          ],
+        },
+      },
+    },
+  },
   package: {
     entries: [
       {

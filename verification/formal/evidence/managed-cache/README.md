@@ -1,6 +1,6 @@
 # A restored reference must still govern the launch
 
-[Replay](replay.mjs) copies the real `checker/admission-denied-reference` fixture into a fresh temporary workspace. Its A config selects a label denying its implicit reference to B. It loads the unchanged policy as plain ESM, creates and disposes real cache-enabled managers, materializes generated configs, chooses the actual tsc target and enters the managed build path. Only the final checker runner is replaced with a recorder: the observable is **permission to start it**, not compiler success.
+[Replay](../../../../packages/limina/integration/formal/managed-cache.mjs) copies the real `checker/admission-denied-reference` fixture into a fresh temporary workspace. Its A config selects a label denying its implicit reference to B. It loads the unchanged policy as plain ESM, creates and disposes real cache-enabled managers, materializes generated configs, chooses the actual tsc target and enters the managed build path. Only the final checker runner is replaced with a recorder: the observable is **permission to start it**, not compiler success.
 
 ```sh
 RUN=$(mktemp -d)
