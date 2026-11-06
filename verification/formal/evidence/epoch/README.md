@@ -1,6 +1,6 @@
 # Epoch replacement during validation
 
-**Internal API reproduced; ordinary CLI publication not established.** The [raw trace excerpt](validation.trace.txt) separates the identity check, external refresh and completion of input validation. The [bounded graph](boundary.mmd) shows both the serialized path and the counterexample. In the [implementation replay](replay.mjs), a read barrier replaces the controller after its identity check. It returns the object from the detached epoch. The same replacement before identity validation rejects. Neither call publishes.
+**Internal API reproduced; ordinary CLI publication not established.** The [raw trace excerpt](validation.trace.txt) separates the identity check, external refresh and completion of input validation. The [bounded graph](boundary.mmd) shows both the serialized path and the counterexample. In the [implementation replay](../../../../packages/limina/integration/formal/epoch.mjs), a read barrier replaces the controller after its identity check. It returns the object from the detached epoch. The same replacement before identity validation rejects. Neither call publishes.
 
 ```sh
 RUN=$(mktemp -d)

@@ -2,7 +2,9 @@
   "scope": "Internal analysis return versus active epoch (I09); not CLI publication or consumption.",
   "sourceMapping": {
     "packages/limina/src/preflight/analysis-cache.ts": "async #attempt",
-    "verification/formal/evidence/epoch/replay.mjs": "observeAnalysisRead",
+    "verification/formal/evidence/epoch/replay.mjs": "runImplementationReplay('epoch')",
+    "verification/formal/run-implementation.mjs": "spawnSync",
+    "packages/limina/integration/formal/epoch.mjs": "observeAnalysisRead",
     "packages/limina/src/preflight/manager.ts": "refreshAfterManagedOutputs",
     "packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts": "bounds repeated drift",
     ".agents/docs/lifecycle.md": "Execution",
@@ -54,7 +56,7 @@
   "empiricalVerification": "See evidence/epoch/README.md and replay.mjs; distinguish historical return from publish.",
   "driftReview": {
     "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
-    "sourceHash": "e50db1abe220e19f5a1e43f5b5cc8991d44494457903edee2670cb637438adaa",
+    "sourceHash": "14973c030947f4ddff7a16f988931c21a3782e94868861584bf1e6d03753d4c2",
     "modelHash": "76f69bd34f3fb73234dfaa2ac9e49fab15ef938aeb230d126ccac4a2afab82cc"
   }
 }

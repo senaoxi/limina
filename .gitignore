@@ -7,6 +7,7 @@ node_modules
 .husky/_
 .eslintcache
 cache
+!/verification/formal/models/cache/
 
 # ignore the temporary config.ts build output,
 # when vitepress fails to build config.ts,

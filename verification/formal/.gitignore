@@ -1,5 +1,3 @@
-# The repository-wide "cache" ignore is for generated data; this is a model.
-!/models/cache/
 /runs/
 states/
 checkpoints/

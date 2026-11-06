@@ -9,7 +9,9 @@
     "packages/limina/src/graph-check/reference-governance.ts": "adjudicateReferences",
     "packages/limina/src/core/build-graph/implicit-references.ts": "addImplicitProjectReferences",
     "packages/limina/src/core/build-graph/prepare.ts": "prepareProducerBuildPlan",
-    "verification/formal/evidence/managed-cache/replay.mjs": "executeCheckerBuildTargets",
+    "verification/formal/evidence/managed-cache/replay.mjs": "runImplementationReplay('managed-cache')",
+    "verification/formal/run-implementation.mjs": "spawnSync",
+    "packages/limina/integration/formal/managed-cache.mjs": "executeCheckerBuildTargets",
     "packages/limina/src/__tests__/execution-admission.spec.ts": "governs transitive",
     "packages/limina/src/__tests__/execution-input-handoff.spec.ts": "blocks a missing-input",
     ".agents/docs/lifecycle.md": "Execution",
@@ -101,7 +103,7 @@
   "empiricalVerification": "Run evidence/managed-cache/replay.mjs; execution-admission, execution-input-handoff and checker/admission-denied-reference.",
   "driftReview": {
     "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
-    "sourceHash": "c64daf7bf534a0eb01ce4e0c5a1d6c907ff7640a42c9a00d8468cfdd86d69807",
+    "sourceHash": "3787495e5aa1905d52f98db309e72b7880a3bb020cc1dc31e8d1b7d4b6224758",
     "modelHash": "4b51a4294bf89b36441ba5e704f1705d209a878aeb50b5c008569ca785615b3a"
   }
 }

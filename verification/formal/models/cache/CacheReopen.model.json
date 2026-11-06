@@ -7,7 +7,9 @@
     "packages/limina/src/core/build-graph/cached-ownership-replay.ts": "hasCurrentOwnership",
     "packages/limina/src/core/build-graph/analysis-cache.ts": "generated-graph-declaration-governance",
     "packages/limina/src/core/build-graph/cached-reference-reconstruction.ts": "hasBoundCachedReferences",
-    "verification/formal/evidence/managed-cache/replay.mjs": "writeStoredAnalysisSnapshot",
+    "verification/formal/evidence/managed-cache/replay.mjs": "runImplementationReplay('managed-cache')",
+    "verification/formal/run-implementation.mjs": "spawnSync",
+    "packages/limina/integration/formal/managed-cache.mjs": "writeStoredAnalysisSnapshot",
     "packages/limina/src/__tests__/analysis-cache-shards.spec.ts": "publishes the index last",
     "packages/limina/src/__tests__/full-analysis-cache.spec.ts": "consistent-reference-removal",
     ".agents/docs/lifecycle.md": "Execution",
@@ -49,9 +51,7 @@
   "fairness": "None; terminal stuttering represents quiescence only.",
   "profiles": {
     "cover-published-hit.cfg": {
-      "breaks": [
-        "NoPublishedHit"
-      ],
+      "breaks": ["NoPublishedHit"],
       "stable": false
     },
     "disabled.cfg": {
@@ -63,27 +63,19 @@
       "stable": false
     },
     "mutation-ignore-baseline.cfg": {
-      "breaks": [
-        "PhysicalCAS"
-      ],
+      "breaks": ["PhysicalCAS"],
       "stable": true
     },
     "mutation-index-first.cfg": {
-      "breaks": [
-        "IndexLast"
-      ],
+      "breaks": ["IndexLast"],
       "stable": false
     },
     "mutation-skip-final.cfg": {
-      "breaks": [
-        "CurrentCommit"
-      ],
+      "breaks": ["CurrentCommit"],
       "stable": false
     },
     "mutation-trust-envelope.cfg": {
-      "breaks": [
-        "CurrentAdoption"
-      ],
+      "breaks": ["CurrentAdoption"],
       "stable": true
     },
     "readonly.cfg": {
@@ -108,7 +100,7 @@
   "empiricalVerification": "Run evidence/managed-cache/replay.mjs and analysis-cache-{lifecycle,shards}, full-analysis-cache.",
   "driftReview": {
     "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
-    "sourceHash": "04448057a02f0977672fb6606c6518cf5aeea7a9a4e2878e9c27856dab1f212a",
+    "sourceHash": "aacff9f059a91a5b7a8402d10a11c9bbad788dacfdbc7c42e20a08283343127f",
     "modelHash": "52c897881003dd6acf31f87241e6f6c2c681499311c4a77c76ab417fa361a5a9"
   }
 }
