@@ -1,0 +1,69 @@
+{
+  "scope": "Validate a generated executable checker entry against independently required output/declaration leaves (I06–I08). Trusted facts only; no module resolution.",
+  "sourceMapping": {
+    "packages/limina/src/core/build-graph/reference-validation.ts": "validateStagedReferences",
+    "packages/limina/src/core/build-graph/finish-prepared-graph.ts": "finishPreparedGraph",
+    "packages/limina/src/core/build-graph/reference-inference.ts": "inferProjectReferences",
+    "packages/limina/src/core/build-graph/cached-graph-binding.ts": "validateRestoredReferences",
+    "packages/limina/src/__tests__/reference-validation.spec.ts": "omitted independent targets",
+    ".agents/docs/semantics.md": "TypeScript",
+    ".agents/docs/invariants.md": "I09",
+    "pnpm-workspace.yaml": "typescript:"
+  },
+  "stateVariables": {
+    "shape": "Input family of staged config bytes, including malformed writes.",
+    "edges": "Decoded references; not scheduling, output attribution or raw compiler inputs.",
+    "phase": "Prepared, staged, then admitted or rejected."
+  },
+  "initialState": "Prepared graph; independently required A, B and output O.",
+  "actions": {
+    "Stage": "packages/limina/src/core/build-graph/finish-prepared-graph.ts::validateStagedReferences",
+    "Validate": "packages/limina/src/core/build-graph/reference-validation.ts::validateReferences",
+    "Finish": "packages/limina/src/core/build-graph/reference-validation.ts::state: diagnostics.length"
+  },
+  "assumptions": "Each path binds one distinct managed config. Physical paths/compiler options not modeled. A check projection may reference a different checker; inbound check edges from declaration roots are not legal.",
+  "safety": {
+    "Sound": "Malformed shapes cannot pass.",
+    "CompleteControls": "Shared DAG and outbound check exceptions must pass."
+  },
+  "liveness": "None: no caller or external-process completion guarantee.",
+  "fairness": "None; terminal stuttering represents quiescence only.",
+  "profiles": {
+    "current.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "expanded.cfg": {
+      "breaks": [],
+      "stable": true
+    },
+    "mutation-derive-required.cfg": {
+      "breaks": ["Sound"],
+      "stable": false
+    },
+    "mutation-no-color.cfg": {
+      "breaks": ["Sound"],
+      "stable": false
+    },
+    "mutation-no-scc.cfg": {
+      "breaks": ["Sound"],
+      "stable": false
+    },
+    "mutation-use-schedule.cfg": {
+      "breaks": ["Sound"],
+      "stable": true
+    }
+  },
+  "bounds": {
+    "maxStates": 100000,
+    "dimensions": "5 or 8 shapes, 7 files, optional unbound path. Reachability depth bounded by all files.",
+    "pruning": "None: no state/action constraints, symmetry or view filtering."
+  },
+  "counterexamples": "A self-consistent omission is still missing if required by source; scheduling can conceal the loss only in a mutant.",
+  "empiricalVerification": "Run reference-validation.spec.ts and the cache bridge; inspect actual serialized files.",
+  "driftReview": {
+    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
+    "sourceHash": "7eba42701e5e0479c8b3720d51b02649cf2795339c27e2df1b882048333665d4",
+    "modelHash": "fb529d0545c965a5ed9c82ae9df4ec8695e076430625fe99fab18e3f5e7c6283"
+  }
+}

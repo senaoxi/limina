@@ -34,6 +34,8 @@ review 必须回答具体问题，而不是勾选“架构没有影响”：
 
 ## Guard 放在哪里
 
+当有界协议跨越多个状态所有者时，使用[形式化验证工作流](../../../verification/formal/README.md)。先把动作映射到当前调用者，再用能区分正反例的实现重放，才能判断模型反例是否为产品缺陷。
+
 优先在非法状态形成的最近入口用类型或 assertion 拒绝；跨模块性质用 focused semantic test；静态依赖规则可用 architecture test/lint。不要以越来越多的 downstream snapshots 代替缺失的入口契约，也不要为文件搬家写恒等测试。
 
 只有同时满足“当前 invariant 明确、长期语义边界明确、确有缺口、diff 小、无需改生产行为或冻结偶然结构”时才在此类知识维护任务新增 guard。生产 defect 需要行为修复时，先交付可审查的 finding 和反例，不借 prose maintenance 顺手修行为。[evidence matrix](./invariants.md#evidence-matrix-与-guard-决策) 记录本次选择。

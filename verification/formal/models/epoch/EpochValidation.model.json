@@ -1,0 +1,60 @@
+{
+  "scope": "Internal analysis return versus active epoch (I09); not CLI publication or consumption.",
+  "sourceMapping": {
+    "packages/limina/src/preflight/analysis-cache.ts": "async #attempt",
+    "verification/formal/evidence/epoch/replay.mjs": "observeAnalysisRead",
+    "packages/limina/src/preflight/manager.ts": "refreshAfterManagedOutputs",
+    "packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts": "bounds repeated drift",
+    ".agents/docs/lifecycle.md": "Execution",
+    ".agents/docs/invariants.md": "I09"
+  },
+  "stateVariables": {
+    "phase": "Before/after asynchronous validation.",
+    "epoch,captured,accepted,replaced": "Active controller identity and returned analysis identity."
+  },
+  "initialState": "Fresh controller, captured epoch 0.",
+  "actions": {
+    "Begin": "packages/limina/src/preflight/analysis-cache.ts::epoch.epoch.run",
+    "IdentityCheck": "packages/limina/src/preflight/analysis-cache.ts::epoch !== this.cache",
+    "ReplaceEpoch": "packages/limina/src/preflight/analysis-cache.ts::refresh():",
+    "FinishValidation": "packages/limina/src/preflight/analysis-cache.ts::return result",
+    "Stay": "packages/limina/src/preflight/analysis-cache.ts::return result"
+  },
+  "assumptions": "One stable observation; replacement is possible only at the configured caller boundary.",
+  "safety": {
+    "TypeOK": "Phase and identity domains.",
+    "AcceptedResultUsesActiveEpoch": "Stronger diagnostic property of the return, not a universal product contract."
+  },
+  "liveness": "None: no caller or external-process completion guarantee.",
+  "fairness": "None; terminal stuttering represents quiescence only.",
+  "profiles": {
+    "epoch-before-identity.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "epoch-serialized.cfg": {
+      "breaks": [],
+      "stable": true
+    },
+    "epoch-validation-boundary.cfg": {
+      "breaks": ["AcceptedResultUsesActiveEpoch"],
+      "stable": true
+    },
+    "proposed-epoch-recheck.cfg": {
+      "breaks": [],
+      "stable": false
+    }
+  },
+  "bounds": {
+    "maxStates": 100000,
+    "dimensions": "One attempt and one replacement, before or inside asynchronous validation.",
+    "pruning": "None: no state/action constraints, symmetry or view filtering."
+  },
+  "counterexamples": "During validation: internal API can return old result. Proposed recheck is model-only.",
+  "empiricalVerification": "See evidence/epoch/README.md and replay.mjs; distinguish historical return from publish.",
+  "driftReview": {
+    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
+    "sourceHash": "e50db1abe220e19f5a1e43f5b5cc8991d44494457903edee2670cb637438adaa",
+    "modelHash": "76f69bd34f3fb73234dfaa2ac9e49fab15ef938aeb230d126ccac4a2afab82cc"
+  }
+}

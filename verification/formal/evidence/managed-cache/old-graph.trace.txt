@@ -1,0 +1,39 @@
+Error: Invariant DeniedHasNoEffect is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ view = 0
+/\ held = [view |-> 0, target |-> "none", stage |-> "none"]
+/\ effect = [ target |-> "none",
+  stage |-> "none",
+  issued |-> [view |-> 0, target |-> "none", stage |-> "none"],
+  at |-> 0 ]
+/\ pc = [root |-> "mutation", independent |-> "mutation"]
+
+State 2: <Refresh line 40, col 12 to line 40, col 78 of module ManagedAdmission>
+/\ view = 1
+/\ held = [view |-> 0, target |-> "none", stage |-> "none"]
+/\ effect = [ target |-> "none",
+  stage |-> "none",
+  issued |-> [view |-> 0, target |-> "none", stage |-> "none"],
+  at |-> 0 ]
+/\ pc = [root |-> "mutation", independent |-> "mutation"]
+
+State 3: <Issue line 26, col 13 to line 30, col 40 of module ManagedAdmission>
+/\ view = 1
+/\ held = [view |-> 1, target |-> "root", stage |-> "mutation"]
+/\ effect = [ target |-> "none",
+  stage |-> "none",
+  issued |-> [view |-> 0, target |-> "none", stage |-> "none"],
+  at |-> 0 ]
+/\ pc = [root |-> "mutation", independent |-> "mutation"]
+
+State 4: <Consume line 31, col 17 to line 37, col 53 of module ManagedAdmission>
+/\ view = 1
+/\ held = [view |-> 0, target |-> "none", stage |-> "none"]
+/\ effect = [ target |-> "root",
+  stage |-> "mutation",
+  issued |-> [view |-> 1, target |-> "root", stage |-> "mutation"],
+  at |-> 1 ]
+/\ pc = [root |-> "launch", independent |-> "mutation"]
+
+21 states generated, 17 distinct states found, 7 states left on queue.

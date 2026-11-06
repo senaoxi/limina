@@ -34,6 +34,8 @@ Review must answer concrete questions rather than merely checking “no architec
 
 ## Where to place guards
 
+For a bounded protocol spanning several owners, use the [formal verification workflow](../../verification/formal/README.md). Map actions to current callers and replay a distinguishing implementation witness before treating a model counterexample as a product defect.
+
 Prefer types or assertions at the nearest entry where an illegal state forms. Use focused semantic tests for cross-module properties and architecture tests/lint for static dependency rules. Do not replace a missing entry contract with ever more downstream snapshots, or write tautological tests for file moves.
 
 Add a guard during this kind of knowledge maintenance only when the current invariant and long-term semantic boundary are clear, a real gap exists, the diff is small, and it requires neither production behavior changes nor freezing incidental structure. If a production defect needs a behavioral fix, first provide a reviewable finding and counterexample rather than silently fixing behavior during prose maintenance. The [evidence matrix](./invariants.md#evidence-matrix-and-guard-decisions) records the choices made here.

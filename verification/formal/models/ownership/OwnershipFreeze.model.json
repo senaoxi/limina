@@ -1,0 +1,79 @@
+{
+  "scope": "Freeze semantic family separately from exact primary execution checker and solution consumer set (I02/I07/I08).",
+  "sourceMapping": {
+    "packages/limina/src/core/build-graph/checker-ownership-resolution.ts": "finalizeLockedOwnership",
+    "packages/limina/src/core/build-graph/checker-semantic-authority.ts": "freezeSemanticAuthorities",
+    "packages/limina/src/core/build-graph/checker-build-coloring.ts": "colorBuildCheckerComponents",
+    "packages/limina/src/core/build-graph/manifest-ownership.ts": "createOwnershipManifest",
+    "packages/limina/src/core/build-graph/cached-ownership-replay.ts": "hasCurrentOwnership",
+    "packages/limina/src/__tests__/generated-graph.spec.ts": "reverse import order",
+    "packages/limina/src/__tests__/typecheck.spec.ts": "inherited owners for the same source",
+    ".agents/docs/semantics.md": "TypeScript",
+    ".agents/docs/invariants.md": "I09",
+    "pnpm-workspace.yaml": "typescript:"
+  },
+  "stateVariables": {
+    "scenario": "Fixed selections, component membership and trusted requirements; external checker internals excluded.",
+    "pending,seen": "Arrival order and union of semantic requirements.",
+    "frozen,family": "Authority snapshot vs current family after coloring.",
+    "owner,solution": "Single source owner, separate checker set for nested or empty solution.",
+    "phase": "Evidence, freeze, selection, manifest or rejection."
+  },
+  "initialState": "Pending evidence in unspecified delivery order; no owner published.",
+  "actions": {
+    "Observe": "packages/limina/src/core/build-graph/checker-ownership-resolution.ts::collectCheckerDependencyFacts",
+    "Select": "packages/limina/src/core/build-graph/checker-ownership-resolution.ts::finalizeLockedOwnership",
+    "Freeze": "packages/limina/src/core/build-graph/checker-semantic-authority.ts::freezeSemanticAuthorities",
+    "Manifest": "packages/limina/src/core/build-graph/manifest-ownership.ts::createOwnershipManifest",
+    "Finish": "packages/limina/src/core/build-graph/manifest-ownership.ts::solutions.sort"
+  },
+  "assumptions": "One representative source, a fixed sibling for shared solution, a same-family tsc/tsgo conflict on an equality component. Empty solution can coexist with unrelated source. No Svelte declaration capability.",
+  "safety": {
+    "FrozenAuthority": "Do not rewrite frozen authority.",
+    "ConflictRejected": "Incompatible requirements cannot publish.",
+    "ExactComponent": "Same semantic family is not exact execution identity.",
+    "SourceOwner": "Admitted source has a primary checker.",
+    "SolutionConsumers": "Solution collects checkers of member sources only.",
+    "LegalCases": "The legal examples must not be refused."
+  },
+  "liveness": "None: no caller or external-process completion guarantee.",
+  "fairness": "None; terminal stuttering represents quiescence only.",
+  "profiles": {
+    "current.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "expanded.cfg": {
+      "breaks": [],
+      "stable": true
+    },
+    "mutation-family-color.cfg": {
+      "breaks": ["ExactComponent"],
+      "stable": true
+    },
+    "mutation-last-wins.cfg": {
+      "breaks": ["ConflictRejected"],
+      "stable": false
+    },
+    "mutation-rewrite.cfg": {
+      "breaks": ["FrozenAuthority"],
+      "stable": false
+    },
+    "mutation-single-root.cfg": {
+      "breaks": ["SolutionConsumers"],
+      "stable": false
+    }
+  },
+  "bounds": {
+    "maxStates": 50000,
+    "dimensions": "4 or 7 scenarios, up to two independent pending requirements.",
+    "pruning": "None: no state/action constraints, symmetry or view filtering."
+  },
+  "counterexamples": "Last-wins is not convergence. Shared solution is not a conflicting primary owner.",
+  "empiricalVerification": "Run generated-graph.spec.ts (reverse import order, nested shared/empty solutions) and typecheck.spec.ts (inherited owners); compare real checker diagnostics separately.",
+  "driftReview": {
+    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
+    "sourceHash": "4e2278d4fbadbb71aa8debfcea9c5c5036051db1e3d57164b1e3c4253738c1a8",
+    "modelHash": "c87d37d9f9523bab174ed13f018e116cc0958b5a1738d6b76426f1009d77339f"
+  }
+}
