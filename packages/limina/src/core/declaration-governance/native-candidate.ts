@@ -2,6 +2,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { NativeObservedProgram } from '../typescript-semantic/native-program-api';
@@ -50,12 +51,12 @@ export function observeNativeDeclarationCandidate(
         snapshot.failures[0]?.detail ??
           'Candidate declaration observation is incomplete.',
       );
-    // Match Native evidence lexical keys without realpath or case folding.
+    // Query membership with the same Compiler Host key as the observation.
     const declarations = new Set(
       context.program
         .getSourceFiles()
         .filter((source) => isDeclarationFile(source.fileName))
-        .map((source) => normalizeAbsolutePath(source.fileName)),
+        .map((source) => compilerFileKey(source.fileName)),
     );
     const resolutions = new Map(
       snapshot.resolutions.map((resolution) => [
@@ -104,7 +105,8 @@ export function observeNativeDeclarationCandidate(
         input.declarations,
         snapshot.requests.flatMap((request) => {
           const file = request.sourceFile?.lexicalPath;
-          if (file === undefined || !declarations.has(file)) return [];
+          if (file === undefined || !declarations.has(compilerFileKey(file)))
+            return [];
           if (
             snapshot.contexts.length !== 1 ||
             request.consumerContextId !== snapshot.contexts[0]!.id
@@ -145,6 +147,7 @@ export function observeNativeDeclarationCandidate(
             },
           ];
         }),
+        compilerFileKey,
       ),
     };
   } finally {

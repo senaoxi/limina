@@ -9,6 +9,8 @@ import type {
   NativeRequest,
 } from '../../domain/analysis/native-evidence';
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
+import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
+import { nativeHostContract } from '../typescript-semantic/compiler-path-key';
 import { qualifiedNativeEvidenceTarget } from '../typescript-semantic/native-fact-qualification';
 import type { CandidateBuildPlan } from './analysis-admission';
 import { projectionConsumers, projections } from './compilation-projection';
@@ -101,6 +103,7 @@ function projectQualifiedPrerequisite(
   input: ProjectionInput,
   context: NativeEvidenceContext,
 ): ProjectedCompilationPrerequisite | undefined {
+  if (context.inputs.hostContract !== nativeHostContract()) return undefined;
   const coverage = targetCoverage(input.snapshot, input.obligation);
   const requests = qualifiedRequests(input, context, coverage);
   if (requests === undefined) return undefined;
@@ -115,17 +118,23 @@ function projectQualifiedPrerequisite(
     coverage,
     requiredRelation,
     projectionSource: source,
-    targetIdentities: coverage.map((item) => item.target),
+    targetIdentities: input.snapshot.resolutions.flatMap((item) =>
+      requests.some((request) => request.id === item.requestId) &&
+      item.target !== null
+        ? [item.target]
+        : [],
+    ),
     consumption: relationConsumption(requiredRelation),
   };
 }
-function hasSamePhysicalTarget(
+function hasSameTarget(
   left: NativeFileIdentity,
   right: NativeFileIdentity,
 ): boolean {
   if (left.physical.state !== 'verified' || right.physical.state !== 'verified')
     return false;
   return [
+    compilerFileKey(left.lexicalPath) === compilerFileKey(right.lexicalPath),
     left.physical.canonicalId === right.physical.canonicalId,
     left.physical.inputVersion === right.physical.inputVersion,
   ].every(Boolean);
@@ -140,7 +149,7 @@ function targetCoverage(
     )
     .filter((item) => item !== null);
   return snapshot.coverage.filter((item) =>
-    targets.some((target) => hasSamePhysicalTarget(item.target, target)),
+    targets.some((target) => hasSameTarget(item.target, target)),
   );
 }
 function selectRelation(
@@ -188,7 +197,7 @@ function coverageForRequest(
     .filter((item) => item.requestId === requestId)
     .flatMap((item) => (item.target === null ? [] : [item.target]));
   return coverage.filter((item) =>
-    targets.some((target) => hasSamePhysicalTarget(item.target, target)),
+    targets.some((target) => hasSameTarget(item.target, target)),
   );
 }
 

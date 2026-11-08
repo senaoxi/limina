@@ -243,7 +243,7 @@ describe('persistent Vue and mixed graph analysis', () => {
     const f = crossProjectFixture();
     expectCold(f.run());
     const snapshot = f.snapshot();
-    snapshot.header.implementation = 'typescript-5.4-6.0-coverage-bounded-v24';
+    snapshot.header.implementation = 'checker-declaration-supplements-v29';
     f.writeSnapshot(snapshot);
     const rebuilt = f.run();
     expectCold(rebuilt);

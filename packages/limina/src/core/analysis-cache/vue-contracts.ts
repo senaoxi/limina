@@ -38,7 +38,7 @@ export interface VueQueryRecord {
   data: DataNode;
 }
 export interface VueContextRecord {
-  adapter: 'vue-3.2.4-v10-compiler-request-identity';
+  adapter: 'vue-3.2.4-v11-compiler-request-identity';
   project: Pick<VueProjectSemanticIdentity, 'configPath' | 'projectRootDir'> & {
     declarationLoading?: VueProjectSemanticIdentity['declarationLoading'];
     extensions: string[];

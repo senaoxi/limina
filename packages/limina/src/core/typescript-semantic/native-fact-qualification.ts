@@ -38,6 +38,7 @@ function hasQualifiedCoverage(
   return [
     coverage.state === 'unique',
     coverage.completeness === 'complete',
+    coverage.members.every((member) => member.match === 'lexical'),
     coverage.target.physical.state === 'verified',
     coverage.members[0]?.configId === target,
   ].every(Boolean);

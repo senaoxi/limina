@@ -27,7 +27,10 @@ import { promisify } from 'node:util';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
-import { projectSupplementalPrerequisite } from '../core/build-graph/compilation-prerequisite';
+import {
+  projectCompilationPrerequisite,
+  projectSupplementalPrerequisite,
+} from '../core/build-graph/compilation-prerequisite';
 import { hasValidRestoredDeclarationContexts } from '../core/build-graph/declaration-context-candidate';
 import * as generatedConfigs from '../core/build-graph/generated-configs';
 import type { DependencyAnalysisResult } from '../core/build-graph/types';
@@ -12685,3 +12688,164 @@ it.each([
     }
   },
 );
+
+describe('declaration compiler path identity', () => {
+  it.each(['tsc', 'vue-tsc'] as const)(
+    'admits an uncovered consumer alias through the real %s candidate',
+    async (checker) => {
+      const compilerOptions = {
+        composite: true,
+        declaration: true,
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        target: 'ES2022',
+        types: [],
+        skipDefaultLibCheck: true,
+      };
+      const fixture = await createFixture({
+        'packages/a/tsconfig.json': json({
+          compilerOptions,
+          files: ['main.ts', 'root.d.ts'],
+        }),
+        'packages/a/main.ts':
+          'import type {Value} from "./root.js"; export const value: Value = 1;',
+        'packages/a/root.d.ts': 'export type {Value} from "../real/api.js";',
+        'packages/b/tsconfig.json': json({
+          compilerOptions,
+          files: ['alias/api.d.ts'],
+        }),
+        'packages/real/api.d.ts': 'export type Value = number;',
+      });
+      fixture.config.scope!.checkers = {
+        [checker]: { include: ['packages/*/tsconfig.json'] },
+      };
+      try {
+        await symlink(
+          fixture.path('packages/real'),
+          fixture.path('packages/b/alias'),
+          'junction',
+        );
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const a = fixture.path('packages/a/tsconfig.json');
+        const b = fixture.path('packages/b/tsconfig.json');
+        const real = fixture.path('packages/real/api.d.ts');
+        expect(
+          graph.dependencyEdges.some(
+            (edge) => edge.fromConfigPath === a && edge.toConfigPath === b,
+          ),
+        ).toBe(false);
+        expect(
+          graph.dependencyAnalysis!.declarationContexts!.some(
+            (decision) => decision.file.lexicalPath === real,
+          ),
+        ).toBe(false);
+        const validation = graph.dependencyAnalysis!.declarationValidation!;
+        expect(validation.state, validation.diagnostics.join('\n')).toBe(
+          'admitted',
+        );
+        const receipt = validation.receipts.find(
+          (item) => item.sourceConfig === a,
+        )!;
+        expect(
+          receipt.requests.some((request) => request.target === real),
+        ).toBe(true);
+        const target = graph.sourceToDts.get(checker)!.get(a)!;
+        const build = await execFileAsync(
+          process.execPath,
+          [
+            requireFromTest.resolve(
+              checker === 'tsc'
+                ? 'typescript/bin/tsc'
+                : 'vue-tsc/bin/vue-tsc.js',
+            ),
+            '--build',
+            target,
+            '--force',
+            '--pretty',
+            'false',
+          ],
+          { cwd: fixture.rootDir },
+        );
+        expect(build.stderr).toBe('');
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('does not substitute another request Coverage sharing the same physical target', async () => {
+    const compilerOptions = {
+      composite: true,
+      declaration: true,
+      module: 'NodeNext',
+      moduleResolution: 'NodeNext',
+      target: 'ES2022',
+      types: [],
+      noLib: true,
+    };
+    const fixture = await createFixture({
+      'packages/a/tsconfig.json': json({ compilerOptions, files: ['main.ts'] }),
+      'packages/a/main.ts':
+        'import {value as a} from "../b/real/value.js"; import {value as b} from "../b/alias/value.js"; export const sum = a+b;',
+      'packages/b/tsconfig.json': json({
+        compilerOptions,
+        files: ['real/value.ts', 'alias/value.ts'],
+      }),
+      'packages/b/real/value.ts': 'export const value=1;',
+    });
+    try {
+      await symlink(
+        fixture.path('packages/b/real'),
+        fixture.path('packages/b/alias'),
+        'junction',
+      );
+      const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+      const analysis = graph.dependencyAnalysis!;
+      const a = fixture.path('packages/a/tsconfig.json');
+      const b = fixture.path('packages/b/tsconfig.json');
+      const snapshot = analysis.nativeEvidence!.find((entry) =>
+        entry.snapshot.contexts.some(
+          (context) =>
+            context.inputs.sourceConfig === a &&
+            context.authority.phase === 'locked',
+        ),
+      )!.snapshot;
+      const obligations = snapshot.obligations.filter(
+        (item) => item.targetConfigId === b,
+      );
+      expect(obligations.length).toBeGreaterThan(0);
+      for (const obligation of obligations) {
+        const own = snapshot.resolutions
+          .filter((resolution) =>
+            obligation.requestIds.includes(resolution.requestId),
+          )
+          .map((resolution) => resolution.target!);
+        const projected = projectCompilationPrerequisite(
+          snapshot,
+          obligation,
+          analysis.candidate!,
+        );
+        expect(projected).toBeDefined();
+        expect(projected!.targetIdentities).toEqual(own);
+        expect(
+          projected!.coverage.map((coverage) => coverage.target.lexicalPath),
+        ).toEqual(own.map((target) => target.lexicalPath));
+        const missing = {
+          ...snapshot,
+          coverage: snapshot.coverage.filter(
+            (coverage) => coverage.target.lexicalPath !== own[0]!.lexicalPath,
+          ),
+        };
+        expect(
+          projectCompilationPrerequisite(
+            missing,
+            obligation,
+            analysis.candidate!,
+          ),
+        ).toBeUndefined();
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});

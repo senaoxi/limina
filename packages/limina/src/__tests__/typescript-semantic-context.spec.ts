@@ -311,7 +311,7 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it.each([false, true])(
-    'stops explicitly covered external declarations across preserveSymlinks=%s',
+    'loads declarations by actual target membership across preserveSymlinks=%s',
     async (preserveSymlinks) => {
       const rootDirectory = await createFixture({
         'external/pkg/index.d.ts': 'export declare const value: true;\n',
@@ -343,10 +343,33 @@ describe('bounded TypeScript semantic context', () => {
       try {
         const record = findRecord(context, sourceFile, 'static');
         const target = context.resolveImportRecord(record).target;
+        const realTarget = normalizeAbsolutePath(
+          path.join(rootDirectory, 'external/pkg/index.d.ts'),
+        );
+        const aliasTarget = normalizeAbsolutePath(
+          path.join(rootDirectory, 'node_modules/pkg/index.d.ts'),
+        );
+        const inputs = parseConfig(
+          path.join(rootDirectory, 'tsconfig.json'),
+        ).fileNames;
+        expect(inputs).toContain(realTarget);
+        expect(inputs).not.toContain(aliasTarget);
+        expect(target?.resolvedFileName).toBe(
+          preserveSymlinks ? aliasTarget : realTarget,
+        );
         expect(target?.isExternalLibraryImport).toBe(true);
         expect(
-          context.program.getSourceFile(target!.resolvedFileName),
-        ).toBeUndefined();
+          context.nativeEvidence?.coverage.find(
+            (coverage) =>
+              coverage.target.lexicalPath === target!.resolvedFileName,
+          ),
+        ).toMatchObject({
+          completeness: 'complete',
+          state: preserveSymlinks ? 'uncovered' : 'unique',
+        });
+        expect(
+          context.program.getSourceFile(target!.resolvedFileName) !== undefined,
+        ).toBe(preserveSymlinks);
       } finally {
         context.dispose();
       }

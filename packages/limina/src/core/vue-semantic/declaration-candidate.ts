@@ -16,7 +16,11 @@ import {
   DeclarationObservationUnavailable,
 } from '../declaration-governance/candidate';
 import { declarationRequestSchema } from '../declaration-governance/schema';
-import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
+import { compilerPathPolicy } from '../typescript-semantic/compiler-path-key';
+import {
+  nativeFingerprint,
+  observeNativeFileIdentity,
+} from '../typescript-semantic/native-file-identity';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
 import { vueCandidateWorker } from './candidate-worker';
 
@@ -67,20 +71,13 @@ export function observeVueDeclarationCandidate(
     input: JSON.stringify({
       vueTsc: toolchain.paths.vueTsc,
       generatedConfig: input.generatedConfig,
+      sourceConfig: input.sourceConfig,
       buildInfoFile: input.parsed.options.tsBuildInfoFile,
       files: [...input.files],
       declarations: input.declarations,
       referenceInputs: input.referenceInputs ?? [],
       configs: input.configs,
-      governed: input.coverage.configurations.flatMap((config) =>
-        config.state === 'enumerated'
-          ? config.members.flatMap((member) =>
-              member.physical.state === 'verified'
-                ? [member.physical.canonicalId]
-                : [],
-            )
-          : [],
-      ),
+      coverage: input.coverage,
     }),
     encoding: 'utf8',
     timeout: 120_000,
@@ -160,9 +157,33 @@ export function observeVueDeclarationCandidate(
         `Vue candidate lookup changed: ${check.file}`,
       );
   }
+  for (const config of input.coverage.configurations) {
+    if (config.state !== 'enumerated') continue;
+    for (const member of config.members) {
+      if (member.physical.state !== 'verified') continue;
+      const current = observeNativeFileIdentity(
+        member.lexicalPath,
+        input.coverage.inputVersion,
+      );
+      if (
+        nativeFingerprint(current.physical) !==
+        nativeFingerprint(member.physical)
+      )
+        throw new DeclarationObservationUnavailable(
+          `Vue candidate binding changed: ${member.lexicalPath}`,
+        );
+    }
+  }
+  const fileKey = compilerPathPolicy(toolchain.tsModule, {
+    getCurrentDirectory: () => path.dirname(input.sourceConfig),
+    getCanonicalFileName: toolchain.tsModule.createCompilerHost(
+      input.parsed.options,
+    ).getCanonicalFileName,
+  }).key;
   const requests = declarationCandidateRequests(
     input.declarations,
     parsed.data.requests,
+    fileKey,
   );
   if (requests.some((request) => request.resolutionState === 'unavailable'))
     throw new DeclarationObservationUnavailable(

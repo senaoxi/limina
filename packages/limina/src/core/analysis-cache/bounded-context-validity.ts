@@ -3,9 +3,9 @@ import type { NativeEvidenceContext } from '../../domain/analysis/native-context
 import type { NativeResolution } from '../../domain/analysis/native-evidence';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
+import { nativeHostContract } from '../typescript-semantic/compiler-path-key';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
-import { NATIVE_PROGRAM_ADAPTER } from '../typescript-semantic/native-program-api';
 import { BoundedEvidenceIndex } from './bounded-evidence-index';
 import { hasCompleteBoundedInventory } from './bounded-inventory-validity';
 import { hasBoundObligations } from './bounded-obligation-validity';
@@ -123,7 +123,7 @@ function hasMatchingProjectInputs(
     rawReferences: nativeFingerprint(project.projectReferences ?? []),
     compilationScope: project.compilationObligationScope ?? 'source-options',
     coverage: nativeFingerprint(record.native!.snapshot.coverageIndexes[0]),
-    hostContract: NATIVE_PROGRAM_ADAPTER,
+    hostContract: nativeHostContract(),
     typescriptVersion: '6.0.3',
   };
   return Object.entries(expected).every(

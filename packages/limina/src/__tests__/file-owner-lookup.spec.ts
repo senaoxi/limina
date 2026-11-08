@@ -97,7 +97,6 @@ describe('analysis-local file owner identity', () => {
       expect(lookup.get(queried)).toBeUndefined();
       expect(lookup.registeredFileNames(queried, owner)).toEqual([]);
       expect(lookup.get(registered)).toEqual([owner]);
-      expect(lookup.isCanonicalAmbiguous(queried)).toBe(false);
     },
   );
 
@@ -121,13 +120,10 @@ describe('analysis-local file owner identity', () => {
       ]);
       await symlink(f.path('real'), f.path('links/second'), 'junction');
       expect(lookup.get(f.path('links/second/value.ts'))).toBeUndefined();
-      expect(lookup.isCanonicalAmbiguous(f.path('links/second/value.ts'))).toBe(
-        false,
-      );
     },
   );
 
-  it('rebuilds canonical membership after a symlink is retargeted or removed', async () => {
+  it('never borrows declaration membership before or after alias retargeting', async () => {
     const f = await fixture();
     await writeFile(f.path('real/value.d.ts'), 'export {};');
     const inputs = [
@@ -135,7 +131,7 @@ describe('analysis-local file owner identity', () => {
     ];
     const first = new FileOwnerLookup(inputs);
     const alias = f.path('links/alias/value.d.ts');
-    expect(first.get(alias)).toEqual([f.path('a.json')]);
+    expect(first.get(alias)).toBeUndefined();
     await rm(f.path('links/alias'), { recursive: true });
     await symlink(f.path('other'), f.path('links/alias'), 'junction');
     expect(new FileOwnerLookup(inputs).get(alias)).toBeUndefined();

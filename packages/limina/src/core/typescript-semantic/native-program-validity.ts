@@ -1,10 +1,10 @@
 import type ts from 'typescript';
 import type { NativeEvidenceFailure } from '../../domain/analysis/native-evidence';
 import { effectiveCompilerOptions } from './compiler-options';
+import { nativeHostContract } from './compiler-path-key';
 import { nativeFingerprint } from './native-file-identity';
 import type { NativeProgramObservationOptions } from './native-observation-adapter';
 import { NativeObservationError } from './native-observation-failure';
-import { NATIVE_PROGRAM_ADAPTER } from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
 
 /**
@@ -18,7 +18,10 @@ export function assertNativeObservationInputs(
   const { inputs } = options.context;
   const expected = [
     compiler.version,
-    NATIVE_PROGRAM_ADAPTER,
+    nativeHostContract(
+      compiler,
+      compiler.createCompilerHost(options.project.options),
+    ),
     options.project.configPath,
     nativeFingerprint(options.project.fileNames),
     nativeFingerprint(effectiveCompilerOptions(options.project.options)),

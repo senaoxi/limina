@@ -1,5 +1,5 @@
 import { renameSync } from 'node:fs';
-import { rename, writeFile } from 'node:fs/promises';
+import { mkdir, rename, symlink, writeFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
@@ -20,6 +20,7 @@ import { NativeObservationAdapter } from '../core/typescript-semantic/native-obs
 import { createNativeObservationContext } from '../core/typescript-semantic/native-observation-context';
 import { NativeObservationError } from '../core/typescript-semantic/native-observation-failure';
 import { nativeProgramFacts } from '../core/typescript-semantic/native-program-facts';
+import { NativeProgramFrontier } from '../core/typescript-semantic/native-program-frontier';
 import { nativeProgramRecords } from '../core/typescript-semantic/native-program-records';
 import { parseTypeScriptProjectConfig } from '../core/typescript-semantic/project-references';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
@@ -1496,3 +1497,153 @@ function compilerWithReferenceFault(
   };
   return { ...ts, createProgram };
 }
+
+describe('actual declaration target membership', () => {
+  it.each(
+    ['d.ts', 'd.mts', 'd.cts'].flatMap((extension) =>
+      ['config', 'type', 'path', 'module'].flatMap((channel) =>
+        [false, true].map((preserveSymlinks) => ({
+          extension,
+          channel,
+          preserveSymlinks,
+        })),
+      ),
+    ),
+  )(
+    'keeps $channel $extension actual targets with preserveSymlinks=$preserveSymlinks',
+    async ({ extension, channel, preserveSymlinks }) => {
+      const alias = `node_modules/proof/index.${extension}`;
+      const real = `real/index.${extension}`;
+      const entry =
+        channel === 'module'
+          ? 'import "proof"; export {};'
+          : channel === 'config'
+            ? 'export {};'
+            : `/// <reference ${channel === 'type' ? 'types' : 'path'}="./${alias}" />\nexport {};`;
+      const files = {
+        'tsconfig.json': config(['main.ts'], {
+          compilerOptions: {
+            ...compilerOptions,
+            composite: true,
+            noLib: true,
+            types: channel === 'config' ? [`./${alias}`] : [],
+            preserveSymlinks,
+          },
+        }),
+        'b.json': config([alias], {
+          compilerOptions: {
+            ...compilerOptions,
+            composite: true,
+            noLib: true,
+            types: [],
+          },
+        }),
+        'main.ts': entry,
+        [real]: 'export declare const value: number;',
+        'real/package.json': JSON.stringify({
+          name: 'proof',
+          types: `./index.${extension}`,
+        }),
+      };
+      const fixture = await createSemanticRepairFixture(files);
+      cleanups.push(fixture.cleanup);
+      await mkdir(fixture.path('node_modules'), { recursive: true });
+      await symlink(
+        fixture.path('real'),
+        fixture.path('node_modules/proof'),
+        'junction',
+      );
+      const parsed = fixture.parse();
+      const coverage = collectSourceConfigCoverage({
+        universe: {
+          id: 'aliases',
+          revision: '1',
+          inputVersion: '1',
+          selectionEvidenceId: 'configs',
+          scopeFingerprint: 'aliases',
+          sourceConfigIds: ['tsconfig.json', 'b.json'].map((name) =>
+            fixture.path(name),
+          ),
+          discovery: 'closed',
+        },
+        parse: (configPath) =>
+          parseTypeScriptProjectConfig({ configPath, tsModule: ts }),
+      });
+      const context = createNativeDependencyContext({
+        configPath: fixture.path('tsconfig.json'),
+        fileNames: parsed.fileNames,
+        options: parsed.options,
+        workspaceSourceBoundary: createWorkspaceSourceBoundary(
+          parsed.fileNames,
+          undefined,
+          coverage,
+        ),
+      });
+      try {
+        const snapshot = context.nativeEvidence!;
+        expect(snapshot.failures).toEqual([]);
+        const resolution = snapshot.resolutions.find((item) =>
+          item.target?.lexicalPath.endsWith(`index.${extension}`),
+        )!;
+        const isAliasSelected = preserveSymlinks || channel === 'path';
+        const target = fixture.path(isAliasSelected ? alias : real);
+        expect(resolution.target?.lexicalPath).toBe(target);
+        const membership = snapshot.coverage.find(
+          (item) => item.target.lexicalPath === target,
+        )!;
+        expect(membership.members.map((member) => member.configId)).toEqual(
+          isAliasSelected ? [fixture.path('b.json')] : [],
+        );
+        expect(membership.state).toBe(isAliasSelected ? 'unique' : 'uncovered');
+        expect(resolution.compilerLoad === 'loaded').toBe(!isAliasSelected);
+        const host = ts.createCompilerHost(parsed.options);
+        const program = ts.createProgram({
+          rootNames: parsed.fileNames,
+          options: parsed.options,
+          host,
+        });
+        expect(program.getSourceFile(target)?.fileName).toBe(target);
+      } finally {
+        context.dispose();
+      }
+    },
+  );
+});
+
+it('does not transfer a declaration root grant to its physical alias', async () => {
+  const fixture = await createSemanticRepairFixture({
+    'tsconfig.json': config(['alias/api.d.ts']),
+    'real/api.d.ts': 'export type Value = number;',
+  });
+  cleanups.push(fixture.cleanup);
+  await symlink(fixture.path('real'), fixture.path('alias'), 'junction');
+  const root = fixture.path('alias/api.d.ts');
+  const coverage = collectSourceConfigCoverage({
+    universe: {
+      id: 'roots',
+      revision: '1',
+      inputVersion: '1',
+      selectionEvidenceId: 'config',
+      scopeFingerprint: 'roots',
+      sourceConfigIds: [fixture.path('tsconfig.json')],
+      discovery: 'closed',
+    },
+    parse: (configPath) =>
+      parseTypeScriptProjectConfig({ configPath, tsModule: ts }),
+  });
+  const frontier = new NativeProgramFrontier(
+    fixture.path('tsconfig.json'),
+    [root],
+    coverage,
+  );
+  expect(frontier.inspect(root).decision).toEqual({
+    action: 'expand',
+    basis: 'covered-declaration',
+  });
+  const real = frontier.inspect(fixture.path('real/api.d.ts'));
+  expect(real.coverage.state).toBe('uncovered');
+  expect(real.decision).toEqual({
+    action: 'expand',
+    basis: 'consumer-declaration',
+  });
+});

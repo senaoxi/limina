@@ -62,6 +62,10 @@ export function declarationResponsibility(input: {
   readonly coverage: NativeCoverage;
 }): DeclarationResponsibility {
   const { coverage } = input;
+  if (coverage.members.some((member) => member.match !== 'lexical'))
+    return { kind: 'unknown', reason: 'Unqualified declaration membership.' };
+  if (coverage.gaps.includes('lexical-identity-conflict'))
+    return { kind: 'unknown', reason: coverage.gaps.join(', ') };
   if (
     input.root &&
     coverage.members.some((member) => member.configId === input.sourceConfig)

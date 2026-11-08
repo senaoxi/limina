@@ -10,6 +10,7 @@ import {
 } from '../../domain/analysis/native-evidence';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import { deriveCompilerCoverage } from './compiler-coverage';
+import { nativeCompilerPathPolicy } from './compiler-path-key';
 import type { TypeScriptSemanticProject } from './contracts';
 import { NativeIdentityObservations } from './native-identity-observations';
 
@@ -25,9 +26,9 @@ export interface NativeSourceAttempt {
  */
 export class NativeProgramFrontier {
   readonly #roots: Set<string>;
-  readonly #declarationRoots = new Set<string>();
   readonly #observations = new Map<string, NativeSourceAttempt>();
   readonly #attempts = new Map<string, NativeSourceAttempt>();
+  readonly fileKey: (file: string) => string;
   readonly identities: NativeIdentityObservations;
   readonly configId: string;
   readonly index: SourceConfigCoverageIndex;
@@ -38,18 +39,14 @@ export class NativeProgramFrontier {
     roots: readonly string[],
     index: SourceConfigCoverageIndex,
     validation?: TypeScriptSemanticProject['declarationContextValidation'],
+    fileKey: (file: string) => string = nativeCompilerPathPolicy().key,
   ) {
     this.identities = new NativeIdentityObservations(index.inputVersion);
     this.configId = configId;
     this.index = index;
     this.validation = validation;
-    this.#roots = new Set(roots.map(normalizeAbsolutePath));
-    for (const root of roots) {
-      if (!isDeclarationFile(root)) continue;
-      const file = this.identities.read(root);
-      if (file.physical.state === 'verified')
-        this.#declarationRoots.add(file.physical.canonicalId);
-    }
+    this.fileKey = fileKey;
+    this.#roots = new Set(roots.map(fileKey));
   }
 
   inspect(fileName: string): NativeSourceAttempt {
@@ -57,17 +54,13 @@ export class NativeProgramFrontier {
     const prior = this.#observations.get(path);
     if (prior !== undefined) return prior;
     const file = this.identities.read(path);
-    const coverage = deriveCompilerCoverage(this.index, file);
+    const coverage = deriveCompilerCoverage(this.index, file, this.fileKey);
     const observation = {
       file,
       coverage,
       decision: decideNativeFrontier({
         consumerConfigId: this.validation?.sourceConfig ?? this.configId,
-        root:
-          this.#roots.has(file.lexicalPath) ||
-          (isDeclarationFile(file.lexicalPath) &&
-            file.physical.state === 'verified' &&
-            this.#declarationRoots.has(file.physical.canonicalId)),
+        root: this.#roots.has(this.fileKey(file.lexicalPath)),
         kind: isDeclarationFile(file.lexicalPath)
           ? 'declaration'
           : 'implementation',
@@ -75,9 +68,12 @@ export class NativeProgramFrontier {
       }),
     };
     if (
-      this.validation?.allowedDeclarations.includes(path) &&
+      this.validation?.allowedDeclarations.some(
+        (file) => this.fileKey(file) === this.fileKey(path),
+      ) &&
       isDeclarationFile(path) &&
-      coverage.members.length > 0
+      coverage.members.length > 0 &&
+      coverage.completeness === 'complete'
     )
       observation.decision = { action: 'expand', basis: 'covered-declaration' };
     this.#observations.set(path, observation);

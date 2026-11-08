@@ -2,9 +2,9 @@ import type { NativeEvidenceContext } from '../../domain/analysis/native-context
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
 import { effectiveCompilerOptions } from './compiler-options';
+import { nativeHostContract } from './compiler-path-key';
 import type { TypeScriptSemanticProject } from './contracts';
 import { nativeFingerprint } from './native-file-identity';
-import { NATIVE_PROGRAM_ADAPTER } from './native-program-api';
 
 export function createNativeObservationContext(options: {
   project: TypeScriptSemanticProject;
@@ -22,7 +22,7 @@ export function createNativeObservationContext(options: {
     typescriptVersion: options.typescriptVersion,
     typescriptImplementation: options.typescriptImplementation,
     toolchain: options.toolchain,
-    hostContract: NATIVE_PROGRAM_ADAPTER,
+    hostContract: nativeHostContract(),
     config: project.configPath,
     sourceConfig: project.sourceConfigPath ?? project.configPath,
     roots: nativeFingerprint(project.fileNames),

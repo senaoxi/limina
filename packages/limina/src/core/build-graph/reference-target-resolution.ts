@@ -5,7 +5,6 @@ import {
 } from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
-import { formatAmbiguousCanonicalOwner } from './canonical-owner-problems';
 import { nativeReferenceTarget } from './native-reference-target';
 import { isCurrentLockedSupplement } from './pending-supplemental-assessment';
 import { getDtsProjectsForSourcePath } from './project-indexes';
@@ -104,15 +103,7 @@ function getOwnedConfigPaths(
   filePath: string,
 ): string[] {
   const owners = context.fileOwnerLookup.get(filePath) ?? [];
-  if (!context.fileOwnerLookup.isCanonicalAmbiguous(filePath)) return owners;
-  context.problems.push(
-    formatAmbiguousCanonicalOwner({
-      filePath,
-      owners,
-      rootDir: context.config.rootDir,
-    }),
-  );
-  return [];
+  return owners;
 }
 
 function resolveExplicitOwnedSource(
