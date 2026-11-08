@@ -58,16 +58,17 @@ export class DeclarationObservationUnavailable extends Error {}
 export function declarationCandidateRequests(
   declarations: readonly string[],
   inventory: readonly DeclarationRequestReceipt[],
+  fileKey: (file: string) => string,
 ): readonly DeclarationRequestReceipt[] {
-  const byFile = Map.groupBy(inventory, (request) => request.file);
+  const byFile = Map.groupBy(inventory, (request) => fileKey(request.file));
   const pending = [...declarations];
   const visited = new Set<string>();
   const result: DeclarationRequestReceipt[] = [];
   while (pending.length > 0) {
     const file = pending.pop()!;
-    if (visited.has(file)) continue;
-    visited.add(file);
-    const requests = byFile.get(file) ?? [];
+    if (visited.has(fileKey(file))) continue;
+    visited.add(fileKey(file));
+    const requests = byFile.get(fileKey(file)) ?? [];
     for (const request of requests) {
       result.push(request);
       if (

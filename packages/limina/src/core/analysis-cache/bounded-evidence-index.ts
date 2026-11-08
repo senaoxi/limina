@@ -3,6 +3,7 @@ import type {
   NativeFileIdentity,
 } from '../../domain/analysis/native-coverage';
 import { deriveCompilerCoverage } from '../typescript-semantic/compiler-coverage';
+import { nativeCompilerPathPolicy } from '../typescript-semantic/compiler-path-key';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { NativeContextRecord } from './contracts';
 
@@ -13,12 +14,17 @@ Local joins only; qualification still checks duplicates and full coverage.
 */
 export class BoundedEvidenceIndex {
   readonly #coverageIndex: Snapshot['coverageIndexes'][number];
+  readonly #fileKey: (file: string) => string;
   readonly #coverage = new Map<string, NativeCoverage>();
   readonly requests: Map<string, Snapshot['requests'][number]>;
   readonly resolutions: Map<string, Snapshot['resolutions'][number]>;
   readonly obligations: Map<string, Snapshot['obligations'][number]>;
 
-  constructor(snapshot: Snapshot) {
+  constructor(
+    snapshot: Snapshot,
+    fileKey: (file: string) => string = nativeCompilerPathPolicy().key,
+  ) {
+    this.#fileKey = fileKey;
     this.#coverageIndex = snapshot.coverageIndexes[0]!;
     this.requests = new Map(
       snapshot.requests.map((entry) => [entry.id, entry]),
@@ -39,7 +45,11 @@ export class BoundedEvidenceIndex {
     const key = nativeFingerprint(target);
     const previous = this.#coverage.get(key);
     if (previous !== undefined) return previous;
-    const coverage = deriveCompilerCoverage(this.#coverageIndex, target);
+    const coverage = deriveCompilerCoverage(
+      this.#coverageIndex,
+      target,
+      this.#fileKey,
+    );
     this.#coverage.set(key, coverage);
     return coverage;
   }

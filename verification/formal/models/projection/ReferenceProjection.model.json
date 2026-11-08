@@ -38,19 +38,27 @@
       "stable": true
     },
     "mutation-derive-required.cfg": {
-      "breaks": ["Sound"],
+      "breaks": [
+        "Sound"
+      ],
       "stable": false
     },
     "mutation-no-color.cfg": {
-      "breaks": ["Sound"],
+      "breaks": [
+        "Sound"
+      ],
       "stable": false
     },
     "mutation-no-scc.cfg": {
-      "breaks": ["Sound"],
+      "breaks": [
+        "Sound"
+      ],
       "stable": false
     },
     "mutation-use-schedule.cfg": {
-      "breaks": ["Sound"],
+      "breaks": [
+        "Sound"
+      ],
       "stable": true
     }
   },
@@ -62,8 +70,8 @@
   "counterexamples": "A self-consistent omission is still missing if required by source; scheduling can conceal the loss only in a mutant.",
   "empiricalVerification": "Run reference-validation.spec.ts and the cache bridge; inspect actual serialized files.",
   "driftReview": {
-    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
-    "sourceHash": "7eba42701e5e0479c8b3720d51b02649cf2795339c27e2df1b882048333665d4",
+    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
+    "sourceHash": "bd40884e7ccc893669db371830285ac4a8e6430a561361bd4231892c6de114fe",
     "modelHash": "fb529d0545c965a5ed9c82ae9df4ec8695e076430625fe99fab18e3f5e7c6283"
   }
 }

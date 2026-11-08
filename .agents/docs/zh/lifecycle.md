@@ -51,7 +51,7 @@ Native 建图按 context 创建物理截断 Program，不按 occurrence 创建�
 
 Occurrence 快照保留 workspace boundary identity 的 SHA-256 摘要，并以不可变 boundary 对象为键在 WeakMap 中记忆。原始 identity 包含完整路径清单；每个 occurrence/cache clone 都深拷贝该清单，会使内存随 workspace 大小与 import 数量的乘积增长，并曾在仓库验证中耗尽默认 4 GiB 堆。有界快照回归使用 10,000 个 workspace 路径；成员集合不同仍会同时改变 boundary 摘要和 project identity。WeakMap 不会延长已释放 boundary 的生命周期。
 
-[FileOwnerLookup](../../../packages/limina/src/core/build-graph/file-owner-lookup.ts) 的 lexical/canonical 索引与 realpath cache 限于当前 analysis/provider 生命周期。新 provider generation 与 replan 从各自 membership 输入新建索引，缺失或已重绑路径不借用旧 generation 的 owner。它不是 filesystem watcher，也不保证跨任意原地文件编辑的缓存有效性。
+[FileOwnerLookup](../../../packages/limina/src/core/build-graph/file-owner-lookup.ts)在当前 analysis/provider 生命周期内持有 compiler-key 索引。新 generation 与 replan 从实际输入拼写重新建立索引。它只提供成员关系，不提供物理 freshness 或文件系统监听；绑定与版本证据独立校验，包括 symlink retarget。
 
 **Derived**：仅限运行期的缓存适合受控 run/provider 生命周期。若外部调用者跨文件编辑复用同一 cache/request generation，source content 不在 key 中就可能复用旧结果；这不是现有 CLI 必然 stale 的证据。要支持长期 daemon，必须先定义 mutation/version contract，不能简单扩大缓存寿命。
 
@@ -80,6 +80,8 @@ Vue compiler request 回执属于单个语义 context/generation。面向 Progra
 Vue 声明闭包投影仅在一次[支撑贡献收集](../../../packages/limina/src/core/project-dependencies/support-contributions.ts)内保留 occurrence 到 dependency 的索引。每条追加依赖沿用既有 occurrence identity，只入索引一次；重复 identity 保留首个匹配项。声明支撑收集仍先解析并追加依赖，再执行查询；缺失 fact 保持既有 incomplete 或 unresolved 结果。索引随本次收集结束而释放，不跨配置、provider 或调用共享。[项目依赖回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)保护首项顺序、不同 occurrence 位置及独立收集；[图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖 Vue 声明遍历中追加的依赖。
 
 ## 原生持久化分析缓存
+
+声明路径成员关系使用 analysis adapter v30、Native Program adapter v14 与 Vue analysis adapter v11。持久分析 header 拒绝整个 v29 快照，包括图记录和 context。Evidence 版本保持 5，storage schema 保持 12，generated graph key 保持 v22。当前 Host 目录、大小写策略与 `toPath` 算法身份参与 Native/Vue context 资格判断。恢复对实际目标重新计算 Coverage，并验证物理绑定、输入和 context；当前 Candidate 仍用真实 Checker 执行检查。旧 canonical 证明被拒绝，不进行迁移。[Native cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)与 [Vue cache](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 回归负责拒绝及后续恢复。
 
 Native／Vue snapshot 将声明解析 receipt、结果与类型环境入口一起保存。Adapter identity 使旧解释失效，缺失或不兼容的必要 receipt 触发重新分析。每次收集按当前根 membership 与入口可达性决定治理投影，包括无 membership 的负向判断。Manifest 内容、symlink 绑定、有效 types／typeRoots、声明内容和失败候选仍属于观察输入。删除最后一个合法本地入口时撤销内部贡献，其他合法入口仍保留共享贡献。更新使用现有项目替换生命周期，不扩大 `replaceProject` 的事务范围。
 

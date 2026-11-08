@@ -4,7 +4,7 @@ import type { DeclarationCompilationEvidence } from '../../domain/analysis/decla
 interface ScopeInput {
   decisions: readonly DeclarationContextDecision[];
   evidence: readonly DeclarationCompilationEvidence[];
-  fileKey(file: string): string;
+  fileKey(file: string, config: string): string;
 }
 interface Transition {
   file: string;
@@ -20,9 +20,10 @@ export function createDeclarationValidationScope(
   input: ScopeInput,
 ): (config: string) => DeclarationContextDecision[] {
   const keys = new Map<string, string>();
-  const fileKey = (file: string) => {
-    const value = keys.get(file) ?? input.fileKey(file);
-    keys.set(file, value);
+  const fileKey = (file: string, config: string) => {
+    const cacheKey = key(config, file);
+    const value = keys.get(cacheKey) ?? input.fileKey(file, config);
+    keys.set(cacheKey, value);
     return value;
   };
   const transitions = declarationTransitions(input, fileKey);
@@ -38,7 +39,7 @@ export function createDeclarationValidationScope(
     const visited = new Set<string>();
     while (pending.length > 0) {
       const [owner, file] = pending.pop()!;
-      const identity = key(owner, fileKey(file));
+      const identity = key(owner, fileKey(file, owner));
       if (visited.has(identity)) continue;
       visited.add(identity);
       const nextRequests = transitions.get(identity) ?? [];
@@ -88,7 +89,10 @@ function declarationTransitions(
       for (const request of observation.requestIds) {
         const source = origins.get(request);
         if (source === undefined || !/\.d\.[cm]?ts$/i.test(source)) continue;
-        const identity = key(evidence.sourceConfig, fileKey(source));
+        const identity = key(
+          evidence.sourceConfig,
+          fileKey(source, evidence.sourceConfig),
+        );
         const entries = transitions.get(identity) ?? [];
         entries.push({
           file: observation.file.lexicalPath,

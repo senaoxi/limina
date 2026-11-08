@@ -1,50 +1,70 @@
+import type { VueProjectSemanticIdentity } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
+import { vueCompilerPathPolicy } from '../../checker/vue-semantic-identity';
 import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
 import type { DeclarationCompilationEvidence } from '../../domain/analysis/declaration-governance';
-import {
-  deriveNativeCoverage,
-  type NativeFileIdentity,
-  type SourceConfigCoverageIndex,
+import type {
+  NativeFileIdentity,
+  SourceConfigCoverageIndex,
 } from '../../domain/analysis/native-coverage';
 import type { ProjectDependency } from '../project-dependencies/contracts';
+import {
+  compilerFileKey,
+  deriveCompilerCoverage,
+} from '../typescript-semantic/compiler-coverage';
+import { nativeCompilerPathPolicy } from '../typescript-semantic/compiler-path-key';
 import {
   nativeFingerprint,
   observeNativeFileIdentity,
 } from '../typescript-semantic/native-file-identity';
 import { readDeclarationContextChoices } from './declaration-context-options';
 
-export function declarationFileKey(file: NativeFileIdentity): string {
-  return file.physical.state === 'verified'
-    ? file.physical.canonicalId
-    : file.lexicalPath;
+export function declarationFileKey(
+  file: NativeFileIdentity,
+  fileKey: (file: string) => string = compilerFileKey,
+): string {
+  return fileKey(file.lexicalPath);
 }
 
 export function collectDeclarationContextDecisions(options: {
   config: ResolvedLiminaInputs;
-  project: { configPath: string; fileNames: readonly string[] };
+  project: {
+    configPath: string;
+    fileNames: readonly string[];
+    context?: { vueSemanticIdentity?: VueProjectSemanticIdentity };
+  };
   evidence: DeclarationCompilationEvidence | undefined;
   unsupportedDependencies?: readonly ProjectDependency[];
   coverageIndex?: SourceConfigCoverageIndex;
   isWorkspaceFile?: (file: string) => boolean;
 }): { decisions: DeclarationContextDecision[]; problems: string[] } {
   const { project, evidence } = options;
+  const fileKey =
+    project.context?.vueSemanticIdentity === undefined
+      ? nativeCompilerPathPolicy().key
+      : vueCompilerPathPolicy(project.context.vueSemanticIdentity).key;
   const read = readDeclarationContextChoices(
     options.config,
     project.configPath,
   );
-  const decisions: DeclarationContextDecision[] = unsupportedDecisions(options);
+  const decisions: DeclarationContextDecision[] = unsupportedDecisions(
+    options,
+    fileKey,
+  );
   const index = options.coverageIndex;
   if (index === undefined) return { decisions, problems: read.problems };
   const identity = (file: string) =>
     observeNativeFileIdentity(file, index.inputVersion);
   const roots = new Set(
-    project.fileNames.map((file) => declarationFileKey(identity(file))),
+    project.fileNames.map((file) =>
+      declarationFileKey(identity(file), fileKey),
+    ),
   );
   const choices = new Map<string, string>();
   for (const choice of read.choices) {
     const file = identity(choice.file);
-    const key = declarationFileKey(file);
-    const coverage = deriveNativeCoverage(index, file);
+    const key = declarationFileKey(file, fileKey);
+    const coverage = deriveCompilerCoverage(index, file, fileKey);
     const previous = choices.get(key);
     if (
       (previous !== undefined && previous !== choice.config) ||
@@ -63,7 +83,7 @@ export function collectDeclarationContextDecisions(options: {
       relation.contextId !== evidence.contextId
     )
       continue;
-    const coverage = deriveNativeCoverage(index, relation.file);
+    const coverage = deriveCompilerCoverage(index, relation.file, fileKey);
     // Unmanaged declarations retain the existing boundary; no producer is inferred.
     if (
       coverage.members.length === 0 &&
@@ -73,7 +93,7 @@ export function collectDeclarationContextDecisions(options: {
       )
     )
       continue;
-    const key = declarationFileKey(relation.file);
+    const key = declarationFileKey(relation.file, fileKey);
     decisions.push({
       kind: relation.kind,
       consumerConfig: project.configPath,
@@ -100,6 +120,7 @@ function chooseContext(
 ): DeclarationContextDecision['selection'] {
   if (
     isLocal &&
+    !coverage.gaps.includes('lexical-identity-conflict') &&
     coverage.members.some((member) => member.configId === consumer)
   )
     return { state: 'local', config: consumer };
@@ -128,12 +149,16 @@ function chooseContext(
 
 function unsupportedDecisions(
   options: Parameters<typeof collectDeclarationContextDecisions>[0],
+  fileKey: (file: string) => string,
 ): DeclarationContextDecision[] {
   const index = options.coverageIndex;
   if (index === undefined || options.evidence !== undefined) return [];
   const localInputs = new Set(
     options.project.fileNames.map((file) =>
-      declarationFileKey(observeNativeFileIdentity(file, index.inputVersion)),
+      declarationFileKey(
+        observeNativeFileIdentity(file, index.inputVersion),
+        fileKey,
+      ),
     ),
   );
   return (options.unsupportedDependencies ?? []).flatMap((dependency) => {
@@ -142,12 +167,13 @@ function unsupportedDecisions(
       dependency.resolvedFilePath,
       index.inputVersion,
     );
-    const coverage = deriveNativeCoverage(index, file);
+    const coverage = deriveCompilerCoverage(index, file, fileKey);
     if (coverage.members.length === 0) return [];
     // Existing framework analysis owns its local inputs. Qualification is needed
     // for a new cross-project context delegation, not for local ambient support.
     if (
-      localInputs.has(declarationFileKey(file)) &&
+      localInputs.has(declarationFileKey(file, fileKey)) &&
+      !coverage.gaps.includes('lexical-identity-conflict') &&
       coverage.members.some(
         (member) => member.configId === options.project.configPath,
       )

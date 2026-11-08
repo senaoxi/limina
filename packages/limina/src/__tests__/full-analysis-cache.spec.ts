@@ -1977,3 +1977,122 @@ it.each(['skipLibCheck', 'noCheck'] as const)(
   },
   60_000,
 );
+
+it.each(['analysis-v29', 'canonical-membership', 'host-policy'] as const)(
+  'cold-rebuilds declaration evidence after %s and restores the new publication',
+  (corruption) => {
+    const f = fixture();
+    const run = 'console.log(JSON.stringify(await runCache()));';
+    const cold = f.execute<GraphRunResult>(run);
+    const store = new AnalysisCacheStore({
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
+      configPath: f.config.configPath,
+      identity: 'unused',
+    });
+    const snapshot = readStoredAnalysisSnapshot(store.path);
+    let changed = 0;
+    const corrupt = (value: unknown): void => {
+      if (value === null || typeof value !== 'object') return;
+      const entry = value as Record<string, unknown>;
+      if (corruption === 'canonical-membership' && entry.match === 'lexical') {
+        entry.match = 'canonical';
+        changed++;
+      }
+      if (
+        corruption === 'host-policy' &&
+        typeof entry.hostContract === 'string'
+      ) {
+        entry.hostContract = 'foreign-case-policy';
+        changed++;
+      }
+      for (const child of Object.values(entry)) corrupt(child);
+    };
+    if (corruption === 'analysis-v29') {
+      snapshot.header.implementation = 'checker-declaration-supplements-v29';
+      changed++;
+    } else corrupt(snapshot.contexts);
+    expect(changed).toBeGreaterThan(0);
+    writeStoredAnalysisSnapshot(store.path, snapshot);
+    const rebuilt = f.execute<GraphRunResult>(run);
+    expect(graphMeaning(rebuilt.graph)).toEqual(graphMeaning(cold.graph));
+    expect(
+      rebuilt.events.some(
+        (event) => event.kind === 'semanticPrograms' && event.count! > 0,
+      ),
+    ).toBe(true);
+    expect(
+      rebuilt.events.some(
+        (event) => event.kind === 'graphHits' && event.count! > 0,
+      ),
+    ).toBe(false);
+    const warm = f.execute<GraphRunResult>(run);
+    expect(warm.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    expect(
+      warm.events.some(
+        (event) => event.kind === 'semanticPrograms' && event.count! > 0,
+      ),
+    ).toBe(false);
+  },
+  60_000,
+);
+
+it('recomputes logical declaration membership after alias retargeting across fresh processes', () => {
+  const f = fixture();
+  f.write(
+    'limina.config.mjs',
+    'export default {scope:{checkers:{tsc:{include:["tsconfig.json","b/tsconfig.json"]}}}};',
+  );
+  f.write(
+    'b/tsconfig.json',
+    JSON.stringify({
+      compilerOptions: {
+        composite: true,
+        noLib: true,
+        types: [],
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+      },
+      files: ['../alias/value.d.ts'],
+    }),
+  );
+  f.write('other/value.d.ts', 'export interface V { value: number }');
+  symlinkSync(f.file('src'), f.file('alias'), 'junction');
+  const run = 'console.log(JSON.stringify(await runCache()));';
+  const cold = f.execute<GraphRunResult>(run);
+  const warm = f.execute<GraphRunResult>(run);
+  expect(warm.events).toContainEqual(
+    expect.objectContaining({ kind: 'graphHits', count: 1 }),
+  );
+  rmSync(f.file('alias'), { recursive: true });
+  symlinkSync(f.file('other'), f.file('alias'), 'junction');
+  const changed = f.execute<GraphRunResult>(run);
+  expect(
+    changed.events.some(
+      (event) => event.kind === 'graphHits' && event.count! > 0,
+    ),
+  ).toBe(false);
+  expect(
+    changed.events.some(
+      (event) => event.kind === 'semanticPrograms' && event.count! > 0,
+    ),
+  ).toBe(true);
+  expect(changed.graph.edges).toEqual(cold.graph.edges);
+  const decisions = (run: GraphRunResult) =>
+    (
+      run.graph
+        .ownershipPlan as import('../core/build-graph/checker-ownership-types').CheckerOwnershipPlan
+    ).declarationContexts!.map((decision) => ({
+      file: decision.file.lexicalPath,
+      selection: decision.selection,
+      members: decision.coverage.members.map((member) => member.configId),
+    }));
+  expect(decisions(changed)).toEqual(decisions(cold));
+  expect(f.execute<GraphRunResult>(run).events).toContainEqual(
+    expect.objectContaining({ kind: 'graphHits', count: 1 }),
+  );
+}, 60_000);

@@ -99,8 +99,8 @@
   "counterexamples": "Mutants discard one independent qualification. Physical faults outside cooperative lease and process crashes are not covered.",
   "empiricalVerification": "Run evidence/managed-cache/replay.mjs and analysis-cache-{lifecycle,shards}, full-analysis-cache.",
   "driftReview": {
-    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
-    "sourceHash": "aacff9f059a91a5b7a8402d10a11c9bbad788dacfdbc7c42e20a08283343127f",
+    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
+    "sourceHash": "5e9105fda4ec3758a5cdd01e5b35bc856a163eaf281bae1549944f0ed2416876",
     "modelHash": "52c897881003dd6acf31f87241e6f6c2c681499311c4a77c76ab417fa361a5a9"
   }
 }

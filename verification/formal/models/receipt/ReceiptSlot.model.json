@@ -58,8 +58,8 @@
   "counterexamples": "Late-receipt removes three guards together; never infer that each is necessary.",
   "empiricalVerification": "Run preflight.spec.ts (in-flight materialization and replacement cases).",
   "driftReview": {
-    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
-    "sourceHash": "6efca64366b823b6c9f1f7e8039b13b8c672ae2dbeaa7f2fba260d0de507b4cf",
+    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
+    "sourceHash": "888f65dfd4056e7ea86c87b3f430f6c26e43ee29d25f6e26c900957c26186e10",
     "modelHash": "61191d69107a73678261b55ce4352b571d7d7c528f933a9d3157a6cd6c214afb"
   }
 }

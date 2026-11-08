@@ -62,7 +62,7 @@ export interface SourceConfigCoverageIndex {
 export interface SourceConfigMember {
   readonly configId: string;
   readonly membershipEvidenceId: string;
-  readonly match: 'lexical' | 'canonical';
+  readonly match: 'lexical';
 }
 
 export interface NativeCoverage {
@@ -83,22 +83,6 @@ function hasVerifiedIdentity(
   return (
     file.physical.state === 'verified' && file.physical.inputVersion === version
   );
-}
-
-function isSamePhysicalFile(
-  a: NativeFileIdentity,
-  b: NativeFileIdentity,
-): boolean {
-  return (
-    a.physical.state === 'verified' &&
-    b.physical.state === 'verified' &&
-    a.physical.canonicalId === b.physical.canonicalId
-  );
-}
-
-function memberMatch(a: NativeFileIdentity, b: NativeFileIdentity) {
-  if (a.lexicalPath === b.lexicalPath) return 'lexical' as const;
-  return isSamePhysicalFile(a, b) ? ('canonical' as const) : undefined;
 }
 
 function enumerationGaps(
@@ -151,44 +135,28 @@ function collectMember(
   target: NativeFileIdentity,
   version: string,
   view: MemberView,
-  fileKey?: (file: string) => string,
+  fileKey: (file: string) => string,
 ) {
   if (config.state !== 'enumerated') return [];
   const member =
     view === undefined
       ? config.members.find(
           (file) =>
-            currentMemberMatch(file, target, version) &&
-            (fileKey === undefined ||
-              fileKey(file.lexicalPath) === fileKey(target.lexicalPath)),
+            fileKey(file.lexicalPath) === fileKey(target.lexicalPath) &&
+            hasVerifiedIdentity(file, version) &&
+            hasVerifiedIdentity(target, version) &&
+            !hasConflictingIdentity(file, target),
         )
-      : fileKey === undefined
-        ? view.firstMatch(target)
-        : view.compilerMatch(target, fileKey);
-  if (!member) return [];
-  return [
-    {
-      configId: config.configId,
-      membershipEvidenceId: config.evidenceId,
-      match:
-        fileKey === undefined
-          ? memberMatch(member, target)!
-          : ('lexical' as const),
-    },
-  ];
-}
-
-function currentMemberMatch(
-  a: NativeFileIdentity,
-  b: NativeFileIdentity,
-  version: string,
-) {
-  const hasCurrentIdentity = [a, b].every((file) =>
-    hasVerifiedIdentity(file, version),
-  );
-  return hasCurrentIdentity && !hasConflictingIdentity(a, b)
-    ? memberMatch(a, b)
-    : undefined;
+      : view.compilerMatch(target, fileKey);
+  return member
+    ? [
+        {
+          configId: config.configId,
+          membershipEvidenceId: config.evidenceId,
+          match: 'lexical' as const,
+        },
+      ]
+    : [];
 }
 
 function hasConflictingIdentity(
@@ -206,13 +174,14 @@ function identityConflictGaps(
   config: SourceConfigEnumeration,
   target: NativeFileIdentity,
   view: MemberView,
+  fileKey: (file: string) => string,
 ): string[] {
   if (config.state !== 'enumerated') return [];
   const hasConflict =
-    view?.hasConflict(target) ??
+    view?.hasConflict(target, fileKey) ??
     config.members.some(
       (member) =>
-        member.lexicalPath === target.lexicalPath &&
+        fileKey(member.lexicalPath) === fileKey(target.lexicalPath) &&
         hasConflictingIdentity(member, target),
     );
   return hasConflict ? ['lexical-identity-conflict'] : [];
@@ -254,12 +223,12 @@ function currentConfigurations(
 }
 
 /**
-A lexical hit never bypasses examination of other configs/canonical aliases.
+Compiler-key membership precedes physical binding validation in every config.
 */
 export function deriveNativeCoverage(
   index: SourceConfigCoverageIndex,
   target: NativeFileIdentity,
-  fileKey?: (file: string) => string,
+  fileKey: (file: string) => string,
 ): NativeCoverage {
   const ids = new Set(index.universe.sourceConfigIds).values().toArray();
   const observations = ids.map((id) =>
@@ -279,7 +248,9 @@ export function deriveNativeCoverage(
     members,
     completeness: gaps.length === 0 ? 'complete' : 'incomplete',
     gaps,
-    state: coverageState(members.length, gaps.length === 0),
+    state: gaps.includes('lexical-identity-conflict')
+      ? 'unavailable'
+      : coverageState(members.length, gaps.length === 0),
   });
 }
 
@@ -296,7 +267,7 @@ function observeConfig(
   index: SourceConfigCoverageIndex,
   target: NativeFileIdentity,
   id: string,
-  fileKey?: (file: string) => string,
+  fileKey: (file: string) => string,
 ) {
   const configs = currentConfigurations(index, id);
   if (configs.length !== 1)
@@ -307,7 +278,7 @@ function observeConfig(
     gaps: [
       ...inspectConfig(config, index, view),
       ...enumerationGaps(config, target),
-      ...identityConflictGaps(config, target, view),
+      ...identityConflictGaps(config, target, view, fileKey),
     ],
     members: collectMember(config, target, index.inputVersion, view, fileKey),
   };

@@ -114,6 +114,8 @@ Pure policy contract, not a CompilerHost or a production frontier.
 export function decideNativeFrontier(
   input: NativeFrontierInput,
 ): NativeFrontierDecision {
+  if (input.coverage.gaps.includes('lexical-identity-conflict'))
+    return { action: 'stop', reason: 'coverage-unavailable' };
   if (isImplementationRoot(input)) return { action: 'expand', basis: 'root' };
   return input.kind === 'declaration'
     ? declarationFrontier(input)

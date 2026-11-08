@@ -4,7 +4,10 @@ import { normalizeAbsolutePath } from '#utils/path';
 import path from 'node:path';
 import ts from 'typescript';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
-import { createVueProjectSemanticIdentity } from '../../checker/vue-semantic-identity';
+import {
+  createVueProjectSemanticIdentity,
+  vueCompilerPathPolicy,
+} from '../../checker/vue-semantic-identity';
 import type {
   DeclarationContextDecision,
   DeclarationContextReceipt,
@@ -14,14 +17,11 @@ import { DeclarationObservationUnavailable } from '../declaration-governance/can
 import { observeNativeDeclarationCandidate } from '../declaration-governance/native-candidate';
 import { createDeclarationValidationScope } from '../declaration-governance/validation-scope';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
-import {
-  nativeFingerprint,
-  observeNativeFileIdentity,
-} from '../typescript-semantic/native-file-identity';
+import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
 import { observeVueDeclarationCandidate } from '../vue-semantic/declaration-candidate';
-import { declarationFileKey } from './declaration-context-decisions';
 import {
   declarationPackageFiles,
   validateDeclarationPackageFormat,
@@ -93,7 +93,7 @@ export function validateDeclarationContexts(
     const scope = createDeclarationValidationScope({
       decisions,
       evidence: input.analysis.declarationEvidence ?? [],
-      fileKey: (file) => fileKey(input, file),
+      fileKey: (file, config) => fileKey(input, file, config),
     });
     for (const project of projects.values()) {
       const packageFiles = declarationPackageFiles({
@@ -239,21 +239,33 @@ function referenceClosure(
   return result;
 }
 
-function fileKey(input: DeclarationValidationInput, file: string): string {
-  return declarationFileKey(
-    observeNativeFileIdentity(file, input.coverage!.inputVersion),
-  );
+function fileKey(
+  input: DeclarationValidationInput,
+  file: string,
+  config: string,
+): string {
+  const identity = input.targets.find(
+    (target) => target.sourceConfig === config,
+  )?.executionIdentity;
+  return identity === undefined
+    ? compilerFileKey(file)
+    : vueCompilerPathPolicy(identity).key(file);
 }
+
 function relevantDeclarationRoots(
   input: DeclarationValidationInput,
   project: CandidateProject,
   decisions: readonly DeclarationContextDecision[],
 ): string[] {
   const consumed = new Set(
-    decisions.map((decision) => declarationFileKey(decision.file)),
+    decisions.map((decision) =>
+      fileKey(input, decision.file.lexicalPath, project.sourceConfig),
+    ),
   );
   return project.parsed.fileNames.filter(
-    (file) => isDeclarationFile(file) && consumed.has(fileKey(input, file)),
+    (file) =>
+      isDeclarationFile(file) &&
+      consumed.has(fileKey(input, file, project.sourceConfig)),
   );
 }
 function expectedContexts(
@@ -267,14 +279,18 @@ function expectedContexts(
   const direct = new Set(
     decisions
       .filter((decision) => decision.consumerConfig === project.sourceConfig)
-      .map((decision) => decision.file.lexicalPath),
+      .map((decision) =>
+        fileKey(input, decision.file.lexicalPath, project.sourceConfig),
+      ),
   );
   for (const decision of decisions) {
     // A descendant's independent checking context does not override this
     // consumer's explicit/local selection for the same declaration input.
     if (
       decision.consumerConfig !== project.sourceConfig &&
-      direct.has(decision.file.lexicalPath)
+      direct.has(
+        fileKey(input, decision.file.lexicalPath, project.sourceConfig),
+      )
     )
       continue;
     const selection = decision.selection;
@@ -289,7 +305,12 @@ function expectedContexts(
       throw new DeclarationContextConflict(
         `Missing declaration context provider: ${selection.config}`,
       );
-    const previous = expected.get(decision.file.lexicalPath);
+    const previousEntry = [...expected].find(
+      ([file]) =>
+        fileKey(input, file, project.sourceConfig) ===
+        fileKey(input, decision.file.lexicalPath, project.sourceConfig),
+    );
+    const previous = previousEntry?.[1];
     if (
       previous !== undefined &&
       previous.generatedConfig !== owner.generatedConfig
@@ -297,15 +318,18 @@ function expectedContexts(
       throw new DeclarationContextConflict(
         `Conflicting declaration contexts: ${decision.file.lexicalPath}`,
       );
+    if (previousEntry !== undefined) expected.delete(previousEntry[0]);
     expected.set(decision.file.lexicalPath, owner);
     checkOwner(owner, selection.state === 'selected');
   }
   // A root may be remapped by references even without an import in that root.
   for (const file of localInputs) expected.set(file, project);
   for (const [file, owner] of expected) {
-    const key = fileKey(input, file);
+    const key = fileKey(input, file, project.sourceConfig);
     if (
-      owner.parsed.fileNames.every((member) => fileKey(input, member) !== key)
+      owner.parsed.fileNames.every(
+        (member) => fileKey(input, member, project.sourceConfig) !== key,
+      )
     )
       throw new DeclarationContextConflict(
         `Declaration is no longer an input of ${owner.sourceConfig}: ${file}`,
@@ -393,12 +417,17 @@ function validateProject(
     });
   }
   const sources = new Map(
-    observation.sources.map((source) => [source.file, source]),
+    observation.sources.map((source) => [
+      fileKey(input, source.file, project.sourceConfig),
+      source,
+    ]),
   );
   for (const decision of decisions) {
     if (
       decision.consumerConfig === project.sourceConfig &&
-      !sources.has(decision.file.lexicalPath)
+      !sources.has(
+        fileKey(input, decision.file.lexicalPath, project.sourceConfig),
+      )
     )
       throw new UnavailableDeclarationContext(
         `Selected declaration was not loaded: ${decision.file.lexicalPath}`,
@@ -407,14 +436,20 @@ function validateProject(
       decision.selection.state === 'selected' &&
       decision.selection.config === project.sourceConfig &&
       project.parsed.options.skipDefaultLibCheck &&
-      sources.get(decision.file.lexicalPath)?.defaultLibrary
+      sources.get(
+        fileKey(input, decision.file.lexicalPath, project.sourceConfig),
+      )?.defaultLibrary
     )
       throw new DeclarationContextConflict(
         `Declaration context owner skips this default library: ${decision.file.lexicalPath}`,
       );
   }
   const mappings = [...expected].map(([file, owner]) => {
-    const mapping = observation.mappings.find((item) => item.file === file);
+    const mapping = observation.mappings.find(
+      (item) =>
+        fileKey(input, item.file, project.sourceConfig) ===
+        fileKey(input, file, project.sourceConfig),
+    );
     if (!mapping?.qualified)
       throw new UnavailableDeclarationContext(
         `Checker cannot qualify declaration input mapping: ${file}`,
@@ -428,7 +463,7 @@ function validateProject(
       file,
       sourceConfig: owner.sourceConfig,
       referenceConfig: actual,
-      loaded: sources.has(file),
+      loaded: sources.has(fileKey(input, file, project.sourceConfig)),
     };
   });
   return {

@@ -125,7 +125,7 @@
 - **Evidence / Strength / Confidence**：[proof tests](../../../packages/limina/src/__tests__/proof.spec.ts)、[generated graph tests](../../../packages/limina/src/__tests__/generated-graph.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：配置 include/exclude/allowlist 决定证明范围；source、graph、proof 通过不证明每个外部工具、package output 或 release 检查均通过。
 
-**Source Config Coverage**：全集先由激活 entry/solution 规则确定，不以成功解析集合替代。发现闭合、成员枚举、配置与物理身份版本一致才证明零/唯一；两个当前已确认不同成员可证明 ambiguous，其他不足为 unavailable。Lexical 命中不遮蔽 canonical 冲突，文件身份不扩大范围。[Coverage 合同测试](../../../packages/limina/src/__tests__/native-evidence-contract.spec.ts)覆盖过期成员和无法界定的配置失败。
+**Source Config Coverage**：全集在解析成功之前由激活规则确定。只有当前 Compiler Path Key 相等才能关联目标与配置的实际输入；物理证据只验证该关联，不能扩大它。同键绑定冲突阻断 local/root 快捷路径；异键物理别名不能制造共享输入 ambiguity。完整 uncovered 声明保留 consumer 分析，不完整证据不能产生成功委托。[Coverage 测试](../../../packages/limina/src/__tests__/native-evidence-contract.spec.ts)、[Checker 观测](../../../packages/limina/src/__tests__/native-program-observation.spec.ts)及[图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)分别保护这些责任，包括不同 key、同 inode 的两个请求。
 
 ## I09 — 事实重用与异步结果受 provider 生命周期约束
 

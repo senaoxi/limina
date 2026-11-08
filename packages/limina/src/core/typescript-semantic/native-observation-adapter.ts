@@ -4,6 +4,7 @@ import type { NativeEvidenceContext } from '../../domain/analysis/native-context
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
+import { compilerPathPolicy } from './compiler-path-key';
 import type { TypeScriptSemanticProject } from './contracts';
 import { collectNativeObligations } from './native-obligation-inventory';
 import { assertNativeProgramCompiler } from './native-program-api';
@@ -50,6 +51,10 @@ export class NativeObservationAdapter {
       project.fileNames,
       coverage,
       project.declarationContextValidation,
+      compilerPathPolicy(
+        compiler,
+        compiler.createCompilerHost(project.options),
+      ).key,
     );
     const { program, modules, requests, loads, configReads, failures } =
       createBoundedProgramClosure(options, compiler, this.frontier);

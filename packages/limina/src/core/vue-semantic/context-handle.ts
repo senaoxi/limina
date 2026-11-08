@@ -16,6 +16,7 @@ import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import { declarationLoadingCeiling } from '../declaration-governance/loading';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
+import { compilerPathPolicy } from '../typescript-semantic/compiler-path-key';
 import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import {
@@ -257,6 +258,13 @@ export class VueSemanticContext {
         host: this.sys,
         toolchain: identity.toolchain,
       });
+    const canonicalFileName = this.tsModule.createCompilerHost(
+      identity.options,
+    ).getCanonicalFileName;
+    const fileKey = compilerPathPolicy(this.tsModule, {
+      getCurrentDirectory: () => this.languageServiceHost.getCurrentDirectory(),
+      getCanonicalFileName: canonicalFileName,
+    }).key;
     this.#boundedHost = createBoundedLanguageServiceHost({
       host: this.languageServiceHost,
       observeModule: (input) => this.compilerRequests.observe(input),
@@ -270,6 +278,7 @@ export class VueSemanticContext {
             : declarationLoadingCeiling(
                 identity.declarationLoading,
                 identity.fileNames,
+                fileKey,
               ),
         configPath: identity.configPath,
         fileNames: identity.fileNames,

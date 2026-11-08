@@ -9,25 +9,13 @@ import { observeNativeFileIdentity } from '../typescript-semantic/native-file-id
 export function declarationLoadingCeiling(
   plan: DeclarationLoadingPlan,
   roots: readonly string[],
+  fileKey: (file: string) => string,
 ): (file: string) => boolean {
-  const rootNames = new Set(roots);
-  const rootIdentities = new Set(
-    roots
-      .filter((file) => isDeclarationFile(file))
-      .flatMap((file) => {
-        const identity = observeNativeFileIdentity(
-          file,
-          plan.coverage.inputVersion,
-        );
-        return identity.physical.state === 'verified'
-          ? [identity.physical.canonicalId]
-          : [];
-      }),
-  );
+  const rootNames = new Set(roots.map(fileKey));
   const decisions = new Map<string, boolean>();
   return (file) => {
     if (plan.purpose === 'type-provider') return true;
-    if (!isDeclarationFile(file)) return rootNames.has(file);
+    if (!isDeclarationFile(file)) return rootNames.has(fileKey(file));
     const prior = decisions.get(file);
     if (prior !== undefined) return prior;
     const identity = observeNativeFileIdentity(
@@ -36,11 +24,8 @@ export function declarationLoadingCeiling(
     );
     const responsibility = declarationResponsibility({
       sourceConfig: plan.sourceConfig,
-      root:
-        rootNames.has(file) ||
-        (identity.physical.state === 'verified' &&
-          rootIdentities.has(identity.physical.canonicalId)),
-      coverage: deriveNativeCoverage(plan.coverage, identity),
+      root: rootNames.has(fileKey(file)),
+      coverage: deriveNativeCoverage(plan.coverage, identity, fileKey),
     });
     const isAllowed =
       responsibility?.kind === 'consumer' || responsibility?.kind === 'local';

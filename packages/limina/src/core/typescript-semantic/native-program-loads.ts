@@ -26,7 +26,7 @@ import {
 /** A load grant is rooted in real input or a compiler request from an admitted
  * source. Coverage alone never authorizes a speculative path fallback. */
 export class NativeProgramLoads {
-  readonly #grants = new Set<string>();
+  readonly #grants = new Map<string, string>();
   readonly #candidates = new Set<string>();
   readonly #redirects = new Map<string, NativeReferenceObservation>();
   #revision = 0;
@@ -48,7 +48,7 @@ export class NativeProgramLoads {
     this.frontier = frontier;
     this.failures = failures;
     for (const root of project.fileNames)
-      this.#grants.add(normalizeAbsolutePath(root));
+      this.#grants.set(frontier.fileKey(root), root);
     if (hasDefaultLibrary(project))
       this.grant(compiler.getDefaultLibFilePath(project.options));
   }
@@ -64,9 +64,9 @@ export class NativeProgramLoads {
   private hasLateGrant(program: ts.Program, previousRevision: number): boolean {
     return (
       this.#revision !== previousRevision &&
-      [...this.#grants].some(
-        (file) => program.getSourceFile(file) === undefined,
-      )
+      this.#grants
+        .values()
+        .some((file) => program.getSourceFile(file) === undefined)
     );
   }
   private completeRedirects(program: ts.Program): boolean {
@@ -110,7 +110,7 @@ export class NativeProgramLoads {
   private canGrant(target: string): boolean {
     return (
       this.frontier.inspect(target).decision.action === 'expand' &&
-      !this.#grants.has(target)
+      !this.#grants.has(this.frontier.fileKey(target))
     );
   }
 
@@ -136,7 +136,7 @@ export class NativeProgramLoads {
 
   allow(file: string): boolean {
     return (
-      this.frontier.allow(file) && this.#grants.has(normalizeAbsolutePath(file))
+      this.frontier.allow(file) && this.#grants.has(this.frontier.fileKey(file))
     );
   }
 
@@ -144,7 +144,7 @@ export class NativeProgramLoads {
     if (file === undefined) return;
     const target = normalizeAbsolutePath(file);
     if (!this.canGrant(target)) return;
-    this.#grants.add(target);
+    this.#grants.set(this.frontier.fileKey(target), target);
     this.#revision++;
   }
 

@@ -1,4 +1,7 @@
+import ts from 'typescript';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { compilerFileKey } from '../core/typescript-semantic/compiler-coverage';
+import { compilerPathPolicy } from '../core/typescript-semantic/compiler-path-key';
 import {
   captureNativeEvidenceOrigin,
   lockNativeEvidenceContext,
@@ -76,7 +79,7 @@ function observeCoverage(
   configurations: readonly SourceConfigEnumeration[],
   target = file(),
 ) {
-  return deriveNativeCoverage(index(configurations), target);
+  return deriveNativeCoverage(index(configurations), target, compilerFileKey);
 }
 
 describe.each(['mutable', 'published'] as const)(
@@ -89,6 +92,7 @@ describe.each(['mutable', 'published'] as const)(
       deriveNativeCoverage(
         representation === 'published' ? freezeNativeData(coverage) : coverage,
         target,
+        compilerFileKey,
       );
     const observeConfigs = (
       configurations: readonly SourceConfigEnumeration[],
@@ -103,6 +107,62 @@ describe.each(['mutable', 'published'] as const)(
       expect(observeConfigs([config('A'), config('B', [])], file()).state).toBe(
         'unique',
       );
+    });
+
+    it.each([true, false])(
+      'checks normalized same-key bindings with case sensitivity %s',
+      (caseSensitive) => {
+        const key = compilerPathPolicy(ts, {
+          getCurrentDirectory: () => '/workspace',
+          getCanonicalFileName: (name) =>
+            caseSensitive ? name : name.toLowerCase(),
+        }).key;
+        const target = file('/workspace/types/api.d.ts');
+        const spelling = caseSensitive
+          ? '/workspace/types/./api.d.ts'
+          : '/WORKSPACE/TYPES/./API.D.TS';
+        const current = index([
+          config('A', [file(spelling)]),
+          config('B', [target]),
+        ]);
+        const publish = (value: SourceConfigCoverageIndex) =>
+          representation === 'published' ? freezeNativeData(value) : value;
+        expect(deriveNativeCoverage(publish(current), target, key).state).toBe(
+          'ambiguous',
+        );
+        const conflict = index([
+          config('A', [file(spelling, 'retargeted')]),
+          config('B', [target]),
+        ]);
+        const coverage = deriveNativeCoverage(publish(conflict), target, key);
+        expect(coverage.state).toBe('unavailable');
+        expect(coverage.gaps).toContain('lexical-identity-conflict');
+        expect(
+          decideNativeFrontier({
+            root: true,
+            kind: 'declaration',
+            consumerConfigId: 'B',
+            coverage,
+          }).action,
+        ).toBe('stop');
+      },
+    );
+
+    it('keeps a fully uncovered target distinct from its owned physical alias', () => {
+      const coverage = observeConfigs([
+        config('A', [file('alias')]),
+        config('B', []),
+      ]);
+      expect(coverage.state).toBe('uncovered');
+      expect(coverage.members).toEqual([]);
+      expect(
+        decideNativeFrontier({
+          root: false,
+          kind: 'declaration',
+          consumerConfigId: 'B',
+          coverage,
+        }),
+      ).toEqual({ action: 'expand', basis: 'consumer-declaration' });
     });
 
     it.each([
@@ -129,16 +189,13 @@ describe.each(['mutable', 'published'] as const)(
       expect(result.completeness).toBe('incomplete');
     });
 
-    it('checks canonical aliases even when the lexical path already matches', () => {
+    it('does not merge different compiler keys sharing physical identity', () => {
       const result = observeConfigs(
         [config('A'), config('B', [file('symlink')])],
         file(),
       );
-      expect(result.state).toBe('ambiguous');
-      expect(result.members.map((member) => member.match)).toEqual([
-        'lexical',
-        'canonical',
-      ]);
+      expect(result.state).toBe('unique');
+      expect(result.members.map((member) => member.configId)).toEqual(['A']);
     });
 
     it('does not borrow scope from an extends/generated config outside the universe', () => {
@@ -334,7 +391,7 @@ describe.each(['mutable', 'published'] as const)(
       expect(result.state).toBe('unavailable');
       expect(result.members).toEqual([]);
     });
-    it('preserves the first canonical alias before a later lexical match', () => {
+    it('uses the compiler match regardless of preceding physical aliases', () => {
       const result = observeConfigs([
         config('A', [file('alias'), file()]),
         config('B', []),
@@ -343,12 +400,12 @@ describe.each(['mutable', 'published'] as const)(
         {
           configId: 'A',
           membershipEvidenceId: 'members:A',
-          match: 'canonical',
+          match: 'lexical',
         },
       ]);
     });
 
-    it('retains stale lexical conflicts beside a current canonical membership', () => {
+    it('retains stale same-key conflicts without borrowing a current alias', () => {
       const stale: NativeFileIdentity = {
         lexicalPath: 'source',
         physical: {
@@ -362,9 +419,7 @@ describe.each(['mutable', 'published'] as const)(
         config('A', [stale, file('alias')]),
         config('B', []),
       ]);
-      expect(result.members.map((member) => member.match)).toEqual([
-        'canonical',
-      ]);
+      expect(result.members).toEqual([]);
       expect(result.state).toBe('unavailable');
       expect(result.gaps).toEqual([
         'member-identity-unavailable',
@@ -379,10 +434,12 @@ it('does not retain caller-owned memberships behind a shallow frozen index', () 
   const coverage = Object.freeze(
     index([config('A', members), config('B', [])]),
   );
-  const before = deriveNativeCoverage(coverage, file());
+  const before = deriveNativeCoverage(coverage, file(), compilerFileKey);
   expect(before.state).toBe('unique');
   members[0] = file('elsewhere', 'different-file');
-  expect(deriveNativeCoverage(coverage, file()).state).toBe('uncovered');
+  expect(deriveNativeCoverage(coverage, file(), compilerFileKey).state).toBe(
+    'uncovered',
+  );
   expect(before.state).toBe('unique');
 });
 
@@ -409,6 +466,7 @@ describe('coverage-driven frontier contract', () => {
     const coverage = deriveNativeCoverage(
       { ...current, universe: { ...current.universe, discovery: 'open' } },
       file(),
+      compilerFileKey,
     );
     expect(coverage.state).toBe('ambiguous');
     expect(coverage.completeness).toBe('incomplete');
@@ -437,6 +495,7 @@ describe('coverage-driven frontier contract', () => {
       deriveNativeCoverage(
         { ...current, universe: { ...current.universe, discovery: 'open' } },
         file(),
+        compilerFileKey,
       ),
     ];
     for (const coverage of coverages) {

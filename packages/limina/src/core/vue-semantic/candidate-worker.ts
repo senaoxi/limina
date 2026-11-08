@@ -95,15 +95,40 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
   const options = args[0];
   if (!options || !options.host || !Array.isArray(options.rootNames)) throw new Error('Unsupported vue-tsc Program creation.');
   const host = options.host;
-  const roots = new Set(options.rootNames.map(normalize));
-  const declarations = new Set(input.declarations.map(normalize));
-  const configs = new Set(input.configs.map(normalize));
-  const governed = new Set(input.governed);
+  const key = file => ts.toPath(file, host.getCurrentDirectory(), host.getCanonicalFileName);
+  const roots = new Set(options.rootNames.map(key));
+  const declarations = new Set(input.declarations.map(key));
+  const configs = new Set(input.configs.map(key));
   const isDeclaration = file => /\.d\.[cm]?ts$/i.test(file);
-  const isRetainedDeclaration = file => {
-    if (!isDeclaration(file)) return false;
-    try { const identity = stat(file, { bigint: true }); return !governed.has(identity.dev + ':' + identity.ino); }
+  const coverage = input.coverage;
+  const currentIdentity = member => {
+    if (member.physical.state !== 'verified' || member.physical.inputVersion !== coverage.inputVersion) return false;
+    try {
+      const actual = stat(member.lexicalPath, { bigint: true });
+      return actual.dev + ':' + actual.ino === member.physical.canonicalId;
+    } catch { return false; }
+  };
+  const enumerations = coverage.universe.sourceConfigIds.map(id => coverage.configurations.filter(config => config.configId === id && config.inputVersion === coverage.inputVersion));
+  const complete = coverage.universe.discovery === 'closed' && coverage.universe.inputVersion === coverage.inputVersion &&
+    new Set(coverage.universe.sourceConfigIds).size === coverage.universe.sourceConfigIds.length &&
+    enumerations.every(entries => entries.length === 1 && entries[0].state === 'enumerated' && entries[0].complete && entries[0].members.every(currentIdentity));
+  const members = enumerations.flatMap(entries => entries.length === 1 && entries[0].state === 'enumerated' ? entries[0].members : []);
+  const memberKeys = new Map();
+  for (const member of members) {
+    const names = memberKeys.get(key(member.lexicalPath)) ?? [];
+    names.push(member);
+    memberKeys.set(key(member.lexicalPath), names);
+  }
+  const canLoadDeclaration = file => {
+    if (!isDeclaration(file)) return roots.has(key(file));
+    const matched = memberKeys.get(key(file)) ?? [];
+    let physical;
+    try { const actual = stat(file, { bigint: true }); physical = actual.dev + ':' + actual.ino; }
     catch { return false; }
+    if (matched.some(member => !currentIdentity(member) || member.physical.canonicalId !== physical)) return false;
+    if (roots.has(key(file))) return enumerations.some(entries => entries.length === 1 && entries[0].state === 'enumerated' && entries[0].configId === input.sourceConfig && entries[0].members.some(member => key(member.lexicalPath) === key(file) && currentIdentity(member)));
+    if (!complete) return false;
+    return matched.length === 0 || declarations.has(key(file));
   };
   const callbacks = new Map();
   const effective = new Map();
@@ -162,7 +187,7 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
     // metadata, not source-loading grants. Libraries remain a separate purpose.
     const name = normalize(file);
     const mappingOnly = input.declarations.length === 0 && input.referenceInputs?.length;
-    if (configs.has(name) || (!mappingOnly && (roots.has(name) || declarations.has(name) || isRetainedDeclaration(name))))
+    if (configs.has(key(name)) || (!mappingOnly && canLoadDeclaration(name)))
       return getSource.call(host, file, ...rest);
     return undefined;
   };
@@ -248,7 +273,7 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
         qualified: !isDeclaration(file) || !/^5\.9\.[012](?:$|-)/.test(ts.version) };
     }),
     requests,
-    contextId: hash([input.generatedConfig, optionsData(program.getCompilerOptions()), input.files, input.declarations]),
+    contextId: hash(['typescript.toPath-v1', host.getCurrentDirectory(), host.getCanonicalFileName('Aa/BB.ts'), host.getCanonicalFileName('aa/bb.ts'), input.generatedConfig, optionsData(program.getCompilerOptions()), input.files, input.declarations]),
   };
   throw stop;
 }, (...args) => {

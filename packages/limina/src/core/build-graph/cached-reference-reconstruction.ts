@@ -188,6 +188,7 @@ function hasCurrentDeclarationDecisions(
           project: {
             configPath: source.configPath,
             fileNames: source.declarationFileNames,
+            context: source.context,
           },
           evidence,
           coverageIndex: input.graph.sourceConfigCoverage,

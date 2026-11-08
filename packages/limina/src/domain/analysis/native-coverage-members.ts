@@ -24,8 +24,6 @@ export function publishedCoverageMembers(
 }
 
 class CoverageMembers {
-  readonly #current = new Map<string, NativeFileIdentity>();
-  readonly #lexical = new Map<string, Set<string>>();
   readonly #compilerMembers = new Map<
     (file: string) => string,
     Map<string, NativeFileIdentity[]>
@@ -37,49 +35,17 @@ class CoverageMembers {
   constructor(config: Enumeration) {
     this.#version = config.inputVersion;
     this.#members = config.members;
-    let hasCurrentIdentities = true;
-    for (const file of config.members) {
-      if (file.physical.state !== 'verified') {
-        hasCurrentIdentities = false;
-        continue;
-      }
-      this.#recordLexical(file.lexicalPath, file.physical.canonicalId);
-      if (file.physical.inputVersion !== this.#version)
-        hasCurrentIdentities = false;
-      else if (!this.#current.has(file.physical.canonicalId))
-        this.#current.set(file.physical.canonicalId, file);
-    }
-    this.hasCurrentIdentities = hasCurrentIdentities;
+    this.hasCurrentIdentities = config.members.every(
+      (file) =>
+        file.physical.state === 'verified' &&
+        file.physical.inputVersion === this.#version,
+    );
   }
 
-  #recordLexical(lexical: string, canonical: string): void {
-    let identities = this.#lexical.get(lexical);
-    if (identities === undefined) {
-      identities = new Set();
-      this.#lexical.set(lexical, identities);
-    }
-    identities.add(canonical);
-  }
-
-  firstMatch(target: NativeFileIdentity): NativeFileIdentity | undefined {
-    if (
-      target.physical.state !== 'verified' ||
-      target.physical.inputVersion !== this.#version
-    )
-      return undefined;
-    // Preserve the first matching alias, even before a later lexical match.
-    return this.#current.get(target.physical.canonicalId);
-  }
-
-  compilerMatch(
+  #entries(
     target: NativeFileIdentity,
     fileKey: (file: string) => string,
-  ): NativeFileIdentity | undefined {
-    if (
-      target.physical.state !== 'verified' ||
-      target.physical.inputVersion !== this.#version
-    )
-      return undefined;
+  ): readonly NativeFileIdentity[] {
     let index = this.#compilerMembers.get(fileKey);
     if (index === undefined) {
       index = new Map();
@@ -91,22 +57,38 @@ class CoverageMembers {
       }
       this.#compilerMembers.set(fileKey, index);
     }
-    const physical = target.physical;
-    return index
-      .get(fileKey(target.lexicalPath))
-      ?.find(
-        (member) =>
-          member.physical.state === 'verified' &&
-          member.physical.inputVersion === this.#version &&
-          member.physical.canonicalId === physical.canonicalId,
-      );
+    return index.get(fileKey(target.lexicalPath)) ?? [];
   }
 
-  hasConflict(target: NativeFileIdentity): boolean {
-    if (target.physical.state !== 'verified') return false;
-    const identities = this.#lexical.get(target.lexicalPath);
-    if (identities === undefined) return false;
-    // Stale verified identities still conflict; they cannot grant membership.
-    return identities.size > 1 || !identities.has(target.physical.canonicalId);
+  compilerMatch(
+    target: NativeFileIdentity,
+    fileKey: (file: string) => string,
+  ): NativeFileIdentity | undefined {
+    if (
+      target.physical.state !== 'verified' ||
+      target.physical.inputVersion !== this.#version
+    )
+      return undefined;
+    const physical = target.physical;
+    return this.#entries(target, fileKey).find(
+      (member) =>
+        member.physical.state === 'verified' &&
+        member.physical.inputVersion === this.#version &&
+        member.physical.canonicalId === physical.canonicalId,
+    );
+  }
+
+  hasConflict(
+    target: NativeFileIdentity,
+    fileKey: (file: string) => string,
+  ): boolean {
+    const physical = target.physical;
+    if (physical.state !== 'verified') return false;
+    // Stale bindings still conflict, although they cannot grant membership.
+    return this.#entries(target, fileKey).some(
+      (member) =>
+        member.physical.state === 'verified' &&
+        member.physical.canonicalId !== physical.canonicalId,
+    );
   }
 }

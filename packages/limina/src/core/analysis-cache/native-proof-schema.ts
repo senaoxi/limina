@@ -114,7 +114,7 @@ export const nativeCoverageIndexSchema: z.ZodType<SourceConfigCoverageIndex> =
 const member = z.object({
   configId: text,
   membershipEvidenceId: text,
-  match: z.enum(['lexical', 'canonical']),
+  match: z.literal('lexical'),
 });
 const nativeCoverageSchemaShape = z.object({
   universeId: text,

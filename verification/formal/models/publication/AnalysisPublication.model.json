@@ -70,8 +70,8 @@
   "counterexamples": "Snapshots distinguish old physical bytes from semantic equivalence.",
   "empiricalVerification": "Run analysis-cache-lifecycle.spec.ts retry, final validation and physical baseline cases.",
   "driftReview": {
-    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
-    "sourceHash": "58a7c3b3ea9c269e56825978b21eab077670f7def39f19f7042111ba9bca3600",
+    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
+    "sourceHash": "9700573c97d92564d05d0968a81b3aa327dd296e063134eb5b9a3ff6b70da2ab",
     "modelHash": "25aa9a3e4ba7765cd681d8381f80d389c09409d232ba35f25c33bd429bd56469"
   }
 }

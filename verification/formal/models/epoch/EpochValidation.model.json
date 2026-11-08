@@ -55,8 +55,8 @@
   "counterexamples": "During validation: internal API can return old result. Proposed recheck is model-only.",
   "empiricalVerification": "See evidence/epoch/README.md and replay.mjs; distinguish historical return from publish.",
   "driftReview": {
-    "baseline": "e9049e9b0793ea03c4515e003fdd4049a6c6cd08",
-    "sourceHash": "14973c030947f4ddff7a16f988931c21a3782e94868861584bf1e6d03753d4c2",
+    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
+    "sourceHash": "d9ca21d1fed9308f5e3a1769b0e816d8dfe3570cedbc3214af840a151aebbd34",
     "modelHash": "76f69bd34f3fb73234dfaa2ac9e49fab15ef938aeb230d126ccac4a2afab82cc"
   }
 }

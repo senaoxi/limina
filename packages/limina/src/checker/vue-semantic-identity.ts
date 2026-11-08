@@ -3,6 +3,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import path from 'pathe';
 import type ts from 'typescript';
+import { compilerPathPolicy } from '../core/typescript-semantic/compiler-path-key';
 import { normalizeExtensions } from './extensions';
 import type { CheckerProjectConfigParseOptions } from './types';
 import {
@@ -66,6 +67,7 @@ function createIdentityId(options: {
 }): string {
   return hashJson({
     adapter: options.toolchain.adapter,
+    hostContract: vueCompilerPathPolicy(options).identity,
     configClosure: options.configClosure,
     configPath: options.configPath,
     extensions: options.extensions,
@@ -293,4 +295,18 @@ export function resolveVueSourceProfile(options: {
   return options.identity?.profilesByFileName.get(
     normalizeAbsolutePath(options.fileName),
   );
+}
+
+export function vueCompilerPathPolicy(
+  identity: Pick<
+    VueProjectSemanticIdentity,
+    'toolchain' | 'configPath' | 'options'
+  >,
+): ReturnType<typeof compilerPathPolicy> {
+  return compilerPathPolicy(identity.toolchain.tsModule, {
+    getCurrentDirectory: () => path.dirname(identity.configPath),
+    getCanonicalFileName: identity.toolchain.tsModule.createCompilerHost(
+      identity.options,
+    ).getCanonicalFileName,
+  });
 }

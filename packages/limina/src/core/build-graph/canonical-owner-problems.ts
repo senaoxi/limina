@@ -9,13 +9,13 @@ export function formatAmbiguousCanonicalOwner(options: {
   rootDir: string;
 }): string {
   return [
-    'Ambiguous canonical governed source ownership:',
-    `  physical target: ${toRelativePath(options.rootDir, options.filePath)}`,
+    'Ambiguous compiler input ownership:',
+    `  compiler target: ${toRelativePath(options.rootDir, options.filePath)}`,
     '  actual owning configs:',
     ...options.owners.map(
       (owner) => `    - ${toRelativePath(options.rootDir, owner)}`,
     ),
-    '  reason: a symlink alias must identify exactly one actual owning config.',
+    '  reason: an implementation input must identify exactly one owning config.',
   ].join('\n');
 }
 
@@ -24,24 +24,10 @@ export function collectCanonicalOwnerProblems(options: {
   membership: FileOwnerLookup;
   rootDir: string;
 }): string[] {
-  const paths = new Set(
-    options.facts.flatMap((fact) =>
-      fact.physicalTargetPath === null ? [] : [fact.physicalTargetPath],
-    ),
-  );
-  const legacy = [...paths]
-    .filter((filePath) => options.membership.isCanonicalAmbiguous(filePath))
-    .map((filePath) =>
-      formatAmbiguousCanonicalOwner({
-        filePath,
-        owners: options.membership.get(filePath) ?? [],
-        rootDir: options.rootDir,
-      }),
-    );
   const native = options.facts.flatMap((fact) =>
     nativeAmbiguityProblem(fact, options.rootDir),
   );
-  return [...new Set([...legacy, ...native])];
+  return [...new Set(native)];
 }
 
 function nativeAmbiguityProblem(
