@@ -13,7 +13,10 @@ import type {
   DeclarationContextReceipt,
 } from '../../domain/analysis/declaration-context';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
-import { DeclarationObservationUnavailable } from '../declaration-governance/candidate';
+import {
+  declarationCandidateRequests,
+  DeclarationObservationUnavailable,
+} from '../declaration-governance/candidate';
 import { observeNativeDeclarationCandidate } from '../declaration-governance/native-candidate';
 import { createDeclarationValidationScope } from '../declaration-governance/validation-scope';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
@@ -143,7 +146,7 @@ export function validateDeclarationContexts(
         });
       }
     }
-    compareDelegatedRequests(result.receipts);
+    compareDelegatedRequests(input, result.receipts);
   } catch (error) {
     if (
       !(error instanceof DeclarationObservationUnavailable) &&
@@ -497,6 +500,7 @@ function projectIdentity(
 }
 
 function compareDelegatedRequests(
+  input: DeclarationValidationInput,
   receipts: readonly DeclarationContextReceipt[],
 ): void {
   for (const receipt of receipts)
@@ -513,25 +517,41 @@ function compareDelegatedRequests(
         throw new UnavailableDeclarationContext(
           `Missing owner observation: ${mapping.referenceConfig}`,
         );
-      const requests = (value: DeclarationContextReceipt) =>
-        delegatedRequests(value, mapping.file);
-      const consumer = requests(receipt);
-      const expected = requests(owner);
-      const key = (request: DeclarationContextReceipt['requests'][number]) =>
-        nativeFingerprint([
-          request.file,
-          request.position,
-          request.channel,
-          request.specifier,
-          request.mode,
-          request.resolutionState,
-          request.target,
-          declarationInputPermissions(request.environment),
-          request.externalLibrary,
-        ]);
+      // Compare each observation under its own Checker/Host policy. Keep
+      // original spellings in the receipts, including transitive requests.
+      const consumerKey = (file: string) =>
+        fileKey(input, file, receipt.sourceConfig);
+      const ownerKey = (file: string) =>
+        fileKey(input, file, owner.sourceConfig);
+      const consumer = declarationCandidateRequests(
+        [mapping.file],
+        receipt.requests,
+        consumerKey,
+      );
+      const expected = declarationCandidateRequests(
+        [mapping.file],
+        owner.requests,
+        ownerKey,
+      );
+      const key =
+        (pathKey: (file: string) => string) =>
+        (request: DeclarationContextReceipt['requests'][number]) =>
+          nativeFingerprint([
+            pathKey(request.file),
+            request.position,
+            request.channel,
+            request.specifier,
+            request.mode,
+            request.resolutionState,
+            request.target === null ? null : pathKey(request.target),
+            declarationInputPermissions(request.environment),
+            request.externalLibrary,
+          ]);
       if (
-        nativeFingerprint(consumer.map(key).sort(compareCodeUnits)) !==
-        nativeFingerprint(expected.map(key).sort(compareCodeUnits))
+        nativeFingerprint(
+          consumer.map(key(consumerKey)).sort(compareCodeUnits),
+        ) !==
+        nativeFingerprint(expected.map(key(ownerKey)).sort(compareCodeUnits))
       )
         throw new DeclarationContextConflict(
           `Declaration request context differs from its selected owner: ${mapping.file}`,
@@ -555,7 +575,7 @@ function compareDelegatedRequests(
           continue;
         }
         if (
-          request.file === mapping.file &&
+          consumerKey(request.file) === consumerKey(mapping.file) &&
           ['module', 'type-directive'].includes(request.channel) &&
           !request.redirects.includes(mapping.referenceConfig)
         )
@@ -579,29 +599,4 @@ function declarationInputPermissions(
     Boolean(options.allowJs ?? options.checkJs),
     Boolean(options.noEmitForJsFiles),
   ];
-}
-
-function delegatedRequests(
-  receipt: DeclarationContextReceipt,
-  file: string,
-): DeclarationContextReceipt['requests'] {
-  const visited = new Set<string>();
-  const pending = [file];
-  const requests: DeclarationContextReceipt['requests'][number][] = [];
-  while (pending.length > 0) {
-    const source = pending.pop()!;
-    if (visited.has(source)) continue;
-    visited.add(source);
-    for (const request of receipt.requests) {
-      if (request.file !== source) continue;
-      requests.push(request);
-      if (
-        request.target !== null &&
-        isDeclarationFile(request.target) &&
-        request.channel !== 'library'
-      )
-        pending.push(request.target);
-    }
-  }
-  return requests;
 }

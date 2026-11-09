@@ -228,6 +228,6 @@ Vue 分析 Adapter 在屏蔽 Program 加载前观察 Volar 原始解析结果，
 
 B 的项目检查与 A 的模块解析重定向是两个承诺。A 保留自己的 TypeChecker 选项。增量构建可以复用此前检查；候选 receipt 证明配置/解析绑定，不表示本轮 Checker 已重新检查成功。Generated-graph、full-analysis-cache 和 execution-admission 回归分别保护这些边界。
 
-Native 候选观察使用当前 Compiler/Host 的同一 `toPath` key 关联已加载声明与请求证据，再比较成员资格或保留嵌套请求。这会消除 `node_modules/../b/index.d.ts` 一类点路径段，并遵循实际 Host 的大小写策略，但不合并 realpath 别名。加载、Coverage、选定上下文与 reference-map 保护仍独立成立；generated-graph 回归覆盖 configured types、源码 type 指令、嵌套请求及未观察到声明时的拒绝。
+Native 和 Vue 候选观察使用各自实际 Compiler/Host 的 `toPath` key 关联已加载声明与请求证据。委派遍历、文件／目标比较指纹和直接请求的 redirect 义务，对每份独立观察使用相同策略；receipt 保留原始路径拼写与有效环境。在大小写不敏感的 Host 上，消费者加载的 `API.d.ts` 与提供者列出的 `api.d.ts` 可以一致，包括目录拼写不同的嵌套请求。不同 key 即使绑定同一个 inode，仍是不同目标。这也会消除点路径段，但不合并 realpath 别名。加载、Coverage、选定上下文、Mode、输入权限与实际 reference-map 保护仍独立成立。[generated-graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖 Native/Vue 拼写保留、嵌套目标不一致及路径规范化后缺少 redirect 的拒绝；文件系统大小写折叠用例仅在大小写不敏感的 Host 上运行。恢复会重新执行当前 Candidate 比较，不采纳保存的成功状态。
 
 迁移比较独立保留未解析依赖观察。即使 Compiler 已判定当前编译关系，源请求仍未解析时，也不能据此删除用户显式引用。这些观察随图 DTO 恢复；迁移将比较标记为不完整，不改写编译义务证明。
