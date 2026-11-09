@@ -10,6 +10,7 @@ import { readAstroTestToolchain } from '@limina/gates/test-support/astro-toolcha
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import {
+  link,
   mkdir,
   mkdtemp,
   readdir,
@@ -11435,6 +11436,7 @@ describe('declaration candidate evidence failures', () => {
     ['not-loaded', 'Selected declaration was not loaded'],
     ['target', 'Declaration request context differs'],
     ['redirect', 'did not use the selected reference'],
+    ['normalized-redirect', 'did not use the selected reference'],
     ['unavailable', 'Unavailable declaration request'],
     ['context', 'Unbound declaration request'],
   ] as const)(
@@ -11477,19 +11479,25 @@ describe('declaration candidate evidence failures', () => {
             Object.defineProperty(context, 'nativeEvidence', {
               value: {
                 ...snapshot,
-                requests:
-                  kind === 'context'
-                    ? snapshot.requests.map((item) =>
-                        item.id === request.id
-                          ? { ...item, consumerContextId: 'unrelated-context' }
-                          : item,
-                      )
-                    : snapshot.requests,
+                requests: snapshot.requests.map((item) => {
+                  if (item.id !== request.id) return item;
+                  if (kind === 'context')
+                    return { ...item, consumerContextId: 'unrelated-context' };
+                  if (kind === 'normalized-redirect')
+                    return {
+                      ...item,
+                      sourceFile: {
+                        ...item.sourceFile!,
+                        lexicalPath: `${fixture.path('packages/b')}/./b.d.ts`,
+                      },
+                    };
+                  return item;
+                }),
                 resolutions: snapshot.resolutions.map((resolution) => {
                   if (resolution.requestId !== request.id) return resolution;
                   if (kind === 'unavailable')
                     return { ...resolution, state: 'unavailable' };
-                  if (kind === 'redirect')
+                  if (kind === 'redirect' || kind === 'normalized-redirect')
                     return { ...resolution, rawRedirectEvidenceIds: [] };
                   if (kind === 'target')
                     return {
@@ -11966,9 +11974,13 @@ describe('compiler requests and final reference admission', () => {
 });
 
 describe('checker-neutral declaration governance', () => {
-  it.each([false, true])(
-    'compares nested declaration requests across explicitly mapped boundaries (differs=%s)',
-    async (differs) => {
+  it.each(
+    ['tsc', 'vue-tsc'].flatMap((checker) =>
+      [false, true].map((differs) => ({ checker, differs })),
+    ),
+  )(
+    'compares nested declaration requests across explicitly mapped boundaries ($checker, differs=$differs)',
+    async ({ checker, differs }) => {
       const compilerOptions = {
         composite: true,
         target: 'ES2022',
@@ -11978,7 +11990,7 @@ describe('checker-neutral declaration governance', () => {
       };
       const aConfig = {
         compilerOptions,
-        files: ['App.vue'],
+        files: [checker === 'tsc' ? 'main.ts' : 'App.vue'],
         liminaOptions: {
           declarationContexts: [
             { file: '../shared/api.d.ts', config: '../d/tsconfig.json' },
@@ -11990,6 +12002,8 @@ describe('checker-neutral declaration governance', () => {
           ...aConfig,
           references: [{ path: '../b' }, { path: '../d' }],
         }),
+        'packages/a/main.ts':
+          'import type { Nested } from "../b/entry"; import type { Api } from "../shared/api"; let nested: Nested; let api: Api;',
         'packages/a/App.vue':
           '<script setup lang="ts">import type { Nested } from "../b/entry"; import type { Api } from "../shared/api"; let nested: Nested; let api: Api;</script>',
         'packages/b/tsconfig.json': json({
@@ -12015,11 +12029,19 @@ describe('checker-neutral declaration governance', () => {
           'export interface Model { value: number }',
       });
       fixture.config.scope!.checkers = {
-        'vue-tsc': { include: ['packages/*/tsconfig.json'] },
+        [checker]: { include: ['packages/*/tsconfig.json'] },
       };
       try {
+        // Different Compiler keys must remain distinct even for one inode.
+        await rm(fixture.path('packages/values/right.d.ts'));
+        await link(
+          fixture.path('packages/values/left.d.ts'),
+          fixture.path('packages/values/right.d.ts'),
+        );
         const a = fixture.path('packages/a/tsconfig.json');
-        const bin = requireFromTest.resolve('vue-tsc/bin/vue-tsc.js');
+        const bin = requireFromTest.resolve(
+          checker === 'tsc' ? 'typescript/bin/tsc' : 'vue-tsc/bin/vue-tsc.js',
+        );
         // Both environments typecheck: a successful build alone does not prove
         // that B's delegated declaration requests retained their context.
         await execFileAsync(
@@ -12064,7 +12086,7 @@ describe('checker-neutral declaration governance', () => {
           [
             bin,
             '-b',
-            graph.sourceToDts.get('vue-tsc')!.get(a)!,
+            graph.sourceToDts.get(checker)!.get(a)!,
             '--pretty',
             'false',
           ],
@@ -12690,6 +12712,91 @@ it.each([
 );
 
 describe('declaration compiler path identity', () => {
+  it.skipIf(ts.sys.useCaseSensitiveFileNames).each(['tsc', 'vue-tsc'] as const)(
+    'compares delegated paths by the actual %s Host key while retaining spelling',
+    async (checker) => {
+      const compilerOptions = {
+        composite: true,
+        declaration: true,
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        target: 'ES2022',
+        types: [],
+        skipDefaultLibCheck: true,
+      };
+      const fixture = await createFixture({
+        'packages/a/tsconfig.json': json({
+          compilerOptions,
+          files: ['main.ts'],
+        }),
+        'packages/a/main.ts':
+          'import type {Value} from "../b/DECLARATIONS/API.js"; export const value: Value = 1;',
+        'packages/b/tsconfig.json': json({
+          compilerOptions,
+          files: ['declarations/api.d.ts'],
+        }),
+        'packages/b/declarations/api.d.ts':
+          'export type {Value} from "./model.js";',
+        'packages/b/declarations/model.d.ts':
+          'export type {Value} from "./leaf.js";',
+        'packages/b/declarations/leaf.d.ts': 'export type Value = number;',
+      });
+      fixture.config.scope!.checkers = {
+        [checker]: { include: ['packages/*/tsconfig.json'] },
+      };
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const validation = graph.dependencyAnalysis!.declarationValidation!;
+        expect(validation.state, validation.diagnostics.join('\n')).toBe(
+          'admitted',
+        );
+        const a = fixture.path('packages/a/tsconfig.json');
+        const b = fixture.path('packages/b/tsconfig.json');
+        const consumer = validation.receipts.find(
+          (item) => item.sourceConfig === a,
+        )!;
+        const owner = validation.receipts.find(
+          (item) => item.sourceConfig === b,
+        )!;
+        expect(consumer.authority.adapter).toBe(
+          checker === 'tsc'
+            ? 'typescript-declaration-candidate-v1'
+            : 'vue-cli-declaration-candidate-v1',
+        );
+        expect(consumer.mappings).toContainEqual(
+          expect.objectContaining({
+            file: fixture.path('packages/b/DECLARATIONS/API.d.ts'),
+            sourceConfig: b,
+            loaded: true,
+          }),
+        );
+        for (const [receipt, directory, entry] of [
+          [consumer, 'DECLARATIONS', 'API'],
+          [owner, 'declarations', 'api'],
+        ] as const) {
+          const requests = [
+            {
+              file: fixture.path(`packages/b/${directory}/${entry}.d.ts`),
+              target: fixture.path(`packages/b/${directory}/model.d.ts`),
+              specifier: './model.js',
+            },
+            {
+              file: fixture.path(`packages/b/${directory}/model.d.ts`),
+              target: fixture.path(`packages/b/${directory}/leaf.d.ts`),
+              specifier: './leaf.js',
+            },
+          ];
+          for (const request of requests)
+            expect(receipt.requests).toContainEqual(
+              expect.objectContaining(request),
+            );
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each(['tsc', 'vue-tsc'] as const)(
     'admits an uncovered consumer alias through the real %s candidate',
     async (checker) => {

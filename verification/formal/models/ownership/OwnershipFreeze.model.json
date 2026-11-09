@@ -48,27 +48,19 @@
       "stable": true
     },
     "mutation-family-color.cfg": {
-      "breaks": [
-        "ExactComponent"
-      ],
+      "breaks": ["ExactComponent"],
       "stable": true
     },
     "mutation-last-wins.cfg": {
-      "breaks": [
-        "ConflictRejected"
-      ],
+      "breaks": ["ConflictRejected"],
       "stable": false
     },
     "mutation-rewrite.cfg": {
-      "breaks": [
-        "FrozenAuthority"
-      ],
+      "breaks": ["FrozenAuthority"],
       "stable": false
     },
     "mutation-single-root.cfg": {
-      "breaks": [
-        "SolutionConsumers"
-      ],
+      "breaks": ["SolutionConsumers"],
       "stable": false
     }
   },
@@ -80,8 +72,8 @@
   "counterexamples": "Last-wins is not convergence. Shared solution is not a conflicting primary owner.",
   "empiricalVerification": "Run generated-graph.spec.ts (reverse import order, nested shared/empty solutions) and typecheck.spec.ts (inherited owners); compare real checker diagnostics separately.",
   "driftReview": {
-    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
-    "sourceHash": "cd5805e107134c1cb5bfe8aa31f9d3609b7ce2b49126743c2b36d6896e523096",
+    "baseline": "cd74e44ee15e31ac04cbfcc8ff4132b1ad656bb8",
+    "sourceHash": "eb9a6c52b89f5fff4a23115588b471378f404f3eb1793790afaab9a932447b98",
     "modelHash": "c87d37d9f9523bab174ed13f018e116cc0958b5a1738d6b76426f1009d77339f"
   }
 }
