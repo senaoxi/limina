@@ -23,7 +23,7 @@
     "test": "pnpm run build && pnpm run test:unit && pnpm run test:tooling && pnpm run test:integration",
     "test:unit": "pnpm --filter limina run test:unit && pnpm --filter limina-migrate run test:unit",
     "test:integration": "pnpm --filter limina run test:integration && pnpm --filter limina-migrate run test:integration",
-    "test:tooling": "pnpm --filter @limina/gates test && node --import tsx --test scripts/release/*.spec.ts scripts/docs/*.spec.ts scripts/git/*.spec.ts",
+    "test:tooling": "pnpm --filter @limina/gates test && node --import tsx --test scripts/release/*.spec.ts scripts/docs/*.spec.ts scripts/git/*.spec.ts docs/.vitepress/theme/evals-cohorts.spec.ts",
     "test:smoke": "pnpm --dir smoke test",
     "smoke": "pnpm run build && pnpm run test:smoke",
     "docs:dev": "pnpm --dir docs run docs:dev",

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "kind": "supplemental-diagnostic",
+  "taskId": "I03",
+  "measuredOn": "2026-11-06",
+  "includedInFormalScores": false,
+  "sourceAnalysisSha256": "421cbb95e769c31c7c488a2688f96524e3e7a22cc778f34e50e769ca18ccc483",
+  "originalSummarySha256": "ed33d9f10044231e8c6cd3baa22b3bf9916eb268831c2b5bf3968814283ca606",
+  "productIdentity": "a19981447eba6c7381401e83d8e6045185a300c66eb3bb8184258e4846eac023",
+  "skillDigest": "2eed42d05b28a30c23ca8c20ec72121e631681c976852c07b2b6f0d216c788fe",
+  "gradingIdentity": "7b97559fae782357878745bb467466a8556ed0ca649d5a56cbce2d179c38038b",
+  "original": {
+    "base": {
+      "passed": 3,
+      "attempts": 3,
+      "repetitions": [
+        { "repetition": 1, "passed": true, "target": "nested/app" },
+        { "repetition": 2, "passed": true, "target": "nested/app" },
+        { "repetition": 3, "passed": true, "target": "nested/app" }
+      ]
+    },
+    "skill": {
+      "passed": 1,
+      "attempts": 3,
+      "repetitions": [
+        { "repetition": 1, "passed": false, "target": "nested" },
+        { "repetition": 2, "passed": false, "target": "nested" },
+        { "repetition": 3, "passed": true, "target": "nested/app" }
+      ]
+    }
+  },
+  "supplemental": {
+    "base": {
+      "passed": 3,
+      "attempts": 3,
+      "repetitions": [
+        { "repetition": 1, "passed": true, "target": "nested/app" },
+        { "repetition": 2, "passed": true, "target": "nested/app" },
+        { "repetition": 3, "passed": true, "target": "nested/app" }
+      ]
+    },
+    "skill": {
+      "passed": 3,
+      "attempts": 3,
+      "repetitions": [
+        { "repetition": 1, "passed": true, "target": "nested/app" },
+        { "repetition": 2, "passed": true, "target": "nested/app" },
+        { "repetition": 3, "passed": true, "target": "nested/app" }
+      ]
+    }
+  }
+}

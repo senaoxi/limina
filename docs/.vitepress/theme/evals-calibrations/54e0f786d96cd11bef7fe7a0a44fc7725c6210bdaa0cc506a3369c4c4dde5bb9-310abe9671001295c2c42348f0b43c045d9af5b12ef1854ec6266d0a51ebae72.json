@@ -1,0 +1,330 @@
+{
+  "schemaVersion": 1,
+  "kind": "task-bank-calibration",
+  "bankId": "54e0f786d96cd11bef7fe7a0a44fc7725c6210bdaa0cc506a3369c4c4dde5bb9",
+  "bankRevision": "v2.1",
+  "completedAt": "2026-11-08T19:11:17.000Z",
+  "scope": "task-calibration",
+  "modelPerformanceIncluded": false,
+  "calculationIdentity": "41cf45ea298914493d36324123a7d071046695c69a2ee5788520dc92b862126f",
+  "sources": {
+    "indexSha256": "8d7a88ba58c96693ed5baf6684f4b7a4bfd801acf851d6a65a027905ee783e84",
+    "bankSha256": "8189bb5ca6d5ebf0edb5b442cfaf63fe95877ad9c962606412258b63e48529e8",
+    "reviewSha256": "c8646b5cfd234e66d0f92534daf1c9e02b4641ca6d240b2359956986f7e4bc2e",
+    "calibrationSha256": "8771766b2e05368d3f98070e950ac5e0a46f357ade0cb9ec25814109ec6c625d"
+  },
+  "inventory": {
+    "tasks": 26,
+    "development": 17,
+    "sealed": 9,
+    "domains": 8,
+    "negativeControls": 2
+  },
+  "graderCalibration": {
+    "cases": 254,
+    "matched": 254,
+    "correct": 61,
+    "incorrect": 122,
+    "unsafe": 71
+  },
+  "independentReview": {
+    "status": "passed",
+    "reviewers": 10,
+    "passed": 26,
+    "adversarialChecks": 84,
+    "referenceAccess": false,
+    "graderAccess": false,
+    "inputEquivalenceAuditors": 1,
+    "equivalentInputs": 26,
+    "taskExecutionRepeated": false
+  },
+  "tasks": [
+    {
+      "id": "C01",
+      "domain": "configuration",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 6,
+      "calibrationMatched": 6,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "C02",
+      "domain": "configuration",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "C03",
+      "domain": "configuration",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 15,
+      "calibrationMatched": 15,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "I01",
+      "domain": "initialization",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 12,
+      "calibrationMatched": 12,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 4
+    },
+    {
+      "id": "I02",
+      "domain": "initialization",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 14,
+      "calibrationMatched": 14,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "I03",
+      "domain": "initialization",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 6,
+      "calibrationMatched": 6,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "K01",
+      "domain": "checker",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "K02",
+      "domain": "checker",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 10,
+      "calibrationMatched": 10,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 4
+    },
+    {
+      "id": "K03",
+      "domain": "checker",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 6,
+      "calibrationMatched": 6,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 4
+    },
+    {
+      "id": "N01",
+      "domain": "negative-control",
+      "split": "dev",
+      "role": "negative-control",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "N02",
+      "domain": "negative-control",
+      "split": "sealed",
+      "role": "negative-control",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "P01",
+      "domain": "package-release",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 4
+    },
+    {
+      "id": "P02",
+      "domain": "package-release",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "P03",
+      "domain": "package-release",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 15,
+      "calibrationMatched": 15,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "R01",
+      "domain": "reference-graph",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "R02",
+      "domain": "reference-graph",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 11,
+      "calibrationMatched": 11,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 4
+    },
+    {
+      "id": "R03",
+      "domain": "reference-graph",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 7,
+      "calibrationMatched": 7,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "S01",
+      "domain": "source-governance",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "S02",
+      "domain": "source-governance",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "S03",
+      "domain": "source-governance",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "T01",
+      "domain": "troubleshooting",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 6,
+      "calibrationMatched": 6,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "T02",
+      "domain": "troubleshooting",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 11,
+      "calibrationMatched": 11,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "T03",
+      "domain": "troubleshooting",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "W01",
+      "domain": "workflow",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 21,
+      "calibrationMatched": 21,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "W02",
+      "domain": "workflow",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 3
+    },
+    {
+      "id": "W03",
+      "domain": "workflow",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 12,
+      "calibrationMatched": 12,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed",
+      "adversarialChecks": 4
+    }
+  ],
+  "identity": "310abe9671001295c2c42348f0b43c045d9af5b12ef1854ec6266d0a51ebae72"
+}

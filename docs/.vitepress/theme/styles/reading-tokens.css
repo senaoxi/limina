@@ -19,7 +19,8 @@
 }
 
 .limina-reading,
-.limina-reading-portal {
+.limina-reading-portal,
+.limina-evals-page {
   --limina-doc-canvas: #fafaf7;
   --limina-doc-surface: #fff;
   --limina-doc-ink: var(--limina-c-ink);
@@ -71,7 +72,8 @@
 }
 
 .dark .limina-reading,
-.dark .limina-reading-portal {
+.dark .limina-reading-portal,
+.dark .limina-evals-page {
   --limina-doc-canvas: #141a1e;
   --limina-doc-surface: #171d22;
   --limina-doc-code: #0e0e0e;

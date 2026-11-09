@@ -1,0 +1,60 @@
+{
+  "version": 7,
+  "purpose": "complete",
+  "generatedBy": "limina",
+  "checkers": {
+    "tsc": {
+      "configToOutputBuild": {},
+      "entry": ".limina/tsconfig/checkers/tsc/tsconfig.build.json",
+      "name": "tsc",
+      "roots": [
+        "tsconfig.json"
+      ],
+      "sourceToBuild": {
+        "tsconfig.json": {
+          "kind": "project",
+          "path": ".limina/tsconfig/checkers/tsc/projects/tsconfig.dts.json"
+        }
+      },
+      "sourceToDts": {
+        "tsconfig.json": ".limina/tsconfig/checkers/tsc/projects/tsconfig.dts.json"
+      },
+      "dtsToSource": {
+        ".limina/tsconfig/checkers/tsc/projects/tsconfig.dts.json": "tsconfig.json"
+      }
+    }
+  },
+  "knip": {
+    "diagnostics": [],
+    "packages": []
+  },
+  "ownedArtifacts": [
+    "dts/checkers/tsc/tsconfig.json/package.json",
+    "manifest.json",
+    "tsconfig/checkers/tsc/projects/tsconfig.dts.json",
+    "tsconfig/checkers/tsc/tsconfig.build.json"
+  ],
+  "ownership": {
+    "configs": [
+      {
+        "config": "tsconfig.json",
+        "owner": "tsc",
+        "role": "type"
+      }
+    ],
+    "solutions": []
+  },
+  "targets": {
+    "build": [
+      {
+        "checker": "tsc",
+        "entry": ".limina/tsconfig/checkers/tsc/tsconfig.build.json",
+        "roots": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "framework": []
+  },
+  "dependencyEdges": []
+}

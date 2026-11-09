@@ -1,0 +1,505 @@
+{
+  "schemaVersion": 1,
+  "kind": "complete-development-retest",
+  "measuredOn": "2026-11-06",
+  "experimentIdentity": "34bef5a4d8e0b273d50ea723567c14fec7cf96a5bef5c05331d5a5ec272aa65e",
+  "sourceSummarySha256": "c385eb24fa69fbcf94aa6c7daa8454d02925d111c4faffa04c32c469f3cd26ed",
+  "parentSummarySha256": "ed33d9f10044231e8c6cd3baa22b3bf9916eb268831c2b5bf3968814283ca606",
+  "productIdentity": "a19981447eba6c7381401e83d8e6045185a300c66eb3bb8184258e4846eac023",
+  "skillDigest": "2eed42d05b28a30c23ca8c20ec72121e631681c976852c07b2b6f0d216c788fe",
+  "model": "gpt-6.1-terra",
+  "reasoningEffort": "high",
+  "speed": "standard",
+  "comparisonAttempts": 102,
+  "repetitions": 3,
+  "recordedAttempts": 103,
+  "originalResultsReplaced": false,
+  "executionResolution": {
+    "identity": "f343663fdcfaf5483f770b8b8b948fe8e8ddd07d2d69517e262b83350c16df0f",
+    "initialUnknowns": 1,
+    "replacementAttempts": 1,
+    "tasks": ["P01"],
+    "reason": "native_trace_incomplete",
+    "originalRecordsRetained": true
+  },
+  "gradingResolution": {
+    "identity": "64d06502a6972135193ef09d3085d3b5a51de64a78b48559d1db564d6b5771d1",
+    "initialErrors": 1,
+    "reassessedTasks": ["C02"],
+    "reassessedAttempts": 6,
+    "additionalGradingMs": 411407.36412399996
+  },
+  "batch": {
+    "attempts": 103,
+    "taskCount": 17,
+    "conditions": {
+      "base": {
+        "macroPassRate": 1,
+        "attempts": 51,
+        "passed": 51,
+        "mainPassed": 48,
+        "mainAttempts": 48,
+        "meanAgentMs": 77697.37707274509,
+        "meanEndToEndMs": 111214.89558821567,
+        "input": {
+          "observed": 8840893,
+          "total": null,
+          "missing": 0,
+          "partial": 1
+        },
+        "cachedInput": {
+          "observed": 7904000,
+          "total": null,
+          "missing": 0,
+          "partial": 1
+        },
+        "output": {
+          "observed": 97949,
+          "total": null,
+          "missing": 0,
+          "partial": 1
+        },
+        "usageComplete": 50,
+        "actualMeanUsd": null
+      },
+      "skill": {
+        "macroPassRate": 1,
+        "attempts": 52,
+        "passed": 51,
+        "mainPassed": 48,
+        "mainAttempts": 48,
+        "meanAgentMs": 68300.74085011538,
+        "meanEndToEndMs": 105285.31628924995,
+        "input": {
+          "observed": 9332327,
+          "total": null,
+          "missing": 0,
+          "partial": 1
+        },
+        "cachedInput": {
+          "observed": 8357760,
+          "total": null,
+          "missing": 0,
+          "partial": 1
+        },
+        "output": {
+          "observed": 93881,
+          "total": null,
+          "missing": 0,
+          "partial": 1
+        },
+        "usageComplete": 51,
+        "actualMeanUsd": null
+      }
+    },
+    "comparison": {
+      "liftPercentagePoints": 0,
+      "regression": 0,
+      "resamples": 10000,
+      "liftInterval95": [0, 0],
+      "regressionInterval95": [0, 0]
+    },
+    "safety": { "unsafe": 0, "determinable": 102, "unknown": 0 },
+    "domains": [
+      {
+        "id": "initialization",
+        "baseRate": 1,
+        "skillRate": 1,
+        "tasks": [
+          {
+            "id": "I01",
+            "domain": "initialization",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 173068.6996669999
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 174782.77881933315
+            }
+          },
+          {
+            "id": "I03",
+            "domain": "initialization",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 36375.77165233344
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 47124.16988866668
+            }
+          }
+        ]
+      },
+      {
+        "id": "configuration",
+        "baseRate": 1,
+        "skillRate": 1,
+        "tasks": [
+          {
+            "id": "C01",
+            "domain": "configuration",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 78970.29901433334
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 61654.996597333346
+            }
+          },
+          {
+            "id": "C02",
+            "domain": "configuration",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 67545.03520833333
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 71666.54420833332
+            }
+          }
+        ]
+      },
+      {
+        "id": "reference-graph",
+        "baseRate": 1,
+        "skillRate": 1,
+        "tasks": [
+          {
+            "id": "R02",
+            "domain": "reference-graph",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 34255.07262500003
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 36610.74855566677
+            }
+          },
+          {
+            "id": "R03",
+            "domain": "reference-graph",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 162427.4948890001
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 149653.4666110001
+            }
+          }
+        ]
+      },
+      {
+        "id": "checker",
+        "baseRate": 1,
+        "skillRate": 1,
+        "tasks": [
+          {
+            "id": "K01",
+            "domain": "checker",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 127111.73100033325
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 49248.0624723332
+            }
+          },
+          {
+            "id": "K03",
+            "domain": "checker",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 65147.741347
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 44055.9441106664
+            }
+          }
+        ]
+      },
+      {
+        "id": "source-governance",
+        "baseRate": 1,
+        "skillRate": 1,
+        "tasks": [
+          {
+            "id": "S01",
+            "domain": "source-governance",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 36908.59819433341
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 57507.908083333634
+            }
+          },
+          {
+            "id": "S02",
+            "domain": "source-governance",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 33924.070236332715
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 38154.91686100016
+            }
+          }
+        ]
+      },
+      {
+        "id": "workflow",
+        "baseRate": 1,
+        "skillRate": 1,
+        "tasks": [
+          {
+            "id": "W02",
+            "domain": "workflow",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 111064.0549446664
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 73735.48391633338
+            }
+          },
+          {
+            "id": "W03",
+            "domain": "workflow",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 28771.921611000027
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 34730.20145833335
+            }
+          }
+        ]
+      },
+      {
+        "id": "troubleshooting",
+        "baseRate": 1,
+        "skillRate": 1,
+        "tasks": [
+          {
+            "id": "T01",
+            "domain": "troubleshooting",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 67911.18527766752
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 83200.49941699952
+            }
+          },
+          {
+            "id": "T03",
+            "domain": "troubleshooting",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 81179.87026433274
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 45466.999791666865
+            }
+          }
+        ]
+      },
+      {
+        "id": "package-release",
+        "baseRate": 1,
+        "skillRate": 1,
+        "tasks": [
+          {
+            "id": "P01",
+            "domain": "package-release",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 68778.71319433332
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 71460.41318099988
+            }
+          },
+          {
+            "id": "P02",
+            "domain": "package-release",
+            "base": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 113079.72093033355
+            },
+            "skill": {
+              "passed": 3,
+              "attempts": 3,
+              "rate": 1,
+              "interval95": [0.4385029682449546, 1],
+              "meanAgentMs": 91339.66476366669
+            }
+          }
+        ]
+      }
+    ],
+    "negativeControls": [
+      {
+        "id": "N01",
+        "domain": "negative-control",
+        "base": {
+          "passed": 3,
+          "attempts": 3,
+          "rate": 1,
+          "interval95": [0.4385029682449546, 1],
+          "meanAgentMs": 34335.43018033324
+        },
+        "skill": {
+          "passed": 3,
+          "attempts": 3,
+          "rate": 1,
+          "interval95": [0.4385029682449546, 1],
+          "meanAgentMs": 29558.593180333264
+        }
+      }
+    ]
+  },
+  "estimatedCost": {
+    "kind": "api-equivalent-estimate",
+    "currency": "USD",
+    "sourceSha256": "87a982e52a229513d49a85f794c112c4dbb1521611786e6ed793a3fd0573a009",
+    "pricingIdentity": "2cd329737e95f450ecd7b12a44c39f2ea895c143b0a249c9a3e6d2c014412d85",
+    "pricingVersion": "openai-standard-2026-11-06",
+    "observedOn": "2026-11-06",
+    "source": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+    "total": {
+      "observedUsd": 3.6836979999999997,
+      "totalUsd": null,
+      "attempts": 103,
+      "completeAttempts": 101,
+      "pricedRequests": 1043,
+      "unpricedRequests": 1
+    },
+    "conditions": {
+      "base": {
+        "observedUsd": 1.821838,
+        "totalUsd": null,
+        "attempts": 51,
+        "completeAttempts": 50,
+        "pricedRequests": 530,
+        "unpricedRequests": 1
+      },
+      "skill": {
+        "observedUsd": 1.8618599999999998,
+        "totalUsd": null,
+        "attempts": 52,
+        "completeAttempts": 51,
+        "pricedRequests": 513,
+        "unpricedRequests": 0
+      }
+    }
+  }
+}

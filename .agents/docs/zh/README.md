@@ -23,6 +23,7 @@
 | 核对重建证据、纠正内容与验证边界                           | [架构审计](./architecture-audit.md)                        |
 | 改变包分发或仓库集成边界                                   | [仓库架构](./architecture.md)                              |
 | 维护可安装的消费者技能及安装入口                           | [可分发的智能体技能](./architecture.md#可分发的智能体技能) |
+| 维护独立 Skill 评测 workspace 及信任边界                   | [独立 Skill 评测](./architecture.md#独立-skill-评测)       |
 | 维护当前公共文档，避免在站点介绍历史接口                   | [公共文档内容](./architecture.md#公共文档内容)             |
 | 修改文档阅读主题或侧栏                                     | [文档侧栏](./architecture.md#文档侧栏)                     |
 | 评估需求的复用方案，或新增／替换第三方依赖                 | [依赖准入](./dependency-admission.md)                      |

@@ -27,6 +27,18 @@ jobs:
           name: packages-build-artifacts
           path: packages/*/dist/**
           retention-days: 1
+  evals-offline:
+    name: Evals offline contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - name: Setup evaluation test runtime
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: 26.13.0
+      - run: pnpm --filter @limina/evals test
+      - run: pnpm --filter @limina/evals typecheck
   limina-vue-semantic-matrix:
     name: Limina Vue semantic matrix
     runs-on: ubuntu-latest
@@ -224,6 +236,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build-artifacts
+      - evals-offline
       - limina-vue-semantic-matrix
       - quality
       - test

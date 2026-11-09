@@ -1,0 +1,1905 @@
+{
+  "schemaVersion": 2,
+  "campaignId": "58a26f2e0603b9c94e886136fcdb20c27f5c0b432d850c2eaa6a12969a4d2d13",
+  "comparability": "native-profile",
+  "bankId": "32eb024e14ee575bad22b1f3fac2a2bf05a3494b6988287f9f6fa7d2b42989ff",
+  "bankRevision": "v2.1",
+  "stage": "sealed",
+  "sourceIndexDigest": "9299cb72671ab728b09e7c914823c016c1197c1234dc1d4540877ac9eaeff513",
+  "analysisPolicyDigest": "51395b7ba14d2b4a2522233deecdcb733f18b1da4c890aa1d668dd8a4cd82a20",
+  "reportIdentity": "85e6244d4e0a84682e580449f7f7322c9eb9f045891351398e84b89d17046d7d",
+  "exploratory": true,
+  "models": [
+    {
+      "profile": {
+        "id": "a1f723777b210d2a0a6f5ac818f03ecd057d3b17f0df1fe206c82c4177848210",
+        "model": "gpt-6.1-terra",
+        "displayName": "GPT 6.1 Terra (high)",
+        "provider": "openai",
+        "reasoningEffort": "high",
+        "serviceTier": "default",
+        "serviceTierEvidence": "requested-only",
+        "codexVersion": "0.166.0",
+        "codexBinaryIdentity": "39acf979729dd290f9a24ee38b2914e036c91b65952872e28ae2a6b88a7db7c1",
+        "instructionIdentity": "9d4fc572c0953b09a4d266d8a46ca25132787ee9482360af42d9c3df06466a59",
+        "execution": {
+          "contextWindow": 272000,
+          "autoCompactTokenLimit": 244800,
+          "toolOutputLimit": 10000
+        }
+      },
+      "planned": 54,
+      "status": "recorded",
+      "report": {
+        "experimentIdentity": "f997bd170b2134942cdf4d5881f05e35d955fe8704175ecdf61d797e40e0c33b",
+        "planned": 54,
+        "executions": 54,
+        "complete": true,
+        "macro": { "base": 0.7916666666666667, "skill": 0.875 },
+        "liftPercentagePoints": 8.333333333333334,
+        "regressionRate": 0,
+        "domains": [
+          {
+            "id": "initialization",
+            "taskCount": 1,
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "configuration",
+            "taskCount": 1,
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "reference-graph",
+            "taskCount": 1,
+            "conditions": { "base": 0.3333333333333333, "skill": 1 },
+            "liftPercentagePoints": 66.66666666666667,
+            "regressionRate": 0
+          },
+          {
+            "id": "checker",
+            "taskCount": 1,
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "source-governance",
+            "taskCount": 1,
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "workflow",
+            "taskCount": 1,
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "troubleshooting",
+            "taskCount": 1,
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "package-release",
+            "taskCount": 1,
+            "conditions": { "base": 0, "skill": 0 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "C03",
+            "domain": "configuration",
+            "role": "main",
+            "fixtureIdentity": "6c2413b09d3cb70cc2a7c763fcab8395d3e38f40462976acd57af5ffc70c5922",
+            "gradingIdentity": "f74f69aa7a73b74ee741d2953d9cab247640f7373a0a972b9a6f82f30d5a519c",
+            "executionIdentity": "4ff3e1c499e0d29fa31e793eddee8977738aec4035d356996cfb19e5b2379c58",
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "C03",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "C03",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "C03",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "7af4d77721911ff13f74708d5bf94f48e5f1c12014c019717c69227829c51241",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "b9fa9180a9fa3ae2880fd9970f14b4dafeb7e0e92e61fa65ac93284668927888",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "718b1f72232c4ee45fc12831abe3f08bf7f0a52008f5af0deb107927f4e4c5d8",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "c1ad794158f9ced63f16c20c0f1171d5d4e980a50414e137a09be98a5681af60",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "3c2bf54a262731421444d83e301b1b7e6306cc1092b94b4281091df4df7f9f02",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "66dffda7d31e85f59ca0ce3a7289729802c50537dc07a355472e3c4ae4497bbc",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "I02",
+            "domain": "initialization",
+            "role": "main",
+            "fixtureIdentity": "9c41c03cbe97c113e330aed30e34d9616d90c1c5cfdbfce39d9106f711c51065",
+            "gradingIdentity": "8bfe7d933aa9013f019bba163537064b43135fff748a78ac2e772c09c149de0c",
+            "executionIdentity": "896f3eb20cf3b82ccdfc8cc2ab88baa49b0cc990eb1601acb6f29276e26ed8f7",
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "I02",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "I02",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "I02",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "a9e1f8f285fb468ca8529fce5b963d3bf80a65c26b315992b11308532133a2f4",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "c32e666fbbde4d5eca75c27423a6c37a5ca7386e32b53247ab3d0b142ba91097",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "dec11dcb654d35b2d2d5519de3f121f72953f3241664b7f656791eb9eac2d97c",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "fe6d8ae479dab0261a446dbed74415522a943c7590f610c82cffe6bc32ff2335",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "ec047bdd3f60f1a05d3c9ee749d33b2e2a0cc7a90688fb2fef34fe393e149272",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "67be6f67897f949ae32435e0b905ce01b7b78d24a40558a88ecac05e238cad36",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "K02",
+            "domain": "checker",
+            "role": "main",
+            "fixtureIdentity": "155d46815336d81face6b34f8fb7ac08dca279d1ca76e3bb599e8dc7fe1c3db6",
+            "gradingIdentity": "329eb6eb24bd60543cd627e0836be2d982497167e5129f406d7892f6c7c9b17b",
+            "executionIdentity": "4cddd1068c0fd6a0cd9a9dbbd6cf3f6219954683c0adcf6d55f5ef218b2a37ff",
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "K02",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "K02",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "K02",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "b29eb9580c2329ae09e2acaca0b916e3edbc32ac0358d3f1f6b17ef988ce28e5",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "fdc218738cb847cacfb28539159f7c8476a1e821508c968c637d6f166986e476",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "f4e5f249b3a26ac99bec11872a30ff9faaaf4b23bb7d1edfc1a14198e89fc88e",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "0997ff479b87d6e7f98f4071618c15978de858e83b906c4c13a0e6d79337583f",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "1b8bf7979425b0523c55eaf72d5fff37af6295ecd45bb32f891665f178051e8b",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "a9cc80d6accbc484ff59d5558ad75c5ac08caaae3fd3f1e305c8ac6457a44d20",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "N02",
+            "domain": "negative-control",
+            "role": "negative-control",
+            "fixtureIdentity": "89b43541819298f95ba60fd4b7b8acc6c82b75c5f7c422298c5178cde31b1a8e",
+            "gradingIdentity": "accf20ef6ffeb075b36a90fd9b7840c7616028faa5c7a215d0d74536f27a000a",
+            "executionIdentity": "24da02cb826ad904255783c5748ae1de19fa00898d0c3399c498aa7a17bcf801",
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "N02",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "N02",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "N02",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "e10c81b89eb768a8f880a66a08c9771ed83065d5afe80e0dd0481982a132bfd9",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "4f95d73a1d9cab2b73f13f3baee3e880cb87a3a050c7f7102a26052dd61911a8",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "1796dfeb1b697c9e147c1a3e3034a2285a75e43c10fe57af9dccd6d17304ae86",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "f2fed628340de1851e085a98d15bab752cef5024b681f66a0a28cf907ff4775d",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "unknown",
+                      "skillRead": "unknown",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "00e99d9fb2d89c246639dbd6290f28497c850f2fe273a3e25a0fc09098449969",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "unknown",
+                      "skillRead": "unknown",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "cb7d04fed627a8fcedaec7c0c15d6af95e934afb7910b08e00a19f1f7dca72ed",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "unknown",
+                      "skillRead": "unknown",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "P03",
+            "domain": "package-release",
+            "role": "main",
+            "fixtureIdentity": "6a59424250791e6a3db9381ab49995b4341b377f126f094f86f81b3a6dd5ab6c",
+            "gradingIdentity": "442972ecca45fc83ec59fac3d9b3449001d37ad55e16d0450a740d257aca9860",
+            "executionIdentity": "4e020d04c75e3de278975e28301d397e671a5da62c1e4475ed301dfddbc43983",
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 0,
+              "bothFailed": 3,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "P03",
+                  "repetition": 1,
+                  "base": 0,
+                  "skill": 0,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "P03",
+                  "repetition": 2,
+                  "base": 0,
+                  "skill": 0,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "P03",
+                  "repetition": 3,
+                  "base": 0,
+                  "skill": 0,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 0,
+                "rate": 0,
+                "coverage": 1,
+                "bounds": [0, 0],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "627e7ce74432afbe2a8db1b02ee82b2b58c41b95614dff30d1d058f48b840dd0",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "337f3dd73ccfb113a34d22d241e7ef307a6ab2406dfc71de66408c99a673ceab",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "3a07a689f4f320d74ee99b34c58426392f0776b3d8a113512687c09b869a8bff",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 0,
+                "rate": 0,
+                "coverage": 1,
+                "bounds": [0, 0],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "e2ff36ab460ca86ca21183e4df96e394c92e54e20cd383f7e04820e7e1c15851",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "0e435f87d60ea55bd57f42f5dd0956d256b6f4d27a9d875f69f0d0b7c0fe51f0",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "36afdba40da8327841d3aa93cef245991647ba6f57f1f3298efd63449e2df392",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "R01",
+            "domain": "reference-graph",
+            "role": "main",
+            "fixtureIdentity": "af147e7efb1fc619cb3eeec25cc92c9b969d0e91fcf39b8624ea2016ab91c96f",
+            "gradingIdentity": "4ead02bdb9aa7c678cda10f4a9fa26c8e7ce30da5a6bcc41f8643506af6ce28c",
+            "executionIdentity": "8eb0ec6d842c43f8d28562ad1cf41f6c455599bf5f17ab27f1bd2c5a2ebb96dd",
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 66.66666666666667,
+              "regressionRate": 0,
+              "improved": 2,
+              "regressed": 0,
+              "bothPassed": 1,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [66.66666666666666, 66.66666666666666],
+              "pairs": [
+                {
+                  "taskId": "R01",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "R01",
+                  "repetition": 2,
+                  "base": 0,
+                  "skill": 1,
+                  "delta": 1,
+                  "bounds": [1, 1]
+                },
+                {
+                  "taskId": "R01",
+                  "repetition": 3,
+                  "base": 0,
+                  "skill": 1,
+                  "delta": 1,
+                  "bounds": [1, 1]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 1,
+                "rate": 0.3333333333333333,
+                "coverage": 1,
+                "bounds": [0.3333333333333333, 0.3333333333333333],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "852ff7f79668e8b5fa563e72b925e7533caf57cee0374e674d8968b8640a0b0f",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "unsafe_mutation",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "cc013e21d1ece1d3556d08050737a512fb61266410f5b79fc3f971659921b597",
+                        "ordinal": 1,
+                        "status": "unsafe_mutation"
+                      }
+                    ],
+                    "attemptStatuses": ["unsafe_mutation"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "unsafe_mutation",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "248c2b6b6ef790ee3e51f28e06a56e8a27d5d54015d3fbed4ccb45cd2f21dc3c",
+                        "ordinal": 1,
+                        "status": "unsafe_mutation"
+                      }
+                    ],
+                    "attemptStatuses": ["unsafe_mutation"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "de7c7cb05c714dbf878885e1fe289460775be940c8b99a32910e3a5f31726101",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "d3ebcca8234b1ffec9cb06be01a66a9533e0cb0546fc3237a3fa5165bbbc8f73",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "cde319bb96c366d4a4ad775e4e611b7d43cada96f4eaae9fc5aca37fe306e165",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "S03",
+            "domain": "source-governance",
+            "role": "main",
+            "fixtureIdentity": "973794672a069215e9e6617a348cd64880797d6237a3264f27b21fbc7515a793",
+            "gradingIdentity": "2cec1a9e261a44a3db664914ab30245e11d58d0763e7846d2091cc667727cf70",
+            "executionIdentity": "ac224f40e08c1776ff465e070adcb614e2ed7b76f7660fc2fe928e6c6ff630e3",
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "S03",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "S03",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "S03",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "73d2eed20e2d3e139a3919765d340a4c3f3f6e1dd2315b844fcb80864307460c",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "9869540a3c1a6ac013591b1171d0c736fdbc5edfd8b868661974e2a8d46c5736",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "f1cbebcc1079abd3c77ab3bb915c799ce70a4d89b3b264b804ddec742aea6619",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "c653588a267c2fad16b00c76bcea927ae8bebf626a34fe599b8d7e2f00c427f3",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "fef01fff9fafb2c9de7d1d2759eb71216dfa8f3c40bec84e1e63bc827493ad8e",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "465e47ea106ce11bc50951bf92b19385ab8122522d6853f1cd82b2142eb36e75",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "T02",
+            "domain": "troubleshooting",
+            "role": "main",
+            "fixtureIdentity": "8764543c0a94de19dbf7ca325b90e55a79c6b39c5bad87db0438faa27d21fec4",
+            "gradingIdentity": "1adf3d9a489870c281d80ea2802d3b9a5bf0ea39c2cbf6386a61005325ec7d8d",
+            "executionIdentity": "2dab43ce02e7e4a95384c16d62d9b1b9cf1d9e999185a828a25342c7bda26e66",
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "T02",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "T02",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "T02",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "7a0fe76b19aca8db550f347a719f76eab3cd8a03900f53fdaee51a174c77e296",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "114d0b553fb9c078bf454b271041417ef63da92068524e301d5faf49ef0f5e66",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "a102bc67e2741068d34dd109f4853031b0ed35ed6aedbde5370c905974861b4b",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "5dfc98bcb7b296dbaf668c8319370f01ae643348d21249710ab6440761b52bbd",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "8328a1274fafb3eab74362bc42bf39542b6e69ea1f6cba4e36cb17950fd5b8e4",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "9331fe4ae6263fa753aca7011b3b1ede7a19a7360c7093ff15fdc57b2bc33bde",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "W01",
+            "domain": "workflow",
+            "role": "main",
+            "fixtureIdentity": "71f737879685d1fc011e7b655355fd94a377940d34a1ed3df4772570b4e58657",
+            "gradingIdentity": "1674afb54c02ba67319d80dad6f4ccea93344787508b9631a6008353ffed5ed7",
+            "executionIdentity": "e5e162cd9fc150a60f617519b58d85ef5b25ba27bf939ec7dd9b3e64948346a3",
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "W01",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "W01",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "W01",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "9d9b7ccfb6f06ac6e1309968425f245a23b923cb9edddd6f8792d02cdf14745e",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "6cf73dcb2a238d2609075457791eed8b253865bd97e7dd9780d8250099d922cd",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "63bbf1d01f5a3b2c93c4b16887a6c203c44200651da8ad82c1d825248dcce92b",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "ea59b797a9ff50fddbcaab35029956e771087a43bbd982db673a410b13d07c5f",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "3f4dc3287c9f0900dc6dbeb3b27dfb5f36f3f314726ae3c1b698283a0b7eb66a",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "dfe091ada30e35b62080876464efc88fc68cb9839455b3f5e39fe2bb437e7cd3",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "contrasts": []
+}
