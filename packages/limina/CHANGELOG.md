@@ -8,6 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.5.0-beta.3] - 2026-11-09
+
+### Features
+
+- feat(checker): separate graph authority from tsgo execution ([e9049e9b](https://github.com/senaoxi/limina/commit/e9049e9b))
+
+### Bug Fixes
+
+- fix: compare declaration requests by compiler key ([e0d1b244](https://github.com/senaoxi/limina/commit/e0d1b244))
+- fix: preserve compiler path identity for declarations ([cd74e44e](https://github.com/senaoxi/limina/commit/cd74e44e))
+- fix: cover formal verification inputs in CI ([51cf25c8](https://github.com/senaoxi/limina/commit/51cf25c8))
+- fix(cache): bound snapshot publication memory ([6fe3edaa](https://github.com/senaoxi/limina/commit/6fe3edaa))
+- fix(checker): qualify tsgo external-input compatibility ([6d420843](https://github.com/senaoxi/limina/commit/6d420843))
+- fix(graph): qualify type directives for tsgo ([a27aa221](https://github.com/senaoxi/limina/commit/a27aa221))
+- fix(graph): reject outFile before declaration projection ([cc7c13fd](https://github.com/senaoxi/limina/commit/cc7c13fd))
+
+### Documentation
+
+- docs: add Codex skills and Pstack workflow routing ([aa3574ac](https://github.com/senaoxi/limina/commit/aa3574ac))
+- docs: update metadata ([d6074b84](https://github.com/senaoxi/limina/commit/d6074b84))
+
+### Maintenance
+
+- test: add model checks and implementation replays ([8cb2db5a](https://github.com/senaoxi/limina/commit/8cb2db5a))
+- build: remove bundled dependency inventory ([d90c32f6](https://github.com/senaoxi/limina/commit/d90c32f6))
+
 ## [0.5.0-beta.2] - 2026-11-02
 
 ### Breaking Changes
