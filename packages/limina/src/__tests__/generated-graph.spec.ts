@@ -10802,6 +10802,17 @@ function declarationPolicyFiles(
   };
 }
 
+function sharedDeclarationPolicyFiles(): Record<string, string> {
+  return {
+    ...declarationPolicyFiles(),
+    'packages/b2/package.json': json({ name: '@example/b2', private: true }),
+    'packages/b2/tsconfig.json': json({
+      compilerOptions: { types: [] },
+      files: ['../b/b.d.ts'],
+    }),
+  };
+}
+
 describe('declaration configuration governance', () => {
   it('preserves framework checking of local ambient declarations without an external delegation', async () => {
     const fixture = await createFixture({
@@ -10998,16 +11009,8 @@ describe('declaration configuration governance', () => {
     }
   });
 
-  it('requires an explicit choice for shared declarations and rejects competing final mappings', async () => {
-    const files = declarationPolicyFiles();
-    files['packages/b2/package.json'] = json({
-      name: '@example/b2',
-      private: true,
-    });
-    files['packages/b2/tsconfig.json'] = json({
-      compilerOptions: { types: [] },
-      files: ['../b/b.d.ts'],
-    });
+  it('requires an explicit choice for shared declarations', async () => {
+    const files = sharedDeclarationPolicyFiles();
     const fixture = await createFixture(files);
     try {
       await expect(
@@ -11024,29 +11027,51 @@ describe('declaration configuration governance', () => {
       expect(selected.dependencyAnalysis?.declarationValidation?.state).toBe(
         'admitted',
       );
-      a.liminaOptions.implicitRefs = [
-        { path: '../b2/tsconfig.json', reason: 'Additional required project' },
-      ];
-      await writeText(fixture.path('packages/a/tsconfig.json'), json(a));
-      await expect(
-        prepareGeneratedTsconfigGraph(fixture.config),
-      ).rejects.toThrow('Declaration context mismatch');
-      delete a.liminaOptions.implicitRefs;
-      await writeText(fixture.path('packages/a/tsconfig.json'), json(a));
-      const b2 = JSON.parse(files['packages/b2/tsconfig.json']!);
-      b2.liminaOptions = {
-        implicitRefs: [
-          { path: '../b/tsconfig.json', reason: 'Additional required project' },
-        ],
-      };
-      await writeText(fixture.path('packages/b2/tsconfig.json'), json(b2));
-      await expect(
-        prepareGeneratedTsconfigGraph(fixture.config),
-      ).rejects.toThrow('Declaration context mismatch');
     } finally {
       await fixture.cleanup();
     }
   });
+
+  it.each([
+    ['consumer', 'a', 'b2'],
+    ['owner', 'b2', 'b'],
+  ])(
+    'rejects competing final declaration mappings through the %s',
+    async (_label, source, target) => {
+      const files = sharedDeclarationPolicyFiles();
+      const a = JSON.parse(files['packages/a/tsconfig.json']!);
+      a.liminaOptions = {
+        declarationContexts: [
+          { file: '../b/b.d.ts', config: '../b/tsconfig.json' },
+        ],
+      };
+      files['packages/a/tsconfig.json'] = json(a);
+      const fixture = await createFixture(files);
+      try {
+        const selected = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(selected.dependencyAnalysis?.declarationValidation?.state).toBe(
+          'admitted',
+        );
+        const key = `packages/${source}/tsconfig.json`;
+        const competing = JSON.parse(files[key]!);
+        competing.liminaOptions = {
+          ...competing.liminaOptions,
+          implicitRefs: [
+            {
+              path: `../${target}/tsconfig.json`,
+              reason: 'Additional required project',
+            },
+          ],
+        };
+        await writeText(fixture.path(key), json(competing));
+        await expect(
+          prepareGeneratedTsconfigGraph(fixture.config),
+        ).rejects.toThrow('Declaration context mismatch');
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 });
 
 describe('declaration context candidate legality', () => {

@@ -1967,6 +1967,11 @@ export default {scope: {checkers: {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
       const secretError = 'SECRET_CHECKER_BUILD_FAILURE';
 
+      // This numeric fixture observes process reporting, not library checking.
+      const projectPath = path.join(rootDir, 'packages/pkg/tsconfig.lib.json');
+      const project = JSON.parse(await readFile(projectPath, 'utf8'));
+      project.compilerOptions.noLib = true;
+      await writeText(projectPath, stringifyConfig(project));
       await writeText(
         path.join(rootDir, 'packages/pkg/package.json'),
         stringifyConfig({
@@ -1984,6 +1989,8 @@ export default {scope: {checkers: {
         rootDir,
         'tsc',
         [
+          "const { writeFileSync } = require('node:fs');",
+          "writeFileSync('checker-started.txt', 'started');",
           `process.stderr.write(${JSON.stringify(`${secretError}\n`)});`,
           'process.exit(2);',
           '',
@@ -2025,6 +2032,9 @@ export default {scope: {checkers: {
             : '';
       }
 
+      expect(
+        await readFile(path.join(rootDir, 'checker-started.txt'), 'utf8'),
+      ).toBe('started');
       expect(stdout).toContain('Limina check summary');
       expect(stdout).toContain('checker:build');
       expect(`${stdout}\n${stderr}`).not.toContain(secretError);
