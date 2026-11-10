@@ -1,10 +1,13 @@
 <script setup lang="ts">
-defineProps<{
-  value: number | null | undefined;
+import { computed } from 'vue';
+const props = defineProps<{
   condition: 'base' | 'skill';
-  passed?: number;
-  executions?: number;
+  passed: number;
+  executions: number;
 }>();
+const value = computed(() =>
+  props.executions > 0 ? props.passed / props.executions : null,
+);
 </script>
 
 <template>
@@ -15,9 +18,7 @@ defineProps<{
     <span v-if="value != null" class="rate-track" aria-hidden="true">
       <span class="rate-fill" :style="{ width: `${value * 100}%` }" />
     </span>
-    <small v-if="passed !== undefined && executions !== undefined"
-      >{{ passed }}/{{ executions }}</small
-    >
+    <small>{{ passed }}/{{ executions }}</small>
   </span>
 </template>
 

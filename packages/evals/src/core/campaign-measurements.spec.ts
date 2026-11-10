@@ -124,6 +124,53 @@ test('missing timing and unsupported pricing stay unknown while evidenced zero r
   assert.equal(empty.main.all.agentMs.cells, 32);
 });
 
+test('task input means retain partial usage and failures without double counting cache or weighting retries as cells', () => {
+  const f = fixture();
+  for (const [index, inputTokens] of [100, 900, 600, 0, 9000].entries()) {
+    f.attempts[index]!.usage = {
+      inputTokens,
+      cachedInputTokens: inputTokens / 2,
+      outputTokens: 10,
+      credits: null,
+      estimatedUsd: null,
+      settledUsd: null,
+      complete: index !== 1,
+      settlement: 'unknown',
+      source: 'offline-test',
+    };
+  }
+  const m = buildCampaignMeasurements(f.manifest, f.attempts, f.costs);
+  assert.equal(m.version, 2);
+  const taskMetrics = m.tasks.find((t) => t.id === 'I01')!.all!;
+  assert.equal(taskMetrics.inputTokens!.mean, 50); // Base 100, Skill evidenced zero.
+  assert.equal(taskMetrics.inputTokens!.observedSum, 1000);
+  assert.equal(taskMetrics.inputTokens!.total, null);
+  assert.equal(taskMetrics.inputTokens!.measured, 2);
+  assert.equal(taskMetrics.inputTokens!.executions, 3);
+  assert.equal(taskMetrics.inputTokens!.coverage, 2 / 3);
+  assert.equal(taskMetrics.agentMs.mean, 30); // (Base mean 20 + Skill 40) / 2.
+  assert.equal(m.main.all.inputTokens!.mean, (100 + 600 + 0) / 3);
+  assert.equal(m.negativeControls.all.inputTokens!.mean, 9000);
+  // Token evidence is independent of whether a price is available.
+  f.costs[2]!.complete = false;
+  f.costs[2]!.totalUsd = null;
+  assert.equal(
+    buildCampaignMeasurements(f.manifest, f.attempts, f.costs).main.all
+      .inputTokens!.mean,
+    m.main.all.inputTokens!.mean,
+  );
+  const legacy = buildCampaignMeasurements(
+    f.manifest,
+    f.attempts,
+    f.costs,
+    undefined,
+    1,
+  );
+  assert.equal(legacy.version, 1);
+  assert.equal(Object.hasOwn(legacy.main.all, 'inputTokens'), false);
+  assert.equal(Object.hasOwn(legacy.tasks[0]!, 'all'), false);
+});
+
 test('cost joins reject swapped cells, foreign models, omitted executions and trace identity drift', () => {
   const f = fixture();
   for (const changes of [

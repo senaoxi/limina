@@ -69,7 +69,9 @@ export function buildCampaignMeasurements(
   attempts: readonly AttemptRecord[],
   costs: readonly AttemptCost[],
   pricingIdentity = apiPricingIdentity,
+  version: 1 | 2 = 2,
 ) {
+  assert.ok(version === 1 || version === 2, 'Unsupported measurement version');
   const pricing = resolveApiPricing(pricingIdentity);
   const costByRun = new Map(costs.map((c) => [c.runId, c]));
   assert.equal(costByRun.size, costs.length, 'Duplicate cost attempt');
@@ -115,6 +117,15 @@ export function buildCampaignMeasurements(
       assert.equal(c.totalUsd, c.observedUsd, 'Complete cost differs');
   }
   const summarize = (cells: Cell[]) => ({
+    ...(version === 2 && {
+      // Input includes cached tokens. Partial totals remain observed evidence,
+      // never a complete execution or a zero-token substitute.
+      inputTokens: measurement(
+        cells,
+        (a) => (a.usage?.complete ? a.usage.inputTokens : null),
+        (a) => a.usage?.inputTokens ?? null,
+      ),
+    }),
     agentMs: measurement(cells, (a) => a.time.agentMs),
     endToEndMs: measurement(cells, (a) => a.time.endToEndMs),
     apiEquivalentUsd: measurement(
@@ -152,7 +163,7 @@ export function buildCampaignMeasurements(
     };
   };
   return {
-    version: 1 as const,
+    version,
     policy: 'task-condition-equal-all-executions' as const,
     pricing: {
       identity: pricingIdentity,
@@ -163,6 +174,7 @@ export function buildCampaignMeasurements(
     negativeControls: group('negative-control'),
     tasks: tasks.map((t) => ({
       id: t.id,
+      ...(version === 2 && { all: summarize(t.cells) }),
       conditions: Object.fromEntries(
         t.cells.map((c) => [c.condition, summarize([c])]),
       ),

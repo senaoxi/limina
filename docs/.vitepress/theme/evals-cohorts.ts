@@ -36,13 +36,25 @@ export type PublishedModelRow = PublicCampaign['models'][number] & {
   file: string;
   summary?: PublicCurrentSummary;
 };
+export interface CurrentSelection {
+  summary: PublicCurrentSummary;
+  task: PublicTaskResult;
+}
+export type CurrentSummaries =
+  | PublicCurrentSummary
+  | readonly PublicCurrentSummary[];
+export function currentSummaries(
+  value?: CurrentSummaries,
+): readonly PublicCurrentSummary[] {
+  return value ? ('sources' in value ? [value] : value) : [];
+}
 
 // A newer report supersedes only the same campaign/stage in the view. Historical
 // snapshots remain immutable, and different campaigns never share model rows.
 export function latestCampaignEntries(
   entries: readonly CampaignEntry[],
   bank: { bankId: string; bankRevision: string },
-  summary?: PublicCurrentSummary,
+  summary?: CurrentSummaries,
 ): CampaignEntry[] {
   const latest = new Map<string, CampaignEntry>();
   for (const entry of entries) {
@@ -52,20 +64,25 @@ export function latestCampaignEntries(
     )
       latest.set(`${entry.campaignId}:${entry.stage}`, entry);
   }
-  if (summary) {
-    const source = summary.sources.base;
+  const selections = new Set<string>();
+  for (const selected of currentSummaries(summary)) {
+    const source = selected.sources.base;
+    const key = `${source.campaignId}:${selected.modelProfileId}:${selected.stage}`;
+    if (selections.has(key))
+      throw new Error('Duplicate current stage selection');
+    selections.add(key);
     const pinned = entries.findLast(
       (entry) =>
         entry.bankId === source.bankId &&
-        entry.bankRevision === summary.bankRevision &&
+        entry.bankRevision === selected.bankRevision &&
         entry.campaignId === source.campaignId &&
-        entry.stage === summary.stage,
+        entry.stage === selected.stage,
     );
     if (
-      summary.kind !== 'current-task-summary' ||
-      summary.policy !== 'latest-complete-task-condition' ||
-      summary.bankRevision !== bank.bankRevision ||
       !pinned ||
+      selected.kind !== 'current-task-summary' ||
+      selected.policy !== 'latest-complete-task-condition' ||
+      selected.bankRevision !== bank.bankRevision ||
       pinned.file !== source.file ||
       pinned.reportIdentity !== source.reportIdentity
     )
@@ -127,21 +144,48 @@ export function bindCurrentSummary(
       row.file === base.file &&
       row.profile.id === summary.modelProfileId,
   );
+  const originalTask = match?.report?.tasks.find(
+    (task) => task.id === latest.taskId,
+  );
+  const revision = summary.revision;
+  const isOriginalMatch = revision
+    ? revision.kind === 'task-contract-revision' &&
+      revision.from.bankId === base.bankId &&
+      revision.from.fixtureIdentity === originalTask?.fixtureIdentity &&
+      revision.from.gradingIdentity === originalTask?.gradingIdentity &&
+      revision.from.executionIdentity === originalTask?.executionIdentity &&
+      revision.to.bankId === latest.bankId &&
+      revision.to.fixtureIdentity === latest.fixtureIdentity &&
+      revision.to.gradingIdentity === latest.gradingIdentity &&
+      revision.to.executionIdentity === latest.executionIdentity &&
+      taskSource.fixtureIdentity === latest.fixtureIdentity &&
+      taskSource.gradingIdentity === latest.gradingIdentity &&
+      taskSource.executionIdentity === latest.executionIdentity
+    : originalTask !== undefined &&
+      originalTask.fixtureIdentity === latest.fixtureIdentity &&
+      originalTask.gradingIdentity === latest.gradingIdentity;
   if (
+    !isOriginalMatch ||
     summary.kind !== 'current-task-summary' ||
     summary.policy !== 'latest-complete-task-condition' ||
     !match?.report?.complete ||
+    match.summary !== undefined ||
+    originalTask?.role !== 'main' ||
     latest.identity !== taskSource.identity ||
     latest.bankId !== taskSource.bankId ||
     latest.reportIdentity !== taskSource.reportIdentity ||
     latest.campaignId !== taskSource.campaignId ||
+    latest.experimentIdentity !== taskSource.experimentIdentity ||
+    latest.sourceIndexSha256 !== taskSource.sourceIndexSha256 ||
+    latest.bankRevision !== summary.bankRevision ||
+    (latest.stage ?? 'sealed') !== summary.stage ||
     latest.profile.id !== summary.modelProfileId ||
     latest.taskId !== taskSource.taskId ||
     latest.condition !== taskSource.condition ||
     !latest.complete
   )
     throw new Error('Current summary source identity differs');
-  const rate = latest.counts.passed / latest.counts.valid;
+  const rate = latest.counts.passed / latest.counts.executions;
   const updated = {
     ...match,
     key: summary.identity,
@@ -159,10 +203,14 @@ export function bindCurrentSummary(
       measurements: match.report.measurements
         ? { ...match.report.measurements, ...summary.measurements }
         : undefined,
-      tasks: match.report.tasks.map((task) =>
-        task.id === latest.taskId
+      tasks: match.report.tasks.map((task) => {
+        const measurements = summary.tasks?.find(
+          (t) => t.id === task.id,
+        )?.measurements;
+        return task.id === latest.taskId
           ? {
               ...task,
+              measurements,
               comparison: {
                 planned: latest.counts.planned,
                 valid: 0,
@@ -187,8 +235,8 @@ export function bindCurrentSummary(
                 },
               },
             }
-          : task,
-      ),
+          : { ...task, ...(measurements && { measurements }) };
+      }),
     },
   };
   return rows.map((row) => (row === match ? updated : row));

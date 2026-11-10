@@ -17,6 +17,7 @@ interface Average {
   measuredCells: number;
 }
 interface Measurements {
+  inputTokens?: Average;
   agentMs: Average;
   endToEndMs: Average;
   apiEquivalentUsd: Average;
@@ -106,13 +107,17 @@ function average(value: Average) {
 export function publicTaskResult(
   source: TaskSource,
   sourceIndexSha256: string,
+  selection?: { taskId: 'P03' | 'I03' },
 ) {
+  const taskId = selection?.taskId ?? 'P03';
   digest(sourceIndexSha256);
   assert.equal(source.schemaVersion, 2);
   for (const id of [source.campaignId, source.reportIdentity, source.bankId])
     digest(id);
   assert.equal(source.bankRevision, 'v2.1');
-  assert.equal(source.stage, 'sealed');
+  assert.ok(['P03', 'I03'].includes(taskId));
+  const stage = taskId === 'I03' ? 'development' : 'sealed';
+  assert.equal(source.stage, stage);
   assert.equal(source.models.length, 1);
   const model = source.models[0]!;
   assert.equal(model.status, 'recorded');
@@ -125,9 +130,9 @@ export function publicTaskResult(
   assert.match(model.profile.codexVersion, /^\d+\.\d+\.\d+$/u);
   assert.equal(model.profile.reasoningEffort, 'high');
   assert.equal(model.profile.serviceTier, 'default');
-  assert.equal(report.planned, 54);
+  assert.equal(report.planned, stage === 'development' ? 102 : 54);
   assert.equal(report.executions, 3);
-  const task = report.tasks.find((entry) => entry.id === 'P03');
+  const task = report.tasks.find((entry) => entry.id === taskId);
   assert.ok(task);
   for (const id of [
     task.fixtureIdentity,
@@ -171,7 +176,9 @@ export function publicTaskResult(
     repetitions.filter((entry) => entry.status === 'passed').length,
   );
   const body = {
-    schemaVersion: 1,
+    schemaVersion:
+      taskId === 'I03' ? 3 : condition.measurements.inputTokens ? 2 : 1,
+    ...(taskId === 'I03' && { stage }),
     kind: 'task-evaluation',
     scope: 'task-condition',
     includedInFormalScores: false,
@@ -182,7 +189,7 @@ export function publicTaskResult(
     experimentIdentity: report.experimentIdentity,
     reportIdentity: source.reportIdentity,
     sourceIndexSha256,
-    taskId: 'P03',
+    taskId,
     condition: 'skill',
     fixtureIdentity: task.fixtureIdentity,
     gradingIdentity: task.gradingIdentity,
@@ -197,6 +204,9 @@ export function publicTaskResult(
     },
     counts: { passed: condition.passed, valid: 3, planned: 3, executions: 3 },
     measurements: {
+      ...(condition.measurements.inputTokens && {
+        inputTokens: average(condition.measurements.inputTokens),
+      }),
       agentMs: average(condition.measurements.agentMs),
       endToEndMs: average(condition.measurements.endToEndMs),
       apiEquivalentUsd: average(condition.measurements.apiEquivalentUsd),
@@ -213,9 +223,14 @@ export function publicTaskResult(
 export async function exportTaskResult(
   directory: string,
   expectedHash: string,
+  selection?: { taskId: 'P03' | 'I03' },
 ) {
   const source = await readCampaignPublication(directory, expectedHash);
-  const data = publicTaskResult(source as unknown as TaskSource, expectedHash);
+  const data = publicTaskResult(
+    source as unknown as TaskSource,
+    expectedHash,
+    selection,
+  );
   const publicRoot = fileURLToPath(
     new URL('../../docs/.vitepress/theme/', import.meta.url),
   );
@@ -235,7 +250,14 @@ export async function exportTaskResult(
     )
       throw error;
   }
-  const target = path.join(publicRoot, 'evals-task-result.json');
+  const modelSuffix =
+    data.profile.model === 'gpt-6.1-terra' ? '' : `-${data.profile.model}`;
+  const target = path.join(
+    publicRoot,
+    data.taskId === 'I03'
+      ? `evals-i03${modelSuffix}-task-result.json`
+      : 'evals-task-result.json',
+  );
   const lock = target + '.lock';
   await mkdir(lock);
   try {

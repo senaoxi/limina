@@ -25,6 +25,7 @@ interface Task {
   role: 'main' | 'negative-control';
   fixtureIdentity: string;
   gradingIdentity: string;
+  executionIdentity?: string;
   conditions: Record<string, Condition>;
 }
 interface Source {
@@ -49,11 +50,22 @@ interface Reference {
   file: string;
   sha256: string;
 }
+export interface TaskRevisionSelection {
+  kind: 'task-contract-revision';
+  from: {
+    bankId: string;
+    fixtureIdentity: string;
+    gradingIdentity: string;
+    executionIdentity: string;
+  };
+  to: TaskRevisionSelection['from'];
+}
 const digest = (value: string) => assert.match(value, /^[a-f\d]{64}$/u);
 const sha256 = (value: Uint8Array) =>
   createHash('sha256').update(value).digest('hex');
 const arms = ['base', 'skill'] as const;
 const metrics = [
+  'inputTokens',
   'agentMs',
   'endToEndMs',
   'apiEquivalentUsd',
@@ -74,50 +86,89 @@ function counts(conditions: Condition[]): Counts {
 }
 function measurements(conditions: Condition[]): Measurements {
   return Object.fromEntries(
-    metrics.map((metric) => {
-      const values = conditions.map((condition): Average => {
-        const value = condition.measurements?.[metric];
-        if (value) return value;
-        return {
-          mean: null,
-          observedSum: 0,
-          total: null,
-          measured: 0,
-          executions: condition.executions,
-          coverage: 0,
-          cells: 1,
-          measuredCells: 0,
-        };
-      });
-      const available = values.flatMap((value) =>
-        value.mean === null ? [] : [value.mean],
-      );
-      const executions = values.reduce(
-        (sum, value) => sum + value.executions,
-        0,
-      );
-      const measured = values.reduce((sum, value) => sum + value.measured, 0);
-      return [
-        metric,
-        {
-          mean: available.length > 0 ? mean(available) : null,
-          observedSum: values.reduce(
-            (sum, value) => sum + value.observedSum,
-            0,
-          ),
-          total:
-            values.length > 0 && values.every((value) => value.total !== null)
-              ? values.reduce((sum, value) => sum + value.total!, 0)
-              : null,
-          measured,
-          executions,
-          coverage: executions ? measured / executions : 0,
-          cells: conditions.length,
-          measuredCells: available.length,
-        },
-      ];
-    }),
+    metrics
+      .filter(
+        (metric) =>
+          metric !== 'inputTokens' ||
+          conditions.some((condition) => condition.measurements?.inputTokens),
+      )
+      .map((metric) => {
+        const values = conditions.map((condition): Average => {
+          const value = condition.measurements?.[metric];
+          if (value) return value;
+          return {
+            mean: null,
+            observedSum: 0,
+            total: null,
+            measured: 0,
+            executions: condition.executions,
+            coverage: 0,
+            cells: 1,
+            measuredCells: 0,
+          };
+        });
+        const available = values.flatMap((value) =>
+          value.mean === null ? [] : [value.mean],
+        );
+        const executions = values.reduce(
+          (sum, value) => sum + value.executions,
+          0,
+        );
+        const measured = values.reduce((sum, value) => sum + value.measured, 0);
+        return [
+          metric,
+          {
+            mean: available.length > 0 ? mean(available) : null,
+            observedSum: values.reduce(
+              (sum, value) => sum + value.observedSum,
+              0,
+            ),
+            total:
+              values.length > 0 && values.every((value) => value.total !== null)
+                ? values.reduce((sum, value) => sum + value.total!, 0)
+                : null,
+            measured,
+            executions,
+            coverage: executions ? measured / executions : 0,
+            cells: conditions.length,
+            measuredCells: available.length,
+          },
+        ];
+      }),
   ) as unknown as Measurements;
+}
+
+function verifyTaskRevision(
+  source: Source,
+  target: Task,
+  latest: TaskResult,
+  revision?: TaskRevisionSelection,
+): void {
+  assert.equal(target.fixtureIdentity, latest.fixtureIdentity);
+  if (!revision) {
+    assert.equal(target.gradingIdentity, latest.gradingIdentity);
+    return;
+  }
+  assert.equal(source.stage, 'development');
+  assert.equal(latest.taskId, 'I03');
+  assert.equal(revision.kind, 'task-contract-revision');
+  for (const value of [
+    ...Object.values(revision.from),
+    ...Object.values(revision.to),
+  ])
+    digest(value);
+  assert.deepEqual(revision.from, {
+    bankId: source.bankId,
+    fixtureIdentity: target.fixtureIdentity,
+    gradingIdentity: target.gradingIdentity,
+    executionIdentity: target.executionIdentity,
+  });
+  assert.deepEqual(revision.to, {
+    bankId: latest.bankId,
+    fixtureIdentity: latest.fixtureIdentity,
+    gradingIdentity: latest.gradingIdentity,
+    executionIdentity: latest.executionIdentity,
+  });
 }
 
 // This is an explicitly selected current-result view, never a new experiment.
@@ -126,6 +177,7 @@ export function buildCurrentSummary(
   latest: TaskResult,
   references: { base: Reference; task: Reference },
   calculationIdentity: string,
+  revision?: TaskRevisionSelection,
 ) {
   for (const value of [
     calculationIdentity,
@@ -139,7 +191,7 @@ export function buildCurrentSummary(
     digest(value);
   assert.match(
     references.base.file,
-    /^\.\/evals-campaigns\/[a-f\d-]+-sealed-[a-f\d]+\.json$/u,
+    /^\.\/evals-campaigns\/[a-f\d-]+-(?:development|sealed)-[a-f\d]+\.json$/u,
   );
   assert.match(
     references.task.file,
@@ -153,7 +205,7 @@ export function buildCurrentSummary(
   );
   assert.equal(
     references.base.file,
-    `./evals-campaigns/${source.campaignId}-sealed-${source.reportIdentity}.json`,
+    `./evals-campaigns/${source.campaignId}-${source.stage}-${source.reportIdentity}.json`,
   );
   assert.equal(
     references.task.file,
@@ -161,7 +213,8 @@ export function buildCurrentSummary(
   );
   assert.equal(source.bankRevision, 'v2.1');
   assert.equal(latest.bankRevision, source.bankRevision);
-  assert.equal(source.stage, 'sealed');
+  assert.ok(['development', 'sealed'].includes(source.stage));
+  assert.equal(latest.stage ?? 'sealed', source.stage);
   assert.equal(latest.kind, 'task-evaluation');
   assert.equal(latest.scope, 'task-condition');
   assert.equal(latest.complete, true);
@@ -187,8 +240,7 @@ export function buildCurrentSummary(
   assert.equal(new Set(tasks.map((task) => task.id)).size, tasks.length);
   const target = tasks.find((task) => task.id === latest.taskId);
   assert.ok(target && target.role === 'main');
-  assert.equal(target.fixtureIdentity, latest.fixtureIdentity);
-  assert.equal(target.gradingIdentity, latest.gradingIdentity);
+  verifyTaskRevision(source, target, latest, revision);
   const previous = target.conditions.skill;
   assert.ok(previous);
   assert.equal(latest.counts.planned, previous.planned);
@@ -276,14 +328,24 @@ export function buildCurrentSummary(
     selectedExecutions,
     original.executions - supersededExecutions + latest.counts.executions,
   );
+  const hasInputTokens = tasks.some((task) =>
+    arms.some((arm) => task.conditions[arm]?.measurements?.inputTokens),
+  );
   const body = {
-    schemaVersion: 1,
+    schemaVersion: revision ? 3 : hasInputTokens ? 2 : 1,
     kind: 'current-task-summary',
     policy: 'latest-complete-task-condition',
     calculationIdentity,
     bankRevision: source.bankRevision,
     stage: source.stage,
     modelProfileId: model.profile.id,
+    ...(revision && {
+      revision: {
+        kind: revision.kind,
+        from: { ...revision.from },
+        to: { ...revision.to },
+      },
+    }),
     sources: {
       base: {
         file: references.base.file,
@@ -304,6 +366,11 @@ export function buildCurrentSummary(
         sourceIndexSha256: latest.sourceIndexSha256,
         taskId: latest.taskId,
         condition: latest.condition,
+        ...(revision && {
+          fixtureIdentity: latest.fixtureIdentity,
+          gradingIdentity: latest.gradingIdentity,
+          executionIdentity: latest.executionIdentity,
+        }),
       },
     },
     selectedExecutions,
@@ -319,6 +386,12 @@ export function buildCurrentSummary(
         tasks.filter((task) => task.role === 'negative-control'),
       ),
     },
+    ...(hasInputTokens && {
+      tasks: tasks.map((task) => ({
+        id: task.id,
+        measurements: measurements(arms.map((arm) => task.conditions[arm]!)),
+      })),
+    }),
   };
   return { ...body, identity: contentIdentity(body) };
 }
@@ -328,6 +401,7 @@ export async function exportCurrentSummary(inputs: {
   baseSha256: string;
   taskFile: string;
   taskSha256: string;
+  revision?: TaskRevisionSelection;
 }) {
   const root = fileURLToPath(
     new URL('../../docs/.vitepress/theme/', import.meta.url),
@@ -351,14 +425,17 @@ export async function exportCurrentSummary(inputs: {
     implementation: sha256(implementationBytes),
     protocol: sha256(protocolBytes),
   });
+  const latest = JSON.parse(taskBytes.toString()) as TaskResult;
+  assert.match(latest.profile.model, /^[a-z\d][a-z\d.-]{1,80}$/u);
   const result = buildCurrentSummary(
     JSON.parse(baseBytes.toString()) as Source,
-    JSON.parse(taskBytes.toString()) as TaskResult,
+    latest,
     {
       base: reference(inputs.baseFile, inputs.baseSha256),
       task: reference(inputs.taskFile, inputs.taskSha256),
     },
     calculationIdentity,
+    inputs.revision,
   );
   const bytes = await format(JSON.stringify(result), { parser: 'json' });
   const snapshots = path.join(root, 'evals-current-summaries');
@@ -373,7 +450,14 @@ export async function exportCurrentSummary(inputs: {
     )
       throw error;
   }
-  const target = path.join(root, 'evals-current-results.json');
+  const modelSuffix =
+    latest.profile.model === 'gpt-6.1-terra' ? '' : `-${latest.profile.model}`;
+  const target = path.join(
+    root,
+    result.sources.task.taskId === 'I03'
+      ? `evals-current-i03${modelSuffix}-results.json`
+      : 'evals-current-results.json',
+  );
   const lock = target + '.lock';
   await mkdir(lock);
   try {

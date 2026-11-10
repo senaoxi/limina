@@ -12,7 +12,7 @@ interface Reference {
   bankId: string;
 }
 export interface PublicCurrentSummary {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2 | 3;
   kind: 'current-task-summary';
   policy: 'latest-complete-task-condition';
   identity: string;
@@ -20,6 +20,16 @@ export interface PublicCurrentSummary {
   bankRevision: string;
   stage: string;
   modelProfileId: string;
+  revision?: {
+    kind: 'task-contract-revision';
+    from: {
+      bankId: string;
+      fixtureIdentity: string;
+      gradingIdentity: string;
+      executionIdentity: string;
+    };
+    to: NonNullable<PublicCurrentSummary['revision']>['from'];
+  };
   sources: {
     base: Reference & { sourceIndexDigest: string };
     task: Reference & {
@@ -28,6 +38,9 @@ export interface PublicCurrentSummary {
       sourceIndexSha256: string;
       taskId: string;
       condition: string;
+      fixtureIdentity?: string;
+      gradingIdentity?: string;
+      executionIdentity?: string;
     };
   };
   selectedExecutions: number;
@@ -53,4 +66,5 @@ export interface PublicCurrentSummary {
       conditions: Record<string, PublishedMeasurements>;
     };
   };
+  tasks?: { id: string; measurements: PublishedMeasurements }[];
 }

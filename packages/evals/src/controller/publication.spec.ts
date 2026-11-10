@@ -342,6 +342,11 @@ test('publication is bound to campaign, raw journal, budget prefix and calculati
     null,
   );
   assert.equal(measured.models[1]!.report, null);
+  assert.equal(measured.models[0]!.report!.measurements!.version, 2);
+  assert.equal(
+    measured.models[0]!.report!.tasks[0]!.measurements!.inputTokens!.mean,
+    null,
+  );
   assert.equal(
     await readFile(path.join(legacyDirectory, 'report.json'), 'utf8'),
     legacyReportBytes,
@@ -360,6 +365,8 @@ test('publication is bound to campaign, raw journal, budget prefix and calculati
     reportSha256: _currentHash,
     ...pricedBody
   } = current;
+  // Exercise the legacy measured shape as well as the unmeasured report above.
+  pricedBody.measurementVersion = 1;
   pricedBody.calculationDigest = contentIdentity(
     'archived Terra-only calculator',
   );

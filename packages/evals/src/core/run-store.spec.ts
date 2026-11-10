@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -96,8 +101,213 @@ async function fixture() {
     },
     evidence,
   };
-  return { root, directory, store, plan, task, data };
+  return {
+    root,
+    directory,
+    store,
+    plan,
+    task,
+    data,
+    snapshot,
+    start,
+    final,
+    fixed,
+  };
 }
+
+async function gradingReviewFixture(isKnownFailure = false) {
+  const f = await fixture();
+  const data = structuredClone(f.data);
+  data.facts.grade = { ...data.facts.grade!, status: 'error', assertions: [] };
+  if (isKnownFailure)
+    data.facts.grade = {
+      ...f.data.facts.grade!,
+      assertions: f.data.facts.grade!.assertions.map((a, index) => ({
+        ...a,
+        passed: index !== 0,
+      })),
+    };
+  for (const [kind, snapshot] of [
+    ['fixture', f.snapshot],
+    ['start', f.start],
+    ['final', f.final],
+  ] as const) {
+    const reference = data.evidence.find(
+      (reference) => reference.kind === kind,
+    )!;
+    const bytes = JSON.stringify(snapshot);
+    writeFileSync(path.join(f.directory, reference.path), bytes);
+    reference.sha256 = sha256(bytes);
+  }
+  const original = f.store.finish(f.store.startNext()!.runId, f.task, data);
+  const grade = {
+    report: f.data.facts.grade!,
+    commands: [{ exitCode: 0, timedOut: false }],
+  };
+  const bytes = JSON.stringify(grade);
+  writeFileSync(path.join(f.directory, 'review-assertions.json'), bytes);
+  const assertions: EvidenceReference = {
+    kind: 'assertions',
+    path: 'review-assertions.json',
+    sha256: sha256(bytes),
+  };
+  const proof = {
+    version: 1,
+    kind: 'offline-grading-review',
+    modelCalls: 0,
+    runId: original.runId,
+    experimentIdentity: f.plan.identity,
+    originalRecordDigest: contentIdentity(original),
+    originalEvidence: original.evidence,
+    gradingToolchain: 'fixed offline fixture',
+    gradingTimeoutMs: 300_000,
+    elapsedMs: 10,
+    assertionsSha256: assertions.sha256,
+  };
+  const proofBytes = JSON.stringify(proof);
+  writeFileSync(path.join(f.directory, 'review-proof.json'), proofBytes);
+  const review = {
+    runId: original.runId,
+    task: f.task,
+    originalRecordDigest: contentIdentity(original),
+    setupDigest: f.fixed,
+    gradingToolchainDigest: f.fixed,
+    assertions,
+    evidence: {
+      kind: 'grading-review' as const,
+      path: 'review-proof.json',
+      sha256: sha256(proofBytes),
+    },
+  };
+  return { ...f, original, review, proof, grade };
+}
+
+test('appends a grading review without another execution and preserves the original journal prefix', async (t) => {
+  const f = await gradingReviewFixture();
+  t.after(() => rm(f.root, { recursive: true, force: true }));
+  const file = path.join(f.directory, 'attempts.jsonl');
+  const before = readFileSync(file);
+  const result = f.store.reviewGrading(f.review);
+  assert.equal(result.outcome.status, 'passed');
+  assert.equal(result.runId, f.original.runId);
+  assert.deepEqual(result.time, f.original.time);
+  assert.deepEqual(result.usage, f.original.usage);
+  assert.equal(f.store.summary().attempts.length, 1);
+  assert.equal(f.store.summary().inFlight, null);
+  assert.equal(f.store.next()!.ordinal, 1);
+  assert.notEqual(f.store.next()!.slot.id, result.slot.id);
+  assert.deepEqual(readFileSync(file).subarray(0, before.length), before);
+  const historical = RunStore.openAt(
+    f.directory,
+    before.length,
+    sha256(before),
+  );
+  assert.equal(
+    historical.summary().attempts[0]!.outcome.status,
+    'grader_error',
+  );
+  assert.equal(
+    RunStore.open(f.directory).summary().attempts[0]!.outcome.status,
+    'passed',
+  );
+  assert.equal(
+    result.gradingReview!.originalRecordDigest,
+    contentIdentity(f.original),
+  );
+  assert.throws(() => f.store.reviewGrading(f.review), /grading review/);
+  assert.throws(
+    () => RunStore.open(f.directory).reviewGrading(f.review),
+    /Read-only/,
+  );
+});
+
+test('rejects a grading review with foreign inputs, missing assertions or changed evidence', async (t) => {
+  const f = await gradingReviewFixture();
+  t.after(() => rm(f.root, { recursive: true, force: true }));
+  const before = readFileSync(path.join(f.directory, 'attempts.jsonl'));
+  for (const changes of [
+    { runId: 'foreign' },
+    { originalRecordDigest: contentIdentity('foreign') },
+    { setupDigest: contentIdentity('other setup') },
+    { gradingToolchainDigest: contentIdentity('other grader runtime') },
+    { task: { ...f.task, prompt: 'different task contract' } },
+  ])
+    assert.throws(
+      () => f.store.reviewGrading({ ...f.review, ...changes }),
+      /grading review/,
+    );
+  const assertionsFile = path.join(f.directory, f.review.assertions.path);
+  const missing = JSON.stringify({
+    ...f.grade,
+    report: { ...f.grade.report, assertions: [] },
+  });
+  writeFileSync(assertionsFile, missing);
+  const proof = JSON.stringify({
+    ...f.proof,
+    assertionsSha256: sha256(missing),
+  });
+  writeFileSync(path.join(f.directory, f.review.evidence.path), proof);
+  const changed = {
+    ...f.review,
+    assertions: { ...f.review.assertions, sha256: sha256(missing) },
+    evidence: { ...f.review.evidence, sha256: sha256(proof) },
+  };
+  assert.throws(() => f.store.reviewGrading(changed), /grading review/);
+  assert.deepEqual(
+    readFileSync(path.join(f.directory, 'attempts.jsonl')),
+    before,
+  );
+});
+
+test('keeps review failures final and rejects changes to its resource and provenance contract', async (t) => {
+  const f = await gradingReviewFixture();
+  t.after(() => rm(f.root, { recursive: true, force: true }));
+  for (const changes of [
+    { gradingTimeoutMs: 300_001 },
+    { modelCalls: 1 },
+    { gradingToolchain: 'different runtime' },
+    { originalEvidence: [] },
+  ]) {
+    const bytes = JSON.stringify({ ...f.proof, ...changes });
+    writeFileSync(path.join(f.directory, f.review.evidence.path), bytes);
+    assert.throws(
+      () =>
+        f.store.reviewGrading({
+          ...f.review,
+          evidence: { ...f.review.evidence, sha256: sha256(bytes) },
+        }),
+      /grading review/,
+    );
+  }
+  const failedGrade = {
+    ...f.grade,
+    report: {
+      ...f.grade.report,
+      assertions: f.grade.report.assertions.map((a, index) => ({
+        ...a,
+        passed: index !== 0,
+      })),
+    },
+  };
+  const bytes = JSON.stringify(failedGrade);
+  writeFileSync(path.join(f.directory, f.review.assertions.path), bytes);
+  const proof = JSON.stringify({ ...f.proof, assertionsSha256: sha256(bytes) });
+  writeFileSync(path.join(f.directory, f.review.evidence.path), proof);
+  const input = {
+    ...f.review,
+    assertions: { ...f.review.assertions, sha256: sha256(bytes) },
+    evidence: { ...f.review.evidence, sha256: sha256(proof) },
+  };
+  assert.equal(f.store.reviewGrading(input).outcome.status, 'assertion_failed');
+  assert.throws(() => f.store.reviewGrading(input), /grading review/);
+  const known = await gradingReviewFixture(true);
+  t.after(() => rm(known.root, { recursive: true, force: true }));
+  assert.equal(known.original.outcome.status, 'assertion_failed');
+  assert.throws(
+    () => known.store.reviewGrading(known.review),
+    /grading review/,
+  );
+});
 
 test('journal resumes remaining slots, never retries an Agent failure or overwrites a result', async (t) => {
   const f = await fixture();

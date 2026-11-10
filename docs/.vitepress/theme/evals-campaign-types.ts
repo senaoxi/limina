@@ -10,6 +10,7 @@ export interface PublishedAverage {
   measuredCells: number;
 }
 export interface PublishedMeasurements {
+  inputTokens?: PublishedAverage;
   agentMs: PublishedAverage;
   endToEndMs: PublishedAverage;
   apiEquivalentUsd: PublishedAverage;
@@ -57,8 +58,12 @@ interface PublishedCondition {
 }
 interface PublishedTask {
   id: string;
+  fixtureIdentity?: string;
+  gradingIdentity?: string;
+  executionIdentity?: string;
   domain: string;
   role: 'main' | 'negative-control';
+  measurements?: PublishedMeasurements;
   comparison: {
     planned: number;
     valid: number;
@@ -94,7 +99,7 @@ export interface PublicCampaign {
       liftPercentagePoints: number | null;
       counts?: Record<string, PublishedCounts>;
       measurements?: {
-        version: 1;
+        version: 1 | 2;
         policy: 'task-condition-equal-all-executions';
         pricing: { identity: string; version: string; observedOn: string };
         main: {

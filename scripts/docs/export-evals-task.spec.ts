@@ -115,7 +115,51 @@ it('publishes a complete one-task result with failures and unknown costs, withou
   assert.equal(result.measurements.apiEquivalentUsd.mean, null);
   assert.equal(result.profile.id, before.models[0]!.profile.id);
   assert.equal(result.bankId, before.bankId);
+  assert.equal(result.schemaVersion, 1);
+  assert.equal(Object.hasOwn(result.measurements, 'inputTokens'), false);
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|fictional|macro|lift/u);
+});
+
+it('exports input token coverage separately from pricing and strips private token evidence', () => {
+  const source = fixture();
+  const m = source.models[0]!.report!.tasks[0]!.conditions.skill!.measurements;
+  m.inputTokens = {
+    ...m.agentMs,
+    mean: 1200,
+    observedSum: 2900,
+    total: null,
+    measured: 2,
+    coverage: 2 / 3,
+  };
+  Object.assign(m.inputTokens, { trace: 'PRIVATE_TOKEN_TRACE' });
+  const result = publicTaskResult(source, digest(30));
+  assert.equal(result.schemaVersion, 2);
+  assert.equal(result.measurements.inputTokens!.mean, 1200);
+  assert.equal(result.measurements.inputTokens!.measured, 2);
+  assert.equal(result.measurements.inputTokens!.total, null);
+  assert.equal(result.measurements.apiEquivalentUsd.mean, null);
+  assert.doesNotMatch(JSON.stringify(result), /PRIVATE_TOKEN_TRACE/u);
+});
+
+it('publishes the explicitly selected development I03 result without treating its unrun batch slots as executions', () => {
+  const source = fixture();
+  source.stage = 'development';
+  source.models[0]!.report!.planned = 102;
+  source.models[0]!.report!.tasks[0]!.id = 'I03';
+  const before = structuredClone(source);
+  const result = publicTaskResult(source, digest(30), { taskId: 'I03' });
+  assert.equal(result.schemaVersion, 3);
+  assert.equal(result.stage, 'development');
+  assert.equal(result.taskId, 'I03');
+  assert.equal(result.experimentIdentity, digest(5));
+  assert.equal(result.bankId, digest(3));
+  assert.equal(result.counts.executions, 3);
+  assert.equal(result.counts.passed, 2);
+  assert.equal(result.includedInFormalScores, false);
+  assert.deepEqual(source, before);
+  assert.throws(() => publicTaskResult(source, digest(30)));
+  source.stage = 'sealed';
+  assert.throws(() => publicTaskResult(source, digest(30), { taskId: 'I03' }));
 });
 
 it('rejects unresolved, missing, duplicated, replacement or foreign-condition samples and miscounted results', () => {

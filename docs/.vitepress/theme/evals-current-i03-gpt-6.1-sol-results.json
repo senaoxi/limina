@@ -1,0 +1,1400 @@
+{
+  "schemaVersion": 3,
+  "kind": "current-task-summary",
+  "policy": "latest-complete-task-condition",
+  "calculationIdentity": "abe41ffd8378e07852b47101afdc85107070c77580272dbc223d96ecfdac133c",
+  "bankRevision": "v2.1",
+  "stage": "development",
+  "modelProfileId": "f462c9a7950d1907b20c3f0d794014536596257409830db8b9490d4076a9a171",
+  "revision": {
+    "kind": "task-contract-revision",
+    "from": {
+      "bankId": "54e0f786d96cd11bef7fe7a0a44fc7725c6210bdaa0cc506a3369c4c4dde5bb9",
+      "fixtureIdentity": "93f126b3f14b498acbe348a19ed100b3c8f08f0b2b9b8d60ae22bd1441660239",
+      "gradingIdentity": "428076e0a675c82479a683ebebf03209909f3ce66f43b852d4f412cad7cf865b",
+      "executionIdentity": "83d66fe07462b8dce258b1c318214d094721168c4d75dee571772f36553ac967"
+    },
+    "to": {
+      "bankId": "2d16a0b0b0ee3f37c915ed4207a2f364b3da69249220faa14fcbfa0ab4af03cc",
+      "fixtureIdentity": "93f126b3f14b498acbe348a19ed100b3c8f08f0b2b9b8d60ae22bd1441660239",
+      "gradingIdentity": "810607bd68e7b3e11e143634dc79e707b52103a15b75dc28ce4faa99a8862670",
+      "executionIdentity": "35cc801f051314216971a02ff6d3994c98dd12cdf07ed6359fe320c9e85e5d46"
+    }
+  },
+  "sources": {
+    "base": {
+      "file": "./evals-campaigns/b73ffecf7a4061d328dc451c46f25ee8945cdfdebd829476c747aab1060b96e6-development-f113f24d45a7cab33d86701a703318602be6aed254cc7d66fc90d1ce2add489e.json",
+      "sha256": "f94cf2809242c8889b03a0fae7020c2d17c46180c04ec0d75816c00a1ed8c0a7",
+      "campaignId": "b73ffecf7a4061d328dc451c46f25ee8945cdfdebd829476c747aab1060b96e6",
+      "reportIdentity": "f113f24d45a7cab33d86701a703318602be6aed254cc7d66fc90d1ce2add489e",
+      "bankId": "54e0f786d96cd11bef7fe7a0a44fc7725c6210bdaa0cc506a3369c4c4dde5bb9",
+      "sourceIndexDigest": "bbafe547013ca5f736ebb12a86d45f8e14d28d9d300b3922aa175352b55ee039"
+    },
+    "task": {
+      "file": "./evals-task-results/eeb3ecc99ad644404af28ffa28a2f5355befe0c1b18506ebbe2daaadeb79758b-4b4f7dcb24592cd083f460b2f05552d0f0211788882d307e72bdecf27f77ea93.json",
+      "sha256": "48415252660bedab50be5e5c9d2ca356ac967c0cf368fb44899b0f39e82282f9",
+      "identity": "4b4f7dcb24592cd083f460b2f05552d0f0211788882d307e72bdecf27f77ea93",
+      "campaignId": "eeb3ecc99ad644404af28ffa28a2f5355befe0c1b18506ebbe2daaadeb79758b",
+      "reportIdentity": "94201dc2c3b8a14d5b93bb81997518db03b0b712d91ac40a10401060ab71aa1b",
+      "bankId": "2d16a0b0b0ee3f37c915ed4207a2f364b3da69249220faa14fcbfa0ab4af03cc",
+      "experimentIdentity": "0410b3029db68986e7593de5d5448ef632bcb2172d1faa1be7c13ffaad94fe1e",
+      "sourceIndexSha256": "db18732f7eafdb1562e945d69a73f56ced118576f349967fb4679249fb027daa",
+      "taskId": "I03",
+      "condition": "skill",
+      "fixtureIdentity": "93f126b3f14b498acbe348a19ed100b3c8f08f0b2b9b8d60ae22bd1441660239",
+      "gradingIdentity": "810607bd68e7b3e11e143634dc79e707b52103a15b75dc28ce4faa99a8862670",
+      "executionIdentity": "35cc801f051314216971a02ff6d3994c98dd12cdf07ed6359fe320c9e85e5d46"
+    }
+  },
+  "selectedExecutions": 102,
+  "sourceExecutions": 105,
+  "supersededExecutions": 3,
+  "counts": {
+    "base": { "passed": 47, "valid": 48, "planned": 48, "executions": 48 },
+    "skill": { "passed": 48, "valid": 48, "planned": 48, "executions": 48 }
+  },
+  "macro": { "base": 0.9791666666666666, "skill": 1 },
+  "differencePercentagePoints": 2.083333333333337,
+  "domains": [
+    {
+      "id": "configuration",
+      "taskCount": 2,
+      "counts": {
+        "base": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 },
+        "skill": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 }
+      },
+      "conditions": { "base": 1, "skill": 1 },
+      "differencePercentagePoints": 0
+    },
+    {
+      "id": "initialization",
+      "taskCount": 2,
+      "counts": {
+        "base": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 },
+        "skill": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 }
+      },
+      "conditions": { "base": 1, "skill": 1 },
+      "differencePercentagePoints": 0
+    },
+    {
+      "id": "checker",
+      "taskCount": 2,
+      "counts": {
+        "base": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 },
+        "skill": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 }
+      },
+      "conditions": { "base": 1, "skill": 1 },
+      "differencePercentagePoints": 0
+    },
+    {
+      "id": "package-release",
+      "taskCount": 2,
+      "counts": {
+        "base": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 },
+        "skill": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 }
+      },
+      "conditions": { "base": 1, "skill": 1 },
+      "differencePercentagePoints": 0
+    },
+    {
+      "id": "reference-graph",
+      "taskCount": 2,
+      "counts": {
+        "base": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 },
+        "skill": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 }
+      },
+      "conditions": { "base": 1, "skill": 1 },
+      "differencePercentagePoints": 0
+    },
+    {
+      "id": "source-governance",
+      "taskCount": 2,
+      "counts": {
+        "base": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 },
+        "skill": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 }
+      },
+      "conditions": { "base": 1, "skill": 1 },
+      "differencePercentagePoints": 0
+    },
+    {
+      "id": "troubleshooting",
+      "taskCount": 2,
+      "counts": {
+        "base": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 },
+        "skill": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 }
+      },
+      "conditions": { "base": 1, "skill": 1 },
+      "differencePercentagePoints": 0
+    },
+    {
+      "id": "workflow",
+      "taskCount": 2,
+      "counts": {
+        "base": { "passed": 5, "valid": 6, "planned": 6, "executions": 6 },
+        "skill": { "passed": 6, "valid": 6, "planned": 6, "executions": 6 }
+      },
+      "conditions": { "base": 0.8333333333333333, "skill": 1 },
+      "differencePercentagePoints": 16.666666666666675
+    }
+  ],
+  "measurements": {
+    "main": {
+      "all": {
+        "inputTokens": {
+          "mean": 230231.3854166667,
+          "observedSum": 22091051,
+          "total": null,
+          "measured": 94,
+          "executions": 96,
+          "coverage": 0.9791666666666666,
+          "cells": 32,
+          "measuredCells": 32
+        },
+        "agentMs": {
+          "mean": 84064.71932893754,
+          "observedSum": 8070213.055578002,
+          "total": 8070213.055578002,
+          "measured": 96,
+          "executions": 96,
+          "coverage": 1,
+          "cells": 32,
+          "measuredCells": 32
+        },
+        "endToEndMs": {
+          "mean": 113807.25544698963,
+          "observedSum": 10925496.522911003,
+          "total": 10925496.522911003,
+          "measured": 96,
+          "executions": 96,
+          "coverage": 1,
+          "cells": 32,
+          "measuredCells": 32
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.09848649583333333,
+          "observedSum": 9.417908800000001,
+          "total": null,
+          "measured": 94,
+          "executions": 96,
+          "coverage": 0.9791666666666666,
+          "cells": 32,
+          "measuredCells": 32
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 96,
+          "coverage": 0,
+          "cells": 32,
+          "measuredCells": 0
+        }
+      },
+      "conditions": {
+        "base": {
+          "inputTokens": {
+            "mean": 211991.4166666667,
+            "observedSum": 10164426,
+            "total": null,
+            "measured": 46,
+            "executions": 48,
+            "coverage": 0.9583333333333334,
+            "cells": 16,
+            "measuredCells": 16
+          },
+          "agentMs": {
+            "mean": 84083.78314575001,
+            "observedSum": 4036021.5909960014,
+            "total": 4036021.5909960014,
+            "measured": 48,
+            "executions": 48,
+            "coverage": 1,
+            "cells": 16,
+            "measuredCells": 16
+          },
+          "endToEndMs": {
+            "mean": 113985.04623518755,
+            "observedSum": 5471282.219289003,
+            "total": 5471282.219289003,
+            "measured": 48,
+            "executions": 48,
+            "coverage": 1,
+            "cells": 16,
+            "measuredCells": 16
+          },
+          "apiEquivalentUsd": {
+            "mean": 0.08994369999999999,
+            "observedSum": 4.2805028,
+            "total": null,
+            "measured": 46,
+            "executions": 48,
+            "coverage": 0.9583333333333334,
+            "cells": 16,
+            "measuredCells": 16
+          },
+          "settledUsd": {
+            "mean": null,
+            "observedSum": 0,
+            "total": null,
+            "measured": 0,
+            "executions": 48,
+            "coverage": 0,
+            "cells": 16,
+            "measuredCells": 0
+          }
+        },
+        "skill": {
+          "inputTokens": {
+            "mean": 248471.35416666666,
+            "observedSum": 11926625,
+            "total": 11926625,
+            "measured": 48,
+            "executions": 48,
+            "coverage": 1,
+            "cells": 16,
+            "measuredCells": 16
+          },
+          "agentMs": {
+            "mean": 84045.65551212503,
+            "observedSum": 4034191.464582001,
+            "total": 4034191.464582001,
+            "measured": 48,
+            "executions": 48,
+            "coverage": 1,
+            "cells": 16,
+            "measuredCells": 16
+          },
+          "endToEndMs": {
+            "mean": 113629.46465879166,
+            "observedSum": 5454214.303622,
+            "total": 5454214.303622,
+            "measured": 48,
+            "executions": 48,
+            "coverage": 1,
+            "cells": 16,
+            "measuredCells": 16
+          },
+          "apiEquivalentUsd": {
+            "mean": 0.10702929166666666,
+            "observedSum": 5.137406,
+            "total": 5.137406,
+            "measured": 48,
+            "executions": 48,
+            "coverage": 1,
+            "cells": 16,
+            "measuredCells": 16
+          },
+          "settledUsd": {
+            "mean": null,
+            "observedSum": 0,
+            "total": null,
+            "measured": 0,
+            "executions": 48,
+            "coverage": 0,
+            "cells": 16,
+            "measuredCells": 0
+          }
+        }
+      }
+    },
+    "negativeControls": {
+      "all": {
+        "inputTokens": {
+          "mean": 54681.5,
+          "observedSum": 328089,
+          "total": 328089,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 23565.761868166774,
+          "observedSum": 141394.57120900066,
+          "total": 141394.57120900066,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 38546.721618000105,
+          "observedSum": 231280.32970800065,
+          "total": 231280.32970800065,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.021258533333333333,
+          "observedSum": 0.12755119999999998,
+          "total": 0.12755119999999998,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      },
+      "conditions": {
+        "base": {
+          "inputTokens": {
+            "mean": 52120.333333333336,
+            "observedSum": 156361,
+            "total": 156361,
+            "measured": 3,
+            "executions": 3,
+            "coverage": 1,
+            "cells": 1,
+            "measuredCells": 1
+          },
+          "agentMs": {
+            "mean": 22747.00715266688,
+            "observedSum": 68241.02145800064,
+            "total": 68241.02145800064,
+            "measured": 3,
+            "executions": 3,
+            "coverage": 1,
+            "cells": 1,
+            "measuredCells": 1
+          },
+          "endToEndMs": {
+            "mean": 37272.42525000001,
+            "observedSum": 111817.27575000003,
+            "total": 111817.27575000003,
+            "measured": 3,
+            "executions": 3,
+            "coverage": 1,
+            "cells": 1,
+            "measuredCells": 1
+          },
+          "apiEquivalentUsd": {
+            "mean": 0.017048400000000002,
+            "observedSum": 0.0511452,
+            "total": 0.0511452,
+            "measured": 3,
+            "executions": 3,
+            "coverage": 1,
+            "cells": 1,
+            "measuredCells": 1
+          },
+          "settledUsd": {
+            "mean": null,
+            "observedSum": 0,
+            "total": null,
+            "measured": 0,
+            "executions": 3,
+            "coverage": 0,
+            "cells": 1,
+            "measuredCells": 0
+          }
+        },
+        "skill": {
+          "inputTokens": {
+            "mean": 57242.666666666664,
+            "observedSum": 171728,
+            "total": 171728,
+            "measured": 3,
+            "executions": 3,
+            "coverage": 1,
+            "cells": 1,
+            "measuredCells": 1
+          },
+          "agentMs": {
+            "mean": 24384.51658366667,
+            "observedSum": 73153.54975100001,
+            "total": 73153.54975100001,
+            "measured": 3,
+            "executions": 3,
+            "coverage": 1,
+            "cells": 1,
+            "measuredCells": 1
+          },
+          "endToEndMs": {
+            "mean": 39821.0179860002,
+            "observedSum": 119463.05395800062,
+            "total": 119463.05395800062,
+            "measured": 3,
+            "executions": 3,
+            "coverage": 1,
+            "cells": 1,
+            "measuredCells": 1
+          },
+          "apiEquivalentUsd": {
+            "mean": 0.025468666666666664,
+            "observedSum": 0.07640599999999999,
+            "total": 0.07640599999999999,
+            "measured": 3,
+            "executions": 3,
+            "coverage": 1,
+            "cells": 1,
+            "measuredCells": 1
+          },
+          "settledUsd": {
+            "mean": null,
+            "observedSum": 0,
+            "total": null,
+            "measured": 0,
+            "executions": 3,
+            "coverage": 0,
+            "cells": 1,
+            "measuredCells": 0
+          }
+        }
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "C01",
+      "measurements": {
+        "inputTokens": {
+          "mean": 222610.6666666667,
+          "observedSum": 1335664,
+          "total": 1335664,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 78088.18062483327,
+          "observedSum": 468529.08374899963,
+          "total": 468529.08374899963,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 98834.88512499994,
+          "observedSum": 593009.3107499997,
+          "total": 593009.3107499997,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.1093348,
+          "observedSum": 0.6560088,
+          "total": 0.6560088,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "C02",
+      "measurements": {
+        "inputTokens": {
+          "mean": 290363.1666666667,
+          "observedSum": 1742179,
+          "total": 1742179,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 104905.16838183353,
+          "observedSum": 629431.0102910012,
+          "total": 629431.0102910012,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 165747.28169416625,
+          "observedSum": 994483.6901649975,
+          "total": 994483.6901649975,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.1282758,
+          "observedSum": 0.7696548,
+          "total": 0.7696548,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "I01",
+      "measurements": {
+        "inputTokens": {
+          "mean": 460646.1666666667,
+          "observedSum": 2763877,
+          "total": 2763877,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 119771.68310400008,
+          "observedSum": 718630.0986240006,
+          "total": 718630.0986240006,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 148130.92714616674,
+          "observedSum": 888785.5628770005,
+          "total": 888785.5628770005,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.15067453333333333,
+          "observedSum": 0.9040471999999999,
+          "total": 0.9040471999999999,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "I03",
+      "measurements": {
+        "inputTokens": {
+          "mean": 89883.33333333334,
+          "observedSum": 539300,
+          "total": 539300,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 38547.212784833224,
+          "observedSum": 231283.27670899936,
+          "total": 231283.27670899936,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 51912.56346516682,
+          "observedSum": 311475.3807910009,
+          "total": 311475.3807910009,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.06301806666666668,
+          "observedSum": 0.3781084,
+          "total": 0.3781084,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "K01",
+      "measurements": {
+        "inputTokens": {
+          "mean": 254045.8333333333,
+          "observedSum": 1524275,
+          "total": 1524275,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 67928.93654850006,
+          "observedSum": 407573.6192910004,
+          "total": 407573.6192910004,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 131466.9730416666,
+          "observedSum": 788801.8382499997,
+          "total": 788801.8382499997,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.09346973333333333,
+          "observedSum": 0.5608184,
+          "total": 0.5608184,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "K03",
+      "measurements": {
+        "inputTokens": {
+          "mean": 196431.16666666666,
+          "observedSum": 1178587,
+          "total": 1178587,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 54184.50924316661,
+          "observedSum": 325107.0554589997,
+          "total": 325107.0554589997,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 67124.70344433333,
+          "observedSum": 402748.2206659999,
+          "total": 402748.2206659999,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.08287233333333334,
+          "observedSum": 0.497234,
+          "total": 0.497234,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "N01",
+      "measurements": {
+        "inputTokens": {
+          "mean": 54681.5,
+          "observedSum": 328089,
+          "total": 328089,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 23565.761868166774,
+          "observedSum": 141394.57120900066,
+          "total": 141394.57120900066,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 38546.721618000105,
+          "observedSum": 231280.32970800065,
+          "total": 231280.32970800065,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.021258533333333333,
+          "observedSum": 0.12755119999999998,
+          "total": 0.12755119999999998,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "P01",
+      "measurements": {
+        "inputTokens": {
+          "mean": 176755.5,
+          "observedSum": 1060533,
+          "total": 1060533,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 94292.38736116662,
+          "observedSum": 565754.3241669997,
+          "total": 565754.3241669997,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 110559.02655549985,
+          "observedSum": 663354.159332999,
+          "total": 663354.159332999,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.08523593333333332,
+          "observedSum": 0.5114156,
+          "total": 0.5114156,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "P02",
+      "measurements": {
+        "inputTokens": {
+          "mean": 251748.5,
+          "observedSum": 1510491,
+          "total": 1510491,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 122283.97377066655,
+          "observedSum": 733703.8426239993,
+          "total": 733703.8426239993,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 140329.82604850002,
+          "observedSum": 841978.9562910001,
+          "total": 841978.9562910001,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.11127806666666668,
+          "observedSum": 0.6676683999999999,
+          "total": 0.6676683999999999,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "R02",
+      "measurements": {
+        "inputTokens": {
+          "mean": 175895.8333333333,
+          "observedSum": 1055375,
+          "total": 1055375,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 63657.82316666667,
+          "observedSum": 381946.939,
+          "total": 381946.939,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 108128.00275683365,
+          "observedSum": 648768.0165410019,
+          "total": 648768.0165410019,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.07215479999999999,
+          "observedSum": 0.4329288,
+          "total": 0.4329288,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "R03",
+      "measurements": {
+        "inputTokens": {
+          "mean": 316148,
+          "observedSum": 1896888,
+          "total": 1896888,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 123886.73550000013,
+          "observedSum": 743320.4130000008,
+          "total": 743320.4130000008,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 169972.81381266666,
+          "observedSum": 1019836.8828759999,
+          "total": 1019836.8828759999,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.13688906666666667,
+          "observedSum": 0.8213344,
+          "total": 0.8213344,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "S01",
+      "measurements": {
+        "inputTokens": {
+          "mean": 207316,
+          "observedSum": 1199919,
+          "total": null,
+          "measured": 5,
+          "executions": 6,
+          "coverage": 0.8333333333333334,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 71878.74551366651,
+          "observedSum": 431272.47308199905,
+          "total": 431272.47308199905,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 98222.89749283346,
+          "observedSum": 589337.3849570008,
+          "total": 589337.3849570008,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.08673753333333334,
+          "observedSum": 0.48302,
+          "total": null,
+          "measured": 5,
+          "executions": 6,
+          "coverage": 0.8333333333333334,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "S02",
+      "measurements": {
+        "inputTokens": {
+          "mean": 133870.8333333333,
+          "observedSum": 836040,
+          "total": null,
+          "measured": 5,
+          "executions": 6,
+          "coverage": 0.8333333333333334,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 52341.15916683353,
+          "observedSum": 314046.9550010012,
+          "total": 314046.9550010012,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 81278.46245816693,
+          "observedSum": 487670.7747490016,
+          "total": 487670.7747490016,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.06076853333333333,
+          "observedSum": 0.3652216,
+          "total": null,
+          "measured": 5,
+          "executions": 6,
+          "coverage": 0.8333333333333334,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "T01",
+      "measurements": {
+        "inputTokens": {
+          "mean": 194654.6666666667,
+          "observedSum": 1167928,
+          "total": 1167928,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 67598.02044433323,
+          "observedSum": 405588.12266599946,
+          "total": 405588.12266599946,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 81592.98865949985,
+          "observedSum": 489557.9319569991,
+          "total": 489557.9319569991,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.08450486666666668,
+          "observedSum": 0.5070292000000001,
+          "total": 0.5070292000000001,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "T03",
+      "measurements": {
+        "inputTokens": {
+          "mean": 315899.1666666666,
+          "observedSum": 1895395,
+          "total": 1895395,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 112130.7540485,
+          "observedSum": 672784.524291,
+          "total": 672784.524291,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 143610.49577083357,
+          "observedSum": 861662.9746250013,
+          "total": 861662.9746250013,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.14255533333333334,
+          "observedSum": 0.855332,
+          "total": 0.855332,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "W02",
+      "measurements": {
+        "inputTokens": {
+          "mean": 239064.16666666666,
+          "observedSum": 1434385,
+          "total": 1434385,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 114211.70931916691,
+          "observedSum": 685270.2559150015,
+          "total": 685270.2559150015,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 151390.0125765002,
+          "observedSum": 908340.075459001,
+          "total": 908340.075459001,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.09677586666666667,
+          "observedSum": 0.5806552,
+          "total": 0.5806552,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    },
+    {
+      "id": "W03",
+      "measurements": {
+        "inputTokens": {
+          "mean": 158369.1666666667,
+          "observedSum": 950215,
+          "total": 950215,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "agentMs": {
+          "mean": 59328.510284833406,
+          "observedSum": 355971.06170900044,
+          "total": 355971.06170900044,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "endToEndMs": {
+          "mean": 72614.22710400002,
+          "observedSum": 435685.36262400006,
+          "total": 435685.36262400006,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "apiEquivalentUsd": {
+          "mean": 0.07123866666666667,
+          "observedSum": 0.42743200000000003,
+          "total": 0.42743200000000003,
+          "measured": 6,
+          "executions": 6,
+          "coverage": 1,
+          "cells": 2,
+          "measuredCells": 2
+        },
+        "settledUsd": {
+          "mean": null,
+          "observedSum": 0,
+          "total": null,
+          "measured": 0,
+          "executions": 6,
+          "coverage": 0,
+          "cells": 2,
+          "measuredCells": 0
+        }
+      }
+    }
+  ],
+  "identity": "4934aa5c08fd80a7babe89a4cb461b27f02a1d17059b9ae9d83c4e8b9924ed1b"
+}

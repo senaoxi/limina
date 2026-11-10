@@ -16,15 +16,22 @@ import type { UsageRecord } from './budget.ts';
 import {
   type ExperimentManifest,
   type ExperimentSlot,
+  freezeTaskIdentity,
   verifyExperiment,
 } from './experiment.ts';
 import { contentIdentity } from './identity.ts';
 import {
+  type AssertionReport,
   type AttemptFacts,
   type AttemptOutcome,
   deriveOutcome,
 } from './outcome.ts';
-import { assertRelativePath, sha256 } from './snapshot.ts';
+import {
+  assertRelativePath,
+  sha256,
+  type Snapshot,
+  verifySnapshot,
+} from './snapshot.ts';
 import type { TaskSpec } from './task.ts';
 
 export interface EvidenceReference {
@@ -34,6 +41,7 @@ export interface EvidenceReference {
     | 'final'
     | 'trace'
     | 'assertions'
+    | 'grading-review'
     | 'infrastructure';
   path: string;
   sha256: string;
@@ -61,6 +69,26 @@ export interface AttemptRecord {
     used: 'yes' | 'no' | 'unknown';
   };
   evidence: EvidenceReference[];
+  gradingReview?: {
+    originalRecordDigest: string;
+    originalAssertions: EvidenceReference;
+    reviewedAt: string;
+    evidence: EvidenceReference;
+  };
+}
+
+interface GradingReviewInput {
+  runId: string;
+  originalRecordDigest: string;
+  task: TaskSpec;
+  setupDigest: string;
+  gradingToolchainDigest: string;
+  assertions: EvidenceReference;
+  evidence: EvidenceReference;
+}
+interface GradingReview extends GradingReviewInput {
+  version: 1;
+  reviewedAt: string;
 }
 
 interface StartedAttempt {
@@ -71,7 +99,8 @@ interface StartedAttempt {
 }
 type RunEvent =
   | { type: 'started'; attempt: StartedAttempt }
-  | { type: 'finished'; record: AttemptRecord };
+  | { type: 'finished'; record: AttemptRecord }
+  | { type: 'grading_review'; review: GradingReview };
 interface JournalEntry {
   version: 1;
   previous: string | null;
@@ -195,8 +224,13 @@ export class RunStore {
 
   #state(entries: JournalEntry[]): RunState {
     const state: RunState = { starts: [], records: [], inFlight: null };
-    for (const { event } of entries) {
-      if (event.type === 'started') {
+    for (const { event } of entries) this.#applyEvent(state, event);
+    return state;
+  }
+
+  #applyEvent(state: RunState, event: RunEvent): void {
+    switch (event.type) {
+      case 'started': {
         const attempt = event.attempt;
         if (
           state.inFlight ||
@@ -206,7 +240,10 @@ export class RunStore {
           throw new Error('Invalid or concurrent attempt start');
         state.starts.push(attempt);
         state.inFlight = attempt;
-      } else if (event.type === 'finished') {
+
+        return;
+      }
+      case 'finished': {
         const record = event.record;
         const slot = this.manifest.slots.find(
           (candidate) => candidate.id === record.slot.id,
@@ -223,9 +260,26 @@ export class RunStore {
           );
         state.records.push(record);
         state.inFlight = null;
-      } else throw new Error('Unknown attempt journal event');
+
+        return;
+      }
+      case 'grading_review': {
+        const index = state.records.findIndex(
+          (r) => r.runId === event.review.runId,
+        );
+        if (index === -1 || state.inFlight)
+          throw new Error('Invalid grading review target');
+        state.records[index] = this.#reviewedRecord(
+          state.records[index]!,
+          event.review,
+        );
+
+        return;
+      }
+      default: {
+        throw new Error('Unknown attempt journal event');
+      }
     }
-    return state;
   }
 
   #append(event: RunEvent, entries: JournalEntry[]): void {
@@ -287,6 +341,183 @@ export class RunStore {
     } catch {
       return false;
     }
+  }
+
+  #readReference(reference: EvidenceReference): unknown {
+    assertRelativePath(reference.path);
+    const file = path.join(this.directory, reference.path);
+    const bytes = readFileSync(file);
+    if (realpathSync(file) !== file || sha256(bytes) !== reference.sha256)
+      throw new Error('Changed grading review evidence');
+    return JSON.parse(bytes.toString());
+  }
+
+  #assertReviewContext(original: AttemptRecord, review: GradingReview): void {
+    const task = this.manifest.inputs.tasks.find(
+      (t) => t.id === original.slot.taskId,
+    );
+    if (
+      review.version !== 1 ||
+      !Number.isFinite(Date.parse(review.reviewedAt)) ||
+      review.originalRecordDigest !== contentIdentity(original) ||
+      contentIdentity(task) !==
+        contentIdentity(
+          freezeTaskIdentity(
+            review.task,
+            review.setupDigest,
+            review.gradingToolchainDigest,
+          ),
+        ) ||
+      review.assertions.kind !== 'assertions' ||
+      review.evidence.kind !== 'grading-review' ||
+      review.assertions.path === review.evidence.path ||
+      original.evidence.some((r) =>
+        [review.assertions.path, review.evidence.path].includes(r.path),
+      )
+    )
+      throw new Error('Invalid grading review inputs');
+  }
+
+  #assertReviewOriginal(original: AttemptRecord): void {
+    if (
+      original.outcome.status !== 'grader_error' ||
+      original.gradingReview ||
+      original.facts.execution.status !== 'completed' ||
+      original.facts.execution.exitCode !== 0 ||
+      original.facts.captureStatus !== 'complete' ||
+      original.facts.traceStatus !== 'complete' ||
+      original.facts.mutation?.status !== 'accepted' ||
+      !this.#hasEvidence(original)
+    )
+      throw new Error('Invalid grading review original outcome or evidence');
+    if (
+      this.manifest.version === 2 &&
+      original.observedModelId !== this.manifest.policy.model
+    )
+      throw new Error('Invalid grading review model evidence');
+    for (const kind of ['fixture', 'start', 'final', 'trace', 'assertions'])
+      if (original.evidence.filter((r) => r.kind === kind).length !== 1)
+        throw new Error('Incomplete grading review original evidence');
+  }
+
+  #assertReviewProof(original: AttemptRecord, review: GradingReview): void {
+    const proof = this.#readReference(review.evidence) as {
+      version: number;
+      kind: string;
+      modelCalls: number;
+      runId: string;
+      experimentIdentity: string;
+      originalRecordDigest: string;
+      originalEvidence: EvidenceReference[];
+      gradingToolchain: unknown;
+      gradingTimeoutMs: number;
+      elapsedMs: number;
+      assertionsSha256: string;
+    };
+    if (
+      proof.version !== 1 ||
+      proof.kind !== 'offline-grading-review' ||
+      proof.modelCalls !== 0 ||
+      proof.runId !== original.runId ||
+      proof.experimentIdentity !== original.experimentIdentity ||
+      proof.originalRecordDigest !== review.originalRecordDigest ||
+      contentIdentity(proof.originalEvidence) !==
+        contentIdentity(original.evidence) ||
+      contentIdentity(proof.gradingToolchain) !==
+        review.gradingToolchainDigest ||
+      proof.gradingTimeoutMs !== this.manifest.policy.timeoutsMs.grading ||
+      !Number.isFinite(proof.elapsedMs) ||
+      proof.elapsedMs < 0 ||
+      proof.elapsedMs > proof.gradingTimeoutMs ||
+      proof.assertionsSha256 !== review.assertions.sha256
+    )
+      throw new Error('Invalid grading review proof');
+  }
+
+  #reviewReport(review: GradingReview): AssertionReport {
+    const result = this.#readReference(review.assertions) as {
+      report: AssertionReport;
+      commands: { timedOut: boolean; exitCode: number | null }[];
+    };
+    if (
+      result.report?.status !== 'complete' ||
+      !Array.isArray(result.commands) ||
+      result.commands.length === 0 ||
+      result.commands.some(
+        (c) =>
+          typeof c.timedOut !== 'boolean' ||
+          c.timedOut ||
+          !Number.isSafeInteger(c.exitCode),
+      ) ||
+      !Array.isArray(result.report.assertions) ||
+      result.report.assertions.some((a) => typeof a.passed !== 'boolean')
+    )
+      throw new Error('Incomplete grading review assertions or commands');
+    return result.report;
+  }
+
+  #reviewedRecord(
+    original: AttemptRecord,
+    review: GradingReview,
+  ): AttemptRecord {
+    this.#assertReviewOriginal(original);
+    this.#assertReviewContext(original, review);
+    this.#assertReviewProof(original, review);
+    for (const kind of ['fixture', 'start', 'final']) {
+      const snapshot = this.#readReference(
+        original.evidence.find((r) => r.kind === kind)!,
+      ) as Snapshot;
+      verifySnapshot(snapshot);
+      if (
+        snapshot.status !== 'complete' ||
+        (kind === 'fixture' && snapshot.digest !== review.task.fixtureDigest)
+      )
+        throw new Error('Incomplete grading review submitted state');
+    }
+    const report = this.#reviewReport(review);
+    const facts = { ...structuredClone(original.facts), grade: report };
+    const outcome = deriveOutcome(review.task, facts);
+    if (!['passed', 'assertion_failed'].includes(outcome.status))
+      throw new Error('Incomplete grading review assertion contract');
+    return {
+      ...structuredClone(original),
+      facts,
+      outcome,
+      evidence: [
+        ...original.evidence.filter((r) => r.kind !== 'assertions'),
+        review.assertions,
+        review.evidence,
+      ],
+      gradingReview: {
+        originalRecordDigest: review.originalRecordDigest,
+        originalAssertions: original.evidence.find(
+          (r) => r.kind === 'assertions',
+        )!,
+        reviewedAt: review.reviewedAt,
+        evidence: review.evidence,
+      },
+    };
+  }
+
+  /**
+  Append a same-input grading adjudication; never start or replace an execution.
+  */
+  reviewGrading(input: GradingReviewInput): AttemptRecord {
+    return this.#locked(() => {
+      const entries = this.#entries();
+      const state = this.#state(entries);
+      const original = state.records.find((r) => r.runId === input.runId);
+      if (!original || state.inFlight)
+        throw new Error('Invalid grading review target');
+      const review: GradingReview = {
+        ...structuredClone(input),
+        version: 1,
+        reviewedAt: new Date().toISOString(),
+      };
+      const record = this.#reviewedRecord(original, review);
+      this.#append({ type: 'grading_review', review }, entries);
+      return record;
+    });
   }
 
   next(): { slot: ExperimentSlot; ordinal: 1 | 2 } | null {

@@ -75,6 +75,7 @@ function averaged(m: AveragedMeasurement) {
 }
 function measurements(m: ExecutionMeasurements) {
   return {
+    ...(m.inputTokens && { inputTokens: averaged(m.inputTokens) }),
     agentMs: averaged(m.agentMs),
     endToEndMs: averaged(m.endToEndMs),
     apiEquivalentUsd: averaged(m.apiEquivalentUsd),
@@ -187,7 +188,7 @@ export function publicCampaign(report: CampaignReport) {
       const measured = r.measurements;
       if (measured) {
         const pricing = resolveApiPricing(measured.pricing.identity);
-        assert.equal(measured.version, 1);
+        assert.ok(measured.version === 1 || measured.version === 2);
         assert.equal(measured.policy, 'task-condition-equal-all-executions');
         assert.equal(measured.pricing.version, pricing.version);
         assert.equal(measured.pricing.observedOn, pricing.observedOn);
@@ -239,7 +240,7 @@ export function publicCampaign(report: CampaignReport) {
           counts: countConditions(r.tasks.filter((t) => t.role === 'main')),
           ...(measured && {
             measurements: {
-              version: 1 as const,
+              version: measured.version,
               policy: 'task-condition-equal-all-executions' as const,
               pricing: {
                 identity: measured.pricing.identity,
@@ -275,6 +276,11 @@ export function publicCampaign(report: CampaignReport) {
               fixtureIdentity: t.fixtureIdentity,
               gradingIdentity: t.gradingIdentity,
               executionIdentity: t.executionIdentity,
+              ...(measured?.version === 2 && {
+                measurements: measurements(
+                  measured.tasks.find((m) => m.id === t.id)!.all!,
+                ),
+              }),
               comparison: comparison(t.comparison),
               conditions: Object.fromEntries(
                 ['base', 'skill', 'candidate', 'explicit-skill']

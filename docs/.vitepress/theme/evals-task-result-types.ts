@@ -4,7 +4,8 @@ import type {
 } from './evals-campaign-types';
 
 export interface PublicTaskResult {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2 | 3;
+  stage?: 'development' | 'sealed';
   kind: 'task-evaluation';
   scope: 'task-condition';
   includedInFormalScores: false;
@@ -17,6 +18,9 @@ export interface PublicTaskResult {
   reportIdentity: string;
   sourceIndexSha256: string;
   taskId: string;
+  fixtureIdentity: string;
+  gradingIdentity: string;
+  executionIdentity: string;
   condition: string;
   profile: PublicCampaign['models'][number]['profile'];
   counts: {

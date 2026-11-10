@@ -3,6 +3,7 @@ import type { TaskDefinition } from '../../controller/calibration.ts';
 import { gradeMigrationPreview } from '../../graders/v2_1/W03.ts';
 import { availableV2DevelopmentTasks } from '../v2/index.ts';
 import { createI01SatisfiesDefinition } from './I01.ts';
+import { createI03BoundaryDefinition } from './I03.ts';
 import { createR02V21Definition } from './R02.ts';
 
 const prompts: Record<string, string> = {
@@ -77,6 +78,7 @@ export const availableV21DevelopmentTasks = availableV2DevelopmentTasks.map(
   (task) => {
     const versioned = createV21Definition(task, prompts[task.id]);
     if (task.id === 'I01') return createI01SatisfiesDefinition(versioned);
+    if (task.id === 'I03') return createI03BoundaryDefinition(versioned);
     return task.id === 'R02' ? createR02V21Definition(versioned) : versioned;
   },
 );

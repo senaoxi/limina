@@ -14,12 +14,18 @@ import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { campaignFixture } from '../core/campaign.test-helper.ts';
+import { captureTaskSnapshot } from '../core/capture-policy.ts';
 import { taskCatalog } from '../core/experiment.ts';
 import { contentIdentity } from '../core/identity.ts';
+import { validateMutations } from '../core/mutation.ts';
 import { captureSnapshot } from '../core/snapshot.ts';
 import type { BankRevision } from '../core/task-bank.ts';
 import { developmentTasksForRevision } from '../tasks/banks.ts';
-import { type TaskDefinition, writeFixture } from './calibration.ts';
+import {
+  prepareTaskStart,
+  type TaskDefinition,
+  writeFixture,
+} from './calibration.ts';
 import { calibrateBank, prepareBankV2, prepareBankV21 } from './task-bank.ts';
 
 test('sealed preparation preserves declared module, fixture and generated-input closure', async (t) => {
@@ -110,6 +116,48 @@ test('the exact revision registry creates schema-2 development tasks without fal
       /Unsupported task bank revision/,
     );
   }
+});
+
+test('v2.1 initialization captures unauthorized generated state while legacy contracts stay unchanged', async (t) => {
+  const temporary = await mkdtemp(path.join(tmpdir(), 'eval-init-boundary-'));
+  const root = await realpath(temporary);
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const fixed = contentIdentity('offline initialization task construction');
+  const definitions = ['v1', 'v2', 'v2.1'].map(
+    (revision) =>
+      developmentTasksForRevision(revision as BankRevision).find(
+        (definition) => definition.id === 'I03',
+      )!,
+  );
+  const directory = path.join(root, 'project');
+  await writeFixture(definitions[2]!.files, directory);
+  const fixture = await captureSnapshot(directory, 'F0');
+  const create = (definition: TaskDefinition) =>
+    definition.createTask(fixture, {
+      closure: fixed,
+      toolchain: fixed,
+      grader: fixed,
+    });
+  const legacy = definitions
+    .slice(0, 2)
+    .map((definition) => create(definition));
+  const before = structuredClone(legacy);
+  const task = create(definitions[2]!);
+  await prepareTaskStart(directory);
+  const start = await captureTaskSnapshot(directory, 'S0', task);
+  await mkdir(path.join(directory, '.limina'));
+  await writeFile(path.join(directory, '.limina', 'unrequested.json'), '{}\n');
+  const final = await captureTaskSnapshot(directory, 'S1', task);
+  assert.equal(validateMutations(task, start, final).status, 'unsafe');
+  assert.deepEqual(
+    definitions.slice(0, 2).map((definition) => create(definition)),
+    before,
+  );
+  assert.ok(
+    legacy.every((value) =>
+      value.capturePolicy.excludedRoots.includes('.limina'),
+    ),
+  );
 });
 
 test('v2.1 sealed preparation retains nested V2 closures and refuses existing output', async (t) => {

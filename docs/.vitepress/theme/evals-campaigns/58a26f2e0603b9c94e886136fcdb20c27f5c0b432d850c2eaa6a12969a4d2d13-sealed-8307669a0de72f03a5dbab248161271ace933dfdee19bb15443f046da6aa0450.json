@@ -1,0 +1,3782 @@
+{
+  "schemaVersion": 2,
+  "campaignId": "58a26f2e0603b9c94e886136fcdb20c27f5c0b432d850c2eaa6a12969a4d2d13",
+  "comparability": "native-profile",
+  "bankId": "32eb024e14ee575bad22b1f3fac2a2bf05a3494b6988287f9f6fa7d2b42989ff",
+  "bankRevision": "v2.1",
+  "stage": "sealed",
+  "sourceIndexDigest": "e0004f780f5321da8f7494fe053a9a8cc39ca5b69471e28eb2d7bf872f5353ef",
+  "analysisPolicyDigest": "51395b7ba14d2b4a2522233deecdcb733f18b1da4c890aa1d668dd8a4cd82a20",
+  "reportIdentity": "8307669a0de72f03a5dbab248161271ace933dfdee19bb15443f046da6aa0450",
+  "exploratory": true,
+  "models": [
+    {
+      "profile": {
+        "id": "a1f723777b210d2a0a6f5ac818f03ecd057d3b17f0df1fe206c82c4177848210",
+        "model": "gpt-6.1-terra",
+        "displayName": "GPT 6.1 Terra (high)",
+        "provider": "openai",
+        "reasoningEffort": "high",
+        "serviceTier": "default",
+        "serviceTierEvidence": "requested-only",
+        "codexVersion": "0.166.0",
+        "codexBinaryIdentity": "39acf979729dd290f9a24ee38b2914e036c91b65952872e28ae2a6b88a7db7c1",
+        "instructionIdentity": "9d4fc572c0953b09a4d266d8a46ca25132787ee9482360af42d9c3df06466a59",
+        "execution": {
+          "contextWindow": 272000,
+          "autoCompactTokenLimit": 244800,
+          "toolOutputLimit": 10000
+        }
+      },
+      "planned": 54,
+      "status": "recorded",
+      "report": {
+        "experimentIdentity": "f997bd170b2134942cdf4d5881f05e35d955fe8704175ecdf61d797e40e0c33b",
+        "planned": 54,
+        "executions": 54,
+        "complete": true,
+        "macro": { "base": 0.7916666666666667, "skill": 0.875 },
+        "liftPercentagePoints": 8.333333333333334,
+        "regressionRate": 0,
+        "counts": {
+          "base": {
+            "passed": 19,
+            "valid": 24,
+            "planned": 24,
+            "executions": 24
+          },
+          "skill": {
+            "passed": 21,
+            "valid": 24,
+            "planned": 24,
+            "executions": 24
+          }
+        },
+        "measurements": {
+          "version": 2,
+          "policy": "task-condition-equal-all-executions",
+          "pricing": {
+            "identity": "2ac2a65f57132d3468c3c32177127a0f80ed075f0ad1e5d072ecfbd59baeeee9",
+            "version": "openai-standard-2026-11-09",
+            "observedOn": "2026-11-09"
+          },
+          "main": {
+            "all": {
+              "inputTokens": {
+                "mean": 432358.89583333326,
+                "observedSum": 21069423,
+                "total": null,
+                "measured": 46,
+                "executions": 48,
+                "coverage": 0.9583333333333334,
+                "cells": 16,
+                "measuredCells": 16
+              },
+              "agentMs": {
+                "mean": 139831.4822135417,
+                "observedSum": 6711911.146250001,
+                "total": 6711911.146250001,
+                "measured": 48,
+                "executions": 48,
+                "coverage": 1,
+                "cells": 16,
+                "measuredCells": 16
+              },
+              "endToEndMs": {
+                "mean": 197298.04931683335,
+                "observedSum": 9470306.367208004,
+                "total": 9470306.367208004,
+                "measured": 48,
+                "executions": 48,
+                "coverage": 1,
+                "cells": 16,
+                "measuredCells": 16
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.0635600375,
+                "observedSum": 3.1096830000000013,
+                "total": null,
+                "measured": 46,
+                "executions": 48,
+                "coverage": 0.9583333333333334,
+                "cells": 16,
+                "measuredCells": 16
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 48,
+                "coverage": 0,
+                "cells": 16,
+                "measuredCells": 0
+              }
+            },
+            "conditions": {
+              "base": {
+                "inputTokens": {
+                  "mean": 434926.3333333334,
+                  "observedSum": 10467307,
+                  "total": null,
+                  "measured": 23,
+                  "executions": 24,
+                  "coverage": 0.9583333333333334,
+                  "cells": 8,
+                  "measuredCells": 8
+                },
+                "agentMs": {
+                  "mean": 142899.1327151667,
+                  "observedSum": 3429579.185164001,
+                  "total": 3429579.185164001,
+                  "measured": 24,
+                  "executions": 24,
+                  "coverage": 1,
+                  "cells": 8,
+                  "measuredCells": 8
+                },
+                "endToEndMs": {
+                  "mean": 199252.06229691673,
+                  "observedSum": 4782049.495126001,
+                  "total": 4782049.495126001,
+                  "measured": 24,
+                  "executions": 24,
+                  "coverage": 1,
+                  "cells": 8,
+                  "measuredCells": 8
+                },
+                "apiEquivalentUsd": {
+                  "mean": 0.06262987916666667,
+                  "observedSum": 1.5217720000000001,
+                  "total": null,
+                  "measured": 23,
+                  "executions": 24,
+                  "coverage": 0.9583333333333334,
+                  "cells": 8,
+                  "measuredCells": 8
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 24,
+                  "coverage": 0,
+                  "cells": 8,
+                  "measuredCells": 0
+                }
+              },
+              "skill": {
+                "inputTokens": {
+                  "mean": 429791.4583333333,
+                  "observedSum": 10602116,
+                  "total": null,
+                  "measured": 23,
+                  "executions": 24,
+                  "coverage": 0.9583333333333334,
+                  "cells": 8,
+                  "measuredCells": 8
+                },
+                "agentMs": {
+                  "mean": 136763.83171191666,
+                  "observedSum": 3282331.9610860003,
+                  "total": 3282331.9610860003,
+                  "measured": 24,
+                  "executions": 24,
+                  "coverage": 1,
+                  "cells": 8,
+                  "measuredCells": 8
+                },
+                "endToEndMs": {
+                  "mean": 195344.03633675,
+                  "observedSum": 4688256.872082001,
+                  "total": 4688256.872082001,
+                  "measured": 24,
+                  "executions": 24,
+                  "coverage": 1,
+                  "cells": 8,
+                  "measuredCells": 8
+                },
+                "apiEquivalentUsd": {
+                  "mean": 0.06449019583333333,
+                  "observedSum": 1.5879109999999996,
+                  "total": null,
+                  "measured": 23,
+                  "executions": 24,
+                  "coverage": 0.9583333333333334,
+                  "cells": 8,
+                  "measuredCells": 8
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 24,
+                  "coverage": 0,
+                  "cells": 8,
+                  "measuredCells": 0
+                }
+              }
+            }
+          },
+          "negativeControls": {
+            "all": {
+              "inputTokens": {
+                "mean": 103980.66666666666,
+                "observedSum": 623884,
+                "total": 623884,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 61736.292736166724,
+                "observedSum": 370417.7564170003,
+                "total": 370417.7564170003,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 81465.0201805002,
+                "observedSum": 488790.12108300114,
+                "total": 488790.12108300114,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.023081699999999997,
+                "observedSum": 0.1384902,
+                "total": 0.1384902,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "conditions": {
+              "base": {
+                "inputTokens": {
+                  "mean": 104601.33333333333,
+                  "observedSum": 313804,
+                  "total": 313804,
+                  "measured": 3,
+                  "executions": 3,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "agentMs": {
+                  "mean": 61088.058305666746,
+                  "observedSum": 183264.17491700023,
+                  "total": 183264.17491700023,
+                  "measured": 3,
+                  "executions": 3,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "endToEndMs": {
+                  "mean": 79467.21627766674,
+                  "observedSum": 238401.64883300022,
+                  "total": 238401.64883300022,
+                  "measured": 3,
+                  "executions": 3,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "apiEquivalentUsd": {
+                  "mean": 0.022971999999999996,
+                  "observedSum": 0.06891599999999999,
+                  "total": 0.06891599999999999,
+                  "measured": 3,
+                  "executions": 3,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 3,
+                  "coverage": 0,
+                  "cells": 1,
+                  "measuredCells": 0
+                }
+              },
+              "skill": {
+                "inputTokens": {
+                  "mean": 103360,
+                  "observedSum": 310080,
+                  "total": 310080,
+                  "measured": 3,
+                  "executions": 3,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "agentMs": {
+                  "mean": 62384.527166666696,
+                  "observedSum": 187153.5815000001,
+                  "total": 187153.5815000001,
+                  "measured": 3,
+                  "executions": 3,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "endToEndMs": {
+                  "mean": 83462.82408333365,
+                  "observedSum": 250388.47225000092,
+                  "total": 250388.47225000092,
+                  "measured": 3,
+                  "executions": 3,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "apiEquivalentUsd": {
+                  "mean": 0.0231914,
+                  "observedSum": 0.0695742,
+                  "total": 0.0695742,
+                  "measured": 3,
+                  "executions": 3,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 3,
+                  "coverage": 0,
+                  "cells": 1,
+                  "measuredCells": 0
+                }
+              }
+            }
+          }
+        },
+        "domains": [
+          {
+            "id": "initialization",
+            "taskCount": 1,
+            "counts": {
+              "base": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              },
+              "skill": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              }
+            },
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "configuration",
+            "taskCount": 1,
+            "counts": {
+              "base": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              },
+              "skill": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              }
+            },
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "reference-graph",
+            "taskCount": 1,
+            "counts": {
+              "base": {
+                "passed": 1,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              },
+              "skill": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              }
+            },
+            "conditions": { "base": 0.3333333333333333, "skill": 1 },
+            "liftPercentagePoints": 66.66666666666667,
+            "regressionRate": 0
+          },
+          {
+            "id": "checker",
+            "taskCount": 1,
+            "counts": {
+              "base": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              },
+              "skill": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              }
+            },
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "source-governance",
+            "taskCount": 1,
+            "counts": {
+              "base": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              },
+              "skill": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              }
+            },
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "workflow",
+            "taskCount": 1,
+            "counts": {
+              "base": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              },
+              "skill": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              }
+            },
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "troubleshooting",
+            "taskCount": 1,
+            "counts": {
+              "base": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              },
+              "skill": {
+                "passed": 3,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              }
+            },
+            "conditions": { "base": 1, "skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "package-release",
+            "taskCount": 1,
+            "counts": {
+              "base": {
+                "passed": 0,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              },
+              "skill": {
+                "passed": 0,
+                "valid": 3,
+                "planned": 3,
+                "executions": 3
+              }
+            },
+            "conditions": { "base": 0, "skill": 0 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          }
+        ],
+        "tasks": [
+          {
+            "id": "C03",
+            "domain": "configuration",
+            "role": "main",
+            "fixtureIdentity": "6c2413b09d3cb70cc2a7c763fcab8395d3e38f40462976acd57af5ffc70c5922",
+            "gradingIdentity": "f74f69aa7a73b74ee741d2953d9cab247640f7373a0a972b9a6f82f30d5a519c",
+            "executionIdentity": "4ff3e1c499e0d29fa31e793eddee8977738aec4035d356996cfb19e5b2379c58",
+            "measurements": {
+              "inputTokens": {
+                "mean": 354948.1666666666,
+                "observedSum": 2129689,
+                "total": 2129689,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 121160.92834699989,
+                "observedSum": 726965.5700819993,
+                "total": 726965.5700819993,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 156479.93173616676,
+                "observedSum": 938879.5904170007,
+                "total": 938879.5904170007,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.06536366666666667,
+                "observedSum": 0.39218200000000003,
+                "total": 0.39218200000000003,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "C03",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "C03",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "C03",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 436452,
+                    "observedSum": 1309356,
+                    "total": 1309356,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 134371.5550273331,
+                    "observedSum": 403114.66508199926,
+                    "total": 403114.66508199926,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 168400.99295866676,
+                    "observedSum": 505202.97887600027,
+                    "total": 505202.97887600027,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.0788606,
+                    "observedSum": 0.2365818,
+                    "total": 0.2365818,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "7af4d77721911ff13f74708d5bf94f48e5f1c12014c019717c69227829c51241",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "b9fa9180a9fa3ae2880fd9970f14b4dafeb7e0e92e61fa65ac93284668927888",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "718b1f72232c4ee45fc12831abe3f08bf7f0a52008f5af0deb107927f4e4c5d8",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 273444.3333333333,
+                    "observedSum": 820333,
+                    "total": 820333,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 107950.30166666668,
+                    "observedSum": 323850.905,
+                    "total": 323850.905,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 144558.8705136668,
+                    "observedSum": 433676.6115410004,
+                    "total": 433676.6115410004,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.05186673333333333,
+                    "observedSum": 0.1556002,
+                    "total": 0.1556002,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "c1ad794158f9ced63f16c20c0f1171d5d4e980a50414e137a09be98a5681af60",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "3c2bf54a262731421444d83e301b1b7e6306cc1092b94b4281091df4df7f9f02",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "66dffda7d31e85f59ca0ce3a7289729802c50537dc07a355472e3c4ae4497bbc",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "I02",
+            "domain": "initialization",
+            "role": "main",
+            "fixtureIdentity": "9c41c03cbe97c113e330aed30e34d9616d90c1c5cfdbfce39d9106f711c51065",
+            "gradingIdentity": "8bfe7d933aa9013f019bba163537064b43135fff748a78ac2e772c09c149de0c",
+            "executionIdentity": "896f3eb20cf3b82ccdfc8cc2ab88baa49b0cc990eb1601acb6f29276e26ed8f7",
+            "measurements": {
+              "inputTokens": {
+                "mean": 398588.8333333333,
+                "observedSum": 2391533,
+                "total": 2391533,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 146905.16984033346,
+                "observedSum": 881431.0190420009,
+                "total": 881431.0190420009,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 199650.4691181668,
+                "observedSum": 1197902.8147090008,
+                "total": 1197902.8147090008,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.06322783333333334,
+                "observedSum": 0.379367,
+                "total": 0.379367,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "I02",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "I02",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "I02",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 365617.3333333333,
+                    "observedSum": 1096852,
+                    "total": 1096852,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 133985.7270000001,
+                    "observedSum": 401957.18100000033,
+                    "total": 401957.18100000033,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 188517.94825033363,
+                    "observedSum": 565553.8447510009,
+                    "total": 565553.8447510009,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.060214199999999996,
+                    "observedSum": 0.1806426,
+                    "total": 0.1806426,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "a9e1f8f285fb468ca8529fce5b963d3bf80a65c26b315992b11308532133a2f4",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "c32e666fbbde4d5eca75c27423a6c37a5ca7386e32b53247ab3d0b142ba91097",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "dec11dcb654d35b2d2d5519de3f121f72953f3241664b7f656791eb9eac2d97c",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 431560.3333333333,
+                    "observedSum": 1294681,
+                    "total": 1294681,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 159824.61268066685,
+                    "observedSum": 479473.83804200054,
+                    "total": 479473.83804200054,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 210782.98998599997,
+                    "observedSum": 632348.9699579999,
+                    "total": 632348.9699579999,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.06624146666666668,
+                    "observedSum": 0.19872440000000002,
+                    "total": 0.19872440000000002,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "fe6d8ae479dab0261a446dbed74415522a943c7590f610c82cffe6bc32ff2335",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "ec047bdd3f60f1a05d3c9ee749d33b2e2a0cc7a90688fb2fef34fe393e149272",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "67be6f67897f949ae32435e0b905ce01b7b78d24a40558a88ecac05e238cad36",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "K02",
+            "domain": "checker",
+            "role": "main",
+            "fixtureIdentity": "155d46815336d81face6b34f8fb7ac08dca279d1ca76e3bb599e8dc7fe1c3db6",
+            "gradingIdentity": "329eb6eb24bd60543cd627e0836be2d982497167e5129f406d7892f6c7c9b17b",
+            "executionIdentity": "4cddd1068c0fd6a0cd9a9dbbd6cf3f6219954683c0adcf6d55f5ef218b2a37ff",
+            "measurements": {
+              "inputTokens": {
+                "mean": 1367407.8333333335,
+                "observedSum": 8204447,
+                "total": 8204447,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 311927.2757431669,
+                "observedSum": 1871563.6544590015,
+                "total": 1871563.6544590015,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 554167.3682845001,
+                "observedSum": 3325004.2097070003,
+                "total": 3325004.2097070003,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.13947190000000004,
+                "observedSum": 0.8368314000000003,
+                "total": 0.8368314000000003,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "K02",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "K02",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "K02",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 1332231.6666666667,
+                    "observedSum": 3996695,
+                    "total": 3996695,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 311814.7873610002,
+                    "observedSum": 935444.3620830006,
+                    "total": 935444.3620830006,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 555266.4225553334,
+                    "observedSum": 1665799.267666,
+                    "total": 1665799.267666,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.1366894666666667,
+                    "observedSum": 0.4100684000000001,
+                    "total": 0.4100684000000001,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "b29eb9580c2329ae09e2acaca0b916e3edbc32ac0358d3f1f6b17ef988ce28e5",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "fdc218738cb847cacfb28539159f7c8476a1e821508c968c637d6f166986e476",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "f4e5f249b3a26ac99bec11872a30ff9faaaf4b23bb7d1edfc1a14198e89fc88e",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 1402584,
+                    "observedSum": 4207752,
+                    "total": 4207752,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 312039.76412533363,
+                    "observedSum": 936119.2923760009,
+                    "total": 936119.2923760009,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 553068.3140136668,
+                    "observedSum": 1659204.9420410004,
+                    "total": 1659204.9420410004,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.14225433333333334,
+                    "observedSum": 0.42676300000000006,
+                    "total": 0.42676300000000006,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "0997ff479b87d6e7f98f4071618c15978de858e83b906c4c13a0e6d79337583f",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "1b8bf7979425b0523c55eaf72d5fff37af6295ecd45bb32f891665f178051e8b",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "a9cc80d6accbc484ff59d5558ad75c5ac08caaae3fd3f1e305c8ac6457a44d20",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "N02",
+            "domain": "negative-control",
+            "role": "negative-control",
+            "fixtureIdentity": "89b43541819298f95ba60fd4b7b8acc6c82b75c5f7c422298c5178cde31b1a8e",
+            "gradingIdentity": "accf20ef6ffeb075b36a90fd9b7840c7616028faa5c7a215d0d74536f27a000a",
+            "executionIdentity": "24da02cb826ad904255783c5748ae1de19fa00898d0c3399c498aa7a17bcf801",
+            "measurements": {
+              "inputTokens": {
+                "mean": 103980.66666666666,
+                "observedSum": 623884,
+                "total": 623884,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 61736.292736166724,
+                "observedSum": 370417.7564170003,
+                "total": 370417.7564170003,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 81465.0201805002,
+                "observedSum": 488790.12108300114,
+                "total": 488790.12108300114,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.023081699999999997,
+                "observedSum": 0.1384902,
+                "total": 0.1384902,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "N02",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "N02",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "N02",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 104601.33333333333,
+                    "observedSum": 313804,
+                    "total": 313804,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 61088.058305666746,
+                    "observedSum": 183264.17491700023,
+                    "total": 183264.17491700023,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 79467.21627766674,
+                    "observedSum": 238401.64883300022,
+                    "total": 238401.64883300022,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.022971999999999996,
+                    "observedSum": 0.06891599999999999,
+                    "total": 0.06891599999999999,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "e10c81b89eb768a8f880a66a08c9771ed83065d5afe80e0dd0481982a132bfd9",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "4f95d73a1d9cab2b73f13f3baee3e880cb87a3a050c7f7102a26052dd61911a8",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "1796dfeb1b697c9e147c1a3e3034a2285a75e43c10fe57af9dccd6d17304ae86",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 103360,
+                    "observedSum": 310080,
+                    "total": 310080,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 62384.527166666696,
+                    "observedSum": 187153.5815000001,
+                    "total": 187153.5815000001,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 83462.82408333365,
+                    "observedSum": 250388.47225000092,
+                    "total": 250388.47225000092,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.0231914,
+                    "observedSum": 0.0695742,
+                    "total": 0.0695742,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "f2fed628340de1851e085a98d15bab752cef5024b681f66a0a28cf907ff4775d",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "unknown",
+                      "skillRead": "unknown",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "00e99d9fb2d89c246639dbd6290f28497c850f2fe273a3e25a0fc09098449969",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "unknown",
+                      "skillRead": "unknown",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "cb7d04fed627a8fcedaec7c0c15d6af95e934afb7910b08e00a19f1f7dca72ed",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "unknown",
+                      "skillRead": "unknown",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "P03",
+            "domain": "package-release",
+            "role": "main",
+            "fixtureIdentity": "6a59424250791e6a3db9381ab49995b4341b377f126f094f86f81b3a6dd5ab6c",
+            "gradingIdentity": "442972ecca45fc83ec59fac3d9b3449001d37ad55e16d0450a740d257aca9860",
+            "executionIdentity": "4e020d04c75e3de278975e28301d397e671a5da62c1e4475ed301dfddbc43983",
+            "measurements": {
+              "inputTokens": {
+                "mean": 297790.1666666666,
+                "observedSum": 2073862,
+                "total": null,
+                "measured": 5,
+                "executions": 6,
+                "coverage": 0.8333333333333334,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 140902.9802914999,
+                "observedSum": 845417.8817489995,
+                "total": 845417.8817489995,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 154864.3569858335,
+                "observedSum": 929186.141915001,
+                "total": 929186.141915001,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.052213083333333334,
+                "observedSum": 0.35342480000000004,
+                "total": null,
+                "measured": 5,
+                "executions": 6,
+                "coverage": 0.8333333333333334,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 0,
+              "bothFailed": 3,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "P03",
+                  "repetition": 1,
+                  "base": 0,
+                  "skill": 0,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "P03",
+                  "repetition": 2,
+                  "base": 0,
+                  "skill": 0,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "P03",
+                  "repetition": 3,
+                  "base": 0,
+                  "skill": 0,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 0,
+                "rate": 0,
+                "coverage": 1,
+                "bounds": [0, 0],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 322023.3333333333,
+                    "observedSum": 966070,
+                    "total": 966070,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 92460.77811099989,
+                    "observedSum": 277382.33433299966,
+                    "total": 277382.33433299966,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 107538.44290233364,
+                    "observedSum": 322615.32870700094,
+                    "total": 322615.32870700094,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.05577546666666667,
+                    "observedSum": 0.16732640000000001,
+                    "total": 0.16732640000000001,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "627e7ce74432afbe2a8db1b02ee82b2b58c41b95614dff30d1d058f48b840dd0",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "337f3dd73ccfb113a34d22d241e7ef307a6ab2406dfc71de66408c99a673ceab",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "3a07a689f4f320d74ee99b34c58426392f0776b3d8a113512687c09b869a8bff",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 0,
+                "rate": 0,
+                "coverage": 1,
+                "bounds": [0, 0],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 273557,
+                    "observedSum": 1107792,
+                    "total": null,
+                    "measured": 2,
+                    "executions": 3,
+                    "coverage": 0.6666666666666666,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 189345.18247199993,
+                    "observedSum": 568035.5474159998,
+                    "total": 568035.5474159998,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 202190.27106933334,
+                    "observedSum": 606570.813208,
+                    "total": 606570.813208,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.0486507,
+                    "observedSum": 0.1860984,
+                    "total": null,
+                    "measured": 2,
+                    "executions": 3,
+                    "coverage": 0.6666666666666666,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "e2ff36ab460ca86ca21183e4df96e394c92e54e20cd383f7e04820e7e1c15851",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "0e435f87d60ea55bd57f42f5dd0956d256b6f4d27a9d875f69f0d0b7c0fe51f0",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "assertion_failed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "36afdba40da8327841d3aa93cef245991647ba6f57f1f3298efd63449e2df392",
+                        "ordinal": 1,
+                        "status": "assertion_failed"
+                      }
+                    ],
+                    "attemptStatuses": ["assertion_failed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "R01",
+            "domain": "reference-graph",
+            "role": "main",
+            "fixtureIdentity": "af147e7efb1fc619cb3eeec25cc92c9b969d0e91fcf39b8624ea2016ab91c96f",
+            "gradingIdentity": "4ead02bdb9aa7c678cda10f4a9fa26c8e7ce30da5a6bcc41f8643506af6ce28c",
+            "executionIdentity": "8eb0ec6d842c43f8d28562ad1cf41f6c455599bf5f17ab27f1bd2c5a2ebb96dd",
+            "measurements": {
+              "inputTokens": {
+                "mean": 273595.5,
+                "observedSum": 1670648,
+                "total": null,
+                "measured": 5,
+                "executions": 6,
+                "coverage": 0.8333333333333334,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 158245.5119235002,
+                "observedSum": 949473.0715410012,
+                "total": 949473.0715410012,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 188014.6925973334,
+                "observedSum": 1128088.1555840005,
+                "total": 1128088.1555840005,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.047790149999999997,
+                "observedSum": 0.3053958,
+                "total": null,
+                "measured": 5,
+                "executions": 6,
+                "coverage": 0.8333333333333334,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 66.66666666666667,
+              "regressionRate": 0,
+              "improved": 2,
+              "regressed": 0,
+              "bothPassed": 1,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [66.66666666666666, 66.66666666666666],
+              "pairs": [
+                {
+                  "taskId": "R01",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "R01",
+                  "repetition": 2,
+                  "base": 0,
+                  "skill": 1,
+                  "delta": 1,
+                  "bounds": [1, 1]
+                },
+                {
+                  "taskId": "R01",
+                  "repetition": 3,
+                  "base": 0,
+                  "skill": 1,
+                  "delta": 1,
+                  "bounds": [1, 1]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 1,
+                "rate": 0.3333333333333333,
+                "coverage": 1,
+                "bounds": [0.3333333333333333, 0.3333333333333333],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 181660,
+                    "observedSum": 574055,
+                    "total": null,
+                    "measured": 2,
+                    "executions": 3,
+                    "coverage": 0.6666666666666666,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 204379.91473600027,
+                    "observedSum": 613139.7442080008,
+                    "total": 613139.7442080008,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 223703.29393066667,
+                    "observedSum": 671109.881792,
+                    "total": 671109.881792,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.0313059,
+                    "observedSum": 0.1125726,
+                    "total": null,
+                    "measured": 2,
+                    "executions": 3,
+                    "coverage": 0.6666666666666666,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "852ff7f79668e8b5fa563e72b925e7533caf57cee0374e674d8968b8640a0b0f",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "unsafe_mutation",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "cc013e21d1ece1d3556d08050737a512fb61266410f5b79fc3f971659921b597",
+                        "ordinal": 1,
+                        "status": "unsafe_mutation"
+                      }
+                    ],
+                    "attemptStatuses": ["unsafe_mutation"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "unsafe_mutation",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "248c2b6b6ef790ee3e51f28e06a56e8a27d5d54015d3fbed4ccb45cd2f21dc3c",
+                        "ordinal": 1,
+                        "status": "unsafe_mutation"
+                      }
+                    ],
+                    "attemptStatuses": ["unsafe_mutation"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 365531,
+                    "observedSum": 1096593,
+                    "total": 1096593,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 112111.10911100013,
+                    "observedSum": 336333.3273330004,
+                    "total": 336333.3273330004,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 152326.09126400016,
+                    "observedSum": 456978.2737920005,
+                    "total": 456978.2737920005,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.0642744,
+                    "observedSum": 0.1928232,
+                    "total": 0.1928232,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "de7c7cb05c714dbf878885e1fe289460775be940c8b99a32910e3a5f31726101",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "d3ebcca8234b1ffec9cb06be01a66a9533e0cb0546fc3237a3fa5165bbbc8f73",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "cde319bb96c366d4a4ad775e4e611b7d43cada96f4eaae9fc5aca37fe306e165",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "S03",
+            "domain": "source-governance",
+            "role": "main",
+            "fixtureIdentity": "973794672a069215e9e6617a348cd64880797d6237a3264f27b21fbc7515a793",
+            "gradingIdentity": "2cec1a9e261a44a3db664914ab30245e11d58d0763e7846d2091cc667727cf70",
+            "executionIdentity": "ac224f40e08c1776ff465e070adcb614e2ed7b76f7660fc2fe928e6c6ff630e3",
+            "measurements": {
+              "inputTokens": {
+                "mean": 246523.1666666667,
+                "observedSum": 1479139,
+                "total": 1479139,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 92475.46285400001,
+                "observedSum": 554852.777124,
+                "total": 554852.777124,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 127058.47186133324,
+                "observedSum": 762350.8311679994,
+                "total": 762350.8311679994,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.055658733333333335,
+                "observedSum": 0.33395240000000004,
+                "total": 0.33395240000000004,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "S03",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "S03",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "S03",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 241847.33333333334,
+                    "observedSum": 725542,
+                    "total": 725542,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 95200.42897200002,
+                    "observedSum": 285601.28691600007,
+                    "total": 285601.28691600007,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 127760.50645866657,
+                    "observedSum": 383281.5193759997,
+                    "total": 383281.5193759997,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.04533526666666667,
+                    "observedSum": 0.1360058,
+                    "total": 0.1360058,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "73d2eed20e2d3e139a3919765d340a4c3f3f6e1dd2315b844fcb80864307460c",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "9869540a3c1a6ac013591b1171d0c736fdbc5edfd8b868661974e2a8d46c5736",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "f1cbebcc1079abd3c77ab3bb915c799ce70a4d89b3b264b804ddec742aea6619",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 251199,
+                    "observedSum": 753597,
+                    "total": 753597,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 89750.49673599999,
+                    "observedSum": 269251.49020799994,
+                    "total": 269251.49020799994,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 126356.4372639999,
+                    "observedSum": 379069.31179199973,
+                    "total": 379069.31179199973,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.0659822,
+                    "observedSum": 0.1979466,
+                    "total": 0.1979466,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "c653588a267c2fad16b00c76bcea927ae8bebf626a34fe599b8d7e2f00c427f3",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "fef01fff9fafb2c9de7d1d2759eb71216dfa8f3c40bec84e1e63bc827493ad8e",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "465e47ea106ce11bc50951bf92b19385ab8122522d6853f1cd82b2142eb36e75",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "T02",
+            "domain": "troubleshooting",
+            "role": "main",
+            "fixtureIdentity": "8764543c0a94de19dbf7ca325b90e55a79c6b39c5bad87db0438faa27d21fec4",
+            "gradingIdentity": "1adf3d9a489870c281d80ea2802d3b9a5bf0ea39c2cbf6386a61005325ec7d8d",
+            "executionIdentity": "2dab43ce02e7e4a95384c16d62d9b1b9cf1d9e999185a828a25342c7bda26e66",
+            "measurements": {
+              "inputTokens": {
+                "mean": 421102.5,
+                "observedSum": 2526615,
+                "total": 2526615,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 109658.07584750005,
+                "observedSum": 657948.4550850003,
+                "total": 657948.4550850003,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 148280.91927083317,
+                "observedSum": 889685.5156249991,
+                "total": 889685.5156249991,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.0643065,
+                "observedSum": 0.385839,
+                "total": 0.385839,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "T02",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "T02",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "T02",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 515568.6666666667,
+                    "observedSum": 1546706,
+                    "total": 1546706,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 134443.58709733337,
+                    "observedSum": 403330.76129200007,
+                    "total": 403330.76129200007,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 173419.83227766646,
+                    "observedSum": 520259.4968329994,
+                    "total": 520259.4968329994,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.077326,
+                    "observedSum": 0.23197800000000002,
+                    "total": 0.23197800000000002,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "7a0fe76b19aca8db550f347a719f76eab3cd8a03900f53fdaee51a174c77e296",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "114d0b553fb9c078bf454b271041417ef63da92068524e301d5faf49ef0f5e66",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "a102bc67e2741068d34dd109f4853031b0ed35ed6aedbde5370c905974861b4b",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 326636.3333333333,
+                    "observedSum": 979909,
+                    "total": 979909,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 84872.56459766673,
+                    "observedSum": 254617.6937930002,
+                    "total": 254617.6937930002,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 123142.0062639999,
+                    "observedSum": 369426.01879199967,
+                    "total": 369426.01879199967,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.051287,
+                    "observedSum": 0.153861,
+                    "total": 0.153861,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "5dfc98bcb7b296dbaf668c8319370f01ae643348d21249710ab6440761b52bbd",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "8328a1274fafb3eab74362bc42bf39542b6e69ea1f6cba4e36cb17950fd5b8e4",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "9331fe4ae6263fa753aca7011b3b1ede7a19a7360c7093ff15fdc57b2bc33bde",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 1,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "W01",
+            "domain": "workflow",
+            "role": "main",
+            "fixtureIdentity": "71f737879685d1fc011e7b655355fd94a377940d34a1ed3df4772570b4e58657",
+            "gradingIdentity": "1674afb54c02ba67319d80dad6f4ccea93344787508b9631a6008353ffed5ed7",
+            "executionIdentity": "e5e162cd9fc150a60f617519b58d85ef5b25ba27bf939ec7dd9b3e64948346a3",
+            "measurements": {
+              "inputTokens": {
+                "mean": 98915,
+                "observedSum": 593490,
+                "total": 593490,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "agentMs": {
+                "mean": 37376.45286133315,
+                "observedSum": 224258.7171679989,
+                "total": 224258.7171679989,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "endToEndMs": {
+                "mean": 49868.184680499835,
+                "observedSum": 299209.108082999,
+                "total": 299209.108082999,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.020448433333333335,
+                "observedSum": 0.12269060000000001,
+                "total": 0.12269060000000001,
+                "measured": 6,
+                "executions": 6,
+                "coverage": 1,
+                "cells": 2,
+                "measuredCells": 2
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 6,
+                "coverage": 0,
+                "cells": 2,
+                "measuredCells": 0
+              }
+            },
+            "comparison": {
+              "planned": 3,
+              "valid": 3,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 3,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "W01",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "W01",
+                  "repetition": 2,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                },
+                {
+                  "taskId": "W01",
+                  "repetition": 3,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 84010.33333333333,
+                    "observedSum": 252031,
+                    "total": 252031,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 36536.28341666671,
+                    "observedSum": 109608.85025000013,
+                    "total": 109608.85025000013,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 49409.059041666485,
+                    "observedSum": 148227.17712499946,
+                    "total": 148227.17712499946,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.015532133333333335,
+                    "observedSum": 0.0465964,
+                    "total": 0.0465964,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "9d9b7ccfb6f06ac6e1309968425f245a23b923cb9edddd6f8792d02cdf14745e",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "6cf73dcb2a238d2609075457791eed8b253865bd97e7dd9780d8250099d922cd",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "63bbf1d01f5a3b2c93c4b16887a6c203c44200651da8ad82c1d825248dcce92b",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 3,
+                "valid": 3,
+                "passed": 3,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 3,
+                "measurements": {
+                  "inputTokens": {
+                    "mean": 113819.66666666667,
+                    "observedSum": 341459,
+                    "total": 341459,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "agentMs": {
+                    "mean": 38216.62230599959,
+                    "observedSum": 114649.86691799876,
+                    "total": 114649.86691799876,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 50327.310319333184,
+                    "observedSum": 150981.93095799955,
+                    "total": 150981.93095799955,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.025364733333333334,
+                    "observedSum": 0.0760942,
+                    "total": 0.0760942,
+                    "measured": 3,
+                    "executions": 3,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 3,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "ea59b797a9ff50fddbcaab35029956e771087a43bbd982db673a410b13d07c5f",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 2,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "3f4dc3287c9f0900dc6dbeb3b27dfb5f36f3f314726ae3c1b698283a0b7eb66a",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  },
+                  {
+                    "repetition": 3,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "dfe091ada30e35b62080876464efc88fc68cb9839455b3f5e39fe2bb437e7cd3",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "yes",
+                      "skillRead": "yes",
+                      "referencesRead": 2,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "contrasts": []
+}

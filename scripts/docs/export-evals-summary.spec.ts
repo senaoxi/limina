@@ -148,7 +148,7 @@ function fixture() {
 function references(source: Source, latest: Latest) {
   return {
     base: {
-      file: `./evals-campaigns/${source.campaignId}-sealed-${source.reportIdentity}.json`,
+      file: `./evals-campaigns/${source.campaignId}-${source.stage}-${source.reportIdentity}.json`,
       sha256: digest(20),
     },
     task: {
@@ -157,6 +157,63 @@ function references(source: Source, latest: Latest) {
     },
   };
 }
+
+it('requires a pinned contract transition for a revised I03 Grader and preserves the original source', () => {
+  const { source, latest } = fixture();
+  source.stage = 'development';
+  const target = source.models[0]!.report!.tasks[0]!;
+  target.id = 'I03';
+  target.domain = 'initialization';
+  target.executionIdentity = digest(32);
+  latest.taskId = 'I03';
+  latest.stage = 'development';
+  latest.schemaVersion = 3;
+  latest.gradingIdentity = digest(40);
+  latest.executionIdentity = digest(41);
+  sign(latest);
+  const revision = {
+    kind: 'task-contract-revision' as const,
+    from: {
+      bankId: source.bankId,
+      fixtureIdentity: target.fixtureIdentity,
+      gradingIdentity: target.gradingIdentity,
+      executionIdentity: target.executionIdentity,
+    },
+    to: {
+      bankId: latest.bankId,
+      fixtureIdentity: latest.fixtureIdentity,
+      gradingIdentity: latest.gradingIdentity,
+      executionIdentity: latest.executionIdentity,
+    },
+  };
+  assert.throws(() => aggregate(source, latest));
+  const before = structuredClone(source);
+  const result = buildCurrentSummary(
+    source,
+    latest,
+    references(source, latest),
+    digest(22),
+    revision,
+  );
+  assert.equal(result.schemaVersion, 3);
+  assert.equal(result.stage, 'development');
+  assert.deepEqual(result.revision, revision);
+  assert.equal(result.sources.task.executionIdentity, latest.executionIdentity);
+  assert.equal(result.sources.task.gradingIdentity, latest.gradingIdentity);
+  assert.equal(result.counts.skill!.passed, 6);
+  assert.deepEqual(source, before);
+  const wrong = structuredClone(revision);
+  wrong.from.gradingIdentity = digest(99);
+  assert.throws(() =>
+    buildCurrentSummary(
+      source,
+      latest,
+      references(source, latest),
+      digest(22),
+      wrong,
+    ),
+  );
+});
 function aggregate(source: Source, latest: Latest) {
   return buildCurrentSummary(
     source,
@@ -204,12 +261,41 @@ it('aggregates the selected task once, preserving domain weights, controls, unkn
   assert.equal(result.supersededExecutions, 3);
   assert.notEqual(result.sources.base.bankId, result.sources.task.bankId);
   assert.deepEqual({ source, latest }, original);
+  assert.equal(result.schemaVersion, 1);
+  assert.equal(Object.hasOwn(result, 'tasks'), false);
   // A worse complete latest result remains selected; this is not best-of-k.
   latest.counts.passed = 1;
   latest.repetitions[1]!.status = 'assertion_failed';
   latest.repetitions[2]!.status = 'agent_error';
   sign(latest);
   assert.equal(aggregate(source, latest).counts.skill!.passed, 4);
+});
+
+it('aggregates task input tokens from selected sources with explicit coverage for partial and legacy cells', () => {
+  const { source, latest } = fixture();
+  const base = source.models[0]!.report!.tasks[0]!.conditions.base!;
+  base.measurements!.inputTokens = measured(100).agentMs;
+  latest.measurements.inputTokens = {
+    ...measured(300).agentMs,
+    total: null,
+    observedSum: 1000,
+    measured: 2,
+    coverage: 2 / 3,
+  };
+  sign(latest);
+  const result = aggregate(source, latest);
+  const task = result.tasks!.find((task) => task.id === 'P03')!;
+  assert.equal(result.schemaVersion, 2);
+  assert.equal(task.measurements.inputTokens!.mean, 200);
+  assert.equal(task.measurements.inputTokens!.coverage, 5 / 6);
+  assert.equal(task.measurements.inputTokens!.total, null);
+  assert.equal(result.measurements.main.all.inputTokens!.mean, 200);
+  assert.equal(result.measurements.main.all.inputTokens!.measured, 5);
+  assert.equal(result.measurements.main.all.inputTokens!.executions, 18);
+  assert.equal(result.measurements.main.all.inputTokens!.measuredCells, 2);
+  assert.equal(result.measurements.main.all.inputTokens!.cells, 6);
+  assert.equal(result.measurements.main.all.inputTokens!.observedSum, 1300);
+  assert.equal(result.measurements.main.all.apiEquivalentUsd.mean, null);
 });
 
 it('rejects mismatched models, grading, incomplete or inconsistent results and source identities without leaking extra fields', () => {

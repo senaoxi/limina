@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "task-evaluation",
   "scope": "task-condition",
   "includedInFormalScores": false,
@@ -8,8 +8,8 @@
   "bankRevision": "v2.1",
   "campaignId": "e28aba3795c5ae869fb62bc110d779c3f159a1e82106e0a9111a2a46d6e39297",
   "experimentIdentity": "bae8c0e35764a610891fc33b440dc727a05990494f349280a3cc1c4874cbc723",
-  "reportIdentity": "46f083d323cc86c2189ca1e4b8371c439171dd9b5c4eb749a871c05342f92881",
-  "sourceIndexSha256": "000fa4d1383092dfca5db0205aec8dd220aabc59476d918f49b6ed34404bed10",
+  "reportIdentity": "7de25fb80d81631813542ee7e3a2166e67b4c99a05b77f0e98dd5622d193dcaf",
+  "sourceIndexSha256": "6ae16d10a5992c9b4439347b6e5a15fbd6f5a218fb1321eab10a9f078477b267",
   "taskId": "P03",
   "condition": "skill",
   "fixtureIdentity": "6a59424250791e6a3db9381ab49995b4341b377f126f094f86f81b3a6dd5ab6c",
@@ -25,6 +25,16 @@
   },
   "counts": { "passed": 3, "valid": 3, "planned": 3, "executions": 3 },
   "measurements": {
+    "inputTokens": {
+      "mean": 293716.6666666667,
+      "observedSum": 881150,
+      "total": 881150,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
     "agentMs": {
       "mean": 69355.904125,
       "observedSum": 208067.712375,
@@ -71,5 +81,5 @@
     { "repetition": 2, "status": "passed" },
     { "repetition": 3, "status": "passed" }
   ],
-  "identity": "637279f88c2e36164a6c1d410de5044e3c466a89aa7c1198d2245f781212b7f4"
+  "identity": "296a4b0f1357a362cc12ca077d5c3d660ea279bb2dd8f5f815065edcc715b043"
 }

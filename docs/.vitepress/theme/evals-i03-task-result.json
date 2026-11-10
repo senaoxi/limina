@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 3,
+  "stage": "development",
+  "kind": "task-evaluation",
+  "scope": "task-condition",
+  "includedInFormalScores": false,
+  "complete": true,
+  "bankId": "2d16a0b0b0ee3f37c915ed4207a2f364b3da69249220faa14fcbfa0ab4af03cc",
+  "bankRevision": "v2.1",
+  "campaignId": "168f064944bac111ffcc388195a44838c4800f16622a1471e8827a11b351c3f2",
+  "experimentIdentity": "8e4924859c803301a5fa25fe026194dc3bde4c233faaee24ca5c71443147b341",
+  "reportIdentity": "4b99dc638b40c4d6b3d8026471ea4fbc16d12c1a10ec5cf137c2facb69bfee2b",
+  "sourceIndexSha256": "e1536102ad80d4c7f94423e919754e864f6b95332742ca12edc856bbbf2686fc",
+  "taskId": "I03",
+  "condition": "skill",
+  "fixtureIdentity": "93f126b3f14b498acbe348a19ed100b3c8f08f0b2b9b8d60ae22bd1441660239",
+  "gradingIdentity": "810607bd68e7b3e11e143634dc79e707b52103a15b75dc28ce4faa99a8862670",
+  "executionIdentity": "35cc801f051314216971a02ff6d3994c98dd12cdf07ed6359fe320c9e85e5d46",
+  "profile": {
+    "id": "a1f723777b210d2a0a6f5ac818f03ecd057d3b17f0df1fe206c82c4177848210",
+    "model": "gpt-6.1-terra",
+    "displayName": "GPT 6.1 Terra (high)",
+    "reasoningEffort": "high",
+    "serviceTier": "default",
+    "codexVersion": "0.166.0"
+  },
+  "counts": { "passed": 3, "valid": 3, "planned": 3, "executions": 3 },
+  "measurements": {
+    "inputTokens": {
+      "mean": 134319,
+      "observedSum": 402957,
+      "total": 402957,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "agentMs": {
+      "mean": 44024.023124999985,
+      "observedSum": 132072.06937499996,
+      "total": 132072.06937499996,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "endToEndMs": {
+      "mean": 59139.708000000006,
+      "observedSum": 177419.124,
+      "total": 177419.124,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "apiEquivalentUsd": {
+      "mean": 0.031311533333333336,
+      "observedSum": 0.09393460000000001,
+      "total": 0.09393460000000001,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "settledUsd": {
+      "mean": null,
+      "observedSum": 0,
+      "total": null,
+      "measured": 0,
+      "executions": 3,
+      "coverage": 0,
+      "cells": 1,
+      "measuredCells": 0
+    }
+  },
+  "repetitions": [
+    { "repetition": 1, "status": "passed" },
+    { "repetition": 2, "status": "passed" },
+    { "repetition": 3, "status": "passed" }
+  ],
+  "identity": "a7df0cc1a97cc0018d741f1ec4e29d9e0e5e9c03ae7a2ed0e577070b6c83bde1"
+}

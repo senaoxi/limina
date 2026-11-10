@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 3,
+  "stage": "development",
+  "kind": "task-evaluation",
+  "scope": "task-condition",
+  "includedInFormalScores": false,
+  "complete": true,
+  "bankId": "2d16a0b0b0ee3f37c915ed4207a2f364b3da69249220faa14fcbfa0ab4af03cc",
+  "bankRevision": "v2.1",
+  "campaignId": "eeb3ecc99ad644404af28ffa28a2f5355befe0c1b18506ebbe2daaadeb79758b",
+  "experimentIdentity": "0410b3029db68986e7593de5d5448ef632bcb2172d1faa1be7c13ffaad94fe1e",
+  "reportIdentity": "94201dc2c3b8a14d5b93bb81997518db03b0b712d91ac40a10401060ab71aa1b",
+  "sourceIndexSha256": "db18732f7eafdb1562e945d69a73f56ced118576f349967fb4679249fb027daa",
+  "taskId": "I03",
+  "condition": "skill",
+  "fixtureIdentity": "93f126b3f14b498acbe348a19ed100b3c8f08f0b2b9b8d60ae22bd1441660239",
+  "gradingIdentity": "810607bd68e7b3e11e143634dc79e707b52103a15b75dc28ce4faa99a8862670",
+  "executionIdentity": "35cc801f051314216971a02ff6d3994c98dd12cdf07ed6359fe320c9e85e5d46",
+  "profile": {
+    "id": "f462c9a7950d1907b20c3f0d794014536596257409830db8b9490d4076a9a171",
+    "model": "gpt-6.1-sol",
+    "displayName": "GPT 6.1 Sol (high)",
+    "reasoningEffort": "high",
+    "serviceTier": "default",
+    "codexVersion": "0.166.0"
+  },
+  "counts": { "passed": 3, "valid": 3, "planned": 3, "executions": 3 },
+  "measurements": {
+    "inputTokens": {
+      "mean": 121316.66666666667,
+      "observedSum": 363950,
+      "total": 363950,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "agentMs": {
+      "mean": 44328.889028000005,
+      "observedSum": 132986.66708400002,
+      "total": 132986.66708400002,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "endToEndMs": {
+      "mean": 60279.11245833334,
+      "observedSum": 180837.337375,
+      "total": 180837.337375,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "apiEquivalentUsd": {
+      "mean": 0.09565306666666668,
+      "observedSum": 0.2869592,
+      "total": 0.2869592,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "settledUsd": {
+      "mean": null,
+      "observedSum": 0,
+      "total": null,
+      "measured": 0,
+      "executions": 3,
+      "coverage": 0,
+      "cells": 1,
+      "measuredCells": 0
+    }
+  },
+  "repetitions": [
+    { "repetition": 1, "status": "passed" },
+    { "repetition": 2, "status": "passed" },
+    { "repetition": 3, "status": "passed" }
+  ],
+  "identity": "4b4f7dcb24592cd083f460b2f05552d0f0211788882d307e72bdecf27f77ea93"
+}

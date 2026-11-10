@@ -101,8 +101,10 @@ async function taskCodeIdentity(files: string[]): Promise<string> {
     '../tasks/v2/index.ts',
     '../tasks/v2_1/index.ts',
     '../tasks/v2_1/I01.ts',
+    '../tasks/v2_1/I03.ts',
     '../tasks/v2_1/R02.ts',
     '../graders/v2_1/R02.ts',
+    '../graders/v2_1/I03.ts',
     '../graders/v2_1/W03.ts',
     '../graders/v2/N01.ts',
   ].map((relative) => fileURLToPath(new URL(relative, import.meta.url)));

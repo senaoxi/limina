@@ -24,7 +24,7 @@ import { verifyBudgetSource } from './run-budget.ts';
 
 export interface CampaignSourceIndex {
   version: 1;
-  measurementVersion?: 1;
+  measurementVersion?: 1 | 2;
   reanalysisOf?: {
     sourceIndexFile: string;
     sourceIndexSha256: string;
@@ -126,6 +126,12 @@ export async function campaignReportInputs(
   >,
   pricingIdentity = apiPricingIdentity,
 ): Promise<ModelReportInput[]> {
+  if (
+    index.measurementVersion !== undefined &&
+    index.measurementVersion !== 1 &&
+    index.measurementVersion !== 2
+  )
+    throw new Error('Unsupported measurement version');
   const ledgerBytes = await readFile(index.ledgerSnapshot.file);
   if (sha256(ledgerBytes) !== index.ledgerSnapshot.sha256)
     throw new Error('Report ledger snapshot changed');
@@ -169,8 +175,9 @@ export async function campaignReportInputs(
       throw new Error('Campaign budget source changed');
     const summary = store.summary();
     const measurements =
-      index.measurementVersion === 1
-        ? buildCampaignMeasurements(
+      index.measurementVersion === undefined
+        ? undefined
+        : buildCampaignMeasurements(
             store.manifest,
             summary.attempts,
             await Promise.all(
@@ -179,8 +186,8 @@ export async function campaignReportInputs(
               ),
             ),
             pricingIdentity,
-          )
-        : undefined;
+            index.measurementVersion,
+          );
     inputs.push({
       manifest: store.manifest,
       summary,
@@ -301,7 +308,7 @@ export async function writeCampaignReport(
       : { file: admissionFile, sha256: sha256(admissionBytes) };
   const body = {
     version: 1 as const,
-    measurementVersion: 1 as const,
+    measurementVersion: 2 as const,
     admission,
     campaignFile,
     campaignSha256: sha256(bytes),
@@ -412,18 +419,18 @@ export async function reanalyseCampaignReport(
     throw new Error('Historical report does not match bound attempts');
   const measuredInputs =
     sourcePricingIdentity === apiPricingIdentity &&
-    source.measurementVersion === 1
+    source.measurementVersion === 2
       ? inputs
       : await campaignReportInputs(campaign, {
           ...source,
-          measurementVersion: 1,
+          measurementVersion: 2,
         });
   await mkdir(output, { mode: 0o700 });
   const ledgerFile = path.join(output, 'ledger-snapshot.jsonl');
   await writeFile(ledgerFile, ledger, { flag: 'wx', mode: 0o600 });
   const body = {
     ...oldBody,
-    measurementVersion: 1 as const,
+    measurementVersion: 2 as const,
     ledgerSnapshot: { file: ledgerFile, sha256: sha256(ledger) },
     calculationDigest: await campaignCalculationDigest(),
     reanalysisOf: {
