@@ -17,7 +17,9 @@ import {
   isValidVersion,
   ReleaseLogger,
   REPO_ROOT,
+  resolvePublicationTimeouts,
   runCommand,
+  type PublicationTimeouts,
   type ReleasePlan,
   type ResolvedReleasePackageConfig,
 } from './shared.ts';
@@ -176,18 +178,34 @@ function registryArguments(registry?: string): string[] {
   return registry ? ['--registry', registry] : [];
 }
 
+interface RegistryQueryOptions {
+  registry?: string;
+  timeoutMs: number;
+}
+
 function registryOutput(
   arguments_: string[],
-  registry?: string,
+  options: RegistryQueryOptions,
 ): string | undefined {
   let output: string;
   try {
     output = execReleaseCommand(
       getNpmCommand(),
-      [...arguments_, '--json', ...registryArguments(registry)],
-      { cwd: REPO_ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      [...arguments_, '--json', ...registryArguments(options.registry)],
+      {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: options.timeoutMs,
+        killSignal: 'SIGKILL',
+      },
     );
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ETIMEDOUT')
+      throw new Error(
+        `npm registry query timed out after ${options.timeoutMs}ms: ${arguments_.join(' ')}`,
+        { cause: error },
+      );
     const stdout = (error as { stdout?: Buffer | string }).stdout?.toString();
     if (stdout) {
       const value = JSON.parse(stdout) as { error?: { code?: string } };
@@ -200,11 +218,11 @@ function registryOutput(
 
 function registryIntegrity(
   plan: ReleasePlan,
-  registry?: string,
+  options: RegistryQueryOptions,
 ): string | undefined {
   const output = registryOutput(
     ['view', `${plan.config.packageName}@${plan.newVersion}`, 'dist.integrity'],
-    registry,
+    options,
   );
   if (output === undefined) return undefined;
   const value: unknown = JSON.parse(output);
@@ -218,38 +236,45 @@ function registryIntegrity(
 
 function waitForPublishedIntegrity(
   plan: ReleasePlan,
-  registry?: string,
+  options: RegistryQueryOptions,
+  metadataTimeoutMs: number,
 ): string {
-  const deadline = performance.now() + 300_000;
+  const deadline = performance.now() + metadataTimeoutMs;
   const waitBuffer = new Int32Array(new SharedArrayBuffer(4));
   let hasReportedWait = false;
   while (performance.now() < deadline) {
-    const integrity = registryIntegrity(plan, registry);
-    if (integrity !== undefined) return integrity;
+    const remainingMs = Math.ceil(deadline - performance.now());
+    if (remainingMs <= 0) break;
+    const integrity = registryIntegrity(plan, {
+      ...options,
+      timeoutMs: Math.min(options.timeoutMs, remainingMs),
+    });
+    if (integrity !== undefined && performance.now() < deadline)
+      return integrity;
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) break;
     if (!hasReportedWait) {
       ReleaseLogger.info(
-        `Waiting up to five minutes for npm metadata: ${plan.config.packageName}@${plan.newVersion}`,
+        `Waiting up to ${metadataTimeoutMs}ms for npm metadata: ${plan.config.packageName}@${plan.newVersion}`,
       );
       hasReportedWait = true;
     }
-    const remaining = deadline - performance.now();
-    if (remaining > 0)
-      Atomics.wait(waitBuffer, 0, 0, Math.min(5000, remaining));
+    Atomics.wait(waitBuffer, 0, 0, Math.min(5000, remaining));
   }
   throw new Error(
-    `Published version did not become visible within five minutes: ${plan.config.packageName}@${plan.newVersion}. Channels were not promoted.`,
+    `Published version did not become visible within ${metadataTimeoutMs}ms: ${plan.config.packageName}@${plan.newVersion}. Channels were not promoted.`,
   );
 }
 
 function registryTags(
   plan: ReleasePlan,
-  registry?: string,
+  options: RegistryQueryOptions,
 ): Record<string, string> {
   // `npm view name dist-tags` silently returns no output when a newly
   // published package has a candidate tag but no latest version yet.
   const output = registryOutput(
     ['dist-tag', 'ls', plan.config.packageName],
-    registry,
+    options,
   );
   if (output === undefined) return {};
   return Object.fromEntries(
@@ -279,12 +304,17 @@ interface PublicationMemberEvidence {
 
 export function publishReleaseGroup(
   plans: ReleasePlan[],
-  options: {
+  options: Partial<PublicationTimeouts> & {
     registry?: string;
     provenance: boolean;
     evidenceDirectory?: string;
   },
 ): void {
+  const timeouts = resolvePublicationTimeouts(options);
+  const queryOptions = {
+    registry: options.registry,
+    timeoutMs: timeouts.registryQueryTimeoutMs,
+  };
   assertReleaseGroup(plans);
   for (const plan of plans)
     validatePublicationTarget(plan.config, plan.newVersion, plan.gitTag);
@@ -298,6 +328,7 @@ export function publishReleaseGroup(
     gitTag: plans[0]!.gitTag,
     channel: plans[0]!.npmTag ?? 'latest',
     candidateTag,
+    ...timeouts,
     status: 'in-progress',
     phase: 'pack',
     activePackage: '',
@@ -347,9 +378,9 @@ export function publishReleaseGroup(
     evidence.phase = 'preflight';
     const existing = packages.map(({ plan, integrity, member }) => {
       evidence.activePackage = plan.config.packageName;
-      const published = registryIntegrity(plan, options.registry);
+      const published = registryIntegrity(plan, queryOptions);
       member.registryIntegrity = published ?? null;
-      member.tagsBefore = registryTags(plan, options.registry);
+      member.tagsBefore = registryTags(plan, queryOptions);
       saveEvidence();
       if (published !== undefined && published !== integrity)
         throw new Error(
@@ -383,14 +414,15 @@ export function publishReleaseGroup(
         } catch (error) {
           // A failed client response does not prove the immutable upload failed.
           member.registryIntegrity =
-            registryIntegrity(plan, options.registry) ?? null;
+            registryIntegrity(plan, queryOptions) ?? null;
           saveEvidence();
           throw error;
         }
       }
       member.registryIntegrity = waitForPublishedIntegrity(
         plan,
-        options.registry,
+        queryOptions,
+        timeouts.metadataTimeoutMs,
       );
       saveEvidence();
       if (member.registryIntegrity !== integrity)
@@ -416,7 +448,7 @@ export function publishReleaseGroup(
           { cwd: REPO_ROOT, stdio: 'inherit' },
         );
       } finally {
-        member.tagsAfter = registryTags(plan, options.registry);
+        member.tagsAfter = registryTags(plan, queryOptions);
         saveEvidence();
       }
       if (member.tagsAfter[plan.npmTag ?? 'latest'] !== plan.newVersion)
@@ -427,7 +459,7 @@ export function publishReleaseGroup(
     evidence.phase = 'verify-channels';
     for (const [index, { plan, member }] of packages.entries()) {
       evidence.activePackage = plan.config.packageName;
-      member.tagsAfter = registryTags(plan, options.registry);
+      member.tagsAfter = registryTags(plan, queryOptions);
       saveEvidence();
       if (member.tagsAfter[plan.npmTag ?? 'latest'] !== plan.newVersion)
         throw new Error(

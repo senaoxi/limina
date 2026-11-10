@@ -123,7 +123,53 @@ export interface ReleasePlan {
   npmTag: string | undefined;
 }
 
-export interface ReleaseCliOptions {
+export const DEFAULT_METADATA_TIMEOUT_MS = 30 * 60_000;
+export const DEFAULT_REGISTRY_QUERY_TIMEOUT_MS = 30_000;
+
+export interface PublicationTimeouts {
+  metadataTimeoutMs: number;
+  registryQueryTimeoutMs: number;
+}
+
+function normalizePublicationTimeout(
+  name: string,
+  value: number | string,
+): number {
+  const milliseconds = Number(value);
+  if (
+    !Number.isSafeInteger(milliseconds) ||
+    milliseconds <= 0 ||
+    milliseconds > 2_147_483_647
+  )
+    throw new Error(
+      `${name} must be a positive integer in milliseconds (at most 2147483647).`,
+    );
+  return milliseconds;
+}
+
+export function resolvePublicationTimeouts(
+  options: {
+    metadataTimeoutMs?: number | string;
+    registryQueryTimeoutMs?: number | string;
+  } = {},
+): PublicationTimeouts {
+  return {
+    metadataTimeoutMs: normalizePublicationTimeout(
+      '--metadata-timeout / LIMINA_RELEASE_METADATA_TIMEOUT_MS',
+      options.metadataTimeoutMs ??
+        process.env.LIMINA_RELEASE_METADATA_TIMEOUT_MS ??
+        DEFAULT_METADATA_TIMEOUT_MS,
+    ),
+    registryQueryTimeoutMs: normalizePublicationTimeout(
+      '--registry-query-timeout / LIMINA_RELEASE_REGISTRY_QUERY_TIMEOUT_MS',
+      options.registryQueryTimeoutMs ??
+        process.env.LIMINA_RELEASE_REGISTRY_QUERY_TIMEOUT_MS ??
+        DEFAULT_REGISTRY_QUERY_TIMEOUT_MS,
+    ),
+  };
+}
+
+export interface ReleaseCliOptions extends Partial<PublicationTimeouts> {
   packageSelectors: string[];
   type?: ReleaseType;
   version?: string;
@@ -142,7 +188,7 @@ export interface ReleaseCliOptions {
   help: boolean;
 }
 
-export interface PublishCliOptions {
+export interface PublishCliOptions extends Partial<PublicationTimeouts> {
   packageSelectors: string[];
   dryRun: boolean;
   skipTests: boolean;

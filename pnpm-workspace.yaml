@@ -156,8 +156,7 @@ hoist: false
 
 loglevel: info
 minimumReleaseAge: 1440
-minimumReleaseAgeExclude:
-  - logaria@0.0.4
+minimumReleaseAgeStrict: true
 nodeVersion: 22.22.3
 
 overrides:

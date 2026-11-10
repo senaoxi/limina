@@ -11,9 +11,10 @@ import {
   compareVersions,
   getReleasePackageConfigs,
   isValidVersion,
-  type ResolvedReleasePackageConfig,
+  resolvePublicationTimeouts,
   selectPreviousGitTag,
   sortTagsByVersion,
+  type ResolvedReleasePackageConfig,
 } from '@limina/gates/release/shared';
 import assert from 'node:assert/strict';
 import {
@@ -62,6 +63,58 @@ function planWithTag(tag: string) {
     { explicitNpmTag: tag },
   );
 }
+
+it('admits bounded publication timeouts with explicit, environment and default precedence', () => {
+  const names = [
+    'LIMINA_RELEASE_METADATA_TIMEOUT_MS',
+    'LIMINA_RELEASE_REGISTRY_QUERY_TIMEOUT_MS',
+  ] as const;
+  const previous = names.map((name) => process.env[name]);
+  try {
+    for (const name of names) delete process.env[name];
+    assert.deepEqual(resolvePublicationTimeouts(), {
+      metadataTimeoutMs: 1_800_000,
+      registryQueryTimeoutMs: 30_000,
+    });
+    process.env[names[0]] = '600000';
+    process.env[names[1]] = '45000';
+    assert.deepEqual(resolvePublicationTimeouts(), {
+      metadataTimeoutMs: 600_000,
+      registryQueryTimeoutMs: 45_000,
+    });
+    assert.deepEqual(
+      resolvePublicationTimeouts({
+        metadataTimeoutMs: '900000',
+        registryQueryTimeoutMs: 15_000,
+      }),
+      { metadataTimeoutMs: 900_000, registryQueryTimeoutMs: 15_000 },
+    );
+    for (const value of [0, -1, 1.5, NaN, Infinity, 2_147_483_648, '', 'bad']) {
+      for (const name of names) process.env[name] = '30000';
+      for (const key of [
+        'metadataTimeoutMs',
+        'registryQueryTimeoutMs',
+      ] as const)
+        assert.throws(
+          () => resolvePublicationTimeouts({ [key]: value }),
+          /must be a positive integer/u,
+        );
+      for (const name of names) {
+        process.env[name] = String(value);
+        assert.throws(
+          () => resolvePublicationTimeouts(),
+          /must be a positive integer/u,
+        );
+        process.env[name] = '30000';
+      }
+    }
+  } finally {
+    for (const [index, name] of names.entries()) {
+      if (previous[index] === undefined) delete process.env[name];
+      else process.env[name] = previous[index];
+    }
+  }
+});
 
 it('renders nonempty changelogs without migration maps and preserves historical links', () => {
   const section = buildChangelogSection(

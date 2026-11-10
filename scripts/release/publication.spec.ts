@@ -27,6 +27,7 @@ import {
   discoverReleasePackages,
   resolvePackageSelections,
   sortReleasePackageConfigs,
+  type PublicationTimeouts,
   type ReleasePlan,
 } from '@limina/gates/release/shared';
 import assert from 'node:assert/strict';
@@ -428,7 +429,10 @@ interface RegistryDocument {
   'dist-tags': Record<string, string>;
 }
 
-async function createPublicationFixture(npmTag = 'beta') {
+async function createPublicationFixture(
+  npmTag = 'beta',
+  timeouts: Partial<PublicationTimeouts> = {},
+) {
   const version = discoverReleasePackages()[0]!.manifest.version!;
   const documents = new Map<string, RegistryDocument>();
   const uploads: string[] = [];
@@ -443,6 +447,8 @@ async function createPublicationFixture(npmTag = 'beta') {
     metadataMisses: new Map<string, number>(),
     bootstrapLatest: new Map<string, string>(),
     isChangeLatest: false,
+    stallMetadataFor: '',
+    stallTagsFor: '',
   };
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -496,6 +502,11 @@ async function createPublicationFixture(npmTag = 'beta') {
       reply(404, { error: 'not_found' });
       return;
     }
+    if (
+      (!isTagRequest && controls.stallMetadataFor === name) ||
+      (isTagRequest && controls.stallTagsFor === name && promotions > 0)
+    )
+      return;
     const copy = structuredClone(document);
     const misses = controls.metadataMisses.get(name) ?? 0;
     if (!isTagRequest && misses > 0) {
@@ -522,9 +533,9 @@ async function createPublicationFixture(npmTag = 'beta') {
     import { publishReleaseGroup } from ${JSON.stringify(new URL('../../packages/gates/src/release/publication.ts', import.meta.url).href)};
     import { discoverReleasePackages } from ${JSON.stringify(new URL('../../packages/gates/src/release/shared.ts', import.meta.url).href)};
     const plans = discoverReleasePackages().map(config => ({ config, currentVersion: config.manifest.version, newVersion: config.manifest.version, gitTag: 'limina/v' + config.manifest.version, npmTag: ${JSON.stringify(npmTag)} }));
-    publishReleaseGroup(plans, { registry: ${JSON.stringify(registry)}, provenance: false, evidenceDirectory: ${JSON.stringify(path.join(directory, 'evidence'))} });
+    publishReleaseGroup(plans, { registry: ${JSON.stringify(registry)}, provenance: false, evidenceDirectory: ${JSON.stringify(path.join(directory, 'evidence'))}, ...${JSON.stringify(timeouts)} });
   `;
-  const run = (isFastVisibilityTimeout = false) =>
+  const run = (waitAdvanceMs?: number) =>
     promisify(execFile)(
       process.execPath,
       [
@@ -542,7 +553,7 @@ async function createPublicationFixture(npmTag = 'beta') {
             let elapsed = 0;
             mock.method(performance, 'now', () => elapsed);
             mock.method(Atomics, 'wait', (_buffer, _index, _value, milliseconds) => {
-              elapsed += ${isFastVisibilityTimeout ? 3_600_000 : 'milliseconds ?? 0'};
+              elapsed += ${waitAdvanceMs ?? 'milliseconds ?? 0'};
               return 'timed-out';
             });
             ${source}
@@ -552,6 +563,8 @@ async function createPublicationFixture(npmTag = 'beta') {
         timeout: 45_000,
         env: {
           ...process.env,
+          LIMINA_RELEASE_METADATA_TIMEOUT_MS: undefined,
+          LIMINA_RELEASE_REGISTRY_QUERY_TIMEOUT_MS: undefined,
           npm_config_userconfig: userconfig,
           npm_config_cache: path.join(directory, 'cache'),
           npm_config_fetch_retries: '0',
@@ -758,14 +771,14 @@ it(
 );
 
 it(
-  'waits for both accepted versions to become visible before promoting the channel',
+  'allows metadata delays beyond five minutes for both packages before promoting the channel',
   { timeout: 60_000 },
   async () => {
     const fixture = await createPublicationFixture();
     try {
       fixture.controls.metadataMisses.set('limina', 2);
       fixture.controls.metadataMisses.set('limina-migrate', 2);
-      await fixture.run();
+      await fixture.run(600_000);
       assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
       assert.deepEqual(fixture.metadataMissingPromotions, [0, 0, 0, 0]);
       assert.equal(fixture.promotions, 2);
@@ -775,6 +788,8 @@ it(
       }
       const [evidence] = await fixture.readEvidence();
       assert.equal(evidence.status, 'complete');
+      assert.equal(evidence.metadataTimeoutMs, 1_800_000);
+      assert.equal(evidence.registryQueryTimeoutMs, 30_000);
       for (const member of evidence.packages)
         assert.equal(member.registryIntegrity, member.integrity);
     } finally {
@@ -787,12 +802,14 @@ it(
   'fails without promoting when an accepted version stays invisible past the deadline',
   { timeout: 60_000 },
   async () => {
-    const fixture = await createPublicationFixture();
+    const fixture = await createPublicationFixture('beta', {
+      metadataTimeoutMs: 15_000,
+    });
     try {
       fixture.controls.metadataMisses.set('limina', Infinity);
       await assert.rejects(
-        fixture.run(true),
-        /Published version did not become visible within five minutes/u,
+        fixture.run(),
+        /Published version did not become visible within 15000ms/u,
       );
       assert.deepEqual(fixture.uploads, ['limina']);
       assert.equal(fixture.promotions, 0);
@@ -805,6 +822,51 @@ it(
     }
   },
 );
+
+for (const [name, isTagQuery, timeouts, queryTimeout, phase, uploadCount] of [
+  [
+    'metadata query',
+    false,
+    { registryQueryTimeoutMs: 5000 },
+    5000,
+    'upload',
+    1,
+  ],
+  ['channel query', true, { registryQueryTimeoutMs: 5000 }, 5000, 'promote', 2],
+  [
+    'remaining visibility budget',
+    false,
+    { metadataTimeoutMs: 2000, registryQueryTimeoutMs: 10_000 },
+    2000,
+    'upload',
+    1,
+  ],
+] as const)
+  it(
+    `bounds a stalled npm ${name} without completing publication`,
+    { timeout: 60_000 },
+    async () => {
+      const fixture = await createPublicationFixture('beta', timeouts);
+      try {
+        if (isTagQuery) fixture.controls.stallTagsFor = 'limina';
+        else fixture.controls.stallMetadataFor = 'limina';
+        await assert.rejects(
+          fixture.run(),
+          new RegExp(
+            `npm registry query timed out after ${queryTimeout}ms`,
+            'u',
+          ),
+        );
+        assert.equal(fixture.uploads.length, uploadCount);
+        assert.equal(fixture.promotions, isTagQuery ? 1 : 0);
+        const [evidence] = await fixture.readEvidence();
+        assert.equal(evidence.status, 'failed');
+        assert.equal(evidence.phase, phase);
+      } finally {
+        await fixture.close();
+      }
+    },
+  );
 
 it(
   'accepts registry bootstrap latest for previously missing packages',

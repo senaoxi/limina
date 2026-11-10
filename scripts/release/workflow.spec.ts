@@ -33,6 +33,51 @@ it('allows manual publication in the owning repository without an activation var
   assert.equal(workflow.jobs.publish.environment, 'Release');
 });
 
+it('exposes numeric publication budgets only to the npm publisher', () => {
+  const workflow = parse(
+    readFileSync(
+      new URL('../../.github/workflows/publish-npm.yml', import.meta.url),
+      'utf8',
+    ),
+  ) as {
+    on: {
+      workflow_dispatch: {
+        inputs: Record<string, { type: string; default?: number }>;
+      };
+    };
+    jobs: {
+      publish: {
+        env?: Record<string, string>;
+        steps: { run?: string; env?: Record<string, string> }[];
+      };
+    };
+  };
+  const inputs = workflow.on.workflow_dispatch.inputs;
+  for (const [name, milliseconds] of [
+    ['metadata_timeout_ms', 1_800_000],
+    ['registry_query_timeout_ms', 30_000],
+  ] as const) {
+    assert.equal(inputs[name]?.type, 'number');
+    assert.equal(inputs[name]?.default, milliseconds);
+  }
+  const job = workflow.jobs.publish;
+  const publisher = job.steps.find((step) =>
+    step.run?.includes('scripts/release/publish-approved.ts'),
+  );
+  assert.ok(publisher);
+  const budgets = {
+    LIMINA_RELEASE_METADATA_TIMEOUT_MS: '${{ inputs.metadata_timeout_ms }}',
+    LIMINA_RELEASE_REGISTRY_QUERY_TIMEOUT_MS:
+      '${{ inputs.registry_query_timeout_ms }}',
+  };
+  for (const [name, expression] of Object.entries(budgets)) {
+    assert.equal(publisher.env?.[name], expression);
+    assert.equal(job.env?.[name], undefined);
+    for (const step of job.steps)
+      if (step !== publisher) assert.equal(step.env?.[name], undefined);
+  }
+});
+
 for (const workflowFile of ['publish-npm.yml', 'deploy-docs.yml'])
   it(`bootstraps private tools before checking a cold ${workflowFile} checkout`, () => {
     const workflow = parse(

@@ -26,6 +26,7 @@ import {
   readPublishBranch,
   resolveDefaultNpmTag,
   resolvePackageSelections,
+  resolvePublicationTimeouts,
   runCommand,
   sortReleasePackageConfigs,
   type PublishCliOptions,
@@ -507,6 +508,8 @@ function previewPublishPlan(context: PublishRunContext): void {
       formatReleasePlans(context.plans),
       '',
       `npm provenance: ${context.options.provenance ? 'enabled' : 'disabled'}`,
+      `Metadata visibility timeout: ${context.options.metadataTimeoutMs}ms per package`,
+      `Registry query timeout: ${context.options.registryQueryTimeoutMs}ms`,
       context.options.dryRun
         ? 'Dry-run mode only previews the plan. No packages will be published.'
         : 'The packages above will now be checked and published.',
@@ -642,6 +645,8 @@ function previewReleasePlan(context: ReleaseRunContext): void {
       formatReleasePlans(context.plans),
       '',
       `npm publish: ${npmPublishMode}`,
+      `Metadata visibility timeout: ${context.options.metadataTimeoutMs}ms per package`,
+      `Registry query timeout: ${context.options.registryQueryTimeoutMs}ms`,
       `GitHub release: ${githubReleaseMode}`,
       context.options.dryRun
         ? 'Dry-run mode only previews the plan. No files will be changed and no publish steps will run.'
@@ -713,8 +718,9 @@ function performPublishPreflightChecks(context: PublishRunContext): void {
 }
 
 export async function runPublishCommand(
-  options: PublishCliOptions,
+  input: PublishCliOptions,
 ): Promise<void> {
+  const options = { ...input, ...resolvePublicationTimeouts(input) };
   const plans = await resolvePublishPlans(options);
   const context: PublishRunContext = { plans, options };
 
@@ -740,8 +746,9 @@ export async function runPublishCommand(
 }
 
 export async function runReleaseCommand(
-  options: ReleaseCliOptions,
+  input: ReleaseCliOptions,
 ): Promise<void> {
+  const options = { ...input, ...resolvePublicationTimeouts(input) };
   const { plans } = await resolveReleasePlans(options);
   const context: ReleaseRunContext = { plans, options };
 

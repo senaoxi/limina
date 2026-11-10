@@ -6,6 +6,16 @@ name: Publish Limina
         description: Approved new limina/v<version> tag for both packages
         required: true
         type: string
+      metadata_timeout_ms:
+        description: Per-package metadata visibility timeout in milliseconds (default 30 minutes)
+        required: true
+        type: number
+        default: 1800000
+      registry_query_timeout_ms:
+        description: Timeout for each npm metadata or channel query in milliseconds (default 30 seconds)
+        required: true
+        type: number
+        default: 30000
 permissions:
   contents: read
 concurrency:
@@ -75,6 +85,9 @@ jobs:
             fi
           done
       - name: Publish the approved same-version group with provenance
+        env:
+          LIMINA_RELEASE_METADATA_TIMEOUT_MS: ${{ inputs.metadata_timeout_ms }}
+          LIMINA_RELEASE_REGISTRY_QUERY_TIMEOUT_MS: ${{ inputs.registry_query_timeout_ms }}
         run: pnpm exec tsx scripts/release/publish-approved.ts
       - name: Create GitHub release after both npm packages are available
         shell: bash

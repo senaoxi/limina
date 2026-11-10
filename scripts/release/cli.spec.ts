@@ -33,10 +33,12 @@ it('starts releases without an activation switch and retains ordinary preflight 
     'GITLAB_CI',
     'ACTIONS_ID_TOKEN_REQUEST_URL',
     'ACTIONS_ID_TOKEN_REQUEST_TOKEN',
+    'LIMINA_RELEASE_METADATA_TIMEOUT_MS',
+    'LIMINA_RELEASE_REGISTRY_QUERY_TIMEOUT_MS',
   ])
     delete environment[name];
-  const run = (...arguments_: string[]) => {
-    const result = spawnSync(
+  const invoke = (...arguments_: string[]) =>
+    spawnSync(
       process.execPath,
       [
         '--import',
@@ -46,6 +48,8 @@ it('starts releases without an activation switch and retains ordinary preflight 
       ],
       { cwd: root, env: environment, encoding: 'utf8', timeout: 30_000 },
     );
+  const run = (...arguments_: string[]) => {
+    const result = invoke(...arguments_);
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     return result.stdout + result.stderr;
@@ -109,6 +113,26 @@ it('starts releases without an activation switch and retains ordinary preflight 
         /Working directory is not clean/u,
       );
     rmSync(path.join(root, 'uncommitted.txt'));
+    for (const arguments_ of [
+      ['publish', '--package', 'limina', '--dry-run'],
+      ['--package', 'limina', '--version', '1.2.3-beta.2', '--dry-run'],
+    ]) {
+      const result = invoke(
+        ...arguments_,
+        '--metadata-timeout',
+        '900000',
+        '--registry-query-timeout',
+        '15000',
+      );
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.match(result.stdout, /Metadata visibility timeout: 900000ms/u);
+      assert.match(result.stdout, /Registry query timeout: 15000ms/u);
+    }
+    assert.match(
+      run('publish', '--package', 'limina', '--metadata-timeout', '0'),
+      /must be a positive integer/u,
+    );
     assert.match(
       run('publish', '--package', 'limina'),
       /provenance publishing requires a supported cloud CI\/CD environment/u,

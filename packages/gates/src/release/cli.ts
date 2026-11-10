@@ -5,8 +5,11 @@ import { runChangelogCommand } from './changelog.ts';
 import { runPublishCommand, runReleaseCommand } from './release.ts';
 import {
   ChangelogLogger,
+  DEFAULT_METADATA_TIMEOUT_MS,
+  DEFAULT_REGISTRY_QUERY_TIMEOUT_MS,
   ReleaseLogger,
   isReleaseType,
+  resolvePublicationTimeouts,
   splitCsvValues,
   type ChangelogCliOptions,
   type PublishCliOptions,
@@ -36,6 +39,8 @@ interface ReleaseCommandFlags extends BaseCliFlags {
   skipPush?: boolean;
   fromTag?: string;
   registry?: string;
+  metadataTimeout?: string;
+  registryQueryTimeout?: string;
   npmTag?: string;
   provenance?: boolean;
 }
@@ -46,6 +51,8 @@ interface PublishCommandFlags extends BaseCliFlags {
   skipTests?: boolean;
   skipBuild?: boolean;
   registry?: string;
+  metadataTimeout?: string;
+  registryQueryTimeout?: string;
   npmTag?: string;
   provenance?: boolean;
 }
@@ -140,6 +147,10 @@ function createReleaseCliOptions(
     skipPush: Boolean(flags.skipPush),
     fromTag: normalizeOptionalString('--from-tag', flags.fromTag),
     registry: normalizeOptionalString('--registry', flags.registry),
+    ...resolvePublicationTimeouts({
+      metadataTimeoutMs: flags.metadataTimeout,
+      registryQueryTimeoutMs: flags.registryQueryTimeout,
+    }),
     npmTag: normalizeOptionalString('--npm-tag', flags.npmTag),
     provenance: flags.provenance !== false,
     help: Boolean(flags.help),
@@ -159,6 +170,10 @@ function createPublishCliOptions(
     skipTests: Boolean(flags.skipTests),
     skipBuild: Boolean(flags.skipBuild),
     registry: normalizeOptionalString('--registry', flags.registry),
+    ...resolvePublicationTimeouts({
+      metadataTimeoutMs: flags.metadataTimeout,
+      registryQueryTimeoutMs: flags.registryQueryTimeout,
+    }),
     npmTag: normalizeOptionalString('--npm-tag', flags.npmTag),
     provenance: flags.provenance !== false,
     help: Boolean(flags.help),
@@ -206,6 +221,14 @@ function createReleaseCli() {
       'Reuse built artifacts; skip build and package verification',
     )
     .option('--registry <url>', 'Custom npm registry')
+    .option(
+      '--metadata-timeout <ms>',
+      `Maximum metadata visibility wait per package (default: ${DEFAULT_METADATA_TIMEOUT_MS}ms; LIMINA_RELEASE_METADATA_TIMEOUT_MS)`,
+    )
+    .option(
+      '--registry-query-timeout <ms>',
+      `Maximum time per npm registry query (default: ${DEFAULT_REGISTRY_QUERY_TIMEOUT_MS}ms; LIMINA_RELEASE_REGISTRY_QUERY_TIMEOUT_MS)`,
+    )
     .option('--npm-tag <tag>', 'Override the npm dist-tag')
     .option('--no-provenance', 'Publish without npm provenance attestations')
     .action(async (packages: string[], flags: PublishCommandFlags) => {
@@ -244,6 +267,14 @@ function createReleaseCli() {
       'Override the starting git tag for changelog collection',
     )
     .option('--registry <url>', 'Custom npm registry')
+    .option(
+      '--metadata-timeout <ms>',
+      `Maximum metadata visibility wait per package (default: ${DEFAULT_METADATA_TIMEOUT_MS}ms; LIMINA_RELEASE_METADATA_TIMEOUT_MS)`,
+    )
+    .option(
+      '--registry-query-timeout <ms>',
+      `Maximum time per npm registry query (default: ${DEFAULT_REGISTRY_QUERY_TIMEOUT_MS}ms; LIMINA_RELEASE_REGISTRY_QUERY_TIMEOUT_MS)`,
+    )
     .option('--npm-tag <tag>', 'Override the npm dist-tag')
     .option('--no-provenance', 'Publish without npm provenance attestations')
     .action(async (packages: string[], flags: ReleaseCommandFlags) => {
