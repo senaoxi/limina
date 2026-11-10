@@ -64,6 +64,23 @@ async function checkVolumeParent(parent: string) {
 }
 type Result = Awaited<ReturnType<typeof runLocalCodex>>;
 
+function nextAdmittedSlot(input: Parameters<typeof executeSlot>[0]) {
+  const { store, admitted, skill } = input;
+  const next = store.next();
+  if (
+    !next ||
+    next.slot.taskId !== admitted.task.id ||
+    (input.expectedSlotId && next.slot.id !== input.expectedSlotId)
+  )
+    throw new Error('Unexpected frozen slot');
+  const treatment = store.manifest.inputs.conditions.find(
+    (value) => value.id === next.slot.condition,
+  );
+  if (!treatment || treatment.skillDigest !== (skill?.digest ?? null))
+    throw new Error('Slot treatment differs from frozen Skill');
+  return next;
+}
+
 /**
 Called serially by the formal controller after suite, budget and stage admission.
 */
@@ -79,18 +96,7 @@ export async function executeSlot(input: {
   expectedSlotId?: string;
 }) {
   const { store, admitted, config, skill } = input;
-  const next = store.next();
-  if (
-    !next ||
-    next.slot.taskId !== admitted.task.id ||
-    (input.expectedSlotId && next.slot.id !== input.expectedSlotId)
-  )
-    throw new Error('Unexpected frozen slot');
-  const treatment = store.manifest.inputs.conditions.find(
-    (value) => value.id === next.slot.condition,
-  );
-  if (!treatment || treatment.skillDigest !== (skill?.digest ?? null))
-    throw new Error('Slot treatment differs from frozen Skill');
+  const next = nextAdmittedSlot(input);
   await verifyAdmittedTask(
     admitted,
     config.docker,
@@ -131,8 +137,7 @@ export async function executeSlot(input: {
   };
   const raw = path.join(root, 'raw');
   await save('F0.json', admitted.fixture);
-  let isInterrupted = false;
-  try {
+  async function prepareWorkspace() {
     volume.create();
     await rmdir(volume.workspace); // Only the empty, newly created volume project.
     await materializeSnapshot(admitted.fixture, volume.workspace);
@@ -155,6 +160,62 @@ export async function executeSlot(input: {
     );
     if (!expected.digest || expected.status !== 'complete')
       throw new Error('Incomplete expected S0');
+    return { runtime, expectedStartDigest: expected.digest };
+  }
+  async function recoverObservations(): Promise<void> {
+    // A later parse or settlement error must not erase a known Agent failure.
+    try {
+      const exit: { execution: AgentExecution; agentMs: number } = JSON.parse(
+        await readFile(path.join(raw, 'execution.json'), 'utf8'),
+      );
+      facts.execution = exit.execution;
+      agentMs = exit.agentMs;
+    } catch {
+      /*
+      No controller exit observation.
+      */
+    }
+    try {
+      const final: Snapshot = JSON.parse(
+        await readFile(path.join(raw, 'S1.json'), 'utf8'),
+      );
+      facts.captureStatus = final.status;
+    } catch {
+      /*
+      No final observation.
+      */
+    }
+  }
+  async function gradeResult(completed: Result): Promise<void> {
+    const deadline = new GradingDeadline(
+      store.manifest.policy.timeoutsMs.grading,
+    );
+    const rebuilt = await reconstructForVerifier({
+      task: admitted.task,
+      fixture: admitted.fixture,
+      start: completed.s0,
+      final: completed.s1,
+      destination: path.join(root, 'verifier'),
+      prepareStart: (directory) => prepareTaskState(directory, skill),
+    });
+    if (!rebuilt.project)
+      throw new Error('Accepted changes failed verifier reconstruction');
+    await verifyBinary(config.docker);
+    const grade = await gradeTaskProject(
+      admitted.definition,
+      admitted.task,
+      admitted.fixture,
+      completed.s1,
+      rebuilt.project,
+      config.docker,
+      deadline,
+    );
+    await save('assertions.json', grade);
+    facts.grade = grade?.report ?? null;
+  }
+  let isInterrupted = false;
+  try {
+    const { runtime, expectedStartDigest } = await prepareWorkspace();
     const prompt =
       next.slot.condition === 'explicit-skill'
         ? `${explicitInstruction}\n${admitted.task.prompt}`
@@ -195,7 +256,7 @@ export async function executeSlot(input: {
       budget: input.budget,
       timeoutMs: store.manifest.policy.timeoutsMs.agent,
       setupEndsAt: began + store.manifest.policy.timeoutsMs.setup,
-      expectedStartDigest: expected.digest,
+      expectedStartDigest,
       assertDispatchAllowed: input.assertDispatchAllowed,
     });
     agentMs = result.agentMs;
@@ -213,33 +274,8 @@ export async function executeSlot(input: {
     if (
       result.mutation.status === 'accepted' &&
       result.execution.status !== 'infra_error'
-    ) {
-      const deadline = new GradingDeadline(
-        store.manifest.policy.timeoutsMs.grading,
-      );
-      const rebuilt = await reconstructForVerifier({
-        task: admitted.task,
-        fixture: admitted.fixture,
-        start: result.s0,
-        final: result.s1,
-        destination: path.join(root, 'verifier'),
-        prepareStart: (directory) => prepareTaskState(directory, skill),
-      });
-      if (!rebuilt.project)
-        throw new Error('Accepted changes failed verifier reconstruction');
-      await verifyBinary(config.docker);
-      const grade = await gradeTaskProject(
-        admitted.definition,
-        admitted.task,
-        admitted.fixture,
-        result.s1,
-        rebuilt.project,
-        config.docker,
-        deadline,
-      );
-      await save('assertions.json', grade);
-      facts.grade = grade?.report ?? null;
-    }
+    )
+      await gradeResult(result);
   } catch (error) {
     isInterrupted = true;
     await save('controller-error.json', {
@@ -253,28 +289,7 @@ export async function executeSlot(input: {
         assertions: [],
       } satisfies AssertionReport;
     } else {
-      // A later parse or settlement error must not erase a known Agent failure.
-      try {
-        const exit: { execution: AgentExecution; agentMs: number } = JSON.parse(
-          await readFile(path.join(raw, 'execution.json'), 'utf8'),
-        );
-        facts.execution = exit.execution;
-        agentMs = exit.agentMs;
-      } catch {
-        /*
-        No controller exit observation.
-        */
-      }
-      try {
-        const final: Snapshot = JSON.parse(
-          await readFile(path.join(raw, 'S1.json'), 'utf8'),
-        );
-        facts.captureStatus = final.status;
-      } catch {
-        /*
-        No final observation.
-        */
-      }
+      await recoverObservations();
     }
   } finally {
     try {
@@ -292,54 +307,61 @@ export async function executeSlot(input: {
         root
       }`,
     );
-  const evidence: EvidenceReference[] = [];
-  for (const [kind, file] of [
-    ['fixture', 'F0.json'],
-    ['start', 'raw/S0.json'],
-    ['final', 'raw/S1.json'],
-    ['trace', 'raw/native-trace-capture.json'],
-    ['assertions', 'assertions.json'],
-    ['infrastructure', 'raw/infrastructure.json'],
-  ] as const) {
-    try {
-      const bytes = await readFile(path.join(root, file));
-      evidence.push({
-        kind,
-        path: path.join(evidenceName, file),
-        sha256: sha256(bytes),
-      });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  async function finishAttempt() {
+    const evidence: EvidenceReference[] = [];
+    for (const [kind, file] of [
+      ['fixture', 'F0.json'],
+      ['start', 'raw/S0.json'],
+      ['final', 'raw/S1.json'],
+      ['trace', 'raw/native-trace-capture.json'],
+      ['assertions', 'assertions.json'],
+      ['infrastructure', 'raw/infrastructure.json'],
+    ] as const) {
+      try {
+        const bytes = await readFile(path.join(root, file));
+        evidence.push({
+          kind,
+          path: path.join(evidenceName, file),
+          sha256: sha256(bytes),
+        });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
     }
-  }
-  const record = store.finish(runId, admitted.task, {
-    facts,
-    usage:
-      facts.execution.status === 'infra_error' ? null : (result?.usage ?? null),
-    time: { agentMs, endToEndMs: performance.now() - began },
-    activation,
-    evidence,
-    ...(store.manifest.version === 2 &&
-      result && {
-        activationEvidence: observeActivation({
-          skill,
-          discoverable: result.skillDiscoverable,
-          trace: result.traceFiles,
-          traceComplete: result.trace.status === 'complete',
-          evidence: evidence.filter(
-            (entry) => entry.kind === 'trace' || entry.kind === 'start',
-          ),
+    const record = store.finish(runId, admitted.task, {
+      facts,
+      usage:
+        facts.execution.status === 'infra_error'
+          ? null
+          : (result?.usage ?? null),
+      time: { agentMs, endToEndMs: performance.now() - began },
+      activation,
+      evidence,
+      ...(store.manifest.version === 2 &&
+        result && {
+          activationEvidence: observeActivation({
+            skill,
+            discoverable: result.skillDiscoverable,
+            trace: result.traceFiles,
+            traceComplete: result.trace.status === 'complete',
+            evidence: evidence.filter(
+              (entry) => entry.kind === 'trace' || entry.kind === 'start',
+            ),
+          }),
         }),
-      }),
-  });
-  // Keep an incomplete capture's image for reconciliation; never delete a mounted image.
-  if (
-    !isInterrupted &&
-    result?.s1.status === 'complete' &&
-    result.runtimeIntegrity.status !== 'unknown'
-  )
-    await rm(volume.root, { recursive: true });
-  if (isInterrupted)
-    throw new Error('Controller interrupted; attempt saved, dispatch stopped');
-  return record;
+    });
+    // Keep an incomplete capture's image for reconciliation; never delete a mounted image.
+    if (
+      !isInterrupted &&
+      result?.s1.status === 'complete' &&
+      result.runtimeIntegrity.status !== 'unknown'
+    )
+      await rm(volume.root, { recursive: true });
+    if (isInterrupted)
+      throw new Error(
+        'Controller interrupted; attempt saved, dispatch stopped',
+      );
+    return record;
+  }
+  return finishAttempt();
 }

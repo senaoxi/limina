@@ -127,13 +127,61 @@ export function publishedModelRows(
   );
 }
 
+function hasMatchingOriginalTask(
+  summary: PublicCurrentSummary,
+  latest: PublicTaskResult,
+  originalTask:
+    | NonNullable<PublishedModelRow['report']>['tasks'][number]
+    | undefined,
+): boolean {
+  const base = summary.sources.base;
+  const taskSource = summary.sources.task;
+  const revision = summary.revision;
+  return revision
+    ? revision.kind === 'task-contract-revision' &&
+        revision.from.bankId === base.bankId &&
+        revision.from.fixtureIdentity === originalTask?.fixtureIdentity &&
+        revision.from.gradingIdentity === originalTask?.gradingIdentity &&
+        revision.from.executionIdentity === originalTask?.executionIdentity &&
+        revision.to.bankId === latest.bankId &&
+        revision.to.fixtureIdentity === latest.fixtureIdentity &&
+        revision.to.gradingIdentity === latest.gradingIdentity &&
+        revision.to.executionIdentity === latest.executionIdentity &&
+        taskSource.fixtureIdentity === latest.fixtureIdentity &&
+        taskSource.gradingIdentity === latest.gradingIdentity &&
+        taskSource.executionIdentity === latest.executionIdentity
+    : originalTask !== undefined &&
+        originalTask.fixtureIdentity === latest.fixtureIdentity &&
+        originalTask.gradingIdentity === latest.gradingIdentity;
+}
+
+function hasMatchingTaskSource(
+  summary: PublicCurrentSummary,
+  latest: PublicTaskResult,
+): boolean {
+  const taskSource = summary.sources.task;
+  return (
+    latest.identity === taskSource.identity &&
+    latest.bankId === taskSource.bankId &&
+    latest.reportIdentity === taskSource.reportIdentity &&
+    latest.campaignId === taskSource.campaignId &&
+    latest.experimentIdentity === taskSource.experimentIdentity &&
+    latest.sourceIndexSha256 === taskSource.sourceIndexSha256 &&
+    latest.bankRevision === summary.bankRevision &&
+    (latest.stage ?? 'sealed') === summary.stage &&
+    latest.profile.id === summary.modelProfileId &&
+    latest.taskId === taskSource.taskId &&
+    latest.condition === taskSource.condition &&
+    latest.complete
+  );
+}
+
 export function bindCurrentSummary(
   rows: readonly PublishedModelRow[],
   summary: PublicCurrentSummary,
   latest: PublicTaskResult,
 ): PublishedModelRow[] {
   const base = summary.sources.base;
-  const taskSource = summary.sources.task;
   const match = rows.find(
     (row) =>
       row.source.campaignId === base.campaignId &&
@@ -147,23 +195,11 @@ export function bindCurrentSummary(
   const originalTask = match?.report?.tasks.find(
     (task) => task.id === latest.taskId,
   );
-  const revision = summary.revision;
-  const isOriginalMatch = revision
-    ? revision.kind === 'task-contract-revision' &&
-      revision.from.bankId === base.bankId &&
-      revision.from.fixtureIdentity === originalTask?.fixtureIdentity &&
-      revision.from.gradingIdentity === originalTask?.gradingIdentity &&
-      revision.from.executionIdentity === originalTask?.executionIdentity &&
-      revision.to.bankId === latest.bankId &&
-      revision.to.fixtureIdentity === latest.fixtureIdentity &&
-      revision.to.gradingIdentity === latest.gradingIdentity &&
-      revision.to.executionIdentity === latest.executionIdentity &&
-      taskSource.fixtureIdentity === latest.fixtureIdentity &&
-      taskSource.gradingIdentity === latest.gradingIdentity &&
-      taskSource.executionIdentity === latest.executionIdentity
-    : originalTask !== undefined &&
-      originalTask.fixtureIdentity === latest.fixtureIdentity &&
-      originalTask.gradingIdentity === latest.gradingIdentity;
+  const isOriginalMatch = hasMatchingOriginalTask(
+    summary,
+    latest,
+    originalTask,
+  );
   if (
     !isOriginalMatch ||
     summary.kind !== 'current-task-summary' ||
@@ -171,18 +207,7 @@ export function bindCurrentSummary(
     !match?.report?.complete ||
     match.summary !== undefined ||
     originalTask?.role !== 'main' ||
-    latest.identity !== taskSource.identity ||
-    latest.bankId !== taskSource.bankId ||
-    latest.reportIdentity !== taskSource.reportIdentity ||
-    latest.campaignId !== taskSource.campaignId ||
-    latest.experimentIdentity !== taskSource.experimentIdentity ||
-    latest.sourceIndexSha256 !== taskSource.sourceIndexSha256 ||
-    latest.bankRevision !== summary.bankRevision ||
-    (latest.stage ?? 'sealed') !== summary.stage ||
-    latest.profile.id !== summary.modelProfileId ||
-    latest.taskId !== taskSource.taskId ||
-    latest.condition !== taskSource.condition ||
-    !latest.complete
+    !hasMatchingTaskSource(summary, latest)
   )
     throw new Error('Current summary source identity differs');
   const rate = latest.counts.passed / latest.counts.executions;

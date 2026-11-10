@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
+import { constants, type Stats } from 'node:fs';
 import { lstat, open, readdir, readlink } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -65,6 +65,35 @@ function comparePaths(a: string, b: string): number {
   return Buffer.compare(Buffer.from(a), Buffer.from(b));
 }
 
+async function captureFile(
+  absolute: string,
+  relative: string,
+  before: Stats,
+  entries: SnapshotEntry[],
+): Promise<void> {
+  const mode = before.mode & 0o7777;
+  const handle = await open(
+    absolute,
+    constants.O_RDONLY | constants.O_NOFOLLOW,
+  );
+  try {
+    if (!isUnchanged(before, await handle.stat()))
+      throw new Error('FILE_CHANGED');
+    const content = await handle.readFile();
+    if (!isUnchanged(before, await handle.stat()))
+      throw new Error('FILE_CHANGED');
+    entries.push({
+      path: relative,
+      kind: 'file',
+      mode,
+      sha256: sha256(content),
+      content: content.toString('base64'),
+    });
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Run only in the protected collector, after the controller quiesces writers.
  * A local filesystem capture does not itself prove Sandbox isolation.
  */
@@ -117,26 +146,7 @@ export async function captureSnapshot(
       } else if (relative && before.isFile()) {
         bytes += before.size;
         if (bytes > maxBytes) throw new Error('BYTE_LIMIT');
-        const handle = await open(
-          absolute,
-          constants.O_RDONLY | constants.O_NOFOLLOW,
-        );
-        try {
-          if (!isUnchanged(before, await handle.stat()))
-            throw new Error('FILE_CHANGED');
-          const content = await handle.readFile();
-          if (!isUnchanged(before, await handle.stat()))
-            throw new Error('FILE_CHANGED');
-          entries.push({
-            path: relative,
-            kind: 'file',
-            mode,
-            sha256: sha256(content),
-            content: content.toString('base64'),
-          });
-        } finally {
-          await handle.close();
-        }
+        await captureFile(absolute, relative, before, entries);
       } else {
         throw new Error('UNSUPPORTED_FILE_TYPE');
       }
@@ -176,6 +186,21 @@ export async function captureSnapshot(
   };
 }
 
+function verifyEntryMetadata(entry: SnapshotEntry): void {
+  if (
+    !['file', 'directory', 'symlink'].includes(entry.kind) ||
+    !Number.isSafeInteger(entry.mode) ||
+    entry.mode < 0 ||
+    entry.mode > 0o7777
+  )
+    throw new Error('Invalid snapshot entry');
+  if (
+    entry.kind === 'symlink' &&
+    (typeof entry.target !== 'string' || entry.target.includes('\0'))
+  )
+    throw new Error('Invalid symlink target');
+}
+
 // Recompute transport integrity at the controller; never trust a remote hash.
 export function verifySnapshot(snapshot: Snapshot): void {
   if (
@@ -189,18 +214,7 @@ export function verifySnapshot(snapshot: Snapshot): void {
   for (const path of snapshot.excludedRoots) assertRelativePath(path);
   for (const entry of snapshot.entries) {
     assertRelativePath(entry.path);
-    if (
-      !['file', 'directory', 'symlink'].includes(entry.kind) ||
-      !Number.isSafeInteger(entry.mode) ||
-      entry.mode < 0 ||
-      entry.mode > 0o7777
-    )
-      throw new Error('Invalid snapshot entry');
-    if (
-      entry.kind === 'symlink' &&
-      (typeof entry.target !== 'string' || entry.target.includes('\0'))
-    )
-      throw new Error('Invalid symlink target');
+    verifyEntryMetadata(entry);
     if (
       snapshot.excludedRoots.some(
         (root) => entry.path === root || entry.path.startsWith(`${root}/`),

@@ -1,21 +1,16 @@
 import { readAstroTestToolchain } from '@limina/gates/test-support/astro-toolchain';
 import { execa } from 'execa';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { env as inheritedEnvironment } from 'node:process';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
+import {
+  RELEASE_FIXTURE_PACKAGE_NAME,
+  writeConsumerArtifacts,
+} from './consumer-artifacts';
 
 export interface CommandResult {
   code?: string;
@@ -53,120 +48,6 @@ interface PackedDistributionTarball {
   tarballPath: string;
 }
 
-export async function assertPackageModuleClosure(
-  root: string,
-  manifest: DistributionPackageJson,
-): Promise<void> {
-  const allowed = new Set([
-    manifest.name,
-    ...Object.keys(manifest.dependencies ?? {}),
-    ...Object.keys(manifest.peerDependencies ?? {}),
-    ...Object.keys(manifest.optionalDependencies ?? {}),
-  ]);
-  const developmentTypes = new Set(Object.keys(manifest.devDependencies ?? {}));
-  const files = await readdir(root, { recursive: true });
-  const imports = new Map<string, string[]>();
-  for (const file of files) {
-    if (!/\.(?:js|d\.ts)$/u.test(file)) continue;
-    const filePath = path.join(root, file);
-    const text = await readFile(filePath, 'utf8');
-    const syntax = ts.createSourceFile(
-      file,
-      text,
-      ts.ScriptTarget.Latest,
-      true,
-    );
-    const specifiers: string[] = [];
-    const visit = (node: ts.Node): void => {
-      if (
-        (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-        node.moduleSpecifier &&
-        ts.isStringLiteral(node.moduleSpecifier)
-      )
-        specifiers.push(node.moduleSpecifier.text);
-      if (
-        ts.isCallExpression(node) &&
-        node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-        node.arguments[0] &&
-        ts.isStringLiteral(node.arguments[0])
-      )
-        specifiers.push(node.arguments[0].text);
-      if (
-        ts.isImportTypeNode(node) &&
-        ts.isLiteralTypeNode(node.argument) &&
-        ts.isStringLiteral(node.argument.literal)
-      )
-        specifiers.push(node.argument.literal.text);
-      ts.forEachChild(node, visit);
-    };
-    visit(syntax);
-    imports.set(file, specifiers);
-  }
-  const publicDeclarations = new Set<string>();
-  const pendingDeclarations: string[] = [];
-  const addPublicEntry = (value: unknown): void => {
-    if (typeof value === 'string') {
-      const declaration = value.replace(/\.js$/u, '.d.ts');
-      const file = path.relative(root, path.resolve(root, declaration));
-      if (file.endsWith('.d.ts') && imports.has(file))
-        pendingDeclarations.push(file);
-    } else if (value && typeof value === 'object')
-      for (const entry of Object.values(value)) addPublicEntry(entry);
-  };
-  addPublicEntry(manifest.types);
-  addPublicEntry(manifest.exports);
-  while (pendingDeclarations.length > 0) {
-    const file = pendingDeclarations.pop()!;
-    if (publicDeclarations.has(file)) continue;
-    publicDeclarations.add(file);
-    const specifiers = imports.get(file) ?? [];
-    for (const specifier of specifiers) {
-      if (!specifier.startsWith('.')) continue;
-      const target = path.relative(
-        root,
-        path
-          .resolve(root, path.dirname(file), specifier)
-          .replace(/\.js$/u, '.d.ts'),
-      );
-      if (imports.has(target)) pendingDeclarations.push(target);
-    }
-  }
-  for (const [file, specifiers] of imports) {
-    const filePath = path.join(root, file);
-    for (const specifier of specifiers) {
-      if (specifier.startsWith('.')) {
-        const target = path.resolve(path.dirname(filePath), specifier);
-        const declaration = file.endsWith('.d.ts')
-          ? target.replace(/\.js$/u, '.d.ts')
-          : target;
-        await access(existsSync(target) ? target : declaration);
-      } else if (!specifier.startsWith('node:')) {
-        const name = specifier.startsWith('@')
-          ? specifier.split('/').slice(0, 2).join('/')
-          : specifier.split('/', 1)[0]!;
-        if (
-          specifier.startsWith('#') ||
-          name.startsWith('@limina/') ||
-          specifier.startsWith('limina/internal/') ||
-          (!allowed.has(name) &&
-            // The retained, unexported workspace support declaration can
-            // describe build-time types. Public declarations and runtime JS
-            // must be consumable without development dependencies.
-            !(
-              file.endsWith('.d.ts') &&
-              !publicDeclarations.has(file) &&
-              developmentTypes.has(name)
-            ))
-        ) {
-          throw new Error(
-            `Undeclared or workspace-only published import in ${file}: ${specifier}`,
-          );
-        }
-      }
-    }
-  }
-}
-
 export const PACKAGE_ROOT_DIR = fileURLToPath(
   new URL('../packages/limina/', import.meta.url),
 );
@@ -174,7 +55,6 @@ const astroTestRequire = createRequire(
   path.join(PACKAGE_ROOT_DIR, 'package.json'),
 );
 export const DIST_DIR = path.join(PACKAGE_ROOT_DIR, 'dist');
-export const RELEASE_FIXTURE_PACKAGE_NAME = '@limina-smoke/release-fixture';
 const REQUIRED_DIST_FILES = [
   'package.json',
   'bin/limina.js',
@@ -581,7 +461,6 @@ async function writeConsumerFiles(
   const pnpmVersion = pnpmVersionResult.stdout.trim();
 
   await mkdir(path.join(fixtureDirectory, 'app', 'src'), { recursive: true });
-  await mkdir(path.join(fixtureDirectory, 'release-dist'), { recursive: true });
 
   await writeFile(
     path.join(fixtureDirectory, 'package.json'),
@@ -681,114 +560,7 @@ export default defineConfig({
     }),
     'utf8',
   );
-  await writeFile(
-    path.join(fixtureDirectory, 'release-dist', 'package.json'),
-    stringifyJson({
-      exports: {
-        '.': './index.js',
-      },
-      license: 'MIT',
-      name: RELEASE_FIXTURE_PACKAGE_NAME,
-      type: 'module',
-      types: './index.d.ts',
-      version: '1.0.0',
-    }),
-    'utf8',
-  );
-  await writeFile(
-    path.join(fixtureDirectory, 'release-dist', 'index.js'),
-    'export const value = 1;\n',
-    'utf8',
-  );
-  await writeFile(
-    path.join(fixtureDirectory, 'release-dist', 'index.d.ts'),
-    'export declare const value = 1;\n',
-    'utf8',
-  );
-  await writeFile(
-    path.join(fixtureDirectory, 'release-dist', 'README.md'),
-    '# Release fixture\n',
-    'utf8',
-  );
-  await writeFile(
-    path.join(fixtureDirectory, 'release-dist', 'LICENSE.md'),
-    'MIT\n',
-    'utf8',
-  );
-  await writeFile(
-    path.join(fixtureDirectory, 'verify-exports.mjs'),
-    `import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-
-const publicApi = await import('limina');
-const schemaPath = fileURLToPath(import.meta.resolve('limina/schemas/tsconfig-schema.json'));
-const packageJsonPath = fileURLToPath(import.meta.resolve('limina/package.json'));
-const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
-const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-
-if (typeof publicApi.defineConfig !== 'function') {
-  throw new Error('limina root export did not expose defineConfig.');
-}
-for (const removedExport of [
-  'loadConfig',
-  'runGraphCheck',
-  'runSourceCheck',
-  'prepareGeneratedTsconfigGraph',
-  'collectDependencyGraph',
-  'createLiminaFlowReporter',
-]) {
-  if (removedExport in publicApi) {
-    throw new Error(\`limina root export should not expose \${removedExport}.\`);
-  }
-}
-let configExportRejected = false;
-try {
-  await import('limina/config');
-} catch (error) {
-  configExportRejected =
-    Boolean(error) &&
-    typeof error === 'object' &&
-    'code' in error &&
-    error.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED';
-}
-if (!configExportRejected) {
-  throw new Error('limina/config export should not be exposed.');
-}
-if (Object.keys(manifest.exports ?? {}).some(key => key === './internal' || key.startsWith('./internal/'))) {
-  throw new Error('Published Limina must not expose workspace-only internal modules.');
-}
-for (const specifier of [
-  'limina/internal/core/tsconfig/actions',
-  'limina/internal/config/runner',
-  'limina/internal/logger',
-]) {
-  let rejected = false;
-  try {
-    await import(specifier);
-  } catch (error) {
-    rejected = Boolean(error) && typeof error === 'object' && 'code' in error && error.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED';
-  }
-  if (!rejected) throw new Error(\`Published Limina must reject \${specifier}.\`);
-}
-if (manifest.name !== 'limina') {
-  throw new Error('limina/package.json did not resolve to the installed package.');
-}
-if (!schema || typeof schema !== 'object') {
-  throw new Error('limina schema export did not resolve to JSON content.');
-}
-try {
-  import.meta.resolve('svelte2tsx');
-  throw new Error('The non-Svelte consumer unexpectedly installed svelte2tsx.');
-} catch (error) {
-  if (error instanceof Error && error.message.includes('unexpectedly installed')) {
-    throw error;
-  }
-}
-
-console.log('limina exports ok');
-`,
-    'utf8',
-  );
+  await writeConsumerArtifacts(fixtureDirectory);
 }
 
 export async function installConsumerDependencies(options: {

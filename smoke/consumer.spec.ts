@@ -2,13 +2,14 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { RELEASE_FIXTURE_PACKAGE_NAME } from './consumer-artifacts';
 import {
   assertDistributionArtifacts,
   type ConsumerFixture,
   createConsumerFixture,
+  type DistributionPackageJson,
   getPeerDependencyRange,
   packLiminaDistribution,
-  RELEASE_FIXTURE_PACKAGE_NAME,
   runNodeScript,
   runPnpm,
 } from './helpers';
@@ -104,6 +105,182 @@ async function assertDefaultCheckWorkflow(
   );
 }
 
+function assertInstalledManifest(
+  manifest: DistributionPackageJson,
+  installedManifest: DistributionPackageJson,
+): void {
+  expect(installedManifest.peerDependencies).toEqual(manifest.peerDependencies);
+  expect(installedManifest.devDependencies).toEqual(manifest.devDependencies);
+  expect(installedManifest.peerDependenciesMeta).toEqual(
+    manifest.peerDependenciesMeta,
+  );
+  for (const packageManifest of [manifest, installedManifest]) {
+    for (const section of [
+      packageManifest.dependencies,
+      packageManifest.devDependencies,
+      packageManifest.optionalDependencies,
+      packageManifest.peerDependencies,
+      packageManifest.peerDependenciesMeta,
+    ]) {
+      expect(section?.['oxc-parser']).toBeUndefined();
+      expect(section?.['@astrojs/compiler']).toBeUndefined();
+    }
+    for (const section of [
+      packageManifest.dependencies,
+      packageManifest.optionalDependencies,
+      packageManifest.peerDependencies,
+      packageManifest.peerDependenciesMeta,
+    ]) {
+      expect(section?.['@jridgewell/trace-mapping']).toBeUndefined();
+    }
+    expect(packageManifest.devDependencies?.['@jridgewell/trace-mapping']).toBe(
+      '^0.3.31',
+    );
+    for (const section of [
+      packageManifest.dependencies,
+      packageManifest.optionalDependencies,
+    ]) {
+      expect(section?.svelte2tsx).toBeUndefined();
+    }
+    expect(packageManifest.devDependencies?.svelte2tsx).toBe('^0.7.61');
+    expect(packageManifest.peerDependencies?.svelte2tsx).toBe('^0.7.61');
+    expect(packageManifest.peerDependenciesMeta?.svelte2tsx?.optional).toBe(
+      true,
+    );
+    expect(packageManifest.peerDependencies?.['@astrojs/check']).toBe(
+      '>=0.9.6 <0.10.0',
+    );
+    expect(
+      packageManifest.peerDependenciesMeta?.['@astrojs/check']?.optional,
+    ).toBe(true);
+    for (const workspacePackageName of [
+      '@limina/eslint-config',
+      '@limina/gates',
+      '@limina/build-tools',
+      '@docs-islands/eslint-config',
+      '@docs-islands/plugin-license',
+      '@docs-islands/utils',
+    ]) {
+      expect(
+        packageManifest.devDependencies?.[workspacePackageName],
+      ).toBeUndefined();
+    }
+    expect(packageManifest.devDependencies?.logaria).toBe('^0.0.4');
+  }
+  expect(manifest.dependencies?.['oxc-resolver']).toBeDefined();
+  expect(installedManifest.dependencies?.['oxc-resolver']).toBe(
+    manifest.dependencies?.['oxc-resolver'],
+  );
+  for (const packageName of ['@vue/language-core', '@volar/typescript']) {
+    expect(installedManifest.dependencies?.[packageName]).toBeUndefined();
+    expect(installedManifest.devDependencies?.[packageName]).toBeUndefined();
+    expect(
+      installedManifest.optionalDependencies?.[packageName],
+    ).toBeUndefined();
+    expect(installedManifest.peerDependencies?.[packageName]).toBeUndefined();
+    expect(
+      installedManifest.peerDependenciesMeta?.[packageName],
+    ).toBeUndefined();
+  }
+}
+
+async function assertReleaseChecks(
+  fixture: ConsumerFixture,
+  manifest: DistributionPackageJson,
+): Promise<void> {
+  const releaseCheckArguments = [
+    'exec',
+    'limina',
+    '--config',
+    './limina.config.mjs',
+    'release',
+    'check',
+    '--package',
+    RELEASE_FIXTURE_PACKAGE_NAME,
+  ];
+  const releaseCheckResult = await runPnpm(releaseCheckArguments, {
+    cwd: fixture.fixtureDir,
+  });
+
+  expect(releaseCheckResult.stdout).toContain('limina release check');
+  expect(releaseCheckResult.stdout).toContain('release checks passed');
+
+  const releaseManifestPath = path.join(
+    fixture.fixtureDir,
+    'release-dist',
+    'package.json',
+  );
+  const releaseManifest = JSON.parse(
+    await readFile(releaseManifestPath, 'utf8'),
+  ) as Record<string, unknown>;
+
+  delete releaseManifest.types;
+  await writeFile(
+    releaseManifestPath,
+    `${JSON.stringify(releaseManifest, null, 2)}\n`,
+    'utf8',
+  );
+
+  const invalidReleaseCheckResult = await runPnpm(releaseCheckArguments, {
+    cwd: fixture.fixtureDir,
+    reject: false,
+  });
+
+  expect(invalidReleaseCheckResult.exitCode).toBe(0);
+
+  const configSource = await readFile(fixture.configPath, 'utf8');
+
+  await writeFile(
+    fixture.configPath,
+    configSource.replace(
+      '  package: {',
+      '  release: { npmPackageJsonLint: true },\n  package: {',
+    ),
+    'utf8',
+  );
+
+  const missingPeerResult = await runPnpm(releaseCheckArguments, {
+    cwd: fixture.fixtureDir,
+    reject: false,
+  });
+  const missingPeerOutput = `${missingPeerResult.stdout}\n${missingPeerResult.stderr}`;
+
+  expect(missingPeerResult.exitCode).toBe(1);
+  expect(missingPeerOutput).toContain('Missing Limina runtime dependency:');
+  expect(missingPeerOutput).toContain('package: npm-package-json-lint');
+
+  await runPnpm(
+    [
+      'add',
+      '--save-dev',
+      '--prefer-offline',
+      '--ignore-scripts',
+      `npm-package-json-lint@${getPeerDependencyRange(
+        manifest,
+        'npm-package-json-lint',
+      )}`,
+    ],
+    {
+      cwd: fixture.fixtureDir,
+      inherit: true,
+      timeout: 300_000,
+    },
+  );
+
+  const enabledReleaseCheckResult = await runPnpm(releaseCheckArguments, {
+    cwd: fixture.fixtureDir,
+    reject: false,
+  });
+  const invalidReleaseOutput = `${enabledReleaseCheckResult.stdout}\n${enabledReleaseCheckResult.stderr}`;
+
+  expect(enabledReleaseCheckResult.exitCode).toBe(1);
+  expect(invalidReleaseOutput).toContain(
+    'Packed package manifest failed npm-package-json-lint',
+  );
+  expect(invalidReleaseOutput).toContain('require-types');
+  expect(invalidReleaseOutput).not.toContain('ReferenceError');
+}
+
 describe('limina published package smoke', () => {
   it('checks the Astro semantic graph with the lowest supported check version and TypeScript 5', async () => {
     const manifest = assertDistributionArtifacts();
@@ -196,87 +373,7 @@ describe('limina published package smoke', () => {
           'utf8',
         ),
       ) as typeof manifest;
-      expect(installedManifest.peerDependencies).toEqual(
-        manifest.peerDependencies,
-      );
-      expect(installedManifest.devDependencies).toEqual(
-        manifest.devDependencies,
-      );
-      expect(installedManifest.peerDependenciesMeta).toEqual(
-        manifest.peerDependenciesMeta,
-      );
-      for (const packageManifest of [manifest, installedManifest]) {
-        for (const section of [
-          packageManifest.dependencies,
-          packageManifest.devDependencies,
-          packageManifest.optionalDependencies,
-          packageManifest.peerDependencies,
-          packageManifest.peerDependenciesMeta,
-        ]) {
-          expect(section?.['oxc-parser']).toBeUndefined();
-          expect(section?.['@astrojs/compiler']).toBeUndefined();
-        }
-        for (const section of [
-          packageManifest.dependencies,
-          packageManifest.optionalDependencies,
-          packageManifest.peerDependencies,
-          packageManifest.peerDependenciesMeta,
-        ]) {
-          expect(section?.['@jridgewell/trace-mapping']).toBeUndefined();
-        }
-        expect(
-          packageManifest.devDependencies?.['@jridgewell/trace-mapping'],
-        ).toBe('^0.3.31');
-        for (const section of [
-          packageManifest.dependencies,
-          packageManifest.optionalDependencies,
-        ]) {
-          expect(section?.svelte2tsx).toBeUndefined();
-        }
-        expect(packageManifest.devDependencies?.svelte2tsx).toBe('^0.7.61');
-        expect(packageManifest.peerDependencies?.svelte2tsx).toBe('^0.7.61');
-        expect(packageManifest.peerDependenciesMeta?.svelte2tsx?.optional).toBe(
-          true,
-        );
-        expect(packageManifest.peerDependencies?.['@astrojs/check']).toBe(
-          '>=0.9.6 <0.10.0',
-        );
-        expect(
-          packageManifest.peerDependenciesMeta?.['@astrojs/check']?.optional,
-        ).toBe(true);
-        for (const workspacePackageName of [
-          '@limina/eslint-config',
-          '@limina/gates',
-          '@limina/build-tools',
-          '@docs-islands/eslint-config',
-          '@docs-islands/plugin-license',
-          '@docs-islands/utils',
-        ]) {
-          expect(
-            packageManifest.devDependencies?.[workspacePackageName],
-          ).toBeUndefined();
-        }
-        expect(packageManifest.devDependencies?.logaria).toBe('^0.0.4');
-      }
-      expect(manifest.dependencies?.['oxc-resolver']).toBeDefined();
-      expect(installedManifest.dependencies?.['oxc-resolver']).toBe(
-        manifest.dependencies?.['oxc-resolver'],
-      );
-      for (const packageName of ['@vue/language-core', '@volar/typescript']) {
-        expect(installedManifest.dependencies?.[packageName]).toBeUndefined();
-        expect(
-          installedManifest.devDependencies?.[packageName],
-        ).toBeUndefined();
-        expect(
-          installedManifest.optionalDependencies?.[packageName],
-        ).toBeUndefined();
-        expect(
-          installedManifest.peerDependencies?.[packageName],
-        ).toBeUndefined();
-        expect(
-          installedManifest.peerDependenciesMeta?.[packageName],
-        ).toBeUndefined();
-      }
+      assertInstalledManifest(manifest, installedManifest);
 
       const helpResult = await runPnpm(['exec', 'limina', '--help'], {
         cwd: fixture.fixtureDir,
@@ -350,97 +447,7 @@ describe('limina published package smoke', () => {
       expect(graphCheckResult.stdout).toContain('limina graph check');
       expect(graphCheckResult.stdout).toContain('limina graph passed');
 
-      const releaseCheckArguments = [
-        'exec',
-        'limina',
-        '--config',
-        './limina.config.mjs',
-        'release',
-        'check',
-        '--package',
-        RELEASE_FIXTURE_PACKAGE_NAME,
-      ];
-      const releaseCheckResult = await runPnpm(releaseCheckArguments, {
-        cwd: fixture.fixtureDir,
-      });
-
-      expect(releaseCheckResult.stdout).toContain('limina release check');
-      expect(releaseCheckResult.stdout).toContain('release checks passed');
-
-      const releaseManifestPath = path.join(
-        fixture.fixtureDir,
-        'release-dist',
-        'package.json',
-      );
-      const releaseManifest = JSON.parse(
-        await readFile(releaseManifestPath, 'utf8'),
-      ) as Record<string, unknown>;
-
-      delete releaseManifest.types;
-      await writeFile(
-        releaseManifestPath,
-        `${JSON.stringify(releaseManifest, null, 2)}\n`,
-        'utf8',
-      );
-
-      const invalidReleaseCheckResult = await runPnpm(releaseCheckArguments, {
-        cwd: fixture.fixtureDir,
-        reject: false,
-      });
-
-      expect(invalidReleaseCheckResult.exitCode).toBe(0);
-
-      const configSource = await readFile(fixture.configPath, 'utf8');
-
-      await writeFile(
-        fixture.configPath,
-        configSource.replace(
-          '  package: {',
-          '  release: { npmPackageJsonLint: true },\n  package: {',
-        ),
-        'utf8',
-      );
-
-      const missingPeerResult = await runPnpm(releaseCheckArguments, {
-        cwd: fixture.fixtureDir,
-        reject: false,
-      });
-      const missingPeerOutput = `${missingPeerResult.stdout}\n${missingPeerResult.stderr}`;
-
-      expect(missingPeerResult.exitCode).toBe(1);
-      expect(missingPeerOutput).toContain('Missing Limina runtime dependency:');
-      expect(missingPeerOutput).toContain('package: npm-package-json-lint');
-
-      await runPnpm(
-        [
-          'add',
-          '--save-dev',
-          '--prefer-offline',
-          '--ignore-scripts',
-          `npm-package-json-lint@${getPeerDependencyRange(
-            manifest,
-            'npm-package-json-lint',
-          )}`,
-        ],
-        {
-          cwd: fixture.fixtureDir,
-          inherit: true,
-          timeout: 300_000,
-        },
-      );
-
-      const enabledReleaseCheckResult = await runPnpm(releaseCheckArguments, {
-        cwd: fixture.fixtureDir,
-        reject: false,
-      });
-      const invalidReleaseOutput = `${enabledReleaseCheckResult.stdout}\n${enabledReleaseCheckResult.stderr}`;
-
-      expect(enabledReleaseCheckResult.exitCode).toBe(1);
-      expect(invalidReleaseOutput).toContain(
-        'Packed package manifest failed npm-package-json-lint',
-      );
-      expect(invalidReleaseOutput).toContain('require-types');
-      expect(invalidReleaseOutput).not.toContain('ReferenceError');
+      await assertReleaseChecks(fixture, manifest);
     } finally {
       if (fixture) {
         await fixture.cleanup();

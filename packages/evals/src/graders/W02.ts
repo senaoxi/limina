@@ -58,6 +58,76 @@ export async function gradeOutputWorkflow(
     commands.push(result);
     return result;
   };
+  async function checkOutputConsumption(): Promise<void> {
+    const copied = await run([
+      '-e',
+      "const fs=require('fs');process.stdout.write(JSON.stringify(fs.readFileSync('dist/contracts.d.ts').equals(fs.readFileSync('src/contracts.d.ts'))));",
+    ]);
+    assertions.push({
+      id: 'local-declaration-copied',
+      passed: copied.exitCode === 0 && copied.stdout === 'true',
+    });
+    const runtime = await run([
+      '--input-type=module',
+      '-e',
+      "import {twice} from './dist/index.js';process.stdout.write(JSON.stringify([twice({value:4}),twice({value:-3}),twice({value:1.25})]));",
+    ]);
+    assertions.push({
+      id: 'runtime-consumption',
+      passed: runtime.exitCode === 0 && runtime.stdout === '[8,-6,2.5]',
+    });
+    const consumer = await run([
+      '-e',
+      String.raw`const fs=require('fs');fs.mkdirSync('.eval-tmp',{recursive:true});fs.writeFileSync('.eval-tmp/consumer.ts',"import {twice} from '../dist/index.js';\nexport const value:number=twice({value:3});\n");fs.writeFileSync('.eval-tmp/tsconfig.json',JSON.stringify({compilerOptions:{target:'ES2023',module:'NodeNext',moduleResolution:'NodeNext',strict:true,noEmit:true,types:[]},files:['consumer.ts']}));`,
+    ]);
+    const types = await run([
+      '/opt/limina-evals/runtime/node_modules/typescript/bin/tsc',
+      '-p',
+      '.eval-tmp/tsconfig.json',
+      '--pretty',
+      'false',
+    ]);
+    assertions.push({
+      id: 'type-consumption',
+      passed: consumer.exitCode === 0 && types.exitCode === 0,
+    });
+    const injection = await run([
+      '-e',
+      String.raw`require('fs').writeFileSync('.eval-tmp/consumer.ts',"import {twice} from '../dist/index.js';\nexport const value:number=twice({value:'wrong'});\n")`,
+    ]);
+    const rejected = await run([
+      '/opt/limina-evals/runtime/node_modules/typescript/bin/tsc',
+      '-p',
+      '.eval-tmp/tsconfig.json',
+      '--pretty',
+      'false',
+    ]);
+    assertions.push({
+      id: 'consumer-type-error',
+      passed:
+        injection.exitCode === 0 &&
+        rejected.exitCode === 2 &&
+        rejected.stdout.includes('error TS2322:') &&
+        rejected.stdout.includes('.eval-tmp/consumer.ts'),
+    });
+    const secondClean = await run(['clean.mjs']);
+    const rebuilt = outputArguments
+      ? await run([cli, ...outputArguments])
+      : undefined;
+    const consumedAgain = await run([
+      '--input-type=module',
+      '-e',
+      "import {twice} from './dist/index.js';process.stdout.write(String(twice({value:11})));",
+    ]);
+    assertions.push({
+      id: 'clean-rebuild',
+      passed:
+        secondClean.exitCode === 0 &&
+        rebuilt?.exitCode === 0 &&
+        consumedAgain.exitCode === 0 &&
+        consumedAgain.stdout === '22',
+    });
+  }
   const setup = await run([
     '-e',
     "require('fs').symlinkSync('/opt/limina-evals/runtime/node_modules','/workspace/node_modules')",
@@ -131,74 +201,7 @@ export async function gradeOutputWorkflow(
       id: 'delivered-output-matches',
       passed: hasMatchingOutput,
     });
-    const copied = await run([
-      '-e',
-      "const fs=require('fs');process.stdout.write(JSON.stringify(fs.readFileSync('dist/contracts.d.ts').equals(fs.readFileSync('src/contracts.d.ts'))));",
-    ]);
-    assertions.push({
-      id: 'local-declaration-copied',
-      passed: copied.exitCode === 0 && copied.stdout === 'true',
-    });
-    const runtime = await run([
-      '--input-type=module',
-      '-e',
-      "import {twice} from './dist/index.js';process.stdout.write(JSON.stringify([twice({value:4}),twice({value:-3}),twice({value:1.25})]));",
-    ]);
-    assertions.push({
-      id: 'runtime-consumption',
-      passed: runtime.exitCode === 0 && runtime.stdout === '[8,-6,2.5]',
-    });
-    const consumer = await run([
-      '-e',
-      String.raw`const fs=require('fs');fs.mkdirSync('.eval-tmp',{recursive:true});fs.writeFileSync('.eval-tmp/consumer.ts',"import {twice} from '../dist/index.js';\nexport const value:number=twice({value:3});\n");fs.writeFileSync('.eval-tmp/tsconfig.json',JSON.stringify({compilerOptions:{target:'ES2023',module:'NodeNext',moduleResolution:'NodeNext',strict:true,noEmit:true,types:[]},files:['consumer.ts']}));`,
-    ]);
-    const types = await run([
-      '/opt/limina-evals/runtime/node_modules/typescript/bin/tsc',
-      '-p',
-      '.eval-tmp/tsconfig.json',
-      '--pretty',
-      'false',
-    ]);
-    assertions.push({
-      id: 'type-consumption',
-      passed: consumer.exitCode === 0 && types.exitCode === 0,
-    });
-    const injection = await run([
-      '-e',
-      String.raw`require('fs').writeFileSync('.eval-tmp/consumer.ts',"import {twice} from '../dist/index.js';\nexport const value:number=twice({value:'wrong'});\n")`,
-    ]);
-    const rejected = await run([
-      '/opt/limina-evals/runtime/node_modules/typescript/bin/tsc',
-      '-p',
-      '.eval-tmp/tsconfig.json',
-      '--pretty',
-      'false',
-    ]);
-    assertions.push({
-      id: 'consumer-type-error',
-      passed:
-        injection.exitCode === 0 &&
-        rejected.exitCode === 2 &&
-        rejected.stdout.includes('error TS2322:') &&
-        rejected.stdout.includes('.eval-tmp/consumer.ts'),
-    });
-    const secondClean = await run(['clean.mjs']);
-    const rebuilt = outputArguments
-      ? await run([cli, ...outputArguments])
-      : undefined;
-    const consumedAgain = await run([
-      '--input-type=module',
-      '-e',
-      "import {twice} from './dist/index.js';process.stdout.write(String(twice({value:11})));",
-    ]);
-    assertions.push({
-      id: 'clean-rebuild',
-      passed:
-        secondClean.exitCode === 0 &&
-        rebuilt?.exitCode === 0 &&
-        consumedAgain.exitCode === 0 &&
-        consumedAgain.stdout === '22',
-    });
+    await checkOutputConsumption();
   }
   return {
     report: {

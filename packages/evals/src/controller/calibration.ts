@@ -184,20 +184,7 @@ export async function gradeTaskProject(
   }
 }
 
-export async function calibrateTask(input: {
-  definition: TaskDefinition;
-  docker: DockerIdentity;
-  closureDigest: string;
-  output: string;
-}) {
-  const { definition, output } = input;
-  if (
-    !path.isAbsolute(output) ||
-    (await realpath(path.dirname(output))) !== path.dirname(output)
-  )
-    throw new Error(
-      'Calibration output must have a canonical controller parent',
-    );
+function validateCalibrationCases(definition: TaskDefinition): void {
   if (
     definition.cases.filter((value) => value.expected === 'passed').length ===
       0 ||
@@ -212,6 +199,40 @@ export async function calibrateTask(input: {
   for (const value of definition.cases)
     if (!/^[a-z0-9-]+$/.test(value.id))
       throw new Error('Invalid calibration case ID');
+}
+
+async function applyCalibrationEdits(
+  source: string,
+  edits: CalibrationCase['edits'],
+): Promise<void> {
+  for (const edit of edits) {
+    assertRelativePath(edit.path);
+    const target = path.join(source, edit.path);
+    if (edit.content === null)
+      await rm(target, { recursive: true, force: true });
+    else {
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, edit.content, { mode: 0o644 });
+    }
+    if (edit.mode !== undefined) await chmod(target, edit.mode);
+  }
+}
+
+export async function calibrateTask(input: {
+  definition: TaskDefinition;
+  docker: DockerIdentity;
+  closureDigest: string;
+  output: string;
+}) {
+  const { definition, output } = input;
+  if (
+    !path.isAbsolute(output) ||
+    (await realpath(path.dirname(output))) !== path.dirname(output)
+  )
+    throw new Error(
+      'Calibration output must have a canonical controller parent',
+    );
+  validateCalibrationCases(definition);
   await mkdir(output, { mode: 0o700 });
   const codeDigest = await taskCodeIdentity(definition.sourceFiles);
   const graderDigest = await taskCodeIdentity(definition.graderFiles);
@@ -254,17 +275,7 @@ export async function calibrateTask(input: {
     await materializeSnapshot(fixture, source);
     await prepareTaskStart(source);
     const start = await captureTaskSnapshot(source, 'S0', task);
-    for (const edit of scenario.edits) {
-      assertRelativePath(edit.path);
-      const target = path.join(source, edit.path);
-      if (edit.content === null)
-        await rm(target, { recursive: true, force: true });
-      else {
-        await mkdir(path.dirname(target), { recursive: true });
-        await writeFile(target, edit.content, { mode: 0o644 });
-      }
-      if (edit.mode !== undefined) await chmod(target, edit.mode);
-    }
+    await applyCalibrationEdits(source, scenario.edits);
     const final = await captureTaskSnapshot(source, 'S1', task);
     await writeFile(path.join(directory, 'S0.json'), JSON.stringify(start), {
       mode: 0o600,
@@ -361,6 +372,54 @@ export async function calibrateTask(input: {
   return receipt;
 }
 
+function verifyCalibrationStates(
+  result: Awaited<ReturnType<typeof calibrateTask>>['results'][number],
+  fixture: Snapshot,
+  start: Snapshot,
+  final: Snapshot,
+): void {
+  if (
+    result.states.fixture !== fixture.digest ||
+    result.states.start !== start.digest ||
+    result.states.final !== final.digest
+  )
+    throw new Error('Calibration state identity changed');
+  if (
+    start.status !== 'complete' ||
+    final.status !== 'complete' ||
+    start.stage !== 'S0' ||
+    final.stage !== 'S1'
+  )
+    throw new Error('Calibration state evidence incomplete');
+}
+
+function verifyCalibrationFixture(
+  fixture: Snapshot,
+  definition: TaskDefinition,
+): void {
+  const expectedPaths = new Set(Object.keys(definition.files));
+  for (const file of Object.keys(definition.files)) {
+    const parts = file.split('/');
+    for (let depth = 1; depth < parts.length; depth++)
+      expectedPaths.add(parts.slice(0, depth).join('/'));
+  }
+  if (
+    fixture.excludedRoots.length > 0 ||
+    fixture.entries.length !== expectedPaths.size ||
+    fixture.entries.some(
+      (entry) =>
+        !expectedPaths.has(entry.path) ||
+        (entry.kind === 'file'
+          ? Buffer.from(entry.content, 'base64').toString('utf8') !==
+              definition.files[entry.path] || entry.mode !== 0o644
+          : entry.kind !== 'directory'),
+    )
+  )
+    throw new Error(
+      'Calibration fixture differs from the controller task definition',
+    );
+}
+
 export interface AdmittedTask {
   readonly task: TaskSpec;
   readonly fixture: Snapshot;
@@ -424,28 +483,8 @@ export async function admitCalibratedTask(input: {
   )
     throw new Error('Calibration identity changed or is incomplete');
   verifySnapshot(fixture);
-  const expectedPaths = new Set(Object.keys(definition.files));
-  for (const file of Object.keys(definition.files)) {
-    const parts = file.split('/');
-    for (let depth = 1; depth < parts.length; depth++)
-      expectedPaths.add(parts.slice(0, depth).join('/'));
-  }
-  if (
-    fixture.excludedRoots.length > 0 ||
-    fixture.entries.length !== expectedPaths.size ||
-    fixture.entries.some(
-      (entry) =>
-        !expectedPaths.has(entry.path) ||
-        (entry.kind === 'file'
-          ? Buffer.from(entry.content, 'base64').toString('utf8') !==
-              definition.files[entry.path] || entry.mode !== 0o644
-          : entry.kind !== 'directory'),
-    )
-  )
-    throw new Error(
-      'Calibration fixture differs from the controller task definition',
-    );
-  for (const scenario of definition.cases) {
+  verifyCalibrationFixture(fixture, definition);
+  async function verifyCase(scenario: CalibrationCase): Promise<void> {
     const result = receipt.results.find(
       (value) => value.caseId === scenario.id,
     );
@@ -460,19 +499,7 @@ export async function admitCalibratedTask(input: {
     const final = await read<Snapshot>(`${scenario.id}/S1.json`);
     verifySnapshot(start);
     verifySnapshot(final);
-    if (
-      result.states.fixture !== fixture.digest ||
-      result.states.start !== start.digest ||
-      result.states.final !== final.digest
-    )
-      throw new Error('Calibration state identity changed');
-    if (
-      start.status !== 'complete' ||
-      final.status !== 'complete' ||
-      start.stage !== 'S0' ||
-      final.stage !== 'S1'
-    )
-      throw new Error('Calibration state evidence incomplete');
+    verifyCalibrationStates(result, fixture, start, final);
     if (
       (scenario.expectedFailedAssertions ?? []).some(
         (id) =>
@@ -512,6 +539,7 @@ export async function admitCalibratedTask(input: {
     )
       throw new Error('Calibration reference or negative control did not hold');
   }
+  for (const scenario of definition.cases) await verifyCase(scenario);
   const admitted = Object.freeze({
     task,
     fixture,

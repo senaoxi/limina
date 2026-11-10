@@ -28,6 +28,21 @@ function isDirectFileRead(command: string, file: string): boolean {
   return target === file || target?.endsWith(`/${file}`) === true;
 }
 
+function initialActivation(
+  skill: Snapshot | null,
+  isDiscoverable: boolean,
+  yes: EvidenceReference[],
+): ActivationEvidence {
+  return {
+    installed: observation(skill ? 'yes' : 'no', yes),
+    discoverable: observation(isDiscoverable ? 'yes' : 'no', yes),
+    discovered: observation(skill ? 'unknown' : 'no', skill ? [] : yes),
+    skillRead: observation(skill ? 'unknown' : 'no', skill ? [] : yes),
+    referenceReads: {},
+    followed: observation(skill ? 'unknown' : 'no', skill ? [] : yes),
+  };
+}
+
 /** Extract only complete-content reads from successful native tool results.
  * Visibility, file access and following advice have different authorities. */
 export function observeActivation(input: {
@@ -38,23 +53,7 @@ export function observeActivation(input: {
   evidence: EvidenceReference[];
 }): ActivationEvidence {
   const yes = input.evidence;
-  const out: ActivationEvidence = {
-    installed: observation(input.skill ? 'yes' : 'no', yes),
-    discoverable: observation(input.discoverable ? 'yes' : 'no', yes),
-    discovered: observation(
-      input.skill ? 'unknown' : 'no',
-      input.skill ? [] : yes,
-    ),
-    skillRead: observation(
-      input.skill ? 'unknown' : 'no',
-      input.skill ? [] : yes,
-    ),
-    referenceReads: {},
-    followed: observation(
-      input.skill ? 'unknown' : 'no',
-      input.skill ? [] : yes,
-    ),
-  };
+  const out = initialActivation(input.skill, input.discoverable, yes);
   if (!input.skill || !input.traceComplete) return out;
   const files = new Map(
     input.trace.entries

@@ -89,15 +89,30 @@ function protectInputs(input: AttemptInput): void {
   }
 }
 
-/**
-Every launched model attempt reserves one slot in the same controller ledger.
-Final capture runs for success, nonzero exit, timeout and process errors alike.
-*/
-export async function runLocalCodex(input: AttemptInput) {
-  if (input.modelProfile)
-    verifyProfileBinary(input.modelProfile, input.identity);
-  input.assertDispatchAllowed();
-  const excludedRoots = captureRoots(input.task);
+function assertIncludedAccount(
+  billing: BillingEvidence,
+  account: Awaited<ReturnType<typeof inspectAccount>>,
+): void {
+  if (
+    billing.mode !== 'included_only' ||
+    !['plus', 'pro', 'prolite', 'promax'].includes(
+      account.auth.planType ?? '',
+    ) ||
+    account.ordinaryUsageAllowed !== true ||
+    account.credits?.balance !== '0' ||
+    account.credits.hasCredits ||
+    account.credits.unlimited ||
+    account.spendControlReached !== false
+  )
+    throw new Error(
+      'This runner is admitted only for included usage without credits',
+    );
+}
+
+function assertPreparedRuntime(
+  input: AttemptInput,
+  excludedRoots: string[],
+): void {
   if (
     input.task.dependencyPolicy.variants.every(
       (variant) => variant.closureDigest !== input.runtime.bundleDigest,
@@ -112,6 +127,129 @@ export async function runLocalCodex(input: AttemptInput) {
       )
   )
     throw new Error('Prepared runtime does not match the frozen TaskSpec');
+}
+
+async function prepareNativeAccount(
+  input: AttemptInput,
+  environment: ReturnType<typeof codexEnvironment>,
+  readableToolRoots: string[],
+) {
+  const discovery = await inspectAccount(
+    input.identity,
+    environment,
+    {
+      workspace: input.volume.workspace,
+      disabledSkillPaths: [],
+    },
+    input.modelProfile,
+  );
+  const allowedSkillPaths = input.allowedSkillPaths ?? [];
+  for (const skillPath of allowedSkillPaths)
+    if (!isWithin(input.volume.workspace, realpathSync(skillPath)))
+      throw new Error('Treatment Skill must be frozen inside the workspace');
+  const disabledSkillPaths = (discovery.skills ?? [])
+    .filter((skill) => !allowedSkillPaths.includes(skill.path))
+    .map((skill) => skill.path);
+  const account = await inspectAccount(
+    input.identity,
+    environment,
+    {
+      workspace: input.volume.workspace,
+      disabledSkillPaths,
+    },
+    input.modelProfile,
+  );
+  const enabledSkillPaths = (account.skills ?? [])
+    .filter((skill) => skill.enabled)
+    .map((skill) => skill.path);
+  verifyLocalConfig(
+    input.identity,
+    input.evidenceDirectory,
+    readableToolRoots,
+    disabledSkillPaths,
+    input.volume.workspace,
+    input.modelProfile,
+  );
+  if (
+    enabledSkillPaths.length !== allowedSkillPaths.length ||
+    enabledSkillPaths.some(
+      (skillPath) => !allowedSkillPaths.includes(skillPath),
+    )
+  )
+    throw new Error('Native Skill discovery differs from the frozen treatment');
+  if (
+    account.model?.model !==
+      (input.modelProfile?.canonicalModelId ?? 'gpt-6.1-terra') ||
+    account.model.supportedReasoningEfforts.every(
+      (effort) =>
+        effort.reasoningEffort !==
+        (input.modelProfile?.reasoningEffort ?? 'high'),
+    )
+  )
+    throw new Error('Required model and reasoning effort unavailable');
+  assertIncludedAccount(input.billing, account);
+  return { discovery, account, allowedSkillPaths, disabledSkillPaths };
+}
+
+async function checkRuntimeIntegrity(
+  input: AttemptInput,
+  s0: Awaited<ReturnType<typeof captureTaskSnapshot>>,
+  s1: Awaited<ReturnType<typeof captureTaskSnapshot>>,
+  captureEndsAt: number,
+) {
+  let mutation = validateMutations(input.task, s0, s1);
+  let runtimeIntegrity: {
+    status: 'complete' | 'changed' | 'unknown';
+    error?: string;
+  } = {
+    status: 'unknown',
+  };
+  if (s1.status === 'complete') {
+    try {
+      await beforeCaptureDeadline(captureEndsAt, () =>
+        verifyAgentRuntime(input.volume.frozen, input.runtime),
+      );
+      runtimeIntegrity = { status: 'complete' };
+    } catch (error) {
+      runtimeIntegrity = {
+        status:
+          error instanceof ProtectedRuntimeChanged ? 'changed' : 'unknown',
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Runtime integrity capture failed',
+      };
+      if (error instanceof ProtectedRuntimeChanged) {
+        const violations =
+          mutation.status === 'unsafe' ? mutation.violations : [];
+        mutation = {
+          status: 'unsafe',
+          violations: [
+            ...violations,
+            { path: error.relativePath, code: 'protected' },
+          ],
+        };
+      }
+    }
+  }
+  if (runtimeIntegrity.status === 'unknown' && mutation.status === 'accepted')
+    mutation = {
+      status: 'unknown',
+      reason: 'Protected dependency evidence is incomplete',
+    };
+  return { mutation, runtimeIntegrity };
+}
+
+/**
+Every launched model attempt reserves one slot in the same controller ledger.
+Final capture runs for success, nonzero exit, timeout and process errors alike.
+*/
+export async function runLocalCodex(input: AttemptInput) {
+  if (input.modelProfile)
+    verifyProfileBinary(input.modelProfile, input.identity);
+  input.assertDispatchAllowed();
+  const excludedRoots = captureRoots(input.task);
+  assertPreparedRuntime(input, excludedRoots);
   await verifyAgentRuntime(input.volume.workspace, input.runtime);
   const readableToolRoots = [
     ...input.readableToolRoots,
@@ -144,75 +282,8 @@ export async function runLocalCodex(input: AttemptInput) {
     // The pinned CLI writes raw tool dispatches here, outside all Agent grants.
     // exec --json alone omits some Code Mode tool outputs.
     environment.CODEX_ROLLOUT_TRACE_ROOT = nativeTraceRoot;
-    const discovery = await inspectAccount(
-      input.identity,
-      environment,
-      {
-        workspace: input.volume.workspace,
-        disabledSkillPaths: [],
-      },
-      input.modelProfile,
-    );
-    const allowedSkillPaths = input.allowedSkillPaths ?? [];
-    for (const skillPath of allowedSkillPaths)
-      if (!isWithin(input.volume.workspace, realpathSync(skillPath)))
-        throw new Error('Treatment Skill must be frozen inside the workspace');
-    const disabledSkillPaths = (discovery.skills ?? [])
-      .filter((skill) => !allowedSkillPaths.includes(skill.path))
-      .map((skill) => skill.path);
-    const account = await inspectAccount(
-      input.identity,
-      environment,
-      {
-        workspace: input.volume.workspace,
-        disabledSkillPaths,
-      },
-      input.modelProfile,
-    );
-    const enabledSkillPaths = (account.skills ?? [])
-      .filter((skill) => skill.enabled)
-      .map((skill) => skill.path);
-    verifyLocalConfig(
-      input.identity,
-      input.evidenceDirectory,
-      readableToolRoots,
-      disabledSkillPaths,
-      input.volume.workspace,
-      input.modelProfile,
-    );
-    if (
-      enabledSkillPaths.length !== allowedSkillPaths.length ||
-      enabledSkillPaths.some(
-        (skillPath) => !allowedSkillPaths.includes(skillPath),
-      )
-    )
-      throw new Error(
-        'Native Skill discovery differs from the frozen treatment',
-      );
-    if (
-      account.model?.model !==
-        (input.modelProfile?.canonicalModelId ?? 'gpt-6.1-terra') ||
-      account.model.supportedReasoningEfforts.every(
-        (effort) =>
-          effort.reasoningEffort !==
-          (input.modelProfile?.reasoningEffort ?? 'high'),
-      )
-    )
-      throw new Error('Required model and reasoning effort unavailable');
-    if (
-      input.billing.mode !== 'included_only' ||
-      !['plus', 'pro', 'prolite', 'promax'].includes(
-        account.auth.planType ?? '',
-      ) ||
-      account.ordinaryUsageAllowed !== true ||
-      account.credits?.balance !== '0' ||
-      account.credits.hasCredits ||
-      account.credits.unlimited ||
-      account.spendControlReached !== false
-    )
-      throw new Error(
-        'This runner is admitted only for included usage without credits',
-      );
+    const { discovery, account, allowedSkillPaths, disabledSkillPaths } =
+      await prepareNativeAccount(input, environment, readableToolRoots);
     const s0 = await captureTaskSnapshot(
       input.volume.workspace,
       'S0',
@@ -305,114 +376,83 @@ export async function runLocalCodex(input: AttemptInput) {
         excludedRoots,
         timeoutMs: input.timeoutMs,
       });
-    // Preserve a known exit independently of later trace, billing and Grader work.
-    writeFileSync(
-      path.join(input.evidenceDirectory, 'execution.json'),
-      JSON.stringify({ execution, agentMs }),
-      { mode: 0o600, flag: 'wx' },
-    );
-    const usage = usageFromEvents(events);
-    const starts = events.filter(
-      (event): event is { type: string; thread_id: string } =>
-        typeof event === 'object' &&
-        event !== null &&
-        'type' in event &&
-        event.type === 'thread.started' &&
-        'thread_id' in event &&
-        typeof event.thread_id === 'string',
-    );
-    const trace = await collectNativeTrace(
-      nativeTraceRoot,
-      starts.length === 1 ? starts[0]!.thread_id : null,
-      usage,
-      input.modelProfile,
-      { forbidAgentInstructions: true },
-    );
-    writeFileSync(
-      path.join(input.evidenceDirectory, 'native-trace-capture.json'),
-      `${JSON.stringify({ ...trace, skillDiscovery: { authority: 'codex-app-server:skills/list', modelProfileId: input.modelProfile?.id ?? null, workspace: input.volume.workspace, before: { observedAt: discovery.observedAt, skills: discovery.skills }, dispatch: { observedAt: account.observedAt, skills: account.skills } } })}\n`,
-      { mode: 0o600 },
-    );
-    usage.modelEvidence = {
-      observedModelIds: trace.evidence.observedModelIds ?? [],
-      modelProfileId: input.modelProfile?.id ?? null,
-      traceDigest: trace.files.digest,
-    };
-    if (
-      trace.evidence.status !== 'complete' ||
-      !trace.evidence.tokensComplete
-    ) {
-      usage.complete = false;
-      usage.settlement = 'unknown';
-      usage.settledUsd = null;
-    }
-    if (execution.status === 'infra_error')
-      input.budget.recordNotDispatched(
-        input.runId,
-        execution.evidence.recordId,
+    async function finalizeAttempt() {
+      // Preserve a known exit independently of later trace, billing and Grader work.
+      writeFileSync(
+        path.join(input.evidenceDirectory, 'execution.json'),
+        JSON.stringify({ execution, agentMs }),
+        { mode: 0o600, flag: 'wx' },
       );
-    else input.budget.recordUsage(input.runId, usage);
-    let mutation = validateMutations(input.task, s0, s1);
-    let runtimeIntegrity: {
-      status: 'complete' | 'changed' | 'unknown';
-      error?: string;
-    } = {
-      status: 'unknown',
-    };
-    if (s1.status === 'complete') {
-      try {
-        await beforeCaptureDeadline(captureEndsAt, () =>
-          verifyAgentRuntime(input.volume.frozen, input.runtime),
-        );
-        runtimeIntegrity = { status: 'complete' };
-      } catch (error) {
-        runtimeIntegrity = {
-          status:
-            error instanceof ProtectedRuntimeChanged ? 'changed' : 'unknown',
-          error:
-            error instanceof Error
-              ? error.message
-              : 'Runtime integrity capture failed',
-        };
-        if (error instanceof ProtectedRuntimeChanged) {
-          const violations =
-            mutation.status === 'unsafe' ? mutation.violations : [];
-          mutation = {
-            status: 'unsafe',
-            violations: [
-              ...violations,
-              { path: error.relativePath, code: 'protected' },
-            ],
-          };
-        }
-      }
-    }
-    if (runtimeIntegrity.status === 'unknown' && mutation.status === 'accepted')
-      mutation = {
-        status: 'unknown',
-        reason: 'Protected dependency evidence is incomplete',
+      const usage = usageFromEvents(events);
+      const starts = events.filter(
+        (event): event is { type: string; thread_id: string } =>
+          typeof event === 'object' &&
+          event !== null &&
+          'type' in event &&
+          event.type === 'thread.started' &&
+          'thread_id' in event &&
+          typeof event.thread_id === 'string',
+      );
+      const trace = await collectNativeTrace(
+        nativeTraceRoot,
+        starts.length === 1 ? starts[0]!.thread_id : null,
+        usage,
+        input.modelProfile,
+        { forbidAgentInstructions: true },
+      );
+      writeFileSync(
+        path.join(input.evidenceDirectory, 'native-trace-capture.json'),
+        `${JSON.stringify({ ...trace, skillDiscovery: { authority: 'codex-app-server:skills/list', modelProfileId: input.modelProfile?.id ?? null, workspace: input.volume.workspace, before: { observedAt: discovery.observedAt, skills: discovery.skills }, dispatch: { observedAt: account.observedAt, skills: account.skills } } })}\n`,
+        { mode: 0o600 },
+      );
+      usage.modelEvidence = {
+        observedModelIds: trace.evidence.observedModelIds ?? [],
+        modelProfileId: input.modelProfile?.id ?? null,
+        traceDigest: trace.files.digest,
       };
-    const result = {
-      runId: input.runId,
-      taskId: input.task.id,
-      execution,
-      agentMs,
-      s0,
-      s1,
-      usage,
-      trace: trace.evidence,
-      runtime: input.runtime,
-      runtimeIntegrity,
-      mutation,
-      skillDiscoverable: allowedSkillPaths.length === 1,
-      traceFiles: trace.files,
-    };
-    writeFileSync(
-      path.join(input.evidenceDirectory, 'attempt.json'),
-      `${JSON.stringify(result)}\n`,
-      { mode: 0o600 },
-    );
-    return result;
+      if (
+        trace.evidence.status !== 'complete' ||
+        !trace.evidence.tokensComplete
+      ) {
+        usage.complete = false;
+        usage.settlement = 'unknown';
+        usage.settledUsd = null;
+      }
+      if (execution.status === 'infra_error')
+        input.budget.recordNotDispatched(
+          input.runId,
+          execution.evidence.recordId,
+        );
+      else input.budget.recordUsage(input.runId, usage);
+      const { mutation, runtimeIntegrity } = await checkRuntimeIntegrity(
+        input,
+        s0,
+        s1,
+        captureEndsAt,
+      );
+      const result = {
+        runId: input.runId,
+        taskId: input.task.id,
+        execution,
+        agentMs,
+        s0,
+        s1,
+        usage,
+        trace: trace.evidence,
+        runtime: input.runtime,
+        runtimeIntegrity,
+        mutation,
+        skillDiscoverable: allowedSkillPaths.length === 1,
+        traceFiles: trace.files,
+      };
+      writeFileSync(
+        path.join(input.evidenceDirectory, 'attempt.json'),
+        `${JSON.stringify(result)}\n`,
+        { mode: 0o600 },
+      );
+      return result;
+    }
+    return await finalizeAttempt();
   } finally {
     isolatedHome.dispose();
   }

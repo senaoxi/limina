@@ -8,6 +8,18 @@ import type {
 
 const cli = '/opt/limina-evals/runtime/node_modules/limina/bin/limina.js';
 
+function hasPreservedSource(fixture: Snapshot, final: Snapshot): boolean {
+  const source = fixture.entries.find((entry) => entry.path === 'src/index.ts');
+  const actualSource = final.entries.find(
+    (entry) => entry.path === 'src/index.ts',
+  );
+  return (
+    source?.kind === 'file' &&
+    actualSource?.kind === 'file' &&
+    source.sha256 === actualSource.sha256
+  );
+}
+
 /**
 Run only after reconstruction and mutation admission, outside the Agent process.
 Neither this module nor its assertion decisions are copied into the container.
@@ -20,17 +32,10 @@ export async function gradeInitialization(
 ): Promise<{ report: AssertionReport; commands: CommandEvidence[] }> {
   const assertions: AssertionReport['assertions'] = [];
   const commands: CommandEvidence[] = [];
-  const source = fixture.entries.find((entry) => entry.path === 'src/index.ts');
-  const actualSource = final.entries.find(
-    (entry) => entry.path === 'src/index.ts',
-  );
   assertions.push(
     {
       id: 'source-preserved',
-      passed:
-        source?.kind === 'file' &&
-        actualSource?.kind === 'file' &&
-        source.sha256 === actualSource.sha256,
+      passed: hasPreservedSource(fixture, final),
     },
     {
       id: 'config-created',

@@ -13,6 +13,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
 import {
+  type CommandResult,
   packLiminaDistribution,
   packMigrationDistribution,
   runCommand,
@@ -41,6 +42,140 @@ function corruptEmbeddedCoreVersion(text: string): string | undefined {
     : `${text.slice(0, initializer.getStart(source))}"99.0.0"${text.slice(initializer.end)}`;
 }
 
+async function writeMigrationProject(
+  root: string,
+  coreTarballPath: string,
+): Promise<void> {
+  const put = async (file: string, content: string) =>
+    writeFile(path.join(root, file), content);
+  await put(
+    'package.json',
+    json({
+      name: 'packed-migration',
+      private: true,
+      type: 'module',
+      devDependencies: {
+        limina: `file:${coreTarballPath}`,
+        typescript: '6.0.3',
+      },
+    }),
+  );
+  await put(
+    'pnpm-workspace.yaml',
+    `packages: []\nhoist: false\nautoInstallPeers: false\npackageImportMethod: copy\noverrides:\n  limina: ${JSON.stringify(`file:${coreTarballPath}`)}\n`,
+  );
+  await put('.gitignore', 'node_modules/\n.limina/\n');
+  await put(
+    'limina.config.mjs',
+    `export default ({ command, mode }) => {
+    if (!['migration', 'check', 'graph'].includes(command)) throw new Error('wrong command');
+    if (mode !== 'mode with ! & quotes') throw new Error('wrong mode');
+    return {};
+  };\n`,
+  );
+  await put(
+    'tsconfig.json',
+    json({
+      compilerOptions: { strict: true, noEmit: true },
+      files: ['index.ts'],
+    }),
+  );
+  await put('index.ts', 'export const value: number = 1;\n');
+  await runPnpm(['install', '--ignore-scripts', '--prefer-offline'], {
+    cwd: root,
+  });
+}
+
+async function assertMissingVerifier(
+  worker: string,
+  root: string,
+  runMigration: () => Promise<CommandResult>,
+): Promise<void> {
+  await rename(worker, `${worker}.disabled`);
+  try {
+    const missing = await runMigration();
+    expect(missing.exitCode).not.toBe(0);
+    const report = JSON.parse(
+      await readFile(path.join(root, '.limina/migration/latest.json'), 'utf8'),
+    );
+    expect(report.result.inputConsumable).toBe(false);
+    expect(report.verification.diagnostics.join('\n')).toContain(
+      'verifier is unavailable',
+    );
+  } finally {
+    await rename(`${worker}.disabled`, worker);
+  }
+}
+
+async function assertEmbeddedCoreVersion(
+  migrateRoot: string,
+  root: string,
+  before: string,
+  runMigration: () => Promise<CommandResult>,
+): Promise<void> {
+  // Corrupt a consumer artifact's actual embedded core version while the
+  // installed self manifest and build metadata stay unchanged.
+  const chunks = await readdir(path.join(migrateRoot, 'chunks'));
+  let hasExercisedEmbeddedVersion = false;
+  for (const chunk of chunks) {
+    const chunkPath = path.join(migrateRoot, 'chunks', chunk);
+    const text = await readFile(chunkPath, 'utf8');
+    const corrupted = corruptEmbeddedCoreVersion(text);
+    if (corrupted === undefined) continue;
+    hasExercisedEmbeddedVersion = true;
+    await writeFile(chunkPath, corrupted);
+    try {
+      const invalidCore = await runMigration();
+      expect(invalidCore.exitCode).not.toBe(0);
+      expect(invalidCore.stderr).toContain('embedded Limina@99.0.0');
+      expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
+        before,
+      );
+    } finally {
+      await writeFile(chunkPath, text);
+    }
+    break;
+  }
+  expect(hasExercisedEmbeddedVersion).toBe(true);
+}
+
+async function assertProjectVersionMetadata(
+  root: string,
+  before: string,
+  runMigration: () => Promise<CommandResult>,
+) {
+  const manifestPath = path.join(root, 'node_modules/limina/package.json');
+  const manifestText = await readFile(manifestPath, 'utf8');
+  const manifest = JSON.parse(manifestText);
+  await writeFile(manifestPath, json({ ...manifest, version: '99.0.0' }));
+  try {
+    const mismatch = await runMigration();
+    expect(mismatch.exitCode, mismatch.stdout + mismatch.stderr).toBe(0);
+    expect(mismatch.stdout).toContain('Project Limina@99.0.0');
+    expect(mismatch.stdout).toContain('observed-different-version');
+    expect(mismatch.stdout).toContain(
+      'project runtime is not the verification target',
+    );
+    expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
+      before,
+    );
+  } finally {
+    await writeFile(manifestPath, manifestText);
+  }
+  await writeFile(manifestPath, json({ ...manifest, version: '' }));
+  try {
+    const unknown = await runMigration();
+    expect(unknown.exitCode, unknown.stdout + unknown.stderr).toBe(0);
+    expect(unknown.stdout).toContain('Project Limina version: unavailable');
+    expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
+      before,
+    );
+  } finally {
+    await writeFile(manifestPath, manifestText);
+  }
+  return manifest;
+}
+
 it('runs packed migration, preserves legacy argv and isolates verifier and version failures', async () => {
   const core = await packLiminaDistribution();
   const migration = await packMigrationDistribution();
@@ -48,8 +183,6 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     path.join(tmpdir(), "limina migrate ! & ' "),
   );
   const root = await realpath(temporaryPath);
-  const put = async (file: string, content: string) =>
-    writeFile(path.join(root, file), content);
   const node = (arguments_: string[], environment?: NodeJS.ProcessEnv) =>
     runCommand(process.execPath, arguments_, {
       cwd: root,
@@ -80,42 +213,7 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     'node_modules/limina-migrate/bin/limina-migrate.js',
   );
   try {
-    await put(
-      'package.json',
-      json({
-        name: 'packed-migration',
-        private: true,
-        type: 'module',
-        devDependencies: {
-          limina: `file:${core.tarballPath}`,
-          typescript: '6.0.3',
-        },
-      }),
-    );
-    await put(
-      'pnpm-workspace.yaml',
-      `packages: []\nhoist: false\nautoInstallPeers: false\npackageImportMethod: copy\noverrides:\n  limina: ${JSON.stringify(`file:${core.tarballPath}`)}\n`,
-    );
-    await put('.gitignore', 'node_modules/\n.limina/\n');
-    await put(
-      'limina.config.mjs',
-      `export default ({ command, mode }) => {
-      if (!['migration', 'check', 'graph'].includes(command)) throw new Error('wrong command');
-      if (mode !== 'mode with ! & quotes') throw new Error('wrong mode');
-      return {};
-    };\n`,
-    );
-    await put(
-      'tsconfig.json',
-      json({
-        compilerOptions: { strict: true, noEmit: true },
-        files: ['index.ts'],
-      }),
-    );
-    await put('index.ts', 'export const value: number = 1;\n');
-    await runPnpm(['install', '--ignore-scripts', '--prefer-offline'], {
-      cwd: root,
-    });
+    await writeMigrationProject(root, core.tarballPath);
     const coreHelp = await node([coreBin, '--help']);
     expect(coreHelp.exitCode).toBe(0);
     const help = await node([coreBin, 'migration', '--help'], {
@@ -164,52 +262,12 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
       path.join(root, 'node_modules/limina-migrate'),
     );
     const worker = path.join(migrateRoot, 'migration-verify-process.js');
-    await rename(worker, `${worker}.disabled`);
-    try {
-      const missing = await node([migrateBin, ...arguments_]);
-      expect(missing.exitCode).not.toBe(0);
-      const report = JSON.parse(
-        await readFile(
-          path.join(root, '.limina/migration/latest.json'),
-          'utf8',
-        ),
-      );
-      expect(report.result.inputConsumable).toBe(false);
-      expect(report.verification.diagnostics.join('\n')).toContain(
-        'verifier is unavailable',
-      );
-    } finally {
-      await rename(`${worker}.disabled`, worker);
-    }
-    const manifestPath = path.join(root, 'node_modules/limina/package.json');
-    const manifestText = await readFile(manifestPath, 'utf8');
-    const manifest = JSON.parse(manifestText);
-    await writeFile(manifestPath, json({ ...manifest, version: '99.0.0' }));
-    try {
-      const mismatch = await node([migrateBin, ...arguments_]);
-      expect(mismatch.exitCode, mismatch.stdout + mismatch.stderr).toBe(0);
-      expect(mismatch.stdout).toContain('Project Limina@99.0.0');
-      expect(mismatch.stdout).toContain('observed-different-version');
-      expect(mismatch.stdout).toContain(
-        'project runtime is not the verification target',
-      );
-      expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
-        before,
-      );
-    } finally {
-      await writeFile(manifestPath, manifestText);
-    }
-    await writeFile(manifestPath, json({ ...manifest, version: '' }));
-    try {
-      const unknown = await node([migrateBin, ...arguments_]);
-      expect(unknown.exitCode, unknown.stdout + unknown.stderr).toBe(0);
-      expect(unknown.stdout).toContain('Project Limina version: unavailable');
-      expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
-        before,
-      );
-    } finally {
-      await writeFile(manifestPath, manifestText);
-    }
+    await assertMissingVerifier(worker, root, () =>
+      node([migrateBin, ...arguments_]),
+    );
+    const manifest = await assertProjectVersionMetadata(root, before, () =>
+      node([migrateBin, ...arguments_]),
+    );
     // Self metadata must agree with the implementation, even without a core
     // runtime dependency. This error occurs before any user writes.
     const selfManifestPath = path.join(migrateRoot, 'package.json');
@@ -238,30 +296,9 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     } finally {
       await writeFile(selfManifestPath, selfManifestText);
     }
-    // Corrupt a consumer artifact's actual embedded core version while the
-    // installed self manifest and build metadata stay unchanged.
-    const chunks = await readdir(path.join(migrateRoot, 'chunks'));
-    let hasExercisedEmbeddedVersion = false;
-    for (const chunk of chunks) {
-      const chunkPath = path.join(migrateRoot, 'chunks', chunk);
-      const text = await readFile(chunkPath, 'utf8');
-      const corrupted = corruptEmbeddedCoreVersion(text);
-      if (corrupted === undefined) continue;
-      hasExercisedEmbeddedVersion = true;
-      await writeFile(chunkPath, corrupted);
-      try {
-        const invalidCore = await node([migrateBin, ...arguments_]);
-        expect(invalidCore.exitCode).not.toBe(0);
-        expect(invalidCore.stderr).toContain('embedded Limina@99.0.0');
-        expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
-          before,
-        );
-      } finally {
-        await writeFile(chunkPath, text);
-      }
-      break;
-    }
-    expect(hasExercisedEmbeddedVersion).toBe(true);
+    await assertEmbeddedCoreVersion(migrateRoot, root, before, () =>
+      node([migrateBin, ...arguments_]),
+    );
     // A real separate Node launcher records transport without requesting a public package.
     const migrateManifest = path.join(migrateRoot, 'package.json');
     const original = await readFile(migrateManifest, 'utf8');

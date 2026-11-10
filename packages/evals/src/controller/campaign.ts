@@ -252,7 +252,8 @@ export async function executeCampaign(
     string,
     { reference: FileReference; value: Decision }
   >();
-  if (kind === 'sealed' || kind === 'confirmation') {
+  async function loadFinalDecisions(): Promise<void> {
+    if (kind !== 'sealed' && kind !== 'confirmation') return;
     if (!config.finalDecision)
       throw new Error('A common development-only decision is required');
     const decisionBytes = await pinned(config.finalDecision);
@@ -285,6 +286,7 @@ export async function executeCampaign(
       decisions.set(profile.id, { reference: item.decision, value });
     }
   }
+  await loadFinalDecisions();
   const preparationLock = path.join(config.directory, '.prepare-lock');
   mkdirSync(preparationLock, { mode: 0o700 });
   try {
@@ -309,28 +311,30 @@ export async function executeCampaign(
       kind !== 'smoke' && existsSync(smokeFile)
         ? (JSON.parse(readFileSync(smokeFile, 'utf8')) as typeof admissions)
         : [];
-    for (const profile of campaign.profiles) {
+    async function admitProfile(
+      profile: (typeof campaign.profiles)[number],
+    ): Promise<void> {
       if (smokePassed && !smokePassed.has(profile.id)) {
         admissions.push({
           profileId: profile.id,
           status: 'not_admitted',
           reason: 'smoke_not_passed',
         });
-        continue;
+        return;
       }
       const unadmitted = smokeAdmissions.find(
         (a) => a.profileId === profile.id && a.status === 'not_admitted',
       );
       if (unadmitted) {
         admissions.push(unadmitted);
-        continue;
+        return;
       }
       if (
         prior?.find((a) => a.profileId === profile.id)?.status ===
         'not_admitted'
       ) {
         admissions.push(prior.find((a) => a.profileId === profile.id)!);
-        continue;
+        return;
       }
       try {
         const context = await prepareFormalExecution(
@@ -367,6 +371,7 @@ export async function executeCampaign(
         });
       }
     }
+    for (const profile of campaign.profiles) await admitProfile(profile);
     if (!prior)
       await writeFile(admissionFile, `${JSON.stringify(admissions)}\n`, {
         flag: 'wx',

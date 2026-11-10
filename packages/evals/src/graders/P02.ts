@@ -25,6 +25,18 @@ function hasResolvedDependencies(text: string): boolean {
     return false;
   }
 }
+function hasSubmittedDependencies(final: Snapshot): boolean {
+  const submitted = final.entries.find(
+    (value) => value.path === 'packages/app/dist/package.json',
+  );
+  return (
+    submitted?.kind === 'file' &&
+    hasResolvedDependencies(
+      Buffer.from(submitted.content, 'base64').toString('utf8'),
+    )
+  );
+}
+
 export async function gradePackedDependencies(
   task: TaskSpec,
   _fixture: Snapshot,
@@ -32,17 +44,10 @@ export async function gradePackedDependencies(
   verifier: DockerVerifier,
 ): Promise<{ report: AssertionReport; commands: CommandEvidence[] }> {
   const commands: CommandEvidence[] = [];
-  const submitted = final.entries.find(
-    (value) => value.path === 'packages/app/dist/package.json',
-  );
   const assertions: AssertionReport['assertions'] = [
     {
       id: 'submitted-dependencies',
-      passed:
-        submitted?.kind === 'file' &&
-        hasResolvedDependencies(
-          Buffer.from(submitted.content, 'base64').toString('utf8'),
-        ),
+      passed: hasSubmittedDependencies(final),
     },
   ];
   const run = async (arguments_: string[]) => {

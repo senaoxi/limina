@@ -84,6 +84,155 @@ const sealedIds = new Set([
   'N02',
 ]);
 
+function readTaskCalibration(
+  task: BankTask,
+  admitted:
+    | { id: string; status: CalibrationStatus; evidence: Reference }
+    | undefined,
+  bankId: string,
+  read: <T>(reference: Reference) => T,
+) {
+  const totals = { cases: 0, matched: 0, correct: 0, incorrect: 0, unsafe: 0 };
+  const expectedOutcome = {
+    passed: 'passed',
+    failed: 'assertion_failed',
+    unsafe: 'unsafe_mutation',
+  };
+  assert.match(task.id, /^(?:[ICRKSWTP]0[1-3]|N0[12])$/);
+  assert.equal(task.domain, domains[task.id[0]!]);
+  assert.equal(task.split, sealedIds.has(task.id) ? 'sealed' : 'dev');
+  assert.equal(task.role, task.id[0] === 'N' ? 'negative-control' : 'main');
+  for (const field of [
+    'specDigest',
+    'executionDigest',
+    'gradingDigest',
+    'graderDigest',
+  ] as const)
+    assertDigest(task[field]);
+  assert.ok(admitted, 'Bank task has no independent review');
+  const receipt = read<{
+    bankId: string;
+    taskId: string;
+    status: CalibrationStatus;
+    reviewerStatus: CalibrationStatus;
+    frozenSubmissionGraderStatus: string;
+    referenceAccess: boolean;
+    graderAccess: boolean;
+    review: Reference;
+    independentVerification: Reference;
+    graderCalibration: Reference;
+  }>(admitted.evidence);
+  assert.equal(receipt.bankId, bankId);
+  assert.equal(receipt.taskId, task.id);
+  assert.equal(receipt.status, admitted.status);
+  assert.equal(receipt.referenceAccess, false);
+  assert.equal(receipt.graderAccess, false);
+  const review = read<{
+    taskId: string;
+    status: CalibrationStatus;
+    referenceAccess: boolean;
+    graderAccess: boolean;
+    adversarialChecks: unknown[];
+  }>(receipt.review);
+  assert.equal(review.taskId, task.id);
+  assert.equal(review.status, receipt.reviewerStatus);
+  assert.equal(review.referenceAccess, false);
+  assert.equal(review.graderAccess, false);
+  assert.ok(
+    Array.isArray(review.adversarialChecks) &&
+      review.adversarialChecks.length >= 3,
+  );
+  const verification = read<{
+    bankId: string;
+    taskId: string;
+    outcome: { status: string };
+    grading: { report: { graderDigest: string } };
+  }>(receipt.independentVerification);
+  assert.equal(
+    verification.bankId,
+    bankId,
+    'Submission belongs to another bank',
+  );
+  assert.equal(verification.taskId, task.id);
+  assert.equal(verification.grading.report.graderDigest, task.graderDigest);
+  assert.equal(
+    verification.outcome.status,
+    receipt.frozenSubmissionGraderStatus,
+  );
+  assert.ok(outcomeStatuses.has(verification.outcome.status));
+  if (receipt.status === 'passed') {
+    assert.equal(review.status, 'passed');
+    assert.equal(verification.outcome.status, 'passed');
+  }
+  const graded = read<{
+    task: {
+      id: string;
+      specDigest: string;
+      executionDigest: string;
+      gradingDigest: string;
+    };
+    graderDigest: string;
+    modelCalls: number;
+    formalAttempt: boolean;
+    results: CalibrationCase[];
+  }>(receipt.graderCalibration);
+  for (const field of [
+    'id',
+    'specDigest',
+    'executionDigest',
+    'gradingDigest',
+  ] as const)
+    assert.equal(
+      graded.task[field],
+      task[field],
+      'Calibration belongs to another task identity',
+    );
+  assert.equal(graded.graderDigest, task.graderDigest);
+  assert.equal(graded.modelCalls, 0);
+  assert.equal(graded.formalAttempt, false);
+  assert.ok(graded.results.some((c) => c.expected === 'passed'));
+  assert.ok(graded.results.some((c) => c.expected !== 'passed'));
+  assert.equal(
+    new Set(graded.results.map((c) => c.caseId)).size,
+    graded.results.length,
+  );
+  let matched = 0;
+  for (const result of graded.results) {
+    assert.ok(Object.hasOwn(expectedOutcome, result.expected));
+    assert.equal(typeof result.matched, 'boolean');
+    if (result.matched)
+      assert.equal(
+        result.outcome.status,
+        expectedOutcome[result.expected],
+        'Calibration accepted an incorrect outcome',
+      );
+    matched += Number(result.matched);
+    totals[
+      result.expected === 'passed'
+        ? 'correct'
+        : result.expected === 'failed'
+          ? 'incorrect'
+          : 'unsafe'
+    ]++;
+  }
+  totals.cases += graded.results.length;
+  totals.matched += matched;
+  return {
+    task: {
+      id: task.id,
+      domain: task.domain,
+      split: task.split,
+      role: task.role,
+      calibrationCases: graded.results.length,
+      calibrationMatched: matched,
+      reviewStatus: status(receipt.status),
+      submissionStatus: verification.outcome.status,
+      adversarialChecks: review.adversarialChecks.length,
+    },
+    totals,
+  };
+}
+
 /**
 Read frozen calibration evidence only; never invokes a model, Grader or ledger.
 */
@@ -234,139 +383,16 @@ export async function readCalibrationPublication(
   assert.equal(calibration.modelCalls, 0);
   const totals = { cases: 0, matched: 0, correct: 0, incorrect: 0, unsafe: 0 };
   const tasks: PublicBankCalibration['tasks'] = [];
-  const expectedOutcome = {
-    passed: 'passed',
-    failed: 'assertion_failed',
-    unsafe: 'unsafe_mutation',
-  };
   for (const task of bank.tasks) {
-    assert.match(task.id, /^(?:[ICRKSWTP]0[1-3]|N0[12])$/);
-    assert.equal(task.domain, domains[task.id[0]!]);
-    assert.equal(task.split, sealedIds.has(task.id) ? 'sealed' : 'dev');
-    assert.equal(task.role, task.id[0] === 'N' ? 'negative-control' : 'main');
-    for (const field of [
-      'specDigest',
-      'executionDigest',
-      'gradingDigest',
-      'graderDigest',
-    ] as const)
-      assertDigest(task[field]);
-    const admitted = suite.tasks.find((t) => t.id === task.id);
-    assert.ok(admitted, 'Bank task has no independent review');
-    const receipt = read<{
-      bankId: string;
-      taskId: string;
-      status: CalibrationStatus;
-      reviewerStatus: CalibrationStatus;
-      frozenSubmissionGraderStatus: string;
-      referenceAccess: boolean;
-      graderAccess: boolean;
-      review: Reference;
-      independentVerification: Reference;
-      graderCalibration: Reference;
-    }>(admitted.evidence);
-    assert.equal(receipt.bankId, id);
-    assert.equal(receipt.taskId, task.id);
-    assert.equal(receipt.status, admitted.status);
-    assert.equal(receipt.referenceAccess, false);
-    assert.equal(receipt.graderAccess, false);
-    const review = read<{
-      taskId: string;
-      status: CalibrationStatus;
-      referenceAccess: boolean;
-      graderAccess: boolean;
-      adversarialChecks: unknown[];
-    }>(receipt.review);
-    assert.equal(review.taskId, task.id);
-    assert.equal(review.status, receipt.reviewerStatus);
-    assert.equal(review.referenceAccess, false);
-    assert.equal(review.graderAccess, false);
-    assert.ok(
-      Array.isArray(review.adversarialChecks) &&
-        review.adversarialChecks.length >= 3,
+    const result = readTaskCalibration(
+      task,
+      suite.tasks.find((t) => t.id === task.id),
+      id,
+      read,
     );
-    const verification = read<{
-      bankId: string;
-      taskId: string;
-      outcome: { status: string };
-      grading: { report: { graderDigest: string } };
-    }>(receipt.independentVerification);
-    assert.equal(verification.bankId, id, 'Submission belongs to another bank');
-    assert.equal(verification.taskId, task.id);
-    assert.equal(verification.grading.report.graderDigest, task.graderDigest);
-    assert.equal(
-      verification.outcome.status,
-      receipt.frozenSubmissionGraderStatus,
-    );
-    assert.ok(outcomeStatuses.has(verification.outcome.status));
-    if (receipt.status === 'passed') {
-      assert.equal(review.status, 'passed');
-      assert.equal(verification.outcome.status, 'passed');
-    }
-    const graded = read<{
-      task: {
-        id: string;
-        specDigest: string;
-        executionDigest: string;
-        gradingDigest: string;
-      };
-      graderDigest: string;
-      modelCalls: number;
-      formalAttempt: boolean;
-      results: CalibrationCase[];
-    }>(receipt.graderCalibration);
-    for (const field of [
-      'id',
-      'specDigest',
-      'executionDigest',
-      'gradingDigest',
-    ] as const)
-      assert.equal(
-        graded.task[field],
-        task[field],
-        'Calibration belongs to another task identity',
-      );
-    assert.equal(graded.graderDigest, task.graderDigest);
-    assert.equal(graded.modelCalls, 0);
-    assert.equal(graded.formalAttempt, false);
-    assert.ok(graded.results.some((c) => c.expected === 'passed'));
-    assert.ok(graded.results.some((c) => c.expected !== 'passed'));
-    assert.equal(
-      new Set(graded.results.map((c) => c.caseId)).size,
-      graded.results.length,
-    );
-    let matched = 0;
-    for (const result of graded.results) {
-      assert.ok(Object.hasOwn(expectedOutcome, result.expected));
-      assert.equal(typeof result.matched, 'boolean');
-      if (result.matched)
-        assert.equal(
-          result.outcome.status,
-          expectedOutcome[result.expected],
-          'Calibration accepted an incorrect outcome',
-        );
-      matched += Number(result.matched);
-      totals[
-        result.expected === 'passed'
-          ? 'correct'
-          : result.expected === 'failed'
-            ? 'incorrect'
-            : 'unsafe'
-      ]++;
-    }
-    totals.cases += graded.results.length;
-    totals.matched += matched;
-    tasks.push({
-      id: task.id,
-      domain: task.domain,
-      split: task.split,
-      role: task.role,
-      calibrationCases: graded.results.length,
-      calibrationMatched: matched,
-      reviewStatus: status(receipt.status),
-      submissionStatus: verification.outcome.status,
-      adversarialChecks: review.adversarialChecks.length,
-    });
+    tasks.push(result.task);
+    for (const key of Object.keys(totals) as (keyof typeof totals)[])
+      totals[key] += result.totals[key];
   }
   assert.equal(new Set(tasks.map((t) => t.id)).size, 26);
   const inventory = {

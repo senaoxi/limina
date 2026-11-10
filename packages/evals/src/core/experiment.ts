@@ -153,6 +153,27 @@ function digest(value: unknown): asserts value is string {
     throw new Error('Experiment requires a SHA-256 input identity');
 }
 
+function expectedTasksForBatch(kind: ExperimentInputs['kind']) {
+  return kind === 'smoke'
+    ? taskCatalog.filter((task) => task.id === 'I01')
+    : taskCatalog.filter((task) =>
+        kind === 'pilot'
+          ? [
+              'I01',
+              'C01',
+              'R02',
+              'K01',
+              'S01',
+              'W02',
+              'T01',
+              'P01',
+              'N01',
+            ].includes(task.id)
+          : kind === 'confirmation' ||
+            task.split === (kind === 'development' ? 'dev' : 'sealed'),
+      );
+}
+
 function validateInputs(inputs: ExperimentInputs): void {
   if (
     !['smoke', 'pilot', 'development', 'sealed', 'confirmation'].includes(
@@ -199,25 +220,7 @@ function validateInputs(inputs: ExperimentInputs): void {
         ?.skillDigest
   )
     throw new Error('Explicit smoke must use the same current Skill');
-  const expectedTasks =
-    inputs.kind === 'smoke'
-      ? taskCatalog.filter((task) => task.id === 'I01')
-      : taskCatalog.filter((task) =>
-          inputs.kind === 'pilot'
-            ? [
-                'I01',
-                'C01',
-                'R02',
-                'K01',
-                'S01',
-                'W02',
-                'T01',
-                'P01',
-                'N01',
-              ].includes(task.id)
-            : inputs.kind === 'confirmation' ||
-              task.split === (inputs.kind === 'development' ? 'dev' : 'sealed'),
-        );
+  const expectedTasks = expectedTasksForBatch(inputs.kind);
   if (
     inputs.tasks.length !== expectedTasks.length ||
     expectedTasks.some(

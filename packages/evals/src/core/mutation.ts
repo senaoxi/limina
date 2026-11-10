@@ -164,6 +164,10 @@ function escapePointer(key: string): string {
   return key.replaceAll('~', '~0').replaceAll('/', '~1');
 }
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function changedJsonFields(
   before: unknown,
   after: unknown,
@@ -175,10 +179,8 @@ function changedJsonFields(
     canonicalJson(before) === canonicalJson(after)
   )
     return [];
-  const isBeforeObject =
-    before !== null && typeof before === 'object' && !Array.isArray(before);
-  const isAfterObject =
-    after !== null && typeof after === 'object' && !Array.isArray(after);
+  const isBeforeObject = isJsonObject(before);
+  const isAfterObject = isJsonObject(after);
   const normalizedBefore =
     before === undefined && isAfterObject && Object.keys(after).length > 0
       ? {}
@@ -187,14 +189,7 @@ function changedJsonFields(
     after === undefined && isBeforeObject && Object.keys(before).length > 0
       ? {}
       : after;
-  if (
-    normalizedBefore === null ||
-    normalizedAfter === null ||
-    typeof normalizedBefore !== 'object' ||
-    typeof normalizedAfter !== 'object' ||
-    Array.isArray(normalizedBefore) ||
-    Array.isArray(normalizedAfter)
-  )
+  if (!isJsonObject(normalizedBefore) || !isJsonObject(normalizedAfter))
     return [pointer];
   const a = normalizedBefore as Record<string, unknown>;
   const b = normalizedAfter as Record<string, unknown>;
@@ -229,13 +224,18 @@ function checkRule(
         !rule.allowExecutable))
   )
     return { path: change.path, code: 'mode' };
-  if (
-    change.before &&
+  return change.before &&
     change.after &&
     change.before.mode !== change.after.mode &&
     !rule.allowExecutable
-  )
-    return { path: change.path, code: 'mode' };
+    ? { path: change.path, code: 'mode' }
+    : checkRuleContent(change, rule);
+}
+
+function checkRuleContent(
+  change: FileChange,
+  rule: MutationRule,
+): MutationViolation | undefined {
   if (rule.pipelinePolicy) {
     try {
       const config =

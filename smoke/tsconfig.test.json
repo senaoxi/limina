@@ -4,5 +4,10 @@
   "compilerOptions": {
     "types": ["node", "vitest/globals"]
   },
-  "include": ["helpers.ts", "*.spec.ts"]
+  "include": [
+    "helpers.ts",
+    "consumer-artifacts.ts",
+    "package-module-closure.ts",
+    "*.spec.ts"
+  ]
 }

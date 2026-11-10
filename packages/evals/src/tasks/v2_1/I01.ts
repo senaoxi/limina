@@ -1,7 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import type { TaskDefinition } from '../../controller/calibration.ts';
 
-/** A new content identity; earlier task definitions and receipts stay archived. */
+/**
+  A new content identity; earlier task definitions and receipts stay archived.
+*/
 export function createI01SatisfiesDefinition(
   original: TaskDefinition,
 ): TaskDefinition {

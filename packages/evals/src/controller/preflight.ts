@@ -302,6 +302,62 @@ async function nativeIsolation(
   }
 }
 
+interface DockerIsolationInspection {
+  user: string;
+  environment: string[];
+  host: {
+    NetworkMode: string;
+    ReadonlyRootfs: boolean;
+    Binds: unknown;
+    CapDrop: string[];
+    SecurityOpt: string[];
+  };
+  mounts: {
+    Type: string;
+    Destination: string;
+    RW: boolean;
+    Driver: string;
+  }[];
+}
+
+function assertDockerIsolation(
+  inspection: DockerIsolationInspection,
+  config: FoundationPreflightConfig,
+): void {
+  if (
+    inspection.user !== '1000:1000' ||
+    inspection.host.NetworkMode !== 'none' ||
+    !inspection.host.ReadonlyRootfs ||
+    !inspection.host.CapDrop.includes('ALL') ||
+    inspection.host.SecurityOpt.every(
+      (value) => !value.startsWith('no-new-privileges'),
+    ) ||
+    (config.docker.projectDependencies === 'image-volume'
+      ? inspection.mounts.length !== 1 ||
+        inspection.mounts.some(
+          (mount) =>
+            mount.Type !== 'volume' ||
+            mount.Destination !== '/workspace/node_modules' ||
+            mount.RW ||
+            mount.Driver !== 'local',
+        )
+      : inspection.mounts.length > 0) ||
+    [
+      'npm_config_verify_deps_before_run=false',
+      'npm_config_ignore_scripts=true',
+      'npm_config_offline=true',
+    ].some((entry) => !inspection.environment.includes(entry)) ||
+    inspection.environment.some((entry) =>
+      /^(?:OPENAI|VERCEL|AI_GATEWAY|CODEX|DOCKER_HOST|.*TOKEN|.*SECRET|.*PASSWORD)=/.test(
+        entry,
+      ),
+    )
+  )
+    throw new Error(
+      'Docker isolation configuration differs from the fixed contract',
+    );
+}
+
 async function dockerIsolation(
   config: FoundationPreflightConfig,
   directory: string,
@@ -363,55 +419,9 @@ async function dockerIsolation(
   const verifier = new DockerVerifier(config.docker);
   try {
     await verifier.start(project.project);
-    const inspection = (await verifier.inspectIsolation()) as {
-      user: string;
-      environment: string[];
-      host: {
-        NetworkMode: string;
-        ReadonlyRootfs: boolean;
-        Binds: unknown;
-        CapDrop: string[];
-        SecurityOpt: string[];
-      };
-      mounts: {
-        Type: string;
-        Destination: string;
-        RW: boolean;
-        Driver: string;
-      }[];
-    };
-    if (
-      inspection.user !== '1000:1000' ||
-      inspection.host.NetworkMode !== 'none' ||
-      !inspection.host.ReadonlyRootfs ||
-      !inspection.host.CapDrop.includes('ALL') ||
-      inspection.host.SecurityOpt.every(
-        (value) => !value.startsWith('no-new-privileges'),
-      ) ||
-      (config.docker.projectDependencies === 'image-volume'
-        ? inspection.mounts.length !== 1 ||
-          inspection.mounts.some(
-            (mount) =>
-              mount.Type !== 'volume' ||
-              mount.Destination !== '/workspace/node_modules' ||
-              mount.RW ||
-              mount.Driver !== 'local',
-          )
-        : inspection.mounts.length > 0) ||
-      [
-        'npm_config_verify_deps_before_run=false',
-        'npm_config_ignore_scripts=true',
-        'npm_config_offline=true',
-      ].some((entry) => !inspection.environment.includes(entry)) ||
-      inspection.environment.some((entry) =>
-        /^(?:OPENAI|VERCEL|AI_GATEWAY|CODEX|DOCKER_HOST|.*TOKEN|.*SECRET|.*PASSWORD)=/.test(
-          entry,
-        ),
-      )
-    )
-      throw new Error(
-        'Docker isolation configuration differs from the fixed contract',
-      );
+    const inspection =
+      (await verifier.inspectIsolation()) as DockerIsolationInspection;
+    assertDockerIsolation(inspection, config);
     const observation = await verifier.command('/usr/local/bin/node', [
       '-e',
       "const fs=require('fs'),net=require('net');fs.writeFileSync('writable.txt','ok');let readOnly=false;try{const fd=fs.openSync('/usr/local/bin/pnpm','r+');fs.closeSync(fd)}catch(e){readOnly=['EROFS','EACCES','EPERM'].includes(e.code)}const report={uid:process.getuid(),node:process.version,readOnly,credentials:fs.existsSync('/root/.codex/auth.json'),socket:fs.existsSync('/var/run/docker.sock')};const s=net.connect({host:'198.18.0.1',port:9});s.setTimeout(1000,()=>{s.destroy();console.log(JSON.stringify({...report,network:'timeout'}))});s.once('error',e=>console.log(JSON.stringify({...report,network:e.code})));s.once('connect',()=>{s.destroy();console.log(JSON.stringify({...report,network:'connected'}))});",

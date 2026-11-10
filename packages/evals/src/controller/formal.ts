@@ -455,24 +455,27 @@ async function admitCandidate(
   const before = await json<Snapshot>(change.start);
   const after = await json<Snapshot>(change.final);
   const changes = compareAgentSnapshots(before, after);
-  if (
-    exportId !== contentIdentity(exportBody) ||
-    exported.developmentRunIdentity !== developmentIdentity ||
-    exported.preparedIdentity !== preparedIdentity ||
-    exported.skillDigest !== original.digest ||
-    before.digest !== exported.workspaceDigest ||
-    before.excludedRoots.length > 0 ||
-    changes.length === 0 ||
-    changes.some(
-      (c) =>
-        !c.path.startsWith('skills/limina/') ||
-        c.after?.kind === 'symlink' ||
-        (c.after && (c.after.mode & 0o7000) !== 0),
+  function verifyRevisionExport(): void {
+    if (
+      exportId !== contentIdentity(exportBody) ||
+      exported.developmentRunIdentity !== developmentIdentity ||
+      exported.preparedIdentity !== preparedIdentity ||
+      exported.skillDigest !== original.digest ||
+      before.digest !== exported.workspaceDigest ||
+      before.excludedRoots.length > 0 ||
+      changes.length === 0 ||
+      changes.some(
+        (c) =>
+          !c.path.startsWith('skills/limina/') ||
+          c.after?.kind === 'symlink' ||
+          (c.after && (c.after.mode & 0o7000) !== 0),
+      )
     )
-  )
-    throw new Error(
-      'Candidate includes changes outside the authorized revision export',
-    );
+      throw new Error(
+        'Candidate includes changes outside the authorized revision export',
+      );
+  }
+  verifyRevisionExport();
   const revisionAttempt = budget
     .summary()
     .attempts.find((a) => a.reservation.runId === change.revisionRunId);
@@ -516,12 +519,11 @@ async function admitCandidate(
   return candidate;
 }
 
-export async function loadFormalInputs(
+function assertFormalControl(
+  control: Admission,
   controlFile: string,
-  mode: 'input' | 'legacy-dispatch' = 'input',
-) {
-  await owned(controlFile);
-  const control: Admission = JSON.parse(await readFile(controlFile, 'utf8'));
+  mode: 'input' | 'legacy-dispatch',
+): void {
   if (
     control.bankRevision !== undefined &&
     !isBankRevision(control.bankRevision)
@@ -558,6 +560,15 @@ export async function loadFormalInputs(
     throw new Error(
       `Independent ${control.bankRevision.toUpperCase()} task calibration is required before model admission`,
     );
+}
+
+export async function loadFormalInputs(
+  controlFile: string,
+  mode: 'input' | 'legacy-dispatch' = 'input',
+) {
+  await owned(controlFile);
+  const control: Admission = JSON.parse(await readFile(controlFile, 'utf8'));
+  assertFormalControl(control, controlFile, mode);
   await owned(control.sealedStore);
   await owned(control.volumeParent);
   const stopFile = path.join(control.sealedStore, 'formal', 'STOP');
@@ -680,7 +691,8 @@ export async function prepareFormalExecution(
     controlFile,
     options.campaign ? 'input' : 'legacy-dispatch',
   );
-  if (options.campaign) {
+  function bindCampaignInputs(): void {
+    if (!options.campaign) return;
     verifyCampaign(options.campaign);
     const campaign = options.campaign;
     const bank = createTaskBank(
@@ -699,7 +711,10 @@ export async function prepareFormalExecution(
     for (const [name, config] of configs)
       configs.set(name, { ...config, modelProfile: profile });
   }
-  if (control.bankRevision === 'v2' || control.bankRevision === 'v2.1') {
+  bindCampaignInputs();
+  async function verifyTaskCalibration(): Promise<void> {
+    if (control.bankRevision !== 'v2' && control.bankRevision !== 'v2.1')
+      return;
     const edition = control.bankRevision.toUpperCase();
     const review = await json<{
       bankId: string;
@@ -727,6 +742,7 @@ export async function prepareFormalExecution(
       throw new Error(`Independent ${edition} task calibration is incomplete`);
     for (const task of review.tasks) await pinned(task.evidence);
   }
+  await verifyTaskCalibration();
   const runRoot = path.join(
     control.sealedStore,
     'formal',
@@ -777,7 +793,7 @@ export async function prepareFormalExecution(
     return frozen;
   };
   if (kind !== 'smoke') await previousStage(runRoot, await plan('smoke'));
-  if (kind === 'confirmation' || kind === 'sealed') {
+  async function admitFinalStage(): Promise<void> {
     const development = await previousStage(runRoot, await plan('development'));
     if (!control.decision && !options.decision)
       throw new Error(
@@ -832,10 +848,12 @@ export async function prepareFormalExecution(
         throw error;
     }
   }
+  if (kind === 'confirmation' || kind === 'sealed') await admitFinalStage();
   const manifest = await plan(kind);
   const store = new RunStore(path.join(runRoot, kind), manifest);
   await bindRunBudget(store, budget.path);
-  if (store.next()) {
+  async function prepareDispatch(): Promise<void> {
+    if (!store.next()) return;
     const financial = budget.summary();
     if (
       !financial.includedDispatchReady ||
@@ -884,6 +902,7 @@ export async function prepareFormalExecution(
         throw new Error(`Formal preflight blocked: ${parent}`);
     }
   }
+  await prepareDispatch();
   const dispatchNext = async (expectedSlotId?: string) => {
     if (existsSync(path.join(store.directory, 'MODEL_HOLD.json')))
       throw new Error('Model identity hold requires explicit evidence review');

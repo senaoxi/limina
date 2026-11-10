@@ -407,6 +407,25 @@ function conditionSummaries(
   });
 }
 
+function assertBudgetReservation(
+  record: RunSummary['attempts'][number],
+  entry: BudgetSummary['attempts'][number] | undefined,
+  manifest: ExperimentManifest,
+): asserts entry is BudgetSummary['attempts'][number] {
+  if (
+    !entry ||
+    entry.reservation.taskId !== record.slot.taskId ||
+    (manifest.version === 2 &&
+      (entry.reservation.modelProfile?.id !==
+        manifest.inputs.modelProfile?.id ||
+        entry.reservation.experimentIdentity !== manifest.identity ||
+        entry.reservation.slotId !== record.slot.id ||
+        entry.reservation.campaignId !== manifest.inputs.campaignId ||
+        entry.reservation.model !== manifest.policy.model))
+  )
+    throw new Error('Run attempt is absent from the shared budget ledger');
+}
+
 /**
 Allowlisted derived data only: no prompts, hidden assertions, file contents or raw traces.
 */
@@ -441,18 +460,7 @@ export function buildReport(
       record.facts.execution.evidence.phase === 'setup'
     )
       return record;
-    if (
-      !entry ||
-      entry.reservation.taskId !== record.slot.taskId ||
-      (manifest.version === 2 &&
-        (entry.reservation.modelProfile?.id !==
-          manifest.inputs.modelProfile?.id ||
-          entry.reservation.experimentIdentity !== manifest.identity ||
-          entry.reservation.slotId !== record.slot.id ||
-          entry.reservation.campaignId !== manifest.inputs.campaignId ||
-          entry.reservation.model !== manifest.policy.model))
-    )
-      throw new Error('Run attempt is absent from the shared budget ledger');
+    assertBudgetReservation(record, entry, manifest);
     for (const key of [
       'inputTokens',
       'cachedInputTokens',

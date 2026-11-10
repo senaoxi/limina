@@ -63,49 +63,53 @@ export async function collectNativeTrace(
   };
   try {
     if (profile) verifyModelProfile(profile);
-    if (files.status !== 'complete')
-      throw new Error('TRACE_CAPTURE_INCOMPLETE');
-    const contents = new Map(
-      files.entries
-        .filter((entry) => entry.kind === 'file')
-        .map((entry) => [
-          entry.path,
-          Buffer.from(entry.content, 'base64').toString('utf8'),
-        ]),
-    );
-    if (files.entries.some((entry) => entry.kind === 'symlink'))
-      throw new Error('TRACE_SYMLINK');
-    const manifests = contents
-      .keys()
-      .filter((file) => /^[^/]+\/manifest\.json$/.test(file))
-      .toArray();
-    if (manifests.length !== 1) throw new Error('TRACE_SESSION_COUNT');
-    const manifestPath = manifests[0]!;
-    const prefix = manifestPath.slice(0, -'manifest.json'.length);
-    const readJson = (relative: string) => {
-      if (!/^(?:manifest\.json|payloads\/\d+\.json)$/.test(relative))
-        throw new Error('TRACE_PAYLOAD_PATH');
-      const content = contents.get(prefix + relative);
-      if (content === undefined) throw new Error('TRACE_PAYLOAD_MISSING');
-      return record(JSON.parse(content));
-    };
-    const manifest = readJson('manifest.json');
-    if (
-      manifest.schema_version !== 2 ||
-      manifest.raw_event_log !== 'trace.jsonl' ||
-      manifest.payloads_dir !== 'payloads'
-    )
-      throw new Error('TRACE_SCHEMA');
-    const threadId = text(manifest.root_thread_id);
-    evidence.threadId = threadId;
-    if (threadId !== expectedThreadId || manifest.rollout_id !== threadId)
-      throw new Error('TRACE_SESSION_CHANGED');
-    const raw = contents.get(`${prefix}trace.jsonl`);
-    if (!raw?.endsWith('\n')) throw new Error('TRACE_TRUNCATED');
-    const rows = raw
-      .trimEnd()
-      .split('\n')
-      .map((line) => record(JSON.parse(line)));
+    function readSession() {
+      if (files.status !== 'complete')
+        throw new Error('TRACE_CAPTURE_INCOMPLETE');
+      const contents = new Map(
+        files.entries
+          .filter((entry) => entry.kind === 'file')
+          .map((entry) => [
+            entry.path,
+            Buffer.from(entry.content, 'base64').toString('utf8'),
+          ]),
+      );
+      if (files.entries.some((entry) => entry.kind === 'symlink'))
+        throw new Error('TRACE_SYMLINK');
+      const manifests = contents
+        .keys()
+        .filter((file) => /^[^/]+\/manifest\.json$/.test(file))
+        .toArray();
+      if (manifests.length !== 1) throw new Error('TRACE_SESSION_COUNT');
+      const manifestPath = manifests[0]!;
+      const prefix = manifestPath.slice(0, -'manifest.json'.length);
+      const readJson = (relative: string) => {
+        if (!/^(?:manifest\.json|payloads\/\d+\.json)$/.test(relative))
+          throw new Error('TRACE_PAYLOAD_PATH');
+        const content = contents.get(prefix + relative);
+        if (content === undefined) throw new Error('TRACE_PAYLOAD_MISSING');
+        return record(JSON.parse(content));
+      };
+      const manifest = readJson('manifest.json');
+      if (
+        manifest.schema_version !== 2 ||
+        manifest.raw_event_log !== 'trace.jsonl' ||
+        manifest.payloads_dir !== 'payloads'
+      )
+        throw new Error('TRACE_SCHEMA');
+      const threadId = text(manifest.root_thread_id);
+      evidence.threadId = threadId;
+      if (threadId !== expectedThreadId || manifest.rollout_id !== threadId)
+        throw new Error('TRACE_SESSION_CHANGED');
+      const raw = contents.get(`${prefix}trace.jsonl`);
+      if (!raw?.endsWith('\n')) throw new Error('TRACE_TRUNCATED');
+      const rows = raw
+        .trimEnd()
+        .split('\n')
+        .map((line) => record(JSON.parse(line)));
+      return { contents, prefix, readJson, threadId, rows };
+    }
+    const { contents, prefix, readJson, threadId, rows } = readSession();
     const calls = new Set<string>();
     const finishedCalls = new Set<string>();
     const inferences = new Set<string>();
@@ -120,7 +124,131 @@ export async function collectNativeTrace(
       referenced.add(prefix + relative);
       return readJson(relative);
     };
-    for (const [index, row] of rows.entries()) {
+    function startTool(event: RecordValue): void {
+      const id = text(event.tool_call_id);
+      if (
+        calls.has(id) ||
+        !['exec_command', 'write_stdin', 'apply_patch'].includes(
+          text(record(event.kind).type),
+        )
+      )
+        throw new Error('TRACE_TOOL_NOT_ADMITTED');
+      calls.add(id);
+    }
+    function finishTool(event: RecordValue): void {
+      const id = text(event.tool_call_id);
+      if (!calls.has(id) || finishedCalls.has(id))
+        throw new Error('TRACE_TOOL_PAIR');
+      finishedCalls.add(id);
+    }
+    function startInference(event: RecordValue): void {
+      const id = text(event.inference_call_id);
+      if (
+        typeof event.model === 'string' &&
+        !evidence.observedModelIds!.includes(event.model)
+      )
+        evidence.observedModelIds!.push(event.model);
+      if (
+        inferences.has(id) ||
+        event.model !== (profile?.canonicalModelId ?? 'gpt-6.1-terra') ||
+        event.provider_name !== 'OpenAI'
+      )
+        throw new Error('TRACE_MODEL_CHANGED');
+      const request = payload(event.request_payload);
+      if (
+        instructionPolicy &&
+        (!Array.isArray(request.input) || hasAgentInstructions(request.input))
+      )
+        throw new Error('TRACE_UNEXPECTED_AGENT_INSTRUCTIONS');
+      if (
+        typeof request.model === 'string' &&
+        !evidence.observedModelIds!.includes(request.model)
+      )
+        evidence.observedModelIds!.push(request.model);
+      if (
+        request.model !== event.model ||
+        record(request.reasoning).effort !==
+          (profile?.reasoningEffort ?? 'high') ||
+        ![undefined, null, 'default'].includes(
+          request.service_tier as string | null | undefined,
+        )
+      )
+        throw new Error('TRACE_MODEL_CONFIGURATION');
+      inferences.add(id);
+    }
+    function completeInference(event: RecordValue): void {
+      const id = text(event.inference_call_id);
+      if (!inferences.has(id) || finishedInferences.has(id))
+        throw new Error('TRACE_INFERENCE_PAIR');
+      const response = payload(event.response_payload);
+      if (
+        typeof response.model === 'string' &&
+        !evidence.observedModelIds!.includes(response.model)
+      )
+        evidence.observedModelIds!.push(response.model);
+      if (
+        response.model !== undefined &&
+        response.model !== (profile?.canonicalModelId ?? 'gpt-6.1-terra')
+      )
+        throw new Error('TRACE_RESPONSE_MODEL_CHANGED');
+      if (
+        response.service_tier !== undefined &&
+        response.service_tier !== null &&
+        response.service_tier !== 'default'
+      )
+        throw new Error('TRACE_RESPONSE_TIER_CHANGED');
+      const tokens = record(response.token_usage);
+      for (const [key, source] of [
+        ['input', 'input_tokens'],
+        ['cachedInput', 'cached_input_tokens'],
+        ['output', 'output_tokens'],
+      ] as const) {
+        const value = tokens[source];
+        if (
+          typeof value !== 'number' ||
+          !Number.isSafeInteger(value) ||
+          value < 0
+        )
+          throw new Error('TRACE_USAGE_UNKNOWN');
+        totals[key] += value;
+      }
+      finishedInferences.add(id);
+    }
+    function failInference(event: RecordValue): void {
+      const id = text(event.inference_call_id);
+      if (!inferences.has(id) || finishedInferences.has(id))
+        throw new Error('TRACE_INFERENCE_PAIR');
+      text(event.error);
+      finishedInferences.add(id);
+      failedInferences.add(id);
+    }
+    function configureSession(event: RecordValue): void {
+      const session = payload(event.event_payload);
+      if (
+        typeof session.model === 'string' &&
+        !evidence.observedModelIds!.includes(session.model)
+      )
+        evidence.observedModelIds!.push(session.model);
+      const permissions = record(session.permission_profile);
+      if (
+        isConfigured ||
+        session.session_id !== threadId ||
+        session.model !== (profile?.canonicalModelId ?? 'gpt-6.1-terra') ||
+        session.model_provider_id !== (profile?.providerId ?? 'openai') ||
+        session.approval_policy !== 'never' ||
+        session.reasoning_effort !== (profile?.reasoningEffort ?? 'high') ||
+        record(session.active_permission_profile).id !== 'limina-eval' ||
+        permissions.type !== 'managed' ||
+        permissions.network !== 'restricted' ||
+        record(permissions.file_system).type !== 'restricted'
+      )
+        throw new Error('TRACE_EXECUTION_CONFIGURATION');
+      isConfigured = true;
+    }
+    function validateEventEnvelope(
+      row: RecordValue,
+      index: number,
+    ): RecordValue {
       if (
         row.schema_version !== 2 ||
         row.seq !== index + 1 ||
@@ -139,140 +267,68 @@ export async function collectNativeTrace(
         (event.thread_id !== threadId || event.agent_path !== '/root')
       )
         throw new Error('TRACE_SUBAGENT');
+      return event;
+    }
+    function finishTrace(): void {
+      evidence.toolCalls = calls.size;
+      evidence.inferenceCalls = inferences.size;
+      evidence.failedInferenceCalls = failedInferences.size;
+      if (
+        !isConfigured ||
+        !isEnded ||
+        inferences.size === 0 ||
+        calls.size !== finishedCalls.size ||
+        inferences.size !== finishedInferences.size
+      )
+        throw new Error('TRACE_LIFECYCLE_INCOMPLETE');
+      if (
+        totals.input !== usage.inputTokens ||
+        totals.cachedInput !== usage.cachedInputTokens ||
+        totals.output !== usage.outputTokens ||
+        totals.cachedInput > totals.input
+      )
+        throw new Error('TRACE_USAGE_MISMATCH');
+      if (
+        contents
+          .keys()
+          .some((p) => p.startsWith(`${prefix}payloads/`) && !referenced.has(p))
+      )
+        throw new Error('TRACE_UNREFERENCED_PAYLOAD');
+      evidence.tokens = totals;
+      evidence.tokensComplete = failedInferences.size === 0;
+      evidence.status = 'complete';
+      evidence.observedModelIds = [
+        profile?.canonicalModelId ?? 'gpt-6.1-terra',
+      ];
+      if (profile) evidence.modelProfileId = profile.id;
+    }
+    for (const [index, row] of rows.entries()) {
+      const event = validateEventEnvelope(row, index);
       if (
         event.type === 'protocol_event_observed' &&
         event.event_type === 'session_configured'
       ) {
-        const session = payload(event.event_payload);
-        if (
-          typeof session.model === 'string' &&
-          !evidence.observedModelIds!.includes(session.model)
-        )
-          evidence.observedModelIds!.push(session.model);
-        const permissions = record(session.permission_profile);
-        if (
-          isConfigured ||
-          session.session_id !== threadId ||
-          session.model !== (profile?.canonicalModelId ?? 'gpt-6.1-terra') ||
-          session.model_provider_id !== (profile?.providerId ?? 'openai') ||
-          session.approval_policy !== 'never' ||
-          session.reasoning_effort !== (profile?.reasoningEffort ?? 'high') ||
-          record(session.active_permission_profile).id !== 'limina-eval' ||
-          permissions.type !== 'managed' ||
-          permissions.network !== 'restricted' ||
-          record(permissions.file_system).type !== 'restricted'
-        )
-          throw new Error('TRACE_EXECUTION_CONFIGURATION');
-        isConfigured = true;
+        configureSession(event);
       }
       switch (event.type) {
         case 'tool_call_started': {
-          const id = text(event.tool_call_id);
-          if (
-            calls.has(id) ||
-            !['exec_command', 'write_stdin', 'apply_patch'].includes(
-              text(record(event.kind).type),
-            )
-          )
-            throw new Error('TRACE_TOOL_NOT_ADMITTED');
-          calls.add(id);
-
+          startTool(event);
           continue;
         }
         case 'tool_call_ended': {
-          const id = text(event.tool_call_id);
-          if (!calls.has(id) || finishedCalls.has(id))
-            throw new Error('TRACE_TOOL_PAIR');
-          finishedCalls.add(id);
-
+          finishTool(event);
           continue;
         }
         case 'inference_started': {
-          const id = text(event.inference_call_id);
-          if (
-            typeof event.model === 'string' &&
-            !evidence.observedModelIds!.includes(event.model)
-          )
-            evidence.observedModelIds!.push(event.model);
-          if (
-            inferences.has(id) ||
-            event.model !== (profile?.canonicalModelId ?? 'gpt-6.1-terra') ||
-            event.provider_name !== 'OpenAI'
-          )
-            throw new Error('TRACE_MODEL_CHANGED');
-          const request = payload(event.request_payload);
-          if (
-            instructionPolicy &&
-            (!Array.isArray(request.input) ||
-              hasAgentInstructions(request.input))
-          )
-            throw new Error('TRACE_UNEXPECTED_AGENT_INSTRUCTIONS');
-          if (
-            typeof request.model === 'string' &&
-            !evidence.observedModelIds!.includes(request.model)
-          )
-            evidence.observedModelIds!.push(request.model);
-          if (
-            request.model !== event.model ||
-            record(request.reasoning).effort !==
-              (profile?.reasoningEffort ?? 'high') ||
-            ![undefined, null, 'default'].includes(
-              request.service_tier as string | null | undefined,
-            )
-          )
-            throw new Error('TRACE_MODEL_CONFIGURATION');
-          inferences.add(id);
-
+          startInference(event);
           continue;
         }
         case 'inference_completed': {
-          const id = text(event.inference_call_id);
-          if (!inferences.has(id) || finishedInferences.has(id))
-            throw new Error('TRACE_INFERENCE_PAIR');
-          const response = payload(event.response_payload);
-          if (
-            typeof response.model === 'string' &&
-            !evidence.observedModelIds!.includes(response.model)
-          )
-            evidence.observedModelIds!.push(response.model);
-          if (
-            response.model !== undefined &&
-            response.model !== (profile?.canonicalModelId ?? 'gpt-6.1-terra')
-          )
-            throw new Error('TRACE_RESPONSE_MODEL_CHANGED');
-          if (
-            response.service_tier !== undefined &&
-            response.service_tier !== null &&
-            response.service_tier !== 'default'
-          )
-            throw new Error('TRACE_RESPONSE_TIER_CHANGED');
-          const tokens = record(response.token_usage);
-          for (const [key, source] of [
-            ['input', 'input_tokens'],
-            ['cachedInput', 'cached_input_tokens'],
-            ['output', 'output_tokens'],
-          ] as const) {
-            const value = tokens[source];
-            if (
-              typeof value !== 'number' ||
-              !Number.isSafeInteger(value) ||
-              value < 0
-            )
-              throw new Error('TRACE_USAGE_UNKNOWN');
-            totals[key] += value;
-          }
-          finishedInferences.add(id);
-
+          completeInference(event);
           continue;
         }
         case 'inference_failed': {
-          const id = text(event.inference_call_id);
-          if (!inferences.has(id) || finishedInferences.has(id))
-            throw new Error('TRACE_INFERENCE_PAIR');
-          text(event.error);
-          finishedInferences.add(id);
-          failedInferences.add(id);
-
+          failInference(event);
           continue;
         }
         // No default
@@ -285,35 +341,7 @@ export async function collectNativeTrace(
         throw new Error('TRACE_END_POSITION');
       isEnded = true;
     }
-    evidence.toolCalls = calls.size;
-    evidence.inferenceCalls = inferences.size;
-    evidence.failedInferenceCalls = failedInferences.size;
-    if (
-      !isConfigured ||
-      !isEnded ||
-      inferences.size === 0 ||
-      calls.size !== finishedCalls.size ||
-      inferences.size !== finishedInferences.size
-    )
-      throw new Error('TRACE_LIFECYCLE_INCOMPLETE');
-    if (
-      totals.input !== usage.inputTokens ||
-      totals.cachedInput !== usage.cachedInputTokens ||
-      totals.output !== usage.outputTokens ||
-      totals.cachedInput > totals.input
-    )
-      throw new Error('TRACE_USAGE_MISMATCH');
-    if (
-      contents
-        .keys()
-        .some((p) => p.startsWith(`${prefix}payloads/`) && !referenced.has(p))
-    )
-      throw new Error('TRACE_UNREFERENCED_PAYLOAD');
-    evidence.tokens = totals;
-    evidence.tokensComplete = failedInferences.size === 0;
-    evidence.status = 'complete';
-    evidence.observedModelIds = [profile?.canonicalModelId ?? 'gpt-6.1-terra'];
-    if (profile) evidence.modelProfileId = profile.id;
+    finishTrace();
   } catch (error) {
     evidence.errors.push(
       error instanceof Error ? error.message : 'TRACE_UNKNOWN',

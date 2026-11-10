@@ -145,14 +145,7 @@ function money(value: number): number {
   return Math.ceil(value * 1e6);
 }
 
-function validateUsage(usage: UsageRecord): void {
-  if (
-    !['included', 'pending', 'settled', 'unknown'].includes(usage.settlement) ||
-    typeof usage.complete !== 'boolean' ||
-    typeof usage.source !== 'string' ||
-    !usage.source
-  )
-    throw new Error('Invalid usage metadata');
+function validateUsageMeasurements(usage: UsageRecord): void {
   for (const value of [
     usage.inputTokens,
     usage.cachedInputTokens,
@@ -169,17 +162,25 @@ function validateUsage(usage: UsageRecord): void {
     throw new Error('Cached tokens exceed input tokens');
   if (usage.estimatedUsd !== null) money(usage.estimatedUsd);
   if (usage.settledUsd !== null) money(usage.settledUsd);
-  if (usage.modelEvidence) {
-    const evidence = usage.modelEvidence;
-    if (
-      evidence.observedModelIds.some(
-        (id) => !/^[a-z\d][a-z\d.-]{1,79}$/.test(id),
-      )
-    )
-      throw new Error('Invalid observed model identity');
-    if (evidence.modelProfileId !== null) assertDigest(evidence.modelProfileId);
-    if (evidence.traceDigest !== null) assertDigest(evidence.traceDigest);
-  }
+  if (!usage.modelEvidence) return;
+  const evidence = usage.modelEvidence;
+  if (
+    evidence.observedModelIds.some((id) => !/^[a-z\d][a-z\d.-]{1,79}$/.test(id))
+  )
+    throw new Error('Invalid observed model identity');
+  if (evidence.modelProfileId !== null) assertDigest(evidence.modelProfileId);
+  if (evidence.traceDigest !== null) assertDigest(evidence.traceDigest);
+}
+
+function validateUsage(usage: UsageRecord): void {
+  if (
+    !['included', 'pending', 'settled', 'unknown'].includes(usage.settlement) ||
+    typeof usage.complete !== 'boolean' ||
+    typeof usage.source !== 'string' ||
+    !usage.source
+  )
+    throw new Error('Invalid usage metadata');
+  validateUsageMeasurements(usage);
   if (
     usage.credits !== null &&
     (!Number.isFinite(usage.credits) || usage.credits < 0)
@@ -208,6 +209,118 @@ function validateUsage(usage: UsageRecord): void {
   }
   if (usage.settlement === 'settled' && usage.settledUsd === null)
     throw new Error('Settlement requires actual USD');
+}
+
+function validateReservationIdentity(reservation: Reservation): void {
+  if (reservation.modelProfile) {
+    verifyModelProfile(reservation.modelProfile);
+    for (const d of [
+      reservation.campaignId,
+      reservation.experimentIdentity,
+      reservation.slotId,
+    ])
+      assertDigest(d);
+    if (
+      reservation.model !== reservation.modelProfile.canonicalModelId ||
+      reservation.reasoningEffort !==
+        reservation.modelProfile.reasoningEffort ||
+      reservation.serviceTier !==
+        reservation.modelProfile.requestedServiceTier ||
+      reservation.speed !== undefined ||
+      !reservation.runId.startsWith(`${reservation.slotId!}-`)
+    )
+      throw new Error('Reservation model or slot differs from profile');
+  }
+  if (
+    !reservation.runId ||
+    !reservation.taskId ||
+    (!reservation.modelProfile &&
+      (reservation.model !== 'gpt-6.1-terra' ||
+        reservation.reasoningEffort !== 'high' ||
+        reservation.speed !== 'standard' ||
+        reservation.serviceTier !== undefined ||
+        reservation.campaignId !== undefined ||
+        reservation.experimentIdentity !== undefined ||
+        reservation.slotId !== undefined))
+  )
+    throw new Error('Invalid attempt identity');
+}
+
+function validateReservationBilling(
+  reservation: Reservation,
+  now: number,
+): number {
+  const billing = reservation.billing;
+  const age = now - Date.parse(billing.observedAt);
+  if (
+    !Number.isFinite(age) ||
+    age < 0 ||
+    age > 60_000 ||
+    !billing.source ||
+    !billing.autoReloadDisabled
+  )
+    throw new Error('Fresh billing evidence required');
+  if (
+    billing.settingsObservedAt !== undefined &&
+    (!Number.isFinite(Date.parse(billing.settingsObservedAt)) ||
+      Date.parse(billing.settingsObservedAt) > now)
+  )
+    throw new Error('Invalid settings observation time');
+  const maximum = money(reservation.maximumUsd);
+  if (billing.mode === 'included_only') {
+    if (
+      maximum !== 0 ||
+      billing.ordinaryUsageAllowed !== true ||
+      billing.creditBalance !== 0 ||
+      billing.unlimitedCredits !== false ||
+      !['plus', 'pro', 'prolite', 'promax'].includes(billing.accountPlan ?? '')
+    )
+      throw new Error('Included-only allowance unavailable');
+  } else if (
+    billing.mode === 'unknown' ||
+    billing.providerEnforcedCeilingUsd === null ||
+    !billing.rateCardVersion ||
+    money(billing.providerEnforcedCeilingUsd) > maximum
+  ) {
+    throw new Error('Paid dispatch lacks an enforceable cost bound');
+  }
+  return maximum;
+}
+
+function validateUsageTransition(
+  previous: UsageRecord | null,
+  usage: UsageRecord,
+): void {
+  if (
+    previous?.complete &&
+    (!usage.complete ||
+      (['inputTokens', 'cachedInputTokens', 'outputTokens'] as const).some(
+        (key) => previous![key] !== usage[key],
+      ))
+  )
+    throw new Error('Complete token evidence is immutable');
+  if (
+    previous?.settledUsd !== null &&
+    previous?.settledUsd !== undefined &&
+    usage.settledUsd === null
+  )
+    throw new Error('Known settlement cannot become unknown');
+  if (
+    previous?.financialEvidence &&
+    previous.financialEvidence.sha256 === usage.financialEvidence?.sha256 &&
+    previous.settledUsd !== usage.settledUsd
+  )
+    throw new Error(
+      'The same settlement evidence cannot report another amount',
+    );
+  if (
+    previous?.modelEvidence &&
+    contentIdentity(previous.modelEvidence) !==
+      contentIdentity(usage.modelEvidence ?? null)
+  )
+    throw new Error(
+      'Observed model evidence cannot be overwritten by settlement',
+    );
 }
 
 /**
@@ -316,38 +429,7 @@ export class BudgetManager {
 
   reserveAttempt(reservation: Reservation, now = Date.now()): void {
     this.#locked((entries) => {
-      if (reservation.modelProfile) {
-        verifyModelProfile(reservation.modelProfile);
-        for (const d of [
-          reservation.campaignId,
-          reservation.experimentIdentity,
-          reservation.slotId,
-        ])
-          assertDigest(d);
-        if (
-          reservation.model !== reservation.modelProfile.canonicalModelId ||
-          reservation.reasoningEffort !==
-            reservation.modelProfile.reasoningEffort ||
-          reservation.serviceTier !==
-            reservation.modelProfile.requestedServiceTier ||
-          reservation.speed !== undefined ||
-          !reservation.runId.startsWith(`${reservation.slotId!}-`)
-        )
-          throw new Error('Reservation model or slot differs from profile');
-      }
-      if (
-        !reservation.runId ||
-        !reservation.taskId ||
-        (!reservation.modelProfile &&
-          (reservation.model !== 'gpt-6.1-terra' ||
-            reservation.reasoningEffort !== 'high' ||
-            reservation.speed !== 'standard' ||
-            reservation.serviceTier !== undefined ||
-            reservation.campaignId !== undefined ||
-            reservation.experimentIdentity !== undefined ||
-            reservation.slotId !== undefined))
-      )
-        throw new Error('Invalid attempt identity');
+      validateReservationIdentity(reservation);
       const state = this.#state(entries);
       if (state.has(reservation.runId))
         throw new Error('Attempt already reserved');
@@ -366,42 +448,7 @@ export class BudgetManager {
           )
       )
         throw new Error('Observed spend exceeded its enforced ceiling');
-      const billing = reservation.billing;
-      const age = now - Date.parse(billing.observedAt);
-      if (
-        !Number.isFinite(age) ||
-        age < 0 ||
-        age > 60_000 ||
-        !billing.source ||
-        !billing.autoReloadDisabled
-      )
-        throw new Error('Fresh billing evidence required');
-      if (
-        billing.settingsObservedAt !== undefined &&
-        (!Number.isFinite(Date.parse(billing.settingsObservedAt)) ||
-          Date.parse(billing.settingsObservedAt) > now)
-      )
-        throw new Error('Invalid settings observation time');
-      const maximum = money(reservation.maximumUsd);
-      if (billing.mode === 'included_only') {
-        if (
-          maximum !== 0 ||
-          billing.ordinaryUsageAllowed !== true ||
-          billing.creditBalance !== 0 ||
-          billing.unlimitedCredits !== false ||
-          !['plus', 'pro', 'prolite', 'promax'].includes(
-            billing.accountPlan ?? '',
-          )
-        )
-          throw new Error('Included-only allowance unavailable');
-      } else if (
-        billing.mode === 'unknown' ||
-        billing.providerEnforcedCeilingUsd === null ||
-        !billing.rateCardVersion ||
-        money(billing.providerEnforcedCeilingUsd) > maximum
-      ) {
-        throw new Error('Paid dispatch lacks an enforceable cost bound');
-      }
+      const maximum = validateReservationBilling(reservation, now);
       const exposure = state
         .values()
         .reduce(
@@ -433,37 +480,7 @@ export class BudgetManager {
         canonicalJson(attempt.usage) === canonicalJson(usage)
       )
         return;
-      if (
-        attempt.usage?.complete &&
-        (!usage.complete ||
-          (['inputTokens', 'cachedInputTokens', 'outputTokens'] as const).some(
-            (key) => attempt.usage![key] !== usage[key],
-          ))
-      )
-        throw new Error('Complete token evidence is immutable');
-      if (
-        attempt.usage?.settledUsd !== null &&
-        attempt.usage?.settledUsd !== undefined &&
-        usage.settledUsd === null
-      )
-        throw new Error('Known settlement cannot become unknown');
-      if (
-        attempt.usage?.financialEvidence &&
-        attempt.usage.financialEvidence.sha256 ===
-          usage.financialEvidence?.sha256 &&
-        attempt.usage.settledUsd !== usage.settledUsd
-      )
-        throw new Error(
-          'The same settlement evidence cannot report another amount',
-        );
-      if (
-        attempt.usage?.modelEvidence &&
-        contentIdentity(attempt.usage.modelEvidence) !==
-          contentIdentity(usage.modelEvidence ?? null)
-      )
-        throw new Error(
-          'Observed model evidence cannot be overwritten by settlement',
-        );
+      validateUsageTransition(attempt.usage, usage);
       // Preserve unexpected charges as evidence. Subsequent dispatch fails closed.
       this.#append({ type: 'usage', runId, usage }, entries);
     });

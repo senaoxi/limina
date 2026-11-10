@@ -11,15 +11,146 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import {
-  assertPackageModuleClosure,
+  type CommandResult,
   packLiminaDistribution,
   packMigrationDistribution,
   runCommand,
   runPnpm,
 } from './helpers';
+import { assertPackageModuleClosure } from './package-module-closure';
 
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+type RunNode = (arguments_: string[]) => Promise<CommandResult>;
+
+async function assertPublicConfigApi(
+  root: string,
+  coreRoot: string,
+  node: RunNode,
+): Promise<void> {
+  const coreManifestText = await readFile(
+    path.join(coreRoot, 'package.json'),
+    'utf8',
+  );
+  const coreManifest = JSON.parse(coreManifestText);
+  await assertPackageModuleClosure(coreRoot, coreManifest);
+  expect(
+    Object.keys(coreManifest.exports).filter(
+      (key) => key === './internal' || key.startsWith('./internal/'),
+    ),
+  ).toEqual([]);
+  const publicApi = await node([
+    '--input-type=module',
+    '--eval',
+    'import { defineConfig } from "limina"; if (defineConfig({}).constructor !== Object) throw new Error("public config unavailable"); for (const specifier of ["limina/internal/core/tsconfig/actions", "limina/internal/config/runner", "limina/internal/logger"]) { try { await import(specifier); throw new Error("internal exported"); } catch (error) { if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error; } }',
+  ]);
+  expect(publicApi.exitCode, publicApi.stdout + publicApi.stderr).toBe(0);
+  await writeFile(
+    path.join(root, 'public-config.ts'),
+    'import { defineConfig, type LiminaConfig } from "limina"; const config: LiminaConfig = {}; defineConfig(config);\n',
+  );
+  const publicTypes = await node([
+    path.join(root, 'node_modules/typescript/bin/tsc'),
+    '--ignoreConfig',
+    '--strict',
+    '--noEmit',
+    '--module',
+    'NodeNext',
+    '--moduleResolution',
+    'NodeNext',
+    '--target',
+    'ES2023',
+    'public-config.ts',
+  ]);
+  expect(publicTypes.exitCode, publicTypes.stdout + publicTypes.stderr).toBe(0);
+}
+
+async function assertMissingCompiler(
+  root: string,
+  cli: string,
+  before: string,
+  node: RunNode,
+): Promise<void> {
+  // Remove the consumer's real compiler directory, without modifying store
+  // contents, to challenge the required peer through the installed process.
+  const typescriptRoot = await realpath(
+    path.join(root, 'node_modules/typescript'),
+  );
+  await rename(typescriptRoot, `${typescriptRoot}.disabled`);
+  try {
+    const compilerlessHelp = await node([cli, '--help']);
+    expect(compilerlessHelp.exitCode).toBe(0);
+    const noCompiler = await node([cli, '--yes']);
+    expect(noCompiler.exitCode).not.toBe(0);
+    expect(noCompiler.stderr).toContain('typescript');
+    expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
+      before,
+    );
+  } finally {
+    await rename(`${typescriptRoot}.disabled`, typescriptRoot);
+  }
+}
+
+async function assertMissingWorkerDependency(
+  root: string,
+  migrateRoot: string,
+  worker: string,
+  node: RunNode,
+): Promise<void> {
+  // Missing a worker dependency cannot reuse the last successful topology.
+  const workerText = await readFile(worker, 'utf8');
+  const dependency = /from ["'](\.\/chunks\/[^"']+)["']/u.exec(workerText)?.[1];
+  expect(dependency).toBeDefined();
+  const chunk = path.resolve(migrateRoot, dependency!);
+  await rename(chunk, `${chunk}.disabled`);
+  try {
+    const unavailable = await node([
+      worker,
+      path.join(root, 'limina.config.mjs'),
+      'native',
+      'default',
+      'check',
+    ]);
+    expect(unavailable.exitCode).not.toBe(0);
+    expect(unavailable.stderr).toContain('ERR_MODULE_NOT_FOUND');
+    expect(unavailable.stdout).not.toContain('LIMINA_MIGRATION_INPUT=');
+  } finally {
+    await rename(`${chunk}.disabled`, chunk);
+  }
+}
+
+async function assertMigrationArtifacts(migrateRoot: string): Promise<void> {
+  const manifest = JSON.parse(
+    await readFile(path.join(migrateRoot, 'package.json'), 'utf8'),
+  );
+  await assertPackageModuleClosure(migrateRoot, manifest);
+  const build = JSON.parse(
+    await readFile(path.join(migrateRoot, 'migration-build.json'), 'utf8'),
+  );
+  expect(build).toEqual({
+    formatVersion: 1,
+    coreVersion: manifest.version,
+    migrateVersion: manifest.version,
+  });
+  for (const resource of [
+    'cli.js',
+    'migration-verify-process.js',
+    'flow-renderer-process.js',
+    'LICENSE.md',
+  ])
+    await access(path.join(migrateRoot, resource));
+  await expect(
+    access(path.join(migrateRoot, 'bundled-dependencies.json')),
+  ).rejects.toMatchObject({ code: 'ENOENT' });
+  for (const section of [
+    'dependencies',
+    'devDependencies',
+    'peerDependencies',
+    'optionalDependencies',
+  ])
+    expect(manifest[section]?.limina).toBeUndefined();
 }
 
 it('consumes defaults and neutral inputs with only the packed migrate product, preserves schema ownership, and diagnoses missing config and loader packages before writing', async () => {
@@ -90,35 +221,7 @@ it('consumes defaults and neutral inputs with only the packed migrate product, p
     const migrateRoot = await realpath(
       path.join(root, 'node_modules/limina-migrate'),
     );
-    const manifest = JSON.parse(
-      await readFile(path.join(migrateRoot, 'package.json'), 'utf8'),
-    );
-    await assertPackageModuleClosure(migrateRoot, manifest);
-    const build = JSON.parse(
-      await readFile(path.join(migrateRoot, 'migration-build.json'), 'utf8'),
-    );
-    expect(build).toEqual({
-      formatVersion: 1,
-      coreVersion: manifest.version,
-      migrateVersion: manifest.version,
-    });
-    for (const resource of [
-      'cli.js',
-      'migration-verify-process.js',
-      'flow-renderer-process.js',
-      'LICENSE.md',
-    ])
-      await access(path.join(migrateRoot, resource));
-    await expect(
-      access(path.join(migrateRoot, 'bundled-dependencies.json')),
-    ).rejects.toMatchObject({ code: 'ENOENT' });
-    for (const section of [
-      'dependencies',
-      'devDependencies',
-      'peerDependencies',
-      'optionalDependencies',
-    ])
-      expect(manifest[section]?.limina).toBeUndefined();
+    await assertMigrationArtifacts(migrateRoot);
     const help = await node([cli, '--help']);
     expect(help.exitCode).toBe(0);
     await runCommand('git', ['init'], { cwd: root });
@@ -203,83 +306,9 @@ it('consumes defaults and neutral inputs with only the packed migrate product, p
     const installedCoreReport = await readReport();
     expect(installedCoreReport.result.inputConsumable).toBe(true);
     const coreRoot = await realpath(path.join(root, 'node_modules/limina'));
-    const coreManifestText = await readFile(
-      path.join(coreRoot, 'package.json'),
-      'utf8',
-    );
-    const coreManifest = JSON.parse(coreManifestText);
-    await assertPackageModuleClosure(coreRoot, coreManifest);
-    expect(
-      Object.keys(coreManifest.exports).filter(
-        (key) => key === './internal' || key.startsWith('./internal/'),
-      ),
-    ).toEqual([]);
-    const publicApi = await node([
-      '--input-type=module',
-      '--eval',
-      'import { defineConfig } from "limina"; if (defineConfig({}).constructor !== Object) throw new Error("public config unavailable"); for (const specifier of ["limina/internal/core/tsconfig/actions", "limina/internal/config/runner", "limina/internal/logger"]) { try { await import(specifier); throw new Error("internal exported"); } catch (error) { if (error.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") throw error; } }',
-    ]);
-    expect(publicApi.exitCode, publicApi.stdout + publicApi.stderr).toBe(0);
-    await put(
-      'public-config.ts',
-      'import { defineConfig, type LiminaConfig } from "limina"; const config: LiminaConfig = {}; defineConfig(config);\n',
-    );
-    const publicTypes = await node([
-      path.join(root, 'node_modules/typescript/bin/tsc'),
-      '--ignoreConfig',
-      '--strict',
-      '--noEmit',
-      '--module',
-      'NodeNext',
-      '--moduleResolution',
-      'NodeNext',
-      '--target',
-      'ES2023',
-      'public-config.ts',
-    ]);
-    expect(publicTypes.exitCode, publicTypes.stdout + publicTypes.stderr).toBe(
-      0,
-    );
-    // Remove the consumer's real compiler directory, without modifying store
-    // contents, to challenge the required peer through the installed process.
-    const typescriptRoot = await realpath(
-      path.join(root, 'node_modules/typescript'),
-    );
-    await rename(typescriptRoot, `${typescriptRoot}.disabled`);
-    try {
-      const compilerlessHelp = await node([cli, '--help']);
-      expect(compilerlessHelp.exitCode).toBe(0);
-      const noCompiler = await node([cli, '--yes']);
-      expect(noCompiler.exitCode).not.toBe(0);
-      expect(noCompiler.stderr).toContain('typescript');
-      expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
-        before,
-      );
-    } finally {
-      await rename(`${typescriptRoot}.disabled`, typescriptRoot);
-    }
-    // Missing a worker dependency cannot reuse the last successful topology.
-    const workerText = await readFile(worker, 'utf8');
-    const dependency = /from ["'](\.\/chunks\/[^"']+)["']/u.exec(
-      workerText,
-    )?.[1];
-    expect(dependency).toBeDefined();
-    const chunk = path.resolve(migrateRoot, dependency!);
-    await rename(chunk, `${chunk}.disabled`);
-    try {
-      const unavailable = await node([
-        worker,
-        path.join(root, 'limina.config.mjs'),
-        'native',
-        'default',
-        'check',
-      ]);
-      expect(unavailable.exitCode).not.toBe(0);
-      expect(unavailable.stderr).toContain('ERR_MODULE_NOT_FOUND');
-      expect(unavailable.stdout).not.toContain('LIMINA_MIGRATION_INPUT=');
-    } finally {
-      await rename(`${chunk}.disabled`, chunk);
-    }
+    await assertPublicConfigApi(root, coreRoot, node);
+    await assertMissingCompiler(root, cli, before, node);
+    await assertMissingWorkerDependency(root, migrateRoot, worker, node);
   } finally {
     await rm(root, { recursive: true, force: true });
     await core.cleanup();

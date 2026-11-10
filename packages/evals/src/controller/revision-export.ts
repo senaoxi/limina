@@ -100,17 +100,9 @@ export function projectDevelopmentDiagnostics(
   });
 }
 
-/**
-Export inert development material into a fresh workspace. Filesystem isolation
-of the later Codex process is a separate required runtime gate.
-*/
-export async function exportRevisionInputs(input: {
-  preparedDirectory: string;
-  development: readonly DevelopmentInput[];
-  output: string;
-  protectedRoots: readonly string[];
-  developmentRun?: RunStore;
-}): Promise<RevisionExport> {
+async function assertRevisionExportStorage(
+  input: Parameters<typeof exportRevisionInputs>[0],
+): Promise<void> {
   const expected = taskCatalog.filter((task) => task.split === 'dev');
   if (
     input.development.length !== expected.length ||
@@ -148,6 +140,20 @@ export async function exportRevisionInputs(input: {
       );
   }
   await assertNoGitAncestor(path.dirname(input.output));
+}
+
+/**
+Export inert development material into a fresh workspace. Filesystem isolation
+of the later Codex process is a separate required runtime gate.
+*/
+export async function exportRevisionInputs(input: {
+  preparedDirectory: string;
+  development: readonly DevelopmentInput[];
+  output: string;
+  protectedRoots: readonly string[];
+  developmentRun?: RunStore;
+}): Promise<RevisionExport> {
+  await assertRevisionExportStorage(input);
   const prepared = await verifyPreparedInputs(input.preparedDirectory);
   if (
     input.developmentRun &&

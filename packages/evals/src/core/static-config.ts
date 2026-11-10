@@ -3,7 +3,8 @@ import type { MutationRule } from './task.ts';
 
 // Parentheses and satisfies preserve the value. Inspect that value rather than
 // evaluating the module or mistaking a type constraint for executable setup.
-function dataExpression(expression: ts.Expression): ts.Expression {
+function dataExpression(input: ts.Expression): ts.Expression {
+  let expression = input;
   while (
     ts.isParenthesizedExpression(expression) ||
     ts.isSatisfiesExpression(expression)
@@ -12,8 +13,8 @@ function dataExpression(expression: ts.Expression): ts.Expression {
   return expression;
 }
 
-function isLiteral(expression: ts.Expression): boolean {
-  expression = dataExpression(expression);
+function isLiteral(input: ts.Expression): boolean {
+  const expression = dataExpression(input);
   if (
     ts.isStringLiteral(expression) ||
     ts.isNumericLiteral(expression) ||
@@ -43,6 +44,63 @@ function isLiteral(expression: ts.Expression): boolean {
     names.add(name);
     return isLiteral(property.initializer);
   });
+}
+
+function readHelperImport(
+  statement: ts.ImportDeclaration,
+  helper: string | null,
+): string | null | undefined {
+  const clause = statement.importClause;
+  const bindings = clause?.namedBindings;
+  if (
+    !clause ||
+    statement.attributes ||
+    !ts.isStringLiteral(statement.moduleSpecifier) ||
+    statement.moduleSpecifier.text !== 'limina'
+  )
+    return undefined;
+  if (clause.isTypeOnly) return helper;
+  if (
+    !bindings ||
+    clause.name ||
+    !ts.isNamedImports(bindings) ||
+    bindings.elements.length === 0
+  )
+    return undefined;
+  const values = bindings.elements.filter((binding) => !binding.isTypeOnly);
+  if (
+    values.length > 1 ||
+    (values.length === 1 &&
+      (helper !== null ||
+        (values[0]!.propertyName?.text ?? values[0]!.name.text) !==
+          'defineConfig'))
+  )
+    return undefined;
+  return values.length === 1 ? values[0]!.name.text : helper;
+}
+
+function readConfigExport(
+  statement: ts.Statement,
+  helper: string | null,
+): Record<string, unknown> | null {
+  if (!ts.isExportAssignment(statement) || statement.isExportEquals)
+    return null;
+  let expression = dataExpression(statement.expression);
+  if (ts.isCallExpression(expression)) {
+    const callee = dataExpression(expression.expression);
+    if (
+      !helper ||
+      !ts.isIdentifier(callee) ||
+      callee.text !== helper ||
+      expression.arguments.length !== 1 ||
+      expression.typeArguments
+    )
+      return null;
+    expression = dataExpression(expression.arguments[0]!);
+  }
+  return !ts.isObjectLiteralExpression(expression) || !isLiteral(expression)
+    ? null
+    : (readLiteral(expression) as Record<string, unknown>);
 }
 
 /**
@@ -75,70 +133,27 @@ export function readStaticLiminaConfig(
   )
     return null;
   let helper: string | null = null;
-  let isExported = false;
-  let value: Record<string, unknown> | null = null;
   // ESM imports are hoisted; their position does not change the admitted value.
   for (const statement of parsed.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
-    const clause = statement.importClause;
-    const bindings = clause?.namedBindings;
-    if (
-      !clause ||
-      statement.attributes ||
-      !ts.isStringLiteral(statement.moduleSpecifier) ||
-      statement.moduleSpecifier.text !== 'limina'
-    )
-      return null;
-    if (clause.isTypeOnly) continue;
-    if (
-      clause.name ||
-      !bindings ||
-      !ts.isNamedImports(bindings) ||
-      bindings.elements.length === 0
-    )
-      return null;
-    const values = bindings.elements.filter((binding) => !binding.isTypeOnly);
-    if (
-      values.length > 1 ||
-      (values.length === 1 &&
-        (helper !== null ||
-          (values[0]!.propertyName?.text ?? values[0]!.name.text) !==
-            'defineConfig'))
-    )
-      return null;
-    if (values.length === 1) helper = values[0]!.name.text;
+    const imported = readHelperImport(statement, helper);
+    if (imported === undefined) return null;
+    helper = imported;
   }
+  let isExported = false;
+  let value: Record<string, unknown> | null = null;
   for (const statement of parsed.statements) {
     if (ts.isImportDeclaration(statement)) continue;
-    if (
-      isExported ||
-      !ts.isExportAssignment(statement) ||
-      statement.isExportEquals
-    )
-      return null;
+    if (isExported) return null;
     isExported = true;
-    let expression = dataExpression(statement.expression);
-    if (ts.isCallExpression(expression)) {
-      const callee = dataExpression(expression.expression);
-      if (
-        !helper ||
-        !ts.isIdentifier(callee) ||
-        callee.text !== helper ||
-        expression.arguments.length !== 1 ||
-        expression.typeArguments
-      )
-        return null;
-      expression = dataExpression(expression.arguments[0]!);
-    }
-    if (!ts.isObjectLiteralExpression(expression) || !isLiteral(expression))
-      return null;
-    value = readLiteral(expression) as Record<string, unknown>;
+    value = readConfigExport(statement, helper);
+    if (value === null) return null;
   }
   return value;
 }
 
-function readLiteral(expression: ts.Expression): unknown {
-  expression = dataExpression(expression);
+function readLiteral(input: ts.Expression): unknown {
+  const expression = dataExpression(input);
   if (ts.isStringLiteral(expression)) return expression.text;
   if (ts.isNumericLiteral(expression)) return Number(expression.text);
   if (expression.kind === ts.SyntaxKind.TrueKeyword) return true;

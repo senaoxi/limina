@@ -88,6 +88,41 @@ export async function verifyReconstructedProject(
     throw new Error('Reconstructed project changed before verifier transfer');
 }
 
+async function replayChanges(
+  destination: string,
+  changes: Extract<MutationDecision, { status: 'accepted' }>['changes'],
+): Promise<void> {
+  // Apply deletions deepest first; a rename is an explicit deletion plus addition.
+  const deleted = changes
+    .filter((change) => !change.after)
+    .toSorted((a, b) => b.path.split('/').length - a.path.split('/').length);
+  for (const change of deleted) {
+    assertRelativePath(change.path);
+    await rm(path.join(destination, change.path), {
+      recursive: change.before?.kind === 'directory',
+    });
+  }
+  const changed = changes.filter((change) => change.after);
+  const newEntries: SnapshotEntry[] = [];
+  for (const change of changed) {
+    if (!change.after) continue;
+    if (!change.before) newEntries.push(change.after);
+    else if (change.after.kind === 'file') {
+      await writeFile(
+        path.join(destination, change.path),
+        Buffer.from(change.after.content, 'base64'),
+        { flag: 'w' },
+      );
+      await chmod(path.join(destination, change.path), change.after.mode);
+    }
+  }
+  await writeEntries(destination, newEntries);
+  for (const change of changed) {
+    if (change.before && change.after?.kind === 'directory')
+      await chmod(path.join(destination, change.path), change.after.mode);
+  }
+}
+
 /**
 Validation precedes even trusted setup. The callback is controller code that
 prepares S0 after frozen F0 materialization, never an Agent-supplied hook.
@@ -132,35 +167,7 @@ export async function reconstructForVerifier(input: {
   });
   if (rebuilt.status !== 'complete' || rebuilt.digest !== input.start.digest)
     throw new Error('Rebuilt S0 differs from frozen Agent start');
-  // Apply deletions deepest first; a rename is an explicit deletion plus addition.
-  const deleted = decision.changes
-    .filter((change) => !change.after)
-    .toSorted((a, b) => b.path.split('/').length - a.path.split('/').length);
-  for (const change of deleted) {
-    assertRelativePath(change.path);
-    await rm(path.join(input.destination, change.path), {
-      recursive: change.before?.kind === 'directory',
-    });
-  }
-  const changed = decision.changes.filter((change) => change.after);
-  const newEntries: SnapshotEntry[] = [];
-  for (const change of changed) {
-    if (!change.after) continue;
-    if (!change.before) newEntries.push(change.after);
-    else if (change.after.kind === 'file') {
-      await writeFile(
-        path.join(input.destination, change.path),
-        Buffer.from(change.after.content, 'base64'),
-        { flag: 'w' },
-      );
-      await chmod(path.join(input.destination, change.path), change.after.mode);
-    }
-  }
-  await writeEntries(input.destination, newEntries);
-  for (const change of changed) {
-    if (change.before && change.after?.kind === 'directory')
-      await chmod(path.join(input.destination, change.path), change.after.mode);
-  }
+  await replayChanges(input.destination, decision.changes);
   const final = await captureSnapshot(input.destination, 'S1', {
     excludedRoots: input.final.excludedRoots,
   });

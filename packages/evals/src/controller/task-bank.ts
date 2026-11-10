@@ -71,7 +71,7 @@ async function prepareVersionedBank(
       ...definition.sourceFiles,
       ...definition.graderFiles,
     ]);
-    for (const file of inputs) {
+    async function copyFrozenSource(file: string): Promise<void> {
       const info = await lstat(file);
       const destination = path.resolve(
         frozen,
@@ -87,6 +87,7 @@ async function prepareVersionedBank(
       await mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
       await copyFile(file, destination);
     }
+    for (const file of inputs) await copyFrozenSource(file);
     const adapter = fileURLToPath(
       new URL(
         revision === 'v2' ? '../tasks/v2/index.ts' : '../tasks/v2_1/index.ts',

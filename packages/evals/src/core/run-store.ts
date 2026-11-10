@@ -456,6 +456,37 @@ export class RunStore {
     return result.report;
   }
 
+  #bindObservedModel(
+    record: AttemptRecord,
+    evidence: EvidenceReference[],
+  ): void {
+    if (this.manifest.version !== 2) {
+      return;
+    }
+
+    const reference = evidence.find((entry) => entry.kind === 'trace');
+    if (reference) {
+      const trace = JSON.parse(
+        readFileSync(path.join(this.directory, reference.path), 'utf8'),
+      ) as {
+        evidence: {
+          status: string;
+          modelProfileId?: string;
+          observedModelIds?: string[];
+        };
+      };
+      if (
+        trace.evidence.status === 'complete' &&
+        trace.evidence.modelProfileId === record.modelProfileId &&
+        trace.evidence.observedModelIds?.length === 1 &&
+        trace.evidence.observedModelIds[0] === this.manifest.policy.model
+      )
+        record.observedModelId = trace.evidence.observedModelIds[0];
+    }
+    if (record.outcome.status === 'passed' && !record.observedModelId)
+      throw new Error('Passing V2 attempt requires matching model evidence');
+  }
+
   #reviewedRecord(
     original: AttemptRecord,
     review: GradingReview,
@@ -627,31 +658,7 @@ export class RunStore {
         completedAt: new Date().toISOString(),
         outcome: deriveOutcome(task, data.facts),
       };
-      if (this.manifest.version === 2) {
-        const reference = data.evidence.find((entry) => entry.kind === 'trace');
-        if (reference) {
-          const trace = JSON.parse(
-            readFileSync(path.join(this.directory, reference.path), 'utf8'),
-          ) as {
-            evidence: {
-              status: string;
-              modelProfileId?: string;
-              observedModelIds?: string[];
-            };
-          };
-          if (
-            trace.evidence.status === 'complete' &&
-            trace.evidence.modelProfileId === record.modelProfileId &&
-            trace.evidence.observedModelIds?.length === 1 &&
-            trace.evidence.observedModelIds[0] === this.manifest.policy.model
-          )
-            record.observedModelId = trace.evidence.observedModelIds[0];
-        }
-        if (record.outcome.status === 'passed' && !record.observedModelId)
-          throw new Error(
-            'Passing V2 attempt requires matching model evidence',
-          );
-      }
+      this.#bindObservedModel(record, data.evidence);
       if (
         record.outcome.status === 'passed' &&
         ['fixture', 'start', 'final', 'trace', 'assertions'].some(
