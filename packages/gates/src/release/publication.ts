@@ -300,6 +300,10 @@ interface PublicationMemberEvidence {
   registryIntegrity: string | null;
   tagsBefore?: Record<string, string>;
   tagsAfter?: Record<string, string>;
+  candidateCleanup: {
+    status: 'pending' | 'removed' | 'absent' | 'failed';
+    error?: string;
+  };
 }
 
 export function publishReleaseGroup(
@@ -316,6 +320,9 @@ export function publishReleaseGroup(
     timeoutMs: timeouts.registryQueryTimeoutMs,
   };
   assertReleaseGroup(plans);
+  const candidateTag = `candidate-${plans[0]!.newVersion}`;
+  if (candidateTag === (plans[0]!.npmTag ?? 'latest'))
+    throw new Error('Candidate tag cannot be the target channel.');
   for (const plan of plans)
     validatePublicationTarget(plan.config, plan.newVersion, plan.gitTag);
   if (options.evidenceDirectory)
@@ -323,7 +330,6 @@ export function publishReleaseGroup(
   const temporaryDirectory = mkdtempSync(
     path.join(options.evidenceDirectory ?? tmpdir(), 'limina-release-'),
   );
-  const candidateTag = `limina-candidate-${plans[0]!.newVersion}`;
   const evidence = {
     gitTag: plans[0]!.gitTag,
     channel: plans[0]!.npmTag ?? 'latest',
@@ -336,6 +342,7 @@ export function publishReleaseGroup(
       name: plan.config.packageName,
       version: plan.newVersion,
       registryIntegrity: null,
+      candidateCleanup: { status: 'pending' },
     })),
   };
   const saveEvidence = () => {
@@ -479,6 +486,47 @@ export function publishReleaseGroup(
         throw new Error(
           `Latest channel changed for ${plan.config.packageName}: expected ${member.tagsBefore!.latest ?? 'absent'}, received ${member.tagsAfter.latest ?? 'absent'}.`,
         );
+    }
+    // Cleanup is best-effort, only after the entire group's channel checks pass.
+    for (const { plan, member } of packages) {
+      evidence.activePackage = plan.config.packageName;
+      saveEvidence();
+      try {
+        member.tagsAfter = registryTags(plan, queryOptions);
+        const candidateVersion = member.tagsAfter[candidateTag];
+        if (candidateVersion === undefined) {
+          member.candidateCleanup = { status: 'absent' };
+        } else {
+          if (candidateVersion !== plan.newVersion)
+            throw new Error(
+              `Candidate tag ${candidateTag} for ${plan.config.packageName} points to ${candidateVersion}; expected ${plan.newVersion}. Refusing removal.`,
+            );
+          runCommand(
+            getNpmCommand(),
+            [
+              'dist-tag',
+              'rm',
+              plan.config.packageName,
+              candidateTag,
+              ...registryArguments(options.registry),
+            ],
+            { cwd: REPO_ROOT, stdio: 'inherit' },
+          );
+          member.tagsAfter = registryTags(plan, queryOptions);
+          if (member.tagsAfter[candidateTag] !== undefined)
+            throw new Error(
+              `Candidate tag removal verification failed for ${plan.config.packageName}.`,
+            );
+          member.candidateCleanup = { status: 'removed' };
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        member.candidateCleanup = { status: 'failed', error: message };
+        ReleaseLogger.warn(
+          `Candidate cleanup failed for ${plan.config.packageName}: ${message} Publication and channel promotion are complete; rerun to retry cleanup.`,
+        );
+      }
+      saveEvidence();
     }
     evidence.status = 'complete';
     evidence.phase = 'complete';

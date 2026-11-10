@@ -436,6 +436,7 @@ async function createPublicationFixture(
   const version = discoverReleasePackages()[0]!.manifest.version!;
   const documents = new Map<string, RegistryDocument>();
   const uploads: string[] = [];
+  const removals: { name: string; tag: string; promotions: number }[] = [];
   let promotions = 0;
   const metadataMissingPromotions: number[] = [];
   const controls = {
@@ -449,6 +450,9 @@ async function createPublicationFixture(
     isChangeLatest: false,
     stallMetadataFor: '',
     stallTagsFor: '',
+    failCleanupFor: '',
+    loseCleanupResponseFor: '',
+    dropCleanupFor: '',
   };
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -500,6 +504,23 @@ async function createPublicationFixture(
     const document = documents.get(name);
     if (!document) {
       reply(404, { error: 'not_found' });
+      return;
+    }
+    if (isTagRequest && request.method === 'DELETE') {
+      const tag = parts[5]!;
+      removals.push({ name, tag, promotions });
+      if (controls.failCleanupFor === name) {
+        reply(503, { error: 'controlled candidate cleanup failure' });
+        return;
+      }
+      if (controls.dropCleanupFor !== name) delete document['dist-tags'][tag];
+      if (controls.loseCleanupResponseFor === name) {
+        reply(503, {
+          error: 'controlled response failure after accepted cleanup',
+        });
+        return;
+      }
+      reply(200, { ok: true });
       return;
     }
     if (
@@ -593,6 +614,7 @@ async function createPublicationFixture(
     version,
     documents,
     uploads,
+    removals,
     controls,
     metadataMissingPromotions,
     get promotions() {
@@ -609,18 +631,163 @@ async function createPublicationFixture(
 }
 
 it('rejects invalid channels before uploading either member', async () => {
-  for (const tag of ['0.5.0-beta.2', '>=0.5', '1', 'beta next']) {
+  for (const tag of [
+    '0.5.0-beta.2',
+    '>=0.5',
+    '1',
+    'beta next',
+    `candidate-${discoverReleasePackages()[0]!.manifest.version}`,
+  ]) {
     const fixture = await createPublicationFixture(tag);
     try {
-      await assert.rejects(fixture.run(), /Invalid npm tag/u);
+      await assert.rejects(
+        fixture.run(),
+        /Invalid npm tag|Candidate tag cannot be the target channel/u,
+      );
       assert.equal(fixture.documents.size, 0);
       assert.deepEqual(fixture.uploads, []);
       assert.equal(fixture.promotions, 0);
+      assert.deepEqual(fixture.removals, []);
     } finally {
       await fixture.close();
     }
   }
 });
+
+it(
+  'removes only the shared candidate tag after both channels are verified',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      await fixture.run();
+      const candidateTag = `candidate-${fixture.version}`;
+      assert.deepEqual(fixture.removals, [
+        { name: 'limina', tag: candidateTag, promotions: 2 },
+        { name: 'limina-migrate', tag: candidateTag, promotions: 2 },
+      ]);
+      const [evidence] = await fixture.readEvidence();
+      assert.equal(evidence.candidateTag, candidateTag);
+      assert.equal(evidence.status, 'complete');
+      for (const member of evidence.packages) {
+        assert.deepEqual(member.candidateCleanup, { status: 'removed' });
+        assert.deepEqual(member.tagsAfter, { beta: fixture.version });
+        assert.deepEqual(fixture.documents.get(member.name)!['dist-tags'], {
+          beta: fixture.version,
+        });
+      }
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+for (const [fault, packageName, wasRemoved] of [
+  ['failCleanupFor', 'limina', false],
+  ['loseCleanupResponseFor', 'limina-migrate', true],
+  ['dropCleanupFor', 'limina-migrate', false],
+] as const)
+  it(
+    `preserves publication and recovers candidate cleanup after ${fault}`,
+    { timeout: 60_000 },
+    async () => {
+      const fixture = await createPublicationFixture();
+      try {
+        fixture.controls[fault] = packageName;
+        const result = await fixture.run();
+        assert.match(
+          result.stdout + result.stderr,
+          /Candidate cleanup failed/u,
+        );
+        assert.equal(fixture.removals.length, 2);
+        const [first] = await fixture.readEvidence();
+        assert.equal(first.status, 'complete');
+        for (const member of first.packages) {
+          assert.equal(
+            member.candidateCleanup.status,
+            member.name === packageName ? 'failed' : 'removed',
+          );
+          assert.equal(
+            fixture.documents.get(member.name)!['dist-tags'].beta,
+            fixture.version,
+          );
+        }
+        assert.ok(
+          first.packages.find(
+            (member: { name: string }) => member.name === packageName,
+          ).candidateCleanup.error,
+        );
+        assert.equal(
+          fixture.documents.get(packageName)!['dist-tags'][
+            `candidate-${fixture.version}`
+          ],
+          wasRemoved ? undefined : fixture.version,
+        );
+        fixture.controls[fault] = '';
+        await fixture.run();
+        assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
+        assert.equal(fixture.removals.length, wasRemoved ? 2 : 3);
+        const recovered = (await fixture.readEvidence()).find((state) =>
+          state.packages.every(
+            (member: { candidateCleanup: { status: string } }) =>
+              member.candidateCleanup.status !== 'failed',
+          ),
+        );
+        assert.equal(recovered.status, 'complete');
+        for (const member of recovered.packages) {
+          assert.equal(
+            member.candidateCleanup.status,
+            !wasRemoved && member.name === packageName ? 'removed' : 'absent',
+          );
+          assert.deepEqual(fixture.documents.get(member.name)!['dist-tags'], {
+            beta: fixture.version,
+          });
+        }
+      } finally {
+        await fixture.close();
+      }
+    },
+  );
+
+it(
+  'preserves a candidate pointing to another version and all unrelated tags',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture('latest');
+    try {
+      await fixture.run();
+      const protectedTags = {
+        latest: fixture.version,
+        [`candidate-${fixture.version}`]: '0.3.0',
+        'candidate-0.3.0': '0.3.0',
+        [`limina-candidate-${fixture.version}`]: fixture.version,
+        beta: '0.3.0',
+      };
+      for (const document of fixture.documents.values())
+        document['dist-tags'] = { ...protectedTags };
+      await fixture.run();
+      assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
+      assert.equal(fixture.removals.length, 2);
+      const evidence = (await fixture.readEvidence()).find((state) =>
+        state.packages.some(
+          (member: { candidateCleanup: { status: string } }) =>
+            member.candidateCleanup.status === 'failed',
+        ),
+      );
+      assert.equal(evidence.status, 'complete');
+      for (const member of evidence.packages) {
+        assert.equal(member.candidateCleanup.status, 'failed');
+        assert.match(member.candidateCleanup.error, /points to 0\.3\.0/u);
+        assert.deepEqual(
+          fixture.documents.get(member.name)!['dist-tags'],
+          protectedTags,
+        );
+      }
+    } finally {
+      await fixture.close();
+    }
+  },
+);
 
 // Each fault owns a fresh registry and the existing 60-second case budget.
 // One serial case exceeded that budget on Windows after recovery coverage grew.
@@ -634,6 +801,7 @@ it(
       await assert.rejects(fixture.run(), /controlled second upload failure/);
       assert.deepEqual(fixture.documents.keys().toArray(), ['limina']);
       assert.equal(fixture.promotions, 0);
+      assert.deepEqual(fixture.removals, []);
       assert.equal(
         fixture.documents.get('limina')!['dist-tags'].beta,
         undefined,
@@ -725,6 +893,7 @@ it(
     try {
       fixture.controls.isDropPromotion = true;
       await assert.rejects(fixture.run(), /Channel verification failed/u);
+      assert.deepEqual(fixture.removals, []);
       assert.equal(fixture.documents.size, 2);
       assert.equal(
         fixture.documents.get('limina-migrate')!['dist-tags'].beta,
@@ -902,6 +1071,7 @@ it(
         fixture.run(),
         /Latest channel changed for limina-migrate/u,
       );
+      assert.deepEqual(fixture.removals, []);
       const [evidence] = await fixture.readEvidence();
       assert.equal(evidence.status, 'failed');
       assert.equal(evidence.phase, 'verify-channels');
