@@ -162,6 +162,7 @@ it('pins local Git classification, isolates recovery concurrency and checks rele
     assert.equal(filter.with?.['predicate-quantifier'], 'some-with-excludes');
   }
   for (const group of [
+    'CI-release-',
     'CI-pr-',
     'CI-retry-',
     'CI-push-main',
@@ -171,6 +172,16 @@ it('pins local Git classification, isolates recovery concurrency and checks rele
     assert.ok(value.concurrency.group.includes(group));
   assert.ok(
     value.concurrency['cancel-in-progress'].includes('github.run_attempt == 1'),
+  );
+  assert.ok(
+    value.concurrency.group.startsWith(
+      "${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release:') && format('CI-release-{0}', github.run_id)",
+    ),
+  );
+  assert.ok(
+    value.concurrency['cancel-in-progress'].includes(
+      "!startsWith(github.event.head_commit.message, 'release:')",
+    ),
   );
   const publication = parse(
     readFileSync(

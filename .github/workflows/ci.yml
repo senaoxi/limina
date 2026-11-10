@@ -25,8 +25,8 @@ defaults:
   run:
     shell: bash
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('CI-pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && (github.run_attempt > 1 && format('CI-retry-{0}', github.sha) || 'CI-push-main') || github.event_name == 'schedule' && 'CI-schedule-main' || format('CI-dispatch-{0}', github.run_id) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.run_attempt == 1) }}
+  group: ${{ github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release:') && format('CI-release-{0}', github.run_id) || github.event_name == 'pull_request' && format('CI-pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && (github.run_attempt > 1 && format('CI-retry-{0}', github.sha) || 'CI-push-main') || github.event_name == 'schedule' && 'CI-schedule-main' || format('CI-dispatch-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.run_attempt == 1 && !startsWith(github.event.head_commit.message, 'release:')) }}
 jobs:
   plan:
     name: Plan

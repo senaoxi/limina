@@ -7,7 +7,7 @@ import {
   requiredNative,
   seal,
 } from './contract.ts';
-import { assertHead, contractHash, diff, prBase } from './git.ts';
+import { assertHead, contractHash, diff, git, prBase } from './git.ts';
 import { GitHub } from './github.ts';
 import { History } from './history.ts';
 import {
@@ -95,7 +95,13 @@ export function identity(): Identity {
   value.forced =
     value.originAttempt > 1 ||
     event === 'schedule' ||
-    event === 'workflow_dispatch';
+    event === 'workflow_dispatch' ||
+    (event === 'push' &&
+      // Match the workflow's case-insensitive startsWith without trimming the subject.
+      git(['show', '-s', '--format=%B', targetSha])
+        .toString('utf8')
+        .toLowerCase()
+        .startsWith('release:'));
   return value;
 }
 export async function prepare(): Promise<void> {
@@ -118,7 +124,7 @@ export async function prepare(): Promise<void> {
       'Current Run identity mismatch',
     );
     plan.workflowId = run.workflow_id;
-    if (id.event === 'push' && id.originAttempt === 1) {
+    if (id.event === 'push' && !id.forced) {
       const current = await api.get<{ object: { sha: string } }>(
         '/git/ref/heads/main',
       );

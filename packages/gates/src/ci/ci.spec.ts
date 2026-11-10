@@ -44,6 +44,7 @@ import {
 } from './git.ts';
 import { GitHub } from './github.ts';
 import { History } from './history.ts';
+import { finalize, prepare } from './planner.ts';
 import { validatePublication } from './status.ts';
 import type { ApiJob, ApiRun, JobReceipt, Plan, RunView } from './types.ts';
 
@@ -62,6 +63,105 @@ const identity = {
 function plan(): Plan {
   return fullPlan(identity, 'b'.repeat(64), '24.22.1', 'test');
 }
+it('forces release pushes through full validation even after main advances', async (context) => {
+  const directory = mkdtempSync(
+    path.join(os.tmpdir(), 'affected-release-push-'),
+  );
+  const previous = process.cwd();
+  const environment = {
+    GITHUB_EVENT_NAME: 'push',
+    GITHUB_REF: 'refs/heads/main',
+    GITHUB_SHA: '',
+    GITHUB_REPOSITORY: identity.repository,
+    GITHUB_REPOSITORY_ID: String(identity.repositoryId),
+    GITHUB_RUN_ID: String(identity.runId),
+    GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_WORKFLOW_REF:
+      identity.repository + '/.github/workflows/ci.yml@refs/heads/main',
+    GITHUB_OUTPUT: path.join(directory, 'outputs'),
+    GH_TOKEN: 'local-fixture',
+    ROLLING_NODE: '24.22.1',
+    AFFECTED_CI: 'enabled',
+  };
+  const before = Object.fromEntries(
+    Object.keys(environment).map((key) => [key, process.env[key]]),
+  );
+  let headReads = 0;
+  let currentHead = '';
+  context.mock.method(
+    GitHub.prototype,
+    'run',
+    async () => successfulView().run,
+  );
+  context.mock.method(GitHub.prototype, 'get', async () => {
+    headReads++;
+    return { object: { sha: currentHead } };
+  });
+  context.mock.method(History.prototype, 'resolve', async () => {
+    assert.fail(
+      'Forced release and obsolete ordinary pushes must not query checkpoints',
+    );
+  });
+  try {
+    Object.assign(process.env, environment);
+    execFileSync('git', ['init', '-q'], { cwd: directory });
+    process.chdir(directory);
+    for (const [commitMessage, release, stale] of [
+      ['release: limina@1.0.0, migrate@1.0.0', true, false],
+      ['release: limina@1.0.1, migrate@1.0.1', true, true],
+      ['Release: retain GitHub expression case semantics', true, true],
+      ['docs: mention release: in the subject', false, true],
+      ['docs: ordinary change\n\nrelease: body only', false, true],
+      [' release: leading whitespace', false, true],
+      ['release(scope): scoped type is not the prefix', false, true],
+    ] as const) {
+      execFileSync(
+        'git',
+        [
+          '-c',
+          'user.name=CI Test',
+          '-c',
+          'user.email=ci@example.invalid',
+          'commit',
+          '--allow-empty',
+          '--cleanup=verbatim',
+          '-q',
+          '-F',
+          '-',
+        ],
+        { input: commitMessage, stdio: ['pipe', 'pipe', 'pipe'] },
+      );
+      const target = gitText(['rev-parse', 'HEAD']);
+      process.env.GITHUB_SHA = target;
+      currentHead = stale ? 'f'.repeat(40) : target;
+      headReads = 0;
+      await prepare();
+      finalize();
+      const value = admitPlan(
+        JSON.parse(readFileSync('.reports/ci/plan.json', 'utf8')),
+      );
+      assert.equal(value.targetSha, target);
+      assert.equal(value.forced, release, commitMessage);
+      assert.equal(value.mode, release ? 'full' : 'obsolete', commitMessage);
+      assert.equal(headReads, release ? 0 : 1, commitMessage);
+      if (!release) continue;
+      assert.equal(value.reason, 'Forced full validation');
+      assert.ok(
+        domains.every((domain) => value.domains[domain].mode === 'run'),
+      );
+      assert.deepEqual(value.nativeTuples, tuples(value.rollingNode));
+      assert.deepEqual(value.diffs, []);
+      assert.equal(value.proposal, undefined);
+    }
+  } finally {
+    process.chdir(previous);
+    for (const [key, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 function successfulView(value = plan()): RunView {
   const jobs: ApiJob[] = [];
   const receipts: JobReceipt[] = [];
