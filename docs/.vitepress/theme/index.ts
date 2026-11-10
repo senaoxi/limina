@@ -3,6 +3,7 @@
 
 import type { Theme } from 'vitepress';
 import DefaultTheme from 'vitepress/theme';
+import { defineAsyncComponent } from 'vue';
 import ArticleLayout from './ArticleLayout.vue';
 import ReadingTable from './ReadingTable.vue';
 
@@ -15,6 +16,10 @@ const theme: Theme = {
   Layout: ArticleLayout,
   enhanceApp: ({ app }) => {
     app.component('ReadingTable', ReadingTable);
+    app.component(
+      'EvalsDashboard',
+      defineAsyncComponent(() => import('./EvalsDashboard.vue')),
+    );
   },
 };
 

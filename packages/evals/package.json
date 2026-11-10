@@ -1,0 +1,23 @@
+{
+  "name": "@limina/evals",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/core/*.spec.ts src/controller/*.spec.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "eval:prepare": "node src/cli.ts prepare",
+    "eval:preflight": "node src/cli.ts preflight",
+    "eval:smoke": "node src/cli.ts smoke",
+    "eval:run": "node src/cli.ts run",
+    "eval:report": "node src/cli.ts report",
+    "eval:campaign": "node src/cli.ts campaign",
+    "eval:calibrate": "node src/cli.ts calibrate",
+    "eval:prepare-bank": "node src/cli.ts prepare-bank",
+    "eval:attribute": "node src/cli.ts attribute"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:dev",
+    "typescript": "catalog:dev",
+    "yaml": "catalog:dev"
+  }
+}

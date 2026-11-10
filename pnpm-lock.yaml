@@ -551,6 +551,18 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
+  packages/evals:
+    devDependencies:
+      '@types/node':
+        specifier: 22.18.0
+        version: 22.18.0
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+      yaml:
+        specifier: catalog:dev
+        version: 2.9.1
+
   packages/gates:
     devDependencies:
       '@commitlint/cli':

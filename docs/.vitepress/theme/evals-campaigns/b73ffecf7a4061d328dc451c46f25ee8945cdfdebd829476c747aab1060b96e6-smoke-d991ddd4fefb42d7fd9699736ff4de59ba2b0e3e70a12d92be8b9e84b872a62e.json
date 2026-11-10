@@ -1,0 +1,780 @@
+{
+  "schemaVersion": 2,
+  "campaignId": "b73ffecf7a4061d328dc451c46f25ee8945cdfdebd829476c747aab1060b96e6",
+  "comparability": "native-profile",
+  "bankId": "54e0f786d96cd11bef7fe7a0a44fc7725c6210bdaa0cc506a3369c4c4dde5bb9",
+  "bankRevision": "v2.1",
+  "stage": "smoke",
+  "sourceIndexDigest": "3a77ae0719c9704977bfd457f7a7c1e832e6d4bf20b4a6de1b3fb51defabf136",
+  "analysisPolicyDigest": "51395b7ba14d2b4a2522233deecdcb733f18b1da4c890aa1d668dd8a4cd82a20",
+  "reportIdentity": "d991ddd4fefb42d7fd9699736ff4de59ba2b0e3e70a12d92be8b9e84b872a62e",
+  "exploratory": true,
+  "models": [
+    {
+      "profile": {
+        "id": "f462c9a7950d1907b20c3f0d794014536596257409830db8b9490d4076a9a171",
+        "model": "gpt-6.1-sol",
+        "displayName": "GPT 6.1 Sol (high)",
+        "provider": "openai",
+        "reasoningEffort": "high",
+        "serviceTier": "default",
+        "serviceTierEvidence": "requested-only",
+        "codexVersion": "0.166.0",
+        "codexBinaryIdentity": "39acf979729dd290f9a24ee38b2914e036c91b65952872e28ae2a6b88a7db7c1",
+        "instructionIdentity": "966cfa2747e38957f35caf4988ca4d458026f0aca9636a2c1be3e3ddcb9c766b",
+        "execution": {
+          "contextWindow": 272000,
+          "autoCompactTokenLimit": 244800,
+          "toolOutputLimit": 10000
+        }
+      },
+      "planned": 3,
+      "status": "recorded",
+      "report": {
+        "experimentIdentity": "7e60a9d6e321a7df95cf8e4d5a7e1cdcd70f0df80f9d3433ba50ab3a2da6931c",
+        "planned": 3,
+        "executions": 3,
+        "complete": true,
+        "macro": { "base": null, "skill": null, "explicit-skill": null },
+        "liftPercentagePoints": null,
+        "regressionRate": null,
+        "counts": {
+          "base": { "passed": 1, "valid": 1, "planned": 1, "executions": 1 },
+          "skill": { "passed": 1, "valid": 1, "planned": 1, "executions": 1 },
+          "explicit-skill": {
+            "passed": 1,
+            "valid": 1,
+            "planned": 1,
+            "executions": 1
+          }
+        },
+        "measurements": {
+          "version": 1,
+          "policy": "task-condition-equal-all-executions",
+          "pricing": {
+            "identity": "2ac2a65f57132d3468c3c32177127a0f80ed075f0ad1e5d072ecfbd59baeeee9",
+            "version": "openai-standard-2026-11-09",
+            "observedOn": "2026-11-09"
+          },
+          "main": {
+            "all": {
+              "agentMs": {
+                "mean": 131831.90187499998,
+                "observedSum": 395495.70562499994,
+                "total": 395495.70562499994,
+                "measured": 3,
+                "executions": 3,
+                "coverage": 1,
+                "cells": 3,
+                "measuredCells": 3
+              },
+              "endToEndMs": {
+                "mean": 161895.15069433334,
+                "observedSum": 485685.45208300004,
+                "total": 485685.45208300004,
+                "measured": 3,
+                "executions": 3,
+                "coverage": 1,
+                "cells": 3,
+                "measuredCells": 3
+              },
+              "apiEquivalentUsd": {
+                "mean": 0.17449400000000004,
+                "observedSum": 0.5234820000000001,
+                "total": 0.5234820000000001,
+                "measured": 3,
+                "executions": 3,
+                "coverage": 1,
+                "cells": 3,
+                "measuredCells": 3
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 3,
+                "coverage": 0,
+                "cells": 3,
+                "measuredCells": 0
+              }
+            },
+            "conditions": {
+              "base": {
+                "agentMs": {
+                  "mean": 116285.88683300001,
+                  "observedSum": 116285.88683300001,
+                  "total": 116285.88683300001,
+                  "measured": 1,
+                  "executions": 1,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "endToEndMs": {
+                  "mean": 144952.93920800003,
+                  "observedSum": 144952.93920800003,
+                  "total": 144952.93920800003,
+                  "measured": 1,
+                  "executions": 1,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "apiEquivalentUsd": {
+                  "mean": 0.18797640000000007,
+                  "observedSum": 0.18797640000000007,
+                  "total": 0.18797640000000007,
+                  "measured": 1,
+                  "executions": 1,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 1,
+                  "coverage": 0,
+                  "cells": 1,
+                  "measuredCells": 0
+                }
+              },
+              "skill": {
+                "agentMs": {
+                  "mean": 141174.581375,
+                  "observedSum": 141174.581375,
+                  "total": 141174.581375,
+                  "measured": 1,
+                  "executions": 1,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "endToEndMs": {
+                  "mean": 175557.956666,
+                  "observedSum": 175557.956666,
+                  "total": 175557.956666,
+                  "measured": 1,
+                  "executions": 1,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "apiEquivalentUsd": {
+                  "mean": 0.1686568,
+                  "observedSum": 0.1686568,
+                  "total": 0.1686568,
+                  "measured": 1,
+                  "executions": 1,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 1,
+                  "coverage": 0,
+                  "cells": 1,
+                  "measuredCells": 0
+                }
+              },
+              "explicit-skill": {
+                "agentMs": {
+                  "mean": 138035.23741699997,
+                  "observedSum": 138035.23741699997,
+                  "total": 138035.23741699997,
+                  "measured": 1,
+                  "executions": 1,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "endToEndMs": {
+                  "mean": 165174.556209,
+                  "observedSum": 165174.556209,
+                  "total": 165174.556209,
+                  "measured": 1,
+                  "executions": 1,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "apiEquivalentUsd": {
+                  "mean": 0.1668488,
+                  "observedSum": 0.1668488,
+                  "total": 0.1668488,
+                  "measured": 1,
+                  "executions": 1,
+                  "coverage": 1,
+                  "cells": 1,
+                  "measuredCells": 1
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 1,
+                  "coverage": 0,
+                  "cells": 1,
+                  "measuredCells": 0
+                }
+              }
+            }
+          },
+          "negativeControls": {
+            "all": {
+              "agentMs": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 0,
+                "coverage": 0,
+                "cells": 0,
+                "measuredCells": 0
+              },
+              "endToEndMs": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 0,
+                "coverage": 0,
+                "cells": 0,
+                "measuredCells": 0
+              },
+              "apiEquivalentUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 0,
+                "coverage": 0,
+                "cells": 0,
+                "measuredCells": 0
+              },
+              "settledUsd": {
+                "mean": null,
+                "observedSum": 0,
+                "total": null,
+                "measured": 0,
+                "executions": 0,
+                "coverage": 0,
+                "cells": 0,
+                "measuredCells": 0
+              }
+            },
+            "conditions": {
+              "base": {
+                "agentMs": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                },
+                "endToEndMs": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                },
+                "apiEquivalentUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                }
+              },
+              "skill": {
+                "agentMs": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                },
+                "endToEndMs": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                },
+                "apiEquivalentUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                }
+              },
+              "explicit-skill": {
+                "agentMs": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                },
+                "endToEndMs": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                },
+                "apiEquivalentUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                },
+                "settledUsd": {
+                  "mean": null,
+                  "observedSum": 0,
+                  "total": null,
+                  "measured": 0,
+                  "executions": 0,
+                  "coverage": 0,
+                  "cells": 0,
+                  "measuredCells": 0
+                }
+              }
+            }
+          }
+        },
+        "domains": [
+          {
+            "id": "initialization",
+            "taskCount": 1,
+            "counts": {
+              "base": {
+                "passed": 1,
+                "valid": 1,
+                "planned": 1,
+                "executions": 1
+              },
+              "skill": {
+                "passed": 1,
+                "valid": 1,
+                "planned": 1,
+                "executions": 1
+              },
+              "explicit-skill": {
+                "passed": 1,
+                "valid": 1,
+                "planned": 1,
+                "executions": 1
+              }
+            },
+            "conditions": { "base": 1, "skill": 1, "explicit-skill": 1 },
+            "liftPercentagePoints": 0,
+            "regressionRate": 0
+          },
+          {
+            "id": "configuration",
+            "taskCount": 0,
+            "counts": {},
+            "conditions": {
+              "base": null,
+              "skill": null,
+              "explicit-skill": null
+            },
+            "liftPercentagePoints": null,
+            "regressionRate": null
+          },
+          {
+            "id": "reference-graph",
+            "taskCount": 0,
+            "counts": {},
+            "conditions": {
+              "base": null,
+              "skill": null,
+              "explicit-skill": null
+            },
+            "liftPercentagePoints": null,
+            "regressionRate": null
+          },
+          {
+            "id": "checker",
+            "taskCount": 0,
+            "counts": {},
+            "conditions": {
+              "base": null,
+              "skill": null,
+              "explicit-skill": null
+            },
+            "liftPercentagePoints": null,
+            "regressionRate": null
+          },
+          {
+            "id": "source-governance",
+            "taskCount": 0,
+            "counts": {},
+            "conditions": {
+              "base": null,
+              "skill": null,
+              "explicit-skill": null
+            },
+            "liftPercentagePoints": null,
+            "regressionRate": null
+          },
+          {
+            "id": "workflow",
+            "taskCount": 0,
+            "counts": {},
+            "conditions": {
+              "base": null,
+              "skill": null,
+              "explicit-skill": null
+            },
+            "liftPercentagePoints": null,
+            "regressionRate": null
+          },
+          {
+            "id": "troubleshooting",
+            "taskCount": 0,
+            "counts": {},
+            "conditions": {
+              "base": null,
+              "skill": null,
+              "explicit-skill": null
+            },
+            "liftPercentagePoints": null,
+            "regressionRate": null
+          },
+          {
+            "id": "package-release",
+            "taskCount": 0,
+            "counts": {},
+            "conditions": {
+              "base": null,
+              "skill": null,
+              "explicit-skill": null
+            },
+            "liftPercentagePoints": null,
+            "regressionRate": null
+          }
+        ],
+        "tasks": [
+          {
+            "id": "I01",
+            "domain": "initialization",
+            "role": "main",
+            "fixtureIdentity": "79b503034f99fa751a30e21900b843147adb209225af7bf3876c746ede7886d5",
+            "gradingIdentity": "bc8d34d89eca45bcc4a8dce4ae067b1fd48e4b58881657edf9491828c6697f75",
+            "executionIdentity": "a2bef1eee033108768be282370770403cb1c750f709cc91f857a016c46624590",
+            "comparison": {
+              "planned": 1,
+              "valid": 1,
+              "liftPercentagePoints": 0,
+              "regressionRate": 0,
+              "improved": 0,
+              "regressed": 0,
+              "bothPassed": 1,
+              "bothFailed": 0,
+              "unpaired": 0,
+              "bounds": [0, 0],
+              "pairs": [
+                {
+                  "taskId": "I01",
+                  "repetition": 1,
+                  "base": 1,
+                  "skill": 1,
+                  "delta": 0,
+                  "bounds": [0, 0]
+                }
+              ]
+            },
+            "conditions": {
+              "base": {
+                "planned": 1,
+                "valid": 1,
+                "passed": 1,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 1,
+                "measurements": {
+                  "agentMs": {
+                    "mean": 116285.88683300001,
+                    "observedSum": 116285.88683300001,
+                    "total": 116285.88683300001,
+                    "measured": 1,
+                    "executions": 1,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 144952.93920800003,
+                    "observedSum": 144952.93920800003,
+                    "total": 144952.93920800003,
+                    "measured": 1,
+                    "executions": 1,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.18797640000000007,
+                    "observedSum": 0.18797640000000007,
+                    "total": 0.18797640000000007,
+                    "measured": 1,
+                    "executions": 1,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 1,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "06ecd4b4502ecce7e0e25c1f2e9e5b2ee8d498c2552aebf40e61e2cd2bcfe968",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "no",
+                      "discoverable": "no",
+                      "discovered": "no",
+                      "skillRead": "no",
+                      "referencesRead": 0,
+                      "followed": "no"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "skill": {
+                "planned": 1,
+                "valid": 1,
+                "passed": 1,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 1,
+                "measurements": {
+                  "agentMs": {
+                    "mean": 141174.581375,
+                    "observedSum": 141174.581375,
+                    "total": 141174.581375,
+                    "measured": 1,
+                    "executions": 1,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 175557.956666,
+                    "observedSum": 175557.956666,
+                    "total": 175557.956666,
+                    "measured": 1,
+                    "executions": 1,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.1686568,
+                    "observedSum": 0.1686568,
+                    "total": 0.1686568,
+                    "measured": 1,
+                    "executions": 1,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 1,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "ab41e7b298519bedb3d0453e1e2b8d482cf8bbff71d6554be46e515aa44b3f5e",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "unknown",
+                      "skillRead": "unknown",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              },
+              "explicit-skill": {
+                "planned": 1,
+                "valid": 1,
+                "passed": 1,
+                "rate": 1,
+                "coverage": 1,
+                "bounds": [1, 1],
+                "executions": 1,
+                "measurements": {
+                  "agentMs": {
+                    "mean": 138035.23741699997,
+                    "observedSum": 138035.23741699997,
+                    "total": 138035.23741699997,
+                    "measured": 1,
+                    "executions": 1,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "endToEndMs": {
+                    "mean": 165174.556209,
+                    "observedSum": 165174.556209,
+                    "total": 165174.556209,
+                    "measured": 1,
+                    "executions": 1,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "apiEquivalentUsd": {
+                    "mean": 0.1668488,
+                    "observedSum": 0.1668488,
+                    "total": 0.1668488,
+                    "measured": 1,
+                    "executions": 1,
+                    "coverage": 1,
+                    "cells": 1,
+                    "measuredCells": 1
+                  },
+                  "settledUsd": {
+                    "mean": null,
+                    "observedSum": 0,
+                    "total": null,
+                    "measured": 0,
+                    "executions": 1,
+                    "coverage": 0,
+                    "cells": 1,
+                    "measuredCells": 0
+                  }
+                },
+                "repetitions": [
+                  {
+                    "repetition": 1,
+                    "status": "passed",
+                    "attemptCount": 1,
+                    "attempts": [
+                      {
+                        "id": "108846689f5f7e05592c55f8aa5eead9dc3a5cce1e03e59d2447b40644cc8ba0",
+                        "ordinal": 1,
+                        "status": "passed"
+                      }
+                    ],
+                    "attemptStatuses": ["passed"],
+                    "activation": {
+                      "installed": "yes",
+                      "discoverable": "yes",
+                      "discovered": "unknown",
+                      "skillRead": "unknown",
+                      "referencesRead": 0,
+                      "followed": "unknown"
+                    },
+                    "attribution": null
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "contrasts": []
+}

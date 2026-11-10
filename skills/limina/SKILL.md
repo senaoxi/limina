@@ -79,6 +79,13 @@ pnpm exec limina check --issues --format json
 and caches. `--issues` reads stored evidence; it does not rerun checks or prove
 the current files pass. Inspect named pipeline commands before executing them.
 
+For output validation, distinguish local packing and check-state writes from
+dependency installation, registry access and publication. Check the permitted
+paths and effects before running; a report-only request does not authorize all
+check side effects, and a network restriction does not by itself forbid every
+local check. Use the [package-check reference](references/package-checks.md)
+when deciding which evidence can be obtained within the actual scope.
+
 For authorized first adoption, use `limina init` or `limina init --yes` in the
 intended project. Init chooses the nearest `package.json`, writes adoption files,
 and removes that root's existing `.limina` directory. It does not need a pnpm

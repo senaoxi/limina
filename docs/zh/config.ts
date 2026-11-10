@@ -148,6 +148,10 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         link: '/zh/cli',
       },
       {
+        text: '评测',
+        link: '/zh/evals',
+      },
+      {
         text: pkg.version,
         items: [
           {

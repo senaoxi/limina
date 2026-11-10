@@ -146,6 +146,10 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         link: '/cli',
       },
       {
+        text: 'Evals',
+        link: '/evals',
+      },
+      {
         text: pkg.version,
         items: [
           {

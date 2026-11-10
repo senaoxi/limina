@@ -42,6 +42,30 @@ Do not run an uninspected build/release script just because it has a familiar na
 Check generation rules and rebuild to repair missing or invalid output. Hand
 editing `dist/package.json` would leave the next build broken.
 
+## Check permissions and observable results
+
+`package check` and `release check` can pack temporary archives and write check
+state. They do not publish. Establish separately whether the task permits those
+writes, dependency installation, registry access and publication; permission for
+one effect does not grant the others. Inspect the installed implementation and
+supported options when the boundary is unclear. Do not invent an offline flag
+or assume that every validation step needs network access.
+
+Run the applicable local checks when their effects are permitted. If a required
+effect is prohibited or its permission remains unresolved, report the blocked
+step and the narrow permission needed. Do not bypass the restriction or present
+source inspection as an executed check. Registry-authority resolution can fail
+before artifact validation; that failure is not evidence that the artifact's
+contents were checked.
+
+Keep execution and readiness separate: an unexecuted check is not an executed
+failure, an infrastructure/configuration failure can leave later checks
+unexecuted, and a successful exit with skipped tools leaves coverage incomplete.
+For structured assessments, follow the requested field types, status values and
+path base. Keep status values separate from explanatory evidence rather than
+replacing them with prose or a different JSON shape. Report uncertainty without
+inventing a result for checks that did not run.
+
 ## What each layer establishes
 
 | Layer                 | Evidence                                                              | Important limit                                              |

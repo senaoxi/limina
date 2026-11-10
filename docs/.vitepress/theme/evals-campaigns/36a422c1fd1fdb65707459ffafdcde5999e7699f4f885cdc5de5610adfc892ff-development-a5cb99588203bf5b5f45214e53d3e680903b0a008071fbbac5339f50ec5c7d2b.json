@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 2,
+  "campaignId": "36a422c1fd1fdb65707459ffafdcde5999e7699f4f885cdc5de5610adfc892ff",
+  "comparability": "native-profile",
+  "bankId": "32eb024e14ee575bad22b1f3fac2a2bf05a3494b6988287f9f6fa7d2b42989ff",
+  "bankRevision": "v2.1",
+  "stage": "development",
+  "sourceIndexDigest": "a6950d4a1c041cc86a9710e6aa7a59254e2eca44cb6b1ca0e9b7c4ee38cc5522",
+  "analysisPolicyDigest": "51395b7ba14d2b4a2522233deecdcb733f18b1da4c890aa1d668dd8a4cd82a20",
+  "reportIdentity": "a5cb99588203bf5b5f45214e53d3e680903b0a008071fbbac5339f50ec5c7d2b",
+  "exploratory": true,
+  "models": [
+    {
+      "profile": {
+        "id": "f462c9a7950d1907b20c3f0d794014536596257409830db8b9490d4076a9a171",
+        "model": "gpt-6.1-sol",
+        "displayName": "GPT 6.1 Sol (high)",
+        "provider": "openai",
+        "reasoningEffort": "high",
+        "serviceTier": "default",
+        "serviceTierEvidence": "requested-only",
+        "codexVersion": "0.166.0",
+        "codexBinaryIdentity": "39acf979729dd290f9a24ee38b2914e036c91b65952872e28ae2a6b88a7db7c1",
+        "instructionIdentity": "966cfa2747e38957f35caf4988ca4d458026f0aca9636a2c1be3e3ddcb9c766b",
+        "execution": {
+          "contextWindow": 272000,
+          "autoCompactTokenLimit": 244800,
+          "toolOutputLimit": 10000
+        }
+      },
+      "planned": 102,
+      "status": "not_admitted",
+      "report": null
+    }
+  ],
+  "contrasts": []
+}

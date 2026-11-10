@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 2,
+  "kind": "task-evaluation",
+  "scope": "task-condition",
+  "includedInFormalScores": false,
+  "complete": true,
+  "bankId": "e9539c7e5ea988eb3778cadf40ee86a2cca1bf62c67c079f838aeb2cbee441b9",
+  "bankRevision": "v2.1",
+  "campaignId": "e28aba3795c5ae869fb62bc110d779c3f159a1e82106e0a9111a2a46d6e39297",
+  "experimentIdentity": "bae8c0e35764a610891fc33b440dc727a05990494f349280a3cc1c4874cbc723",
+  "reportIdentity": "7de25fb80d81631813542ee7e3a2166e67b4c99a05b77f0e98dd5622d193dcaf",
+  "sourceIndexSha256": "6ae16d10a5992c9b4439347b6e5a15fbd6f5a218fb1321eab10a9f078477b267",
+  "taskId": "P03",
+  "condition": "skill",
+  "fixtureIdentity": "6a59424250791e6a3db9381ab49995b4341b377f126f094f86f81b3a6dd5ab6c",
+  "gradingIdentity": "442972ecca45fc83ec59fac3d9b3449001d37ad55e16d0450a740d257aca9860",
+  "executionIdentity": "04b39eb85a701805cc3dbfe0bd3293f04581c4affab226a7490dc53da0ada3db",
+  "profile": {
+    "id": "a1f723777b210d2a0a6f5ac818f03ecd057d3b17f0df1fe206c82c4177848210",
+    "model": "gpt-6.1-terra",
+    "displayName": "GPT 6.1 Terra (high)",
+    "reasoningEffort": "high",
+    "serviceTier": "default",
+    "codexVersion": "0.166.0"
+  },
+  "counts": { "passed": 3, "valid": 3, "planned": 3, "executions": 3 },
+  "measurements": {
+    "inputTokens": {
+      "mean": 293716.6666666667,
+      "observedSum": 881150,
+      "total": 881150,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "agentMs": {
+      "mean": 69355.904125,
+      "observedSum": 208067.712375,
+      "total": 208067.712375,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "endToEndMs": {
+      "mean": 84220.378292,
+      "observedSum": 252661.13487599997,
+      "total": 252661.13487599997,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "apiEquivalentUsd": {
+      "mean": 0.05814746666666667,
+      "observedSum": 0.1744424,
+      "total": 0.1744424,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "settledUsd": {
+      "mean": null,
+      "observedSum": 0,
+      "total": null,
+      "measured": 0,
+      "executions": 3,
+      "coverage": 0,
+      "cells": 1,
+      "measuredCells": 0
+    }
+  },
+  "repetitions": [
+    { "repetition": 1, "status": "passed" },
+    { "repetition": 2, "status": "passed" },
+    { "repetition": 3, "status": "passed" }
+  ],
+  "identity": "296a4b0f1357a362cc12ca077d5c3d660ea279bb2dd8f5f815065edcc715b043"
+}

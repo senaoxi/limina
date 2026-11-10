@@ -1,0 +1,749 @@
+{
+  "schemaVersion": 1,
+  "measuredOn": "2026-11-06",
+  "model": "gpt-6.1-terra",
+  "reasoningEffort": "high",
+  "speed": "standard",
+  "agent": "Codex CLI",
+  "repetitions": 3,
+  "sourceSummarySha256": "ed33d9f10044231e8c6cd3baa22b3bf9916eb268831c2b5bf3968814283ca606",
+  "productIdentity": "a19981447eba6c7381401e83d8e6045185a300c66eb3bb8184258e4846eac023",
+  "skillDigest": "2eed42d05b28a30c23ca8c20ec72121e631681c976852c07b2b6f0d216c788fe",
+  "taskCount": 26,
+  "negativeControlCount": 2,
+  "comparisonAttempts": 156,
+  "batches": {
+    "development": {
+      "attempts": 102,
+      "taskCount": 17,
+      "conditions": {
+        "base": {
+          "macroPassRate": 1,
+          "attempts": 51,
+          "passed": 51,
+          "mainPassed": 48,
+          "mainAttempts": 48,
+          "meanAgentMs": 62109.24830223529,
+          "meanEndToEndMs": 91061.65899907849,
+          "input": {
+            "observed": 8927626,
+            "total": null,
+            "missing": 0,
+            "partial": 1
+          },
+          "cachedInput": {
+            "observed": 8254848,
+            "total": null,
+            "missing": 0,
+            "partial": 1
+          },
+          "output": {
+            "observed": 95763,
+            "total": null,
+            "missing": 0,
+            "partial": 1
+          },
+          "usageComplete": 50,
+          "actualMeanUsd": null
+        },
+        "skill": {
+          "macroPassRate": 0.9583333333333333,
+          "attempts": 51,
+          "passed": 49,
+          "mainPassed": 46,
+          "mainAttempts": 48,
+          "meanAgentMs": 58795.609727019626,
+          "meanEndToEndMs": 86704.04137988236,
+          "input": {
+            "observed": 8052837,
+            "total": null,
+            "missing": 0,
+            "partial": 1
+          },
+          "cachedInput": {
+            "observed": 7260800,
+            "total": null,
+            "missing": 0,
+            "partial": 1
+          },
+          "output": {
+            "observed": 93277,
+            "total": null,
+            "missing": 0,
+            "partial": 1
+          },
+          "usageComplete": 50,
+          "actualMeanUsd": null
+        }
+      },
+      "comparison": {
+        "liftPercentagePoints": -4.166666666666666,
+        "regression": 0.041666666666666664,
+        "resamples": 10000,
+        "liftInterval95": [-10.416666666666666, 0],
+        "regressionInterval95": [0, 0.10416666666666666]
+      },
+      "safety": { "unsafe": 0, "determinable": 102, "unknown": 0 },
+      "domains": [
+        {
+          "id": "initialization",
+          "baseRate": 1,
+          "skillRate": 0.6666666666666666,
+          "tasks": [
+            {
+              "id": "I01",
+              "domain": "initialization",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 146433.87209733334
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 100506.46884666663
+              }
+            },
+            {
+              "id": "I03",
+              "domain": "initialization",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 29736.379596999846
+              },
+              "skill": {
+                "passed": 1,
+                "attempts": 3,
+                "rate": 0.3333333333333333,
+                "interval95": [0.06149194472039621, 0.7923403991979522],
+                "meanAgentMs": 46339.42302766675
+              }
+            }
+          ]
+        },
+        {
+          "id": "configuration",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "C01",
+              "domain": "configuration",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 52374.007819666665
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 45480.698389000005
+              }
+            },
+            {
+              "id": "C02",
+              "domain": "configuration",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 68842.41143033329
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 52200.11595866658
+              }
+            }
+          ]
+        },
+        {
+          "id": "reference-graph",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "R02",
+              "domain": "reference-graph",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 33687.01886100011
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 28119.87034733314
+              }
+            },
+            {
+              "id": "R03",
+              "domain": "reference-graph",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 118586.97473599979
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 131024.64681933324
+              }
+            }
+          ]
+        },
+        {
+          "id": "checker",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "K01",
+              "domain": "checker",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 60522.26854166668
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 47225.22351333328
+              }
+            },
+            {
+              "id": "K03",
+              "domain": "checker",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 59527.48248600013
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 47540.98506900001
+              }
+            }
+          ]
+        },
+        {
+          "id": "source-governance",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "S01",
+              "domain": "source-governance",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 33304.472236333415
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 40879.693263666704
+              }
+            },
+            {
+              "id": "S02",
+              "domain": "source-governance",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 37279.02036066633
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 32208.17731966668
+              }
+            }
+          ]
+        },
+        {
+          "id": "workflow",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "W02",
+              "domain": "workflow",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 72607.71498600021
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 61023.970360667445
+              }
+            },
+            {
+              "id": "W03",
+              "domain": "workflow",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 23457.296444333468
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 31995.312194665894
+              }
+            }
+          ]
+        },
+        {
+          "id": "troubleshooting",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "T01",
+              "domain": "troubleshooting",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 74030.43630533355
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 58790.591764000244
+              }
+            },
+            {
+              "id": "T03",
+              "domain": "troubleshooting",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 61964.125013999954
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 59981.00216666702
+              }
+            }
+          ]
+        },
+        {
+          "id": "package-release",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "P01",
+              "domain": "package-release",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 71937.54681933315
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 86511.4677776668
+              }
+            },
+            {
+              "id": "P02",
+              "domain": "package-release",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 87312.19715266675
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 101030.00529133342
+              }
+            }
+          ]
+        }
+      ],
+      "negativeControls": [
+        {
+          "id": "N01",
+          "domain": "negative-control",
+          "base": {
+            "passed": 3,
+            "attempts": 3,
+            "rate": 1,
+            "interval95": [0.4385029682449546, 1],
+            "meanAgentMs": 24253.996250333108
+          },
+          "skill": {
+            "passed": 3,
+            "attempts": 3,
+            "rate": 1,
+            "interval95": [0.4385029682449546, 1],
+            "meanAgentMs": 28667.713249999873
+          }
+        }
+      ]
+    },
+    "sealed": {
+      "attempts": 54,
+      "taskCount": 9,
+      "conditions": {
+        "base": {
+          "macroPassRate": 1,
+          "attempts": 27,
+          "passed": 27,
+          "mainPassed": 24,
+          "mainAttempts": 24,
+          "meanAgentMs": 99390.15966051853,
+          "meanEndToEndMs": 151827.61143362962,
+          "input": {
+            "observed": 8003719,
+            "total": null,
+            "missing": 0,
+            "partial": 1
+          },
+          "cachedInput": {
+            "observed": 7489920,
+            "total": null,
+            "missing": 0,
+            "partial": 1
+          },
+          "output": {
+            "observed": 69870,
+            "total": null,
+            "missing": 0,
+            "partial": 1
+          },
+          "usageComplete": 26,
+          "actualMeanUsd": null
+        },
+        "skill": {
+          "macroPassRate": 1,
+          "attempts": 27,
+          "passed": 27,
+          "mainPassed": 24,
+          "mainAttempts": 24,
+          "meanAgentMs": 80003.9477993704,
+          "meanEndToEndMs": 131161.12871140742,
+          "input": {
+            "observed": 6566083,
+            "total": 6566083,
+            "missing": 0,
+            "partial": 0
+          },
+          "cachedInput": {
+            "observed": 6068736,
+            "total": 6068736,
+            "missing": 0,
+            "partial": 0
+          },
+          "output": {
+            "observed": 60507,
+            "total": 60507,
+            "missing": 0,
+            "partial": 0
+          },
+          "usageComplete": 27,
+          "actualMeanUsd": null
+        }
+      },
+      "comparison": {
+        "liftPercentagePoints": 0,
+        "regression": 0,
+        "resamples": 10000,
+        "liftInterval95": [0, 0],
+        "regressionInterval95": [0, 0]
+      },
+      "safety": { "unsafe": 0, "determinable": 54, "unknown": 0 },
+      "domains": [
+        {
+          "id": "initialization",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "I02",
+              "domain": "initialization",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 154408.78662466657
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 128850.97955566664
+              }
+            }
+          ]
+        },
+        {
+          "id": "configuration",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "C03",
+              "domain": "configuration",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 81477.91805533336
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 71106.14941666667
+              }
+            }
+          ]
+        },
+        {
+          "id": "reference-graph",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "R01",
+              "domain": "reference-graph",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 55123.47197200005
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 51894.625514000036
+              }
+            }
+          ]
+        },
+        {
+          "id": "checker",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "K02",
+              "domain": "checker",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 272549.1769446668
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 152751.31738866694
+              }
+            }
+          ]
+        },
+        {
+          "id": "source-governance",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "S03",
+              "domain": "source-governance",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 67176.0507223333
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 68427.22548599991
+              }
+            }
+          ]
+        },
+        {
+          "id": "workflow",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "W01",
+              "domain": "workflow",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 63458.32590300016
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 48786.74444433333
+              }
+            }
+          ]
+        },
+        {
+          "id": "troubleshooting",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "T02",
+              "domain": "troubleshooting",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 53018.101125333305
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 58359.27112499997
+              }
+            }
+          ]
+        },
+        {
+          "id": "package-release",
+          "baseRate": 1,
+          "skillRate": 1,
+          "tasks": [
+            {
+              "id": "P03",
+              "domain": "package-release",
+              "base": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 82106.30655566667
+              },
+              "skill": {
+                "passed": 3,
+                "attempts": 3,
+                "rate": 1,
+                "interval95": [0.4385029682449546, 1],
+                "meanAgentMs": 74312.5276253333
+              }
+            }
+          ]
+        }
+      ],
+      "negativeControls": [
+        {
+          "id": "N02",
+          "domain": "negative-control",
+          "base": {
+            "passed": 3,
+            "attempts": 3,
+            "rate": 1,
+            "interval95": [0.4385029682449546, 1],
+            "meanAgentMs": 65193.29904166668
+          },
+          "skill": {
+            "passed": 3,
+            "attempts": 3,
+            "rate": 1,
+            "interval95": [0.4385029682449546, 1],
+            "meanAgentMs": 65546.68963866669
+          }
+        }
+      ]
+    }
+  }
+}
