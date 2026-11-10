@@ -4,7 +4,15 @@
 
 Use this convention for commit messages and PR titles. The title rules apply to both; body and footer formatting applies to commit messages. Use the rules and examples below directly; do not read Git history to infer commit style.
 
+## Semantic review
+
 Before drafting, inspect the intended diff. Before an authorized commit, verify that the complete `git diff --cached` matches the intended change and contains no unrelated work.
+
+Apply this review to authored merge, squash and cherry-pick messages as well. Compare the integrated result against the destination's pre-integration HEAD and inspect conflict resolutions. Describe the resulting capability, corrected behavior or repository policy, and select the type from that change. Git operations, branch names and execution chronology are integration metadata, not the result the subject must explain.
+
+For example, use `feat(evals): add model comparisons and task metrics` to describe that capability, or `feat(release): remove candidate tags after promotion` to describe that behavior. A title such as `feat(evals): merge model evaluations into main` fails semantic review even if its syntax passes commitlint.
+
+Review meaning against the actual diff independently of mechanical validation. Passing commitlint, bypassing hooks with `--no-verify`, omitting tests or receiving an instruction to merge does not waive these requirements. Preserve unchanged imported messages unless rewording them is separately authorized.
 
 ## Local commit validation
 

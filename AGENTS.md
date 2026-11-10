@@ -15,7 +15,7 @@
 - **Dependency fields, bundling, public type dependencies or optional loading:** follow [dependency placement and bundling](.agents/docs/dependency-placement.md).
 - **PCR or saved technical audit results:** use [project-context-writing](.agents/skills/project-context-writing/SKILL.md) and follow [bilingual maintenance](.agents/docs/README.md#bilingual-publishing-and-maintenance) and [writing/privacy review](.agents/docs/README.md#writing-and-privacy-review).
 - **Local migration, publication or documentation deployment:** follow [the migration scope and gates](.agents/docs/migration.md).
-- **Commit messages or PR titles:** follow [the commit convention](.github/commit-convention.md).
+- **Commit messages, PR titles or branch integration:** read [the commit convention](.github/commit-convention.md) and complete its [semantic review](.github/commit-convention.md#semantic-review), including for merge, squash and cherry-pick commits.
 - **Explicitly requested online HTML explainers:** follow the global `answer-me-with-html` skill's default shared Vercel publication workflow; preserve the local HTML and return its path when publication fails or is unsuitable. Do not invoke this skill for ordinary replies.
 
 ## Codex engineering workflow routing
