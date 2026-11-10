@@ -66,7 +66,7 @@ export default defineConfig([
   {
     files: [
       'scripts/**/*.ts',
-      'packages/gates/src/{release,commit,privacy}/**/*.{ts,mjs}',
+      'packages/gates/src/{release,commit,privacy,ci}/**/*.{ts,mjs}',
     ],
     rules: {
       complexity: ['warn', { max: 40 }],

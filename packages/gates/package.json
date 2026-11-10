@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.bootstrap.json",
-    "test": "vitest run && node --import tsx --test src/commit/*.spec.ts",
-    "clean": "del-cli dist .tsbuild coverage .eslintcache"
+    "test": "vitest run && node --import tsx --test src/commit/*.spec.ts && pnpm run test:ci",
+    "clean": "del-cli dist .tsbuild coverage .eslintcache",
+    "test:ci": "node --import tsx --test src/ci/*.spec.ts"
   },
   "devDependencies": {
     "@eslint/js": "catalog:lint",

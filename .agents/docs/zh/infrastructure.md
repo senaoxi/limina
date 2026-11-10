@@ -48,7 +48,19 @@ docs 隐私审查从远程 main `8f8892f6a491adc2933bee1e438d19d166ad064b` 开�
 
 共享 build action 调用根 `format:check` 与 `lint:check` 别名，分别通过 `limina check format` 和 `limina check lint` 执行只读 Prettier 和 ESLint 校验。[CI 守卫](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)解析实际配置的命令步骤，保护只读参数。两命令覆盖整个仓库；修改仍显式通过 `format:write` 与 `lint:fix` 执行，复用当前 `format` 和 `lint` 脚本。
 
-[CI](../../../.github/workflows/ci.yml)保留原生平台 build／test／smoke 和独立 Vue tuples。每条受支持的 Node 版本线都在 Linux 上执行 unit／integration／tooling 测试和独立 build／smoke 验证；Node 24 另有最新补丁的滚动测试。发布固定使用 Node 24.15.0；文档部署固定使用 Node 24.22.1。Linux quality 复用同提交／平台的 package artifacts，其他环境独立构建／检查。显式 build 后使用 test:smoke，不重复构建。不引入路径过滤、Nx cache 或缓存 .limina 状态。CI Status 依赖全部验证任务，失败／取消／skipped 都失败。
+[CI](../../../.github/workflows/ci.yml)保留单一工作流。[CI 控制器](../../../packages/gates/src/ci/cli.ts)属于仓库治理，通过 Node 直接运行，不依赖工具 Bootstrap，也不增加 Limina 产品 API。`LIMINA_AFFECTED_CI` 默认为 `shadow`：生成影响计划，但所有领域仍执行；`enabled` 才允许 PR/main 增量调度。`disabled`、schedule 和手动运行保持全量，新合同首次运行也全量。远程 shadow/canary 验收之前不得启用增量模式。
+
+冻结计划逐项列出必需 Job、原生 tuple、shard 和 Step。Repository Gates 在 Linux 22 Bootstrap 私有工具后只执行一次 gates/format/lint，其 Bootstrap Artifact 供 Linux 22 Native Build 使用；其他原生 tuple 独立 Bootstrap。每个 Validation 环境分别运行根 Checker、产物检查、Migrate Unit、Tooling 和两套 Integration；显式检查取消状态、Setup 和 Artifact 前置条件，单个领域失败不阻断其他独立 Step。消费者等待 Native Matrix 完成后只准入自己的 producer，不以其他 tuple 的聚合成功为条件。精确相同的 OS/Node tuple 去重。Core 只有在规定的所有原生构建、Checker 和产物检查成功后才能推进。
+
+[Filter](../../../.github/ci/filters.yml)按领域基线分类最终 Git 文件树差异，[Policy 与执行清单](../../../packages/gates/src/ci/contract.ts)决定验证影响。dorny/paths-filter v4.0.3 固定为 `ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d`，使用 Node 24、本地 Git（`token: ''`）、显式 base SHA、JSON 列表和 `some-with-excludes`。其 MIT 许可的发布入口只负责分类，不负责 Checkpoint。哈希、历史和证据复用 Node 内建能力、Git 与既有 GitHub REST API，不新增 npm 依赖、数据库、Tag 或共享 Checkpoint 文件。独立 NUL parser 对照 `git diff --no-renames --name-status -z` 审计 Action 输出。未知路径、基线树中的新目录、特殊 Git 条目、无效 UTF-8、输出缺失、控制合同变化或预算超限一律全量。本地 Node 24 发布入口实验发现：含 LF 的路径可能被较窄 Filter 匹配，却被 `all_files: '**'` 漏掉；独立集合审计拒绝该差异，不丢弃路径。
+
+[Checkpoint Resolver](../../../packages/gates/src/ci/history.ts)分别查询 Repository Gates、Core、Limina Unit、Migrate Unit、Tooling、Integration、Smoke、Windows、Checker Compatibility 和 Docs 的 main push 执行历史。成功证据最多 30 天，解析预算为 60 秒和 1,000 条 Run；分页不完整、来源不明或证据缺失退回全量。发现候选后，对相关祖先区间逐 SHA 查询，不使用创建时间或 success 过滤，覆盖窗口前创建但后来 rerun 的记录。最近实际失败使旧成功失效；unaffected 跳过不推进或替换证据。Checkpoint 之后的失败会强制执行，即使后续恢复让净 Diff 为空。部分 rerun 只有在 API 时间戳、Step 状态、原始 attempt 和收据能唯一证明来源时才复用 Job，禁止跨 Run 拼接成功。
+
+main push 验证事件 SHA；首次执行已过期时不能产生成功 Status 或收据。PR 验证事件对应的精确 merge SHA，对照事件核对两个父节点，Checkpoint 必须属于第一父节点的 Base 历史。Base 身份无法证明时全量验证固定目标；目标不可取得或 checkout 不符时失败。Checkout 获取完整历史。main push 与 PR 分组取消旧运行，schedule、manual 和恢复运行隔离。attempt 大于一且重新执行 Planner 时强制全量并绕过 stale 优化。过期、取消或来源无法追溯的恢复入口是对发布门禁所选 main push Run 执行 **Rerun all jobs**。
+
+Artifact 绑定仓库、Run、producer attempt、plan/contract hash、目标 SHA、OS、架构、精确 Node、pnpm、lockfile 和文件摘要。消费者先核对，再恢复明确列出的 dist 文件及 producer 权限模式；不共享 node_modules、`.limina`、`.tsbuild` 或测试缓存。构建与测试产物保留 30 天，计划和审计收据保留 90 天，受仓库保留策略约束；缺失或过期时恢复失败。`CI Status` 用 Jobs API 与收据逐项核对完整计划，保留独立 Step 的成功和失败结果，并重新核实 unaffected 证明。缺失、取消、失败和非法跳过均失败。候选收据只有在 Status 与对应 Run attempt 最终成功后有效，上传后被取消不能准入发布。Planner 无法查询 API 时可以冻结数字 Workflow ID 未解析的 Full Plan，但 Status 必须再绑定当前仓库、CI workflow 路径与 Run 才能接受。
+
+[发布](../../../.github/workflows/publish-npm.yml)保留最新精确 SHA 的 main push CI/Security/CodeQL 查询，只增加 CI 收据校验。所选 Run、当前 attempt、SHA、合同、完整执行清单和 unaffected 历史证明必须一致；收据缺失、过期或出现较新实际失败时拒绝。手动 CI 不替代 push 证据。本地控制器、真实 Git 与固定 Action 测试不证明 GitHub Matrix 取消、rerun 分组、排队时间或原生 Windows/Linux 行为。远程 canary、shadow/full 对照及 wall-clock/runner 时间测量仍是启用增量模式的验收条件，不预设性能收益已实现。
 
 既有 Windows focused job 还选择路径 helper、框架配置收集和 type-evidence 回归，随后执行两个 Svelte 执行准入用例，覆盖已消费输入及受管刷新间的实时 CommonJS 证明。[`ci-workflow.spec.ts`](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)保护这一选择。快速 job 补充完整平台 matrix；macOS 或 Linux 上的合成 Windows 路径不能替代原生 Windows loader、文件系统和进程验收。
 
@@ -58,11 +70,9 @@ docs 隐私审查从远程 main `8f8892f6a491adc2933bee1e438d19d166ad064b` 开�
 
 [Vue 跨项目矩阵夹具](../../../packages/limina/fixtures/vue-semantic-matrix/cross-project.mjs)在临时源码 owner 的开发依赖中声明 `vue`，版本取自已安装的 tuple。即使手写 SFC 没有 bare import，Vue 编译器生成的类型导入也需要这项声明。仅有物理 package link 不授予 Source import authority；保留完整默认检查及所有精确 checker tuple。
 
-Windows 将 Limina 单元测试文件分到四个完整互补的 Vitest shard，每个 job 保留原有两个 worker 上限。此前的两个分片在[运行 40814176692](https://github.com/senaoxi/limina/actions/runs/40814176692/job/123251265773)中，第一份分片仍在 Limina 单元测试阶段到达 job 时限，尚未执行 migration、tooling 与集成检查。四个 shard job 仍各自构建并执行全部质量门禁、完整 migration/tooling 套件及两个集成套件；Linux 不分片。失败运行的 artifact 名称包含 Windows shard，避免冲突。[CI 合同守卫](../../../packages/limina/src/__tests__/ci-workflow.spec.ts)要求四份分片及全部门禁；CI Status 等待整个矩阵。本地 shard 枚举可证明文件选择完整且互不重叠，调整后的 job 耗时仍须由原生 Windows CI 验收。当前工具链的 `vitest list --filesOnly` 列出未分片的 glob 结果；应通过 `vitest list --json --shard=1/4` 收集测试定义，观察实际 shard 过滤。
+Windows 保留四份互补 Limina Unit 分片，macOS 保留两份，每份均为两个 worker。[控制器测试](../../../packages/gates/src/ci/ci.spec.ts)与 [Workflow 清单守卫](../../../packages/gates/src/ci/workflow.spec.ts)保护覆盖完整性以及缺失／取消拒绝。Migrate、Tooling 和 Integration 在每个验证环境只执行一次，不再随 Limina 分片重复。Linux 保持不分片。原生验收分别测量排队、依赖等待、Step 执行和 Runner 总消耗。
 
-macOS 将 Limina 单元测试文件拆成两份互补分片，显式提供分片编号及总数；Windows 保留四份。[运行 40975020314](https://github.com/senaoxi/limina/actions/runs/40975020314/job/123800811746)中，macOS 核心套件约 42 分钟后通过，随后迁移阶段达到 job 的 60 分钟上限，tooling 与集成检查尚未完成。每份分片仍构建并执行全部质量门禁，以及完整的 migration/tooling 和集成套件。分片保留两个 worker 上限与每例测试时限。CI 合同守卫要求完整分片编号与正确总数；本地 Vitest 枚举检查覆盖互补且无重叠，调整后的 job 耗时仍须由原生 CI 验收。
-
-组合测试 job 为 setup、build／quality、unit、tooling 与 integration 阶段设置 90 分钟时限。[运行 41008724183](https://github.com/senaoxi/limina/actions/runs/41008724183/job/123909503407)中，未分片的 Linux／Node 22 job 在 56 分钟后仍处于单测阶段，另一个 Linux job 约 53 分钟后才进入集成测试。总预算必须为全部必需阶段保留时间。默认每例测试与子进程时限不变；[开发工作流](./development-workflow.md#验证与交付)记录 fixture 的单例预算。CI 合同守卫单独约束组合 job 预算。
+Limina Unit 与 Validation Job 保留 90 分钟期限，不增加单例测试或子进程时限。成功及失败运行均保留可用测试报告和执行收据；[开发工作流](./development-workflow.md#验证与交付)继续负责 fixture 预算。
 
 六个使用真实 Astro 声明图的跨领域用例各有 120 秒时限，分别覆盖 package imports、核心治理域、两类跨配置边、Proof 的观察集合以及 Build 目标选择。[Windows / Node 22.22.3 日志](https://github.com/senaoxi/limina/actions/runs/40097787173/job/120883562891)记录了 31.713–93.150 秒耗时，超出默认 30 秒预算。全局时限、两 worker 上限、原断言和 Svelte 核心治理用例的 30 秒时限保留。较大的有限时限适用于这些真实工具链用例，在所有平台一致执行；它不修复或证明 Windows 性能，也不替代修改后的原生 Windows CI 验收。
 

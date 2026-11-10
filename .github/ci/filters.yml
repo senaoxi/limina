@@ -1,0 +1,84 @@
+all_files:
+  - "**"
+full_control:
+  - ".github/**"
+  - ".husky/**"
+  - ".vscode/**"
+  - "patches/**"
+  - "scripts/**"
+  - "verification/**"
+  - "packages/gates/**"
+  - "packages/build-tools/**"
+  - "packages/limina/src/__tests__/ci-workflow.spec.ts"
+  - "**/package.json"
+  - "**/pnpm-lock.yaml"
+  - "**/pnpm-workspace.yaml"
+  - "**/package-lock.json"
+  - "**/yarn.lock"
+  - "**/bun.lock"
+  - "**/bun.lockb"
+  - "**/tsconfig*.json"
+  - "**/tsconfig*.jsonc"
+  - "**/*.config.*"
+  - "docs/**/config.ts"
+  - "packages/limina/packagePlugin.ts"
+  - "packages/migrate/packagePlugin.ts"
+  - "**/.editorconfig"
+  - "**/.gitattributes"
+  - "**/.gitignore"
+  - "**/.npmrc"
+  - "**/.pnpmfile.cjs"
+  - "**/.prettierrc*"
+  - "**/.prettierignore"
+  - "**/.nvmrc"
+  - "**/.node-version"
+  - "**/.tool-versions"
+  - "**/.env"
+  - "**/.env.*"
+  - ".gitleaks.toml"
+  - "vercel.json"
+  - "LICENSE"
+  - "packages/limina/LICENSE.md"
+  - "packages/migrate/LICENSE.md"
+  - ".agents/docs/license-policy.md"
+  - ".agents/docs/**/license-policy.md"
+limina_source:
+  - "packages/limina/src/**"
+  - "!packages/limina/src/**/__tests__/**"
+limina_runtime:
+  - "packages/limina/bin/**"
+  - "packages/limina/schemas/**"
+limina_unit:
+  - "packages/limina/src/**/__tests__/**"
+limina_integration:
+  - "packages/limina/integration/**"
+limina_fixtures:
+  - "packages/limina/fixtures/**"
+migrate_source:
+  - "packages/migrate/src/**"
+  - "!packages/migrate/src/**/__tests__/**"
+migrate_runtime:
+  - "packages/migrate/bin/**"
+migrate_unit:
+  - "packages/migrate/src/**/__tests__/**"
+migrate_integration:
+  - "packages/migrate/integration/**"
+smoke:
+  - "smoke/**"
+package_docs:
+  - "packages/limina/README*.md"
+  - "packages/limina/CHANGELOG.md"
+  - "packages/migrate/README*.md"
+  - "packages/migrate/CHANGELOG.md"
+docs_markdown:
+  - "docs/**/*.md"
+docs_runtime:
+  - "docs/**"
+  - "!docs/**/*.md"
+repository_docs:
+  - "AGENTS.md"
+  - "README*.md"
+  - "CONTRIBUTING.md"
+  - "SECURITY.md"
+  - ".agents/**/*.md"
+  - "skills/**/*.md"

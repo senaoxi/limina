@@ -84,6 +84,11 @@ jobs:
               exit 1
             fi
           done
+      - name: Validate Affected CI execution receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: node packages/gates/src/ci/cli.ts publish .reports/release/ci.json
       - name: Publish the approved same-version group with provenance
         env:
           LIMINA_RELEASE_METADATA_TIMEOUT_MS: ${{ inputs.metadata_timeout_ms }}

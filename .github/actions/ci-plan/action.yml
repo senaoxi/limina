@@ -1,0 +1,21 @@
+name: Load frozen validation plan
+description: Restore the exact plan, including its source attempt on partial reruns
+inputs:
+  plan-hash:
+    description: Hash from the original successful Plan job
+    required: false
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+      continue-on-error: true
+      with:
+        github-token: ${{ github.token }}
+        run-id: ${{ github.run_id }}
+        repository: ${{ github.repository }}
+        pattern: ci-plan-a*-all-all
+        path: .reports/ci/plans
+    - shell: bash
+      env:
+        CI_PLAN_HASH: ${{ inputs.plan-hash }}
+      run: node packages/gates/src/ci/cli.ts load-plan

@@ -1,241 +1,4 @@
 name: CI
-env:
-  NODE_OPTIONS: --max-old-space-size=4096
-  NODE_VERSION: 22.22.3
-  FORCE_COLOR: 1
-permissions:
-  contents: read
-  actions: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-jobs:
-  build-artifacts:
-    name: Build Artifacts
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-      - name: Setup Environment
-        uses: ./.github/actions/setup-env
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Build tools and both public packages
-        run: pnpm run build
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: packages-build-artifacts
-          path: packages/*/dist/**
-          retention-days: 1
-  limina-vue-semantic-matrix:
-    name: Limina Vue semantic matrix
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-      - name: Setup Environment
-        uses: ./.github/actions/setup-env
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          name: packages-build-artifacts
-          path: packages
-      - name: Install exact Vue checker tuples
-        run: pnpm --dir packages/limina/fixtures/vue-semantic-matrix install --frozen-lockfile --ignore-scripts
-      - name: Verify Vue semantic adapter families
-        run: pnpm --dir packages/limina/fixtures/vue-semantic-matrix matrix
-    needs:
-      - build-artifacts
-  quality:
-    name: Code Quality
-    runs-on: ubuntu-latest
-    needs: build-artifacts
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-      - name: Setup Environment
-        uses: ./.github/actions/setup-env
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          name: packages-build-artifacts
-          path: packages
-      - name: Build and Quality Check
-        uses: ./.github/actions/build-and-check
-        with:
-          skip-build: "true"
-  test:
-    name: Test (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux / Node 22.22.3
-            os: ubuntu-latest
-            node: 22.22.3
-          - name: Linux / Node 24.15.0
-            os: ubuntu-latest
-            node: 24.15.0
-          - name: Linux / Node 26.0.0
-            os: ubuntu-latest
-            node: 26.0.0
-          - name: macOS / Node 22.22.3 / unit 1 of 2
-            os: macos-latest
-            node: 22.22.3
-            unitShard: 1
-            unitShards: 2
-          - name: macOS / Node 22.22.3 / unit 2 of 2
-            os: macos-latest
-            node: 22.22.3
-            unitShard: 2
-            unitShards: 2
-          - name: Windows / Node 22.22.3 / unit 1 of 4
-            os: windows-latest
-            node: 22.22.3
-            unitShard: 1
-            unitShards: 4
-          - name: Windows / Node 22.22.3 / unit 2 of 4
-            os: windows-latest
-            node: 22.22.3
-            unitShard: 2
-            unitShards: 4
-          - name: Windows / Node 22.22.3 / unit 3 of 4
-            os: windows-latest
-            node: 22.22.3
-            unitShard: 3
-            unitShards: 4
-          - name: Windows / Node 22.22.3 / unit 4 of 4
-            os: windows-latest
-            node: 22.22.3
-            unitShard: 4
-            unitShards: 4
-          - name: Linux / Node 24 Latest
-            os: ubuntu-latest
-            node: 24
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-      - name: Setup Environment
-        uses: ./.github/actions/setup-env
-        with:
-          node-version: ${{ matrix.node }}
-      - name: Build and Quality Check
-        uses: ./.github/actions/build-and-check
-      - name: Unit Tests
-        env:
-          VITEST_MAX_WORKERS: "2"
-        run: pnpm --filter limina run test:unit ${{ matrix.unitShard && format('--shard={0}/{1}', matrix.unitShard, matrix.unitShards) || '' }} --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-unit.xml && pnpm --filter limina-migrate run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml && pnpm run test:tooling
-      - name: Limina Integration Tests
-        run: pnpm --filter limina run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-integration.xml && pnpm --filter limina-migrate run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-integration.xml
-      - name: Upload Test Results
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: test-results-${{ matrix.os }}-${{ matrix.node }}${{ matrix.unitShard && format('-unit-{0}', matrix.unitShard) || '' }}
-          path: .smoke/test-results/**
-          include-hidden-files: true
-          retention-days: 7
-        if: failure()
-  limina-atomic-writer-windows:
-    name: Limina Windows behavior (Node ${{ matrix.node }})
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node:
-          - 22.22.3
-          - 24.15.0
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-      - name: Setup Environment
-        uses: ./.github/actions/setup-env
-        with:
-          node-version: ${{ matrix.node }}
-      - name: Atomic writer, path, shell, and migration transaction unit tests
-        run: pnpm --filter limina run test:unit src/__tests__/atomic-writer.spec.ts src/__tests__/path-filters.spec.ts src/__tests__/shell-command.spec.ts src/__tests__/standalone-invocation-command.spec.ts src/__tests__/migration-forward.spec.ts && pnpm --filter limina-migrate run test:unit src/__tests__/migration-transaction.spec.ts
-      - name: Portable configuration and evidence regression
-        run: pnpm --filter limina run test:unit src/__tests__/path.spec.ts src/__tests__/framework-config-inputs.spec.ts src/__tests__/type-evidence.spec.ts
-      - name: Framework execution admission regression
-        run: pnpm --filter limina run test:unit src/__tests__/execution-admission.spec.ts -t "binds framework execution to consumed inputs|retains live CommonJS configuration proof through managed refresh in Node"
-      - name: Build packed Limina
-        run: pnpm run build
-      - name: Standalone generated-command tarball round-trip
-        run: pnpm --dir smoke exec vitest run generated-command.spec.ts migration.spec.ts migration-standalone.spec.ts
-  limina-platform-build-smoke:
-    name: Limina build and smoke (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux / Node 22.22.3
-            os: ubuntu-latest
-            node: 22.22.3
-          - name: Linux / Node 24.15.0
-            os: ubuntu-latest
-            node: 24.15.0
-          - name: Linux / Node 26.0.0
-            os: ubuntu-latest
-            node: 26.0.0
-          - name: macOS / Node 24.15.0
-            os: macos-latest
-            node: 24.15.0
-          - name: Windows / Node 24.15.0
-            os: windows-latest
-            node: 24.15.0
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-      - name: Setup Environment
-        uses: ./.github/actions/setup-env
-        with:
-          node-version: ${{ matrix.node }}
-      - name: Build Limina
-        run: pnpm run build
-      - name: Smoke Test Limina
-        run: pnpm run test:smoke
-  build:
-    name: Build Validation
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
-      - name: Setup Environment
-        uses: ./.github/actions/setup-env
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Download Build Artifacts
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          name: packages-build-artifacts
-          path: packages
-      - name: Build Docs
-        run: pnpm docs:build
-      - name: Upload Docs Artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: docs-dist
-          path: docs/.vitepress/dist
-          retention-days: 1
-    needs:
-      - build-artifacts
-  status:
-    name: CI Status
-    runs-on: ubuntu-latest
-    needs:
-      - build-artifacts
-      - limina-vue-semantic-matrix
-      - quality
-      - test
-      - limina-atomic-writer-windows
-      - limina-platform-build-smoke
-      - build
-    if: always()
-    steps:
-      - name: Check Status
-        env:
-          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
-        run: "if [[ \"$FAILED\" == \"true\" ]]; then\n  echo \"\u274C CI Failed\"\n  exit 1\nelse\n  echo \"\u2705 CI Passed\"\nfi\n"
 "on":
   push:
     branches:
@@ -250,3 +13,1105 @@ jobs:
   workflow_dispatch: null
   schedule:
     - cron: 0 0 * * 1
+permissions:
+  contents: read
+  actions: read
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+  FORCE_COLOR: "1"
+  GH_TOKEN: ${{ github.token }}
+  AFFECTED_CI: ${{ vars.LIMINA_AFFECTED_CI || 'shadow' }}
+defaults:
+  run:
+    shell: bash
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('CI-pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && (github.run_attempt > 1 && format('CI-retry-{0}', github.sha) || 'CI-push-main') || github.event_name == 'schedule' && 'CI-schedule-main' || format('CI-dispatch-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.run_attempt == 1) }}
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    outputs:
+      mode: ${{ steps.freeze.outputs.mode }}
+      plan_hash: ${{ steps.freeze.outputs.plan_hash }}
+      rolling_node: ${{ steps.freeze.outputs.rolling_node }}
+      native_matrix: ${{ steps.freeze.outputs.native_matrix }}
+      native_other: ${{ steps.freeze.outputs.native_other }}
+      native_linux: ${{ steps.freeze.outputs.native_linux }}
+      unit_matrix: ${{ steps.freeze.outputs.unit_matrix }}
+      validation_matrix: ${{ steps.freeze.outputs.validation_matrix }}
+      smoke_matrix: ${{ steps.freeze.outputs.smoke_matrix }}
+      windows_matrix: ${{ steps.freeze.outputs.windows_matrix }}
+      validation: ${{ steps.freeze.outputs.validation }}
+      repository_gates: ${{ steps.freeze.outputs.repository_gates }}
+      core: ${{ steps.freeze.outputs.core }}
+      limina_unit: ${{ steps.freeze.outputs.limina_unit }}
+      migrate_unit: ${{ steps.freeze.outputs.migrate_unit }}
+      tooling: ${{ steps.freeze.outputs.tooling }}
+      integration: ${{ steps.freeze.outputs.integration }}
+      smoke: ${{ steps.freeze.outputs.smoke }}
+      windows: ${{ steps.freeze.outputs.windows }}
+      checker_compatibility: ${{ steps.freeze.outputs.checker_compatibility }}
+      docs: ${{ steps.freeze.outputs.docs }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/rolling_node
+        id: rolling_node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: ci/prepare
+        id: prepare
+        run: node packages/gates/src/ci/cli.ts prepare
+        shell: bash
+        env:
+          ROLLING_NODE: ${{ steps.rolling_node.outputs.node-version }}
+      - name: Classify baseline 0
+        id: filter_0
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_0 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_0 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: Classify baseline 1
+        id: filter_1
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_1 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_1 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: Classify baseline 2
+        id: filter_2
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_2 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_2 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: Classify baseline 3
+        id: filter_3
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_3 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_3 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: Classify baseline 4
+        id: filter_4
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_4 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_4 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: Classify baseline 5
+        id: filter_5
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_5 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_5 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: Classify baseline 6
+        id: filter_6
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_6 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_6 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: Classify baseline 7
+        id: filter_7
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_7 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_7 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: Classify baseline 8
+        id: filter_8
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_8 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_8 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: Classify baseline 9
+        id: filter_9
+        if: ${{ !cancelled() && steps.prepare.outputs.filter_9 == 'true' }}
+        continue-on-error: true
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        with:
+          token: ""
+          base: ${{ steps.prepare.outputs.base_9 }}
+          ref: ${{ steps.prepare.outputs.target_sha }}
+          list-files: json
+          predicate-quantifier: some-with-excludes
+          filters: .github/ci/filters.yml
+      - name: ci/freeze
+        id: freeze
+        run: node packages/gates/src/ci/cli.ts finalize
+        shell: bash
+        env:
+          FILTER_0: ${{ toJSON(steps.filter_0.outputs) }}
+          FILTER_OUTCOME_0: ${{ steps.filter_0.outcome }}
+          FILTER_1: ${{ toJSON(steps.filter_1.outputs) }}
+          FILTER_OUTCOME_1: ${{ steps.filter_1.outcome }}
+          FILTER_2: ${{ toJSON(steps.filter_2.outputs) }}
+          FILTER_OUTCOME_2: ${{ steps.filter_2.outcome }}
+          FILTER_3: ${{ toJSON(steps.filter_3.outputs) }}
+          FILTER_OUTCOME_3: ${{ steps.filter_3.outcome }}
+          FILTER_4: ${{ toJSON(steps.filter_4.outputs) }}
+          FILTER_OUTCOME_4: ${{ steps.filter_4.outcome }}
+          FILTER_5: ${{ toJSON(steps.filter_5.outputs) }}
+          FILTER_OUTCOME_5: ${{ steps.filter_5.outcome }}
+          FILTER_6: ${{ toJSON(steps.filter_6.outputs) }}
+          FILTER_OUTCOME_6: ${{ steps.filter_6.outcome }}
+          FILTER_7: ${{ toJSON(steps.filter_7.outputs) }}
+          FILTER_OUTCOME_7: ${{ steps.filter_7.outcome }}
+          FILTER_8: ${{ toJSON(steps.filter_8.outputs) }}
+          FILTER_OUTCOME_8: ${{ steps.filter_8.outcome }}
+          FILTER_9: ${{ toJSON(steps.filter_9.outputs) }}
+          FILTER_OUTCOME_9: ${{ steps.filter_9.outcome }}
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+      - name: Retain frozen plan
+        if: ${{ !cancelled() && steps.freeze.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-plan-a{0}-all-all', github.run_attempt) }}
+          path: .reports/ci/plan.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+  repository-gates:
+    name: CI repository-gates / linux-22.22.3 / all
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - plan
+    if: ${{ !cancelled() && needs.plan.outputs.mode != 'obsolete' }}
+    env:
+      CI_JOB: repository-gates
+      CI_TUPLE: linux-22.22.3
+      CI_SHARD: all
+      ROLLING_NODE: ${{ needs.plan.outputs.rolling_node || '24.15.0' }}
+    steps:
+      - name: ci/checkout
+        id: checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/setup
+        id: setup
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: 22.22.3
+      - name: ci/load_plan
+        id: load_plan
+        uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/admit
+        id: admit
+        run: node packages/gates/src/ci/cli.ts admit
+        shell: bash
+      - name: ci/bootstrap
+        id: bootstrap
+        run: pnpm run build:tools
+        shell: bash
+      - name: ci/gates
+        id: gates
+        run: pnpm run gates:check
+        shell: bash
+      - name: ci/format
+        id: format
+        run: pnpm run format:check
+        shell: bash
+      - name: ci/lint
+        id: lint
+        run: pnpm run lint:check
+        shell: bash
+      - name: ci/manifest
+        id: manifest
+        run: node packages/gates/src/ci/cli.ts artifact-create bootstrap
+        shell: bash
+      - name: ci/upload_artifact
+        id: upload_artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.manifest.outputs.artifact_name }}
+          path: .reports/ci/upload/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: ci/collect_receipt
+        id: collect_receipt
+        run: node packages/gates/src/ci/cli.ts receipt
+        shell: bash
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        if: ${{ always() && steps.admit.outcome == 'success' }}
+      - name: Retain execution receipt
+        if: ${{ always() && steps.collect_receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-receipt-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: .reports/ci/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-tests-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: ".smoke/test-results/**
+
+            coverage/**"
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: ignore
+  native-build-linux22:
+    name: CI native-build-linux22 / linux-22.22.3 / all
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - plan
+      - repository-gates
+    if: ${{ !cancelled() && needs.repository-gates.result == 'success' && needs.plan.outputs.mode != 'obsolete' && (needs.plan.outputs.native_linux == 'true' || needs.plan.outputs.mode == '') }}
+    env:
+      CI_JOB: native-build-linux22
+      CI_TUPLE: linux-22.22.3
+      CI_SHARD: all
+      ROLLING_NODE: ${{ needs.plan.outputs.rolling_node || '24.15.0' }}
+    steps:
+      - name: ci/checkout
+        id: checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/setup
+        id: setup
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: 22.22.3
+      - name: ci/load_plan
+        id: load_plan
+        uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/admit
+        id: admit
+        run: node packages/gates/src/ci/cli.ts admit
+        shell: bash
+      - name: ci/select_artifact
+        id: select_artifact
+        run: node packages/gates/src/ci/cli.ts artifact-select bootstrap
+        shell: bash
+      - name: ci/download_native
+        id: download_native
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+          repository: ${{ github.repository }}
+          artifact-ids: ${{ steps.select_artifact.outputs.artifact_id }}
+          path: .reports/ci/restored
+      - name: ci/restore
+        id: restore
+        run: node packages/gates/src/ci/cli.ts artifact-restore
+        shell: bash
+      - name: ci/native_build
+        id: native_build
+        run: pnpm --filter limina run build && pnpm --filter limina-migrate run build
+        shell: bash
+      - name: ci/manifest
+        id: manifest
+        run: node packages/gates/src/ci/cli.ts artifact-create native
+        shell: bash
+      - name: ci/upload_artifact
+        id: upload_artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.manifest.outputs.artifact_name }}
+          path: .reports/ci/upload/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: ci/collect_receipt
+        id: collect_receipt
+        run: node packages/gates/src/ci/cli.ts receipt
+        shell: bash
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        if: ${{ always() && steps.admit.outcome == 'success' }}
+      - name: Retain execution receipt
+        if: ${{ always() && steps.collect_receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-receipt-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: .reports/ci/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-tests-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: ".smoke/test-results/**
+
+            coverage/**"
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: ignore
+  native-build:
+    name: ${{ format('CI native-build / {0} / all', matrix.key) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    needs:
+      - plan
+    if: ${{ !cancelled() && needs.plan.outputs.mode != 'obsolete' && (needs.plan.outputs.native_other == 'true' || needs.plan.outputs.mode == '') }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.native_matrix || '{"include":[{"key":"linux-24.15.0","platform":"linux","node":"24.15.0","os":"ubuntu-latest"},{"key":"linux-26.0.0","platform":"linux","node":"26.0.0","os":"ubuntu-latest"},{"key":"darwin-22.22.3","platform":"darwin","node":"22.22.3","os":"macos-latest"},{"key":"win32-22.22.3","platform":"win32","node":"22.22.3","os":"windows-latest"},{"key":"darwin-24.15.0","platform":"darwin","node":"24.15.0","os":"macos-latest"},{"key":"win32-24.15.0","platform":"win32","node":"24.15.0","os":"windows-latest"}]}') }}
+    env:
+      CI_JOB: native-build
+      CI_TUPLE: ${{ matrix.key }}
+      CI_SHARD: all
+      ROLLING_NODE: ${{ needs.plan.outputs.rolling_node || '24.15.0' }}
+    steps:
+      - name: ci/checkout
+        id: checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/setup
+        id: setup
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: ${{ matrix.node }}
+      - name: ci/load_plan
+        id: load_plan
+        uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/admit
+        id: admit
+        run: node packages/gates/src/ci/cli.ts admit
+        shell: bash
+      - name: ci/bootstrap
+        id: bootstrap
+        run: pnpm run build:tools
+        shell: bash
+      - name: ci/native_build
+        id: native_build
+        run: pnpm --filter limina run build && pnpm --filter limina-migrate run build
+        shell: bash
+      - name: ci/manifest
+        id: manifest
+        run: node packages/gates/src/ci/cli.ts artifact-create native
+        shell: bash
+      - name: ci/upload_artifact
+        id: upload_artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.manifest.outputs.artifact_name }}
+          path: .reports/ci/upload/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - name: ci/collect_receipt
+        id: collect_receipt
+        run: node packages/gates/src/ci/cli.ts receipt
+        shell: bash
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        if: ${{ always() && steps.admit.outcome == 'success' }}
+      - name: Retain execution receipt
+        if: ${{ always() && steps.collect_receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-receipt-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: .reports/ci/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-tests-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: ".smoke/test-results/**
+
+            coverage/**"
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: ignore
+  limina-unit:
+    name: ${{ format('CI limina-unit / {0} / {1}', matrix.key, matrix.shard) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    needs:
+      - plan
+      - repository-gates
+      - native-build-linux22
+      - native-build
+    if: ${{ !cancelled() && needs.repository-gates.result == 'success' && needs.plan.outputs.mode != 'obsolete' && (needs.plan.outputs.limina_unit == 'true' || needs.plan.outputs.mode == '') }}
+    env:
+      CI_JOB: limina-unit
+      CI_TUPLE: ${{ matrix.key }}
+      CI_SHARD: ${{ matrix.shard }}
+      ROLLING_NODE: ${{ needs.plan.outputs.rolling_node || '24.15.0' }}
+    steps:
+      - name: ci/checkout
+        id: checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/setup
+        id: setup
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: ${{ matrix.node }}
+      - name: ci/load_plan
+        id: load_plan
+        uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/admit
+        id: admit
+        run: node packages/gates/src/ci/cli.ts admit
+        shell: bash
+      - name: ci/select_artifact
+        id: select_artifact
+        run: node packages/gates/src/ci/cli.ts artifact-select native
+        shell: bash
+      - name: ci/download_native
+        id: download_native
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+          repository: ${{ github.repository }}
+          artifact-ids: ${{ steps.select_artifact.outputs.artifact_id }}
+          path: .reports/ci/restored
+      - name: ci/restore
+        id: restore
+        run: node packages/gates/src/ci/cli.ts artifact-restore
+        shell: bash
+      - name: ci/limina_unit
+        id: limina_unit
+        run: 'shard="${CI_SHARD/-//}"
+
+          args=()
+
+          if [[ "$shard" != all ]]; then args+=("--shard=$shard"); fi
+
+          pnpm --filter limina run test:unit "${args[@]}" --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-unit.xml'
+        shell: bash
+        env:
+          VITEST_MAX_WORKERS: "2"
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_limina_unit == 'true' }}
+      - name: ci/collect_receipt
+        id: collect_receipt
+        run: node packages/gates/src/ci/cli.ts receipt
+        shell: bash
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        if: ${{ always() && steps.admit.outcome == 'success' }}
+      - name: Retain execution receipt
+        if: ${{ always() && steps.collect_receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-receipt-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: .reports/ci/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-tests-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: ".smoke/test-results/**
+
+            coverage/**"
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: ignore
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.unit_matrix || '{"include":[{"key":"linux-22.22.3","platform":"linux","node":"22.22.3","os":"ubuntu-latest","shard":"all"},{"key":"linux-24.15.0","platform":"linux","node":"24.15.0","os":"ubuntu-latest","shard":"all"},{"key":"linux-26.0.0","platform":"linux","node":"26.0.0","os":"ubuntu-latest","shard":"all"},{"key":"darwin-22.22.3","platform":"darwin","node":"22.22.3","os":"macos-latest","shard":"1-2"},{"key":"darwin-22.22.3","platform":"darwin","node":"22.22.3","os":"macos-latest","shard":"2-2"},{"key":"win32-22.22.3","platform":"win32","node":"22.22.3","os":"windows-latest","shard":"1-4"},{"key":"win32-22.22.3","platform":"win32","node":"22.22.3","os":"windows-latest","shard":"2-4"},{"key":"win32-22.22.3","platform":"win32","node":"22.22.3","os":"windows-latest","shard":"3-4"},{"key":"win32-22.22.3","platform":"win32","node":"22.22.3","os":"windows-latest","shard":"4-4"}]}') }}
+  validation:
+    name: ${{ format('CI validation / {0} / {1}', matrix.key, 'all') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    needs:
+      - plan
+      - repository-gates
+      - native-build-linux22
+      - native-build
+    if: ${{ !cancelled() && needs.repository-gates.result == 'success' && needs.plan.outputs.mode != 'obsolete' && (needs.plan.outputs.validation == 'true' || needs.plan.outputs.mode == '') }}
+    env:
+      CI_JOB: validation
+      CI_TUPLE: ${{ matrix.key }}
+      CI_SHARD: all
+      ROLLING_NODE: ${{ needs.plan.outputs.rolling_node || '24.15.0' }}
+    steps:
+      - name: ci/checkout
+        id: checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/setup
+        id: setup
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: ${{ matrix.node }}
+      - name: ci/load_plan
+        id: load_plan
+        uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/admit
+        id: admit
+        run: node packages/gates/src/ci/cli.ts admit
+        shell: bash
+      - name: ci/select_artifact
+        id: select_artifact
+        run: node packages/gates/src/ci/cli.ts artifact-select native
+        shell: bash
+      - name: ci/download_native
+        id: download_native
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+          repository: ${{ github.repository }}
+          artifact-ids: ${{ steps.select_artifact.outputs.artifact_id }}
+          path: .reports/ci/restored
+      - name: ci/restore
+        id: restore
+        run: node packages/gates/src/ci/cli.ts artifact-restore
+        shell: bash
+      - name: ci/core_checker
+        id: core_checker
+        run: pnpm run check
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_core_checker == 'true' }}
+      - name: ci/package_validation
+        id: package_validation
+        run: pnpm run lint:packages
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_package_validation == 'true' }}
+      - name: ci/migrate_unit
+        id: migrate_unit
+        run: pnpm --filter limina-migrate run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml
+        shell: bash
+        env:
+          VITEST_MAX_WORKERS: "2"
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_migrate_unit == 'true' }}
+      - name: ci/tooling
+        id: tooling
+        run: pnpm run test:tooling
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_tooling == 'true' }}
+      - name: ci/limina_integration
+        id: limina_integration
+        run: pnpm --filter limina run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-integration.xml
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_limina_integration == 'true' }}
+      - name: ci/migrate_integration
+        id: migrate_integration
+        run: pnpm --filter limina-migrate run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-integration.xml
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_migrate_integration == 'true' }}
+      - name: ci/collect_receipt
+        id: collect_receipt
+        run: node packages/gates/src/ci/cli.ts receipt
+        shell: bash
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        if: ${{ always() && steps.admit.outcome == 'success' }}
+      - name: Retain execution receipt
+        if: ${{ always() && steps.collect_receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-receipt-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: .reports/ci/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-tests-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: ".smoke/test-results/**
+
+            coverage/**"
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: ignore
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.validation_matrix || '{"include":[{"key":"linux-22.22.3","platform":"linux","node":"22.22.3","os":"ubuntu-latest"},{"key":"linux-24.15.0","platform":"linux","node":"24.15.0","os":"ubuntu-latest"},{"key":"linux-26.0.0","platform":"linux","node":"26.0.0","os":"ubuntu-latest"},{"key":"darwin-22.22.3","platform":"darwin","node":"22.22.3","os":"macos-latest"},{"key":"win32-22.22.3","platform":"win32","node":"22.22.3","os":"windows-latest"}]}') }}
+  platform-smoke:
+    name: ${{ format('CI platform-smoke / {0} / {1}', matrix.key, 'all') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    needs:
+      - plan
+      - repository-gates
+      - native-build-linux22
+      - native-build
+    if: ${{ !cancelled() && needs.repository-gates.result == 'success' && needs.plan.outputs.mode != 'obsolete' && (needs.plan.outputs.smoke == 'true' || needs.plan.outputs.mode == '') }}
+    env:
+      CI_JOB: platform-smoke
+      CI_TUPLE: ${{ matrix.key }}
+      CI_SHARD: all
+      ROLLING_NODE: ${{ needs.plan.outputs.rolling_node || '24.15.0' }}
+    steps:
+      - name: ci/checkout
+        id: checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/setup
+        id: setup
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: ${{ matrix.node }}
+      - name: ci/load_plan
+        id: load_plan
+        uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/admit
+        id: admit
+        run: node packages/gates/src/ci/cli.ts admit
+        shell: bash
+      - name: ci/select_artifact
+        id: select_artifact
+        run: node packages/gates/src/ci/cli.ts artifact-select native
+        shell: bash
+      - name: ci/download_native
+        id: download_native
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+          repository: ${{ github.repository }}
+          artifact-ids: ${{ steps.select_artifact.outputs.artifact_id }}
+          path: .reports/ci/restored
+      - name: ci/restore
+        id: restore
+        run: node packages/gates/src/ci/cli.ts artifact-restore
+        shell: bash
+      - name: ci/smoke
+        id: smoke
+        run: pnpm run test:smoke
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_smoke == 'true' }}
+      - name: ci/collect_receipt
+        id: collect_receipt
+        run: node packages/gates/src/ci/cli.ts receipt
+        shell: bash
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        if: ${{ always() && steps.admit.outcome == 'success' }}
+      - name: Retain execution receipt
+        if: ${{ always() && steps.collect_receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-receipt-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: .reports/ci/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-tests-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: ".smoke/test-results/**
+
+            coverage/**"
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: ignore
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.smoke_matrix || '{"include":[{"key":"linux-22.22.3","platform":"linux","node":"22.22.3","os":"ubuntu-latest"},{"key":"linux-24.15.0","platform":"linux","node":"24.15.0","os":"ubuntu-latest"},{"key":"linux-26.0.0","platform":"linux","node":"26.0.0","os":"ubuntu-latest"},{"key":"darwin-24.15.0","platform":"darwin","node":"24.15.0","os":"macos-latest"},{"key":"win32-24.15.0","platform":"win32","node":"24.15.0","os":"windows-latest"}]}') }}
+  windows-behavior:
+    name: ${{ format('CI windows-behavior / {0} / {1}', matrix.key, 'all') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    needs:
+      - plan
+      - repository-gates
+      - native-build-linux22
+      - native-build
+    if: ${{ !cancelled() && needs.repository-gates.result == 'success' && needs.plan.outputs.mode != 'obsolete' && (needs.plan.outputs.windows == 'true' || needs.plan.outputs.smoke == 'true' || needs.plan.outputs.mode == '') }}
+    env:
+      CI_JOB: windows-behavior
+      CI_TUPLE: ${{ matrix.key }}
+      CI_SHARD: all
+      ROLLING_NODE: ${{ needs.plan.outputs.rolling_node || '24.15.0' }}
+    steps:
+      - name: ci/checkout
+        id: checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/setup
+        id: setup
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: ${{ matrix.node }}
+      - name: ci/load_plan
+        id: load_plan
+        uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/admit
+        id: admit
+        run: node packages/gates/src/ci/cli.ts admit
+        shell: bash
+      - name: ci/select_artifact
+        id: select_artifact
+        run: node packages/gates/src/ci/cli.ts artifact-select native
+        shell: bash
+      - name: ci/download_native
+        id: download_native
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+          repository: ${{ github.repository }}
+          artifact-ids: ${{ steps.select_artifact.outputs.artifact_id }}
+          path: .reports/ci/restored
+      - name: ci/restore
+        id: restore
+        run: node packages/gates/src/ci/cli.ts artifact-restore
+        shell: bash
+      - name: ci/windows_transactions
+        id: windows_transactions
+        run: pnpm --filter limina run test:unit src/__tests__/atomic-writer.spec.ts src/__tests__/path-filters.spec.ts src/__tests__/shell-command.spec.ts src/__tests__/standalone-invocation-command.spec.ts src/__tests__/migration-forward.spec.ts && pnpm --filter limina-migrate run test:unit src/__tests__/migration-transaction.spec.ts
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_windows_transactions == 'true' }}
+      - name: ci/windows_paths
+        id: windows_paths
+        run: pnpm --filter limina run test:unit src/__tests__/path.spec.ts src/__tests__/framework-config-inputs.spec.ts src/__tests__/type-evidence.spec.ts
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_windows_paths == 'true' }}
+      - name: ci/windows_framework
+        id: windows_framework
+        run: pnpm --filter limina run test:unit src/__tests__/execution-admission.spec.ts -t "binds framework execution to consumed inputs|retains live CommonJS configuration proof through managed refresh in Node"
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_windows_framework == 'true' }}
+      - name: ci/packed_smoke
+        id: packed_smoke
+        run: pnpm --dir smoke exec vitest run generated-command.spec.ts migration.spec.ts migration-standalone.spec.ts
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_packed_smoke == 'true' }}
+      - name: ci/collect_receipt
+        id: collect_receipt
+        run: node packages/gates/src/ci/cli.ts receipt
+        shell: bash
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        if: ${{ always() && steps.admit.outcome == 'success' }}
+      - name: Retain execution receipt
+        if: ${{ always() && steps.collect_receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-receipt-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: .reports/ci/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-tests-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: ".smoke/test-results/**
+
+            coverage/**"
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: ignore
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.windows_matrix || '{"include":[{"key":"win32-22.22.3","platform":"win32","node":"22.22.3","os":"windows-latest"},{"key":"win32-24.15.0","platform":"win32","node":"24.15.0","os":"windows-latest"}]}') }}
+  vue-compatibility:
+    name: CI vue-compatibility / linux-22.22.3 / all
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs:
+      - plan
+      - repository-gates
+      - native-build-linux22
+    if: ${{ !cancelled() && needs.repository-gates.result == 'success' && needs.plan.outputs.mode != 'obsolete' && (needs.plan.outputs.checker_compatibility == 'true' || needs.plan.outputs.mode == '') }}
+    env:
+      CI_JOB: vue-compatibility
+      CI_TUPLE: linux-22.22.3
+      CI_SHARD: all
+      ROLLING_NODE: ${{ needs.plan.outputs.rolling_node || '24.15.0' }}
+    steps:
+      - name: ci/checkout
+        id: checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/setup
+        id: setup
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: 22.22.3
+      - name: ci/load_plan
+        id: load_plan
+        uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/admit
+        id: admit
+        run: node packages/gates/src/ci/cli.ts admit
+        shell: bash
+      - name: ci/select_artifact
+        id: select_artifact
+        run: node packages/gates/src/ci/cli.ts artifact-select native
+        shell: bash
+      - name: ci/download_native
+        id: download_native
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+          repository: ${{ github.repository }}
+          artifact-ids: ${{ steps.select_artifact.outputs.artifact_id }}
+          path: .reports/ci/restored
+      - name: ci/restore
+        id: restore
+        run: node packages/gates/src/ci/cli.ts artifact-restore
+        shell: bash
+      - name: ci/vue_matrix
+        id: vue_matrix
+        run: pnpm --dir packages/limina/fixtures/vue-semantic-matrix install --frozen-lockfile --ignore-scripts && pnpm --dir packages/limina/fixtures/vue-semantic-matrix matrix
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_vue_matrix == 'true' }}
+      - name: ci/collect_receipt
+        id: collect_receipt
+        run: node packages/gates/src/ci/cli.ts receipt
+        shell: bash
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        if: ${{ always() && steps.admit.outcome == 'success' }}
+      - name: Retain execution receipt
+        if: ${{ always() && steps.collect_receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-receipt-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: .reports/ci/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-tests-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: ".smoke/test-results/**
+
+            coverage/**"
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: ignore
+  docs:
+    name: CI docs / linux-22.22.3 / all
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs:
+      - plan
+      - repository-gates
+      - native-build-linux22
+    if: ${{ !cancelled() && needs.repository-gates.result == 'success' && needs.plan.outputs.mode != 'obsolete' && (needs.plan.outputs.docs == 'true' || needs.plan.outputs.mode == '') }}
+    env:
+      CI_JOB: docs
+      CI_TUPLE: linux-22.22.3
+      CI_SHARD: all
+      ROLLING_NODE: ${{ needs.plan.outputs.rolling_node || '24.15.0' }}
+    steps:
+      - name: ci/checkout
+        id: checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: ci/setup
+        id: setup
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: 22.22.3
+      - name: ci/load_plan
+        id: load_plan
+        uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/admit
+        id: admit
+        run: node packages/gates/src/ci/cli.ts admit
+        shell: bash
+      - name: ci/select_artifact
+        id: select_artifact
+        run: node packages/gates/src/ci/cli.ts artifact-select native
+        shell: bash
+      - name: ci/download_native
+        id: download_native
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.run_id }}
+          repository: ${{ github.repository }}
+          artifact-ids: ${{ steps.select_artifact.outputs.artifact_id }}
+          path: .reports/ci/restored
+      - name: ci/restore
+        id: restore
+        run: node packages/gates/src/ci/cli.ts artifact-restore
+        shell: bash
+      - name: ci/docs_build
+        id: docs_build
+        run: pnpm docs:build
+        shell: bash
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_docs_build == 'true' }}
+      - name: Retain documentation
+        if: ${{ !cancelled() && steps.docs_build.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('docs-dist-a{0}', github.run_attempt) }}
+          path: docs/.vitepress/dist
+          include-hidden-files: true
+          retention-days: 30
+      - name: ci/collect_receipt
+        id: collect_receipt
+        run: node packages/gates/src/ci/cli.ts receipt
+        shell: bash
+        env:
+          CI_STEPS: ${{ toJSON(steps) }}
+        if: ${{ always() && steps.admit.outcome == 'success' }}
+      - name: Retain execution receipt
+        if: ${{ always() && steps.collect_receipt.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-receipt-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: .reports/ci/receipt.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-tests-a{0}-{1}-{2}-{3}', github.run_attempt, env.CI_JOB, env.CI_TUPLE, env.CI_SHARD) }}
+          path: ".smoke/test-results/**
+
+            coverage/**"
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: ignore
+  status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ always() }}
+    needs:
+      - plan
+      - repository-gates
+      - native-build-linux22
+      - native-build
+      - limina-unit
+      - validation
+      - platform-smoke
+      - windows-behavior
+      - vue-compatibility
+      - docs
+    env:
+      CI_JOB: status
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24.15.0
+          package-manager-cache: false
+      - uses: ./.github/actions/ci-plan
+        with:
+          plan-hash: ${{ needs.plan.outputs.plan_hash }}
+      - name: ci/audit
+        id: audit
+        run: node packages/gates/src/ci/cli.ts status
+        shell: bash
+      - name: Retain final execution audit
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ format('ci-audit-a{0}-all-all', github.run_attempt) }}
+          path: .reports/ci/audit.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
