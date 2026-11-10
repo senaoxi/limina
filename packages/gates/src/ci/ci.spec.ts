@@ -579,25 +579,31 @@ it('uses net tree differences, both rename paths and baseline directory existenc
     const reverted = commit();
     assert.deepEqual(diff(a, reverted, cwd).paths, []);
     const unusual = 'space tab\tline\n中文.md';
-    // Git paths can contain characters that the Windows working tree cannot create.
-    // Exercise the real NUL protocol through the index without weakening that case.
+    // Windows also rejects control characters through update-index --index-info.
+    // Build tree objects directly so the real diff retains the complete NUL path.
     const blob = run('rev-parse', a + ':docs/old.md');
-    run('update-index', '--force-remove', 'docs/old.md');
-    execFileSync('git', ['update-index', '-z', '--index-info'], {
-      cwd,
-      input: Buffer.from('100644 ' + blob + '\tdocs/' + unusual + '\0'),
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    run(
+    const tree = (entry: string) =>
+      execFileSync('git', ['mktree', '-z'], {
+        cwd,
+        input: Buffer.from(entry + '\0'),
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+        .toString('utf8')
+        .trim();
+    const documentation = tree('100644 blob ' + blob + '\t' + unusual);
+    const root = tree('040000 tree ' + documentation + '\tdocs');
+    const renamed = run(
       '-c',
       'user.name=CI Test',
       '-c',
       'user.email=ci@example.invalid',
-      'commit',
-      '-qm',
-      'index rename',
+      'commit-tree',
+      root,
+      '-p',
+      reverted,
+      '-m',
+      'tree rename',
     );
-    const renamed = run('rev-parse', 'HEAD');
     assert.deepEqual(diff(a, renamed, cwd).paths, [
       'docs/old.md',
       'docs/' + unusual,

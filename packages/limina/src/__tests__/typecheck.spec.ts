@@ -3606,9 +3606,15 @@ describe('checker targets after materialization', () => {
   it('removes an excluded consumer check configuration through its local managed namespace', async () => {
     const fixture = await createFixture({
       'packages/a/src/App.svelte': '<p>a</p>',
-      'packages/a/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+      'packages/a/tsconfig.json': tsconfig({
+        compilerOptions: { noLib: true, types: [] },
+        include: ['src/**/*'],
+      }),
       'packages/b/src/App.svelte': '<p>b</p>',
-      'packages/b/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+      'packages/b/tsconfig.json': tsconfig({
+        compilerOptions: { noLib: true, types: [] },
+        include: ['src/**/*'],
+      }),
     });
     const createConfig = (include: string[], exclude: string[] = []) =>
       withFixtureGovernanceRoot({
@@ -3763,10 +3769,16 @@ describe('checker targets after materialization', () => {
     async (change) => {
       const fixture = await createFixture({
         'packages/a/src/App.svelte': '<p>hello</p>',
-        'packages/a/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+        'packages/a/tsconfig.json': tsconfig({
+          compilerOptions: { noLib: true, types: [] },
+          include: ['src/**/*'],
+        }),
         ...(change === 'remove' && {
           'packages/b/src/App.svelte': '<p>second</p>',
-          'packages/b/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+          'packages/b/tsconfig.json': tsconfig({
+            compilerOptions: { noLib: true, types: [] },
+            include: ['src/**/*'],
+          }),
         }),
       });
       const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
@@ -3789,7 +3801,10 @@ describe('checker targets after materialization', () => {
           );
           await writeText(
             fixture.path('packages/b/tsconfig.json'),
-            tsconfig({ include: ['src/**/*'] }),
+            tsconfig({
+              compilerOptions: { noLib: true, types: [] },
+              include: ['src/**/*'],
+            }),
           );
         } else if (change === 'package-root') {
           await writeText(

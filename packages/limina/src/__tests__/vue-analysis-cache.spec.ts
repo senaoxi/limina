@@ -334,7 +334,8 @@ describe('persistent Vue and mixed graph analysis', () => {
       const f = crossProjectFixture();
       const cold = f.run();
       expectCold(cold);
-      expectRestored(f.run());
+      // Unchanged restoration is covered above; retain the independent recovery
+      // control after corruption without a fourth compiler-process startup.
       const snapshot = f.snapshot();
       const record = Object.values(snapshot.graphs)[0]!;
       const data = snapshotCodec.decodeData(record.data) as StoredGraphData;

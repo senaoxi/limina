@@ -76,6 +76,10 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 [执行输入交接 fixture](../../../packages/limina/src/__tests__/execution-input-handoff.spec.ts)使用 `noLib: true`，保留既有空 `types` 列表。四个项目只使用基础类型与本地声明；反复发现标准库与受管输出 receipt 合同无关，且已在 Windows CI 超过 30 秒。保留相同的每例时限、源码漂移及相关输出拒绝控制、无关输出接纳、独立 target 并发与刷新发布屏障。生产输入验证及标准库专项测试保持既有行为。
 
+[Checker 执行测试](../../../packages/limina/src/__tests__/typecheck.spec.ts)中的 Svelte target 排除和物化后重规划用例，为仅含文本的组件使用 `noLib: true` 和空 `types`。这些用例负责 target 选择、局部受管配置移除、package root 变化及 receipt 新鲜度；注入的 runner 不检查标准库诊断。排除和 add-replan 用例曾在 macOS CI 超过 30 秒；省去无关的默认标准库发现可减少多轮真实 Svelte generation 的工作量，同时保留原时限。保留真实框架转换、两个 manager、全部 target/cwd 断言及 stale-receipt 负向控制。[缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)中的 Vue 引用擦除用例保留冷启动发布、篡改拒绝及重建后的新进程恢复，在既有 60 秒内启动三次 runner。相邻用例继续覆盖未变化的跨项目恢复，不在每个篡改用例重复第四次启动。
+
+[CI Git 路径 fixture](../../../packages/gates/src/ci/ci.spec.ts)通过 `mktree -z` 和 `commit-tree` 创建包含控制字符的文件名。Git for Windows 即使通过 `update-index --index-info` 也可能拒绝这些路径，输出忽略路径的诊断却以成功状态退出。Tree object 保留真实 NUL 分隔 diff，无须创建 Windows 不允许的工作树路径，也不关闭路径保护。保留 rename 两端、净回退、新目录及格式错误／特殊 entry 拒绝断言。本地 object 协议重放不替代原生 Windows 验收。
+
 [循环具名 wrapper 迁移回归](../../../packages/migrate/src/__tests__/migration-topology.spec.ts)仅为数值导出源码 leaf 设置 `noLib: true` 和空 `types`，包括独立的健康 sibling。其合同是 solution 成员关系及新进程幂等性，默认标准库发现增加了无关工作。保留两条验证命令、两个保留的源码成员、真实 CLI 重跑及每例 30 秒时限。覆盖普通标准库的其他迁移用例仍保留标准库。
 
 独立的默认／具名 solution 展开用例保留普通标准库及两次完整迁移，每次均由新的 `check` 与 `graph` 进程验证。该用例使用 60 秒预算以容纳四进程合同：[Windows CI](https://github.com/senaoxi/limina/actions/runs/41019655628/job/123943833401)完成首次迁移，但在 30.014 秒时中断了幂等重跑。保留两项 implicit reference、展开后的 wrapper 成员、schema 接纳、输入消费及文件未变化断言。全局测试时限与生产 verifier 行为不变。
