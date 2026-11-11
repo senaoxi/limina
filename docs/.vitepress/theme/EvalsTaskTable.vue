@@ -29,8 +29,6 @@ const text = computed(() =>
         repeat: 'Repeat',
       },
 );
-const percentage = (v: number | null | undefined) =>
-  v == null ? 'N/A' : `${(100 * v).toFixed(1)}%`;
 const duration = (m: PublishedAverage | undefined) =>
   m?.mean == null ? 'N/A' : `${(m.mean / 1000).toFixed(2)}s`;
 const money = (m: PublishedAverage | undefined) =>
@@ -39,8 +37,6 @@ const tokens = (m: PublishedAverage | undefined) =>
   m?.mean == null
     ? 'N/A'
     : m.mean.toLocaleString('en-US', { maximumFractionDigits: 0 });
-const coverage = (m: PublishedAverage | undefined) =>
-  m ? `${m.measured}/${m.executions} · ${percentage(m.coverage)}` : 'N/A';
 function attemptMark(status: string) {
   if (status === 'passed') return '✓';
   if (
@@ -102,15 +98,12 @@ function stageName(stage: string) {
           </th>
           <td class="task-metric">
             {{ tokens(task.measurements?.inputTokens) }}
-            <small>{{ coverage(task.measurements?.inputTokens) }}</small>
           </td>
           <td class="task-metric">
             {{ duration(task.measurements?.agentMs) }}
-            <small>{{ coverage(task.measurements?.agentMs) }}</small>
           </td>
           <td class="task-metric">
             {{ money(task.measurements?.apiEquivalentUsd) }}
-            <small>{{ coverage(task.measurements?.apiEquivalentUsd) }}</small>
           </td>
           <td v-for="condition in ['base', 'skill']" :key="condition">
             <div v-if="task.conditions[condition]" class="attempt-summary">
@@ -216,10 +209,6 @@ small {
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-}
-.task-metric > small {
-  margin-top: 4px;
-  font-size: 10px;
 }
 .task-name small {
   margin-top: 2px;

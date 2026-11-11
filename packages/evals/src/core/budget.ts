@@ -54,6 +54,20 @@ export interface BillingEvidence {
   settingsObservedAt?: string;
   accountPlan?: string;
   unlimitedCredits?: boolean;
+  nativeHasCredits?: boolean;
+  accountIdentitySha256?: string;
+  /**
+  Historical diagnostic evidence; does not admit new Team dispatch.
+  */
+  teamIncludedEvidence?: {
+    version: 1;
+    source: 'operator-confirmed-payment-controls';
+    accountIdentitySha256: string;
+    recordedAt: string;
+    paidOverageDisabled: boolean;
+    automaticCreditPurchaseDisabled: boolean;
+    maximumExtraUsd: number;
+  };
 }
 
 interface Reservation {
@@ -97,17 +111,39 @@ export function normalizeFinancialUsage(usage: UsageRecord): UsageRecord {
   return usage;
 }
 
+function hasHistoricalTeamBound(billing: BillingEvidence): boolean {
+  const team = billing.teamIncludedEvidence;
+  return (
+    billing.accountPlan === 'team' &&
+    billing.nativeHasCredits === false &&
+    billing.unlimitedCredits === false &&
+    (billing.creditBalance === null || billing.creditBalance === 0) &&
+    /^[a-f\d]{64}$/.test(billing.accountIdentitySha256 ?? '') &&
+    team?.version === 1 &&
+    team.source === 'operator-confirmed-payment-controls' &&
+    team.accountIdentitySha256 === billing.accountIdentitySha256 &&
+    Number.isFinite(Date.parse(team.recordedAt)) &&
+    Date.parse(team.recordedAt) <= Date.parse(billing.observedAt) &&
+    typeof team.paidOverageDisabled === 'boolean' &&
+    team.paidOverageDisabled &&
+    typeof team.automaticCreditPurchaseDisabled === 'boolean' &&
+    team.automaticCreditPurchaseDisabled &&
+    team.maximumExtraUsd === 0
+  );
+}
+
 function hasIncludedBound(reservation: Reservation): boolean {
   const billing = reservation.billing;
   return (
     reservation.maximumUsd === 0 &&
     billing.mode === 'included_only' &&
     billing.ordinaryUsageAllowed === true &&
-    billing.creditBalance === 0 &&
     billing.autoReloadDisabled &&
     billing.unlimitedCredits !== true &&
-    (billing.accountPlan === undefined ||
-      ['plus', 'pro', 'prolite', 'promax'].includes(billing.accountPlan))
+    (hasHistoricalTeamBound(billing) ||
+      (billing.creditBalance === 0 &&
+        (billing.accountPlan === undefined ||
+          ['plus', 'pro', 'prolite', 'promax'].includes(billing.accountPlan))))
   );
 }
 

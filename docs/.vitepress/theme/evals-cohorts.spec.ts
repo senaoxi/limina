@@ -20,12 +20,18 @@ import {
   latestCampaignEntries,
   publishedModelRows,
 } from './evals-cohorts';
-import { combinedCampaignEntries, combinedModelRows } from './evals-combined';
+import {
+  combinedCampaignEntries,
+  combinedModelRows,
+  type UsageRemeasurement,
+  withUsageRemeasurements,
+} from './evals-combined';
 import summaryJson from './evals-current-results.json';
 import bankJson from './evals-latest-bank.json';
 import type { PublicCurrentSummary } from './evals-summary-types';
 import type { PublicTaskResult } from './evals-task-result-types';
 import taskJson from './evals-task-result.json';
+import remeasurementJson from './evals-usage-remeasurements.json';
 
 function fixture(campaign: string, profile: string, passed: number) {
   const data: PublicCampaign = {
@@ -837,6 +843,219 @@ it('selects both models I03 and Terra P03 in their own model and stage without c
         initializationSummary,
       ]),
     /Duplicate current stage/,
+  );
+});
+
+function readPublishedFixture<T>(file: string): T {
+  return JSON.parse(readFileSync(new URL(file, import.meta.url), 'utf8')) as T;
+}
+
+function usageMeasurementRows() {
+  const selections = [
+    {
+      summary: summaryJson as PublicCurrentSummary,
+      task: taskJson as PublicTaskResult,
+    },
+    {
+      summary: readPublishedFixture<PublicCurrentSummary>(
+        'evals-current-i03-results.json',
+      ),
+      task: readPublishedFixture<PublicTaskResult>(
+        'evals-i03-task-result.json',
+      ),
+    },
+    {
+      summary: readPublishedFixture<PublicCurrentSummary>(
+        'evals-current-i03-gpt-6.1-sol-results.json',
+      ),
+      task: readPublishedFixture<PublicTaskResult>(
+        'evals-i03-gpt-6.1-sol-task-result.json',
+      ),
+    },
+  ];
+  const entries = combinedCampaignEntries(
+    campaignIndex.campaigns,
+    bankJson,
+    selections.map((item) => item.summary),
+  );
+  return combinedModelRows(
+    entries.map((entry) =>
+      bindPublishedCohort(
+        entry,
+        readPublishedFixture<PublicCampaign>(entry.file),
+      ),
+    ),
+    bankJson as PublicBankCalibration,
+    selections,
+  );
+}
+
+it('recomputes complete input and API cost means from selected usage without changing scores, timing or historical sources', () => {
+  const receipts = remeasurementJson.remeasurements as UsageRemeasurement[];
+  const rows = usageMeasurementRows();
+  const before = structuredClone(rows);
+  const selected = withUsageRemeasurements(rows, receipts);
+  // These means come from the independently audited six raw measurements.
+  const expected: Record<string, [number, number]> = {
+    C03: [463_256, 0.1675442666666667],
+    S01: [201_751, 0.08386633333333335],
+    S02: [127_773, 0.059617],
+    R01: [279_653.1666666667, 0.05272963333333333],
+  };
+  assert.equal(receipts.length, 4);
+  for (const previous of rows) {
+    const current = selected.find((row) => row.key === previous.key)!;
+    assert.deepEqual(current.sources, previous.sources);
+    assert.deepEqual(current.main.counts, previous.main.counts);
+    assert.deepEqual(current.main.attempts, previous.main.attempts);
+    assert.deepEqual(current.main.macro, previous.main.macro);
+    assert.equal(
+      current.main.differencePercentagePoints,
+      previous.main.differencePercentagePoints,
+    );
+    assert.deepEqual(current.negativeControls, previous.negativeControls);
+    for (const key of ['inputTokens', 'apiEquivalentUsd', 'agentMs'] as const) {
+      assert.equal(current.main.measurements[key]!.measured, 144);
+      assert.equal(current.main.measurements[key]!.executions, 144);
+      assert.equal(current.main.measurements[key]!.coverage, 1);
+      assert.equal(current.negativeControls.measurements[key]!.measured, 12);
+      assert.equal(current.negativeControls.measurements[key]!.coverage, 1);
+    }
+    for (const key of ['agentMs', 'endToEndMs', 'settledUsd'] as const)
+      assert.deepEqual(
+        current.main.measurements[key],
+        previous.main.measurements[key],
+      );
+    for (const original of previous.main.tasks) {
+      const task = current.main.tasks.find((task) => task.id === original.id)!;
+      assert.deepEqual(task.comparison, original.comparison);
+      for (const condition of ['base', 'skill'])
+        assert.deepEqual(
+          task.conditions[condition]!.repetitions,
+          original.conditions[condition]!.repetitions,
+        );
+      for (const key of ['agentMs', 'endToEndMs', 'settledUsd'] as const)
+        assert.deepEqual(task.measurements![key], original.measurements![key]);
+      if (!task.measurementRemeasurement) {
+        assert.strictEqual(task, original);
+        continue;
+      }
+      assert.equal(task.measurementRemeasurement.selectedExecutions, 6);
+      assert.equal(task.measurementRemeasurement.sourceExecutions, 7);
+      assert.equal(original.measurements!.inputTokens!.measured, 5);
+      assert.equal(original.measurements!.apiEquivalentUsd!.measured, 5);
+      for (const key of ['inputTokens', 'apiEquivalentUsd'] as const) {
+        assert.equal(task.measurements![key]!.measured, 6);
+        assert.equal(task.measurements![key]!.coverage, 1);
+        assert.notEqual(task.measurements![key]!.total, null);
+      }
+      const expectation = expected[task.id];
+      assert.ok(expectation);
+      assert.equal(task.measurements!.inputTokens!.mean, expectation[0]);
+      assert.ok(
+        Math.abs(task.measurements!.apiEquivalentUsd!.mean! - expectation[1]) <
+          1e-12,
+      );
+    }
+  }
+  assert.deepEqual(rows, before);
+});
+
+it('withholds incomplete final usage and rejects wrong source, price, calculation and duplicate selections', () => {
+  const receipts = remeasurementJson.remeasurements as UsageRemeasurement[];
+  const rows = usageMeasurementRows();
+  const mutations: ((value: UsageRemeasurement) => void)[] = [
+    (value) => {
+      value.source.reportIdentity = 'foreign';
+    },
+    (value) => {
+      value.source.attemptId = 'foreign';
+    },
+    (value) => {
+      value.source.stage =
+        value.source.stage === 'sealed' ? 'development' : 'sealed';
+    },
+    (value) => {
+      value.supplemental.modelProfileId = 'foreign';
+    },
+    (value) => {
+      value.supplemental.repetition = 3;
+    },
+    (value) => {
+      value.supplemental.fixtureIdentity = 'foreign';
+    },
+    (value) => {
+      value.supplemental.executionIdentity = 'foreign';
+    },
+    (value) => {
+      value.supplemental.gradingIdentity = 'foreign';
+    },
+    (value) => {
+      value.supplemental.complete = false;
+    },
+    (value) => {
+      value.supplemental.costComplete = false;
+    },
+    (value) => {
+      value.supplemental.apiEquivalentUsd = NaN;
+    },
+    (value) => {
+      value.supplemental.apiEquivalentUsd = -1;
+    },
+    (value) => {
+      value.supplemental.pricingIdentity = '0'.repeat(64);
+    },
+    (value) => {
+      value.selection.sourceExecutions = 6;
+    },
+    (value) => {
+      value.source.conditionInputTokens.mean = 0;
+    },
+    (value) => {
+      value.source.conditionApiEquivalentUsd.mean = 0;
+    },
+    (value) => {
+      value.measurements.taskInputTokens.mean!++;
+    },
+    (value) => {
+      value.measurements.taskApiEquivalentUsd.mean!++;
+    },
+    (value) => {
+      value.measurements.conditionApiEquivalentUsd.measured = 2;
+    },
+  ];
+  for (let index = 0; index < receipts.length; index++) {
+    for (const mutate of mutations) {
+      const invalid = structuredClone(receipts);
+      mutate(invalid[index]!);
+      assert.throws(
+        () => withUsageRemeasurements(rows, invalid),
+        /Usage remeasurement/,
+      );
+    }
+    assert.throws(
+      () =>
+        withUsageRemeasurements(
+          rows,
+          receipts.filter((_, candidateIndex) => candidateIndex !== index),
+        ),
+      /Final usage measurement is incomplete/,
+    );
+  }
+  assert.throws(
+    () => withUsageRemeasurements(rows, [...receipts, receipts[0]!]),
+    /source identity/,
+  );
+  const complete = withUsageRemeasurements(rows, receipts);
+  assert.throws(
+    () => withUsageRemeasurements(complete, receipts),
+    /source identity/,
+  );
+  const partialTiming = structuredClone(complete);
+  partialTiming[0]!.main.tasks[0]!.measurements!.agentMs!.measured--;
+  assert.throws(
+    () => withUsageRemeasurements(partialTiming, []),
+    /Final usage measurement is incomplete/,
   );
 });
 

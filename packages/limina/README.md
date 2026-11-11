@@ -12,15 +12,11 @@
   <a href="https://github.com/senaoxi/limina/blob/main/LICENSE.md"><img src="https://img.shields.io/npm/l/limina.svg" alt="license"></a>
 </p>
 
-English | [简体中文](./README.zh-CN.md)
-
-> TypeScript project graph and architecture governance.
+> TypeScript project graph and architecture governance
 
 Start with incremental type builds, then progressively enable architecture governance.
 
 Limina supports single-package projects and pnpm, npm, Yarn, and Bun workspaces where project references, source boundaries, check coverage, and release artifacts can drift over time. It builds on existing TypeScript configuration and source dependency relationships to generate reusable type-build configuration, then adds checks for dependency graphs, source boundaries, coverage, and release readiness.
-
-Configuration migration is provided by the separate, same-version `limina-migrate` package: `pnpm exec limina-migrate`, or `pnpm dlx limina-migrate@<version>`. The old `limina migration` entry remains as a deprecated forwarder.
 
 ## What Limina does
 
@@ -36,7 +32,3 @@ Configuration migration is provided by the separate, same-version `limina-migrat
 Limina is not a bundler, a test framework, or a publishing tool. It does not replace TypeScript or framework-specific checkers. Instead, it runs alongside existing tools and verifies that the project structure they depend on remains consistent and reviewable.
 
 [Read the Docs to Learn More](https://senao.me/repos/limina/)
-
-## Development
-
-See [Contributing](../../CONTRIBUTING.md) for the workspace workflow and [migration status](../../.agents/docs/migration.md) for the Logaria dependency and release gates.

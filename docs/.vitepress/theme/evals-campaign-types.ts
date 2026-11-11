@@ -92,6 +92,7 @@ export interface PublicCampaign {
       codexVersion?: string;
     };
     report: {
+      experimentIdentity?: string;
       executions: number;
       planned: number;
       complete: boolean;

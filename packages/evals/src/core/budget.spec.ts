@@ -50,6 +50,106 @@ const reservation = (runId: string) => ({
   billing: { ...billing, observedAt: new Date().toISOString() },
 });
 
+test('reads completed Team zero-paid evidence without inventing a balance, settlement or new dispatch admission', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'eval-team-budget-'));
+  try {
+    const file = path.join(root, 'ledger.jsonl');
+    const account = 'a'.repeat(64);
+    const team = {
+      ...billing,
+      accountPlan: 'team',
+      creditBalance: null,
+      nativeHasCredits: false,
+      accountIdentitySha256: account,
+      teamIncludedEvidence: {
+        version: 1 as const,
+        source: 'operator-confirmed-payment-controls' as const,
+        accountIdentitySha256: account,
+        recordedAt: billing.observedAt,
+        paidOverageDisabled: true,
+        automaticCreditPurchaseDisabled: true,
+        maximumExtraUsd: 0,
+      },
+    };
+    const cases = [
+      { name: 'bound', value: team, ready: true },
+      {
+        name: 'missing',
+        value: { ...team, teamIncludedEvidence: null },
+        ready: false,
+      },
+      {
+        name: 'paid overage',
+        value: {
+          ...team,
+          teamIncludedEvidence: {
+            ...team.teamIncludedEvidence,
+            paidOverageDisabled: false,
+          },
+        },
+        ready: false,
+      },
+      {
+        name: 'automatic purchase',
+        value: {
+          ...team,
+          teamIncludedEvidence: {
+            ...team.teamIncludedEvidence,
+            automaticCreditPurchaseDisabled: false,
+          },
+        },
+        ready: false,
+      },
+      {
+        name: 'foreign account',
+        value: { ...team, accountIdentitySha256: 'b'.repeat(64) },
+        ready: false,
+      },
+      {
+        name: 'credits available',
+        value: { ...team, nativeHasCredits: true },
+        ready: false,
+      },
+    ];
+    for (const { name, value, ready } of cases) {
+      const events = [
+        {
+          type: 'reserve',
+          reservation: { ...reservation('team'), billing: value },
+        },
+        { type: 'usage', runId: 'team', usage },
+      ];
+      let previous: string | null = null;
+      const bytes = events
+        .map((event) => {
+          const body = { version: 1, previous, event };
+          previous = contentIdentity(body);
+          return `${canonicalJson({ ...body, digest: previous })}\n`;
+        })
+        .join('');
+      writeFileSync(file, bytes);
+      const result = new BudgetManager(file).summary();
+      assert.equal(result.includedDispatchReady, ready, name);
+      assert.equal(result.attempts[0]!.reservation.billing.creditBalance, null);
+      assert.equal(result.settledSpend, null);
+      assert.equal(result.remainingBudget, null);
+      assert.equal(result.maximumExposure, 0);
+      assert.equal(readFileSync(file, 'utf8'), bytes);
+    }
+    // Reading the historical evidence never admits a new Team reservation.
+    assert.throws(
+      () =>
+        new BudgetManager(path.join(root, 'fresh.jsonl')).reserveAttempt({
+          ...reservation('new-team'),
+          billing: { ...team, observedAt: new Date().toISOString() },
+        }),
+      /Included-only allowance unavailable/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('budget survives restart, forbids concurrent dispatch and does not double-count replayed usage', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'eval-budget-'));
   try {

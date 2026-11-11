@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 2,
+  "kind": "usage-measurement-remeasurement",
+  "includedInFormalScores": false,
+  "source": {
+    "campaignId": "b73ffecf7a4061d328dc451c46f25ee8945cdfdebd829476c747aab1060b96e6",
+    "reportIdentity": "f113f24d45a7cab33d86701a703318602be6aed254cc7d66fc90d1ce2add489e",
+    "experimentIdentity": "e5ac42be7db32d88f07770d7f1cd2a0336b7e3a5d8cef933a0172c65306c6500",
+    "modelProfileId": "f462c9a7950d1907b20c3f0d794014536596257409830db8b9490d4076a9a171",
+    "stage": "development",
+    "taskId": "S02",
+    "condition": "base",
+    "repetition": 2,
+    "attemptId": "1a545d4c3b2ca3dabbc20de7c6a17932a8c6c08c0962c5c449cb25a2c01da689",
+    "conditionInputTokens": {
+      "mean": 122438,
+      "observedSum": 400129,
+      "total": null,
+      "measured": 2,
+      "executions": 3,
+      "coverage": 0.6666666666666666,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "taskInputTokens": {
+      "mean": 133870.8333333333,
+      "observedSum": 836040,
+      "total": null,
+      "measured": 5,
+      "executions": 6,
+      "coverage": 0.8333333333333334,
+      "cells": 2,
+      "measuredCells": 2
+    },
+    "conditionApiEquivalentUsd": {
+      "mean": 0.048235600000000003,
+      "observedSum": 0.14531719999999998,
+      "total": null,
+      "measured": 2,
+      "executions": 3,
+      "coverage": 0.6666666666666666,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "taskApiEquivalentUsd": {
+      "mean": 0.06076853333333333,
+      "observedSum": 0.3652216,
+      "total": null,
+      "measured": 5,
+      "executions": 6,
+      "coverage": 0.8333333333333334,
+      "cells": 2,
+      "measuredCells": 2
+    }
+  },
+  "supplemental": {
+    "campaignId": "d94ca5f01f21ce9e4c3a98b357031137e3ada5b5ac4607c10a1ad7c691381c54",
+    "reportIdentity": "2e175bf2ce5585b6f95823b4c59a0f7fd0dc030fefcb2c8f3e958d0d2e613330",
+    "experimentIdentity": "8bbada4bc3113189e8e5fdb27efa0d871363ed3a7a1035117bd876aabf6ba067",
+    "modelProfileId": "f462c9a7950d1907b20c3f0d794014536596257409830db8b9490d4076a9a171",
+    "taskId": "S02",
+    "condition": "base",
+    "repetition": 2,
+    "attemptId": "fdfbdd1fc8484563546e91ab186114d7301a8bd27533cbd752ae6b9996bebd5d",
+    "inputTokens": 85851,
+    "complete": true,
+    "apiEquivalentUsd": 0.0413264,
+    "costComplete": true,
+    "pricingIdentity": "2ac2a65f57132d3468c3c32177127a0f80ed075f0ad1e5d072ecfbd59baeeee9",
+    "outcome": "passed",
+    "fixtureIdentity": "864cbfeccfa2e462843cc33974efaaef5b8fc43a8bf23e77200bfaaa34a55c74",
+    "executionIdentity": "53021ade7fac7be177aa16bf08f904328964d54f06855ca891a3e6aa54657052",
+    "gradingIdentity": "3041f3d68d4abc669514277b3512af99b3100373cac1752aa67817f26f22b9c4",
+    "traceSha256": "bdc13599b63f21f98ea98f74555d924fc3f6b47650967979f4bc4b7b100a7bbc",
+    "sourceIndexSha256": "3cceac08a360bedb017e9e1da4b93b102bf84610b64c9a6947b0b1bee5817b55",
+    "sourceRunnerDigest": "159e464802f59a9dacf440726bc4709c204dae8f352e0d781f7d66fa93ea713e",
+    "runnerDigest": "dffc5fef33196015acaf46b8511647bec03b56a107f7854e17b16b6c2161008a"
+  },
+  "selection": {
+    "policy": "replace-incomplete-usage-measurements",
+    "selectedExecutions": 6,
+    "sourceExecutions": 7,
+    "replacedMeasurements": 1
+  },
+  "measurements": {
+    "conditionInputTokens": {
+      "mean": 110242.33333333333,
+      "observedSum": 330727,
+      "total": 330727,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "taskInputTokens": {
+      "mean": 127773,
+      "observedSum": 766638,
+      "total": 766638,
+      "measured": 6,
+      "executions": 6,
+      "coverage": 1,
+      "cells": 2,
+      "measuredCells": 2
+    },
+    "conditionApiEquivalentUsd": {
+      "mean": 0.04593253333333334,
+      "observedSum": 0.13779760000000002,
+      "total": 0.13779760000000002,
+      "measured": 3,
+      "executions": 3,
+      "coverage": 1,
+      "cells": 1,
+      "measuredCells": 1
+    },
+    "taskApiEquivalentUsd": {
+      "mean": 0.059617,
+      "observedSum": 0.357702,
+      "total": 0.357702,
+      "measured": 6,
+      "executions": 6,
+      "coverage": 1,
+      "cells": 2,
+      "measuredCells": 2
+    }
+  },
+  "identity": "424d3b23cc9d6edfedb048283be0c0fe2d0a8ef8ec76b71e921b27541f9a3753"
+}

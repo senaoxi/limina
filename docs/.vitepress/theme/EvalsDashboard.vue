@@ -10,7 +10,9 @@ import { bindPublishedCohort } from './evals-cohorts';
 import {
   combinedCampaignEntries,
   combinedModelRows,
+  withUsageRemeasurements,
   type CombinedModelRow,
+  type UsageRemeasurement,
 } from './evals-combined';
 import currentSolI03Summary from './evals-current-i03-gpt-6.1-sol-results.json';
 import currentI03Summary from './evals-current-i03-results.json';
@@ -21,6 +23,7 @@ import latestBank from './evals-latest-bank.json';
 import type { PublicCurrentSummary } from './evals-summary-types';
 import type { PublicTaskResult } from './evals-task-result-types';
 import latestTask from './evals-task-result.json';
+import usageRemeasurements from './evals-usage-remeasurements.json';
 const { lang } = useData();
 const zh = computed(() => lang.value.startsWith('zh'));
 const bank = latestBank as PublicBankCalibration;
@@ -69,7 +72,10 @@ onMounted(async () => {
       }),
     );
     if (!disposed)
-      modelRows.value = combinedModelRows(loaded, bank, selections);
+      modelRows.value = withUsageRemeasurements(
+        combinedModelRows(loaded, bank, selections),
+        usageRemeasurements.remeasurements as UsageRemeasurement[],
+      );
   } catch {
     if (!disposed) loadError.value = true;
   } finally {
@@ -87,7 +93,6 @@ const text = computed(() =>
         agent: 'Agent',
         duration: '平均耗时',
         cost: '平均 API 等价成本',
-        measured: '测量覆盖',
         passedExecutions: '成功 / 全部执行',
         lift: '差值（百分点）',
         tasks: '任务与独立尝试',
@@ -106,7 +111,6 @@ const text = computed(() =>
         agent: 'Agent',
         duration: 'Avg duration',
         cost: 'Avg API-equivalent cost',
-        measured: 'Measurement coverage',
         passedExecutions: 'Passed / all executions',
         lift: 'Difference (pp)',
         tasks: 'Tasks and independent attempts',
@@ -123,8 +127,6 @@ const duration = (m: PublishedAverage | undefined) =>
   m?.mean == null ? 'N/A' : `${(m.mean / 1000).toFixed(2)}s`;
 const money = (m: PublishedAverage | undefined) =>
   m?.mean == null ? 'N/A' : `$${m.mean.toFixed(4)}`;
-const coverage = (m: PublishedAverage | undefined) =>
-  m ? `${m.measured}/${m.executions} · ${percentage(m.coverage)}` : 'N/A';
 </script>
 <template>
   <div class="evals-page">
@@ -194,16 +196,10 @@ const coverage = (m: PublishedAverage | undefined) =>
                   Codex<small>{{ m.profile.codexVersion ?? 'N/A' }}</small>
                 </td>
                 <td>
-                  {{ duration(m.main.measurements.agentMs)
-                  }}<small :title="text.measured">{{
-                    coverage(m.main.measurements.agentMs)
-                  }}</small>
+                  {{ duration(m.main.measurements.agentMs) }}
                 </td>
                 <td>
-                  {{ money(m.main.measurements.apiEquivalentUsd)
-                  }}<small :title="text.measured">{{
-                    coverage(m.main.measurements.apiEquivalentUsd)
-                  }}</small>
+                  {{ money(m.main.measurements.apiEquivalentUsd) }}
                 </td>
                 <td v-for="condition in conditions" :key="condition">
                   <EvalsRate
@@ -211,7 +207,9 @@ const coverage = (m: PublishedAverage | undefined) =>
                     :passed="m.main.attempts[condition]!.passed"
                     :executions="m.main.attempts[condition]!.executions"
                   />
-                  <small class="determinate-coverage"
+                  <small
+                    v-if="m.main.attempts[condition]!.unknown > 0"
+                    class="determinate-coverage"
                     ><span v-if="m.main.attempts[condition]!.unknown > 0"
                       >{{ text.unresolved }}
                       {{ m.main.attempts[condition]!.unknown }} · </span
@@ -269,6 +267,10 @@ const coverage = (m: PublishedAverage | undefined) =>
                               m.negativeControls.attempts[condition]!.rate,
                             )
                           }}<small
+                            v-if="
+                              m.negativeControls.attempts[condition]!.unknown >
+                              0
+                            "
                             ><span
                               v-if="
                                 m.negativeControls.attempts[condition]!
