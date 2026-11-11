@@ -13,6 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { expect, it } from 'vitest';
 import { createSemanticRepairFixture } from '../../src/__tests__/helpers/semantic-repair';
 import type { GeneratedTsconfigGraphManifest } from '../../src/core/build-graph/manifest-types';
+import { readJson, resolveGeneratedPath } from '../helpers/assertions';
 import { runLimina } from '../helpers/run-limina';
 
 const require = createRequire(import.meta.url);
@@ -172,21 +173,26 @@ it('builds independent producers before resolving all Svelte consumers and repai
         )
         .sort((a, b) => a.localeCompare(b)),
     );
-    const expectedReferences: Record<string, number> = {
-      a: 3,
-      c: 1,
-      d: 1,
-      g: 1,
-      h: 0,
+    const expectedReferences: Record<string, string[]> = {
+      a: [manifest.checkers['vue-tsc']!.sourceToDts['tsconfig.b.json']!],
+      c: [],
+      d: [],
+      g: [],
+      h: [],
     };
-    for (const [name, count] of Object.entries(expectedReferences)) {
-      const projected = JSON.parse(
-        await readFile(
-          fixture.path(`.limina/check/tsconfig.${name}.check.json`),
-          'utf8',
-        ),
+    for (const [name, references] of Object.entries(expectedReferences)) {
+      const checkConfig = fixture.path(
+        `.limina/check/tsconfig.${name}.check.json`,
       );
-      expect(projected.references).toHaveLength(count);
+      const projected = await readJson<{
+        compilerOptions: { rootDir: string };
+        references: { path: string }[];
+      }>(checkConfig);
+      expect(
+        projected.references.map((reference) =>
+          resolveGeneratedPath(checkConfig, reference.path),
+        ),
+      ).toEqual(references.map((reference) => fixture.path(reference)));
       expect(projected.compilerOptions.rootDir).toBe(fixture.path());
     }
     const declaration = manifest.declarationBindings!.find(

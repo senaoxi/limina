@@ -1,4 +1,4 @@
-import { normalizeAbsolutePath } from '#utils/path';
+import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type ts from 'typescript';
 import { absoluteCompilerPaths } from '../typescript-semantic/compiler-options';
@@ -11,6 +11,7 @@ export interface SvelteCheckConfigInput {
   options: ts.CompilerOptions;
   references: readonly string[];
   declarationRoots: readonly string[];
+  sourceCheckRoot?: string;
   svelteOptions?: unknown;
 }
 
@@ -71,6 +72,24 @@ function declarationRootDirectories(input: SvelteCheckConfigInput): string[] {
   ];
 }
 
+function sourceCheckOptions(input: SvelteCheckConfigInput): ts.CompilerOptions {
+  const root = input.sourceCheckRoot;
+  if (root === undefined) return {};
+  const source = input.options;
+  return {
+    rootDir:
+      source.rootDir !== undefined &&
+      isPathInsideDirectory(root, source.rootDir)
+        ? source.rootDir
+        : root,
+    ...(source.composite === true && {
+      composite: false,
+      declaration: source.declaration ?? true,
+      incremental: source.incremental ?? true,
+    }),
+  };
+}
+
 export function createSvelteCheckConfig(
   input: SvelteCheckConfigInput,
 ): Record<string, unknown> {
@@ -82,6 +101,7 @@ export function createSvelteCheckConfig(
     include: [],
     compilerOptions: {
       ...sourcePathOptions(input),
+      ...sourceCheckOptions(input),
       disableSourceOfProjectReferenceRedirect: false,
       rootDirs: declarationRootDirectories(input),
     },

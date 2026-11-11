@@ -3017,6 +3017,56 @@ export default component;
     }
   });
 
+  it('reports missing and unsupported solution membership targets', async () => {
+    const leaf = json({
+      compilerOptions: { noLib: true, types: [] },
+      files: ['src/index.ts'],
+    });
+    const fixture = await createFixture({
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.json': json({
+        files: [],
+        references: [
+          { path: './tsconfig.lib.json' },
+          { path: './missing' },
+          { path: './project.json' },
+          { path: './tsconfig.build.json' },
+        ],
+      }),
+      'packages/app/tsconfig.lib.json': leaf,
+      'packages/app/project.json': leaf,
+      'packages/app/tsconfig.build.json': leaf,
+    });
+    const expectedIssues = [
+      'packages/app/missing/tsconfig.json',
+      'packages/app/project.json',
+      'packages/app/tsconfig.build.json',
+    ].map((target) =>
+      expect.objectContaining({
+        code: 'LIMINA_GRAPH_PREPARE_FAILED',
+        filePath: 'packages/app/tsconfig.json',
+        title: expect.stringContaining(target),
+      }),
+    );
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
+        }),
+      ).rejects.toMatchObject({
+        issues: expect.arrayContaining(expectedIssues),
+      });
+      expect(existsSync(fixture.path('.limina/tsconfig'))).toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('rejects a named TypeScript solution reached through a default entry', async () => {
     const fixture = await createFixture({
       'packages/app/tsconfig.json': json({
@@ -5346,48 +5396,67 @@ export default component;
     }
   });
 
-  it('generates output project configs with declaration maps when requested', async () => {
-    const fixture = await createFixture({
-      'packages/pkg/src/index.ts': 'export const value = 1;\n',
-      'packages/pkg/tsconfig.json': json({
-        files: [],
-        references: [
-          {
-            path: './tsconfig.lib.json',
-          },
-        ],
-      }),
-      'packages/pkg/tsconfig.lib.json': json({
-        liminaOptions: {
-          outputs: {
+  it.each([false, true])(
+    'builds with inherited mapRoot and outputs.declarationMap=%s',
+    async (declarationMap) => {
+      const mapRoot = 'https://example.invalid/maps/';
+      const fixture = await createFixture({
+        'packages/pkg/src/index.ts': 'export const value = 1;\n',
+        'packages/pkg/tsconfig.base.json': json({
+          compilerOptions: {
+            ...managedOutputCompilerOptions(),
+            declaration: true,
             declarationMap: true,
+            mapRoot,
           },
-        },
-        compilerOptions: {
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          strict: true,
-          types: [],
-        },
-        include: ['src/**/*.ts'],
-      }),
-    });
+        }),
+        'packages/pkg/tsconfig.json': json({
+          extends: './tsconfig.base.json',
+          liminaOptions: { outputs: { declarationMap, rootDir: './src' } },
+          include: ['src/**/*.ts'],
+        }),
+      });
 
-    try {
-      await prepareGeneratedTsconfigGraph(fixture.config);
-      const outputPath =
-        '.limina/tsconfig/checkers/tsc/outputs/projects/packages/pkg/tsconfig.lib.output.json';
-      const outputConfig = JSON.parse(
-        await readFile(path.join(fixture.rootDir, outputPath), 'utf8'),
-      ) as {
-        compilerOptions: Record<string, unknown>;
-      };
-
-      expect(outputConfig.compilerOptions.declarationMap).toBe(true);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+      try {
+        const source = fixture.path('packages/pkg/tsconfig.json');
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const configs = [
+          graph.sourceToDts.get('tsc')!.get(source)!,
+          graph.configToOutputBuild.get('tsc')!.get(source)!.path,
+        ];
+        const diagnostics: number[] = [];
+        const host = ts.createSolutionBuilderHost(
+          ts.sys,
+          undefined,
+          (error) => {
+            diagnostics.push(error.code);
+          },
+        );
+        const status = ts
+          .createSolutionBuilder(host, configs, { force: true })
+          .build();
+        expect(diagnostics).toEqual([]);
+        expect(status).toBe(ts.ExitStatus.Success);
+        expect(
+          configs.map((configPath) => {
+            const { options } = parseProject(fixture.config, configPath);
+            return {
+              declarationMap: options.declarationMap,
+              mapRoot: options.mapRoot,
+            };
+          }),
+        ).toEqual([
+          { declarationMap: false, mapRoot: undefined },
+          { declarationMap, mapRoot: declarationMap ? mapRoot : undefined },
+        ]);
+        expect(
+          existsSync(fixture.path('packages/pkg/dist/index.d.ts.map')),
+        ).toBe(declarationMap);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('exposes output declaration copy contexts without persisting them in the manifest', async () => {
     const fixture = await createFixture({

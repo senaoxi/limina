@@ -219,12 +219,24 @@ function collectSolutionReference(options: {
       options.context.config.rootDir,
     )
   ) {
-    options.context.onInputError?.(
-      options.fromConfigPath,
-      new TsconfigInputError(
-        `Solution membership target is missing or is not an ordinary config: ${options.referencePath}`,
-      ),
-    );
+    const { config, onInputError, problems } = options.context;
+    const reason =
+      'Solution membership target is missing or is not an ordinary config';
+    if (onInputError) {
+      onInputError(
+        options.fromConfigPath,
+        new TsconfigInputError(`${reason}: ${options.referencePath}`),
+      );
+    } else {
+      problems.push(
+        [
+          `Invalid solution membership target ${toRelativePath(config.rootDir, options.referencePath)}`,
+          `  config: ${toRelativePath(config.rootDir, options.fromConfigPath)}`,
+          '  field: references',
+          `  reason: ${reason}.`,
+        ].join('\n'),
+      );
+    }
     return;
   }
   const targetChecker = resolveReferenceOwner(options);

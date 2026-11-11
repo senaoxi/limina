@@ -95,7 +95,11 @@ function checkReferences(
 ): string[] {
   const targets = new Set(
     state.dependencyEdges
-      .filter((edge) => edge.fromConfigPath === source)
+      .filter(
+        (edge) =>
+          edge.kind === 'framework-declaration' &&
+          edge.fromConfigPath === source,
+      )
       .map((edge) => edge.toConfigPath),
   );
   const implicit = readImplicitReferences(config, source);
@@ -141,7 +145,20 @@ export function projectSvelteConsumerConfigs(
   if (view === undefined) return;
   const projects = state.primaryProjectsByChecker.get('svelte-check') ?? [];
   const units = state.governedSourcesByChecker.get('svelte-check') ?? [];
-  for (const project of projects) {
+  const checks = projects.map((project) => ({
+    project,
+    check: svelteCheckConfigPath(project.configPath),
+    references: checkReferences(state, config, project.configPath),
+  }));
+  const referenceTargets = new Set(
+    checks.flatMap(({ references }) => references),
+  );
+  const sourceConsumers = new Set(
+    state.dependencyEdges
+      .filter((edge) => edge.kind === 'framework-schedule')
+      .map((edge) => edge.fromConfigPath),
+  );
+  for (const { project, check, references } of checks) {
     const source = units.find(
       (unit) => unit.configPath === project.configPath,
     )!;
@@ -149,8 +166,6 @@ export function projectSvelteConsumerConfigs(
       configPath: project.configPath,
       tsModule: ts,
     })!;
-    const check = svelteCheckConfigPath(project.configPath);
-    const references = checkReferences(state, config, project.configPath);
     const roots = [
       config.rootDir,
       view.mirrorRoot,
@@ -167,6 +182,10 @@ export function projectSvelteConsumerConfigs(
       options: original.options,
       references,
       declarationRoots: roots,
+      sourceCheckRoot:
+        sourceConsumers.has(project.configPath) && !referenceTargets.has(check)
+          ? config.rootDir
+          : undefined,
       svelteOptions: original.raw?.svelteOptions,
     });
     view.files.set(check, `${JSON.stringify(projected, null, 2)}\n`);

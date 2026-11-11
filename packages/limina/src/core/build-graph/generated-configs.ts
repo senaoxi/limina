@@ -57,6 +57,24 @@ function createRelativeImportRewriteOverride(
     : {};
 }
 
+function createDeclarationMapOverrides(options: {
+  source: SourceProject['options'];
+  declarationMap: boolean;
+}): { declarationMap: boolean; mapRoot?: null } {
+  const { source, declarationMap } = options;
+  if (
+    !declarationMap &&
+    source.mapRoot &&
+    source.declarationMap === true &&
+    source.sourceMap !== true &&
+    source.inlineSourceMap !== true
+  ) {
+    // TypeScript treats null as an explicit reset across extends.
+    return { declarationMap, mapRoot: null };
+  }
+  return { declarationMap };
+}
+
 export function createGeneratedDtsConfig(options: {
   cache?: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
@@ -96,7 +114,10 @@ export function createGeneratedDtsConfig(options: {
       noEmit: false,
       declaration: true,
       emitDeclarationOnly: true,
-      declarationMap: false,
+      ...createDeclarationMapOverrides({
+        source: project.options,
+        declarationMap: false,
+      }),
       ...createRelativeImportRewriteOverride(project),
       rootDir: createRelativePath(
         project.dtsConfigPath,
@@ -170,7 +191,10 @@ export function createGeneratedOutputProjectConfig(options: {
       incremental: true,
       noEmit: false,
       declaration: true,
-      declarationMap: outputOptions.declarationMap,
+      ...createDeclarationMapOverrides({
+        source: project.options,
+        declarationMap: outputOptions.declarationMap,
+      }),
       emitDeclarationOnly: false,
       target: outputOptions.target,
       rootDir: createRelativePath(

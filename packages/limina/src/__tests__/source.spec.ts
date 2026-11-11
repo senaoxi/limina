@@ -3376,7 +3376,15 @@ packages:
     });
 
     try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(
+        isRunSourceCheck({
+          ...fixture.config,
+          scope: {
+            ...fixture.config.scope,
+            checkers: { auto: { exclude: ['app/tsconfig.json'] } },
+          },
+        }),
+      ).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(

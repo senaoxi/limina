@@ -1489,7 +1489,16 @@ describe('runProofCheck dts config semantics', () => {
     const fixture = await createFixture(files);
 
     try {
-      await expect(isRunProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunProofCheck(fixture.config)).rejects.toMatchObject({
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            code: LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,
+            filePath: 'tsconfig.json',
+            title:
+              'Invalid solution membership target packages/pkg/tsconfig.json',
+          }),
+        ]),
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -1746,7 +1755,16 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(isRunProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunProofCheck(fixture.config)).rejects.toMatchObject({
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            code: LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,
+            filePath: 'packages/pkg/tsconfig.json',
+            title:
+              'Invalid solution membership target packages/pkg/tsconfig.lib.dts.json',
+          }),
+        ]),
+      });
     } finally {
       await fixture.cleanup();
     }

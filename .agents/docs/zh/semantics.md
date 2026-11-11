@@ -157,7 +157,13 @@ Vue 语义上下文中的原生文件使用同一套 Vue 所属 TypeScript 实�
 
 ## 配置投影的边界
 
-Svelte `.check` 配置继承原配置，显式投影 references 和解析结果中的原始 `svelteOptions`，保留原始源码身份。源配置目录下的受管 namespace 保持依赖查找祖先链；投影核对 Svelte/TypeScript 工具链身份。固定原配置有效 `rootDir`，包括 composite 隐式默认的原配置目录。有效 `outDir`、`declarationDir` 保持原编译上下文，执行配置迁移不能改变 Project Reference 声明映射。[映射回归](../../../packages/limina/src/__tests__/svelte-check-config.spec.ts)断言真实 TypeScript Program 的引用重定向及输出文件名，而非仅比较 JSON。
+[源配置收集](../../../packages/limina/src/core/build-graph/source-config-collection.ts)在生成图产物前，将受管 solution 中缺失或不支持的成员报告到声明它的配置上。只有普通源配置可作为成员。迁移仍收集输入诊断来制定恢复计划。
+
+如果声明映射是源配置唯一有效的映射设置，生成声明或用户产物配置关闭它时会清除继承的 `mapRoot`。启用 `sourceMap` 或用户产物声明映射时，`mapRoot` 继续生效。[生成配置写入器](../../../packages/limina/src/core/build-graph/generated-configs.ts)
+
+Svelte 检查配置从有生产者声明证据的 `framework-declaration` 边推导引用。`framework-schedule` 边决定执行顺序。检查配置有源码调度依赖且未被其他 Project Reference 指向时，使用覆盖工作区的 `rootDir`，并在 composite 构建成员规则之外检查源码闭包。源码归属和检查配置的根文件仍来自原始项目。
+
+Svelte `.check` 配置继承原配置，显式投影 references 和解析结果中的原始 `svelteOptions`，保留原始源码身份。源配置目录下的受管 namespace 保持依赖查找祖先链。投影核对 Svelte/TypeScript 工具链身份。保留原构建上下文的检查配置固定有效 `rootDir`，包括 composite 隐式默认的原配置目录。有效 `outDir`、`declarationDir` 保持原编译上下文和 Project Reference 声明映射。[映射回归](../../../packages/limina/src/__tests__/svelte-check-config.spec.ts)断言 TypeScript Program 的引用重定向及输出文件名。
 
 真实生产者输出映射决定声明镜像文件名和内容。增加的 `rootDirs` 支持相对路径解析，但不授予归属或构建权限。Svelte 源码重定向保持开启，普通 TypeScript 依赖也可能重定向到源码。Vue 组件请求必须选中 receipt 绑定的声明；通配 ambient 垫片和生产者构建成功均不能证明消费者实际绑定。最终消费者重采集核对最终 references，原始 roots 与 Source/Proof 身份仍与生成文件分离。
 

@@ -3564,6 +3564,91 @@ describe('runCheckerTypecheck', () => {
     },
   );
 
+  it('checks Svelte peers with mutual source dependencies without creating project references', async () => {
+    const calls: TypecheckTarget[] = [];
+    const peerConfig = tsconfig({
+      compilerOptions: {
+        composite: true,
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        noEmit: true,
+        noLib: true,
+        types: [],
+      },
+      include: ['*.svelte', '*.ts'],
+    });
+    const fixture = await createFixture({
+      'tsconfig.json': tsconfig({
+        files: [],
+        references: [{ path: './a' }, { path: './b' }],
+      }),
+      'a/tsconfig.json': peerConfig,
+      'a/types.ts': 'export interface Item { value: number }',
+      'a/View.svelte':
+        '<script lang="ts">import type { Item } from "../b/types"; const item: Item = { value: 1 };</script><p>{item.value}</p>',
+      'b/tsconfig.json': peerConfig,
+      'b/types.ts': 'export interface Item { value: number }',
+      'b/View.svelte':
+        '<script lang="ts">import type { Item } from "../a/types"; const item: Item = { value: 2 };</script><p>{item.value}</p>',
+    });
+
+    try {
+      const result = await runCheckerTypecheck({
+        config: withFixtureGovernanceRoot({
+          configPath: fixture.path('limina.config.mjs'),
+          rootDir: fixture.rootDir,
+          scope: {
+            checkers: {
+              'svelte-check': {
+                include: ['a/tsconfig.json', 'b/tsconfig.json'],
+              },
+            },
+          },
+        }),
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      const checkPaths = ['a', 'b'].map((peer) =>
+        fixture.path(peer, '.limina/check/tsconfig.check.json'),
+      );
+      expect(calls).toHaveLength(checkPaths.length);
+      expect(calls.map((target) => target.args.at(-1))).toEqual(
+        expect.arrayContaining(checkPaths),
+      );
+      for (const checkPath of checkPaths) {
+        expect(JSON.parse(await readFile(checkPath, 'utf8'))).toMatchObject({
+          compilerOptions: {
+            composite: false,
+            rootDir: fixture.path(),
+          },
+          references: [],
+        });
+      }
+      const manifest: unknown = JSON.parse(
+        await readFile(fixture.path('.limina/manifest.json'), 'utf8'),
+      );
+      expect(manifest).toHaveProperty(
+        'dependencyEdges',
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'framework-schedule',
+            fromConfig: 'a/tsconfig.json',
+            toConfig: 'b/tsconfig.json',
+          }),
+          expect.objectContaining({
+            kind: 'framework-schedule',
+            fromConfig: 'b/tsconfig.json',
+            toConfig: 'a/tsconfig.json',
+          }),
+        ]),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('discovers framework targets without checking build-only peers', async () => {
     const calls: TypecheckTarget[] = [];
     const fixture = await createFixture({
