@@ -3596,7 +3596,7 @@ describe('runCheckerTypecheck', () => {
       const result = await runCheckerTypecheck({
         config: withFixtureGovernanceRoot({
           configPath: fixture.path('limina.config.mjs'),
-          rootDir: fixture.rootDir,
+          rootDir: fixture.path(),
           scope: {
             checkers: {
               'svelte-check': {

@@ -667,7 +667,7 @@ jobs:
         if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.setup.outcome == 'success' && steps.admit.outcome == 'success' && steps.restore.outcome == 'success' && steps.admit.outputs.run_package_validation == 'true' }}
       - name: ci/migrate_unit
         id: migrate_unit
-        run: pnpm --filter limina-migrate run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml
+        run: pnpm --filter limina-migrate run test:unit --silent=passed-only --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml
         shell: bash
         env:
           VITEST_MAX_WORKERS: "2"

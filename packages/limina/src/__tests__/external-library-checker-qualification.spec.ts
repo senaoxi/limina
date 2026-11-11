@@ -193,6 +193,108 @@ async function addNormalDependency(
     await writeFile(fixture.path('b/extra.js'), 'export const extra = 1;');
 }
 
+async function createCacheCheckerFixture(isCompatible: boolean) {
+  const fixture = await createFixture('path');
+  try {
+    if (isCompatible) await addNormalDependency(fixture);
+    await writeFile(
+      fixture.path('package.json'),
+      JSON.stringify({
+        name: 'fixture',
+        private: true,
+        packageManager: 'pnpm@12.10.1',
+      }),
+    );
+    await writeFile(
+      fixture.path('pnpm-lock.yaml'),
+      "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  a: {}\n  b: {}\n  c: {}\n",
+    );
+    await writeFile(
+      fixture.path('limina.config.mjs'),
+      'export default {scope:{checkers:{tsgo:{include:["a/tsconfig.json","b/tsconfig.json","c/tsconfig.json"]}}}};',
+    );
+    const url = (name: string) =>
+      new URL(`../${name}.ts`, import.meta.url).href;
+    const runner = fixture.path('cache-runner.mjs');
+    await writeFile(
+      runner,
+      `
+import {loadConfig} from ${JSON.stringify(url('config/loader'))};
+import {LiminaPreflightManager} from ${JSON.stringify(url('preflight/manager'))};
+import {ExecutionAdmission} from ${JSON.stringify(url('typecheck/admission/execution-admission'))};
+import {executeAuthorizedTypecheck} from ${JSON.stringify(url('typecheck/checker/typecheck-execution'))};
+import {createCheckerTarget,createDefaultRunner} from ${JSON.stringify(url('typecheck/targets'))};
+const config=await loadConfig({configPath:${JSON.stringify(fixture.path('limina.config.mjs'))}});
+const events=[];
+const preflight=new LiminaPreflightManager({config,analysisCache:true,metrics:{record:e=>events.push(e)}});
+try {
+  const graph=(await preflight.ensureGeneratedArtifactsMaterialized()).graph;
+  const checker=graph.checkers.find(c=>c.name==='tsgo');
+  const source=${JSON.stringify(fixture.path('a/tsconfig.json'))};
+  const target=createCheckerTarget({checker,configPath:graph.sourceToBuild.get('tsgo').get(source).path,executionKind:'build',projectRootDir:config.rootDir,sourceConfigPath:source});
+  const admission=new ExecutionAdmission(preflight,graph,[target]);
+  let launches=0;
+  const outcome=await executeAuthorizedTypecheck({admission: admission},target,(target,options)=>{launches++;return createDefaultRunner({stdio:'ignore'})(target,options);});
+  const memoryHit=await preflight.ensureGeneratedGraph()===graph;
+  await preflight.publishAnalysisCache();
+  console.log(JSON.stringify({events,outcome,launches,memoryHit}));
+} finally {preflight.dispose();}
+`,
+    );
+    const loader = pathToFileURL(require.resolve('tsx')).href;
+    return {
+      ...fixture,
+      run() {
+        const output = execFileSync(
+          process.execPath,
+          ['--import', loader, runner],
+          {
+            encoding: 'utf8',
+            timeout: 20_000,
+          },
+        );
+        return JSON.parse(output.trim()) as {
+          events: { kind: string; count?: number }[];
+          launches: number;
+          memoryHit: boolean;
+          outcome: { status: number | 'admission-rejected' };
+        };
+      },
+    };
+  } catch (error) {
+    await fixture.cleanup();
+    throw error;
+  }
+}
+
+async function replaceFixtureNativePackage(
+  fixture: Awaited<ReturnType<typeof createCacheCheckerFixture>>,
+  { hasNativeApi = true }: { hasNativeApi?: boolean } = {},
+): Promise<string> {
+  const alternate = fixture.path('.toolchain/native');
+  await cp(nativeRoot, alternate, { recursive: true, dereference: true });
+  const manifestPath = path.join(alternate, 'package.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  manifest.version = '7.0.0-dev.99999999.1';
+  if (!hasNativeApi) delete manifest.exports['./unstable/sync'];
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  const platform = `@typescript/native-preview-${process.platform}-${process.arch}`;
+  const nativeRequire = createRequire(path.join(nativeRoot, 'package.json'));
+  const platformManifest = nativeRequire.resolve(`${platform}/package.json`);
+  await symlink(
+    path.dirname(platformManifest),
+    fixture.path('node_modules', platform),
+    'junction',
+  );
+  await rm(fixture.path('node_modules/@typescript/native-preview'));
+  await symlink(
+    alternate,
+    fixture.path('node_modules/@typescript/native-preview'),
+    'junction',
+  );
+  return alternate;
+}
+
 async function managedBuild(
   fixture: Awaited<ReturnType<typeof createFixture>>,
   checkerName = 'tsgo',
@@ -586,73 +688,12 @@ describe('external-library semantic authority and Checker execution', () => {
   });
 
   it.each([false, true])(
-    'restores host facts and checks executor identity without the Native API (succeeds: %s)',
+    'restores host facts and invalidates them after the tsgo executor changes (succeeds: %s)',
     async (isCompatible) => {
-      const fixture = await createFixture('path');
+      const fixture = await createCacheCheckerFixture(isCompatible);
       try {
-        if (isCompatible) await addNormalDependency(fixture);
-        await writeFile(
-          fixture.path('package.json'),
-          JSON.stringify({
-            name: 'fixture',
-            private: true,
-            packageManager: 'pnpm@12.10.1',
-          }),
-        );
-        await writeFile(
-          fixture.path('pnpm-lock.yaml'),
-          "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  a: {}\n  b: {}\n  c: {}\n",
-        );
-        await writeFile(
-          fixture.path('limina.config.mjs'),
-          'export default {scope:{checkers:{tsgo:{include:["a/tsconfig.json","b/tsconfig.json","c/tsconfig.json"]}}}};',
-        );
-        const url = (name: string) =>
-          new URL(`../${name}.ts`, import.meta.url).href;
-        await writeFile(
-          fixture.path('cache-runner.mjs'),
-          `
-import {loadConfig} from ${JSON.stringify(url('config/loader'))};
-import {LiminaPreflightManager} from ${JSON.stringify(url('preflight/manager'))};
-import {ExecutionAdmission} from ${JSON.stringify(url('typecheck/admission/execution-admission'))};
-import {executeAuthorizedTypecheck} from ${JSON.stringify(url('typecheck/checker/typecheck-execution'))};
-import {createCheckerTarget,createDefaultRunner} from ${JSON.stringify(url('typecheck/targets'))};
-const config=await loadConfig({configPath:${JSON.stringify(fixture.path('limina.config.mjs'))}});
-const events=[];
-const preflight=new LiminaPreflightManager({config,analysisCache:true,metrics:{record:e=>events.push(e)}});
-try {
-  const graph=(await preflight.ensureGeneratedArtifactsMaterialized()).graph;
-  const checker=graph.checkers.find(c=>c.name==='tsgo');
-  const source=${JSON.stringify(fixture.path('a/tsconfig.json'))};
-  const target=createCheckerTarget({checker,configPath:graph.sourceToBuild.get('tsgo').get(source).path,executionKind:'build',projectRootDir:config.rootDir,sourceConfigPath:source});
-  const admission=new ExecutionAdmission(preflight,graph,[target]);
-  let launches=0;
-  const outcome=await executeAuthorizedTypecheck({admission: admission},target,(target,options)=>{launches++;return createDefaultRunner({stdio:'ignore'})(target,options);});
-  const memoryHit=await preflight.ensureGeneratedGraph()===graph;
-  await preflight.publishAnalysisCache();
-  console.log(JSON.stringify({events,outcome,launches,memoryHit}));
-} finally {preflight.dispose();}
-`,
-        );
-        const run = () => {
-          const loader = pathToFileURL(require.resolve('tsx')).href;
-          const output = execFileSync(
-            process.execPath,
-            ['--import', loader, fixture.path('cache-runner.mjs')],
-            { encoding: 'utf8', timeout: 20_000 },
-          );
-          return JSON.parse(output.trim()) as {
-            events: { kind: string; count?: number }[];
-            launches: number;
-            memoryHit: boolean;
-            outcome: {
-              status: number | 'admission-rejected';
-              decision?: string;
-            };
-          };
-        };
-        const cold = run();
-        const restored = run();
+        const cold = fixture.run();
+        const restored = fixture.run();
         expect(cold.events).toContainEqual(
           expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
         );
@@ -660,35 +701,8 @@ try {
           expect.objectContaining({ kind: 'graphHits', count: 1 }),
         );
         // Change only a fixture-owned tool identity; do not mutate the shared installation.
-        const alternate = fixture.path('.toolchain/native');
-        await cp(nativeRoot, alternate, { recursive: true, dereference: true });
-        const manifest = JSON.parse(
-          await readFile(path.join(alternate, 'package.json'), 'utf8'),
-        );
-        manifest.version = '7.0.0-dev.99999999.1';
-        await writeFile(
-          path.join(alternate, 'package.json'),
-          JSON.stringify(manifest),
-        );
-        const platform = `@typescript/native-preview-${process.platform}-${process.arch}`;
-        const nativeRequire = createRequire(
-          path.join(nativeRoot, 'package.json'),
-        );
-        const platformManifest = nativeRequire.resolve(
-          `${platform}/package.json`,
-        );
-        await symlink(
-          path.dirname(platformManifest),
-          fixture.path('node_modules', platform),
-          'junction',
-        );
-        await rm(fixture.path('node_modules/@typescript/native-preview'));
-        await symlink(
-          alternate,
-          fixture.path('node_modules/@typescript/native-preview'),
-          'junction',
-        );
-        const changed = run();
+        await replaceFixtureNativePackage(fixture);
+        const changed = fixture.run();
         expect(
           changed.events
             .filter((event) => event.kind === 'graphHits')
@@ -704,31 +718,36 @@ try {
           if (isCompatible) expect(result.outcome.status).toBe(0);
           else expect(result.outcome.status).not.toBe(0);
         }
-        if (isCompatible) {
-          // Remove only a fixture-owned observation capability. The real binary
-          // and matching target still exist, so the executor remains usable.
-          delete manifest.exports['./unstable/sync'];
-          await writeFile(
-            path.join(alternate, 'package.json'),
-            JSON.stringify(manifest),
-          );
-          const missing = run();
-          expect(missing.launches).toBe(1);
-          expect(missing.outcome.status).toBe(0);
-          await writeFile(
-            path.join(alternate, 'dist/unused-observer.js'),
-            'throw new Error("must not load observer");',
-          );
-          const observerChanged = run();
-          expect(observerChanged.events).toContainEqual(
-            expect.objectContaining({ kind: 'graphHits', count: 1 }),
-          );
-          expect(observerChanged.launches).toBe(1);
-          expect(observerChanged.outcome.status).toBe(0);
-        }
       } finally {
         await fixture.cleanup();
       }
     },
   );
+
+  it('restores host facts without the Native API when an unused observer changes', async () => {
+    const fixture = await createCacheCheckerFixture(true);
+    try {
+      const alternate = await replaceFixtureNativePackage(fixture, {
+        hasNativeApi: false,
+      });
+      const cold = fixture.run();
+      expect(cold.events).toContainEqual(
+        expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
+      );
+      await writeFile(
+        path.join(alternate, 'dist/unused-observer.js'),
+        'throw new Error("must not load observer");',
+      );
+      const restored = fixture.run();
+      expect(restored.events).toContainEqual(
+        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      );
+      for (const result of [cold, restored]) {
+        expect(result.launches).toBe(1);
+        expect(result.outcome.status).toBe(0);
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
 });

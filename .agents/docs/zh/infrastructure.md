@@ -52,6 +52,8 @@ docs 隐私审查从远程 main `8f8892f6a491adc2933bee1e438d19d166ad064b` 开�
 
 冻结计划逐项列出必需 Job、原生 tuple、shard 和 Step。Repository Gates 在 Linux 22 Bootstrap 私有工具后只执行一次 gates/format/lint，其 Bootstrap Artifact 供 Linux 22 Native Build 使用；其他原生 tuple 独立 Bootstrap。每个 Validation 环境分别运行根 Checker、产物检查、Migrate Unit、Tooling 和两套 Integration；显式检查取消状态、Setup 和 Artifact 前置条件，单个领域失败不阻断其他独立 Step。消费者等待 Native Matrix 完成后只准入自己的 producer，不以其他 tuple 的聚合成功为条件。精确相同的 OS/Node tuple 去重。Core 只有在规定的所有原生构建、Checker 和产物检查成功后才能推进。
 
+Migrate Unit 步骤使用 Vitest 的 `--silent=passed-only`，防止通过的负向用例将预期诊断输出给 `setup-node` 的问题匹配器并生成 TypeScript 错误标注。失败用例仍输出控制台诊断，步骤仍发布 JUnit 结果。
+
 [Filter](../../../.github/ci/filters.yml)按领域基线分类最终 Git 文件树差异，[Policy 与执行清单](../../../packages/gates/src/ci/contract.ts)决定验证影响。dorny/paths-filter v4.0.3 固定为 `ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d`，使用 Node 24、本地 Git（`token: ''`）、显式 base SHA、JSON 列表和 `some-with-excludes`。其 MIT 许可的发布入口只负责分类，不负责 Checkpoint。哈希、历史和证据复用 Node 内建能力、Git 与既有 GitHub REST API，不新增 npm 依赖、数据库、Tag 或共享 Checkpoint 文件。独立 NUL parser 对照 `git diff --no-renames --name-status -z` 审计 Action 输出。未知路径、基线树中的新目录、特殊 Git 条目、无效 UTF-8、输出缺失、控制合同变化或预算超限一律全量。本地 Node 24 发布入口实验发现：含 LF 的路径可能被较窄 Filter 匹配，却被 `all_files: '**'` 漏掉；独立集合审计拒绝该差异，不丢弃路径。
 
 [Checkpoint Resolver](../../../packages/gates/src/ci/history.ts)分别查询 Repository Gates、Core、Limina Unit、Migrate Unit、Tooling、Integration、Smoke、Windows、Checker Compatibility 和 Docs 的 main push 执行历史。成功证据最多 30 天，解析预算为 60 秒和 1,000 条 Run；分页不完整、来源不明或证据缺失退回全量。发现候选后，对相关祖先区间逐 SHA 查询，不使用创建时间或 success 过滤，覆盖窗口前创建但后来 rerun 的记录。最近实际失败使旧成功失效；unaffected 跳过不推进或替换证据。Checkpoint 之后的失败会强制执行，即使后续恢复让净 Diff 为空。部分 rerun 只有在 API 时间戳、Step 状态、原始 attempt 和收据能唯一证明来源时才复用 Job，禁止跨 Run 拼接成功。

@@ -245,7 +245,9 @@ interface CliBuildFixture {
   rootDir: string;
 }
 
-async function createCliBuildFixture(): Promise<CliBuildFixture> {
+async function createCliBuildFixture(
+  compilerOptions: { noLib?: boolean } = {},
+): Promise<CliBuildFixture> {
   const rootDirectoryTemporaryPath = await mkdtemp(
     path.join(tmpdir(), 'limina-cli-build-'),
   );
@@ -334,6 +336,7 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
       compilerOptions: {
         ...buildCompilerOptions,
         noEmit: true,
+        ...compilerOptions,
       },
       include: ['src/**/*.ts'],
     }),
@@ -358,8 +361,9 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
 
 async function withCliBuildFixture(
   callback: (fixture: CliBuildFixture) => Promise<void>,
+  compilerOptions?: { noLib?: boolean },
 ): Promise<void> {
-  const fixture = await createCliBuildFixture();
+  const fixture = await createCliBuildFixture(compilerOptions);
 
   try {
     await callback(fixture);
@@ -1823,36 +1827,39 @@ export default {scope: {checkers: {
   ])(
     'rejects an unsafe internal %s runtime directory before checker spawn',
     async (_label, arguments_, runtimeDirectory) => {
-      await withCliBuildFixture(async ({ cliPath, rootDir }) => {
-        const externalDirectory = path.join(rootDir, 'external');
-        const markerPath = path.join(externalDirectory, 'marker.txt');
-        const internalPath = path.join(rootDir, '.limina', runtimeDirectory);
-        await writeText(markerPath, 'external marker bytes\n');
-        await mkdir(path.dirname(internalPath), { recursive: true });
-        await symlink(externalDirectory, internalPath);
+      await withCliBuildFixture(
+        async ({ cliPath, rootDir }) => {
+          const externalDirectory = path.join(rootDir, 'external');
+          const markerPath = path.join(externalDirectory, 'marker.txt');
+          const internalPath = path.join(rootDir, '.limina', runtimeDirectory);
+          await writeText(markerPath, 'external marker bytes\n');
+          await mkdir(path.dirname(internalPath), { recursive: true });
+          await symlink(externalDirectory, internalPath);
 
-        const output = await runCliExpectFailure({
-          args: arguments_,
-          cliPath,
-          rootDir,
-        });
+          const output = await runCliExpectFailure({
+            args: arguments_,
+            cliPath,
+            rootDir,
+          });
 
-        expect(unwrapReport(output)).toContain('symbolic link');
-        await expect(
-          readFile(path.join(rootDir, 'tsc-args.txt')),
-        ).rejects.toMatchObject({
-          code: 'ENOENT',
-        });
-        await expect(readFile(markerPath, 'utf8')).resolves.toBe(
-          'external marker bytes\n',
-        );
-        await expect(readdir(externalDirectory)).resolves.toEqual([
-          'marker.txt',
-        ]);
-        await expect(
-          lstat(path.join(externalDirectory, 'lib.tsbuildinfo')),
-        ).rejects.toMatchObject({ code: 'ENOENT' });
-      });
+          expect(unwrapReport(output)).toContain('symbolic link');
+          await expect(
+            readFile(path.join(rootDir, 'tsc-args.txt')),
+          ).rejects.toMatchObject({
+            code: 'ENOENT',
+          });
+          await expect(readFile(markerPath, 'utf8')).resolves.toBe(
+            'external marker bytes\n',
+          );
+          await expect(readdir(externalDirectory)).resolves.toEqual([
+            'marker.txt',
+          ]);
+          await expect(
+            lstat(path.join(externalDirectory, 'lib.tsbuildinfo')),
+          ).rejects.toMatchObject({ code: 'ENOENT' });
+        },
+        { noLib: true },
+      );
     },
   );
 
