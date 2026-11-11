@@ -132,54 +132,60 @@ describe('persistent Vue and mixed graph analysis', () => {
     expectRestored(f.run());
   });
 
-  it('requalifies a cached JS service reference when allowJs changes', () => {
-    const f = fixture();
-    f.write(
-      'limina.config.mjs',
-      `export default {scope:{source:{include:['vue/**/*.vue','vue/**/*.ts']},checkers:{'vue-tsc':{include:['vue/tsconfig.json','vue/provider/tsconfig.json']}}}};`,
-    );
-    const options = {
-      composite: true,
-      types: [],
-      target: 'ES2022',
-      module: 'ESNext',
-      moduleResolution: 'Bundler',
-      noImplicitAny: false,
-    };
-    f.write(
-      'vue/a.ts',
-      'import B from "./provider/B.vue"; export const component = B;',
-    );
-    f.write(
-      'vue/provider/B.vue',
-      '<script lang="js">export const value = 1;</script>',
-    );
-    f.write(
-      'vue/provider/tsconfig.json',
-      JSON.stringify({
-        compilerOptions: { ...options, allowJs: true },
-        files: ['B.vue'],
-      }),
-    );
-    for (const isJavaScriptAllowed of [false, true]) {
+  it.each([false, true])(
+    'requalifies a cached JS service reference when allowJs becomes %s',
+    (isNextJavaScriptAllowed) => {
+      const f = fixture();
       f.write(
-        'vue/tsconfig.json',
+        'limina.config.mjs',
+        `export default {scope:{source:{include:['vue/**/*.vue','vue/**/*.ts']},checkers:{'vue-tsc':{include:['vue/tsconfig.json','vue/provider/tsconfig.json']}}}};`,
+      );
+      const options = {
+        composite: true,
+        types: [],
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        noImplicitAny: false,
+      };
+      f.write(
+        'vue/a.ts',
+        'import B from "./provider/B.vue"; export const component = B;',
+      );
+      f.write(
+        'vue/provider/B.vue',
+        '<script lang="js">export const value = 1;</script>',
+      );
+      f.write(
+        'vue/provider/tsconfig.json',
         JSON.stringify({
-          compilerOptions: { ...options, allowJs: isJavaScriptAllowed },
-          files: ['a.ts'],
+          compilerOptions: { ...options, allowJs: true },
+          files: ['B.vue'],
         }),
       );
-      expectCold(f.run());
-      const data = snapshotCodec.decodeData(
-        Object.values(f.snapshot().graphs)[0]!.data,
-      ) as StoredGraphData;
-      expect(
-        data.governedSources.get('vue-tsc')!.get(f.path('vue/tsconfig.json'))!
-          .declarationReferences.size,
-      ).toBe(isJavaScriptAllowed ? 1 : 0);
+      for (const isJavaScriptAllowed of [
+        !isNextJavaScriptAllowed,
+        isNextJavaScriptAllowed,
+      ]) {
+        f.write(
+          'vue/tsconfig.json',
+          JSON.stringify({
+            compilerOptions: { ...options, allowJs: isJavaScriptAllowed },
+            files: ['a.ts'],
+          }),
+        );
+        expectCold(f.run());
+        const data = snapshotCodec.decodeData(
+          Object.values(f.snapshot().graphs)[0]!.data,
+        ) as StoredGraphData;
+        expect(
+          data.governedSources.get('vue-tsc')!.get(f.path('vue/tsconfig.json'))!
+            .declarationReferences.size,
+        ).toBe(isJavaScriptAllowed ? 1 : 0);
+      }
       expectRestored(f.run());
-    }
-  });
+    },
+  );
 
   it.each(['appears', 'disappears'] as const)(
     'reassesses a Pending target that %s across processes',

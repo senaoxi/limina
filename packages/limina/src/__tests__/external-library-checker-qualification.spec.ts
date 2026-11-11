@@ -585,9 +585,13 @@ describe('external-library semantic authority and Checker execution', () => {
     }
   });
 
-  it.each([false, true])(
-    'restores host facts and checks executor identity without the Native API (succeeds: %s)',
-    async (isCompatible) => {
+  it.each([
+    { isCompatible: false, change: 'executor identity' },
+    { isCompatible: true, change: 'executor identity' },
+    { isCompatible: true, change: 'unused observer without the Native API' },
+  ])(
+    'qualifies cached host facts after changing $change (succeeds: $isCompatible)',
+    async ({ isCompatible, change }) => {
       const fixture = await createFixture('path');
       try {
         if (isCompatible) await addNormalDependency(fixture);
@@ -651,14 +655,18 @@ try {
             };
           };
         };
-        const cold = run();
-        const restored = run();
-        expect(cold.events).toContainEqual(
-          expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
-        );
-        expect(restored.events).toContainEqual(
-          expect.objectContaining({ kind: 'graphHits', count: 1 }),
-        );
+        const initialRuns = [];
+        if (change === 'executor identity') {
+          const cold = run();
+          const restored = run();
+          expect(cold.events).toContainEqual(
+            expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
+          );
+          expect(restored.events).toContainEqual(
+            expect.objectContaining({ kind: 'graphHits', count: 1 }),
+          );
+          initialRuns.push(cold, restored);
+        }
         // Change only a fixture-owned tool identity; do not mutate the shared installation.
         const alternate = fixture.path('.toolchain/native');
         await cp(nativeRoot, alternate, { recursive: true, dereference: true });
@@ -666,6 +674,10 @@ try {
           await readFile(path.join(alternate, 'package.json'), 'utf8'),
         );
         manifest.version = '7.0.0-dev.99999999.1';
+        if (change !== 'executor identity') {
+          // The real binary remains usable without an observation API.
+          delete manifest.exports['./unstable/sync'];
+        }
         await writeFile(
           path.join(alternate, 'package.json'),
           JSON.stringify(manifest),
@@ -697,24 +709,14 @@ try {
         expect(changed.events).toContainEqual(
           expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
         );
-        for (const result of [cold, restored, changed]) {
+        for (const result of [...initialRuns, changed]) {
           expect(result.launches).toBe(1);
           expect(result.memoryHit).toBe(true);
           expect(result.outcome.status).toEqual(expect.any(Number));
           if (isCompatible) expect(result.outcome.status).toBe(0);
           else expect(result.outcome.status).not.toBe(0);
         }
-        if (isCompatible) {
-          // Remove only a fixture-owned observation capability. The real binary
-          // and matching target still exist, so the executor remains usable.
-          delete manifest.exports['./unstable/sync'];
-          await writeFile(
-            path.join(alternate, 'package.json'),
-            JSON.stringify(manifest),
-          );
-          const missing = run();
-          expect(missing.launches).toBe(1);
-          expect(missing.outcome.status).toBe(0);
+        if (change !== 'executor identity') {
           await writeFile(
             path.join(alternate, 'dist/unused-observer.js'),
             'throw new Error("must not load observer");',

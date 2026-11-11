@@ -62,6 +62,8 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 [CLI 测试](../../../packages/limina/src/__tests__/cli.spec.ts)中的输出隐藏用例仅为数值导出 fixture 省略默认标准库。其编译器 shim 观察进程报告而非类型检查；无关的标准库发现增加了开销，该用例在 Windows CI 超时。断言退出状态和输出隐藏之前，检查 shim 的启动标记，防止较早的准备失败让测试误通过。保留真实的隔离 CLI、编译器进程及 30 秒时限。
 
+Watch 参数用例使用同样的数值 fixture 限定：省略默认标准库，同时保留真实隔离 CLI、编译器 shim 及 `--watch`／`--preserveWatchOutput` 两项断言，时限仍为 30 秒。[Windows / Node 22 运行](https://github.com/senaoxi/limina/actions/runs/42867775766)中还有两组缓存回归超过单例时限。[Vue 缓存测试](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)为每个 `allowJs` 切换方向使用新 fixture，保留冷启动发布、变化后引用资格检查及新进程恢复，在 60 秒内启动三次 runner。[外部库资格测试](../../../packages/limina/src/__tests__/external-library-checker-qualification.spec.ts)将执行器身份变化与缺少 Native 观察 API 时的执行分开：身份用例保留 cold／warm／changed 执行，以及编译器成功和失败两种结果；独立 observer 用例保留真实执行与修改未使用 observer 代码后的恢复。每例在 30 秒内最多启动三次 runner。两组缓存 fixture 均保留默认标准库。本地受控延迟证明的是单例工作量减少，不是原生 Windows 耗时。
+
 真实 HTTP timeout fixture 的客户端预算须容纳首次客户端初始化与进程调度，服务端延迟须大于该预算。[Metadata](../../../packages/limina/fixtures/detectors/release/registry-metadata-timeout/case.mts) 与 [tarball](../../../packages/limina/fixtures/detectors/release/registry-tarball-timeout/case.mts) timeout fixture 保留精确的请求次数与身份断言，以及包含配置预算的类型化 timeout evidence。同步调整两个时序输入时，仍保留刻意超时的条件；生产时限与 test runner deadline 保持独立。
 
 从[根清单](../../../package.json)与所属 package 的 `package.json` 查找可用脚本。按改动运行相关的 `test:unit`、`test:tooling`、`test:integration`、`test:smoke`、`docs:build`、`typecheck`、`check` 和 `lint:packages` 脚本，同时遵循适用的 package 指令。若某项相关窄检查的失败会推翻当前实现路径，应在受影响边界首次可验证时就运行，不要把反馈延迟到 commit 或交付阶段；最终验收仍须对完整改动重新运行所有必需门禁。

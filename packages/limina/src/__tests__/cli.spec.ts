@@ -1934,6 +1934,11 @@ export default {scope: {checkers: {
 
   it('passes watch flags through checker build from the public command', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      // The numeric source and compiler shim exercise argv, not library checking.
+      const projectPath = path.join(rootDir, 'packages/pkg/tsconfig.lib.json');
+      const project = JSON.parse(await readFile(projectPath, 'utf8'));
+      project.compilerOptions.noLib = true;
+      await writeText(projectPath, stringifyConfig(project));
       await execFileAsync(
         process.execPath,
         [
