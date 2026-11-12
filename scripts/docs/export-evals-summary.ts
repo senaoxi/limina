@@ -211,7 +211,7 @@ export function buildCurrentSummary(
     references.task.file,
     `./evals-task-results/${latest.campaignId}-${identity}.json`,
   );
-  assert.equal(source.bankRevision, 'v2.1');
+  assert.ok(['v2.1', 'v2.2'].includes(source.bankRevision));
   assert.equal(latest.bankRevision, source.bankRevision);
   assert.ok(['development', 'sealed'].includes(source.stage));
   assert.equal(latest.stage ?? 'sealed', source.stage);

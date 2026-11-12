@@ -17,6 +17,7 @@ import {
   calibrateBank,
   prepareBankV2,
   prepareBankV21,
+  prepareBankV22,
 } from './controller/task-bank.ts';
 import { appendAttribution } from './core/attribution.ts';
 import type { BatchKind } from './core/experiment.ts';
@@ -82,10 +83,16 @@ if (
   if (
     values.bank !== undefined &&
     values.bank !== 'v2' &&
-    values.bank !== 'v2.1'
+    values.bank !== 'v2.1' &&
+    values.bank !== 'v2.2'
   )
-    throw new Error('prepare-bank requires bank v2 or v2.1');
-  const prepareBank = values.bank === 'v2.1' ? prepareBankV21 : prepareBankV2;
+    throw new Error('prepare-bank requires bank v2, v2.1 or v2.2');
+  const prepareBank =
+    values.bank === 'v2.2'
+      ? prepareBankV22
+      : values.bank === 'v2.1'
+        ? prepareBankV21
+        : prepareBankV2;
   process.stdout.write(
     `${JSON.stringify(
       await prepareBank(values['source-store'], values.output, values.prompts),
@@ -93,7 +100,8 @@ if (
   );
 } else if (
   positionals[0] === 'calibrate' &&
-  (values.bank === 'v2' || values.bank === 'v2.1') &&
+  isBankRevision(values.bank) &&
+  values.bank !== 'v1' &&
   values.config
 ) {
   process.stdout.write(

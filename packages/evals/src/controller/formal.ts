@@ -148,6 +148,16 @@ async function runnerDigest() {
     'tasks/banks',
     'tasks/v2/index',
     'tasks/v2_1/index',
+    'tasks/v2_2/index',
+    'graders/v2_2/I01',
+    'graders/v2_2/K01',
+    'graders/v2_2/K03',
+    'graders/v2_2/P01',
+    'graders/v2_2/R02',
+    'graders/v2_2/S02',
+    'graders/v2_2/W02',
+    'graders/v2_2/workflow-command',
+
     'tasks/v2_1/I01',
     'tasks/v2_1/I03',
     'tasks/v2_1/R02',
@@ -531,7 +541,8 @@ function assertFormalControl(
     throw new Error('Unsupported task bank revision');
   if (
     mode === 'legacy-dispatch' &&
-    (control.bankRevision === 'v2' || control.bankRevision === 'v2.1')
+    control.bankRevision !== undefined &&
+    control.bankRevision !== 'v1'
   )
     throw new Error(
       `${control.bankRevision.toUpperCase()} dispatch requires a Campaign and frozen Model Profile`,
@@ -554,7 +565,8 @@ function assertFormalControl(
   )
     throw new Error('Campaign must be a single controlled path segment');
   if (
-    (control.bankRevision === 'v2' || control.bankRevision === 'v2.1') &&
+    control.bankRevision !== undefined &&
+    control.bankRevision !== 'v1' &&
     !control.taskCalibration
   )
     throw new Error(
@@ -713,7 +725,11 @@ export async function prepareFormalExecution(
   }
   bindCampaignInputs();
   async function verifyTaskCalibration(): Promise<void> {
-    if (control.bankRevision !== 'v2' && control.bankRevision !== 'v2.1')
+    if (
+      control.bankRevision !== 'v2' &&
+      control.bankRevision !== 'v2.1' &&
+      control.bankRevision !== 'v2.2'
+    )
       return;
     const edition = control.bankRevision.toUpperCase();
     const review = await json<{

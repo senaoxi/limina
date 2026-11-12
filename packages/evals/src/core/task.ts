@@ -47,7 +47,7 @@ export interface DependencyVariant {
 
 export interface TaskSpec {
   version: 2;
-  bankRevision?: 'v2' | 'v2.1';
+  bankRevision?: 'v2' | 'v2.1' | 'v2.2';
   id: string;
   split: 'dev' | 'sealed';
   domain: Domain;

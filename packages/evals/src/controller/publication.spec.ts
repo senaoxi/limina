@@ -59,7 +59,7 @@ test('campaign public projection retains missing models and omits private inject
   assert.throws(() => publicCampaign(altered), /profile/);
 });
 
-test('bound publication readers retain v1, v2 and v2.1 bank identities', async (t) => {
+test('bound publication readers retain historical and current bank identities', async (t) => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'eval-bank-readers-'));
   const root = await realpath(temporary);
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -70,7 +70,7 @@ test('bound publication readers retain v1, v2 and v2.1 bank identities', async (
   const invocation =
     'const {readCampaignPublication}=await import(process.argv[1]);process.stdout.write(JSON.stringify(await readCampaignPublication(process.argv[2],process.argv[3])));';
   const bankIds = new Set<string>();
-  for (const revision of ['v1', 'v2', 'v2.1'] as const) {
+  for (const revision of ['v1', 'v2', 'v2.1', 'v2.2'] as const) {
     const directory = path.join(root, revision);
     await mkdir(directory);
     const { campaign } = campaignFixture(revision);
@@ -121,7 +121,7 @@ test('bound publication readers retain v1, v2 and v2.1 bank identities', async (
     ]);
     assert.deepEqual(JSON.parse(child.stdout), data);
   }
-  assert.equal(bankIds.size, 3);
+  assert.equal(bankIds.size, 4);
 });
 
 test('publication is bound to campaign, raw journal, budget prefix and calculation before projection', async (t) => {

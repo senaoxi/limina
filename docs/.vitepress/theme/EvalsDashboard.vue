@@ -3,49 +3,22 @@ import { useData } from 'vitepress';
 import { computed, onMounted, onScopeDispose, ref, shallowRef } from 'vue';
 import EvalsRate from './EvalsRate.vue';
 import EvalsTaskTable from './EvalsTaskTable.vue';
-import type { PublicBankCalibration } from './evals-calibration-types';
 import type { PublicCampaign, PublishedAverage } from './evals-campaign-types';
 import index from './evals-campaigns.json';
 import { bindPublishedCohort } from './evals-cohorts';
 import {
   combinedCampaignEntries,
-  combinedModelRows,
-  withUsageRemeasurements,
+  currentBankModelRows,
   type CombinedModelRow,
   type UsageRemeasurement,
 } from './evals-combined';
-import currentSolI03Summary from './evals-current-i03-gpt-6.1-sol-results.json';
-import currentI03Summary from './evals-current-i03-results.json';
-import currentSummary from './evals-current-results.json';
-import currentSolI03Task from './evals-i03-gpt-6.1-sol-task-result.json';
-import currentI03Task from './evals-i03-task-result.json';
 import latestBank from './evals-latest-bank.json';
-import type { PublicCurrentSummary } from './evals-summary-types';
-import type { PublicTaskResult } from './evals-task-result-types';
-import latestTask from './evals-task-result.json';
 import usageRemeasurements from './evals-usage-remeasurements.json';
 const { lang } = useData();
 const zh = computed(() => lang.value.startsWith('zh'));
-const bank = latestBank as PublicBankCalibration;
-const selections = [
-  {
-    summary: currentSummary as PublicCurrentSummary,
-    task: latestTask as PublicTaskResult,
-  },
-  {
-    summary: currentI03Summary as PublicCurrentSummary,
-    task: currentI03Task as PublicTaskResult,
-  },
-  {
-    summary: currentSolI03Summary as PublicCurrentSummary,
-    task: currentSolI03Task as PublicTaskResult,
-  },
-];
-const entries = combinedCampaignEntries(
-  index.campaigns,
-  bank,
-  selections.map((selection) => selection.summary),
-);
+const bank = latestBank as Parameters<typeof currentBankModelRows>[1];
+// Historical task revisions retain their own reports; live comparisons use one bank.
+const entries = combinedCampaignEntries(index.campaigns, bank);
 const conditions = ['base', 'skill'] as const;
 const snapshots = import.meta.glob('./evals-campaigns/*.json', {
   import: 'default',
@@ -72,8 +45,9 @@ onMounted(async () => {
       }),
     );
     if (!disposed)
-      modelRows.value = withUsageRemeasurements(
-        combinedModelRows(loaded, bank, selections),
+      modelRows.value = currentBankModelRows(
+        loaded,
+        bank,
         usageRemeasurements.remeasurements as UsageRemeasurement[],
       );
   } catch {

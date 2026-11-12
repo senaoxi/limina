@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 2,
+  "kind": "task-bank-calibration",
+  "bankId": "2b0f90c79d3d7fc5a78e0e3080eeae533eb3b279f5d4bbfcd8dc75f317b0fe62",
+  "bankRevision": "v2.2",
+  "completedAt": "2026-11-11T14:59:43.636Z",
+  "scope": "task-calibration",
+  "modelPerformanceIncluded": false,
+  "calculationIdentity": "07fbc995043c32fef35c7ae92d3347f074a8990d4d387ccf46965a2877412955",
+  "sources": {
+    "indexSha256": "d563d907ad59630c66863374173a2acd57e98d2254e88313b006d5f4a004630d",
+    "bankSha256": "7c45aa430555d9a7b252d3291912df86c66032c4d64cbe63bc8d2aa4ce5bfcf2",
+    "reviewSha256": "7be15ae35b94a1ac0bb5b3fa06de17a3eced987f85799f970a0e808889bb1116",
+    "calibrationSha256": "c5f8873b4793025f2535318e88a6be7990353b54da578fe8ce6a7eb67f7645c0"
+  },
+  "inventory": {
+    "tasks": 26,
+    "development": 17,
+    "sealed": 9,
+    "domains": 8,
+    "negativeControls": 2
+  },
+  "graderCalibration": {
+    "cases": 296,
+    "matched": 296,
+    "correct": 78,
+    "incorrect": 144,
+    "unsafe": 74
+  },
+  "independentReview": {
+    "status": "passed",
+    "passed": 26,
+    "referenceAccess": false,
+    "equivalentInputs": 26
+  },
+  "tasks": [
+    {
+      "id": "C01",
+      "domain": "configuration",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 6,
+      "calibrationMatched": 6,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "C02",
+      "domain": "configuration",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "C03",
+      "domain": "configuration",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 15,
+      "calibrationMatched": 15,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "I01",
+      "domain": "initialization",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 17,
+      "calibrationMatched": 17,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "I02",
+      "domain": "initialization",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 14,
+      "calibrationMatched": 14,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "I03",
+      "domain": "initialization",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 16,
+      "calibrationMatched": 16,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "K01",
+      "domain": "checker",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "K02",
+      "domain": "checker",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 10,
+      "calibrationMatched": 10,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "K03",
+      "domain": "checker",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "N01",
+      "domain": "negative-control",
+      "split": "dev",
+      "role": "negative-control",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "N02",
+      "domain": "negative-control",
+      "split": "sealed",
+      "role": "negative-control",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "P01",
+      "domain": "package-release",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 12,
+      "calibrationMatched": 12,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "P02",
+      "domain": "package-release",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "P03",
+      "domain": "package-release",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 15,
+      "calibrationMatched": 15,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "R01",
+      "domain": "reference-graph",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "R02",
+      "domain": "reference-graph",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 12,
+      "calibrationMatched": 12,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "R03",
+      "domain": "reference-graph",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 7,
+      "calibrationMatched": 7,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "S01",
+      "domain": "source-governance",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 8,
+      "calibrationMatched": 8,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "S02",
+      "domain": "source-governance",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 17,
+      "calibrationMatched": 17,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "S03",
+      "domain": "source-governance",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "T01",
+      "domain": "troubleshooting",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 6,
+      "calibrationMatched": 6,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "T02",
+      "domain": "troubleshooting",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 11,
+      "calibrationMatched": 11,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "T03",
+      "domain": "troubleshooting",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "W01",
+      "domain": "workflow",
+      "split": "sealed",
+      "role": "main",
+      "calibrationCases": 21,
+      "calibrationMatched": 21,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "W02",
+      "domain": "workflow",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 19,
+      "calibrationMatched": 19,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    },
+    {
+      "id": "W03",
+      "domain": "workflow",
+      "split": "dev",
+      "role": "main",
+      "calibrationCases": 12,
+      "calibrationMatched": 12,
+      "reviewStatus": "passed",
+      "submissionStatus": "passed"
+    }
+  ],
+  "identity": "bb004819b6c4ddd917b41de2753c03fc83ddf9e94b29cb17f4f7b3d1f1cc1a73"
+}

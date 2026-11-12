@@ -540,6 +540,19 @@ Preparation preserves the preceding sealed source closure and adds the new wrapp
 
 V2.1 defines observable ownership and delivery boundaries, public report field types and permissible equivalent forms. Scoring keeps independent native commands, consumers, freshness, strictness and failure propagation; an implementation spelling alone is not a substitute for these observations. Reviewers freeze submissions before private grading, and receive no private grading feedback. A failed or ambiguous review remains in the evidence; it cannot be converted to a passed admission by choosing a later favorable record.
 
+V2.2 is an additional complete-bank edition. It preserves earlier definitions and requires a new private Sealed store, all 26 calibrations and a matching independent input review. The public development registry alone is never a complete Bank. Preparation and offline calibration use:
+
+```sh
+pnpm --filter @limina/evals eval:prepare-bank --bank v2.2 --source-store "$V21_STORE" --output "$V22_STORE" --prompts "$V22_PRIVATE_PROMPTS"
+pnpm --filter @limina/evals eval:calibrate --bank v2.2 --config "$V22_CALIBRATION_PLAN"
+```
+
+The [V2.2 definitions](src/tasks/v2_2/index.ts) retain the 17/9 split and two controls. W02 accepts bounded, valid positional config entries while executing internal and user builds separately, checking delivered bytes, consumers and clean/rebuild. S01 explicitly assigns the production TypeScript dependency to the app; root-only and duplicate declarations remain invalid. I01 executes the submitted workflow before and after a source error. K01 tests TypeScript and Vue diagnostic coverage without requiring a particular checker allocation. S02 accepts public re-exports and validates the public number API with an independent compiler. K03 normalizes relative root-directory reports. P01 accepts equivalent root and nested conditional exports while retaining actual consumers; an isolated type-condition consumer prevents runtime-entry fallback from hiding a missing declaration target. R02 requires both the native consumer compiler and actual Checker to reject the same declaration-consumer error. Positive equivalence cases retain disabled checks, unsafe mutation, forged output, wrong ownership and dependency changes as counterexamples.
+
+Scratch permission is explicit in development prompts. `capturePolicy.requiredRoots` describes paths to capture if present, not an obligation to create every path. Protected source perturbations performed by the Grader occur only in disposable reconstructed verifier projects; they never authorize the solver to modify protected inputs. A diagnostic report establishes the requested assessment, not an engineering repair or proof that the solver ran every Grader probe.
+
+New shared controller code changes calibration/Runner identity even when an old task definition is unchanged. Strict private historical replay requires its archived controller closure; existing public reports retain their original identity and contract. The live dashboard compares complete stages from the exact published Bank and the same Campaign/Model Profile. Archived current-task selection summaries remain readable, but their cross-source substitutions do not enter live Base/Skill differences. Offline calibration and independent review do not establish model discrimination or a causal Skill gain.
+
 The prepared pnpm entry applies fixed no-install arguments to run/exec and nested PATH-based calls. Its generated script is read-only and lives under excluded runtime state; the pinned native executables remain unchanged. Direct installation commands are rejected before invoking pnpm. This prevents accidental implicit installation, not hostile direct-binary bypass. A new Runner identity is required, and native sandbox/preflight/smoke acceptance is still separate from offline tool tests.
 
 Shared calculation and calibration source is identity-bound. Preserve the archived source closure as well as V1/V2 records before changing it. The current reader never silently re-admits an older calculation under changed code; immutable historical public JSON remains readable, while strict private replay uses its archived source. New bank/calculation identities do not overwrite earlier snapshots or failure records.
@@ -573,11 +586,11 @@ An offline grading recovery uses `RunStore.reviewGrading` to append a `grading_r
 
 Activation separates installed, discoverable, discovered, skillRead, referenceReads and followed. The private trace capture also retains both native skills/list observations and their workspace/profile scope, so discoverability can be audited independently of a content read. Complete successful tool reads may prove reading; merely listing a path or passing a task cannot. Attribution is independently appended by eval:attribute --run-directory --input, with an existing runId, rubricDigest, controlled causes, private evidence references, confidence and adjudication. Neither diagnostic changes assigned arms or scores. Three repetitions are limited stability evidence, never pass@k or a large independent sample.
 
-### Latest-bank calibration on the docs page
+### Latest-bank data for the docs page
 
-The docs page presents only the latest task bank. Historical task banks, public result snapshots, failed evidence and compatibility tests remain archived. A calibration summary is separate from model performance: expected incorrect/unauthorized submissions count as correctly rejected calibration cases, not successful Agent attempts.
+The docs page uses the latest-bank summary to identify the current task bank. The v2.2 snapshot records offline calibration and independent frozen-submission counts from the hash-pinned controller admission. Correctly rejected repairs and unauthorized changes count toward offline calibration. Historical task banks, public result snapshots and failed evidence remain archived.
 
-From the repository root, export an explicitly selected, frozen independent-review evidence package:
+For a detailed independent-review bundle (index version 1), use the repository exporter:
 
 ```sh
 node --import tsx scripts/docs/export-evals-calibration.ts \
@@ -586,6 +599,6 @@ node --import tsx scripts/docs/export-evals-calibration.ts \
   --output docs/.vitepress/theme/evals-latest-bank.json
 ```
 
-The evidence root contains `coordinator/final/evidence-index.json` and its hash-bound task-calibration, bank, input-equivalence and per-task grading records. The read-only exporter verifies the complete index and task identities, then projects controlled counts/statuses and provenance hashes. It never invokes a Grader, model, account or budget operation. An immutable `evals-calibrations/<bankId>-<publicationIdentity>.json` is written before the latest pointer is atomically replaced. Prompt text, assertion names, reference solutions, raw traces, review narratives and private file paths are excluded.
+The evidence root contains `coordinator/final/evidence-index.json`. The exporter checks the index hash and each referenced file before writing an immutable `evals-calibrations/<bankId>-<publicationIdentity>.json` and atomically replacing the latest pointer. It reads evidence without invoking a Grader, model, account or budget operation. The public summary contains allowlisted counts, statuses and provenance hashes. Prompts, assertion names, solutions, traces, review narratives and evidence paths stay private.
 
-The page shows all 26 tasks, the development/sealed split, separate negative controls, Grader calibration, independent review and adversarial-check counts. Model reports are loaded only for the exact latest Bank Identity and must match their campaign, report and stage. Without matching published reports, the model section stays pending; it never substitutes V1 results or calibration counts for Base/Skill scores. Page entry Markdown contains no result payload, preserving the revision-export boundary.
+The bilingual model table uses complete campaign stages for the exact current Bank Identity. The table shows its pending row until that Bank has complete model results. The archived calibration snapshot contains the task-level offline results.

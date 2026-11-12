@@ -192,6 +192,22 @@
       "reportIdentity": "eb2e9f6e695fdfadc2bda551731ee824bc6d55d64aa1b433806bc4791a9ecd3b",
       "bankRevision": "v2.1",
       "stage": "development"
+    },
+    {
+      "file": "./evals-campaigns/4e20fe990be843b56e72cd44277f0988bb9b213714983ece7cdd16bd74617094-development-7ac05a14bd5052507a22bf51ccd674836d28242cb53f4d1716c83e971082b121.json",
+      "campaignId": "4e20fe990be843b56e72cd44277f0988bb9b213714983ece7cdd16bd74617094",
+      "bankId": "2b0f90c79d3d7fc5a78e0e3080eeae533eb3b279f5d4bbfcd8dc75f317b0fe62",
+      "reportIdentity": "7ac05a14bd5052507a22bf51ccd674836d28242cb53f4d1716c83e971082b121",
+      "bankRevision": "v2.2",
+      "stage": "development"
+    },
+    {
+      "file": "./evals-campaigns/4e20fe990be843b56e72cd44277f0988bb9b213714983ece7cdd16bd74617094-sealed-423c1dbc7887378d9fb5e66854a9b300b33aa33ac9fb6d4edad4757515309980.json",
+      "campaignId": "4e20fe990be843b56e72cd44277f0988bb9b213714983ece7cdd16bd74617094",
+      "bankId": "2b0f90c79d3d7fc5a78e0e3080eeae533eb3b279f5d4bbfcd8dc75f317b0fe62",
+      "reportIdentity": "423c1dbc7887378d9fb5e66854a9b300b33aa33ac9fb6d4edad4757515309980",
+      "bankRevision": "v2.2",
+      "stage": "sealed"
     }
   ]
 }

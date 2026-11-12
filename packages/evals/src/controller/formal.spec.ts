@@ -33,11 +33,11 @@ test('versioned banks cannot enter a legacy dispatch without a frozen campaign p
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const root = await realpath(temporary);
   const file = path.join(root, 'plan.json');
-  for (const bankRevision of ['v2', 'v2.1']) {
+  for (const bankRevision of ['v2', 'v2.1', 'v2.2']) {
     await writeFile(file, JSON.stringify({ bankRevision }), { mode: 0o600 });
     await assert.rejects(
       executeFormal('development', file, 100, 102),
-      /V2(?:\.1)? dispatch requires a Campaign/,
+      /V2(?:\.[12])? dispatch requires a Campaign/,
     );
   }
 });
@@ -57,14 +57,14 @@ test('unknown bank revisions fail before legacy dispatch or runtime preflight', 
   }
 });
 
-test('both versioned banks require independent task review before runtime admission', async (t) => {
+test('versioned banks require independent task review before runtime admission', async (t) => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'eval-task-review-'));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const root = await realpath(temporary);
   const sealedStore = path.join(root, 'controller');
   await mkdir(sealedStore, { mode: 0o700 });
   const file = path.join(sealedStore, 'plan.json');
-  for (const bankRevision of ['v2', 'v2.1']) {
+  for (const bankRevision of ['v2', 'v2.1', 'v2.2']) {
     await writeFile(
       file,
       JSON.stringify({
@@ -79,7 +79,7 @@ test('both versioned banks require independent task review before runtime admiss
     );
     await assert.rejects(
       loadFormalInputs(file),
-      /Independent V2(?:\.1)? task calibration is required/,
+      /Independent V2(?:\.[12])? task calibration is required/,
     );
   }
 });

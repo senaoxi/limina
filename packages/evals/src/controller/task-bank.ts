@@ -30,11 +30,18 @@ export async function prepareBankV21(
 ) {
   return prepareVersionedBank(source, output, promptsFile, 'v2.1');
 }
+export async function prepareBankV22(
+  source: string,
+  output: string,
+  promptsFile: string,
+) {
+  return prepareVersionedBank(source, output, promptsFile, 'v2.2');
+}
 async function prepareVersionedBank(
   source: string,
   output: string,
   promptsFile: string,
-  revision: 'v2' | 'v2.1',
+  revision: Exclude<BankRevision, 'v1'>,
 ) {
   if (
     (await realpath(source)) !== source ||
@@ -57,7 +64,9 @@ async function prepareVersionedBank(
   )
     throw new Error('Nine versioned sealed prompts required');
   await mkdir(output, { mode: 0o700 });
-  const previous = revision === 'v2' ? 'v1-input' : 'v2-input';
+  const previous = { v2: 'v1-input', 'v2.1': 'v2-input', 'v2.2': 'v2_1-input' }[
+    revision
+  ];
   for (const task of sealed) {
     const frozen = path.join(output, task.id, previous);
     await mkdir(frozen, { mode: 0o700, recursive: true });
@@ -90,15 +99,18 @@ async function prepareVersionedBank(
     for (const file of inputs) await copyFrozenSource(file);
     const adapter = fileURLToPath(
       new URL(
-        revision === 'v2' ? '../tasks/v2/index.ts' : '../tasks/v2_1/index.ts',
+        `../tasks/${revision.replace('.', '_')}/index.ts`,
         import.meta.url,
       ),
     );
-    const constructorName =
-      revision === 'v2' ? 'createV2Definition' : 'createV21Definition';
+    const constructorName = {
+      v2: 'createV2Definition',
+      'v2.1': 'createV21Definition',
+      'v2.2': 'createV22Definition',
+    }[revision];
     let closure =
       'definition.sourceFiles.push(fileURLToPath(import.meta.url));';
-    if (revision === 'v2.1') {
+    if (revision !== 'v2') {
       const metadata = path.join(output, task.id, 'package.json');
       try {
         await writeFile(metadata, '{"private":true,"type":"module"}\n', {

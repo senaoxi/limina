@@ -12,13 +12,15 @@ export interface BankTask extends FrozenTask {
 }
 export interface TaskBankRevision {
   schemaVersion: 1;
-  revision: 'v1' | 'v2' | 'v2.1';
+  revision: 'v1' | 'v2' | 'v2.1' | 'v2.2';
   id: string;
   tasks: BankTask[];
 }
 export type BankRevision = TaskBankRevision['revision'];
 export function isBankRevision(value: unknown): value is BankRevision {
-  return typeof value === 'string' && ['v1', 'v2', 'v2.1'].includes(value);
+  return (
+    typeof value === 'string' && ['v1', 'v2', 'v2.1', 'v2.2'].includes(value)
+  );
 }
 export function createTaskBank(
   revision: TaskBankRevision['revision'],

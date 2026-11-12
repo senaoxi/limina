@@ -89,10 +89,13 @@ test('legacy bank and manifest identities survive revision-aware readers unchang
   verifyExperiment(JSON.parse(serializedLegacy));
 });
 
-test('v2.1 has separate scenarios and comparison cells and rejects every mixed bank', () => {
-  const revisions = ['v1', 'v2', 'v2.1'] as const;
+test('bank revisions have separate scenarios and comparison cells and reject every mixed bank', () => {
+  const revisions = ['v1', 'v2', 'v2.1', 'v2.2'] as const;
   const fixtures = revisions.map((revision) => campaignFixture(revision));
-  assert.equal(new Set(fixtures.map((f) => f.campaign.bank.id)).size, 3);
+  assert.equal(
+    new Set(fixtures.map((f) => f.campaign.bank.id)).size,
+    revisions.length,
+  );
   const slots = fixtures.map(
     ({ campaign }) =>
       campaignExperiment(
@@ -106,8 +109,14 @@ test('v2.1 has separate scenarios and comparison cells and rejects every mixed b
           slot.condition === 'base',
       )!,
   );
-  assert.equal(new Set(slots.map((slot) => slot.comparisonIdentity)).size, 3);
-  assert.equal(new Set(slots.map((slot) => slot.designCellId)).size, 3);
+  assert.equal(
+    new Set(slots.map((slot) => slot.comparisonIdentity)).size,
+    revisions.length,
+  );
+  assert.equal(
+    new Set(slots.map((slot) => slot.designCellId)).size,
+    revisions.length,
+  );
   for (const [index, fixture] of fixtures.entries()) {
     const revision = revisions[index]!;
     const serializedBank = JSON.stringify(fixture.campaign.bank);

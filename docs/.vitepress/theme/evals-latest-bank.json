@@ -1,17 +1,17 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "task-bank-calibration",
-  "bankId": "54e0f786d96cd11bef7fe7a0a44fc7725c6210bdaa0cc506a3369c4c4dde5bb9",
-  "bankRevision": "v2.1",
-  "completedAt": "2026-11-08T19:11:17.000Z",
+  "bankId": "2b0f90c79d3d7fc5a78e0e3080eeae533eb3b279f5d4bbfcd8dc75f317b0fe62",
+  "bankRevision": "v2.2",
+  "completedAt": "2026-11-11T14:59:43.636Z",
   "scope": "task-calibration",
   "modelPerformanceIncluded": false,
-  "calculationIdentity": "41cf45ea298914493d36324123a7d071046695c69a2ee5788520dc92b862126f",
+  "calculationIdentity": "07fbc995043c32fef35c7ae92d3347f074a8990d4d387ccf46965a2877412955",
   "sources": {
-    "indexSha256": "8d7a88ba58c96693ed5baf6684f4b7a4bfd801acf851d6a65a027905ee783e84",
-    "bankSha256": "8189bb5ca6d5ebf0edb5b442cfaf63fe95877ad9c962606412258b63e48529e8",
-    "reviewSha256": "c8646b5cfd234e66d0f92534daf1c9e02b4641ca6d240b2359956986f7e4bc2e",
-    "calibrationSha256": "8771766b2e05368d3f98070e950ac5e0a46f357ade0cb9ec25814109ec6c625d"
+    "indexSha256": "d563d907ad59630c66863374173a2acd57e98d2254e88313b006d5f4a004630d",
+    "bankSha256": "7c45aa430555d9a7b252d3291912df86c66032c4d64cbe63bc8d2aa4ce5bfcf2",
+    "reviewSha256": "7be15ae35b94a1ac0bb5b3fa06de17a3eced987f85799f970a0e808889bb1116",
+    "calibrationSha256": "c5f8873b4793025f2535318e88a6be7990353b54da578fe8ce6a7eb67f7645c0"
   },
   "inventory": {
     "tasks": 26,
@@ -21,22 +21,17 @@
     "negativeControls": 2
   },
   "graderCalibration": {
-    "cases": 254,
-    "matched": 254,
-    "correct": 61,
-    "incorrect": 122,
-    "unsafe": 71
+    "cases": 296,
+    "matched": 296,
+    "correct": 78,
+    "incorrect": 144,
+    "unsafe": 74
   },
   "independentReview": {
     "status": "passed",
-    "reviewers": 10,
     "passed": 26,
-    "adversarialChecks": 84,
     "referenceAccess": false,
-    "graderAccess": false,
-    "inputEquivalenceAuditors": 1,
-    "equivalentInputs": 26,
-    "taskExecutionRepeated": false
+    "equivalentInputs": 26
   },
   "tasks": [
     {
@@ -47,8 +42,7 @@
       "calibrationCases": 6,
       "calibrationMatched": 6,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "C02",
@@ -58,8 +52,7 @@
       "calibrationCases": 8,
       "calibrationMatched": 8,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "C03",
@@ -69,19 +62,17 @@
       "calibrationCases": 15,
       "calibrationMatched": 15,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "I01",
       "domain": "initialization",
       "split": "dev",
       "role": "main",
-      "calibrationCases": 12,
-      "calibrationMatched": 12,
+      "calibrationCases": 17,
+      "calibrationMatched": 17,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 4
+      "submissionStatus": "passed"
     },
     {
       "id": "I02",
@@ -91,30 +82,27 @@
       "calibrationCases": 14,
       "calibrationMatched": 14,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "I03",
       "domain": "initialization",
       "split": "dev",
       "role": "main",
-      "calibrationCases": 6,
-      "calibrationMatched": 6,
+      "calibrationCases": 16,
+      "calibrationMatched": 16,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "K01",
       "domain": "checker",
       "split": "dev",
       "role": "main",
-      "calibrationCases": 8,
-      "calibrationMatched": 8,
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "K02",
@@ -124,19 +112,17 @@
       "calibrationCases": 10,
       "calibrationMatched": 10,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 4
+      "submissionStatus": "passed"
     },
     {
       "id": "K03",
       "domain": "checker",
       "split": "dev",
       "role": "main",
-      "calibrationCases": 6,
-      "calibrationMatched": 6,
+      "calibrationCases": 9,
+      "calibrationMatched": 9,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 4
+      "submissionStatus": "passed"
     },
     {
       "id": "N01",
@@ -146,8 +132,7 @@
       "calibrationCases": 8,
       "calibrationMatched": 8,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "N02",
@@ -157,19 +142,17 @@
       "calibrationCases": 8,
       "calibrationMatched": 8,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "P01",
       "domain": "package-release",
       "split": "dev",
       "role": "main",
-      "calibrationCases": 8,
-      "calibrationMatched": 8,
+      "calibrationCases": 12,
+      "calibrationMatched": 12,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 4
+      "submissionStatus": "passed"
     },
     {
       "id": "P02",
@@ -179,8 +162,7 @@
       "calibrationCases": 9,
       "calibrationMatched": 9,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "P03",
@@ -190,8 +172,7 @@
       "calibrationCases": 15,
       "calibrationMatched": 15,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "R01",
@@ -201,19 +182,17 @@
       "calibrationCases": 9,
       "calibrationMatched": 9,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "R02",
       "domain": "reference-graph",
       "split": "dev",
       "role": "main",
-      "calibrationCases": 11,
-      "calibrationMatched": 11,
+      "calibrationCases": 12,
+      "calibrationMatched": 12,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 4
+      "submissionStatus": "passed"
     },
     {
       "id": "R03",
@@ -223,8 +202,7 @@
       "calibrationCases": 7,
       "calibrationMatched": 7,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "S01",
@@ -234,19 +212,17 @@
       "calibrationCases": 8,
       "calibrationMatched": 8,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "S02",
       "domain": "source-governance",
       "split": "dev",
       "role": "main",
-      "calibrationCases": 9,
-      "calibrationMatched": 9,
+      "calibrationCases": 17,
+      "calibrationMatched": 17,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "S03",
@@ -256,8 +232,7 @@
       "calibrationCases": 9,
       "calibrationMatched": 9,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "T01",
@@ -267,8 +242,7 @@
       "calibrationCases": 6,
       "calibrationMatched": 6,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "T02",
@@ -278,8 +252,7 @@
       "calibrationCases": 11,
       "calibrationMatched": 11,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "T03",
@@ -289,8 +262,7 @@
       "calibrationCases": 9,
       "calibrationMatched": 9,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "W01",
@@ -300,19 +272,17 @@
       "calibrationCases": 21,
       "calibrationMatched": 21,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "W02",
       "domain": "workflow",
       "split": "dev",
       "role": "main",
-      "calibrationCases": 9,
-      "calibrationMatched": 9,
+      "calibrationCases": 19,
+      "calibrationMatched": 19,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 3
+      "submissionStatus": "passed"
     },
     {
       "id": "W03",
@@ -322,9 +292,8 @@
       "calibrationCases": 12,
       "calibrationMatched": 12,
       "reviewStatus": "passed",
-      "submissionStatus": "passed",
-      "adversarialChecks": 4
+      "submissionStatus": "passed"
     }
   ],
-  "identity": "310abe9671001295c2c42348f0b43c045d9af5b12ef1854ec6266d0a51ebae72"
+  "identity": "bb004819b6c4ddd917b41de2753c03fc83ddf9e94b29cb17f4f7b3d1f1cc1a73"
 }

@@ -20,7 +20,7 @@ interface PublicationHeader {
   campaignId: string;
   reportIdentity: string;
   bankId: string;
-  bankRevision: 'v1' | 'v2' | 'v2.1';
+  bankRevision: 'v1' | 'v2' | 'v2.1' | 'v2.2';
   stage: 'smoke' | 'pilot' | 'development' | 'sealed' | 'confirmation';
 }
 /**
@@ -52,7 +52,7 @@ export async function readCampaignPublication(
   assert.match(data.campaignId, /^[a-f\d]{64}$/);
   assert.match(data.reportIdentity, /^[a-f\d]{64}$/);
   assert.match(data.bankId, /^[a-f\d]{64}$/);
-  assert.ok(['v1', 'v2', 'v2.1'].includes(data.bankRevision));
+  assert.ok(['v1', 'v2', 'v2.1', 'v2.2'].includes(data.bankRevision));
   assert.ok(
     ['smoke', 'pilot', 'development', 'sealed', 'confirmation'].includes(
       data.stage,

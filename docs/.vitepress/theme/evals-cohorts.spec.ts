@@ -6,6 +6,7 @@ import { type Component, createSSRApp, h } from 'vue';
 import { compileScript, parse } from 'vue/compiler-sfc';
 import { renderToString } from 'vue/server-renderer';
 import type { PublicBankCalibration } from './evals-calibration-types';
+import bankJson from './evals-calibrations/54e0f786d96cd11bef7fe7a0a44fc7725c6210bdaa0cc506a3369c4c4dde5bb9-310abe9671001295c2c42348f0b43c045d9af5b12ef1854ec6266d0a51ebae72.json';
 import type {
   PublicCampaign,
   PublishedAverage,
@@ -23,11 +24,11 @@ import {
 import {
   combinedCampaignEntries,
   combinedModelRows,
+  currentBankModelRows,
   type UsageRemeasurement,
   withUsageRemeasurements,
 } from './evals-combined';
 import summaryJson from './evals-current-results.json';
-import bankJson from './evals-latest-bank.json';
 import type { PublicCurrentSummary } from './evals-summary-types';
 import type { PublicTaskResult } from './evals-task-result-types';
 import taskJson from './evals-task-result.json';
@@ -428,7 +429,7 @@ it('keeps task/domain macros separate from execution rates and excludes controls
   assert.deepEqual(fixtures, before);
 });
 
-it('retains unknown and replacement executions, partial money and evidence-backed zero', () => {
+it('keeps scored rows with partial measurements, replacement executions and observed zero cost', () => {
   const fixtures = combinedFixtures();
   const task = fixtures[0]!.data.models[0]!.report!.tasks[0]!;
   const base = task.conditions.base!;
@@ -454,7 +455,7 @@ it('retains unknown and replacement executions, partial money and evidence-backe
   zero.mean = 0;
   zero.observedSum = 0;
   zero.total = 0;
-  const [row] = combinedModelRows(loadCombined(fixtures), combinedBank);
+  const [row] = currentBankModelRows(loadCombined(fixtures), combinedBank, []);
   assert.equal(row!.main.counts.base!.executions, 13);
   assert.equal(row!.main.counts.skill!.valid, 11);
   assert.equal(row!.main.attempts.base!.rate, 6 / 13);
@@ -1141,4 +1142,27 @@ it('renders the percentage from its displayed execution counts, including zero a
     assert.ok(html.includes(`<small>${passed}/${executions}</small>`), html);
     assert.equal(html.includes('class="rate-track"'), executions > 0);
   }
+});
+
+it('keeps the live bank comparison free of task substitutions and unrelated usage sources', () => {
+  const bank = bankJson as PublicBankCalibration;
+  const entries = combinedCampaignEntries(campaignIndex.campaigns, bank);
+  const cohorts = entries.map((entry) => {
+    const bytes = readFileSync(new URL(entry.file, import.meta.url), 'utf8');
+    return bindPublishedCohort(entry, JSON.parse(bytes) as PublicCampaign);
+  });
+  const before = structuredClone(cohorts);
+  const receipts = remeasurementJson.remeasurements as UsageRemeasurement[];
+  const rows = currentBankModelRows(cohorts, bank, receipts);
+  assert.equal(rows.length, 1);
+  const row = rows[0]!;
+  assert.equal(row.profile.model, 'gpt-6.1-sol');
+  assert.equal(row.main.counts.base!.passed, 69);
+  assert.equal(row.main.counts.skill!.passed, 70);
+  assert.equal(row.main.counts.skill!.executions, 72);
+  assert.ok(
+    row.sources.every((source) => source.source.bankId === bank.bankId),
+  );
+  assert.ok(row.main.tasks.every((task) => !task.selectedCondition));
+  assert.deepEqual(cohorts, before);
 });

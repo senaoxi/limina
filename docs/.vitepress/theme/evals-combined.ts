@@ -709,3 +709,29 @@ export function combinedModelRows(
     ];
   }).flat();
 }
+
+/**
+Live comparisons retain one bank. Archived task selections remain readable through
+combinedModelRows, while usage receipts apply only to the displayed source cohort.
+*/
+export function currentBankModelRows(
+  cohorts: readonly PublishedCohort[],
+  bank: Bank,
+  receipts: readonly UsageRemeasurement[],
+): CombinedModelRow[] {
+  return combinedModelRows(cohorts, bank).flatMap((row) => {
+    const selected = receipts.filter(
+      ({ source }) =>
+        row.profile.id === source.modelProfileId &&
+        row.sources.some(
+          ({ source: report }) =>
+            report.campaignId === source.campaignId &&
+            report.reportIdentity === source.reportIdentity &&
+            report.stage === source.stage,
+        ),
+    );
+    return selected.length > 0
+      ? withUsageRemeasurements([row], selected)
+      : [row];
+  });
+}

@@ -26,7 +26,12 @@ import {
   type TaskDefinition,
   writeFixture,
 } from './calibration.ts';
-import { calibrateBank, prepareBankV2, prepareBankV21 } from './task-bank.ts';
+import {
+  calibrateBank,
+  prepareBankV2,
+  prepareBankV21,
+  prepareBankV22,
+} from './task-bank.ts';
 
 test('sealed preparation preserves declared module, fixture and generated-input closure', async (t) => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'eval-bank-source-'));
@@ -86,7 +91,7 @@ test('the exact revision registry creates schema-2 development tasks without fal
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const root = await realpath(temporary);
   const fixed = contentIdentity('offline registry task construction');
-  for (const revision of ['v1', 'v2', 'v2.1'] as const) {
+  for (const revision of ['v1', 'v2', 'v2.1', 'v2.2'] as const) {
     const bankDirectory = path.join(root, revision);
     await mkdir(bankDirectory);
     const definitions = developmentTasksForRevision(revision);
@@ -265,4 +270,32 @@ test('v2.1 sealed preparation retains nested V2 closures and refuses existing ou
   );
   const retainedPrepared = await captureSnapshot(destination, 'F0');
   assert.equal(retainedPrepared.digest, prepared.digest);
+  const next = path.join(root, 'v2.2');
+  await prepareBankV22(destination, next, promptsFile);
+  const retainedV21 = await captureSnapshot(destination, 'F0');
+  assert.equal(retainedV21.digest, prepared.digest);
+  for (const task of originals) {
+    const old = path.join(destination, task.id);
+    const current = path.join(next, task.id);
+    assert.deepEqual(
+      await readFile(path.join(current, 'v2_1-input', 'task.ts')),
+      await readFile(path.join(old, 'task.ts')),
+    );
+    const { definition } = (await import(
+      pathToFileURL(path.join(current, 'task.ts')).href
+    )) as { definition: TaskDefinition };
+    assert.equal(
+      definition.createTask(before, {
+        closure: fixed,
+        toolchain: fixed,
+        grader: fixed,
+      }).bankRevision,
+      'v2.2',
+    );
+    assert.equal(JSON.parse(definition.files['fixture.json']!).taskId, task.id);
+  }
+  await assert.rejects(
+    prepareBankV22(destination, next, promptsFile),
+    /EEXIST/,
+  );
 });

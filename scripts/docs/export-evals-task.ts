@@ -114,7 +114,7 @@ export function publicTaskResult(
   assert.equal(source.schemaVersion, 2);
   for (const id of [source.campaignId, source.reportIdentity, source.bankId])
     digest(id);
-  assert.equal(source.bankRevision, 'v2.1');
+  assert.ok(['v2.1', 'v2.2'].includes(source.bankRevision));
   assert.ok(['P03', 'I03'].includes(taskId));
   const stage = taskId === 'I03' ? 'development' : 'sealed';
   assert.equal(source.stage, stage);
