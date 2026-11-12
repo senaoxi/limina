@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-12
+
+This release consolidates `0.5.0-beta.0` through `0.5.0-beta.4`. If you are upgrading from `0.4.0`, review the Node.js and configuration changes before running `limina check`.
+
+### Breaking Changes
+
+- **Node.js.** Both `limina` and `limina-migrate` require Node.js `^22.22.3 || ^24.15.0 || >=26.0`.
+- **Configuration.** Move `config.source`, `config.checkers`, and `regions` to `scope.source`, `scope.checkers`, and `scope.regions`. Rename `execution` to `concurrency` and replace the exported `SharedLiminaConfig` type with `ScopeConfig`. Remove `graph.conditionDomains` and the `GraphConditionDomain` type. Keep compiler resolution conditions in `compilerOptions.customConditions`. See the [configuration reference](../../docs/en/config/config-file.md).
+- **Checker ownership.** Automatic discovery chooses a checker for each source config in a solution. To require one checker for the entire solution, select it with `scope.checkers.<checker>.include`. See [how aggregators affect checker selection](../../docs/en/config/checkers.md#how-an-aggregator-affects-selection).
+- **Project references.** TypeScript runtime `require`, `createRequire`, and `require.resolve` calls no longer imply project references. Declare build dependencies that static analysis cannot see with `liminaOptions.implicitRefs`. When a TypeScript or Vue project consumes a managed declaration from outside its own config and multiple configs cover the declaration, select one with `liminaOptions.declarationContexts`. Generated declaration projects reject `compilerOptions.outFile`, including inherited values. See the [reference graph guide](../../docs/en/import-resolution-to-declaration-build-graph.md).
+- **Migration and CI scripts.** Use `limina-migrate` in place of `limina migration`, which now forwards to the matching standalone package and is deprecated. Pass `--yes` to accept the migration scope in non-interactive runs. Named `limina check` pipelines reject extra arguments and `--` passthrough. Set command arguments in the [pipeline configuration](../../docs/en/config/pipelines.md#object-command-step).
+
+### Added
+
+- [Standalone `limina-migrate`](../migrate/README.md) can plan a migration without an existing Limina config. Use `limina-migrate --dry-run --yes` to inspect the scope and file changes without migration writes. The preview still evaluates any selected config module.
+- [Persistent analysis caching](../../docs/en/cli.md#limina-check-pipeline) reuses eligible TypeScript, Vue, and mixed-project analysis across CLI invocations. Limina rebuilds incompatible snapshots on demand. Use `limina check --force` to recompute analysis and refresh eligible snapshots. This replaces the beta `--no-analysis-cache` flag. Set `cache: false` to disable persistent analysis reuse and writes. Checker build caches remain separate.
+- Added an [installable Limina Skill](../../skills/limina/SKILL.md) and a documentation dashboard with model comparisons and per-task evaluation results.
+
+### Changed
+
+- The default `limina check` schedules graph, source, proof, checker build, and checker typecheck tasks even if their policy sections are absent. Use a named pipeline or a standalone command to run a subset. Source checks report missing resources and enforce import boundaries. Run the appropriate checker to diagnose missing resource types.
+- Limina uses the host `typescript` API to derive the reference graph even when `tsgo` runs the build. Use `tsc` when the build needs the same compiler semantics as the graph. See the [checker reference](../../docs/en/config/checkers.md).
+- `limina release check` honors scoped npm registry settings and restricts metadata and tarball downloads to the selected HTTPS origin. It rejects redirects, caps response sizes, and checks tarball integrity. Review the [registry requirements](../../docs/en/config/release-checks.md#registry-authority-and-response-limits) if you use a mirror or private registry.
+- Widened the supported `@astrojs/check` peer range to `>=0.9.6 <0.10.0`, subject to the [Astro adapter requirements](../../docs/en/config/checkers.md#astro-semantic-import-resolution).
+
+### Fixed
+
+- Build required TypeScript and Vue declarations before checking Svelte consumers. Svelte source dependencies can order checks without adding TypeScript project references.
+- Report missing or unsupported solution members during graph preparation. Generated configs preserve the source project's type and library selections and drop inherited `mapRoot` when generation disables the only enabled map option.
+- Preserve healthy source configs and reachable solution members during migration. Keep native build relationships that cannot be inferred as explicit `implicitRefs` where they can be represented safely.
+
 ## [0.5.0-beta.4] - 2026-11-12
 
 ### Features
