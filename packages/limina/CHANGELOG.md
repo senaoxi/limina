@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.5.0-beta.4] - 2026-11-12
+
+### Features
+
+- feat(evals): add v2.2 task bank and campaign results ([4f284195](https://github.com/senaoxi/limina/commit/4f284195))
+- feat(release): clean candidate tags after promotion ([26949060](https://github.com/senaoxi/limina/commit/26949060))
+- feat(evals): show task metrics and reviewed results ([9b6f9003](https://github.com/senaoxi/limina/commit/9b6f9003))
+- feat(evals): add model comparisons and eval dashboard ([07c0c7ea](https://github.com/senaoxi/limina/commit/07c0c7ea))
+
+### Bug Fixes
+
+- fix(checker): preserve Project References semantics ([98bd0416](https://github.com/senaoxi/limina/commit/98bd0416))
+- fix(evals): recompute averages from complete measurements ([78891a1d](https://github.com/senaoxi/limina/commit/78891a1d))
+- fix(release): configure npm publication timeouts ([b7b4c859](https://github.com/senaoxi/limina/commit/b7b4c859))
+
+### Documentation
+
+- docs: require semantic review for branch integration ([71fb0b19](https://github.com/senaoxi/limina/commit/71fb0b19))
+
+### Maintenance
+
+- ci: fix Windows tests and false error annotations ([6e6c9ee0](https://github.com/senaoxi/limina/commit/6e6c9ee0))
+- test: isolate slow declaration and CLI cases ([e745110f](https://github.com/senaoxi/limina/commit/e745110f))
+- test: stabilize platform CI regression fixtures ([01295c4c](https://github.com/senaoxi/limina/commit/01295c4c))
+- refactor: reduce lint complexity in evals and smoke ([d35b4fcd](https://github.com/senaoxi/limina/commit/d35b4fcd))
+- ci: force full validation for release commits ([56a8b126](https://github.com/senaoxi/limina/commit/56a8b126))
+- ci: add affected CI with domain checkpoints ([8e34d851](https://github.com/senaoxi/limina/commit/8e34d851))
+
 ## [0.5.0-beta.3] - 2026-11-09
 
 ### Features
