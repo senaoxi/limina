@@ -228,6 +228,27 @@ async function createCoreFixture(): Promise<{
 }
 
 describe('AnalysisProviderSet', () => {
+  it('retains Native ownership observations from the Svelte route probe', async () => {
+    const fixture = await createCoreFixture();
+
+    try {
+      await expect(
+        fixture.core.buildGraph.hasSvelteCheckProjects(),
+      ).resolves.toBe(false);
+      expect(
+        fixture.core.projectDependencies.nativeSourceEvidence,
+      ).toBeDefined();
+      expect(
+        fixture.core.projectDependencies.nativeSourceContexts?.size,
+      ).toBeGreaterThan(0);
+
+      const graph = await fixture.core.buildGraph.getGraph();
+      expect(graph.checkers.map((checker) => checker.name)).toEqual(['tsc']);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('keeps graph analysis read-only until explicit preparation', async () => {
     const fixture = await createCoreFixture();
     const generatedDirectory = path.join(fixture.rootDir, '.limina');

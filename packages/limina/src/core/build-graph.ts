@@ -8,7 +8,8 @@ import {
   type ProducerBuildPlan,
 } from '#core/build-graph/runner';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
-import { resolveGeneratedGraphCheckers } from './build-graph/checker-resolution';
+import { resolveGeneratedGraphCheckerSelections } from './build-graph/checker-resolution';
+import { beginCoreCollection } from './build-graph/core-collection-run';
 import type { ProducerBuildReceipt } from './build-graph/producer-receipt';
 import { canExcludeSvelteProjects } from './build-graph/svelte-route-precheck';
 import type { ImportCore } from './imports';
@@ -129,13 +130,18 @@ export class BuildGraphCore {
         this.#workspace.getValidatedContext(),
         this.#workspace.getPathIndex(),
       ]);
-      const checkers = await resolveGeneratedGraphCheckers(this.#config, {
+      beginCoreCollection(this.#projectDependencies);
+      const resolution = await resolveGeneratedGraphCheckerSelections({
+        config: this.#config,
         workspaceContext,
         workspacePathIndex,
         importAnalysisContext: this.#imports.context,
         projectConfigCache: this.#projectConfigs,
+        projectDependencyCaches: this.#projectDependencies,
       });
-      return checkers.some((checker) => checker.name === 'svelte-check');
+      return resolution.selections.some(
+        ({ checker }) => checker.name === 'svelte-check',
+      );
     })();
     return this.#svelteProjects;
   }
