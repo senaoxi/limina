@@ -5,6 +5,7 @@ import type {
   TaskLifecycleEvent,
   TaskReference,
 } from '../execution/tasks';
+import type { ExecutionTrace } from '../execution/trace';
 import type {
   LiminaCheckRunCheckItemSummary,
   LiminaCheckRunSummary,
@@ -19,6 +20,8 @@ export interface LiminaCheckRunTaskStats {
 
 interface RecorderState {
   run: LiminaCheckRunSummary;
+  startedAt?: number;
+  trace?: ExecutionTrace;
   taskById: ReadonlyMap<ExecutionTaskIdentity['id'], LiminaCheckRunTaskSummary>;
 }
 
@@ -85,15 +88,6 @@ function cloneRun(run: LiminaCheckRunSummary): LiminaCheckRunSummary {
   };
 }
 
-function durationBetween(
-  startedAt: string | undefined,
-  completedAt: string,
-): number | undefined {
-  return startedAt === undefined
-    ? undefined
-    : Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
-}
-
 function normalizeOptionalNumber(
   value: number | undefined,
 ): number | undefined {
@@ -115,6 +109,7 @@ function normalizeCheckItem(
       ...item,
       ...normalizedStatistics,
       blockedBy: cloneOptionalObjects(item.blockedBy),
+      commandDurationMs: normalizeOptionalNumber(item.commandDurationMs),
     };
   }
 
@@ -195,6 +190,7 @@ function applyPassEvent(
   rawEvent: TaskLifecycleEvent,
 ): void {
   const event = requireEvent(rawEvent, 'pass');
+  context.task.startedAt = event.startedAt ?? context.task.startedAt;
   context.task.completedAt = event.completedAt;
   context.task.durationMs = event.durationMs;
   context.task.state = context.nextState;
@@ -206,9 +202,14 @@ function applyFailEvent(
   rawEvent: TaskLifecycleEvent,
 ): void {
   const event = requireEvent(rawEvent, 'fail');
+  context.task.startedAt = event.startedAt ?? context.task.startedAt;
   context.task.completedAt = event.completedAt;
   context.task.durationMs = event.durationMs;
   context.task.reason = event.reason;
+  if (event.executionStarted === false) {
+    context.task.startedAt = undefined;
+    context.task.durationMs = undefined;
+  }
   context.task.state = context.nextState;
   applyTaskStats(context.task, event.stats);
 }
@@ -218,6 +219,7 @@ function applyDisableEvent(
   rawEvent: TaskLifecycleEvent,
 ): void {
   const event = requireEvent(rawEvent, 'disable');
+  context.task.startedAt = event.startedAt ?? context.task.startedAt;
   context.task.completedAt = event.completedAt;
   context.task.durationMs = event.durationMs;
   context.task.state = context.nextState;
@@ -255,6 +257,8 @@ function projectTask(
   identity: ExecutionTaskIdentity,
   event: TaskLifecycleEvent,
 ): void {
+  if (event.type === 'start')
+    state.startedAt ??= event.startedAtMonotonic ?? performance.now();
   const task = getTask(state, identity);
   const context: TaskProjectionContext = {
     nextState: transitionTask(task.state, event),
@@ -279,12 +283,16 @@ function finishRun(
   completedAt: string,
 ): void {
   state.run.completedAt = completedAt;
-  state.run.durationMs = durationBetween(state.run.startedAt, completedAt);
+  state.run.durationMs =
+    state.startedAt === undefined
+      ? undefined
+      : performance.now() - state.startedAt;
   state.run.result = outcome.state;
   state.run.blockedBy = getOutcomeBlocker(outcome);
 }
 
 export interface CheckRunRecorder {
+  readonly trace?: ExecutionTrace;
   block(task: ExecutionTaskIdentity, blockedBy: TaskReference): void;
   fail(
     task: ExecutionTaskIdentity,
@@ -312,6 +320,7 @@ export interface CheckRunRecorder {
 
 export interface CreateCheckRunRecorderOptions {
   command: string;
+  trace?: ExecutionTrace;
   configPath?: string;
   pipeline?: string;
   plannedTasks: readonly ExecutionTaskIdentity[];
@@ -353,7 +362,9 @@ function createRunSummary(
   return {
     command: options.command,
     configPath: options.configPath,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(
+      performance.timeOrigin + performance.now(),
+    ).toISOString(),
     pipeline: options.pipeline,
     result: 'not-run',
     tasks: options.plannedTasks.map((task) => taskById.get(task.id)!),
@@ -362,12 +373,17 @@ function createRunSummary(
 
 function createRecorder(state: RecorderState): CheckRunRecorder {
   return {
+    trace: state.trace,
     block: (task, blockedBy) =>
       projectTask(state, task, { blockedBy, type: 'block' }),
     fail: (task, result) =>
       projectTask(state, task, { ...result, type: 'fail' }),
-    finish: (outcome, completedAt = new Date().toISOString()) =>
-      finishRun(state, outcome, completedAt),
+    finish: (
+      outcome,
+      completedAt = new Date(
+        performance.timeOrigin + performance.now(),
+      ).toISOString(),
+    ) => finishRun(state, outcome, completedAt),
     getRunSummary: () => cloneRun(state.run),
     pass: (task, result) =>
       projectTask(state, task, { ...result, type: 'pass' }),
@@ -386,6 +402,7 @@ export function createCheckRunRecorder(
 
   return createRecorder({
     run: createRunSummary(options, taskById),
+    trace: options.trace,
     taskById,
   });
 }

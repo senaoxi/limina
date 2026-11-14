@@ -941,6 +941,43 @@ describe('check issue snapshots', () => {
     },
   );
 
+  it.each([45, undefined, -1, NaN, Infinity])(
+    'validates optional command timing %s in the persisted checker target',
+    async (commandDurationMs) => {
+      const rootDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-command-timing-'),
+      );
+      const { run } = createCheckerCompletedRun();
+      const item = run.tasks[0]!.checkItems![0]!;
+      if (item.itemKind !== 'checker-target')
+        throw new Error('Expected checker item.');
+      item.durationMs = 123;
+      item.commandDurationMs = commandDurationMs;
+      try {
+        if (commandDurationMs === undefined || commandDurationMs === 45) {
+          await writeCheckIssueSnapshotOnly(artifactNamespace(rootDirectory), {
+            ...createCheckSnapshot([]),
+            run,
+          });
+          const snapshot = await readCheckIssueSnapshot(rootDirectory);
+          expect(snapshot?.run?.tasks[0]?.checkItems?.[0]).toMatchObject({
+            durationMs: 123,
+            ...(commandDurationMs !== undefined && { commandDurationMs }),
+          });
+        } else {
+          await expect(
+            writeCheckIssueSnapshotOnly(artifactNamespace(rootDirectory), {
+              ...createCheckSnapshot([]),
+              run,
+            }),
+          ).rejects.toThrow();
+        }
+      } finally {
+        await rm(rootDirectory, { recursive: true, force: true });
+      }
+    },
+  );
+
   it('allows the same checker target id in different execution task occurrences', async () => {
     const rootDirectory = await mkdtemp(
       path.join(tmpdir(), 'limina-snapshot-'),

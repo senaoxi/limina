@@ -5,7 +5,10 @@ import {
   isPathCandidatesMatchScopeFilters,
   type PathFilterCandidate,
 } from '../check-reporting/path-filters';
-import { formatCheckIssueSnapshotInventory } from '../check-reporting/snapshot';
+import {
+  CHECK_ISSUE_SNAPSHOT_VERSION,
+  formatCheckIssueSnapshotInventory,
+} from '../check-reporting/snapshot';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 
 function formatIssueIds(options: {
@@ -41,7 +44,7 @@ function formatIssueIds(options: {
         createdAt: '2026-07-17T00:00:00.000Z',
         issues: [issue],
         status: 'completed',
-        version: 9,
+        version: CHECK_ISSUE_SNAPSHOT_VERSION,
       },
     }),
   ) as { issues: { id?: string }[] };
@@ -152,7 +155,7 @@ describe('check issue scope path matching', () => {
           createdAt: '2026-07-17T00:00:00.000Z',
           issues: [issue],
           status: 'completed',
-          version: 9,
+          version: CHECK_ISSUE_SNAPSHOT_VERSION,
         },
       }),
     ) as { issueCount: number };

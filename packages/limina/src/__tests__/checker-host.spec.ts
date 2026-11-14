@@ -1,17 +1,21 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GeneratedDependencyEdge } from '../core/build-graph/runner';
+import { createCheckerTaskStats } from '../pipeline/stats';
 import { runBuildTargets } from '../typecheck/build/target-execution';
 import {
   disposeCheckerProcessHostForTesting,
   resolveCheckerHostEntryForTesting,
+  runCheckerHostProtocolProbeForTesting,
 } from '../typecheck/process-host';
+import { toCheckerTargetOutcome } from '../typecheck/target-types';
 import {
   createCheckerTargetId,
   createDefaultRunner,
@@ -75,10 +79,18 @@ function isProcessRunning(pid: number): boolean {
   }
 }
 
-afterEach(() => {
+function isProcessExecuting(pid: number): boolean {
+  // A blocked parent cannot reap an exited child; zombies are exited, not running.
+  const state = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], {
+    encoding: 'utf8',
+  });
+  if (state.error !== undefined) throw state.error;
+  return state.status === 0 && !state.stdout.trimStart().startsWith('Z');
+}
+
+afterEach(async () => {
   delete process.env.LIMINA_CHECKER_HOST;
-  delete process.env.LIMINA_CHECKER_HOST_TEST_CRASH;
-  disposeCheckerProcessHostForTesting();
+  await disposeCheckerProcessHostForTesting();
 });
 
 describe('createDefaultRunner duration measurement', () => {
@@ -139,38 +151,79 @@ describe('createDefaultRunner duration measurement', () => {
     }
   });
 
-  it('measures checker durations independently of main-thread blocking', async () => {
-    const shortSleepMs = 150;
-    const longSleepMs = 600;
-    const mainThreadBlockMs = 1500;
-    const runner = createDefaultRunner({ stdio: 'ignore' });
-    const shortPromise = Promise.resolve(
-      runner(createSleepTarget(shortSleepMs, 'short')),
-    );
-    const longPromise = Promise.resolve(
-      runner(createSleepTarget(longSleepMs, 'long')),
-    );
+  it.skipIf(process.platform === 'win32')(
+    'separates independent command timing from the full blocked-main lifetime',
+    async () => {
+      const root = await mkdtemp(path.join(tmpdir(), 'limina-host-timing-'));
+      const release = path.join(root, 'release');
+      const runner = createDefaultRunner({ stdio: 'ignore' });
+      const target = (name: string, sleepMs: number): TypecheckTarget => ({
+        ...createSleepTarget(sleepMs, name),
+        args: [
+          '-e',
+          `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(path.join(root, name))}, 'started'); const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(timer); setTimeout(() => {}, ${sleepMs}); } }, 5);`,
+        ],
+      });
+      try {
+        const short = Promise.resolve(runner(target('short', 150)));
+        const long = Promise.resolve(runner(target('long', 600)));
+        await Promise.all(
+          ['short', 'long'].map((name) => waitForFile(path.join(root, name))),
+        );
+        await writeFile(release, 'go');
+        blockMainThread(1500);
+        const [shortResult, longResult] = await Promise.all([short, long]);
+        expect(shortResult.status).toBe(0);
+        expect(longResult.status).toBe(0);
+        expect(
+          longResult.commandDurationMs! - shortResult.commandDurationMs!,
+        ).toBeGreaterThan(225);
+        expect(shortResult.durationMs).toBeGreaterThanOrEqual(1500);
+        expect(longResult.durationMs).toBeGreaterThanOrEqual(1500);
+        expect(shortResult.durationMs!).toBeGreaterThan(
+          shortResult.commandDurationMs!,
+        );
+      } finally {
+        await disposeCheckerProcessHostForTesting();
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
-    // Let both spawn requests reach the host before blocking the loop.
-    await waitForMacrotasks(50);
-    blockMainThread(mainThreadBlockMs);
-
-    const [shortResult, longResult] = await Promise.all([
-      shortPromise,
-      longPromise,
-    ]);
-
-    expect(shortResult.status).toBe(0);
-    expect(longResult.status).toBe(0);
-    expect(shortResult.durationMs).toBeDefined();
-    expect(longResult.durationMs).toBeDefined();
-    // Host-side measurement preserves the sleep-duration gap even when process
-    // startup is slower on Windows. In-process fallback observes both close
-    // events after the block instead, collapsing their measured durations.
-    expect(longResult.durationMs! - shortResult.durationMs!).toBeGreaterThan(
-      (longSleepMs - shortSleepMs) / 2,
-    );
-  });
+  it.each([undefined, 'off'])(
+    'preserves inherited stdin with host mode %s',
+    (hostMode) => {
+      const source = new URL('../typecheck/process-host.ts', import.meta.url)
+        .href;
+      const loader = pathToFileURL(
+        createRequire(import.meta.url).resolve('tsx'),
+      ).href;
+      const command =
+        "const fs = require('node:fs'); process.stdout.write(JSON.stringify({ input: fs.readFileSync(0, 'utf8'), arg: process.argv[1], token: process.env.STDIN_TOKEN })); process.stderr.write('checker-stderr'); process.exit(7);";
+      const driver = `const { runCheckerSpawnMeasured } = await import(${JSON.stringify(source)}); const result = await runCheckerSpawnMeasured({command:process.execPath,args:['-e',${JSON.stringify(command)},'two words'],cwd:process.cwd(),env:process.env,shell:false,stdio:'inherit'}); process.exitCode=result.status;`;
+      const result = spawnSync(
+        process.execPath,
+        ['--import', loader, '--input-type=module', '-e', driver],
+        {
+          encoding: 'utf8',
+          input: 'exact stdin\n',
+          env: {
+            ...process.env,
+            LIMINA_CHECKER_HOST: hostMode,
+            STDIN_TOKEN: 'preserved',
+          },
+          timeout: 10_000,
+        },
+      );
+      expect(result.status).toBe(7);
+      expect(JSON.parse(result.stdout)).toEqual({
+        input: 'exact stdin\n',
+        arg: 'two words',
+        token: 'preserved',
+      });
+      expect(result.stderr).toBe('checker-stderr');
+    },
+  );
 
   it('propagates spawn errors with a measured duration', async () => {
     const runner = createDefaultRunner({ stdio: 'ignore' });
@@ -188,7 +241,7 @@ describe('createDefaultRunner duration measurement', () => {
     expect(result.durationMs).toBeDefined();
   });
 
-  it('cancels an active checker child through the shared host', async () => {
+  it('cancels an active checker child through its owned supervisor', async () => {
     const controller = new AbortController();
     const runner = createDefaultRunner({ stdio: 'ignore' });
     const startedAt = performance.now();
@@ -263,24 +316,271 @@ describe('createDefaultRunner duration measurement', () => {
     expect(onDegraded).toHaveBeenCalledTimes(1);
   });
 
-  it('retries pending spawns inline when the host process dies', async () => {
-    process.env.LIMINA_CHECKER_HOST_TEST_CRASH = '1';
+  it
+    .skipIf(process.platform === 'win32')
+    .each(['existing', 'once', 'dynamic', 'prepend-once'])(
+    'defers native signal ownership to a %s custom handler',
+    async (mode) => {
+      const root = await mkdtemp(path.join(tmpdir(), 'limina-custom-signal-'));
+      const pidPath = path.join(root, 'pid');
+      const readyPath = path.join(root, 'ready');
+      const handledPath = path.join(root, 'handled');
+      const finishPath = path.join(root, 'finish');
+      const source = new URL('../typecheck/process-host.ts', import.meta.url)
+        .href;
+      const loader = pathToFileURL(
+        createRequire(import.meta.url).resolve('tsx'),
+      ).href;
+      const childCode = `require('node:fs').writeFileSync(${JSON.stringify(pidPath)},String(process.pid));setInterval(()=>{},1000);`;
+      const registration =
+        mode === 'prepend-once'
+          ? 'prependOnceListener'
+          : mode === 'once'
+            ? 'once'
+            : 'on';
+      const register = `process.${registration}('SIGTERM',custom);`;
+      const driver = `const fs=await import('node:fs');const{setTimeout:delay}=await import('node:timers/promises');const { runCheckerSpawnMeasured } = await import(${JSON.stringify(source)});const custom=()=>fs.writeFileSync(${JSON.stringify(handledPath)},'handled');${mode === 'existing' || mode === 'once' ? register : ''}const controller=new AbortController();const pending=runCheckerSpawnMeasured({command:process.execPath,args:['-e',${JSON.stringify(childCode)}],cwd:process.cwd(),env:process.env,shell:false,stdio:'ignore'},{signal:controller.signal});while(!fs.existsSync(${JSON.stringify(pidPath)}))await delay(5);${mode === 'dynamic' || mode === 'prepend-once' ? register : ''}fs.writeFileSync(${JSON.stringify(readyPath)},'ready');while(!fs.existsSync(${JSON.stringify(finishPath)}))await delay(5);controller.abort();await pending;process.removeListener('SIGTERM',custom);`;
+      const parent = spawn(
+        process.execPath,
+        ['--import', loader, '--input-type=module', '-e', driver],
+        { stdio: 'ignore' },
+      );
+      const closed = new Promise<void>((resolve) =>
+        parent.once('close', () => resolve()),
+      );
+      let pid: number | undefined;
+      try {
+        await waitForFile(readyPath);
+        pid = Number(await readFile(pidPath, 'utf8'));
+        parent.kill('SIGTERM');
+        await waitForFile(handledPath);
+        expect(parent.exitCode).toBeNull();
+        expect(parent.signalCode).toBeNull();
+        expect(isProcessRunning(pid)).toBe(true);
+        if (mode === 'once' || mode === 'prepend-once') parent.kill('SIGTERM');
+        else await writeFile(finishPath, 'finish');
+        await closed;
+        if (mode === 'once' || mode === 'prepend-once')
+          expect(parent.signalCode).toBe('SIGTERM');
+        else expect(parent.exitCode).toBe(0);
+        for (
+          let attempt = 0;
+          attempt < 100 && isProcessRunning(pid);
+          attempt += 1
+        )
+          await waitForMacrotasks(20);
+        expect(isProcessRunning(pid)).toBe(false);
+      } finally {
+        if (parent.exitCode === null && parent.signalCode === null)
+          parent.kill('SIGKILL');
+        await closed;
+        if (pid !== undefined && isProcessRunning(pid))
+          process.kill(pid, 'SIGKILL');
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
-    const onDegraded = vi.fn();
-    const runner = createDefaultRunner({ onDegraded, stdio: 'ignore' });
+  it.skipIf(process.platform === 'win32').each([
+    ['inflight', undefined, 'exit'],
+    ['after-result', undefined, 'exit'],
+    ['inflight', 'off', 'exit'],
+    ['after-result', 'off', 'exit'],
+    ['after-result', undefined, 'SIGTERM'],
+    ['after-result', undefined, 'SIGINT'],
+    ['after-result', 'off', 'SIGTERM'],
+  ])(
+    'cleans its known group on main shutdown %s with host mode %s via %s',
+    async (mode, hostMode, shutdown) => {
+      const root = await mkdtemp(path.join(tmpdir(), 'limina-main-exit-'));
+      const descendantMarker = path.join(root, 'descendant');
+      const groupMarker = path.join(root, 'group');
+      const blockedMarker = path.join(root, 'blocked');
+      const commandRelease = path.join(root, 'command-release');
+      const exitRelease = path.join(root, 'exit-release');
+      const source = new URL('../typecheck/process-host.ts', import.meta.url)
+        .href;
+      const loader = pathToFileURL(
+        createRequire(import.meta.url).resolve('tsx'),
+      ).href;
+      const descendant = `process.on('SIGTERM',()=>{});require('node:fs').writeFileSync(${JSON.stringify(descendantMarker)},String(process.pid));setInterval(()=>{},1000);`;
+      const command = `const fs=require('node:fs');require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:'ignore'});fs.writeFileSync(${JSON.stringify(groupMarker)},JSON.stringify({pid:process.pid,host:process.ppid}));setInterval(()=>{if(${JSON.stringify(mode)}==='after-result'&&fs.existsSync(${JSON.stringify(commandRelease)}))process.exit(0);},5);`;
+      const driver = `const fs=await import('node:fs');const{setTimeout:delay}=await import('node:timers/promises');const { runCheckerSpawnMeasured } = await import(${JSON.stringify(source)});runCheckerSpawnMeasured({command:process.execPath,args:['-e',${JSON.stringify(command)}],cwd:process.cwd(),env:process.env,shell:false,stdio:'ignore'});while(!fs.existsSync(${JSON.stringify(descendantMarker)}))await delay(5);fs.writeFileSync(${JSON.stringify(blockedMarker)},'ready');while(!fs.existsSync(${JSON.stringify(exitRelease)}))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20);${shutdown === 'exit' ? 'process.exit(0);' : 'setInterval(()=>{},1000);'}`;
+      const parent = spawn(
+        process.execPath,
+        ['--import', loader, '--input-type=module', '-e', driver],
+        {
+          stdio: 'ignore',
+          env: { ...process.env, LIMINA_CHECKER_HOST: hostMode },
+        },
+      );
+      const closed = new Promise<void>((resolve) =>
+        parent.once('close', () => resolve()),
+      );
+      let group: { pid: number; host: number } | undefined;
+      try {
+        await waitForFile(blockedMarker);
+        group = JSON.parse(await readFile(groupMarker, 'utf8')) as typeof group;
+        const descendantPid = Number(await readFile(descendantMarker, 'utf8'));
+        if (mode === 'after-result') {
+          await writeFile(commandRelease, 'go');
+          const completedLeader = hostMode === 'off' ? group!.pid : group!.host;
+          for (
+            let attempt = 0;
+            attempt < 100 && isProcessExecuting(completedLeader);
+            attempt += 1
+          )
+            await waitForMacrotasks(20);
+          expect(isProcessExecuting(completedLeader)).toBe(false);
+          expect(isProcessRunning(descendantPid)).toBe(true);
+        }
+        if (shutdown !== 'exit') parent.kill(shutdown as 'SIGINT' | 'SIGTERM');
+        await writeFile(exitRelease, 'exit');
+        await closed;
+        if (shutdown === 'exit') expect(parent.exitCode).toBe(0);
+        else expect(parent.signalCode).toBe(shutdown);
+        for (
+          let attempt = 0;
+          attempt < 100 && isProcessRunning(descendantPid);
+          attempt += 1
+        )
+          await waitForMacrotasks(20);
+        expect(isProcessRunning(descendantPid)).toBe(false);
+        expect(isProcessRunning(group!.pid)).toBe(false);
+      } finally {
+        if (parent.exitCode === null) parent.kill('SIGKILL');
+        await closed;
+        if (group !== undefined) {
+          try {
+            process.kill(
+              -(hostMode === 'off' ? group.pid : group.host),
+              'SIGKILL',
+            );
+          } catch {
+            /*
+            already exited
+            */
+          }
+        }
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
-    const crashedResult = await runner(createSleepTarget(120, 'crash-first'));
+  it
+    .skipIf(process.platform === 'win32')
+    .each(['running', 'completed', 'cancelled'])(
+    'never replays effects after losing a %s command supervisor',
+    async (mode) => {
+      const root = await mkdtemp(path.join(tmpdir(), 'limina-host-loss-'));
+      const marker = path.join(root, 'ledger');
+      const controller = new AbortController();
+      let pids: { pid: number; host: number } | undefined;
+      try {
+        const runner = createDefaultRunner({ stdio: 'ignore' });
+        const pending = Promise.resolve(
+          runner(
+            {
+              ...createSleepTarget(0, mode),
+              args: [
+                '-e',
+                `const fs = require('node:fs'); process.on('SIGTERM', () => {}); process.kill(process.ppid, 'SIGSTOP'); fs.appendFileSync(${JSON.stringify(marker)}, JSON.stringify({ pid: process.pid, host: process.ppid }) + '\\n'); ${mode === 'completed' ? 'process.exit(0)' : 'setInterval(() => {}, 1000)'}`,
+              ],
+            },
+            { signal: controller.signal },
+          ),
+        );
+        await waitForFile(marker);
+        pids = JSON.parse(
+          (await readFile(marker, 'utf8')).trim(),
+        ) as typeof pids;
+        if (mode === 'cancelled')
+          controller.abort(new Error('cancel lost supervisor'));
+        process.kill(pids!.host, 'SIGKILL');
+        const result = await pending;
+        expect(result.status).toBe(1);
+        expect(result.commandDurationMs).toBeUndefined();
+        expect(result.durationMs).toBeGreaterThan(0);
+        if (mode === 'cancelled')
+          expect(result.error?.message).toBe('cancel lost supervisor');
+        expect(
+          (await readFile(marker, 'utf8')).trim().split('\n'),
+        ).toHaveLength(1);
+        expect(isProcessRunning(pids!.pid)).toBe(false);
+        expect(isProcessRunning(pids!.host)).toBe(false);
+      } finally {
+        await disposeCheckerProcessHostForTesting();
+        if (pids !== undefined) {
+          try {
+            process.kill(-pids.host, 'SIGKILL');
+          } catch {
+            /*
+            already gone
+            */
+          }
+        }
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
-    expect(crashedResult.status).toBe(0);
-    expect(crashedResult.durationMs).toBeGreaterThan(0);
-    expect(onDegraded).toHaveBeenCalledTimes(1);
+  it.skipIf(process.platform === 'win32')(
+    'falls back only before dispatch and retains the failed setup interval',
+    async () => {
+      const onDegraded = vi.fn();
+      const result = await runCheckerHostProtocolProbeForTesting({
+        entry: {
+          command: process.execPath,
+          args: [
+            '-e',
+            "setTimeout(() => process.send('invalid'), 80); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);",
+          ],
+        },
+        onDegraded,
+        spec: {
+          command: process.execPath,
+          args: ['-e', 'process.exit(7)'],
+          cwd: process.cwd(),
+          env: process.env,
+          shell: false,
+          stdio: 'ignore',
+        },
+      });
+      expect(result.status).toBe(7);
+      expect(result.commandDurationMs).toBeUndefined();
+      expect(result.durationMs).toBeGreaterThanOrEqual(580);
+      expect(onDegraded).toHaveBeenCalledTimes(1);
+    },
+  );
 
-    const followUpResult = await runner(createSleepTarget(30, 'crash-second'));
-
-    expect(followUpResult.status).toBe(0);
-    expect(followUpResult.durationMs).toBeGreaterThan(0);
-    expect(onDegraded).toHaveBeenCalledTimes(1);
-  });
+  it.skipIf(process.platform === 'win32')(
+    'fails without replay after a malformed post-dispatch response',
+    async () => {
+      const onDegraded = vi.fn();
+      const result = await runCheckerHostProtocolProbeForTesting({
+        entry: {
+          command: process.execPath,
+          args: [
+            '-e',
+            "process.on('message', () => process.send('invalid')); process.send({ type: 'ready' });",
+          ],
+        },
+        onDegraded,
+        spec: {
+          command: process.execPath,
+          args: ['-e', 'process.exit(7)'],
+          cwd: process.cwd(),
+          env: process.env,
+          shell: false,
+          stdio: 'ignore',
+        },
+      });
+      expect(result.status).toBe(1);
+      expect(result.error?.message).toContain('invalid protocol');
+      expect(result.commandDurationMs).toBeUndefined();
+      expect(onDegraded).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('runBuildTargets duration reporting', () => {
@@ -292,6 +592,7 @@ describe('runBuildTargets duration reporting', () => {
       return {
         configPath: target.configPath,
         durationMs: 123,
+        commandDurationMs: 45,
         status: 0,
       };
     };
@@ -301,7 +602,33 @@ describe('runBuildTargets duration reporting', () => {
     });
 
     expect(results).toHaveLength(1);
-    expect(results[0]).toMatchObject({ durationMs: 123, status: 0 });
+    expect(results[0]).toMatchObject({
+      durationMs: 123,
+      commandDurationMs: 45,
+      status: 0,
+    });
+    const result = results[0]!;
+    if (typeof result.status !== 'number')
+      throw new Error('Target did not execute.');
+    expect(toCheckerTargetOutcome(target, result)).toMatchObject({
+      durationMs: 123,
+      commandDurationMs: 45,
+      status: 'passed',
+    });
+    const stats = createCheckerTaskStats({
+      targetResults: [result],
+      rootConfigPaths: [target.configPath],
+      projectRootDir: '/virtual',
+      failedTargets: [],
+      passed: true,
+    });
+    expect(stats.items).toEqual([
+      expect.objectContaining({
+        itemKind: 'checker-target',
+        durationMs: 123,
+        commandDurationMs: 45,
+      }),
+    ]);
   });
 
   it('falls back to pool wall-clock measurement when the runner reports no duration', async () => {

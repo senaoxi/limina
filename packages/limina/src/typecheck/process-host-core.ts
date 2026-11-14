@@ -1,145 +1,27 @@
 import type { ChildProcess } from 'node:child_process';
 import {
-  type CheckerHostRequest,
   type CheckerHostResponse,
   type CheckerHostSpawnMeasurement,
   type CheckerHostSpawnSpec,
   createCancelledCheckerMeasurement,
+  isCheckerHostResponse,
   spawnAndMeasure,
 } from './host-protocol';
+import {
+  ownChildProcessTree,
+  terminateChildProcessTree,
+  waitForChildProcessTreeTermination,
+} from './process-tree';
 
 export type CheckerHostDegradationListener = (reason: string) => void;
 
-interface PendingCheckerSpawn {
-  cancelledMeasurement?: CheckerHostSpawnMeasurement;
-  onDegraded?: CheckerHostDegradationListener;
-  removeAbortListener?: () => void;
-  resolve: (measurement: CheckerHostSpawnMeasurement) => void;
-  signal?: AbortSignal;
-  spec: CheckerHostSpawnSpec;
-}
-
-function removePendingAbortListener(entry: PendingCheckerSpawn): void {
-  if (entry.removeAbortListener !== undefined) entry.removeAbortListener();
-}
-
-function drainPendingCheckerSpawns(
-  pendingById: Map<number, PendingCheckerSpawn>,
-): PendingCheckerSpawn[] {
-  const pending = pendingById.values().toArray();
-  pendingById.clear();
-  for (const entry of pending) removePendingAbortListener(entry);
-  return pending;
-}
-
-function resolvePendingCheckerMeasurement(
-  pending: PendingCheckerSpawn,
-  message: Extract<CheckerHostResponse, { type: 'result' }>,
-): CheckerHostSpawnMeasurement {
-  return pending.cancelledMeasurement ?? createCheckerHostMeasurement(message);
-}
-
-function createPendingCheckerSpawn(options: {
-  onDegraded: CheckerHostDegradationListener | undefined;
-  resolve: (measurement: CheckerHostSpawnMeasurement) => void;
-  spec: CheckerHostSpawnSpec;
-}): PendingCheckerSpawn {
-  return {
-    onDegraded: options.onDegraded,
-    resolve: options.resolve,
-    spec: options.spec,
-  };
-}
-
-function cancelPendingCheckerSpawn(options: {
-  id: number;
-  pendingById: Map<number, PendingCheckerSpawn>;
-  sendCancel: () => void;
-  signal: AbortSignal;
-}): void {
-  const pending = options.pendingById.get(options.id);
-  if (pending === undefined || pending.cancelledMeasurement !== undefined)
-    return;
-  removePendingAbortListener(pending);
-  pending.removeAbortListener = undefined;
-  pending.cancelledMeasurement = createCancelledCheckerMeasurement(
-    options.signal,
-  );
-  options.sendCancel();
-}
-
-function configurePendingAbort(options: {
-  handleAbort: () => void;
-  pending: PendingCheckerSpawn;
-  signal: AbortSignal | undefined;
-}): void {
-  if (options.signal === undefined) return;
-  options.pending.removeAbortListener = () =>
-    options.signal!.removeEventListener('abort', options.handleAbort);
-  options.pending.signal = options.signal;
-}
-
-function listenForPendingAbort(options: {
-  handleAbort: () => void;
-  signal: AbortSignal | undefined;
-}): void {
-  if (options.signal === undefined) return;
-  options.signal.addEventListener('abort', options.handleAbort, { once: true });
-  if (options.signal.aborted) options.handleAbort();
-}
-
-type CheckerHostResult = Extract<CheckerHostResponse, { type: 'result' }>;
-
-function createCheckerHostMeasurement(
-  message: CheckerHostResult,
-): CheckerHostSpawnMeasurement {
-  const measurement: CheckerHostSpawnMeasurement = {
-    durationMs: message.durationMs,
-    status: message.status,
-  };
-
-  if (message.errorMessage === undefined) {
-    return measurement;
-  }
-
-  return {
-    ...measurement,
-    error: new Error(message.errorMessage),
-  };
-}
-
-function referenceChildProcess(child: ChildProcess): void {
-  child.ref();
-
-  if (child.channel) {
-    child.channel.ref();
-  }
-}
-
-function unrefChildProcess(child: ChildProcess): void {
-  child.unref();
-
-  if (child.channel) {
-    child.channel.unref();
-  }
-}
-
-function isChildProcessRunning(child: ChildProcess): boolean {
-  return child.exitCode === null && child.signalCode === null;
-}
-
-const state = {
-  isDegradationNoticeSent: false,
-};
+const state = { isDegradationNoticeSent: false };
 
 export function notifyCheckerHostDegraded(
   reason: string,
   listener: CheckerHostDegradationListener | undefined,
 ): void {
-  if (state.isDegradationNoticeSent) {
-    return;
-  }
-
+  if (state.isDegradationNoticeSent) return;
   state.isDegradationNoticeSent = true;
   listener?.(reason);
 }
@@ -148,217 +30,189 @@ export function resetCheckerHostDegradationNotice(): void {
   state.isDegradationNoticeSent = false;
 }
 
-function notifyProtocolMessage(
-  listener: ((message: unknown) => void) | undefined,
-  message: CheckerHostResponse,
-): void {
-  if (listener) {
-    listener(message);
-  }
-}
+type HostResult = Extract<CheckerHostResponse, { type: 'result' }>;
+type HostPhase = 'awaiting-ready' | 'dispatched' | 'settling' | 'settled';
 
-function notifyDeactivated(listener: (() => void) | undefined): void {
-  if (listener) {
-    listener();
-  }
-}
-
-function isSignalAborted(signal: AbortSignal | undefined): boolean {
-  return signal !== undefined && signal.aborted;
-}
-
+/**
+One already-owned process group, with no retry after a launch attempt.
+*/
 export class CheckerProcessHost {
   readonly #child: ChildProcess;
-
-  readonly #onDeactivate: (() => void) | undefined;
-
-  readonly #pending = new Map<number, PendingCheckerSpawn>();
-
-  readonly #pingTimer: NodeJS.Timeout;
-
-  readonly #removeExitHook: () => void;
-
-  #active = true;
-
-  #disposed = false;
-
-  #nextRequestId = 0;
+  readonly #releaseOwnership: () => void;
+  readonly #onProtocolMessage: ((message: unknown) => void) | undefined;
+  #cancel: (() => void) | undefined;
+  #completion: Promise<CheckerHostSpawnMeasurement> | undefined;
 
   constructor(
     child: ChildProcess,
     onProtocolMessage?: (message: unknown) => void,
-    onDeactivate?: () => void,
   ) {
     this.#child = child;
-    this.#onDeactivate = onDeactivate;
-    const killHostOnParentExit = (): void => {
-      this.#killChild();
-    };
-
-    process.once('exit', killHostOnParentExit);
-    this.#removeExitHook = () => {
-      process.removeListener('exit', killHostOnParentExit);
-    };
-    this.#pingTimer = setInterval(() => {
-      this.#send({ type: 'ping' });
-    }, 5000);
-    this.#pingTimer.unref();
-    child.on('message', (message: CheckerHostResponse) => {
-      this.#handleProtocolMessage(message, onProtocolMessage);
-    });
-    child.on('error', () => {
-      this.#deactivate('checker host process failed to start');
-    });
-    child.on('exit', () => {
-      this.#deactivate('checker host process exited unexpectedly');
-    });
+    this.#releaseOwnership = ownChildProcessTree(child);
+    this.#onProtocolMessage = onProtocolMessage;
   }
 
-  #createAbortHandler(options: {
-    id: number;
-    signal: AbortSignal;
-  }): () => void {
-    return () =>
-      cancelPendingCheckerSpawn({
-        id: options.id,
-        pendingById: this.#pending,
-        sendCancel: () => this.#send({ id: options.id, type: 'cancel' }),
-        signal: options.signal,
+  #run(
+    spec: CheckerHostSpawnSpec,
+    onDegraded: CheckerHostDegradationListener | undefined,
+    externalSignal: AbortSignal | undefined,
+    startedAt: number,
+  ): Promise<CheckerHostSpawnMeasurement> {
+    const child = this.#child;
+    const controller = new AbortController();
+    const signal =
+      externalSignal === undefined
+        ? controller.signal
+        : AbortSignal.any([externalSignal, controller.signal]);
+    let phase: HostPhase = 'awaiting-ready';
+    let hasDispatched = false;
+    let result: HostResult | undefined;
+    let cancelled: CheckerHostSpawnMeasurement | undefined;
+    let timer: NodeJS.Timeout;
+    const closed = new Promise<void>((resolve) => child.once('close', resolve));
+
+    return new Promise((resolve) => {
+      const finish = async (error?: Error): Promise<void> => {
+        if (phase === 'settling' || phase === 'settled') return;
+        phase = 'settling';
+        clearTimeout(timer);
+        terminateChildProcessTree(child);
+        const cleanupError = await waitForChildProcessTreeTermination(child);
+        if (cleanupError === undefined) await closed;
+        this.#releaseOwnership();
+        let measurement: CheckerHostSpawnMeasurement;
+        if (signal?.aborted)
+          cancelled ??= createCancelledCheckerMeasurement(signal);
+        if (cleanupError !== undefined) {
+          measurement = { status: 1, error: cleanupError, durationMs: 0 };
+        } else if (cancelled !== undefined) {
+          measurement = {
+            ...cancelled,
+            ...(result !== undefined && {
+              commandDurationMs: result.commandDurationMs,
+            }),
+          };
+        } else if (!hasDispatched) {
+          notifyCheckerHostDegraded(
+            `${error?.message ?? 'checker supervisor unavailable'} — executing directly before dispatch`,
+            onDegraded,
+          );
+          // Cleanup can yield. Cancellation must be checked again by the direct owner.
+          try {
+            measurement = await spawnAndMeasure(spec, { signal });
+          } catch (error) {
+            measurement = {
+              status: 1,
+              durationMs: 0,
+              error: error instanceof Error ? error : new Error(String(error)),
+            };
+          }
+        } else if (error !== undefined || result === undefined) {
+          measurement = {
+            status: 1,
+            durationMs: 0,
+            error:
+              error ??
+              new Error(
+                'Checker supervisor exited without a result; execution status is unknown.',
+              ),
+          };
+        } else {
+          measurement = {
+            status: result.status,
+            durationMs: 0,
+            commandDurationMs: result.commandDurationMs,
+            ...(result.errorMessage !== undefined && {
+              error: new Error(result.errorMessage),
+            }),
+          };
+        }
+        signal?.removeEventListener('abort', handleAbort);
+        this.#cancel = undefined;
+        phase = 'settled';
+        resolve({ ...measurement, durationMs: performance.now() - startedAt });
+      };
+      const fail = (reason: string): void => {
+        finish(new Error(reason));
+      };
+      const handleAbort = (): void => {
+        cancelled ??= createCancelledCheckerMeasurement(signal!);
+        finish();
+      };
+      this.#cancel = () => {
+        controller.abort(new Error('Checker supervisor disposed.'));
+      };
+      child.on('message', (message: unknown) => {
+        this.#onProtocolMessage?.(message);
+        if (phase === 'settling' || phase === 'settled') return;
+        if (!isCheckerHostResponse(message)) {
+          fail('Checker supervisor sent an invalid protocol message.');
+        } else if (phase === 'awaiting-ready' && message.type === 'ready') {
+          clearTimeout(timer);
+          phase = 'dispatched';
+          // Even a thrown send can follow partial transport delivery. Never replay.
+          hasDispatched = true;
+          try {
+            child.send({ ...spec, type: 'spawn' }, (error) => {
+              if (error !== null)
+                fail(
+                  `Checker supervisor launch transport failed: ${error.message}`,
+                );
+            });
+          } catch (error) {
+            fail(
+              `Checker supervisor launch transport failed: ${String(error)}`,
+            );
+          }
+        } else if (
+          phase === 'dispatched' &&
+          result === undefined &&
+          message.type === 'result'
+        ) {
+          result = message;
+          // A well-behaved supervisor exits after sending. A stuck one still has
+          // a bounded cleanup path; receipt alone never releases the target.
+          timer = setTimeout(() => {
+            finish();
+          }, 1000);
+        } else {
+          fail('Checker supervisor sent an unexpected protocol message.');
+        }
       });
-  }
-
-  #startPendingSpawn(options: {
-    onDegraded: CheckerHostDegradationListener | undefined;
-    resolve: (measurement: CheckerHostSpawnMeasurement) => void;
-    signal: AbortSignal | undefined;
-    spec: CheckerHostSpawnSpec;
-  }): void {
-    const id = this.#nextRequestId;
-    this.#nextRequestId += 1;
-    const pending = createPendingCheckerSpawn(options);
-    const handleAbort = this.#createAbortHandler({
-      id,
-      signal: options.signal!,
-    });
-    configurePendingAbort({
-      handleAbort,
-      pending,
-      signal: options.signal,
-    });
-    this.#pending.set(id, pending);
-    this.#updateRefState();
-    this.#send({ ...options.spec, id, type: 'spawn' });
-    listenForPendingAbort({ handleAbort, signal: options.signal });
-  }
-
-  #handleProtocolMessage(
-    message: CheckerHostResponse,
-    onProtocolMessage: ((message: unknown) => void) | undefined,
-  ): void {
-    notifyProtocolMessage(onProtocolMessage, message);
-    if (message.type !== 'result') {
-      return;
-    }
-
-    const pending = this.#pending.get(message.id);
-    if (pending === undefined) {
-      return;
-    }
-
-    this.#pending.delete(message.id);
-    removePendingAbortListener(pending);
-    this.#updateRefState();
-    pending.resolve(resolvePendingCheckerMeasurement(pending, message));
-  }
-
-  #isInactiveAndIdle(): boolean {
-    return !this.#active && this.#pending.size === 0;
-  }
-
-  #deactivate(reason: string): void {
-    if (this.#isInactiveAndIdle()) {
-      return;
-    }
-
-    this.#active = false;
-    clearInterval(this.#pingTimer);
-    this.#removeExitHook();
-    notifyDeactivated(this.#onDeactivate);
-
-    const pending = drainPendingCheckerSpawns(this.#pending);
-    this.#updateRefState();
-
-    if (this.#disposed) {
-      return;
-    }
-
-    this.#retryPending(reason, pending);
-  }
-
-  #retryPending(reason: string, pending: readonly PendingCheckerSpawn[]): void {
-    for (const entry of pending) {
-      if (entry.cancelledMeasurement !== undefined) {
-        entry.resolve(entry.cancelledMeasurement);
-        continue;
-      }
-      notifyCheckerHostDegraded(
-        `${reason} — pending checkers retried in-process`,
-        entry.onDegraded,
+      child.once('error', (error) => {
+        finish(error);
+      });
+      child.once('close', () => {
+        finish();
+      });
+      child.once('disconnect', () => {
+        if (result === undefined)
+          fail(
+            'Checker supervisor channel closed before a result; execution status is unknown.',
+          );
+      });
+      timer = setTimeout(
+        () => fail('Checker supervisor did not become ready.'),
+        10_000,
       );
-      const measurement = spawnAndMeasure(entry.spec, { signal: entry.signal });
-      (async () => {
-        entry.resolve(await measurement);
-      })();
-    }
+      signal?.addEventListener('abort', handleAbort, { once: true });
+      if (signal?.aborted) handleAbort();
+    });
   }
-
-  #updateRefState(): void {
-    if (this.#pending.size > 0) {
-      referenceChildProcess(this.#child);
-      return;
-    }
-
-    unrefChildProcess(this.#child);
-  }
-
-  #killChild(): void {
-    if (isChildProcessRunning(this.#child)) {
-      this.#child.kill();
-    }
-  }
-
-  #send(request: CheckerHostRequest): void {
-    try {
-      this.#child.send(request);
-    } catch {
-      this.#deactivate('checker host channel closed unexpectedly');
-    }
-  }
-
-  get active(): boolean {
-    return this.#active;
-  }
-
-  dispose(): void {
-    this.#disposed = true;
-    this.#active = false;
-    clearInterval(this.#pingTimer);
-    this.#removeExitHook();
-    this.#killChild();
+  async dispose(): Promise<void> {
+    this.#cancel?.();
+    await this.#completion;
   }
 
   spawnMeasured(
     spec: CheckerHostSpawnSpec,
     onDegraded: CheckerHostDegradationListener | undefined,
     signal?: AbortSignal,
+    startedAt: number = performance.now(),
   ): Promise<CheckerHostSpawnMeasurement> {
-    if (!this.#active) {
-      return spawnAndMeasure(spec, { signal });
-    }
-    return isSignalAborted(signal)
-      ? Promise.resolve(createCancelledCheckerMeasurement(signal!))
-      : new Promise((resolve) =>
-          this.#startPendingSpawn({ onDegraded, resolve, signal, spec }),
-        );
+    if (this.#completion !== undefined)
+      throw new Error('Checker supervisor already has a request.');
+    this.#completion = this.#run(spec, onDegraded, signal, startedAt);
+    return this.#completion;
   }
 }

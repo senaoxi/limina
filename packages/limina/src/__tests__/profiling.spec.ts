@@ -95,6 +95,85 @@ describe('profiling identity', () => {
     }
   });
 
+  it('recognizes the exact source CLI entry and hashes source changes without traversing dependency links', async () => {
+    const fixture = await createRuntimeFixture();
+    const sourceEntry = path.join(fixture.packageRoot, 'src/cli.ts');
+    await mkdir(path.dirname(sourceEntry));
+    await writeFile(sourceEntry, 'export {};\n');
+    await mkdir(path.join(fixture.packageRoot, 'node_modules'));
+    await symlink(
+      fixture.executablePath,
+      path.join(fixture.packageRoot, 'node_modules/linked'),
+    );
+    try {
+      const first = await collectRuntimeTreeIdentity({
+        executableLogicalPath: sourceEntry,
+        packageLogicalPath: fixture.packageRoot,
+      });
+      expect(first.entryKind).toBe('source');
+      await writeFile(sourceEntry, 'export const changed = true;\n');
+      const changed = await collectRuntimeTreeIdentity({
+        executableLogicalPath: sourceEntry,
+        packageLogicalPath: fixture.packageRoot,
+      });
+      expect(changed.treeHash).not.toBe(first.treeHash);
+      await writeFile(
+        path.join(fixture.packageRoot, 'src/other.ts'),
+        'export {};\n',
+      );
+      await expect(
+        collectRuntimeTreeIdentity({
+          executableLogicalPath: path.join(fixture.packageRoot, 'src/other.ts'),
+          packageLogicalPath: fixture.packageRoot,
+        }),
+      ).rejects.toThrow(/does not match package.json#bin/u);
+      await symlink(
+        sourceEntry,
+        path.join(fixture.packageRoot, 'src/linked.ts'),
+      );
+      await expect(
+        collectRuntimeTreeIdentity({
+          executableLogicalPath: sourceEntry,
+          packageLogicalPath: fixture.packageRoot,
+        }),
+      ).rejects.toThrow(/contains a symbolic link/u);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each(['source', 'distribution'] as const)(
+    'rejects an external manifest symlink for the %s entry',
+    async (entryKind) => {
+      const fixture = await createRuntimeFixture();
+      const sourceEntry = path.join(fixture.packageRoot, 'src/cli.ts');
+      await mkdir(path.dirname(sourceEntry));
+      await writeFile(sourceEntry, 'export {};\n');
+      const manifestPath = path.join(fixture.packageRoot, 'package.json');
+      const externalManifest = path.join(
+        fixture.rootDir,
+        'external-package.json',
+      );
+      await writeFile(
+        externalManifest,
+        JSON.stringify({ bin: { limina: './bin/limina.js' } }),
+      );
+      await rm(manifestPath);
+      await symlink(externalManifest, manifestPath);
+      try {
+        await expect(
+          collectRuntimeTreeIdentity({
+            executableLogicalPath:
+              entryKind === 'source' ? sourceEntry : fixture.executablePath,
+            packageLogicalPath: fixture.packageRoot,
+          }),
+        ).rejects.toThrow(/contains a symbolic link.*package\.json/u);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('rejects symlink entries inside the runtime tree', async () => {
     const fixture = await createRuntimeFixture();
     await symlink(

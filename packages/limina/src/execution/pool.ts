@@ -25,36 +25,35 @@ export async function runPool<T, R>(
 
   const results: R[] = [];
   let nextIndex = 0;
+  let failure: { error: unknown } | undefined;
 
   async function runWorker(): Promise<void> {
-    for (;;) {
-      const index = nextIndex;
-      nextIndex += 1;
+    try {
+      for (;;) {
+        if (failure !== undefined) return;
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= options.items.length) return;
 
-      if (index >= options.items.length) {
-        return;
-      }
-
-      const item = options.items[index]!;
-      options.onStart?.(item, index);
-
-      try {
-        const result = await options.run(item, index);
-        results[index] = result;
-        options.onResult?.(item, result, index);
-      } catch (error) {
-        if (!options.onError) {
-          throw error;
+        const item = options.items[index]!;
+        options.onStart?.(item, index);
+        let result: R;
+        try {
+          result = await options.run(item, index);
+        } catch (error) {
+          if (!options.onError) throw error;
+          result = await options.onError(item, error, index);
         }
-
-        const result = await options.onError(item, error, index);
         results[index] = result;
         options.onResult?.(item, result, index);
       }
+    } catch (error) {
+      failure ??= { error };
     }
   }
 
   const workerCount = Math.min(options.concurrency, options.items.length);
   await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  if (failure !== undefined) throw failure.error;
   return results;
 }

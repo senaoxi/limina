@@ -6,7 +6,7 @@ import type {
 import type { SourceIssueCode } from '../report';
 
 export const SOURCE_ISSUE_SNAPSHOT_VERSION = 2;
-export const CHECK_ISSUE_SNAPSHOT_VERSION = 9;
+export const CHECK_ISSUE_SNAPSHOT_VERSION = 10;
 
 export const LIMINA_CHECK_TASK_NAMES = [
   'checker:build',
@@ -67,6 +67,7 @@ export interface ValidationCheckItemSnapshot extends CheckItemStatistics {
 }
 
 export interface CheckerTargetCheckItemSnapshot extends CheckItemStatistics {
+  commandDurationMs?: number;
   blockedBy?: readonly { id: string; name: string }[];
   id: string;
   itemKind: 'checker-target';

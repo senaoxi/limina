@@ -49,6 +49,7 @@ export class LiminaPreflightManager {
   #cache = new PreflightGenerationCache(0);
   #generation = 0;
   #providerGeneration = 0;
+  #svelteRouteExcluded = false;
   readonly #usesCustomProviders: boolean;
   #analysisCache: AnalysisCacheController | undefined;
   readonly #configuration: { assertStable(): void };
@@ -128,6 +129,7 @@ export class LiminaPreflightManager {
     if (isAdvance) {
       this.#generation += 1;
       this.#producerReceipt = undefined;
+      this.#svelteRouteExcluded = false;
     }
     this.#providerGeneration += 1;
     this.#cache = new PreflightGenerationCache(this.#generation, slot);
@@ -183,6 +185,21 @@ export class LiminaPreflightManager {
     this.#producerReceipt = receipt;
     this.#replaceProviderGeneration(false);
   }
+  #recordSvelteRoute(hasSvelte: boolean): boolean {
+    if (!hasSvelte) this.#svelteRouteExcluded = true;
+    return hasSvelte;
+  }
+  async #validateSvelteRoute<T extends PreparedTsconfigGraph>(
+    pending: Promise<T>,
+  ): Promise<T> {
+    const graph = await pending;
+    if (
+      this.#svelteRouteExcluded &&
+      (graph.governedSources.get('svelte-check')?.size ?? 0) > 0
+    )
+      throw new Error('Svelte route inputs changed; rerun the command.');
+    return graph;
+  }
   get profilingMetrics(): AnalysisMetricsRecorder | undefined {
     return this.#profilingMetrics;
   }
@@ -204,6 +221,7 @@ export class LiminaPreflightManager {
     );
     pending.#generation = this.#generation;
     pending.#providerGeneration = this.#providerGeneration + 1;
+    pending.#svelteRouteExcluded = this.#svelteRouteExcluded;
     pending.run = pending.#createRun();
     if (purpose === 'complete' && this.#producerReceipt !== undefined) {
       pending.#producerReceipt = this.#producerReceipt;
@@ -254,28 +272,36 @@ export class LiminaPreflightManager {
     this.providers.dispose?.();
   }
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
-    this.#cache.generatedGraph ??= queries.loadAnalyzedGraph({
-      cache: this.#analysisCache,
-      configObservation: this.#configuration,
-      source: this,
-      getGraph: this.#generatedGraphProvider,
-      refresh: () => this.#retryAnalysis(),
-    });
+    this.#cache.generatedGraph ??= this.#validateSvelteRoute(
+      queries.loadAnalyzedGraph({
+        cache: this.#analysisCache,
+        configObservation: this.#configuration,
+        source: this,
+        getGraph: this.#generatedGraphProvider,
+        refresh: () => this.#retryAnalysis(),
+      }),
+    );
     return this.#cache.generatedGraph;
   }
   async hasSvelteCheckProjects(): Promise<boolean> {
     const materialized = this.#cache.materializationSlot.receipt?.graph;
     if (materialized !== undefined)
-      return (materialized.governedSources.get('svelte-check')?.size ?? 0) > 0;
+      return this.#recordSvelteRoute(
+        (materialized.governedSources.get('svelte-check')?.size ?? 0) > 0,
+      );
     this.#refreshProducerDiscovery();
     await this.ensureWorkspaceValidated();
-    return this.providers.buildGraph.hasSvelteCheckProjects();
+    return this.#recordSvelteRoute(
+      !(await this.providers.buildGraph.canExcludeSvelteCheckProjects()) &&
+        (await this.providers.buildGraph.hasSvelteCheckProjects()),
+    );
   }
   async ensureProducerBuildPlan(): Promise<ProducerBuildPlan> {
     this.#refreshProducerDiscovery();
     await this.ensureWorkspaceValidated();
-    this.#cache.producerBuildPlan ??=
-      this.providers.buildGraph.getProducerBuildPlan();
+    this.#cache.producerBuildPlan ??= this.#validateSvelteRoute(
+      this.providers.buildGraph.getProducerBuildPlan(),
+    );
     return this.#cache.producerBuildPlan;
   }
   async prepareConsumerPhase(receipt: ProducerBuildReceipt): Promise<void> {

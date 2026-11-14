@@ -1,4 +1,5 @@
 import { mkdir, readdir } from 'node:fs/promises';
+import { performance } from 'node:perf_hooks';
 import path from 'pathe';
 import {
   createLeaseOwner,
@@ -26,19 +27,25 @@ export type {
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_BACKOFF_MS = 250;
 
-function timeoutAt(options: CrossProcessLeaseOptions): number {
-  return Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+interface LeaseDeadline {
+  expiresAt: number;
+  timeoutMs: number;
+}
+
+function createDeadline(options: CrossProcessLeaseOptions): LeaseDeadline {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  return { expiresAt: performance.now() + timeoutMs, timeoutMs };
 }
 
 async function waitForRetry(
-  deadline: number,
+  deadline: LeaseDeadline,
   attempt: number,
   description: string,
 ): Promise<void> {
-  const remaining = deadline - Date.now();
+  const remaining = deadline.expiresAt - performance.now();
   if (remaining <= 0) {
     throw new CrossProcessLeaseTimeoutError(
-      `Timed out after 30 seconds waiting for ${description}.`,
+      `Timed out after ${deadline.timeoutMs} ms waiting for ${description}.`,
     );
   }
   const delay = Math.min(MAX_BACKOFF_MS, 10 * 2 ** Math.min(attempt, 5));
@@ -158,7 +165,7 @@ function leaseDescription(
 
 async function retryLease(options: {
   acquire(): Promise<CrossProcessLease | null>;
-  deadline: number;
+  deadline: LeaseDeadline;
   description: string;
 }): Promise<CrossProcessLease> {
   for (let attempt = 0; ; attempt += 1) {
@@ -170,7 +177,7 @@ async function retryLease(options: {
 
 async function waitForActiveReaders(
   readersPath: string,
-  deadline: number,
+  deadline: LeaseDeadline,
   description: string,
 ): Promise<void> {
   let attempt = 0;
@@ -187,7 +194,7 @@ export async function acquireCrossProcessReadLease(
   const paths = getLeasePaths(canonicalRootDirectory, options);
   await ensureLeaseDirectories(paths);
   const owner = createLeaseOwner();
-  const deadline = timeoutAt(options);
+  const deadline = createDeadline(options);
   return retryLease({
     acquire: () => tryAcquireReader({ owner, paths }),
     deadline,
@@ -202,7 +209,7 @@ export async function acquireCrossProcessWriteLease(
   const paths = getLeasePaths(canonicalRootDirectory, options);
   await ensureLeaseDirectories(paths);
   const owner = createLeaseOwner();
-  const deadline = timeoutAt(options);
+  const deadline = createDeadline(options);
   const lease = await retryLease({
     acquire: () => tryAcquireWriter({ owner, paths }),
     deadline,

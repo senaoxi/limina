@@ -5,6 +5,7 @@ import { DEFAULT_VISIBLE_ISSUE_LIMIT } from '../check-reporting/inventory-presen
 import { createCheckRunRecorder } from '../check-reporting/run-recorder';
 import { formatCheckRunSummaryHuman } from '../check-reporting/summary';
 import type { RunExecutionResult } from '../execution/executor';
+import { ExecutionTrace } from '../execution/trace';
 import {
   createDefaultExecutionPlan,
   createExecutionPlan,
@@ -33,6 +34,7 @@ type ProfileSession = Awaited<ReturnType<typeof createCheckProfileSession>>;
 
 interface CheckExecutionContext {
   command: string;
+  trace?: ExecutionTrace;
   config: ResolvedLiminaConfig;
   flow: CheckFlow;
   pipeline: string | undefined;
@@ -169,6 +171,7 @@ function createRecorder(
 ): ReturnType<typeof createCheckRunRecorder> {
   return createCheckRunRecorder({
     command: context.command,
+    trace: context.trace,
     configPath: context.config.configPath,
     pipeline: context.pipeline ?? 'default',
     plannedTasks: context.plan.tasks,
@@ -211,11 +214,13 @@ async function isExecuteCheckFlow(
 async function finishProfile(options: {
   session: ProfileSession | undefined;
   state: CheckRunState;
+  trace?: ExecutionTrace;
 }): Promise<void> {
   if (options.session === undefined) return;
   await options.session.finish({
     passed: options.state.passed,
     run: getRecordedRun(options.state),
+    trace: options.trace?.snapshot(),
   });
 }
 
@@ -223,18 +228,27 @@ async function finalizeCheckRun(
   context: CheckExecutionContext,
   state: CheckRunState,
 ): Promise<void> {
-  try {
-    await finishProfile({ session: context.profileSession, state });
-  } finally {
-    context.preflight.dispose();
-  }
+  const startedAt = context.trace?.now();
+  context.preflight.dispose();
+  if (startedAt !== undefined)
+    context.trace?.phase('preflight-disposal', startedAt);
+  await finishProfile({
+    session: context.profileSession,
+    state,
+    trace: context.trace,
+  });
 }
 
 async function createExecutionContext(options: {
   flags: CheckFlags;
   pipeline: string | undefined;
+  trace?: ExecutionTrace;
 }): Promise<CheckExecutionContext> {
+  const configStart = options.trace?.now();
   const config = await loadCliConfig(options.flags, 'check');
+  if (configStart !== undefined)
+    options.trace?.phase('config-load', configStart);
+  const setupStart = options.trace?.now();
   const command = createCommandLabel(options.pipeline);
   const metrics = createProfileMetrics();
   const preflight = new LiminaPreflightManager({
@@ -243,49 +257,68 @@ async function createExecutionContext(options: {
     analysisCache: true,
     forceAnalysisCache: options.flags.force === true,
   });
-  const profileSession = await createProfileSessionIfEnabled({
-    command,
-    metrics,
-    preflight,
-  });
-  const sourceIssueReport = {
-    ...createSourceIssueReportOptions(options.flags, command),
-    defer: true,
-  };
-  const planOptions: CheckPlanOptions = {
-    checkIssueReport: {
-      command,
+  try {
+    const sourceIssueReport = {
+      ...createSourceIssueReportOptions(options.flags, command),
       defer: true,
-      verbose: options.flags.verbose,
-    },
-    cwd: process.cwd(),
-    packageNames: parsePackageNames(options.flags.package),
-    preflight,
-    sourceIssueReport,
-  };
-  return {
-    command,
-    config,
-    flow: createCliFlow({ check: true }),
-    pipeline: options.pipeline,
-    plan: createPlan({ config, pipeline: options.pipeline, planOptions }),
-    planOptions,
-    preflight,
-    profileSession,
-  };
+    };
+    const planOptions: CheckPlanOptions = {
+      checkIssueReport: {
+        command,
+        defer: true,
+        verbose: options.flags.verbose,
+      },
+      cwd: process.cwd(),
+      packageNames: parsePackageNames(options.flags.package),
+      preflight,
+      sourceIssueReport,
+    };
+    const plan = createPlan({
+      config,
+      pipeline: options.pipeline,
+      planOptions,
+    });
+    const flow = createCliFlow({ check: true });
+    const profileSession = await createProfileSessionIfEnabled({
+      command,
+      metrics,
+      preflight,
+    });
+    if (setupStart !== undefined)
+      options.trace?.phase('preflight-and-profile-setup', setupStart);
+    return {
+      command,
+      trace: options.trace,
+      config,
+      flow,
+      pipeline: options.pipeline,
+      plan,
+      planOptions,
+      preflight,
+      profileSession,
+    };
+  } catch (error) {
+    preflight.dispose();
+    throw error;
+  }
 }
 
 export async function runConfiguredCheck(options: {
   flags: CheckFlags;
   pipeline: string | undefined;
 }): Promise<void> {
-  const context = await createExecutionContext(options);
+  const trace =
+    process.env.LIMINA_PROFILE === '1' ? new ExecutionTrace() : undefined;
+  const context = await createExecutionContext({ ...options, trace });
+  const executionStart = trace?.now();
   const state: CheckRunState = { passed: false };
   try {
     state.passed = await runCheckWithCliFlowCleanup(context.flow, () =>
       isExecuteCheckFlow(context, state),
     );
   } finally {
+    if (executionStart !== undefined)
+      trace?.phase('check-execution-and-reporting', executionStart);
     await finalizeCheckRun(context, state);
   }
   if (!state.passed) process.exitCode = 1;

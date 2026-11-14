@@ -112,6 +112,9 @@ function createTargetStatsItem(options: {
   });
   return {
     ...item,
+    ...(options.targetResult.commandDurationMs !== undefined && {
+      commandDurationMs: options.targetResult.commandDurationMs,
+    }),
     id: options.targetResult.id,
     itemKind: 'checker-target',
     ...createTargetStatusFields(options),

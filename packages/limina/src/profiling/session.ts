@@ -17,6 +17,7 @@ export interface CheckProfileSession {
   finish(options: {
     passed: boolean;
     run?: LiminaCheckRunSummary;
+    trace?: object;
   }): Promise<void>;
 }
 
@@ -130,6 +131,7 @@ function createProfilePayload(options: {
   passed: boolean;
   peakRssBytes: number;
   run?: LiminaCheckRunSummary;
+  trace?: object;
   state: ProfileSessionState;
 }): object {
   return {
@@ -143,6 +145,15 @@ function createProfilePayload(options: {
     result: options.passed ? 'passed' : 'failed',
     run: options.run,
     runtime: options.state.runtime,
+    trace: options.trace,
+    durationScope:
+      'profile session after runtime identity collection through payload creation; excludes profile write and summary output',
+    cliTraceScope:
+      'runConfiguredCheck entry through preflight disposal; excludes module loader, profile write, summary output and process exit',
+    runDurationScope:
+      'first task lifecycle start through analysis cache publication; excludes final issue snapshot writes',
+    taskDurationScope:
+      'runner wall interval, inclusive of nested graph preparation, admission, resources and child execution; not CPU time',
     schemaVersion: 1,
   };
 }
@@ -171,7 +182,9 @@ export async function createCheckProfileSession(options: {
   const state: ProfileSessionState = {
     buildInputHash: readExpectedHash('LIMINA_PROFILE_BUILD_INPUT_HASH'),
     command: options.command,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(
+      performance.timeOrigin + performance.now(),
+    ).toISOString(),
     metrics: options.metrics,
     runtime,
     startedAt: performance.now(),
@@ -186,17 +199,22 @@ export async function createCheckProfileSession(options: {
     async finish(result: {
       passed: boolean;
       run?: LiminaCheckRunSummary;
+      trace?: object;
     }): Promise<void> {
       clearInterval(sampler);
       peakRssBytes = Math.max(peakRssBytes, process.memoryUsage.rss());
+      const completedAt = new Date(
+        performance.timeOrigin + performance.now(),
+      ).toISOString();
       await writeJsonAtomically(
         options.artifactNamespace,
         getProfilePath(options.artifactNamespace),
         createProfilePayload({
-          completedAt: new Date().toISOString(),
+          completedAt,
           passed: result.passed,
           peakRssBytes,
           run: result.run,
+          trace: result.trace,
           state,
         }),
       );

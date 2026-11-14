@@ -59,6 +59,7 @@ function collectProjectFacts(options: {
   if (state.semanticAuthority.kind === 'pending') {
     return collectPendingOwnershipEvidence({
       ...options.base,
+      metrics: options.caches.metrics,
       onSupplementalAttempt: () => {
         if (options.caches.analysisCache)
           options.caches.analysisCache.requiresSupplementalReassessment = true;
@@ -162,6 +163,7 @@ export async function collectCheckerDependencyFacts(options: {
   caches.sourceConfigCoverage = options.discovery.sourceConfigCoverage;
   const core = new TypeEvidenceCore({
     analysisCache: caches.analysisCache,
+    metrics: caches.metrics,
     generation: getGeneration(options.projectConfigCache),
     importAnalysis: options.importAnalysis,
     workspaceSourceBoundaryProvider: () => workspaceSourceBoundary,

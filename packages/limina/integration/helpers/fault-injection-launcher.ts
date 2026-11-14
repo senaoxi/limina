@@ -234,7 +234,7 @@ function injectProtocolFault(options: {
     if (measurement.error) throw measurement.error;
     if (measurement.status !== 0) {
       throw new Error(
-        `Checker host protocol retry exited with code ${measurement.status}.`,
+        `Checker host pre-dispatch fallback exited with code ${measurement.status}.`,
       );
     }
     return { issues: [], status: 'passed' };

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import {
   type InternalProcessEntry,
   resolveInternalProcessEntry,
@@ -6,6 +6,7 @@ import {
 import {
   type CheckerHostSpawnMeasurement,
   type CheckerHostSpawnSpec,
+  createCancelledCheckerMeasurement,
   spawnAndMeasure,
 } from './host-protocol';
 import {
@@ -17,94 +18,58 @@ import {
 
 export type { CheckerHostDegradationListener } from './process-host-core';
 
-type CheckerHostEntry = InternalProcessEntry;
-
 function resolveCheckerHostEntry(
   moduleUrl: string = import.meta.url,
-): CheckerHostEntry | undefined {
+): InternalProcessEntry | undefined {
   return resolveInternalProcessEntry({
     bundleFileName: 'checker-host-process.js',
     moduleUrl,
     sourceFileName: 'host-process.ts',
+    sourceLoader: 'direct',
   });
 }
 
 export const resolveCheckerHostEntryForTesting: typeof resolveCheckerHostEntry =
   resolveCheckerHostEntry;
+const activeHosts = new Set<CheckerProcessHost>();
 
-const state = {
-  sharedHost: undefined as CheckerProcessHost | undefined,
-  isSharedHostUnavailable: false,
-};
-
-function isHostDisabled(
-  onDegraded: CheckerHostDegradationListener | undefined,
-): boolean {
-  if (process.env.LIMINA_CHECKER_HOST !== 'off') {
-    return false;
-  }
-
-  notifyCheckerHostDegraded(
-    'LIMINA_CHECKER_HOST=off — durations measured in-process',
-    onDegraded,
-  );
-  return true;
-}
-
-function isActiveHost(
-  host: CheckerProcessHost | undefined,
-): host is CheckerProcessHost {
-  return host !== undefined && host.active;
-}
-
-function markSharedHostUnavailable(): void {
-  state.sharedHost = undefined;
-  state.isSharedHostUnavailable = true;
-}
-
-function createSharedCheckerHost(
-  onDegraded: CheckerHostDegradationListener | undefined,
-): CheckerProcessHost | undefined {
-  const entry = resolveCheckerHostEntry();
-  if (entry === undefined) {
-    markSharedHostUnavailable();
+async function runSupervisor(options: {
+  entry: InternalProcessEntry;
+  spec: CheckerHostSpawnSpec;
+  startedAt: number;
+  onDegraded?: CheckerHostDegradationListener;
+  onProtocolMessage?: (message: unknown) => void;
+  signal?: AbortSignal;
+}): Promise<CheckerHostSpawnMeasurement> {
+  let child: ChildProcess;
+  try {
+    child = spawn(options.entry.command, options.entry.args, {
+      detached: true,
+      env: process.env,
+      stdio: [options.spec.stdio, 'inherit', 'inherit', 'ipc'],
+    });
+  } catch (error) {
     notifyCheckerHostDegraded(
-      'checker host entry could not be resolved — durations measured in-process',
-      onDegraded,
+      `checker supervisor failed before dispatch: ${String(error)}`,
+      options.onDegraded,
     );
-    return undefined;
+    const result = await spawnAndMeasure(options.spec, {
+      signal: options.signal,
+    });
+    return { ...result, durationMs: performance.now() - options.startedAt };
   }
-
-  const child = spawn(entry.command, entry.args, {
-    env: process.env,
-    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-  });
-  state.sharedHost = new CheckerProcessHost(
-    child,
-    undefined,
-    markSharedHostUnavailable,
-  );
-  return state.sharedHost;
-}
-
-function resolveAvailableSharedHost(
-  onDegraded: CheckerHostDegradationListener | undefined,
-): CheckerProcessHost | undefined {
-  if (state.isSharedHostUnavailable) {
-    return undefined;
+  const host = new CheckerProcessHost(child, options.onProtocolMessage);
+  activeHosts.add(host);
+  try {
+    return await host.spawnMeasured(
+      options.spec,
+      options.onDegraded,
+      options.signal,
+      options.startedAt,
+    );
+  } finally {
+    activeHosts.delete(host);
   }
-
-  return isActiveHost(state.sharedHost)
-    ? state.sharedHost
-    : createSharedCheckerHost(onDegraded);
-}
-
-function resolveSharedCheckerHost(
-  onDegraded: CheckerHostDegradationListener | undefined,
-): CheckerProcessHost | undefined {
-  return isHostDisabled(onDegraded)
-    ? undefined
-    : resolveAvailableSharedHost(onDegraded);
 }
 
 export async function runCheckerSpawnMeasured(
@@ -114,38 +79,41 @@ export async function runCheckerSpawnMeasured(
     signal?: AbortSignal;
   } = {},
 ): Promise<CheckerHostSpawnMeasurement> {
-  const host = resolveSharedCheckerHost(options.onDegraded);
-
-  return host
-    ? host.spawnMeasured(spec, options.onDegraded, options.signal)
-    : spawnAndMeasure(spec, { signal: options.signal });
+  if (options.signal?.aborted)
+    return createCancelledCheckerMeasurement(options.signal);
+  const startedAt = performance.now();
+  const isDisabled =
+    process.env.LIMINA_CHECKER_HOST === 'off' || process.platform === 'win32';
+  const entry = isDisabled ? undefined : resolveCheckerHostEntry();
+  if (entry !== undefined)
+    return runSupervisor({ ...options, entry, spec, startedAt });
+  notifyCheckerHostDegraded(
+    isDisabled
+      ? 'checker supervisor disabled or unavailable on this platform — executing directly'
+      : 'checker supervisor entry could not be resolved — executing directly',
+    options.onDegraded,
+  );
+  const result = await spawnAndMeasure(spec, { signal: options.signal });
+  return { ...result, durationMs: performance.now() - startedAt };
 }
 
 export async function runCheckerHostProtocolProbeForTesting(options: {
   entry: { args: readonly string[]; command: string };
   onDegraded?: CheckerHostDegradationListener;
   onProtocolMessage?: (message: unknown) => void;
+  signal?: AbortSignal;
   spec: CheckerHostSpawnSpec;
 }): Promise<CheckerHostSpawnMeasurement> {
-  const child = spawn(options.entry.command, [...options.entry.args], {
-    env: process.env,
-    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+  if (options.signal?.aborted)
+    return createCancelledCheckerMeasurement(options.signal);
+  return runSupervisor({
+    ...options,
+    entry: { ...options.entry, args: [...options.entry.args] },
+    startedAt: performance.now(),
   });
-  const host = new CheckerProcessHost(child, options.onProtocolMessage);
-
-  try {
-    return await host.spawnMeasured(options.spec, options.onDegraded);
-  } finally {
-    host.dispose();
-    state.sharedHost = undefined;
-    state.isSharedHostUnavailable = false;
-    resetCheckerHostDegradationNotice();
-  }
 }
 
-export function disposeCheckerProcessHostForTesting(): void {
-  state.sharedHost?.dispose();
-  state.sharedHost = undefined;
-  state.isSharedHostUnavailable = false;
+export async function disposeCheckerProcessHostForTesting(): Promise<void> {
+  await Promise.all([...activeHosts].map((host) => host.dispose()));
   resetCheckerHostDegradationNotice();
 }

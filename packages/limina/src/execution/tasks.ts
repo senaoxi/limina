@@ -63,6 +63,7 @@ export interface ExecutionTaskRunResult {
 }
 
 export interface StartedTaskResult extends ExecutionTaskRunResult {
+  timing?: { startedAt: string; completedAt: string };
   durationMs: number;
 }
 
@@ -77,21 +78,29 @@ export interface CompletedRunOutcome {
 }
 
 export type TaskLifecycleEvent =
-  | { startedAt: string; type: 'start' }
+  | { startedAt: string; startedAtMonotonic?: number; type: 'start' }
   | {
       completedAt: string;
+      startedAt?: string;
       durationMs: number;
       stats?: LiminaCheckRunTaskStats;
       type: 'pass';
     }
   | {
       completedAt: string;
+      startedAt?: string;
       durationMs: number;
+      executionStarted?: boolean;
       reason?: string;
       stats?: LiminaCheckRunTaskStats;
       type: 'fail';
     }
-  | { completedAt: string; durationMs: number; type: 'disable' }
+  | {
+      completedAt: string;
+      startedAt?: string;
+      durationMs: number;
+      type: 'disable';
+    }
   | { blockedBy: TaskReference; type: 'block' }
   | { reason: string; type: 'skip' };
 

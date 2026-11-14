@@ -132,7 +132,13 @@ function isCheckerTargetCheckItem(
 ): value is Record<string, unknown> & CheckerTargetCheckItemSnapshot {
   if (value.itemKind !== 'checker-target') return false;
   return isAllValid([
-    hasOnlyKeys(value, [...CHECK_ITEM_STATISTIC_KEYS, 'blockedBy', 'id']),
+    hasOnlyKeys(value, [
+      ...CHECK_ITEM_STATISTIC_KEYS,
+      'blockedBy',
+      'commandDurationMs',
+      'id',
+    ]),
+    isOptionalFiniteNonNegativeNumber(value.commandDurationMs),
     hasCheckerTargetId(value),
     hasValidCheckerTargetBlockers(value),
   ]);

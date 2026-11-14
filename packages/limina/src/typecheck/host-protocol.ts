@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import {
+  ownChildProcessTree,
   terminateChildProcessTree,
   waitForChildProcessTreeTermination,
 } from './process-tree';
@@ -15,27 +16,75 @@ export interface CheckerHostSpawnSpec {
 
 export interface CheckerHostSpawnMeasurement {
   durationMs: number;
+  commandDurationMs?: number;
   error?: Error;
   status: number;
 }
 
-export type CheckerHostRequest =
-  | (CheckerHostSpawnSpec & {
-      id: number;
-      type: 'spawn';
-    })
-  | { id: number; type: 'cancel' }
-  | { type: 'ping' };
+export type CheckerHostRequest = CheckerHostSpawnSpec & { type: 'spawn' };
 
 export type CheckerHostResponse =
   | { type: 'ready' }
   | {
-      durationMs: number;
+      commandDurationMs: number;
       errorMessage?: string;
-      id: number;
       status: number;
       type: 'result';
     };
+
+export function isCheckerHostResponse(
+  value: unknown,
+): value is CheckerHostResponse {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'type' in value &&
+    (value.type === 'ready' ||
+      (value.type === 'result' &&
+        'commandDurationMs' in value &&
+        typeof value.commandDurationMs === 'number' &&
+        Number.isFinite(value.commandDurationMs) &&
+        value.commandDurationMs >= 0 &&
+        'status' in value &&
+        typeof value.status === 'number' &&
+        Number.isSafeInteger(value.status) &&
+        value.status >= 0 &&
+        value.status <= 255 &&
+        (!('errorMessage' in value) || typeof value.errorMessage === 'string')))
+  );
+}
+
+/**
+Observe a borrowed group member without taking ownership of cleanup.
+The main process and the supervisor's lifecycle handlers manage group cleanup.
+*/
+export function spawnInheritedChecker(
+  spec: CheckerHostSpawnSpec,
+): Promise<Extract<CheckerHostResponse, { type: 'result' }>> {
+  const startedAt = performance.now();
+  return new Promise((resolve) => {
+    const finish = (status: number, error?: Error): void =>
+      resolve({
+        type: 'result',
+        status,
+        commandDurationMs: performance.now() - startedAt,
+        ...(error !== undefined && { errorMessage: error.message }),
+      });
+    try {
+      const child = spawn(spec.command, spec.args, {
+        cwd: spec.cwd,
+        env: spec.env,
+        detached: false,
+        shell: spec.shell,
+        stdio: spec.stdio,
+      });
+      child.once('error', (error) => finish(1, error));
+      child.once('close', (code) => finish(code ?? 1));
+    } catch (error) {
+      finish(1, error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
 
 class CheckerAbortError extends Error {
   override name = 'AbortError';
@@ -80,12 +129,8 @@ function notifyChild(
 }
 
 /**
- * Spawns one checker command and measures its lifetime from spawn until the
- * close/error event. The measurement is only accurate when the surrounding
- * event loop stays responsive while the child runs, so the checker host
- * process is the primary caller; the parent CLI process uses it directly only
- * as the degraded in-process fallback.
- */
+Main-owned direct execution, measured through owned process-tree cleanup.
+*/
 export function spawnAndMeasure(
   spec: CheckerHostSpawnSpec,
   options: {
@@ -101,14 +146,17 @@ export function spawnAndMeasure(
     let cancelledMeasurement: CheckerHostSpawnMeasurement | undefined;
     let isSettled = false;
     const startedAt = performance.now();
-    const finalize = (measurement: CheckerHostSpawnMeasurement): void => {
+    const finalize = (
+      measurement: Omit<CheckerHostSpawnMeasurement, 'durationMs'>,
+    ): void => {
       if (isSettled) {
         return;
       }
 
       isSettled = true;
       removeAbortListener(signal, handleAbort);
-      resolve(measurement);
+      releaseOwnership();
+      resolve({ ...measurement, durationMs: performance.now() - startedAt });
     };
 
     const child = spawn(spec.command, spec.args, {
@@ -119,6 +167,7 @@ export function spawnAndMeasure(
       stdio: spec.stdio,
     });
 
+    const releaseOwnership = ownChildProcessTree(child);
     notifyChild(options.onChild, child);
 
     const handleAbort = (): void => {
@@ -133,7 +182,6 @@ export function spawnAndMeasure(
     child.on('error', (error) => {
       finalize(
         cancelledMeasurement ?? {
-          durationMs: performance.now() - startedAt,
           error,
           status: 1,
         },
@@ -142,7 +190,6 @@ export function spawnAndMeasure(
 
     child.on('close', (code) => {
       const measurement = cancelledMeasurement ?? {
-        durationMs: performance.now() - startedAt,
         status: code ?? 1,
       };
       // Closing the leader does not end an owned POSIX process group.

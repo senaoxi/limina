@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'pathe';
 
 export interface InternalProcessEntry {
@@ -34,9 +34,22 @@ function createProcessEntry(entryPath: string): InternalProcessEntry {
 function resolveSourceProcessEntry(options: {
   moduleUrl: string;
   sourceEntry: string;
+  sourceLoader?: 'direct';
 }): InternalProcessEntry | undefined {
   if (!existsSync(options.sourceEntry)) {
     return undefined;
+  }
+
+  if (options.sourceLoader === 'direct') {
+    try {
+      const loader = createRequire(options.moduleUrl).resolve('tsx');
+      return {
+        command: process.execPath,
+        args: ['--import', pathToFileURL(loader).href, options.sourceEntry],
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   const packageDirectory = path.resolve(
@@ -70,12 +83,14 @@ export function resolveInternalProcessEntry(options: {
   bundleFileName: string;
   moduleUrl: string;
   sourceFileName: string;
+  sourceLoader?: 'direct';
 }): InternalProcessEntry | undefined {
   const currentDirectory = fileURLToPath(new URL('.', options.moduleUrl));
   const sourceEntry = path.resolve(currentDirectory, options.sourceFileName);
   const sourceProcessEntry = resolveSourceProcessEntry({
     moduleUrl: options.moduleUrl,
     sourceEntry,
+    sourceLoader: options.sourceLoader,
   });
 
   return (

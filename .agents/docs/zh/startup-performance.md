@@ -2,6 +2,8 @@
 
 [English](../startup-performance.md) | [简体中文](./startup-performance.md)
 
+下列测量属于 2026-10-29/30 的历史实验，不是当前 CLI 的基线。当前启动调查测量首次成功的 complete materialization receipt：`graph:materialize.completedAt` 可能出现在其他任务已完成图准备之后，不能假定它代表首次图就绪。新运行时必须在相同冻结工作负载和计时边界上比较，不能把历史样本与当前测量合并。
+
 本次实现改善了仓库工作负载的启动耗时，但两个目标均未达成：冷启动 67.364 秒，目标 35 秒；热启动 30.356 秒，目标 15 秒。本记录覆盖一次全量优化和两轮追加评估。完整验收尚未通过：未修改的依赖 tooling 门禁也有失败，详见下文。本地验收记录不构成对其他 workspace 的性能保证。复用与权威合同仍由 [lifecycle](./lifecycle.md) 和 [semantics](./semantics.md) 持有。
 
 ## 复现边界

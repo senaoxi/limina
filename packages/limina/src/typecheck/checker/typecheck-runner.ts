@@ -2,7 +2,6 @@ import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { resolveCheckerTypecheckConcurrency } from '../../execution/config';
-import { runPool } from '../../execution/pool';
 import type { TaskProgressItem } from '../../execution/progress';
 import type { LiminaFlowTask } from '../../flow';
 import { TypecheckLogger } from '../../logger';
@@ -12,6 +11,7 @@ import {
   admissionFailureTargets,
   rejectedBeforeLaunch,
 } from '../admission/reporting';
+import { runComponentTargets } from '../build/component-execution';
 import { createBuildDependencyPlan } from '../build/dependency-plan';
 import {
   completeCheckerTargetTask,
@@ -200,39 +200,39 @@ async function executeTypecheckTargets(options: {
     [...options.targets],
     options.admission.graph.dependencyEdges,
   );
-  const completions: BuildTargetCompletion[] = [];
-  for (const layer of plan.layers)
-    completions.push(
-      ...(await runPool<TypecheckTarget, BuildTargetCompletion>({
-        concurrency: resolveCheckerTypecheckConcurrency({
-          config: options.context.options.config,
-          itemCount: options.targets.length,
-        }),
-        items: layer.flatMap((index) => plan.components[index]!),
-        onError: normalizeTargetError,
-        onResult: (target, result) => {
-          if (typeof result.status === 'number')
-            completeTargetTask({ result, target, tasks });
-          else tasks.get(target.id)?.fail();
-        },
-        run: async (target) => {
-          try {
-            startTargetTask({ context: options.context, target, tasks });
-          } catch (error) {
-            return rejectedBeforeLaunch(target, error);
-          }
-          return executeAuthorizedTypecheck(
-            {
-              admission: options.admission,
-              signal: options.context.options.signal,
-            },
-            target,
-            runner,
-          );
-        },
-      })),
-    );
-  return completions;
+  const completions = new Map<CheckerTargetId, BuildTargetCompletion>();
+  await runComponentTargets({
+    plan,
+    concurrency: resolveCheckerTypecheckConcurrency({
+      config: options.context.options.config,
+      itemCount: options.targets.length,
+    }),
+    run: async (target) => {
+      let result: BuildTargetCompletion | undefined;
+      try {
+        try {
+          startTargetTask({ context: options.context, target, tasks });
+        } catch (error) {
+          result = rejectedBeforeLaunch(target, error);
+        }
+        result ??= await executeAuthorizedTypecheck(
+          {
+            admission: options.admission,
+            signal: options.context.options.signal,
+          },
+          target,
+          runner,
+        );
+      } catch (error) {
+        result = normalizeTargetError(target, error);
+      }
+      completions.set(target.id, result);
+      if (typeof result.status === 'number')
+        completeTargetTask({ result, target, tasks });
+      else tasks.get(target.id)?.fail();
+    },
+  });
+  return options.targets.map((target) => completions.get(target.id)!);
 }
 
 function createContext(

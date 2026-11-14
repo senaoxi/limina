@@ -42,11 +42,6 @@ export interface BuildRunState {
   stableRoots: (roots: Iterable<CheckerTargetId>) => CheckerTargetId[];
 }
 
-export interface RunnableLayer {
-  componentIndexes: number[];
-  targets: TypecheckTarget[];
-}
-
 function createWatchBuildPlan(targets: TypecheckTarget[]): BuildDependencyPlan {
   return {
     components: [targets],
@@ -108,11 +103,11 @@ function collectUpstreamRoots(
   const prerequisites =
     state.buildPlan.executionDependenciesByTargetId?.get(target.id) ?? [];
   return state.stableRoots(
-    prerequisites.flatMap((id) =>
-      state.options.isDeliveryComplete?.(id) === false
-        ? [id]
-        : failureRoots(state.resultsByTargetId.get(id)),
-    ),
+    prerequisites.flatMap((id) => {
+      const roots = failureRoots(state.resultsByTargetId.get(id));
+      if (roots.length > 0) return roots;
+      return state.options.isDeliveryComplete?.(id) === false ? [id] : [];
+    }),
   );
 }
 function failureRoots(
@@ -147,40 +142,26 @@ function createBlockedResult(
 function classifyTarget(
   state: BuildRunState,
   target: TypecheckTarget,
-  layer: RunnableLayer,
+  runnable: TypecheckTarget[],
 ): void {
   const roots = collectUpstreamRoots(state, target);
   if (roots.length === 0 || state.options.watch === true) {
-    layer.targets.push(target);
+    runnable.push(target);
     return;
   }
   const result = createBlockedResult(target, roots);
   state.resultsByTargetId.set(target.id, result);
   emitTargetResult(state.options, target, result);
 }
-function classifyComponent(options: {
-  componentIndex: number;
-  runnableLayer: RunnableLayer;
-  state: BuildRunState;
-}): void {
-  for (const target of getComponentTargets(
-    options.state.buildPlan,
-    options.componentIndex,
-  ))
-    classifyTarget(options.state, target, options.runnableLayer);
-}
-
-export function createRunnableLayer(
+export function createRunnableComponent(
   state: BuildRunState,
-  layer: readonly number[],
-): RunnableLayer {
-  const runnableLayer: RunnableLayer = { componentIndexes: [], targets: [] };
-
-  for (const componentIndex of layer) {
-    classifyComponent({ componentIndex, runnableLayer, state });
+  componentIndex: number,
+): TypecheckTarget[] {
+  const runnable: TypecheckTarget[] = [];
+  for (const target of getComponentTargets(state.buildPlan, componentIndex)) {
+    classifyTarget(state, target, runnable);
   }
-
-  return runnableLayer;
+  return runnable;
 }
 
 function toError(error: unknown): Error {

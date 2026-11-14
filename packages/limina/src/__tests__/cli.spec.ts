@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import parsePosix from 'shell-quote/parse.js';
 import { describe, expect, it, vi } from 'vitest';
+import { CHECK_ISSUE_SNAPSHOT_VERSION } from '../check-reporting/snapshot';
 import { createLiminaCli, runCheckWithCliFlowCleanup } from '../cli';
 import { assertIssueInventoryLimitArgv } from '../cli/argv';
 import { showIssueInventory } from '../cli/issue-query';
@@ -805,7 +806,7 @@ export default {scope: {checkers: {
                 },
               ],
               status: 'completed',
-              version: 9,
+              version: CHECK_ISSUE_SNAPSHOT_VERSION,
             }),
           );
           const seedSnapshot = await readFile(lastRunPath, 'utf8');
@@ -1141,7 +1142,7 @@ export default {scope: {checkers: {
             },
           ],
           status: 'completed',
-          version: 9,
+          version: CHECK_ISSUE_SNAPSHOT_VERSION,
         }),
       );
       const completedCheck = await readFile(lastRunPath, 'utf8');
@@ -1312,7 +1313,7 @@ export default {scope: {checkers: {
           createdAt: '2026-07-17T00:00:00.000Z',
           issues: [],
           status: 'completed',
-          version: 9,
+          version: CHECK_ISSUE_SNAPSHOT_VERSION,
         }),
       );
       const seedSnapshot = await readFile(lastRunPath, 'utf8');
@@ -2776,7 +2777,7 @@ export default {scope: {checkers: {
             title: 'Unused source module',
           })),
           status: 'completed',
-          version: 9,
+          version: CHECK_ISSUE_SNAPSHOT_VERSION,
         }),
       );
       const invocationId = '00000000-0000-4000-8000-000000000000';
@@ -3039,7 +3040,7 @@ export default {scope: {checkers: {
             ],
           },
           status: 'completed',
-          version: 9,
+          version: CHECK_ISSUE_SNAPSHOT_VERSION,
         }),
       );
 
@@ -3184,7 +3185,7 @@ export default {scope: {checkers: {
             },
           ],
           status: 'completed',
-          version: 9,
+          version: CHECK_ISSUE_SNAPSHOT_VERSION,
         }),
       );
 

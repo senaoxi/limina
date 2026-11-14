@@ -1,5 +1,6 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
+import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import type { TypeEvidenceCore } from '../type-evidence';
@@ -47,6 +48,7 @@ interface FactCollectionContext {
 }
 
 interface CollectPendingOptions {
+  metrics?: AnalysisMetricsRecorder;
   onSupplementalAttempt?: () => void;
   baseline?: TypeScriptSemanticDependencyContext;
   config: ResolvedLiminaInputs;
@@ -257,9 +259,12 @@ function pendingContext(
     });
   return isLiveNativeInventory(context.nativeInventory)
     ? context
-    : createTypeScriptDependencyContext({
-        ...semantic.project,
-        workspaceSourceBoundary: options.workspaceSourceBoundary,
-        admissionMode: 'coverage-bounded',
-      });
+    : createTypeScriptDependencyContext(
+        {
+          ...semantic.project,
+          workspaceSourceBoundary: options.workspaceSourceBoundary,
+          admissionMode: 'coverage-bounded',
+        },
+        { metrics: options.metrics },
+      );
 }

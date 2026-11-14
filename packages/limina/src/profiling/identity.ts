@@ -1,7 +1,7 @@
 import { compareCodeUnits } from '#utils/collections';
 import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
-import { readdir, readFile, realpath } from 'node:fs/promises';
+import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'pathe';
 
 export interface FileTreeIdentity {
@@ -10,6 +10,8 @@ export interface FileTreeIdentity {
 }
 
 export interface RuntimeTreeIdentity extends FileTreeIdentity {
+  readonly entryKind: 'source' | 'distribution';
+  readonly treeScope: string;
   readonly executableLogicalPath: string;
   readonly executableRealPath: string;
   readonly packageLogicalPath: string;
@@ -32,7 +34,10 @@ function isPathInsideOrEqual(parentPath: string, childPath: string): boolean {
   );
 }
 
-function assertRegularIdentityEntry(entry: Dirent, entryPath: string): void {
+function assertRegularIdentityEntry(
+  entry: Pick<Dirent, 'isFile' | 'isSymbolicLink'>,
+  entryPath: string,
+): void {
   if (entry.isSymbolicLink()) {
     throw new Error(`Identity tree contains a symbolic link: ${entryPath}.`);
   }
@@ -86,6 +91,12 @@ function compareFilePaths(
   );
 }
 
+async function readPackageManifestFile(packageRoot: string): Promise<Buffer> {
+  const manifestPath = path.join(packageRoot, 'package.json');
+  assertRegularIdentityEntry(await lstat(manifestPath), manifestPath);
+  return readFile(manifestPath);
+}
+
 async function hashFile(
   treeHash: ReturnType<typeof createHash>,
   rootDirectory: string,
@@ -94,9 +105,11 @@ async function hashFile(
   const relativePath = toPortableRelativePath(
     path.relative(rootDirectory, filePath),
   );
-  const fileHash = createHash('sha256')
-    .update(await readFile(filePath))
-    .digest('hex');
+  const content =
+    filePath === path.join(rootDirectory, 'package.json')
+      ? await readPackageManifestFile(rootDirectory)
+      : await readFile(filePath);
+  const fileHash = createHash('sha256').update(content).digest('hex');
 
   treeHash.update(relativePath);
   treeHash.update('\0');
@@ -129,7 +142,7 @@ function getLiminaBinPath(manifest: PackageManifest): string | undefined {
 
 async function readPackageBinPath(packageRoot: string): Promise<string> {
   const manifest = JSON.parse(
-    await readFile(path.join(packageRoot, 'package.json'), 'utf8'),
+    (await readPackageManifestFile(packageRoot)).toString('utf8'),
   ) as PackageManifest;
   const binPath = getLiminaBinPath(manifest);
 
@@ -167,6 +180,25 @@ function assertExecutableInsideRuntime(options: {
   }
 }
 
+async function collectSourceRuntimeFiles(
+  packageRoot: string,
+): Promise<string[]> {
+  const sourceRoot = path.join(packageRoot, 'src');
+  const binRoot = path.join(packageRoot, 'bin');
+  for (const root of [sourceRoot, binRoot]) {
+    if ((await realpath(root)) !== root) {
+      throw new Error(
+        `Source runtime directory must not be a symbolic link: ${root}.`,
+      );
+    }
+  }
+  return [
+    path.join(packageRoot, 'package.json'),
+    ...(await collectRegularFiles(sourceRoot)),
+    ...(await collectRegularFiles(binRoot)),
+  ];
+}
+
 export async function collectRuntimeTreeIdentity(options: {
   executableLogicalPath: string;
   packageLogicalPath: string;
@@ -182,16 +214,32 @@ export async function collectRuntimeTreeIdentity(options: {
     ),
   );
 
-  assertExecutableMatchesPackage({
-    executableLogicalPath,
-    executableRealPath,
-    expectedExecutableRealPath,
-  });
+  const isSourceEntry =
+    executableRealPath === path.join(packageRealPath, 'src/cli.ts') &&
+    executableLogicalPath === path.join(packageLogicalPath, 'src/cli.ts') &&
+    expectedExecutableRealPath === path.join(packageRealPath, 'bin/limina.js');
+  if (!isSourceEntry) {
+    assertExecutableMatchesPackage({
+      executableLogicalPath,
+      executableRealPath,
+      expectedExecutableRealPath,
+    });
+  }
   assertExecutableInsideRuntime({ executableRealPath, packageRealPath });
+  assertExecutableInsideRuntime({
+    executableRealPath: expectedExecutableRealPath,
+    packageRealPath,
+  });
 
-  const files = await collectRegularFiles(packageRealPath);
+  const files = isSourceEntry
+    ? await collectSourceRuntimeFiles(packageRealPath)
+    : await collectRegularFiles(packageRealPath);
   return {
     ...(await hashFiles(packageRealPath, files)),
+    entryKind: isSourceEntry ? 'source' : 'distribution',
+    treeScope: isSourceEntry
+      ? 'package.json, src and bin trees; excludes dependencies, workspace configuration and generated distribution'
+      : 'complete linked package tree',
     executableLogicalPath,
     executableRealPath,
     packageLogicalPath,

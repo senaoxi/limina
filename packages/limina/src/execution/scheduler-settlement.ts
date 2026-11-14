@@ -1,5 +1,6 @@
 import type { RunningTaskEntry } from './executor-types';
 import { finishSynthetic, projectLifecycle } from './scheduler-tasks';
+import { observeScheduler } from './scheduler-trace';
 import type { SchedulerContext } from './scheduler-types';
 import { nowIso } from './task-observers';
 import type {
@@ -13,10 +14,12 @@ function createCompletionEvent(options: {
   outcome: StartedTaskResult;
   task: ExecutionTask;
 }): TaskLifecycleEvent {
-  const completedAt = nowIso();
+  const completedAt = options.outcome.timing?.completedAt ?? nowIso();
+  const startedAt = options.outcome.timing?.startedAt;
   if (options.outcome.status === 'disabled') {
     return {
       completedAt,
+      startedAt,
       durationMs: options.outcome.durationMs,
       type: 'disable',
     };
@@ -24,6 +27,7 @@ function createCompletionEvent(options: {
   if (options.outcome.status === 'passed') {
     return {
       completedAt,
+      startedAt,
       durationMs: options.outcome.durationMs,
       stats: options.outcome.stats,
       type: 'pass',
@@ -31,6 +35,7 @@ function createCompletionEvent(options: {
   }
   return {
     completedAt,
+    startedAt,
     durationMs: options.outcome.durationMs,
     reason: `${options.task.label} failed`,
     stats: options.outcome.stats,
@@ -104,6 +109,7 @@ async function processTaskSettlement(options: {
 }): Promise<void> {
   const task = options.entry.task;
   options.context.outcomes.set(task.id, options.outcome);
+  observeScheduler(options.context);
   markGenerationAdvance({ context: options.context, task });
   await projectLifecycle({
     context: options.context,
@@ -123,6 +129,9 @@ export async function settleEntry(options: {
   entry: RunningTaskEntry;
 }): Promise<void> {
   const settlement = await options.entry.settlement;
+  options.context.options.checkRunRecorder?.trace?.settlementStarted(
+    options.entry.task.id,
+  );
   try {
     if (settlement.type === 'infrastructure-start-failure') return;
     await processTaskSettlement({
@@ -133,6 +142,13 @@ export async function settleEntry(options: {
   } finally {
     options.context.running.delete(options.entry.task.id);
     options.context.locks.release(options.entry.task.id);
+    observeScheduler(options.context);
+    options.context.options.checkRunRecorder?.trace?.released(
+      options.entry.task.id,
+      settlement.type === 'task'
+        ? settlement.outcome.status
+        : 'infrastructure-start-failure',
+    );
   }
 }
 

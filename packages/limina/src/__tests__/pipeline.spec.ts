@@ -13,6 +13,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createCheckRunRecorder } from '../check-reporting/run-recorder';
 import {
+  CHECK_ISSUE_SNAPSHOT_VERSION,
   readCheckIssueSnapshot,
   readSourceIssueSnapshot,
   writeNotRunCheckIssueSnapshot,
@@ -954,7 +955,7 @@ describe('runPipeline', () => {
           ],
         },
         status: 'completed',
-        version: 9,
+        version: CHECK_ISSUE_SNAPSHOT_VERSION,
       });
     } finally {
       await fixture.cleanup();

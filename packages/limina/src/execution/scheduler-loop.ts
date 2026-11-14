@@ -1,6 +1,7 @@
 import { resolveRootBlocker } from './execution-results';
 import { joinRunning, settleOneRunning } from './scheduler-settlement';
 import { finishSynthetic, startTask } from './scheduler-tasks';
+import { observeScheduler } from './scheduler-trace';
 import type { SchedulerContext } from './scheduler-types';
 import { assertActiveGeneration } from './task-execution';
 import type { ExecutionTask, TaskId } from './tasks';
@@ -195,6 +196,7 @@ async function advanceGeneration(context: SchedulerContext): Promise<void> {
   if (context.infrastructureError !== undefined) return;
   context.controller.startNextGeneration();
   context.pendingGenerationAdvance = false;
+  observeScheduler(context);
 }
 
 async function runSchedulerIteration(context: SchedulerContext): Promise<void> {
@@ -237,6 +239,7 @@ async function finishInfrastructureFailure(
   if (context.pendingGenerationAdvance) {
     context.controller.startNextGeneration();
     context.pendingGenerationAdvance = false;
+    observeScheduler(context);
   }
   throw context.infrastructureError;
 }
@@ -248,16 +251,24 @@ async function finishGenerationAdvance(
   await joinRunning(context);
   context.controller.startNextGeneration();
   context.pendingGenerationAdvance = false;
+  observeScheduler(context);
 }
 
 export async function runScheduler(context: SchedulerContext): Promise<void> {
+  const trace = context.options.checkRunRecorder?.trace;
+  trace?.beginScheduler(context.orderedTasks);
+  observeScheduler(context);
   try {
     await runSchedulerLoop(context);
   } catch (error) {
     setInfrastructureError(context, error);
   }
-  if (context.infrastructureError !== undefined) {
-    await finishInfrastructureFailure(context);
+  try {
+    if (context.infrastructureError !== undefined) {
+      await finishInfrastructureFailure(context);
+    }
+    await finishGenerationAdvance(context);
+  } finally {
+    trace?.endScheduler();
   }
-  await finishGenerationAdvance(context);
 }

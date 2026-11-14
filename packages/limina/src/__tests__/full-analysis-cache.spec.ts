@@ -17,12 +17,15 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AnalysisMetricMeasurement } from '../application/analysis/analysis-run';
 import { parseTypeScriptCommandLine } from '../checker/project-base';
 import {
   captureInvocationData,
   invocationDataVersion,
 } from '../config/invocation-data';
+import { loadConfig } from '../config/loader';
 import { getActiveCheckers } from '../config/runtime';
+import { createAnalysisProviders } from '../core';
 import { directoryFingerprint } from '../core/analysis-cache/directory-fingerprint';
 import { observeInstallationDomain } from '../core/analysis-cache/installation-domain';
 import { validateInstallationLock } from '../core/analysis-cache/installation-locks';
@@ -209,6 +212,58 @@ function analyze(
 }
 
 describe('complete native restoration and R02 scope evidence', () => {
+  it('reports bounded Program work for restored pending ownership without registering a cache context', async () => {
+    const f = fixture();
+    f.write('limina.config.mjs', 'export default {};');
+    const config = await loadConfig({
+      configPath: f.file('limina.config.mjs'),
+    });
+    const coldCache = new NativeAnalysisCache(
+      'fixture',
+      undefined,
+      'fixture-config',
+    );
+    const cold = createAnalysisProviders(config, undefined, undefined, {
+      analysisCache: coldCache,
+    });
+    try {
+      await cold.buildGraph.getGraph();
+    } finally {
+      cold.dispose();
+    }
+    const encoded = JSON.stringify(coldCache.snapshot());
+    const snapshot = parseAnalysisSnapshot(JSON.parse(encoded), 'fixture');
+    expect(snapshot).toBeDefined();
+    const cache = new NativeAnalysisCache(
+      'fixture',
+      snapshot,
+      'fixture-config',
+    );
+    const events: AnalysisMetricMeasurement[] = [];
+    const warm = createAnalysisProviders(
+      config,
+      undefined,
+      {
+        record: (event) => {
+          events.push(event);
+        },
+      },
+      { analysisCache: cache },
+    );
+    try {
+      expect(await warm.buildGraph.hasSvelteCheckProjects()).toBe(false);
+      expect(cache.metrics.restoredContexts).toBeGreaterThan(0);
+      expect(cache.metrics.semanticPrograms).toBe(0);
+      expect(
+        events
+          .filter((event) => event.name === 'bounded-program-create')
+          .reduce((count, event) => count + (event.count ?? 0), 0),
+      ).toBe(1);
+    } finally {
+      warm.dispose();
+    }
+  });
+
   it('preserves native customConditions through restoration and invalidates changed conditions', () => {
     const f = fixture();
     f.write(

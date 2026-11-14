@@ -46,6 +46,7 @@ export interface TypecheckTargetResult {
   sourceConfigPath?: string;
   blockedBy?: readonly CheckerTargetId[];
   configPath: string;
+  commandDurationMs?: number;
   durationMs: number;
   error?: Error;
   id: CheckerTargetId;
@@ -61,11 +62,13 @@ export type TypecheckRunnerResult = Omit<
 export type CheckerTargetOutcome =
   | ExecutionAdmissionRejection
   | {
+      commandDurationMs?: number;
       durationMs: number;
       id: CheckerTargetId;
       status: 'passed';
     }
   | {
+      commandDurationMs?: number;
       durationMs: number;
       error?: Error;
       exitCode: number;
@@ -98,10 +101,15 @@ function createCompletedOutcome(
   result: TypecheckTargetResult,
 ): CheckerTargetOutcome {
   const durationMs = result.durationMs;
+  const command =
+    result.commandDurationMs === undefined
+      ? {}
+      : { commandDurationMs: result.commandDurationMs };
 
   return result.status === 0
-    ? { durationMs, id: result.id, status: 'passed' }
+    ? { ...command, durationMs, id: result.id, status: 'passed' }
     : {
+        ...command,
         durationMs,
         ...(result.error !== undefined && { error: result.error }),
         exitCode: result.status,

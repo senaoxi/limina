@@ -245,6 +245,22 @@ describe('check attempt freshness', () => {
           `not a valid v${CHECK_ISSUE_SNAPSHOT_VERSION} snapshot`,
         ),
       });
+      const next = await publishCheckAttempt({
+        command: 'limina check fresh',
+        namespace,
+      });
+      expect(next.latest.sequence).toBeGreaterThan(attempt.latest.sequence);
+      const current = createSnapshot('fresh');
+      await completeCheckAttempt({
+        attempt: next,
+        namespace,
+        snapshot: current,
+        sourceSnapshotPersisted: false,
+        writeSnapshot: writeCheckIssueSnapshotOnly,
+      });
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({ state: 'completed', snapshot: current });
     });
   });
 

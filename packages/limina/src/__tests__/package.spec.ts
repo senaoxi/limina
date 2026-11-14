@@ -14,6 +14,8 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import {
+  CHECK_ISSUE_SNAPSHOT_VERSION,
+  type CheckIssueSnapshot,
   formatCheckIssueSnapshotInventory,
   type LiminaCheckIssue,
 } from '../check-reporting/snapshot';
@@ -1701,12 +1703,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       );
 
-      const snapshot = {
+      const snapshot: CheckIssueSnapshot = {
         command: 'limina check',
         createdAt: '2026-07-17T00:00:00.000Z',
         issues,
         status: 'completed' as const,
-        version: 9 as const,
+        version: CHECK_ISSUE_SNAPSHOT_VERSION,
       };
       const byFile = JSON.parse(
         formatCheckIssueSnapshotInventory({

@@ -1,5 +1,4 @@
 import { resolveCheckerBuildConcurrency } from '../../execution/config';
-import { runPool } from '../../execution/pool';
 import { rejectedBeforeLaunch } from '../admission/reporting';
 import type {
   BuildTargetCompletion,
@@ -7,17 +6,18 @@ import type {
   TypecheckTarget,
 } from '../targets';
 import { runTargetWithMeasuredDuration } from '../targets';
+import { runComponentTargets } from './component-execution';
 import type { BuildRunState, RunBuildTargetsArguments } from './target-state';
 import {
   createBuildRunState,
   createFailedTargetResult,
-  createRunnableLayer,
+  createRunnableComponent,
   emitTargetResult,
 } from './target-state';
 
 export type { RunBuildTargetsOptions } from './target-state';
 
-function resolveLayerConcurrency(
+function resolveTargetConcurrency(
   state: BuildRunState,
   targets: readonly TypecheckTarget[],
 ): number {
@@ -41,43 +41,23 @@ async function beforeTargetRun(
   }
 }
 
-async function runRunnableTargets(
+async function executeTarget(
   state: BuildRunState,
-  targets: readonly TypecheckTarget[],
-): Promise<BuildTargetCompletion[]> {
-  if (targets.length === 0) return [];
-  return runPool<TypecheckTarget, BuildTargetCompletion>({
-    concurrency: resolveLayerConcurrency(state, targets),
-    items: [...targets],
-    onError: createFailedTargetResult,
-    onResult: (target, result) =>
-      emitTargetResult(state.options, target, result),
-    run: async (target) => {
-      const refusal = await beforeTargetRun(state, target);
-      if (refusal !== undefined) return refusal;
-      return state.options.executeTarget === undefined
-        ? runTargetWithMeasuredDuration(state.runner, target)
-        : state.options.executeTarget(target);
-    },
-  });
-}
-
-function recordLayerResults(
-  state: BuildRunState,
-  layerResults: readonly BuildTargetCompletion[],
-): void {
-  for (const result of layerResults) {
-    state.resultsByTargetId.set(result.id, result);
-  }
-}
-
-async function executeLayer(
-  state: BuildRunState,
-  layer: readonly number[],
+  target: TypecheckTarget,
 ): Promise<void> {
-  const runnableLayer = createRunnableLayer(state, layer);
-  const layerResults = await runRunnableTargets(state, runnableLayer.targets);
-  recordLayerResults(state, layerResults);
+  let result: BuildTargetCompletion;
+  try {
+    const refusal = await beforeTargetRun(state, target);
+    result =
+      refusal ??
+      (await (state.options.executeTarget === undefined
+        ? runTargetWithMeasuredDuration(state.runner, target)
+        : state.options.executeTarget(target)));
+  } catch (error) {
+    result = createFailedTargetResult(target, error);
+  }
+  state.resultsByTargetId.set(target.id, result);
+  emitTargetResult(state.options, target, result);
 }
 
 function requireTargetResult(
@@ -104,9 +84,12 @@ export async function runBuildTargets(
     targets,
   });
 
-  for (const layer of state.buildPlan.layers) {
-    await executeLayer(state, layer);
-  }
+  await runComponentTargets({
+    concurrency: resolveTargetConcurrency(state, targets),
+    plan: state.buildPlan,
+    prepareComponent: (index) => createRunnableComponent(state, index),
+    run: (target) => executeTarget(state, target),
+  });
 
   return targets.map((target) =>
     requireTargetResult(state.resultsByTargetId, target),

@@ -405,6 +405,81 @@ describe('runPool', () => {
   });
 });
 
+describe('runPool fatal lifetime', () => {
+  it.each(['runner', 'start', 'result', 'recovery'] as const)(
+    'drains owned work and stops assignment after a fatal %s error',
+    async (trigger) => {
+      const events: string[] = [];
+      const failure = new Error(trigger);
+      const { promise: held, resolve: release } = Promise.withResolvers<void>();
+      const recover = vi.fn(() => {
+        if (trigger === 'recovery') throw failure;
+        return -1;
+      });
+      const run = runPool({
+        concurrency: 2,
+        items: [0, 1, 2, 3],
+        onStart: (item) => {
+          events.push(`start:${item}`);
+          if (trigger === 'start' && item === 1) throw failure;
+        },
+        onResult: (item) => {
+          events.push(`result:${item}`);
+          if (trigger === 'result' && item === 1) throw failure;
+        },
+        ...(trigger !== 'runner' && { onError: recover }),
+        run: async (item) => {
+          if (item === 0) await held;
+          if (item === 1 && (trigger === 'runner' || trigger === 'recovery'))
+            throw failure;
+          events.push(`end:${item}`);
+          return item;
+        },
+      });
+      const outcome = (async () => {
+        try {
+          await run;
+          return 'passed';
+        } catch (error) {
+          events.push('rejected');
+          return error;
+        }
+      })();
+      try {
+        await new Promise<void>((resolve) => {
+          setImmediate(resolve);
+        });
+        expect(events).not.toContain('rejected');
+        expect(events).not.toContain('start:2');
+      } finally {
+        release();
+      }
+      expect(await outcome).toBe(failure);
+      expect(events.indexOf('end:0')).toBeLessThan(events.indexOf('rejected'));
+      expect(events).not.toContain('start:2');
+      expect(events.filter((event) => event === 'result:1')).toHaveLength(
+        trigger === 'result' ? 1 : 0,
+      );
+      expect(recover).toHaveBeenCalledTimes(trigger === 'recovery' ? 1 : 0);
+    },
+  );
+
+  it.each([undefined, null, 0, false])(
+    'preserves a falsy fatal rejection (%s)',
+    async (failure) => {
+      await expect(
+        runPool({
+          concurrency: 1,
+          items: [1, 2],
+          run: () => {
+            throw failure;
+          },
+        }),
+      ).rejects.toBe(failure);
+    },
+  );
+});
+
 describe('ResourceLockSet', () => {
   it('allows read/read sharing', () => {
     const locks = new ResourceLockSet();

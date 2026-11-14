@@ -3,6 +3,7 @@ import {
   LIMINA_CHECK_ISSUE_CODES,
   type LiminaWritableCheckIssueCode,
 } from '../check-reporting/codes';
+import { CHECK_ISSUE_SNAPSHOT_VERSION } from '../check-reporting/snapshot';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 import {
   type CheckRunSummaryHumanOptions,
@@ -273,7 +274,7 @@ describe('check run summary reporting', () => {
         ],
       },
       status: 'completed',
-      version: 9,
+      version: CHECK_ISSUE_SNAPSHOT_VERSION,
     };
     const output = formatCheckRunSummaryHuman({
       issues: snapshot.issues,
@@ -435,7 +436,7 @@ describe('check run summary reporting', () => {
         ],
       },
       status: 'completed',
-      version: 9,
+      version: CHECK_ISSUE_SNAPSHOT_VERSION,
     };
     const output = formatCheckRunSummaryHuman({
       issues: snapshot.issues,
@@ -550,7 +551,7 @@ describe('check run summary reporting', () => {
         ],
       },
       status: 'completed',
-      version: 9,
+      version: CHECK_ISSUE_SNAPSHOT_VERSION,
     };
     const output = formatCheckRunSummaryHuman({
       issues,
@@ -624,7 +625,7 @@ describe('check run summary reporting', () => {
         ],
       },
       status: 'completed',
-      version: 9,
+      version: CHECK_ISSUE_SNAPSHOT_VERSION,
     };
     const output = formatCheckRunSummaryHuman({
       issues: snapshot.issues,

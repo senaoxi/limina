@@ -3,7 +3,7 @@ import type { LiminaFlowTreeNode } from '../flow';
 import type { ExecutionTask, TaskLifecycleEvent } from './tasks';
 
 export function nowIso(): string {
-  return new Date().toISOString();
+  return new Date(performance.timeOrigin + performance.now()).toISOString();
 }
 
 export function formatFlowTaskName(task: ExecutionTask): string {

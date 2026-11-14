@@ -10,6 +10,7 @@ import {
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { resolveGeneratedGraphCheckers } from './build-graph/checker-resolution';
 import type { ProducerBuildReceipt } from './build-graph/producer-receipt';
+import { canExcludeSvelteProjects } from './build-graph/svelte-route-precheck';
 import type { ImportCore } from './imports';
 import type { ProjectDependencyCaches } from './project-dependencies/contracts';
 import { mapPromise } from './promise';
@@ -33,6 +34,7 @@ export class BuildGraphCore {
   #graphPromise: Promise<GeneratedTsconfigGraphResult> | undefined;
   #producerPromise: Promise<ProducerBuildPlan> | undefined;
   #svelteProjects: Promise<boolean> | undefined;
+  #svelteExclusion: Promise<boolean> | undefined;
   #producerReceipt: ProducerBuildReceipt | undefined;
 
   constructor(options: {
@@ -103,6 +105,22 @@ export class BuildGraphCore {
         'Cannot replace producer receipt after final graph preparation.',
       );
     this.#producerReceipt = receipt;
+  }
+
+  canExcludeSvelteCheckProjects(): Promise<boolean> {
+    this.#svelteExclusion ??= (async () => {
+      const [workspaceContext, workspacePathIndex] = await Promise.all([
+        this.#workspace.getValidatedContext(),
+        this.#workspace.getPathIndex(),
+      ]);
+      return canExcludeSvelteProjects({
+        config: this.#config,
+        activatedRegions: workspacePathIndex,
+        generation: this.#artifactNamespace.generation,
+        workspaceSourceConfigPaths: workspaceContext.sourceConfigPaths,
+      });
+    })();
+    return this.#svelteExclusion;
   }
 
   hasSvelteCheckProjects(): Promise<boolean> {

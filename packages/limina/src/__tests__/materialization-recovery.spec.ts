@@ -11,6 +11,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -34,6 +35,7 @@ import {
 import {
   acquireCrossProcessReadLease,
   acquireCrossProcessWriteLease,
+  CrossProcessLeaseTimeoutError,
 } from '../utils/mutation/cross-process-lease';
 
 const execFileAsync = promisify(execFile);
@@ -513,6 +515,66 @@ describe('generated artifact materialization recovery', () => {
     await writer.release();
     await fixture.cleanup();
   });
+
+  it.each([
+    { contender: 'reader', holder: 'writer', jumpMs: 60_000 },
+    { contender: 'writer', holder: 'writer', jumpMs: -60_000 },
+    { contender: 'writer', holder: 'reader', jumpMs: -60_000 },
+  ] as const)(
+    'keeps the $contender deadline while a $holder holds the lease and the wall clock jumps $jumpMs ms',
+    async ({ contender, holder, jumpMs }) => {
+      const fixture = await createFixture();
+      const acquire = {
+        reader: acquireCrossProcessReadLease,
+        writer: acquireCrossProcessWriteLease,
+      };
+      const blocker = await acquire[holder](fixture.namespace.canonicalRootDir);
+      const originalNow = Date.now;
+      const startedAt = performance.now();
+      const timeoutMs = 200;
+      const clock = vi
+        .spyOn(Date, 'now')
+        .mockImplementation(
+          () =>
+            originalNow() + (performance.now() - startedAt >= 25 ? jumpMs : 0),
+        );
+      let releasePromise: Promise<void> | undefined;
+      const releaseBlocker = () => (releasePromise ??= blocker.release());
+      const fallbackRelease = setTimeout(() => {
+        releasePromise ??= blocker.release();
+      }, 1000);
+      try {
+        let error: unknown;
+        try {
+          const lease = await acquire[contender](
+            fixture.namespace.canonicalRootDir,
+            { timeoutMs },
+          );
+          await lease.release();
+        } catch (error_) {
+          error = error_;
+        }
+        expect(performance.now() - startedAt).toBeGreaterThanOrEqual(timeoutMs);
+        expect(error).toBeInstanceOf(CrossProcessLeaseTimeoutError);
+        expect(error).toHaveProperty(
+          'message',
+          expect.stringContaining('200 ms'),
+        );
+        if (holder === 'reader') {
+          const reader = await acquireCrossProcessReadLease(
+            fixture.namespace.canonicalRootDir,
+            { timeoutMs },
+          );
+          await reader.release();
+        }
+      } finally {
+        clock.mockRestore();
+        clearTimeout(fallbackRelease);
+        await releaseBlocker();
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('coordinates independent Node processes through the canonical lease', async () => {
     const fixture = await createFixture();

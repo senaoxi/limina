@@ -186,6 +186,7 @@ function resolveProcessStdio(options: {
 
 function createRunnerResult(options: {
   configPath: string;
+  commandDurationMs?: number;
   durationMs: number;
   error: Error | undefined;
   status: number;
@@ -193,6 +194,9 @@ function createRunnerResult(options: {
   return {
     configPath: options.configPath,
     durationMs: options.durationMs,
+    ...(options.commandDurationMs !== undefined && {
+      commandDurationMs: options.commandDurationMs,
+    }),
     ...(options.error !== undefined && { error: options.error }),
     status: options.status,
   };
@@ -226,6 +230,7 @@ export function createDefaultRunner(
     return createRunnerResult({
       configPath: target.configPath,
       durationMs: measurement.durationMs,
+      commandDurationMs: measurement.commandDurationMs,
       error: measurement.error,
       status: measurement.status,
     });
@@ -234,9 +239,9 @@ export function createDefaultRunner(
 
 /**
  * Wraps one runner invocation so its result always carries a duration. A
- * runner-reported duration wins because it can be measured next to the
- * checker process; the wall-clock fallback only covers custom runners and is
- * inflated by event-loop delay whenever the parent thread is blocked.
+ * runner-reported duration retains custom-runner precedence. The default
+ * runner reports the full owned lifetime; optional commandDurationMs carries
+ * its independent command observation. The fallback covers custom runners.
  */
 export async function runTargetWithMeasuredDuration(
   runner: TypecheckRunner,

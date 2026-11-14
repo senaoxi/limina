@@ -24,9 +24,8 @@ switch (mode) {
     if (typeof process.send !== 'function') {
       throw new TypeError('ipc-invalid mode requires an IPC channel');
     }
-    process.on('message', () => {
-      process.send?.(value, () => process.disconnect());
-    });
+    // Deliberately fail before readiness: no command has been authorized.
+    process.send(value, () => process.disconnect());
     break;
   }
   case 'signal': {

@@ -71,18 +71,37 @@ export async function normalizeRunnerResult(options: {
   flowNode: LiminaFlowTreeNode | undefined;
   task: ExecutionTask;
 }): Promise<StartedTaskResult> {
+  const context = {
+    flow: options.execution.flow,
+    preflight: options.execution.preflight,
+    progress: createTaskProgressReporter(options.flowNode),
+  };
   const startedAt = performance.now();
+  const wallStartedAt = performance.timeOrigin + startedAt;
+  const trace = options.execution.checkRunRecorder?.trace;
+  trace?.runnerStarted(options.task.id, startedAt);
+  const finish = () => {
+    const completedAt = performance.now();
+    trace?.runnerCompleted(options.task.id, completedAt);
+    return {
+      durationMs: completedAt - startedAt,
+      timing: {
+        startedAt: new Date(wallStartedAt).toISOString(),
+        completedAt: new Date(
+          wallStartedAt + completedAt - startedAt,
+        ).toISOString(),
+      },
+    };
+  };
+  let timing: ReturnType<typeof finish> | undefined;
   try {
-    const result = await options.task.run({
-      flow: options.execution.flow,
-      preflight: options.execution.preflight,
-      progress: createTaskProgressReporter(options.flowNode),
-    });
+    const result = await options.task.run(context);
+    timing = finish();
     assertRunnerStatus(result, options.task);
-    return { ...result, durationMs: performance.now() - startedAt };
+    return { ...result, ...timing };
   } catch (error) {
     return {
-      durationMs: performance.now() - startedAt,
+      ...(timing ?? finish()),
       issues: normalizeRunnerError({
         error,
         rootDir: options.execution.rootDir,

@@ -28,6 +28,20 @@ Proof 声明验证必须经由[声明验证入口](../../../packages/limina/src/
 
 释放责任必须沿调用链定位：[CLI check-run](../../../packages/limina/src/cli/check-run.ts) 与 [standalone](../../../packages/limina/src/cli/standalone.ts) 在 `finally` dispose session；[graph export](../../../packages/limina/src/graph-check/runner.ts) 只 dispose 自建 preflight，borrowed preflight/custom providers 的生命周期归 caller。较低层 [pipeline execution](../../../packages/limina/src/pipeline/execution.ts) 可自建 preflight，但没有统一 finally dispose；直接重复调用该内部 API 的生命周期不应借用 CLI 的保证。domain aggregate 的 immutable 视图也不改变这些实际所有权。
 
+[Pool](../../../packages/limina/src/execution/pool.ts)在 runner、recovery 或 observer 发生致命错误后停止分配新工作，等待所有已启动 worker 结束，再抛出首个错误。只有 runner 错误进入可选 recovery 回调；result observer 失败不能重跑已经完成的工作。[Checker component scheduler](../../../packages/limina/src/typecheck/build/component-execution.ts)在前置 component 结束后激活当前 component，不等待同一拓扑层内无关 component。Component 完成包含全部选定 target 及必要复制。普通调度边仍不传播失败；显式 delivery prerequisite 保留传递阻塞的根因身份。[Pool 回归](../../../packages/limina/src/__tests__/execution.spec.ts)与[目标调度回归](../../../packages/limina/src/__tests__/target-scheduler.spec.ts)覆盖排空、observer 失败、并发上限、SCC、delivery 失败和 watch 行为。
+
+### 任务计时与执行 Trace
+
+[任务执行](../../../packages/limina/src/execution/task-execution.ts)在被等待的 runner 边界捕获单调时钟起止时间，最终任务时间戳从 `performance.timeOrigin` 投射同一边界，保持与 elapsed 一致，不跟随后续墙钟调整。Dispatch observer 与延迟 settlement 分别记录。Runner wall time 包含内部建图、准入和进程工作。名为 `graph:materialize` 的任务可能复用 `checker:build` 内已经准备的图，因此它的耗时不等于完整图启动延迟。[Run recorder](../../../packages/limina/src/check-reporting/run-recorder.ts)以单调时钟测量首次生命周期 dispatch 到分析缓存发布完成的区间；最终 issue 快照和 CLI 启动／收尾不在该 run 区间内。并发任务耗时及父子区间不能相加作为 Pipeline wall time。
+
+启用 `LIMINA_PROFILE=1` 时，[执行 Trace](../../../packages/limina/src/execution/trace.ts)记录任务依赖、dispatch、runner、settlement、release 和 pending 区间。等待原因重叠时，依次按 generation、dependency、capacity、resource、scheduling 分类。已观测占用路径沿声明或观测到的前驱关系，求不重叠 dispatch-to-release 区间的最大占用时间。该时间是 elapsed 下界；scheduler wall duration 与未归因间隔单独记录，间隔可能包含独立任务工作。内部资源等待、逐任务 CPU 时间和完整内部关键路径仍不可用。[计时回归](../../../packages/limina/src/__tests__/execution-timing.spec.ts)区分时钟变化、observer 延迟、并发、依赖／资源等待，以及结束较晚的前驱和占用路径较长的前驱。
+
+Profile 的 CLI 阶段覆盖配置、setup、执行／报告、缓存发布、issue 快照发布与 disposal。模块加载、Profile 写入、summary 输出和进程退出超出内部 Trace，外部进程计时仍是端到端基准。[运行时身份](../../../packages/limina/src/profiling/identity.ts)区分精确源码入口的 source/bin/manifest 清单与已安装二进制的完整包清单。两者均保留 canonical containment 和预期身份检查；源码身份不为 workspace 配置或依赖内容建立指纹。[Profiling 回归](../../../packages/limina/src/__tests__/profiling.spec.ts)保护入口、符号链接和内容检查。
+
+[Svelte 路由预检](../../../packages/limina/src/core/build-graph/svelte-route-precheck.ts)复用入口、作用域、solution references、ownership 和显式需求的解析规则，仅证明不存在 Svelte seed。它使用独立的短期配置解析缓存，路由发现不能把旧文件成员预填到正式建图缓存。存在 seed、所有权冲突或无法完成预检时，仍调用完整 Core 查询；不能把 unknown 当作无 Svelte。完整 Core 查询保留语义观测，完整建图和 Checker 准入保留各自的输入观测与资格校验。
+
+[Preflight manager](../../../packages/limina/src/preflight/manager.ts)已经返回的 negative 路由决定属于 analysis generation，因为调用者已经选择 producer／consumer 分支。Provider 替换和后续 positive 路由查询不能撤销这个决定。所有 graph-cache retry 或 producer-plan 查询结束后、物化之前，manager 拒绝与它冲突的最终 Svelte 图。Pending managed refresh 继承此约束；推进 analysis generation 才解除。该冲突是要求新调用的普通失败，不是能自动重试并丢失调用者分支选择的 input error。当前有效的 analysis DTO 仍可发布，但不授予执行许可。[路由回归](../../../packages/limina/src/__tests__/core-svelte-routing.spec.ts)覆盖作用域冲突、解析缓存隔离、epoch retry、两种 preparation purpose、managed refresh、决定保留及新 generation 恢复。
+
 ## Cache identity 与能力范围
 
 | Cache / context                                                            | Key / lifetime owner                                                                                                                                                                          | Invalidation 与限制                                                                                                                                                                                                                 |
@@ -46,6 +60,8 @@ Native 建图按 context 创建物理截断 Program，不按 occurrence 创建�
 [引用推导](../../../packages/limina/src/core/build-graph/reference-inference.ts)只在一次同步只读调用中，在 declaration 和 framework 投影之间共享已收集依赖。每轮建立独立私有 collection map，沿用完整语义身份作为 key，并在成功或失败时丢弃；不采用旧 collection cache 条目。首次收集仍读取当前根文件和合格 provider 查询，后续执行与发布仍重新校验。返回 collection 保留防御性副本。
 
 运行期 project dependency identity 包含 compiler options/conditions、源码文件、authority、extensions、package roots、workspace boundary 与 generation。Native fact cache 也以该 project identity 为键。证据快照在收集与缓存边界复制并冻结，不保留 live framework profile。只有已经观察到的 runtime evidence 才会被复制，克隆不会解析模块。[Project dependency 回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)覆盖上下文变化、修改尝试、原生 resource 及框架生成 observation。
+
+Pending ownership 查询可在已恢复 Native DTO 后创建新的 bounded Program；该查询不能借用旧 context 的进程内 live-inventory 或请求身份。`boundedNativeProgramsCreated` 记录这项实际构造，Native cache 的 `semanticProgramsCreated` 仍只统计缓存层所属的 context。完整 DTO 命中不代表整条命令零 Program；新增计数不会提升 graph cache 的资格或消除 supplemental replay。[Pending facts](../../../packages/limina/src/core/build-graph/checker-ownership-pending-facts.ts)和[缓存回归](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)保留两种计数的边界。
 
 [Runtime/source 收集器](../../../packages/limina/src/core/project-dependencies/runtime-source.ts)在一次不可变收集请求内计算一次既有语义身份，并将其传入文件循环。Purpose、managed-output lookup、options、overlay、成员集合、package ownership、framework identity 与 generation 保持原有 key 语义。逐文件 Astro/Svelte context 替换仍清除并重算 key；没有通过全局 memo 将身份带入下一请求。Runtime observation 仍不产生 Native 编译义务或 reference input。[依赖回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)同时覆盖 compiler 与 runtime 收集器的上下文变化。
 
@@ -241,6 +257,8 @@ Holder 发布的 rename 返回 `EEXIST` 或 `ENOTEMPTY` 时已经证明发生争
 
 独占 declaration publication 在写入、同步和回读前捕获新空文件的 identity。失败时保留该 identity 供回滚；未完成内容必须仍为预期字节的前缀，且 device/inode/mode/link count 相同。已验证文件保留完整 content-hash 检查。每个 parent directory 在创建下一级前单独加入事务 ledger，后续失败不能丢失此前的清理 ownership。无法读取 identity 或外部替换不会授予删除 authority。[Publication 失败守卫](../../../packages/limina/src/__tests__/output-publication-failures.spec.ts)注入 partial write、sync/readback 失败、目录失败和替换，并检查重试与用户文件保留。
 
+[租约等待](../../../packages/limina/src/utils/mutation/cross-process-lease.ts)使用单调时钟截止时间，writer slot 获取与已有 reader 排空共用同一预算。超时提示显示配置的预算，owner 时间戳继续作为系统时钟元数据。reader 排空超时会释放已发布的 writer slot，不移除存活 reader。截止时间约束重试等待，不中断文件系统调用；重试也可能在下一次超时检查前成功获取租约。这不构成抢占式取消或硬实时保证。[物化恢复测试](../../../packages/limina/src/__tests__/materialization-recovery.spec.ts)覆盖时钟调整和超时清理；holder 与 reclamation 守卫继续覆盖所有权和替换竞争。
+
 ## 受管 Checker 的执行准入
 
 物化与执行各自拥有独立准入。诊断候选可以物化，同时适用的 `deny.refs` 阻止受管 Checker target 执行。[Execution Admission](../../../packages/limina/src/typecheck/admission/execution-admission.ts) 由受管 build 和独立的框架 typecheck pool 共用，在物化 revision lease 与当前输入证明下检查 mutation、launch、output-copy 边界。它不调用完整 `graph:check`，不改变 Core 完成状态，不删除关系，也不保证 Checker 最终成功。
@@ -291,7 +309,13 @@ Compiler options 保持原样。合法既有 outputs 优先于 native 值；有�
 
 [新进程验证](../../../packages/migrate/src/migration/verification.ts)为 check 和 graph 各启动独立 worker，各自重建明确的输入来源：已有与新创建的真实配置各加载一次；defaults 重新读取锁定的 manifest/workspace，并使用同一核心默认输入 factory。报告区分原始输入与最终验证来源；生成配置缺失不能由内存 exclusions 替代。该方式保留 CommonJS 支持，不依赖模块热更新。它通过同次发行 Limina 源码内嵌的正常 check/graph 输入读取器读取实际磁盘输入，不使用 overlay 或 report。成功表示该内嵌输入实现消费了磁盘拓扑，不表示执行了任意项目安装版 Limina、完整 typecheck 或 graph 治理。必要写入失败、受保护成员缺失、结构性错误、没有可治理 source 或无法验证时，都不能报告接入成功。单独拒绝可选 outputs 不要求失败。独立发布的 `.limina/migration/latest.json` 记录处理、比较、转换、写入及验证，包括阶段耗时，以及审计位置仍可写时的致命失败尝试。终端结果同时显示隔离配置、删除的域外引用、比较完整性、分析诊断、失败／跳过组和报告路径。治理诊断与源码尚未生成本身不使输入消费失败；残留结构错误或必要写入失败仍会失败；发布失败只警告，不回滚配置。Report 不授予 graph 或后续 migration authority。可编辑模块形态及退出语义见 [CLI 契约](../../../docs/zh/cli.md#limina-migration)。
 
-POSIX checker 执行会持续跟踪所属进程组直到终止，包括组长已经退出的情况。组长自然退出时，即使未取消也会启动后代清理；清理成功后保留组长原始退出状态。组长的 close 事件不再取消强制终止计时。runner 在报告完成前等待进行中的进程组清理；checker host 保留该组直到清理结束，host 关闭时也一样。清理超时有明确上限，并报告为失败的执行结果。[进程组测试](../../../packages/limina/src/__tests__/process-tree.spec.ts)使用响应／忽略信号的子进程、已经退出的组长及直接／host 执行。这些测试不证明 Windows taskkill 的后代终止行为。
+POSIX Checker 执行由主进程先拥有 detached supervisor 进程组，再发送一次命令。实际命令继承该组；源码执行使用包内 Node/tsx 入口，不再经过中间 CLI wrapper。一旦尝试 dispatch，host 失败意味着命令结果未知，必须清理后失败，不能重放命令。只有 dispatch 前失败才可在组清理及再次取消检查后直接回退。主进程在正常完成、host 丢失和取消时都等待所属组清理；普通 process exit 同步终止仍归其所有的组。直接执行及安全的 dispatch 前回退也按相同生命周期登记自己的组；已清理的 supervisor 在开始回退前释放所有权。
+
+有所属组期间，默认 native SIGINT/SIGTERM 处理先终止这些组，再重新发送原信号以保留 signal termination。其他信号监听器仍拥有自己的取消或继续策略，包括动态 prepend 的 once listener；synthetic `process.emit` 的次序不属于 native 中断合同。即使组长已经退出，所有权仍保留到清理结束。主进程遭 SIGKILL、其他未处理的终止信号，以及主动脱离所属组的后代，不在此保证内。Windows 使用直接回退；本地 POSIX 测试不证明 taskkill 行为。[Host 回归](../../../packages/limina/src/__tests__/checker-host.spec.ts)和[进程组回归](../../../packages/limina/src/__tests__/process-tree.spec.ts)覆盖不重放、stdin 继承、主线程阻塞计时、host 丢失、普通退出及响应／忽略信号的后代。
+
+进程组终止使用单调时钟计量 500ms 宽限期，并在实际强制终止尝试后等待最多 1,500ms。逾期 poll 在判断超时之前执行强制升级，避免事件循环阻塞导致尚未执行的 force timer 被取消。事件循环阻塞时，实际清理耗时可能超过两秒；该协议在获得调度后有界，不是硬实时期限。
+
+Checker `durationMs` 从主进程 request 计到等待清理完成，包括 supervisor 启动、IPC 与主事件循环延迟。可选 `commandDurationMs` 在 supervisor 内从命令 spawn 计到 close，不包括启动和后代清理；可靠结果丢失或直接执行时不提供该指标。成功与取消都保留实际 request elapsed。该字段贯穿 target outcome、pipeline statistics 和 check snapshot；只有 checker-target item 接受有限非负 command duration。Snapshot v10 拒绝旧计量 wire model，但允许旧完成快照之后分配新 attempt。逐 target supervision 增加进程启动成本，短命令基准必须在 E2E 中保留此成本。
 
 ## Issue identity 与 freshness
 
@@ -301,7 +325,7 @@ inline 终端写入跟踪转发 chunk 时保留原 Writable 接收者，结束�
 
 Finding producer 保留 typed semantic facts，issue projector 按域组成稳定 identity、去重与排序；同一位置的不同 semantic finding 不能因展示字段相同而吞掉。[check-reporting](../../../packages/limina/src/check-reporting) 定义 canonical issue inventory；terminal presentation 不决定事实 identity。
 
-[check-attempt-io](../../../packages/limina/src/source-check/snapshot/check-attempt-io.ts) 发布 sequence、attempt identity 与 started metadata，完成时提交 `last-run.json` 与认证它的 latest-completed metadata/digest。较旧 completion 不能压过较新 sequence。当前 [snapshot types](../../../packages/limina/src/source-check/snapshot/types.ts) 是 check v9、source v2；standalone [invocation snapshot](../../../packages/limina/src/check-reporting/invocation-snapshot.ts) 是另一个 v1 schema，使用独立 invocation ID。三个版本不能混写。读取器和写入器的拒绝消息从 `CHECK_ISSUE_SNAPSHOT_VERSION` 获取支持的 check 版本；旧版和未来版 check wire model 仍被拒绝。[快照测试](../../../packages/limina/src/__tests__/source-snapshot.spec.ts)与[完成 attempt 测试](../../../packages/limina/src/__tests__/check-attempt.spec.ts)覆盖无效写入、版本拒绝，以及 metadata 一致但快照使用旧版本的情况。
+[check-attempt-io](../../../packages/limina/src/source-check/snapshot/check-attempt-io.ts) 发布 sequence、attempt identity 与 started metadata，完成时提交 `last-run.json` 与认证它的 latest-completed metadata/digest。较旧 completion 不能压过较新 sequence。当前 [snapshot types](../../../packages/limina/src/source-check/snapshot/types.ts) 是 check v10、source v2；standalone [invocation snapshot](../../../packages/limina/src/check-reporting/invocation-snapshot.ts) 是另一个 v1 schema，使用独立 invocation ID。三个版本不能混写。读取器和写入器的拒绝消息从 `CHECK_ISSUE_SNAPSHOT_VERSION` 获取支持的 check 版本；旧版和未来版 check wire model 仍被拒绝。[快照测试](../../../packages/limina/src/__tests__/source-snapshot.spec.ts)与[完成 attempt 测试](../../../packages/limina/src/__tests__/check-attempt.spec.ts)覆盖无效写入、版本拒绝，以及 metadata 一致但快照使用旧版本的情况。
 
 `check --issues` 查询 persisted state，不运行新检查。它的 `QueryConfigAnchor` 与 `ExecutionConfigLocation` 不同：显式路径相对 cwd 做 lexical 解析，可以不存在。locator 从其 dirname 寻找最近 manifest，验证对象，不分类 membership、不 import 配置、不执行配置函数、不构建 preflight。未指定路径时发现当前存在的默认配置，缺少记录不重定向到祖先 workspace。生成的 invocation 命令绑定绝对配置、Node 路径和已安装 Limina binary；[回放测试](../../../packages/limina/src/__tests__/single-package-cli.spec.ts) 删除配置并检查持久化状态不变、配置没有额外执行。latest running/interrupted/aborted/persistence-failed/corrupt metadata 或不一致 completion pair 禁止 fallback 到旧 inventory；corrupt latest attempt 还阻止新 sequence 分配。显式 standalone invocation query 有自己的输入校验，不等于 latest full check。
 
