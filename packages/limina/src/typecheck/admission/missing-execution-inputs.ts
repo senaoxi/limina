@@ -76,19 +76,16 @@ function failedModuleCandidates(
 }
 function missingRequest(
   input: MissingInput,
-  pair: { snapshot: NativeEvidenceSnapshot; requestId: string },
+  snapshot: NativeEvidenceSnapshot,
+  request: NativeRequest,
+  resolution: NativeEvidenceSnapshot['resolutions'][number],
   configs: ReadonlySet<string>,
 ): Set<string>[] {
-  const request = pair.snapshot.requests.find(
-    (item) => item.id === pair.requestId,
-  );
-  return request === undefined
-    ? []
-    : bindMissingContext(input, { request, snapshot: pair.snapshot }, configs);
+  return bindMissingContext(input, { request, snapshot, resolution }, configs);
 }
 function bindMissingContext(
   input: MissingInput,
-  evidence: Pick<RequestContext, 'request' | 'snapshot'>,
+  evidence: Pick<RequestContext, 'request' | 'snapshot' | 'resolution'>,
   configs: ReadonlySet<string>,
 ): Set<string>[] {
   const { request } = evidence;
@@ -100,6 +97,7 @@ function bindMissingContext(
 interface RequestContext {
   request: NativeRequest;
   snapshot: NativeEvidenceSnapshot;
+  resolution: NativeEvidenceSnapshot['resolutions'][number];
   context: NonNullable<ReturnType<typeof projections.get>>['contexts'][number];
 }
 function qualifiedMissingRequest(
@@ -137,16 +135,29 @@ export function missingExecutionInputs(
   ).configs;
   const input = { graph, target, root: config.rootDir };
   return (graph.dependencyAnalysis?.nativeEvidence ?? []).flatMap(
-    ({ snapshot }) =>
-      snapshot.resolutions
-        .filter((resolution) => resolution.state === 'unresolved')
-        .flatMap((resolution) =>
-          missingRequest(
-            input,
-            { snapshot, requestId: resolution.requestId },
-            configs,
-          ),
-        ),
+    ({ snapshot }) => {
+      const unresolved = snapshot.resolutions.filter(
+        (resolution) => resolution.state === 'unresolved',
+      );
+      if (unresolved.length === 0) return [];
+      const requests = new Map<string, NativeRequest>();
+      for (const request of snapshot.requests)
+        if (!requests.has(request.id)) requests.set(request.id, request);
+      const resolutions = new Map<
+        string,
+        NativeEvidenceSnapshot['resolutions'][number]
+      >();
+      for (const resolution of snapshot.resolutions)
+        if (!resolutions.has(resolution.requestId))
+          resolutions.set(resolution.requestId, resolution);
+      return unresolved.flatMap((resolution) => {
+        const request = requests.get(resolution.requestId);
+        const firstResolution = resolutions.get(resolution.requestId);
+        return request === undefined || firstResolution === undefined
+          ? []
+          : missingRequest(input, snapshot, request, firstResolution, configs);
+      });
+    },
   );
 }
 
@@ -162,9 +173,7 @@ function registeredContext(candidate: CandidateBuildPlan, contextId: string) {
     ?.contexts.find((item) => item.id === contextId);
 }
 function missingPathCandidates(evidence: RequestContext): string[] {
-  const resolution = evidence.snapshot.resolutions.find(
-    (item) => item.requestId === evidence.request.id,
-  )!;
+  const { resolution } = evidence;
   const candidates =
     resolution.pathSelection?.state === 'missing'
       ? resolution.pathSelection.candidates
