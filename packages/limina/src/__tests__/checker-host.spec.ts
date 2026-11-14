@@ -441,7 +441,8 @@ describe('createDefaultRunner duration measurement', () => {
         else expect(parent.signalCode).toBe(shutdown);
         for (
           let attempt = 0;
-          attempt < 100 && isProcessRunning(descendantPid);
+          attempt < 100 &&
+          (isProcessRunning(descendantPid) || isProcessRunning(group!.pid));
           attempt += 1
         )
           await waitForMacrotasks(20);
