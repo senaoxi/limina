@@ -14,17 +14,17 @@ Use this table to read your first report:
 
 | Task                | Question it answers                                                   |
 | ------------------- | --------------------------------------------------------------------- |
+| `checker:build`     | Can a declaration-build checker handle the TypeScript or Vue configs? |
 | `graph:check`       | Do project references and dependency rules agree with the source?     |
 | `source:check`      | Do source ownership, cross-package imports, and dependencies agree?   |
 | `proof:check`       | Are the files expected to be checked covered?                         |
-| `checker:build`     | Can a declaration-build checker handle the TypeScript or Vue configs? |
 | `checker:typecheck` | Are Astro or Svelte type checks needed, and can they run?             |
 
 With no Astro or Svelte targets, the last task is `disabled`, meaning it has no applicable work. Package and release checks run separately after the production build.
 
-The report order is Graph, Source, Proof, Checker Build, then Framework Typecheck, including all five default tasks. Workspace validation, core analysis, graph materialization and execution admission remain mandatory internal work.
+Before starting the compilers, `checker:build` shows which reference graph it is materializing. In a TypeScript or Vue project, it prepares the complete graph. Graph, Source, and Proof use that graph after the build finishes, even when a compiler reports an error. The overall check still fails.
 
-This order is the display and recording order for results. It does not mean the default check runs these tasks serially. The default check schedules them as independent tasks; when the concurrency budget and resource locks allow it, they may run concurrently. A failed task fails the current check; other default tasks can continue.
+If the workspace has Svelte check targets, the checker build first prepares the producer graph and builds the declarations. Limina then materializes the complete graph for the remaining checks. A failed producer build blocks checks that need the complete graph. Once the graph is ready, eligible checks can run concurrently within the configured limits.
 
 `workspace:validate` is shared by all topology-dependent work. It must pass before source, proof, graph, checker, migration, package, release, or Limina-managed artifact-producing work can begin. It is recorded as a preparation and as a `LiminaCheckTaskName`, so `limina check --issues --task workspace:validate` can query its structured issues. It is injected automatically and is not a user-configurable pipeline step.
 
@@ -68,7 +68,7 @@ Besides built-in tasks, pipeline steps may be external commands. A completed bui
 | `package:check`     | No            | Built package artifacts                                                                                 | Runs package-shape, type-resolution, and artifact import-boundary checks on `outDir` artifacts                 |
 | `release:check`     | No            | Release-phase artifact consistency                                                                      | Supplemental pre-release checks; not a publishing system or security guarantee                                 |
 
-External commands separate consecutive built-in tasks into segments. Each segment reuses the validated workspace context of the current analysis generation. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives a shared `graph:materialize` preparation before its built-in tasks. Failed required preparation records dependent tasks as `blocked`. A workspace issue can still be persisted in `.limina/check/last-run.json`; a secondary snapshot-write failure does not replace the original validation error.
+In a named pipeline, consecutive built-in tasks share the validated workspace context until an external command starts a new analysis generation. Each task prepares its generated graph artifacts when it needs them. Failed required preparation records dependent tasks as `blocked`. Limina can persist workspace issues in `.limina/check/last-run.json` and preserves the original validation error if snapshot writing also fails.
 
 ### Task Status
 

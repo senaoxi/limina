@@ -91,33 +91,6 @@ describe('ExecutionPlan construction', () => {
     }
   });
 
-  it('builds producers before the default full graph barrier', async () => {
-    const fixture = await createConfig();
-    try {
-      const plan = createDefaultExecutionPlan(fixture.config);
-      const materializer = plan.tasks.filter(
-        (task) => task.issueTask === 'graph:materialize',
-      );
-      expect(materializer).toHaveLength(1);
-      expect(
-        plan.tasks
-          .filter((task) => task.kind === 'task')
-          .map((task) => [task.issueTask, task.requiresSuccessOf]),
-      ).toEqual(
-        expect.arrayContaining(
-          [
-            'graph:check',
-            'source:check',
-            'proof:check',
-            'checker:typecheck',
-          ].map((issueTask) => [issueTask, [materializer[0]!.id]]),
-        ),
-      );
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
   it('does not add a materializer to a segment without generated-file consumers', async () => {
     const fixture = await createConfig();
     fixture.config.pipelines = {
@@ -133,18 +106,14 @@ describe('ExecutionPlan construction', () => {
     }
   });
 
-  it('runs producers but holds graph consumers while final materialization is deferred', async () => {
+  it('holds graph consumers until final materialization finishes', async () => {
     const fixture = await createConfig();
     const plan = createDefaultExecutionPlan(fixture.config);
     const materializerStarted = deferred<void>();
     const releaseMaterializer = deferred<void>();
-    const validation = plan.tasks.find(
-      (task) => task.issueTask === 'workspace:validate',
-    )!;
     const materializer = plan.tasks.find(
       (task) => task.issueTask === 'graph:materialize',
     )!;
-    validation.run = async () => ({ issues: [], status: 'passed' });
     materializer.run = async () => {
       materializerStarted.resolve();
       await releaseMaterializer.promise;
@@ -169,14 +138,23 @@ describe('ExecutionPlan construction', () => {
         rootDir: fixture.config.rootDir,
         tasks: plan.tasks,
       });
-      await materializerStarted.promise;
-      for (const { run, isProducer } of userRuns) {
-        if (isProducer) expect(run).toHaveBeenCalledOnce();
-        else expect(run).not.toHaveBeenCalled();
+      try {
+        await Promise.race([
+          materializerStarted.promise,
+          (async () => {
+            await execution;
+            throw new Error('Execution completed before materialization.');
+          })(),
+        ]);
+        for (const { run, isProducer } of userRuns) {
+          if (isProducer) expect(run).toHaveBeenCalledOnce();
+          else expect(run).not.toHaveBeenCalled();
+        }
+      } finally {
+        releaseMaterializer.resolve();
+        await expect(execution).resolves.toMatchObject({ passed: true });
       }
 
-      releaseMaterializer.resolve();
-      await expect(execution).resolves.toMatchObject({ passed: true });
       for (const { run } of userRuns) expect(run).toHaveBeenCalledOnce();
     } finally {
       preflight.dispose();
@@ -659,7 +637,10 @@ describe('runPipeline', () => {
       expect(output).toContain('◇      graph check\n');
       expect(output).toContain('◇      source check\n');
       expect(output).toContain('◇      proof check\n');
-      expect(output).toContain('◇      checker build\n');
+      expect(output).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] {6}checker build\n/u);
+      expect(output).toMatch(
+        /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] {8}materialize complete reference graph\n/u,
+      );
       expect(output).toContain('◇      checker typecheck\n');
       expect(generatedGraphProvider).toHaveBeenCalledTimes(1);
     } finally {
@@ -1367,10 +1348,10 @@ describe('fixed default tasks', () => {
         const plan = createDefaultExecutionPlan(fixture.config);
         const tasks = plan.tasks.filter((task) => task.kind === 'task');
         expect(tasks.map((task) => task.issueTask)).toEqual([
+          'checker:build',
           'graph:check',
           'source:check',
           'proof:check',
-          'checker:build',
           'checker:typecheck',
         ]);
         expect(plan.userTaskCount).toBe(5);
@@ -1386,10 +1367,8 @@ describe('fixed default tasks', () => {
         ]);
         const [validation, materializer] = preparations;
         const build = tasks.find((task) => task.issueTask === 'checker:build')!;
-        expect(materializer!.requiresSuccessOf).toEqual([
-          validation!.id,
-          build.id,
-        ]);
+        expect(materializer!.requiresSuccessOf).toEqual([validation!.id]);
+        expect(materializer!.requiresSuccessOfWhen?.tasks).toEqual([build.id]);
         expect(build.requiresSuccessOf).toEqual([validation!.id]);
         expect(
           tasks.every(
@@ -1408,10 +1387,10 @@ describe('fixed default tasks', () => {
     try {
       fixture.config.pipelines = { explicit: ['proof:check', 'graph:check'] };
       const expected = [
+        'checker:build',
         'graph:check',
         'source:check',
         'proof:check',
-        'checker:build',
         'checker:typecheck',
       ];
       expect(

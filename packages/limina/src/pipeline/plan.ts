@@ -1,13 +1,13 @@
-import type { BuiltinTaskName, ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaConfig } from '#config/runner';
 import { validateExecutionPlan } from '../execution/executor';
 import type { ExecutionPlan, ExecutionTask, TaskId } from '../execution/tasks';
 import { taskId } from '../execution/tasks';
+import type { LiminaPreflightManager } from '../preflight';
 import {
   createBuiltinExecutionTask,
   createCommandExecutionTask,
   createMaterializationTask,
   createWorkspaceValidationTask,
-  filesystemDependentTasks,
 } from './execution-tasks';
 import {
   defaultCheckPipeline,
@@ -169,14 +169,39 @@ function requireTaskSuccess(
   for (const task of tasks) task.requiresSuccessOf = [prerequisite.id];
 }
 
-function isFilesystemDependentTask(task: ExecutionTask): boolean {
+function isCompleteGraphReady(preflight: LiminaPreflightManager): boolean {
+  const graph = preflight.getMaterializedGraph();
   return (
-    task.kind === 'task' &&
-    filesystemDependentTasks.has(task.issueTask as BuiltinTaskName)
+    graph !== undefined &&
+    (graph.governedSources.get('svelte-check')?.size ?? 0) === 0
   );
 }
 
-function addPreparationTasks(options: {
+function appendDefaultTasks(options: {
+  output: ExecutionTask[];
+  segment: TaskSegment;
+  validation: ExecutionTask;
+}): void {
+  const builds = options.segment.tasks.filter(
+    (task) => task.issueTask === 'checker:build',
+  );
+  const checks = options.segment.tasks.filter(
+    (task) => task.issueTask !== 'checker:build',
+  );
+  const materialization = createMaterializationTask({
+    generation: options.segment.generation,
+    segment: options.segment.index,
+  });
+  materialization.requiresSuccessOf = [options.validation.id];
+  materialization.requiresSuccessOfWhen = {
+    tasks: builds.map((task) => task.id),
+    test: (preflight) => !isCompleteGraphReady(preflight),
+  };
+  requireTaskSuccess(checks, materialization);
+  options.output.push(...builds, materialization, ...checks);
+}
+
+function appendBuiltinTasks(options: {
   config: ResolvedLiminaConfig;
   dependencyMode: 'independent' | 'ordered';
   output: ExecutionTask[];
@@ -191,30 +216,11 @@ function addPreparationTasks(options: {
   attachValidationPredecessors(validation, options.segment.tasks);
   requireTaskSuccess(options.segment.tasks, validation);
   options.output.push(validation);
-  // Ordered steps own their preparation at execution time. A later build must
-  // never become a prerequisite of an earlier Graph/Source/Proof step.
-  if (options.dependencyMode === 'ordered') return;
-  const dependentTasks = options.segment.tasks.filter(
-    isFilesystemDependentTask,
-  );
-  if (dependentTasks.length === 0) return;
-  const materialization = createMaterializationTask({
-    generation: options.segment.generation,
-    segment: options.segment.index,
-  });
-  const builds = options.segment.tasks.filter(
-    (task) => task.issueTask === 'checker:build',
-  );
-  materialization.after = [validation.id, ...builds.map((task) => task.id)];
-  materialization.requiresSuccessOf = [
-    validation.id,
-    ...builds.map((task) => task.id),
-  ];
-  requireTaskSuccess(
-    options.segment.tasks.filter((task) => task.issueTask !== 'checker:build'),
-    materialization,
-  );
-  options.output.push(materialization);
+  if (options.dependencyMode === 'independent') {
+    appendDefaultTasks({ ...options, validation });
+  } else {
+    options.output.push(...options.segment.tasks);
+  }
 }
 
 function appendSegment(options: {
@@ -223,8 +229,7 @@ function appendSegment(options: {
   output: ExecutionTask[];
   segment: TaskSegment;
 }): void {
-  addPreparationTasks(options);
-  options.output.push(...options.segment.tasks);
+  appendBuiltinTasks(options);
   if (options.segment.command !== undefined) {
     options.output.push(options.segment.command);
   }

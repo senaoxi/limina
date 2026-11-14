@@ -116,6 +116,12 @@ export interface ExecutionTask extends ExecutionTaskIdentity {
   invalidatesPreflight?: boolean;
   order: number;
   requiresSuccessOf?: readonly TaskId[];
+  // Always waits for these tasks to settle. The predicate decides whether
+  // a non-successful outcome blocks dispatch using the current preflight.
+  requiresSuccessOfWhen?: Readonly<{
+    tasks: readonly TaskId[];
+    test: (preflight: LiminaPreflightManager) => boolean;
+  }>;
   resources: ResourceRequest;
   run: (context: ExecutionTaskRunContext) => Promise<ExecutionTaskRunResult>;
 }
@@ -123,6 +129,14 @@ export interface ExecutionTask extends ExecutionTaskIdentity {
 export interface ExecutionPlan {
   tasks: readonly ExecutionTask[];
   userTaskCount: number;
+}
+
+export function getTaskDependencies(task: ExecutionTask): Set<TaskId> {
+  return new Set([
+    ...(task.after ?? []),
+    ...(task.requiresSuccessOf ?? []),
+    ...(task.requiresSuccessOfWhen?.tasks ?? []),
+  ]);
 }
 
 export function taskReference(task: ExecutionTaskIdentity): TaskReference {

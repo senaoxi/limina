@@ -196,15 +196,15 @@ function isReportConfiguredCheckerCapabilities(
   return isAuto;
 }
 
-async function reportGeneratedCheckerCapabilities(options: {
+function reportGeneratedCheckerCapabilities(options: {
   auto: boolean;
   config: ResolvedLiminaConfig;
   pipelineOptions: RunPipelineOptions;
   preflight: LiminaPreflightManager;
-}): Promise<void> {
+}): void {
   if (!options.auto) return;
   try {
-    await reportAutoCheckerCapabilities(
+    reportAutoCheckerCapabilities(
       options.config,
       options.pipelineOptions.flow,
       options.preflight,
@@ -245,7 +245,7 @@ export async function runDefaultCheckWithResult(
     plan,
     preflight,
   });
-  await reportGeneratedCheckerCapabilities({
+  reportGeneratedCheckerCapabilities({
     auto: isAuto,
     config,
     pipelineOptions: options,

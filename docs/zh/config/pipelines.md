@@ -57,13 +57,13 @@ Configure the pipeline in the Limina config under `pipelines.lint`.
 
 ::: details 准备步骤的执行时机
 
-连续的内置任务构成一个任务段，外部命令将任务段分开。Limina 在每个任务段前执行 `workspace:validate`。如果任务段包含 `graph:prepare`、`checker:build` 或 `checker:typecheck`，还会在该任务段的全部内置任务前执行 `graph:materialize`。这些准备步骤由 Limina 自动添加，不能作为 `BuiltinTaskName` 单独配置。准备失败时，依赖任务不会继续使用工作区拓扑或生成文件。
+连续的内置任务构成一个任务段。Limina 在每段前执行 `workspace:validate`，各步骤按需准备生成图产物。外部命令将任务段分开。默认检查还包含 `graph:materialize` 准备步骤，并有自己的[构建依赖](../built-in-tasks.md#先理解默认检查)。这些准备步骤由 Limina 自动添加。
 
 :::
 
 已执行内置任务失败会让最终结果失败，但后续步骤仍按顺序尝试。准备步骤失败只阻塞依赖它的内置任务，不自动取消后面的外部命令。
 
-例如，在 `checker:build → pnpm build → package:check` 中，第一段准备失败会使 `checker:build` 被阻塞，但 `pnpm build` 仍会尝试运行。如果构建成功，后一段会重新进行工作区准备，再尝试包检查。前面的失败仍保留在最终结果中。只有外部命令失败才停止剩余步骤，并将它们记为 `skipped`（已跳过）。
+例如，在 `checker:build → pnpm build → package:check` 中，工作区验证失败会阻塞 `checker:build`。Limina 仍会尝试运行 `pnpm build`。如果它成功，后一段会先验证工作区，再尝试包检查。前面的失败仍保留在最终结果中。只有外部命令失败才停止剩余步骤，并将它们记为 `skipped`（已跳过）。
 
 外部命令可能改变后续任务需要读取的文件。因此，进入后续任务前，Limina 会等待当前工作结束并重新建立分析上下文。它仍使用本次运行开始时加载的配置对象，不会在外部命令后重新执行配置模块或函数。
 

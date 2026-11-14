@@ -65,10 +65,10 @@ describe('Limina CI product validation entry points', () => {
         .tasks.filter((task) => task.kind === 'task')
         .map((task) => task.issueTask),
     ).toEqual([
+      'checker:build',
       'graph:check',
       'source:check',
       'proof:check',
-      'checker:build',
       'checker:typecheck',
     ]);
     for (const [script, pipeline, tool, requiredFlag, forbiddenFlag] of [

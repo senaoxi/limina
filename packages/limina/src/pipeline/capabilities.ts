@@ -125,18 +125,14 @@ export function isUsesAutoCheckers(): boolean {
   return true;
 }
 
-export async function reportAutoCheckerCapabilities(
+export function reportAutoCheckerCapabilities(
   config: ResolvedLiminaConfig,
   flow: LiminaFlowReporter | undefined,
   preflight: LiminaPreflightManager,
-): Promise<void> {
-  if (flow === undefined) return;
-  try {
-    const graph = await preflight.ensureGeneratedGraph();
+): void {
+  const graph = preflight.getMaterializedGraph();
+  if (graph !== undefined)
     reportCheckerCapabilities(config, flow, graph.checkers);
-  } catch {
-    // Capability reporting is informational and must not replace task failures.
-  }
 }
 
 function hasPackageNames(packageNames: readonly string[] | undefined): boolean {

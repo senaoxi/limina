@@ -112,18 +112,23 @@ Executable boundaries are protected by the test-only linear oracle for trie sema
 flowchart TB
   CLI["CLI / configuration"] --> Workspace["Validated workspace"]
   Workspace --> Ownership["Checker ownership / frozen semantic authority"]
-  Ownership --> Producers["Independent producer admission"]
-  Producers --> Build["Vue / TypeScript declaration build"]
-  Build --> Receipt["Current inputs / actual declaration outputs"]
+  Ownership -->|"No Svelte targets"| Complete["Materialize complete graph"]
+  Complete --> Build["Checker build"]
+  Build -->|"Wait for settlement"| Checks["Graph / Source / Proof"]
+  Ownership -->|"Svelte targets"| Producers["Materialize producer graph"]
+  Producers --> ProducerBuild["Build declaration producers"]
+  ProducerBuild -->|"Success"| Receipt["Current inputs / actual declaration outputs"]
   Receipt --> Resolution["Svelte compiler consumption / check projection"]
-  Resolution --> Final["Complete graph admission / producer stability"]
-  Final --> Checks["Graph / Source / Proof"]
+  Resolution --> Final["Admit and materialize complete graph"]
+  Final --> Checks
   Final --> Svelte["Per-config Svelte checks"]
   CLI --> Command["Ordered command boundary"]
   Command --> Workspace
 ```
 
-Arrows express dependencies, not universal serial execution. [Steps](../../packages/limina/src/pipeline/steps.ts) defines the fixed default Graph, Source, Proof, Checker Build and Framework Typecheck tasks. Omitting a governance domain does not remove its task. Failed preparation can block planned tasks, and Framework Typecheck without targets remains disabled. The [plan](../../packages/limina/src/pipeline/plan.ts) marks default tasks independent and named pipelines ordered. `after` waits for settlement; `requiresSuccessOf` requires success. Commands divide generations. In the default plan, producer build succeeds before complete-graph materialization; Graph/Source/Proof and framework checks consume that final view. Ordered pipelines preserve their step order and prepare each step at execution time, without a dependency on a later build. The repository’s named pipelines are configuration choices, separate from the default workflow.
+[Steps](../../packages/limina/src/pipeline/steps.ts) defines the five default tasks in report order. Checker Build is followed by Graph, Source, Proof and Checker Typecheck. The [build runner](../../packages/limina/src/typecheck/checker/build-runner.ts) reports which reference graph it materializes before launching compiler targets. The [default plan](../../packages/limina/src/pipeline/plan.ts) waits for Build to settle before consumers use the shared preflight. This lets any managed output refresh finish first. If the current preflight already holds a materialized complete graph without Svelte targets, `graph:materialize` reuses it and releases the checks even when Build failed. Otherwise the complete graph task requires Build success. Failed preparation blocks its dependent tasks. Checker Typecheck without targets is disabled.
+
+Named pipelines preserve configured step order. Commands divide generations. Each built-in step prepares its own graph as needed. The scheduler distinguishes an ordering dependency from a required success and can condition success on the current preflight after its dependencies settle.
 
 Mixed Svelte builds use a separate `ProducerBuildPlan`, never a partially admitted complete graph. Global Source Config Coverage and the existing ownership algorithm remain intact. Producer preparation checks every effective outgoing reference and rejects a necessary dependency on a project without declaration-build capability. Only after the producer receipt exists does the Svelte execution view resolve actual declaration consumption. Final admission compares the producer compilation semantics with the built plan; new consumer incoming edges alone do not require a rebuild. `GeneratedTsconfigGraphResult` continues to mean complete admission. [Preparation](../../packages/limina/src/core/build-graph/prepare.ts), [receipt validation](../../packages/limina/src/core/build-graph/producer-receipt.ts), and [pipeline regressions](../../packages/limina/src/__tests__/pipeline.spec.ts) own these boundaries. Checker Build with an explicit configuration also uses producer preparation, but executes only the selected target closure and does not issue a receipt for the entire producer set. Astro and watch retain their separate contracts.
 

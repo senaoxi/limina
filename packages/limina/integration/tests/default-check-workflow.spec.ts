@@ -74,10 +74,10 @@ async function inventory(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 const defaultTasks = [
+  'checker:build',
   'graph:check',
   'source:check',
   'proof:check',
-  'checker:build',
   'checker:typecheck',
 ];
 const full = {
@@ -107,11 +107,11 @@ it('refreshes all default task inventories after governance domains are omitted'
   expect(current.run!.createdAt).not.toEqual(previous.run!.createdAt);
   expect(current.run!.tasks.map((task) => [task.label, task.state])).toEqual([
     ['workspace:validate', 'passed'],
+    ['checker:build', 'passed'],
     ['graph:materialize', 'passed'],
     ['graph:check', 'passed'],
     ['source:check', 'passed'],
     ['proof:check', 'passed'],
-    ['checker:build', 'passed'],
     ['checker:typecheck', 'disabled'],
   ]);
   expect(current.issues).toEqual([]);
@@ -125,8 +125,7 @@ it.each([undefined, { knip: false }])(
   'fails base source authorization with source=%j',
   async (sourceConfig) => {
     const f = await fixture('detectors/source/package-import-unauthorized');
-    // Resolve the import for the producer compiler without declaring Source
-    // authority for it. Missing-module errors would block the Source task.
+    // Keep this case focused on Source authority by letting the compiler pass.
     await symlink(
       path.dirname(createRequire(import.meta.url).resolve('zod/package.json')),
       f.file('node_modules/zod'),
@@ -159,6 +158,40 @@ it.each([undefined, { knip: false }])(
     ).toEqual(defaultTasks);
   },
 );
+
+it('runs default governance after a compiler error on the complete graph', async () => {
+  const f = await fixture();
+  await f.config({ ...full, scope });
+  await writeFile(
+    f.file('packages/app/src/index.ts'),
+    'export const checkerBuildValue: string = 1;\n',
+  );
+  const result = await f.run(['check']);
+  expect(result.timedOut).toBe(false);
+  expect(result.code, result.stdout + result.stderr).toBe(1);
+  const preparation = result.stdout.indexOf(
+    '[pass] materialize complete reference graph',
+  );
+  const compiler = result.stdout.indexOf('[start] tsc -b');
+  expect(preparation, result.stdout).toBeGreaterThanOrEqual(0);
+  expect(compiler, result.stdout).toBeGreaterThan(preparation);
+  const snapshot = await inventory(f);
+  const states = Object.fromEntries(
+    snapshot.run!.tasks.map((task) => [task.issueTask, task.state]),
+  );
+  expect(states).toMatchObject({
+    'checker:build': 'failed',
+    'graph:materialize': 'passed',
+    'graph:check': 'passed',
+    'source:check': 'passed',
+    'proof:check': 'passed',
+    'checker:typecheck': 'disabled',
+  });
+  expect(snapshot.run!.result).toBe('failed');
+  expect(snapshot.issues).toContainEqual(
+    expect.objectContaining({ code: codes.checkerBuildFailed }),
+  );
+});
 
 it('runs the installed Knip when explicitly enabled', async () => {
   const f = await fixture();

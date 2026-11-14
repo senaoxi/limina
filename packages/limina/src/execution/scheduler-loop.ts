@@ -4,21 +4,13 @@ import { finishSynthetic, startTask } from './scheduler-tasks';
 import { observeScheduler } from './scheduler-trace';
 import type { SchedulerContext } from './scheduler-types';
 import { assertActiveGeneration } from './task-execution';
-import type { ExecutionTask, TaskId } from './tasks';
-
-function getRequiredDependencies(task: ExecutionTask): readonly TaskId[] {
-  return task.requiresSuccessOf ?? [];
-}
-
-function getAllDependencies(task: ExecutionTask): Set<TaskId> {
-  return new Set([...(task.after ?? []), ...getRequiredDependencies(task)]);
-}
+import { type ExecutionTask, getTaskDependencies } from './tasks';
 
 function isDependenciesSettled(
   task: ExecutionTask,
   context: SchedulerContext,
 ): boolean {
-  return [...getAllDependencies(task)].every((id) => context.outcomes.has(id));
+  return [...getTaskDependencies(task)].every((id) => context.outcomes.has(id));
 }
 
 type RootBlocker = ReturnType<typeof resolveRootBlocker>;
@@ -34,24 +26,27 @@ function getDependencyBlocker(options: {
     : resolveRootBlocker(options.dependencyTask, outcome);
 }
 
-function isRequiredDependency(options: {
-  required: readonly TaskId[];
-  task: ExecutionTask;
-}): boolean {
-  return options.required.includes(options.task.id);
-}
-
 function findBlockedDependency(options: {
   context: SchedulerContext;
   task: ExecutionTask;
 }): RootBlocker {
-  const required = getRequiredDependencies(options.task);
-  const blockers = options.context.orderedTasks
-    .filter((task) => isRequiredDependency({ required, task }))
-    .map((dependencyTask) =>
-      getDependencyBlocker({ context: options.context, dependencyTask }),
-    );
-  return blockers.find((blocker) => blocker !== undefined);
+  const required = options.task.requiresSuccessOf ?? [];
+  const conditional = options.task.requiresSuccessOfWhen;
+  for (const dependencyTask of options.context.orderedTasks) {
+    const id = dependencyTask.id;
+    if (!required.includes(id) && !conditional?.tasks.includes(id)) continue;
+    const blocker = getDependencyBlocker({
+      context: options.context,
+      dependencyTask,
+    });
+    if (
+      blocker !== undefined &&
+      (required.includes(id) ||
+        conditional?.test(options.context.options.preflight))
+    )
+      return blocker;
+  }
+  return missingBlocker;
 }
 
 function canStartTask(options: {
@@ -72,7 +67,7 @@ type TaskAction =
   | 'wait-resources';
 
 interface TaskActionContext {
-  blocker: ReturnType<typeof findBlockedDependency>;
+  blocker?: ReturnType<typeof findBlockedDependency>;
   context: SchedulerContext;
   task: ExecutionTask;
 }
@@ -141,10 +136,9 @@ async function isProcessTaskCandidate(options: {
   context: SchedulerContext;
   task: ExecutionTask;
 }): Promise<boolean> {
-  const actionContext: TaskActionContext = {
-    blocker: findBlockedDependency(options),
-    ...options,
-  };
+  const actionContext: TaskActionContext = options;
+  if (isDependenciesSettled(options.task, options.context))
+    actionContext.blocker = findBlockedDependency(options);
   return taskActionHandlers[getTaskAction(actionContext)](actionContext);
 }
 

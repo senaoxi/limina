@@ -19,10 +19,10 @@ const builtInTaskNames = new Set<string>([
 ]);
 
 export const defaultCheckPipeline: readonly PipelineStep[] = [
+  'checker:build',
   'graph:check',
   'source:check',
   'proof:check',
-  'checker:build',
   'checker:typecheck',
 ];
 

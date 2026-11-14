@@ -145,11 +145,16 @@ it('builds independent producers before resolving all Svelte consumers and repai
       return result.stdout + result.stderr;
     };
     const cold = await check(['check']);
-    expect(cold).toContain('checker build');
-    expect(cold).toContain('graph materialize');
-    expect(cold.indexOf('checker build')).toBeLessThan(
-      cold.indexOf('graph materialize'),
+    const preparation = cold.indexOf(
+      '[pass] materialize producer reference graph',
     );
+    const compiler = cold.indexOf('[start] vue-tsc: vue-tsc -b');
+    const producersFinished = cold.indexOf('[pass] checker build');
+    const complete = cold.indexOf('[start] graph materialize');
+    expect(preparation, cold).toBeGreaterThanOrEqual(0);
+    expect(compiler, cold).toBeGreaterThan(preparation);
+    expect(producersFinished, cold).toBeGreaterThan(compiler);
+    expect(complete, cold).toBeGreaterThan(producersFinished);
     const manifest = JSON.parse(
       await readFile(fixture.path('.limina/manifest.json'), 'utf8'),
     ) as GeneratedTsconfigGraphManifest;

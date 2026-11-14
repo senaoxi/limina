@@ -14,17 +14,17 @@ Limina 根据项目的 `tsconfig`、导入和包声明分析项目结构。内�
 
 | 任务                | 回答的问题                                         |
 | ------------------- | -------------------------------------------------- |
+| `checker:build`     | 声明构建检查器能否处理这些 TypeScript / Vue 配置？ |
 | `graph:check`       | 项目引用和配置的依赖规则是否与源码关系一致？       |
 | `source:check`      | 源码归属、跨包导入和依赖声明是否符合要求？         |
 | `proof:check`       | 期望检查的源码是否获得覆盖？                       |
-| `checker:build`     | 声明构建检查器能否处理这些 TypeScript / Vue 配置？ |
 | `checker:typecheck` | 是否需要并且能够运行 Astro / Svelte 类型检查？     |
 
 没有 Astro 或 Svelte 目标时，最后一项显示 `disabled`，表示无适用工作。包检查和发布检查需要在生产构建之后另行运行。
 
-报告按 Graph、Source、Proof、Checker Build、Framework Typecheck 排列，包含全部五个默认任务。工作区验证、核心分析、图物化与执行准入仍是必要的内部流程。
+启动编译器前，`checker:build` 会显示正在物化哪份引用图。TypeScript 或 Vue 项目会先准备完整图。Build 结束后，即使编译器报错，Graph、Source 和 Proof 仍会使用这份图继续检查。整次检查仍返回失败。
 
-这个顺序是结果展示和记录顺序，不表示默认检查按这个顺序串行执行。默认检查会把这些任务作为独立任务调度。在并发额度和资源锁允许时，它们可以同时运行。某个任务失败会让本次检查失败，其他默认任务仍可继续。
+如果工作区有 Svelte 检查目标，Checker Build 先准备生产者图并构建声明。随后，Limina 为剩余检查物化完整图。生产者构建失败时，依赖完整图的检查会被阻塞。图就绪后，可运行的检查会在配置的并发限制内执行。
 
 `workspace:validate` 由所有依赖拓扑的工作共享。它必须先成功，源码、证明、图、检查器、迁移、包、发布或 Limina 托管的产物生成工作才能开始。它既会记录为准备步骤，也是一个 `LiminaCheckTaskName`，因此可以用 `limina check --issues --task workspace:validate` 查询结构化问题。它由 Limina 自动注入，不是用户可配置的流水线步骤。
 
@@ -68,7 +68,7 @@ export default defineConfig({
 | `package:check`     | 否       | 已构建包产物                                          | 对 `outDir` 产物运行打包、类型解析和产物导入边界检查             |
 | `release:check`     | 否       | 发布期产物一致性                                      | 发布前补充检查；不应理解为发布系统或安全保证                     |
 
-外部命令把连续内置任务分成不同任务段。每段复用当前分析代次已验证的工作区上下文。包含 `graph:prepare`、`checker:build` 或 `checker:typecheck` 的任务段，还会在内置任务前获得共享准备步骤 `graph:materialize`。必要准备步骤失败时，依赖任务记录为 `blocked`（被阻塞）。工作区问题仍可写入 `.limina/check/last-run.json`；后续快照写入失败不会替换最初的验证错误。
+在命名流水线中，连续的内置任务共享已验证的工作区上下文，直到外部命令开启新的分析代次。各任务按需准备生成图产物。必要准备失败时，依赖任务记录为 `blocked`（被阻塞）。Limina 可以将工作区问题写入 `.limina/check/last-run.json`。如果快照也写入失败，仍会保留最初的验证错误。
 
 ### 任务状态
 

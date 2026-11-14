@@ -169,7 +169,12 @@ export class ExecutionTrace {
     this.#schedulerStart = this.now();
     for (const task of tasks) {
       this.#tasks.set(task.id, {
-        after: [...(task.after ?? [])],
+        after: [
+          ...new Set([
+            ...(task.after ?? []),
+            ...(task.requiresSuccessOfWhen?.tasks ?? []),
+          ]),
+        ],
         generation: task.generation,
         id: task.id,
         label: task.label,

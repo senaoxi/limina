@@ -112,18 +112,23 @@ lexical exact cache 仍位于 canonicalization 之前；未命中才使用原 ca
 flowchart TB
   CLI["CLI / configuration"] --> Workspace["Validated workspace"]
   Workspace --> Ownership["Checker ownership / frozen semantic authority"]
-  Ownership --> Producers["Independent producer admission"]
-  Producers --> Build["Vue / TypeScript declaration build"]
-  Build --> Receipt["Current inputs / actual declaration outputs"]
+  Ownership -->|"No Svelte targets"| Complete["Materialize complete graph"]
+  Complete --> Build["Checker build"]
+  Build -->|"Wait for settlement"| Checks["Graph / Source / Proof"]
+  Ownership -->|"Svelte targets"| Producers["Materialize producer graph"]
+  Producers --> ProducerBuild["Build declaration producers"]
+  ProducerBuild -->|"Success"| Receipt["Current inputs / actual declaration outputs"]
   Receipt --> Resolution["Svelte compiler consumption / check projection"]
-  Resolution --> Final["Complete graph admission / producer stability"]
-  Final --> Checks["Graph / Source / Proof"]
+  Resolution --> Final["Admit and materialize complete graph"]
+  Final --> Checks
   Final --> Svelte["Per-config Svelte checks"]
   CLI --> Command["Ordered command boundary"]
   Command --> Workspace
 ```
 
-箭头表示依赖，不表示所有任务逐个串行执行。[steps](../../../packages/limina/src/pipeline/steps.ts) 定义固定的 Graph、Source、Proof、Checker Build 和 Framework Typecheck 默认任务，省略治理域不会移除对应任务。准备失败可阻塞已计划任务，没有目标的 Framework Typecheck 仍为 disabled；[plan](../../../packages/limina/src/pipeline/plan.ts) 将默认 tasks 标为 independent，named pipeline 标为 ordered。`after` 表示等待结束，`requiresSuccessOf` 表示成功前提。命令划分 generation。默认计划先完成生产者构建，再物化完整图；Graph/Source/Proof 与框架检查消费最终视图。有序 pipeline 保留步骤顺序，各步骤在执行时准备，不依赖后续构建。仓库的命名 pipeline 属于配置选择，与默认工作流分开。
+[steps](../../../packages/limina/src/pipeline/steps.ts) 按报告顺序定义五项默认任务。Checker Build 之后是 Graph、Source、Proof 和 Checker Typecheck。[构建执行器](../../../packages/limina/src/typecheck/checker/build-runner.ts) 在启动编译器目标前展示正在物化的是哪份引用图。[默认计划](../../../packages/limina/src/pipeline/plan.ts) 等 Build 结束后再让后续检查使用共享 preflight，以便先完成受管输出引发的刷新。如果当前 preflight 已持有物化且无 Svelte 目标的完整图，即使 Build 失败，`graph:materialize` 也会复用该图并放行后续检查。其余情况要求 Build 成功后才能物化完整图。准备失败会阻塞依赖任务。没有目标的 Checker Typecheck 标为 disabled。
+
+命名流水线保留配置中的步骤顺序。外部命令划分分析代次。各内置步骤按需准备自己的图。调度器区分执行顺序依赖与成功前提，并可在依赖任务都结束后，根据当前 preflight 决定是否要求成功。
 
 Svelte 混合构建使用独立的 `ProducerBuildPlan`，不能以部分准入冒充完整图。全局 Source Config Coverage 与既有归属算法保持不变。生产者准备检查全部有效出边；必要依赖进入不具备声明构建能力的项目时拒绝构建。取得生产者 receipt 后，Svelte 执行视图才解析实际声明消费。最终准入比较生产者编译语义与已构建计划，仅增加合法消费者入边不要求重建。`GeneratedTsconfigGraphResult` 仍表示完整准入。[准备流程](../../../packages/limina/src/core/build-graph/prepare.ts)、[receipt 验证](../../../packages/limina/src/core/build-graph/producer-receipt.ts)与 [pipeline 回归](../../../packages/limina/src/__tests__/pipeline.spec.ts)拥有这些边界。显式指定配置的 Checker Build 同样使用生产者准备，但仅执行选中目标的引用闭包，不签发整个生产者集合的 receipt。Astro 与 watch 保留各自合同。
 

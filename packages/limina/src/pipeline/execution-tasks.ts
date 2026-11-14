@@ -1,4 +1,4 @@
-import type { BuiltinTaskName, ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaConfig } from '#config/runner';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import type {
   ExecutionTask,
@@ -16,12 +16,6 @@ import type {
   NormalizedPipelineStep,
   RunPipelineOptions,
 } from './types';
-
-export const filesystemDependentTasks: ReadonlySet<BuiltinTaskName> = new Set([
-  'checker:build',
-  'checker:typecheck',
-  'graph:prepare',
-]);
 
 function toExecutionTaskRunResult(
   result: BuiltinTaskResult,
@@ -116,6 +110,7 @@ export function createMaterializationTask(options: {
       write: ['workspace:generated-files'],
     },
     run: async ({ preflight }) => {
+      preflight.assertProducerReceiptCurrent();
       await preflight.ensureGeneratedArtifactsMaterialized();
       return { issues: [], status: 'passed' };
     },

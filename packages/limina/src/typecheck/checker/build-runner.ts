@@ -214,16 +214,39 @@ async function runGeneratedCheckerBuild(
   return createResult({ context, execution, rootConfigPaths });
 }
 
+async function materializeBuildGraph(
+  preflight: ReturnType<typeof resolvePreflight>,
+  purpose: PreparedTsconfigGraph['purpose'],
+  progress: RunCheckerBuildOptions['progress'],
+): Promise<PreparedTsconfigGraph> {
+  const item = progress?.startItem(
+    purpose === 'complete'
+      ? 'materialize complete reference graph'
+      : 'materialize producer reference graph',
+  );
+  try {
+    const { graph } =
+      await preflight.ensureExecutionArtifactsMaterialized(purpose);
+    item?.pass();
+    return graph;
+  } catch (error) {
+    item?.fail();
+    throw error;
+  }
+}
+
 async function createCheckerBuildContext(
   options: RunCheckerBuildOptions,
   purpose: PreparedTsconfigGraph['purpose'] = 'complete',
 ): Promise<CheckerBuildContext> {
   const preflight = resolvePreflight(options.config, options);
-  const generated = await preflight.ensureExecutionArtifactsMaterialized(
+  const generatedGraph = await materializeBuildGraph(
+    preflight,
     options.watch ? 'complete' : purpose,
+    options.progress,
   );
   const workspaceContext = await preflight.ensureWorkspaceValidated();
-  const allCheckers = generated.graph.checkers;
+  const allCheckers = generatedGraph.checkers;
   return {
     allCheckers,
     buildCheckers: getExecutionCheckers({
@@ -232,7 +255,7 @@ async function createCheckerBuildContext(
     }),
     cwd: path.resolve(options.cwd ?? process.cwd()),
     flowDepth: options.flowDepth ?? 0,
-    generatedGraph: generated.graph,
+    generatedGraph,
     options,
     preflight,
     projectRootDir: normalizeAbsolutePath(options.config.rootDir),

@@ -1,6 +1,6 @@
 import { ResourceLockSet } from './resources';
 import type { SchedulerContext } from './scheduler-types';
-import type { ExecutionTask, TaskId } from './tasks';
+import { type ExecutionTask, getTaskDependencies, type TaskId } from './tasks';
 
 function resourceBlockers(
   task: ExecutionTask,
@@ -33,9 +33,9 @@ export function observeScheduler(context: SchedulerContext): void {
       });
       continue;
     }
-    const dependencies = [
-      ...new Set([...(task.after ?? []), ...(task.requiresSuccessOf ?? [])]),
-    ].filter((id) => !context.outcomes.has(id));
+    const dependencies = [...getTaskDependencies(task)].filter(
+      (id) => !context.outcomes.has(id),
+    );
     if (dependencies.length > 0) {
       trace.observe(task.id, { reason: 'dependency', blockers: dependencies });
       continue;

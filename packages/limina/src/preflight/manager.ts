@@ -283,8 +283,12 @@ export class LiminaPreflightManager {
     );
     return this.#cache.generatedGraph;
   }
+  getMaterializedGraph(): GeneratedTsconfigGraphResult | undefined {
+    const graph = this.#cache.materializationSlot.receipt?.graph;
+    return graph?.purpose === 'complete' ? graph : undefined;
+  }
   async hasSvelteCheckProjects(): Promise<boolean> {
-    const materialized = this.#cache.materializationSlot.receipt?.graph;
+    const materialized = this.getMaterializedGraph();
     if (materialized !== undefined)
       return this.#recordSvelteRoute(
         (materialized.governedSources.get('svelte-check')?.size ?? 0) > 0,

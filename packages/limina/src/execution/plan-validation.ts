@@ -1,5 +1,6 @@
 import { isIntegerNumber } from '../utils/validation/is-integer';
 import type { ExecutionPlan, ExecutionTask, TaskId } from './tasks';
+import { getTaskDependencies } from './tasks';
 
 function assertNonEmptyPlan(plan: ExecutionPlan): void {
   if (plan.tasks.length === 0) {
@@ -13,10 +14,6 @@ function assertUniqueTaskIds(plan: ExecutionPlan): Set<TaskId> {
     throw new Error('Execution plan contains duplicate task ids.');
   }
   return ids;
-}
-
-function getDependencies(task: ExecutionTask): TaskId[] {
-  return [...(task.after ?? []), ...(task.requiresSuccessOf ?? [])];
 }
 
 function assertValidGeneration(task: ExecutionTask): void {
@@ -62,8 +59,7 @@ function assertTaskDependencies(options: {
   ids: ReadonlySet<TaskId>;
   task: ExecutionTask;
 }): void {
-  const orderedEntries = getDependencies(options.task);
-  for (const dependency of orderedEntries) {
+  for (const dependency of getTaskDependencies(options.task)) {
     assertDependencyExists({ ...options, dependency });
     assertDependencyGeneration({
       byId: options.byId,
@@ -233,8 +229,7 @@ function visitDependency(options: {
   assertNotVisiting(options);
   options.visiting.add(options.taskId);
   const task = options.byId.get(options.taskId)!;
-  const dependencies = new Set(getDependencies(task));
-  for (const dependency of dependencies) {
+  for (const dependency of getTaskDependencies(task)) {
     visitDependency({ ...options, taskId: dependency });
   }
   options.visiting.delete(options.taskId);

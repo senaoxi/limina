@@ -57,13 +57,13 @@ Before running built-in tasks, Limina automatically performs necessary preparati
 
 ::: details When preparation runs
 
-Consecutive built-in tasks form a task segment, and external commands separate segments. Limina runs `workspace:validate` before each segment. A segment containing `graph:prepare`, `checker:build`, or `checker:typecheck` also receives `graph:materialize` before all its built-in tasks. Limina adds these steps automatically; they cannot be configured as `BuiltinTaskName` steps. When preparation fails, dependent tasks do not proceed to consume workspace topology or generated files.
+Consecutive built-in tasks form a segment. Limina runs `workspace:validate` before each segment, and individual steps prepare their graph artifacts as needed. External commands separate segments. The default check also has a `graph:materialize` preparation with its own [dependency on the checker build](../built-in-tasks.md#understand-the-default-check-first). Limina adds preparation steps automatically.
 
 :::
 
 A built-in task that runs and fails makes the final result fail, but later steps are still attempted in order. Preparation failure blocks only the built-in tasks that depend on it; it does not automatically cancel subsequent external commands.
 
-For example, in `checker:build → pnpm build → package:check`, failure to prepare the first segment blocks `checker:build`, but `pnpm build` is still attempted. If it succeeds, the next segment prepares the workspace again before attempting the package check. The earlier failure remains in the final result. Only an external command failure stops the remaining steps and records them as `skipped`.
+For example, in `checker:build → pnpm build → package:check`, failed workspace validation blocks `checker:build`. Limina still attempts `pnpm build`. If it succeeds, the next segment validates the workspace before attempting the package check. The earlier failure remains in the final result. Only an external command failure stops the remaining steps and records them as `skipped`.
 
 An external command may change files needed by later tasks. Limina waits for current work to finish and establishes a fresh analysis context before those tasks. It keeps the config object loaded at the start of the run; it does not rerun the config module or function after the command.
 
