@@ -13,6 +13,7 @@
 | 任务或问题                                                 | 上下文 owner                                               |
 | ---------------------------------------------------------- | ---------------------------------------------------------- |
 | 设置仓库、编辑、构建或验收改动                             | [开发工作流](./development-workflow.md)                    |
+| 在一次性项目中驱动真实 CLI 用户流程并保留证据              | [CLI 验证](../../skills/verify-limina/SKILL.md)            |
 | 开始架构工作并定位语义 owner                               | [Limina 地图](./limina.md#从问题进入记录)                  |
 | 识别实体、authority、执行阶段与关系                        | [系统模型](./system-model.md)                              |
 | 建立 TypeScript / Vue / Astro / Svelte 的依赖事实          | [语义事实](./semantics.md)                                 |

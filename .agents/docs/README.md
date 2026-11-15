@@ -13,6 +13,7 @@ Read the relevant paired records before edits. For architecture work, use the Li
 | Task or question                                                         | Context owner                                                                    |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | Set up, edit, build or accept a repository change                        | [Development workflow](./development-workflow.md)                                |
+| Drive real CLI journeys in disposable projects and retain evidence       | [CLI verification skill and feature map](../skills/verify-limina/SKILL.md)       |
 | Start architecture work and locate semantic owners                       | [Limina map](./limina.md#find-a-record-by-question)                              |
 | Identify entities, authority, execution phases and relations             | [System model](./system-model.md)                                                |
 | Establish TypeScript / Vue / Astro / Svelte dependency facts             | [Semantic facts](./semantics.md)                                                 |

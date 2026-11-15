@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Verify Limina'
+  short_description: 'Drive Limina CLI journeys and retain evidence'
+  default_prompt: 'Use $verify-limina to exercise a Limina CLI journey in a disposable project and retain the evidence.'

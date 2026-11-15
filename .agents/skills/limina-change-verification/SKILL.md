@@ -45,3 +45,7 @@ or prior agent summary is current acceptance. Use
 and [doc-coauthoring](../doc-coauthoring/SKILL.md) for public documentation.
 This skill selects execution evidence; test-audit owns test quality and PCR owns
 knowledge. Optional global workflow skills do not add required gates.
+
+For actual user-journey execution, use [verify-limina](../verify-limina/SKILL.md)
+and its feature map. It owns disposable CLI driving and retained artifacts;
+this skill continues to own repository acceptance and adversarial test selection.
