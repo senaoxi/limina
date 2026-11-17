@@ -175,18 +175,24 @@ function createIdentity(options: {
 }
 
 export function createVueProjectSemanticIdentity(
-  options: CheckerProjectConfigParseOptions,
+  options: CheckerProjectConfigParseOptions & {
+    wrapSystem?: (
+      system: ts.System,
+      toolchain: VueSemanticToolchain,
+    ) => ts.System;
+  },
 ): SemanticProjectParseResult {
   const configPath = normalizeAbsolutePath(options.configPath);
   const projectRootDirectory = normalizeAbsolutePath(options.projectRootDir);
   const toolchain = resolveVueSemanticToolchain(projectRootDirectory);
   const virtualFiles = normalizeVueVirtualFiles(options.virtualFiles);
   const recorder = createVueConfigReadRecorder();
-  const host = createVueOverlaySystem({
+  const overlay = createVueOverlaySystem({
     recorder,
     tsModule: toolchain.tsModule,
     virtualFiles,
   });
+  const host = options.wrapSystem?.(overlay, toolchain) ?? overlay;
   const commandLine = toolchain.languageCore.createParsedCommandLine(
     toolchain.tsModule,
     host,

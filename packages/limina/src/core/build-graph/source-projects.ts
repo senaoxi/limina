@@ -1,9 +1,4 @@
-import {
-  type CheckerProjectConfigCache,
-  type CheckerProjectParseContext,
-  isBuildCapablePreset,
-  parseCheckerProjectConfigForContext,
-} from '#checkers';
+import { isBuildCapablePreset } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import {
@@ -13,13 +8,13 @@ import {
 } from '#utils/path';
 import { getEffectiveImporterRoots } from '../typescript-semantic/effective-roots';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
-import type { LockedSemanticAuthority } from './checker-ownership-types';
 import { readGraphRules, readOutputOptions } from './generated/config-readers';
 import {
   getGeneratedDtsConfigPath,
   getGeneratedOutputProjectConfigPath,
   getGeneratedSolutionBuildConfigPath,
 } from './generated/paths';
+import type { FrozenSemanticProject } from './locked-semantic-project';
 import type {
   CheckerSourceConfigCollection,
   SolutionProject,
@@ -32,26 +27,12 @@ export function isInsideNodeModules(filePath: string): boolean {
 
 export function createSourceProject(options: {
   checkerName: SourceProject['checkerName'];
-  checkerPreset: SourceProject['context']['checkerPresets'][number];
   config: ResolvedLiminaInputs;
-  discoveryExtensions?: string[];
+  frozen: FrozenSemanticProject;
   packageRootDir: string;
-  projectConfigCache?: CheckerProjectConfigCache;
-  sourceConfigPath: string;
-  semanticAuthority: LockedSemanticAuthority;
 }): SourceProject {
-  const parseContext: CheckerProjectParseContext = {
-    checkerPresets: [options.checkerPreset],
-    extensions: options.discoveryExtensions ?? [],
-  };
-  const parsed = parseCheckerProjectConfigForContext({
-    allowNoInputDiagnostics: true,
-    cache: options.projectConfigCache,
-    configPath: options.sourceConfigPath,
-    context: parseContext,
-    projectRootDir: options.config.rootDir,
-    virtualFiles: options.config.virtualFiles,
-  });
+  const parsed = options.frozen.project;
+  const sourceConfigPath = parsed.configPath;
   if (
     isBuildCapablePreset(options.checkerName) &&
     parsed.options.outFile !== undefined
@@ -59,49 +40,45 @@ export function createSourceProject(options: {
     throw new Error(
       [
         'outFile is not supported in generated projects:',
-        `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
+        `  config: ${toRelativePath(options.config.rootDir, sourceConfigPath)}`,
         '  reason: bundled output cannot preserve the managed per-file declaration mapping.',
         '  Remove outFile from the source configuration before generating the Reference Graph.',
       ].join('\n'),
     );
   }
-  const context: CheckerProjectParseContext = {
-    ...parseContext,
-    extensions: [...parsed.extensions],
-    vueSemanticIdentity: parsed.vueSemanticIdentity,
-  };
   const ownedFileNames = parsed.fileNames
     .map(normalizeAbsolutePath)
     .filter((fileName) => !isInsideNodeModules(fileName))
     .sort(compareCodeUnits);
-  const outputOptions = readOutputOptions(
-    options.config,
-    options.sourceConfigPath,
-  );
+  const outputOptions = readOutputOptions(options.config, sourceConfigPath);
 
   return {
     checkerName: options.checkerName,
     configClosure: parsed.configClosure.map((entry) => ({ ...entry })),
-    configPath: options.sourceConfigPath,
-    context,
+    configPath: sourceConfigPath,
+    context: {
+      ...parsed.context,
+      checkerPresets: [...parsed.context.checkerPresets],
+      extensions: [...parsed.context.extensions],
+    },
     dtsConfigPath: getGeneratedDtsConfigPath({
       checkerName: options.checkerName,
       packageRootDir: options.packageRootDir,
       rootDir: options.config.rootDir,
-      sourceConfigPath: options.sourceConfigPath,
+      sourceConfigPath,
     }),
     fileNames: getEffectiveImporterRoots({
-      configPath: options.sourceConfigPath,
+      configPath: sourceConfigPath,
       fileNames: ownedFileNames,
       options: parsed.options,
     }),
-    graphRules: readGraphRules(options.config, options.sourceConfigPath),
+    graphRules: readGraphRules(options.config, sourceConfigPath),
     ownedFileNames,
     outputConfigPath: getGeneratedOutputProjectConfigPath({
       checkerName: options.checkerName,
       packageRootDir: options.packageRootDir,
       rootDir: options.config.rootDir,
-      sourceConfigPath: options.sourceConfigPath,
+      sourceConfigPath,
     }),
     outputOptions: outputOptions.outputs,
     outputReferences: new Set(),
@@ -109,7 +86,7 @@ export function createSourceProject(options: {
     options: parsed.options,
     virtualFiles: options.config.virtualFiles,
     references: new Set(),
-    semanticAuthority: { ...options.semanticAuthority },
+    semanticAuthority: { ...options.frozen.authority },
   };
 }
 

@@ -163,7 +163,7 @@ export function createSourceProjectSemanticContext(options: {
     project: {
       virtualFiles: options.project.virtualFiles,
       analysisGeneration: getSourceAnalysisGeneration(options.project),
-      analysisChecker: options.project.checkerName,
+      analysisChecker: options.project.context.checkerPresets.join(':'),
       astroSemanticProject: getSourceAstroProject(options.source),
       configPath: options.project.configPath,
       extensions: options.project.context.extensions,

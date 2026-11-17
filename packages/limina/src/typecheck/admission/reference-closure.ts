@@ -3,6 +3,7 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import { EpochInputs } from '../../core/analysis-cache/epoch-inputs';
+import { declarationCandidateExecutionInputs } from '../../core/analysis-cache/execution-inputs';
 import { frameworkExecutionInputs } from '../../core/analysis-cache/framework-execution-inputs';
 import { vueExecutionInputs } from '../../core/analysis-cache/vue-execution-inputs';
 import { readGraphRules } from '../../core/build-graph/generated/config-readers';
@@ -162,6 +163,7 @@ function svelteCheckClosure(
     if (result.executedConfigs.has(file)) continue;
     result.executedConfigs.add(file);
     result.inputs.add(file);
+    appendCandidateInputs(graph, result, file);
     const identity = identities.get(file);
     if (identity === undefined)
       throw new Error(`Unbound Svelte check reference: ${file}`);
@@ -272,6 +274,7 @@ function nativeClosure(options: {
   return result;
 }
 function addConfigInputs(context: ClosureContext, file: string): void {
+  appendCandidateInputs(context.graph, context.result, file);
   const identity = context.identities.get(file);
   if (identity !== undefined) {
     addSourceInputs(context, identity);
@@ -279,6 +282,14 @@ function addConfigInputs(context: ClosureContext, file: string): void {
   }
   if (!context.graph.generatedFiles.has(file))
     throw new Error(`Unmapped executed configuration: ${file}`);
+}
+function appendCandidateInputs(
+  graph: PreparedTsconfigGraph,
+  closure: ExecutionReferenceClosure,
+  configPath: string,
+): void {
+  const inputs = declarationCandidateExecutionInputs(graph, configPath);
+  if (inputs !== undefined) closure.observations!.append(inputs);
 }
 function addSourceInputs(context: ClosureContext, identity: ProjectKey): void {
   const source = governedSource(context.graph, identity);

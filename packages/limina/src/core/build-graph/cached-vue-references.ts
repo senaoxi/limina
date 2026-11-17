@@ -8,6 +8,7 @@ import {
 } from '../workspace/validated-context';
 import type { CachedGraphData } from './analysis-cache-schema';
 import { resolveBuildGraphImportAnalysis } from './import-analysis-context';
+import type { FrozenSemanticProject } from './locked-semantic-project';
 import { inferProjectReferences } from './reference-inference';
 import { createSourceProject } from './source-projects';
 import type { GovernedSourceUnit, SourceProject } from './types';
@@ -17,6 +18,7 @@ interface Reconstruction {
   config: ResolvedLiminaInputs;
   cache: NativeAnalysisCache;
   workspace: ValidatedWorkspaceContext;
+  frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>;
 }
 
 function sourceProject(
@@ -26,11 +28,8 @@ function sourceProject(
   const project = createSourceProject({
     config: input.config,
     checkerName: source.primaryCheckerName,
-    checkerPreset: source.context.checkerPresets[0]!,
-    discoveryExtensions: source.context.extensions,
+    frozen: input.frozenProjectsByConfigPath.get(source.configPath)!,
     packageRootDir: source.packageRootDir,
-    sourceConfigPath: source.configPath,
-    semanticAuthority: source.semanticAuthority,
   });
   // Current configuration owns roots; the qualified context owns identity.
   // Cached membership, edges and admission cannot supply reference authority.

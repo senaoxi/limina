@@ -23,7 +23,7 @@ This page registers 12 properties that affect system correctness. They come from
 
 ## I02 — Final checker ownership does not rewrite semantic authority
 
-- **Statement / Applies when**: Semantic authority for a managed type config freezes after fact convergence; subsequent promotion/coloring/fallback/finalization cannot change it. Successful finalization assigns each leaf one execution owner.
+- **Statement / Applies when**: Semantic authority and the source input used for reference inference freeze together after fact convergence; subsequent promotion/coloring/fallback/finalization cannot change either. Successful finalization assigns each leaf one execution owner.
 - **Problem**: Selecting a Vue checker to share a declaration build could incorrectly change native TS imports to Vue module semantics.
 - **Root cause**: Source interpretation and build scheduling use different authorities, both of which have been easy to call “owner.”
 - **Enforcement / Why it works**: [Ownership types](../../packages/limina/src/core/build-graph/checker-ownership-types.ts) use separate fields. [Semantic authority](../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) restricts lock evidence, stores frozen values, and compares them after coloring/finalization. [Resolution](../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) collects all requirements before applying locks. Execution selection cannot masquerade as new semantic evidence. Dependency inference classifies the consumer's observed framework target; the provider's final execution checker is not semantic evidence. Physical discovery does not prove a Native compilation obligation.

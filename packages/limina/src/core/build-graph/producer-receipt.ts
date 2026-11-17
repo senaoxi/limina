@@ -6,7 +6,10 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import ts from 'typescript';
-import { graphExecutionInputScope } from '../analysis-cache/execution-inputs';
+import {
+  declarationCandidateExecutionInputs,
+  graphExecutionInputScope,
+} from '../analysis-cache/execution-inputs';
 import { vueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
 import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-references';
 import { observeNativeReferenceMapping } from '../typescript-semantic/reference-redirect';
@@ -129,6 +132,15 @@ export function captureProducerBuildInputs(
   const scope = graphExecutionInputScope(plan, configs, new Set<string>());
   const observed = new Set(scope.paths);
   for (const unit of producers) {
+    const generated = plan.sourceToDts
+      .get(unit.primaryCheckerName)
+      ?.get(unit.configPath);
+    const candidateInputs =
+      generated === undefined
+        ? undefined
+        : declarationCandidateExecutionInputs(plan, generated);
+    const candidatePaths = candidateInputs?.paths ?? [];
+    for (const file of candidatePaths) observed.add(file);
     if (unit.semanticAuthority.family !== 'vue') continue;
     const vueInputs = vueExecutionInputs(unit.context.vueSemanticIdentity);
     for (const file of vueInputs.paths) observed.add(file);

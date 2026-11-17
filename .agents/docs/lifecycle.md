@@ -357,6 +357,10 @@ Vue context identity includes Coverage and loading purpose. Graph, output and ty
 
 Manifest v7 separates single source owners from solution sources/checkers metadata. Graph cache v9 requires pre-coloring seeds; restoration reconstructs seeds from current selection, root/config evidence and bound facts, then replays promotion, coloring and finalization. Missing evidence or differing results falls back cold; cached finalOwner is never a seed. Native storage schema 12 is unchanged.
 
+Frozen source inputs belong to the current analysis generation and are not serialized with ownership seeds. Restoration rebuilds them from current inputs under the frozen semantic authority before adopting graph projections. Cached governed membership and generated `files`/`include` must match that current input; an execution Checker stored in the cache cannot authorize additional roots.
+
+Vue candidate validation retains its actual generated-config input observations separately from source semantic inputs. Execution admission replays only candidates reached by the selected generated configs; producer receipts also retain candidate reads. A late Vue execution owner can therefore detect candidate-only plugin drift while its source authority remains TypeScript. The [execution admission regression](../../packages/limina/src/__tests__/execution-admission.spec.ts) exercises that separation.
+
 Final serialized validation independently derives Required from complete ownership and build projections, and checks actual root reachability, exact Checker identity, binding and cycles. Structural failure cannot deliver an executable artifact plan; deny.refs remains execution admission over the selected closure without deleting facts. Older manifests retain only bounded artifact-cleanup authority.
 
 Final binding also independently reconciles manifest Checker roots, ownership, target lists and path maps with the source and execution projections.

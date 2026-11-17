@@ -13,6 +13,9 @@ import type {
   DeclarationContextReceipt,
 } from '../../domain/analysis/declaration-context';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
+import { EpochInputs } from '../analysis-cache/epoch-inputs';
+import { retainDeclarationCandidateExecutionInputs } from '../analysis-cache/execution-inputs';
+import { retainVueExecutionInputScope } from '../analysis-cache/vue-execution-inputs';
 import {
   declarationCandidateRequests,
   DeclarationObservationUnavailable,
@@ -169,16 +172,33 @@ function readProjects(
   return new Map(
     input.targets.map((target) => {
       if ((target.preset ?? target.checker) === 'vue-tsc') {
-        const { parsed } = createVueProjectSemanticIdentity({
-          configPath: target.generatedConfig,
-          projectRootDir:
-            target.executionRoot ?? path.dirname(target.sourceConfig),
-          virtualFiles: input.files,
-        });
+        const executionInputs = new EpochInputs();
+        const { parsed, identity } = executionInputs.collect(() =>
+          createVueProjectSemanticIdentity({
+            configPath: target.generatedConfig,
+            projectRootDir:
+              target.executionRoot ?? path.dirname(target.sourceConfig),
+            virtualFiles: input.files,
+            wrapSystem: (system, toolchain) =>
+              observedCandidateSystem(
+                toolchain.tsModule,
+                target.generatedConfig,
+                system,
+                input.files,
+              ),
+          }),
+        );
         if (parsed.errors.length > 0)
           throw new DeclarationContextConflict(
             `Cannot parse Vue declaration context candidate: ${target.generatedConfig}`,
           );
+        target.executionIdentity = identity;
+        retainVueExecutionInputScope(identity, executionInputs);
+        retainDeclarationCandidateExecutionInputs(
+          input.analysis.declarationValidation!,
+          target.generatedConfig,
+          executionInputs,
+        );
         return [target.generatedConfig, { ...target, parsed }];
       }
       const system = observedCompilerSystem(ts, target.generatedConfig);
@@ -207,6 +227,24 @@ function readProjects(
       return [target.generatedConfig, { ...target, parsed }];
     }),
   );
+}
+
+function observedCandidateSystem(
+  compiler: typeof ts,
+  configPath: string,
+  overlay: ts.System,
+  files: ReadonlyMap<string, string>,
+): ts.System {
+  const observed = observedCompilerSystem(compiler, configPath, overlay);
+  return {
+    ...observed,
+    readFile: (file, encoding) =>
+      files.has(normalizeAbsolutePath(file))
+        ? overlay.readFile(file, encoding)
+        : observed.readFile(file, encoding),
+    fileExists: (file) =>
+      files.has(normalizeAbsolutePath(file)) || observed.fileExists(file),
+  };
 }
 
 function referenceClosure(

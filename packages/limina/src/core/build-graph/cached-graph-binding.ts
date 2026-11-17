@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
@@ -10,8 +11,10 @@ import { restoreGraphContexts } from './analysis-cache-vue';
 import { rebindCachedCompilation } from './cached-candidate-binding';
 import { replayCurrentOwnership } from './cached-ownership-replay';
 import { hasBoundCachedReferences } from './cached-reference-reconstruction';
+import { hasBoundFrozenSources } from './cached-semantic-sources';
 import { reconstructVueReferences } from './cached-vue-references';
 import type { FrameworkInferenceAmbiguity } from './core-collection-run';
+import type { FrozenSemanticProject } from './locked-semantic-project';
 import { validateRestoredReferences } from './reference-validation';
 
 interface Binding {
@@ -21,6 +24,7 @@ interface Binding {
   stored: StoredGraphData;
   contextIds: readonly string[];
   generation: number;
+  projectConfigCache?: CheckerProjectConfigCache;
 }
 
 export interface BoundCachedGraph {
@@ -36,15 +40,28 @@ export async function bindCachedGraph(
 ): Promise<BoundCachedGraph | undefined> {
   const restored = restoreGraphContexts({ ...input, data: input.stored });
   if (restored === undefined) return undefined;
-  rebindCachedCompilation(restored, input.cache);
   try {
     const ownership = await replayCurrentOwnership(
       restored,
       input.config,
       input.workspace,
+      input.projectConfigCache,
     );
     if (ownership === undefined) return undefined;
-    const graph = validateReferences(input, restored);
+    if (
+      !hasBoundFrozenSources({
+        ...input,
+        graph: restored,
+        frozenProjectsByConfigPath: ownership.frozenProjectsByConfigPath,
+      })
+    )
+      return undefined;
+    rebindCachedCompilation(restored, input.cache);
+    const graph = validateReferences(
+      input,
+      restored,
+      ownership.frozenProjectsByConfigPath,
+    );
     return graph === undefined
       ? undefined
       : { graph, ambiguities: ownership.ambiguities };
@@ -56,9 +73,14 @@ export async function bindCachedGraph(
 function validateReferences(
   input: Binding,
   graph: CachedGraphData,
+  frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>,
 ): CachedGraphData | undefined {
   try {
-    const references = reconstructVueReferences({ ...input, graph });
+    const references = reconstructVueReferences({
+      ...input,
+      graph,
+      frozenProjectsByConfigPath,
+    });
     validateRestoredReferences(graph);
     const isValid = [
       hasBoundCachedReferences(graph, input.config, references),

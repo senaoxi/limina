@@ -45,7 +45,11 @@ import { collectVueRequestInventory } from '../core/vue-semantic/request-invento
 import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
-import { createFixturePathResolver, toPortablePath } from './helpers/path';
+import {
+  createFixturePathResolver,
+  toPortablePath,
+  toPortableRelativePaths,
+} from './helpers/path';
 
 const execFileAsync = promisify(execFile);
 const requireFromTest = createRequire(import.meta.url);
@@ -2417,6 +2421,96 @@ describe('prepareGeneratedTsconfigGraph', () => {
             kind: 'locked',
           },
         });
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([
+    {
+      ownership: 'Auto',
+      checkers: { auto: {} },
+      roots: ['packages/app/src/index.ts'],
+      providers: ['packages/theme/tsconfig.json'],
+      references: ['../theme/tsconfig.dts.json'],
+    },
+    {
+      ownership: 'named Vue',
+      checkers: {
+        auto: {},
+        'vue-tsc': { include: ['packages/app/tsconfig.json'] },
+      },
+      roots: ['packages/app/src/Widget.vue', 'packages/app/src/index.ts'],
+      providers: ['packages/lib/tsconfig.json', 'packages/theme/tsconfig.json'],
+      references: ['../lib/tsconfig.dts.json', '../theme/tsconfig.dts.json'],
+    },
+  ])(
+    'uses roots selected before Vue build ownership for $ownership',
+    async ({ checkers, roots, providers, references }) => {
+      const compilerOptions = {
+        ...managedOutputCompilerOptions(),
+        noLib: true,
+      };
+      const fixture = await createFixture({
+        'packages/app/src/Widget.vue':
+          '<script setup lang="ts">import { lib } from "../../lib/src/index.js"; void lib;</script>',
+        'packages/app/src/index.ts':
+          'export { theme } from "../../theme/src/index.js";',
+        'packages/app/tsconfig.json': json({
+          compilerOptions,
+          include: ['src/**/*', 'src/**/*.astro'],
+        }),
+        'packages/lib/src/index.ts': 'export const lib = 1;',
+        'packages/lib/tsconfig.json': json({
+          compilerOptions,
+          include: ['src/**/*.ts'],
+        }),
+        'packages/theme/src/Theme.vue': '<template>Theme</template>',
+        'packages/theme/src/index.ts': 'export const theme = 1;',
+        'packages/theme/tsconfig.json': json({
+          compilerOptions,
+          include: ['src/**/*'],
+        }),
+      });
+
+      try {
+        const appConfig = 'packages/app/tsconfig.json';
+        const declaration =
+          '.limina/tsconfig/checkers/vue-tsc/projects/packages/app/tsconfig.dts.json';
+        const result = await prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          scope: { ...fixture.config.scope, checkers },
+        });
+
+        expect(
+          result.manifest.checkers['vue-tsc']?.sourceToDts[appConfig],
+        ).toBe(declaration);
+        const declarationPath = fixture.path(declaration);
+        const generatedConfig: unknown = JSON.parse(
+          await readFile(declarationPath, 'utf8'),
+        );
+        expect(generatedConfig).toMatchObject({
+          files: toPortableRelativePaths(
+            path.dirname(declarationPath),
+            roots.map((file) => fixture.path(file)),
+          ),
+          include: [],
+          references: references.map((target) => ({ path: target })),
+        });
+        expect(
+          result.manifest.dependencyEdges
+            .filter((edge) => edge.fromConfig === appConfig)
+            .map(({ kind, toConfig }) => ({ kind, toConfig }))
+            .sort((left, right) =>
+              compareCodeUnits(left.toConfig, right.toConfig),
+            ),
+        ).toEqual(
+          providers.map((toConfig) => ({
+            kind: 'declaration-provider',
+            toConfig,
+          })),
+        );
       } finally {
         await fixture.cleanup();
       }

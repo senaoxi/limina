@@ -5,6 +5,21 @@ import {
 } from '#checkers';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { LockedSemanticAuthority } from './checker-ownership-types';
+import { getScopedParseContext } from './explicit-checker-project-helpers';
+
+export interface FrozenSemanticProject {
+  readonly authority: LockedSemanticAuthority;
+  readonly project: AutoScopeProject;
+}
+
+export function freezeSemanticProject(
+  input: Parameters<typeof prepareLockedSemanticProject>[0],
+): FrozenSemanticProject {
+  return {
+    authority: { ...input.authority },
+    project: prepareLockedSemanticProject(input),
+  };
+}
 
 /**
 Selection can discover Vue through a dependency of an otherwise Native project.
@@ -16,17 +31,21 @@ export function prepareLockedSemanticProject(input: {
   projectConfigCache?: CheckerProjectConfigCache;
   rootDir: string;
 }): AutoScopeProject {
-  if (
-    input.authority.family !== 'vue' &&
-    input.authority.family !== 'typescript'
-  )
-    return input.project;
-  const checker = input.authority.family === 'vue' ? 'vue-tsc' : 'tsc';
+  const parseContext = getScopedParseContext(
+    (
+      {
+        typescript: 'tsc',
+        vue: 'vue-tsc',
+        astro: 'astro',
+        svelte: 'svelte-check',
+      } as const
+    )[input.authority.family],
+  );
   const parsed = parseCheckerProjectConfigForContext({
     allowNoInputDiagnostics: true,
     cache: input.projectConfigCache,
     configPath: input.project.configPath,
-    context: { checkerPresets: [checker], extensions: [] },
+    context: parseContext,
     projectRootDir: input.rootDir,
     virtualFiles: input.project.virtualFiles,
   });
@@ -40,12 +59,12 @@ export function prepareLockedSemanticProject(input: {
   }
   return {
     ...input.project,
-    configClosure: parsed.configClosure,
+    configClosure: parsed.configClosure.map((entry) => ({ ...entry })),
     options: parsed.options,
-    fileNames: parsed.fileNames,
+    fileNames: [...parsed.fileNames],
     context: {
-      checkerPresets: [checker],
-      extensions: parsed.extensions,
+      checkerPresets: [...parseContext.checkerPresets],
+      extensions: [...parsed.extensions],
       vueSemanticIdentity: parsed.vueSemanticIdentity,
     },
   };

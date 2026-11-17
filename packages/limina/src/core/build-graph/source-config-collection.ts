@@ -78,6 +78,7 @@ interface SourceConfigAnalysis {
 }
 
 interface CollectCheckerSourceConfigsOptions {
+  sourceConfigParser?: CollectionContext['sourceConfigParser'];
   onInputError?: (configPath: string, error: Error) => void;
   onProblems?: (problems: string[]) => void;
   sourceDiscovery?: SourceConfigDiscovery;

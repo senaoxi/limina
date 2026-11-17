@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import {
@@ -16,6 +17,10 @@ import {
 } from './checker-ownership-resolution';
 import { freezeSemanticAuthorities } from './checker-semantic-authority';
 import type { FrameworkInferenceAmbiguity } from './core-collection-run';
+import {
+  freezeSemanticProject,
+  type FrozenSemanticProject,
+} from './locked-semantic-project';
 
 /**
 Recreate seeds from current inputs; cached final colors never confer authority.
@@ -24,8 +29,13 @@ export async function replayCurrentOwnership(
   graph: CachedGraphData,
   config: ResolvedLiminaInputs,
   workspace: ValidatedWorkspaceContext,
+  projectConfigCache?: CheckerProjectConfigCache,
 ): Promise<
-  { ambiguities: readonly FrameworkInferenceAmbiguity[] } | undefined
+  | {
+      ambiguities: readonly FrameworkInferenceAmbiguity[];
+      frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>;
+    }
+  | undefined
 > {
   const stored = graph.ownershipPlan;
   if (
@@ -39,6 +49,7 @@ export async function replayCurrentOwnership(
     activatedRegions: new WorkspaceRegionPathIndex(workspace),
     workspaceSourceConfigPaths: workspace.sourceConfigPaths,
     restoredSourceCoverage: graph.sourceConfigCoverage,
+    projectConfigCache,
   });
   if (discovery.collectionInputFailure !== undefined) return undefined;
   discovery.collectionProblems!.push(
@@ -69,6 +80,21 @@ export async function replayCurrentOwnership(
     fingerprint(stored.coloringInputs.seeds)
   )
     return undefined;
+  for (const project of discovery.projectByConfigPath.values()) {
+    const authority = discovery.plan.typeConfigs.get(
+      project.configPath,
+    )?.frozenSemanticAuthority;
+    if (authority === undefined) return undefined;
+    discovery.frozenProjectsByConfigPath.set(
+      project.configPath,
+      freezeSemanticProject({
+        project,
+        authority,
+        projectConfigCache,
+        rootDir: config.rootDir,
+      }),
+    );
+  }
   discovery.plan.dependencyFacts = stored.dependencyFacts;
   discovery.plan.dependencyFactPhase = 'locked';
   discovery.plan.declarationContexts = stored.declarationContexts;
@@ -79,5 +105,10 @@ export async function replayCurrentOwnership(
     fingerprint(discovery.plan.solutions) === fingerprint(stored.solutions) &&
     fingerprint(discovery.plan.sourceConfigPathsByEntry) ===
       fingerprint(stored.sourceConfigPathsByEntry);
-  return isCurrent ? { ambiguities: inference.ambiguities } : undefined;
+  return isCurrent
+    ? {
+        ambiguities: inference.ambiguities,
+        frozenProjectsByConfigPath: discovery.frozenProjectsByConfigPath,
+      }
+    : undefined;
 }

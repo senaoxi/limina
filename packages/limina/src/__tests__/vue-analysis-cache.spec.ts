@@ -1,4 +1,5 @@
 import { readFileSync, rmSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { StoredGraphData } from '../core/build-graph/analysis-cache-schema';
 import { hasBoundCandidate } from '../core/build-graph/cached-candidate-binding';
@@ -6,6 +7,7 @@ import {
   decodeGraphProjection,
   encodeGraphProjection,
 } from './helpers/analysis-snapshot';
+import { toPortableRelativePath } from './helpers/path';
 import {
   cacheMetric,
   createVueCacheFixture,
@@ -327,6 +329,101 @@ describe('persistent Vue and mixed graph analysis', () => {
     expect(references()).toEqual(new Set());
     expectRestored(f.run());
   });
+
+  it.each([
+    'workspace changes',
+    'cached governed roots disagree',
+    'cached generated roots disagree',
+  ] as const)(
+    'rechecks roots selected before Vue build ownership when %s',
+    (change) => {
+      const f = fixture();
+      f.write(
+        'limina.config.mjs',
+        `export default {scope:{source:{include:['native/src/**/*.ts','vue/src/**/*.{ts,vue}']},checkers:{auto:{}}}};`,
+      );
+      f.write(
+        'native/src/index.ts',
+        'export { value } from "../../vue/src/value.js";',
+      );
+      f.write('native/src/Widget.vue', '<template>Independent</template>');
+      f.write(
+        'native/tsconfig.json',
+        JSON.stringify({
+          compilerOptions: {
+            composite: true,
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            noLib: true,
+            types: [],
+          },
+          include: ['src/**/*', 'src/**/*.astro'],
+        }),
+      );
+      const declaration = f.path(
+        '.limina/tsconfig/checkers/vue-tsc/projects/native/tsconfig.dts.json',
+      );
+      const toDeclarationRelative = (source: string) =>
+        toPortableRelativePath(path.dirname(declaration), f.path(source));
+      const expectRoots = (roots: string[]) => {
+        const generated: unknown = JSON.parse(
+          readFileSync(declaration, 'utf8'),
+        );
+        expect(generated).toMatchObject({
+          files: roots.map(toDeclarationRelative),
+          include: [],
+          references: [{ path: '../vue/tsconfig.dts.json' }],
+        });
+      };
+
+      const cold = f.run();
+      expect(cold.passed).toBe(true);
+      expectCold(cold);
+      expectRoots(['native/src/index.ts']);
+      rmSync(f.path('.limina/tsconfig'), { force: true, recursive: true });
+      const warm = f.run();
+      expectRestored(warm);
+      expect(warm.graph).toEqual(cold.graph);
+      expectRoots(['native/src/index.ts']);
+
+      if (change === 'workspace changes') {
+        f.write('native/src/extra.ts', 'export const extra = 1;');
+      } else {
+        const snapshot = f.snapshot();
+        const record = Object.values(snapshot.graphs)[0]!;
+        const data = snapshotCodec.decodeData(record.data) as StoredGraphData;
+        const widget = 'native/src/Widget.vue';
+        if (change === 'cached governed roots disagree') {
+          const unit = data.governedSources
+            .get('vue-tsc')!
+            .get(f.path('native/tsconfig.json'))!;
+          unit.ownedFileNames.unshift(f.path(widget));
+          unit.declarationFileNames.unshift(f.path(widget));
+        } else {
+          const generated = JSON.parse(data.generatedFiles.get(declaration)!);
+          data.generatedFiles = new Map(data.generatedFiles).set(
+            declaration,
+            JSON.stringify({
+              ...generated,
+              files: [widget, 'native/src/index.ts'].map(toDeclarationRelative),
+            }),
+          );
+        }
+        record.data = snapshotCodec.encodeData(data);
+        f.writeSnapshot(snapshot);
+      }
+
+      const rebuilt = f.run();
+      expect(rebuilt.passed).toBe(true);
+      expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
+      expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
+      expectRoots(
+        change === 'workspace changes'
+          ? ['native/src/extra.ts', 'native/src/index.ts']
+          : ['native/src/index.ts'],
+      );
+    },
+  );
 
   it.each([false, true])(
     'rejects erased Vue references without trusting cached admission (erase roots=%s)',

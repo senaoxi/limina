@@ -35,6 +35,7 @@ import type {
 } from './generated-knip';
 import type { OutputOptions } from './generated/config-readers';
 import type { LibraryProjectionReceipt } from './library-projection';
+import type { FrozenSemanticProject } from './locked-semantic-project';
 import type { GeneratedTsconfigGraphManifest } from './manifest-types';
 import type { NativeAnalysisEvidence } from './native-analysis-evidence';
 import type { OutputProjectionReceipt } from './output-projection';
@@ -281,6 +282,7 @@ export interface ResolvedCheckerEntrySelection {
 }
 
 export interface CheckerSelectionResolution {
+  frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>;
   ownershipPlan: CheckerOwnershipPlan;
   selections: ResolvedCheckerEntrySelection[];
 }

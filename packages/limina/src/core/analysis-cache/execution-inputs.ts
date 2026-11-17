@@ -13,6 +13,33 @@ interface ContextReads {
 }
 const contexts = new WeakMap<NativeEvidenceSnapshot, ContextReads>();
 const graphs = new WeakMap<PreparedTsconfigGraph, EpochInputs>();
+type DeclarationValidation = NonNullable<
+  DependencyAnalysisResult['declarationValidation']
+>;
+const declarationCandidates = new WeakMap<
+  DeclarationValidation,
+  Map<string, EpochInputs>
+>();
+
+export function retainDeclarationCandidateExecutionInputs(
+  validation: DeclarationValidation,
+  generatedConfig: string,
+  inputs: EpochInputs,
+): void {
+  const candidates = declarationCandidates.get(validation) ?? new Map();
+  candidates.set(generatedConfig, inputs);
+  declarationCandidates.set(validation, candidates);
+}
+
+export function declarationCandidateExecutionInputs(
+  graph: Pick<PreparedTsconfigGraph, 'dependencyAnalysis'>,
+  generatedConfig: string,
+): EpochInputs | undefined {
+  const validation = graph.dependencyAnalysis?.declarationValidation;
+  return validation === undefined
+    ? undefined
+    : declarationCandidates.get(validation)?.get(generatedConfig);
+}
 
 export function retainContextExecutionInputs(
   snapshot: NativeEvidenceSnapshot | undefined,

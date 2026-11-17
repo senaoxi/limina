@@ -23,6 +23,7 @@ import {
 } from './checker-ownership-graph';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import { recordCoreWork } from './core-collection-run';
+import type { FrozenSemanticProject } from './locked-semantic-project';
 import { prepareNativeSourceBaseline } from './native-source-baseline';
 import type {
   AutoScope,
@@ -40,6 +41,7 @@ export interface CheckerOwnershipDiscovery {
   explicitOwnerByEntryPath: Map<string, CheckerName>;
   plan: CheckerOwnershipPlan;
   projectByConfigPath: Map<string, AutoScopeProject>;
+  frozenProjectsByConfigPath: Map<string, FrozenSemanticProject>;
   scopes: AutoScope[];
 }
 
@@ -243,6 +245,7 @@ export async function discoverCheckerOwnership(options: {
     explicitOwnerByEntryPath,
     plan,
     projectByConfigPath,
+    frozenProjectsByConfigPath: new Map(),
     scopes,
   };
 }

@@ -18,7 +18,6 @@ import { nativeObservedProgram } from '../typescript-semantic/native-program-api
 import { VueSemanticContext } from '../vue-semantic/context-handle';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import type { CheckerDependencyFact } from './checker-ownership-types';
-import { prepareLockedSemanticProject } from './locked-semantic-project';
 import {
   assessNativeSupplement,
   assessPendingSupplement,
@@ -104,11 +103,9 @@ function rebindAssessment(
   const owner = input.discovery.projectByConfigPath.get(
     previous.obligation.targetConfigId!,
   )?.context.vueSemanticIdentity;
-  const consumer = prepareLockedSemanticProject({
-    ...input,
-    project,
-    authority,
-  }).context.vueSemanticIdentity;
+  const consumer = input.discovery.frozenProjectsByConfigPath.get(
+    project.configPath,
+  )?.project.context.vueSemanticIdentity;
   const coverage = input.discovery.sourceConfigCoverage;
   if (owner === undefined || consumer === undefined || coverage === undefined)
     throw new Error('Supplemental capability became unavailable during lock.');

@@ -20,8 +20,7 @@ export function validateStagedDeclarationContexts(
         executionRoot:
           project.context.vueSemanticIdentity?.projectRootDir ??
           state.writeContext.rootDir,
-        executionIdentity: project.context.vueSemanticIdentity,
-        preset: project.context.checkerPresets[0],
+        preset: project.checkerName,
       });
   for (const projects of state.outputProjectsByChecker.values())
     for (const project of projects)
@@ -32,8 +31,7 @@ export function validateStagedDeclarationContexts(
         executionRoot:
           project.context.vueSemanticIdentity?.projectRootDir ??
           state.writeContext.rootDir,
-        executionIdentity: project.context.vueSemanticIdentity,
-        preset: project.context.checkerPresets[0],
+        preset: project.checkerName,
       });
   validateDeclarationContexts({
     analysis: state.dependencyAnalysis,
@@ -110,7 +108,6 @@ function restoredAuthority(
     ...(context?.vueSemanticIdentity !== undefined && {
       executionRoot: context.vueSemanticIdentity.projectRootDir,
     }),
-    executionIdentity: context?.vueSemanticIdentity,
-    preset: context?.checkerPresets[0],
+    preset: checker,
   };
 }

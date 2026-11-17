@@ -120,6 +120,8 @@ async function prepareGraph(
         activatedRegions,
         config,
         ownershipPlan: checkerResolution.ownershipPlan,
+        frozenProjectsByConfigPath:
+          checkerResolution.frozenProjectsByConfigPath,
         projectConfigCache: options.projectConfigCache,
         selections: checkerSelections,
       },

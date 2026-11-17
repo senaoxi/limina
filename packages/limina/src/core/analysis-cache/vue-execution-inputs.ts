@@ -71,6 +71,13 @@ export function retainVueExecutionInputs(
   scopes.set(reused, vueExecutionInputs(source));
 }
 
+export function retainVueExecutionInputScope(
+  identity: VueProjectSemanticIdentity,
+  inputs: EpochInputs,
+): void {
+  scopes.set(identity, inputs);
+}
+
 /** Purposes keep separate semantic identities but execution must watch all
  * reads made on behalf of the same source configuration. */
 export function shareVueExecutionInputs(

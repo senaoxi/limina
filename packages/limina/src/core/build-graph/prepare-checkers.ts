@@ -9,6 +9,7 @@ import { createSolutionBuildModule } from './build-modules';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import { getGeneratedCheckerEntryPath } from './generated/paths';
 import { createGovernedSourceUnit } from './governed-sources';
+import type { FrozenSemanticProject } from './locked-semantic-project';
 import { collectCheckerSourceConfigs } from './source-config-collection';
 import { createSolutionProject, createSourceProject } from './source-projects';
 import type {
@@ -27,19 +28,17 @@ function getPackageRootDirectory(options: {
     .directory;
 }
 
-function getSemanticAuthority(options: {
+function getFrozenProject(options: {
   configPath: string;
-  ownershipPlan: CheckerOwnershipPlan;
+  frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>;
 }) {
-  const authority = options.ownershipPlan.typeConfigs.get(
-    options.configPath,
-  )?.frozenSemanticAuthority;
-  if (authority === undefined) {
+  const frozen = options.frozenProjectsByConfigPath.get(options.configPath);
+  if (frozen === undefined) {
     throw new Error(
-      `Missing frozen semantic authority for ${options.configPath}.`,
+      `Missing frozen semantic project for ${options.configPath}.`,
     );
   }
-  return authority;
+  return frozen;
 }
 
 function createCheckerSolutions(options: {
@@ -210,6 +209,7 @@ export function prepareCheckerGraph(options: {
     ResolvedCheckerEntrySelection['checker']['name']
   >;
   ownershipPlan: CheckerOwnershipPlan;
+  frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>;
 }): PreparedCheckerGraph {
   const parsing = getCheckerParsingOptions(options.selection.checker.name);
   const collection = collectCheckerSourceConfigs({
@@ -224,31 +224,36 @@ export function prepareCheckerGraph(options: {
     explicitOwnerByConfigPath: options.explicitOwnerByConfigPath,
     inheritedOwnerByConfigPath: options.inheritedOwnerByConfigPath,
     projectConfigCache: options.projectConfigCache,
+    sourceConfigParser: (configPath) =>
+      getFrozenProject({
+        configPath,
+        frozenProjectsByConfigPath: options.frozenProjectsByConfigPath,
+      }).project,
   });
   const primaryProjects = [...collection.projectConfigPaths]
     .sort(compareCodeUnits)
     .map((sourceConfigPath) =>
       createSourceProject({
         checkerName: options.selection.checker.name,
-        checkerPreset: parsing.checkerPreset,
         config: options.config,
-        discoveryExtensions: parsing.discoveryExtensions,
         packageRootDir: getPackageRootDirectory({
           activatedRegions: options.activatedRegions,
           sourceConfigPath,
         }),
-        projectConfigCache: options.projectConfigCache,
-        semanticAuthority: getSemanticAuthority({
+        frozen: getFrozenProject({
           configPath: sourceConfigPath,
-          ownershipPlan: options.ownershipPlan,
+          frozenProjectsByConfigPath: options.frozenProjectsByConfigPath,
         }),
-        sourceConfigPath,
       }),
     );
   const governedSources = primaryProjects.map((project) =>
     createGovernedSourceUnit({
       activatedRegions: options.activatedRegions,
       config: options.config,
+      frozen: getFrozenProject({
+        configPath: project.configPath,
+        frozenProjectsByConfigPath: options.frozenProjectsByConfigPath,
+      }),
       project,
       projectConfigCache: options.projectConfigCache,
     }),

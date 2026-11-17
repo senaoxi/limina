@@ -41,10 +41,14 @@ import type {
 import { getCheckerSemanticFamily } from './checker-semantic-authority';
 import type { FileOwnerLookup } from './file-owner-lookup';
 import { collectIndependentCoreWork } from './independent-core-work';
-import { prepareLockedSemanticProject } from './locked-semantic-project';
+import {
+  freezeSemanticProject,
+  prepareLockedSemanticProject,
+} from './locked-semantic-project';
 import { rebindSupplementalAssessments } from './locked-supplemental-assessment';
 
 interface FactCollectionOptions {
+  preparationFailures?: ReadonlyMap<string, unknown>;
   phase?: 'selection' | 'locked';
   config: ResolvedLiminaInputs;
   core: TypeEvidenceCore;
@@ -90,16 +94,20 @@ function collectProjectFacts(options: {
       state,
     });
   }
+  const frozen =
+    options.base.phase === 'locked'
+      ? frozenProjectForCollection(options)
+      : freezeSemanticProject({
+          project: options.project,
+          authority: state.semanticAuthority,
+          projectConfigCache: options.base.projectConfigCache,
+          rootDir: options.base.config.rootDir,
+        });
   return collectLockedProjectFacts({
     caches: options.caches,
     config: options.base.config,
     importAnalysis: options.base.importAnalysis,
-    project: prepareLockedSemanticProject({
-      project: options.project,
-      authority: state.semanticAuthority,
-      projectConfigCache: options.base.projectConfigCache,
-      rootDir: options.base.config.rootDir,
-    }),
+    project: frozen.project,
     state: state as TypeConfigOwnershipState & {
       semanticAuthority: Extract<
         TypeConfigOwnershipState['semanticAuthority'],
@@ -108,6 +116,48 @@ function collectProjectFacts(options: {
     },
     workspaceSourceBoundary: options.base.workspaceSourceBoundary,
   });
+}
+
+function frozenProjectForCollection(
+  input: Parameters<typeof collectProjectFacts>[0],
+) {
+  const configPath = input.project.configPath;
+  if (input.base.preparationFailures?.has(configPath))
+    throw input.base.preparationFailures.get(configPath);
+  const frozen =
+    input.base.discovery.frozenProjectsByConfigPath.get(configPath);
+  if (frozen === undefined)
+    throw new Error(`Missing frozen semantic project for ${configPath}.`);
+  return frozen;
+}
+
+function prepareFrozenProjects(
+  input: Parameters<typeof collectCheckerDependencyFacts>[0],
+): Map<string, unknown> {
+  const failures = new Map<string, unknown>();
+  for (const project of input.discovery.projectByConfigPath.values()) {
+    const state = input.discovery.plan.typeConfigs.get(project.configPath)!;
+    const authority = state.frozenSemanticAuthority;
+    if (
+      authority === undefined ||
+      state.semanticAuthorityUnavailable !== undefined
+    )
+      continue;
+    try {
+      input.discovery.frozenProjectsByConfigPath.set(
+        project.configPath,
+        freezeSemanticProject({
+          project,
+          authority,
+          projectConfigCache: input.projectConfigCache,
+          rootDir: input.config.rootDir,
+        }),
+      );
+    } catch (error) {
+      failures.set(project.configPath, error);
+    }
+  }
+  return failures;
 }
 
 /** Selection may inspect one normally inferred framework's own requests. Its
@@ -324,11 +374,19 @@ export async function collectCheckerDependencyFacts(options: {
   projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: CheckerProjectConfigCache;
 }): Promise<string[]> {
-  const membership = createActualMembershipIndex(
-    options.discovery.projectByConfigPath,
-  );
+  const preparationFailures =
+    options.phase === 'locked' ? prepareFrozenProjects(options) : undefined;
+  const projects =
+    options.phase === 'locked'
+      ? new Map(
+          options.discovery.frozenProjectsByConfigPath
+            .entries()
+            .map(([configPath, frozen]) => [configPath, frozen.project]),
+        )
+      : options.discovery.projectByConfigPath;
+  const membership = createActualMembershipIndex(projects);
   const workspaceSourceBoundary = createWorkspaceSourceBoundaryFromProjects(
-    options.discovery.projectByConfigPath.values(),
+    projects.values(),
     options.discovery.activatedRegions
       ? {
           membership,
@@ -352,6 +410,7 @@ export async function collectCheckerDependencyFacts(options: {
   try {
     const collected = collectAllProjectFacts({
       ...options,
+      preparationFailures,
       core,
       membership: workspaceSourceBoundary.governance!.membership,
       projectDependencyCaches: caches,

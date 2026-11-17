@@ -1,15 +1,12 @@
 import type { CheckerProjectConfigCache } from '#checkers';
-import {
-  createAstroSemanticProject,
-  isBuildCapablePreset,
-  parseCheckerProjectConfigForContext,
-} from '#checkers';
+import { createAstroSemanticProject, isBuildCapablePreset } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { createSvelteSemanticProject } from '../svelte-semantic/project';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { getFrameworkFilePackageRoot } from './framework-file-root';
 import { getGeneratedLeafSolutionBuildConfigPath } from './generated/paths';
+import type { FrozenSemanticProject } from './locked-semantic-project';
 import type {
   FrameworkCapabilityDescriptor,
   GovernedSourceUnit,
@@ -137,7 +134,7 @@ function createFrameworkCapabilities(options: {
 
 function createGovernedAstroSemanticProject(options: {
   capability: FrameworkCapabilityDescriptor | undefined;
-  parsed: ReturnType<typeof parseCheckerProjectConfigForContext>;
+  frozen: FrozenSemanticProject;
   project: SourceProject;
   projectConfigCache: CheckerProjectConfigCache | undefined;
 }): GovernedSourceUnit['astroSemanticProject'] {
@@ -152,11 +149,11 @@ function createGovernedAstroSemanticProject(options: {
     packageRootDir: options.capability.packageRootDir,
     projectFingerprint: options.project.configPath,
     readSnapshot: () => ({
-      checkerExtensions: options.parsed.extensions,
-      compilerOptions: options.project.options,
-      configClosure: options.parsed.configClosure,
-      fileNames: options.parsed.fileNames,
-      projectReferences: [...options.project.references],
+      checkerExtensions: options.frozen.project.context.extensions,
+      compilerOptions: options.frozen.project.options,
+      configClosure: options.frozen.project.configClosure,
+      fileNames: options.frozen.project.fileNames,
+      projectReferences: options.frozen.project.references,
     }),
   });
 }
@@ -189,21 +186,10 @@ function createGovernedSvelteSemanticProject(options: {
 export function createGovernedSourceUnit(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
+  frozen: FrozenSemanticProject;
   project: SourceProject;
   projectConfigCache?: CheckerProjectConfigCache;
 }): GovernedSourceUnit {
-  const parsed = parseCheckerProjectConfigForContext({
-    allowNoInputDiagnostics: true,
-    cache: options.projectConfigCache,
-    configPath: options.project.configPath,
-    context: {
-      checkerPresets: [...options.project.context.checkerPresets],
-      extensions: [...options.project.context.extensions],
-      vueSemanticIdentity: options.project.context.vueSemanticIdentity,
-    },
-    projectRootDir: options.config.rootDir,
-    virtualFiles: options.config.virtualFiles,
-  });
   const ownedFileNames = uniqueSortedStrings(options.project.ownedFileNames);
   const frameworkCapabilities = createFrameworkCapabilities({
     activatedRegions: options.activatedRegions,
@@ -218,7 +204,7 @@ export function createGovernedSourceUnit(options: {
   );
   const astroSemanticProject = createGovernedAstroSemanticProject({
     capability: astroCapability,
-    parsed,
+    frozen: options.frozen,
     project: options.project,
     projectConfigCache: options.projectConfigCache,
   });

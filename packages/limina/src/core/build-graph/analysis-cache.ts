@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { invocationDataVersion } from '../../config/invocation-data';
 import { assertArtifactPathLexicallyContained } from '../../domain/artifacts/namespace';
@@ -34,7 +35,7 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-const key = 'generated-graph-declaration-governance-v24';
+const key = 'generated-graph-declaration-governance-v25';
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
@@ -78,6 +79,7 @@ interface GraphRestoreInput {
   config: ResolvedLiminaInputs;
   workspace: ValidatedWorkspaceContext;
   generation?: number;
+  projectConfigCache?: CheckerProjectConfigCache;
 }
 async function readGraph(
   options: GraphRestoreInput,
@@ -165,6 +167,7 @@ export async function restoreGeneratedGraph(
   const data = await readGraph({
     ...options,
     generation: options.preparation.projectConfigCache?.generation,
+    projectConfigCache: options.preparation.projectConfigCache,
   });
   if (
     data === undefined ||
@@ -201,6 +204,7 @@ async function restoredAnalysis(
     cache,
     config,
     generation: options.projectConfigCache?.generation,
+    projectConfigCache: options.projectConfigCache,
     workspace: await getBuildGraphWorkspace({
       config,
       workspaceContext: options.workspaceContext,

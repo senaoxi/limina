@@ -2,6 +2,7 @@ import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
+import type { FrozenSemanticProject } from './locked-semantic-project';
 import { prepareCheckerGraph } from './prepare-checkers';
 import type {
   PreparedCheckerGraph,
@@ -26,6 +27,7 @@ export function prepareCheckerGraphs(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   ownershipPlan: CheckerOwnershipPlan;
+  frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>;
   projectConfigCache?: CheckerProjectConfigCache;
   selections: ResolvedCheckerEntrySelection[];
 }): PreparedCheckerGraph[] {

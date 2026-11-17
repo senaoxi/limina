@@ -23,7 +23,7 @@
 
 ## I02 — semantic authority 不随 final checker owner 改写
 
-- **Statement / Applies when**：managed type config 的 semantic authority 在 facts convergence 后 freeze；后续 promotion/coloring/fallback/finalization 不能改变它。成功 finalization 为 leaf 确定唯一执行 owner。
+- **Statement / Applies when**：managed type config 的 semantic authority 与引用推导所用的源输入在 facts convergence 后一同 freeze；后续 promotion/coloring/fallback/finalization 不能改变二者。成功 finalization 为 leaf 确定唯一执行 owner。
 - **Problem**：为共享 declaration build 选用 Vue checker，可能错误地把原生 TS import 改为 Vue module semantics。
 - **Root cause**：解释源码与安排构建使用不同 authority，二者都曾容易被称为 owner。
 - **Enforcement / Why it works**：[ownership types](../../../packages/limina/src/core/build-graph/checker-ownership-types.ts) 分字段；[semantic authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 限定 lock evidence、保存 frozen 值并在 coloring/finalization 后比对；[resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先收齐 requirements 再应用锁。执行选择无法冒充新的语义证据。Dependency inference 分类 consumer 实际观察的框架目标；provider 的最终执行 Checker 不是语义证据。物理发现不能证明 Native 编译义务。

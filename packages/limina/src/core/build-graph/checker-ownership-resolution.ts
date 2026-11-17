@@ -224,6 +224,7 @@ export async function resolveCheckerOwnership(options: {
     throw discovery.collectionInputFailure;
   finalizeLockedOwnership({ config: options.config, discovery });
   return {
+    frozenProjectsByConfigPath: discovery.frozenProjectsByConfigPath,
     ownershipPlan: discovery.plan,
     selections: createOwnershipSelections({
       config: options.config,

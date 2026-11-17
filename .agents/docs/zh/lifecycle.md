@@ -359,6 +359,10 @@ Vue 上下文身份包含 Coverage 和加载用途。graph、output、type-provi
 
 Manifest v7 将 source 单值 owner 与 solution 的 sources/checkers 元数据分开。Graph cache v9 要求 coloring 前的 seeds；恢复从当前选择、root/config 证据和绑定 facts 重建 seeds，然后重放 promotion、coloring 与 finalization。缺失证据或结果不同即冷回退；不使用缓存 finalOwner 作为 seed。Native storage schema 12 不变。
 
+冻结的源输入属于当前分析 generation，不随 ownership seeds 序列化。恢复在接纳图投影前，按冻结语义权威从当前输入重建它们。缓存的受管成员与生成配置 `files`／`include` 必须匹配当前输入；缓存中的执行 Checker 不能授予新增 roots。
+
+Vue 候选验证单独保留实际生成配置的输入观测，不与源语义输入混用。执行准入只重放所选生成配置实际到达的候选，producer 回执也保留候选读取。因此，后期选定 Vue 执行 owner 后，即使源权威仍为 TypeScript，也能检测仅由候选编译器读取的插件变化。[执行准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts)覆盖这一区别。
+
 最终序列化校验独立从完整 ownership 与 build projections 求 Required，并检查生成 root 的实际可达覆盖、精确 Checker 身份、绑定及环。结构失败不交付可执行产物计划；deny.refs 仍对选中闭包执行准入，不删除事实。旧 manifest 仅保留受限产物清理用途。
 
 最终绑定还会独立比对 manifest 的 Checker roots、ownership、targets 和路径映射与 source/执行投影的一致性。
