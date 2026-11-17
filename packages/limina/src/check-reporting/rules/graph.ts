@@ -23,6 +23,12 @@ export const graphIssueRules: readonly LiminaCheckIssueRuleDefinition[] = [
     task: 'graph:check',
   }),
   defineIssueRule({
+    code: C.graphFrameworkInferenceAmbiguous,
+    description:
+      'Multiple inferred framework checkers retain the TypeScript semantic baseline and pending build ownership.',
+    task: 'graph:prepare',
+  }),
+  defineIssueRule({
     code: C.graphImportTargetUnmapped,
     description:
       'A governed import target is not mapped into the source graph.',

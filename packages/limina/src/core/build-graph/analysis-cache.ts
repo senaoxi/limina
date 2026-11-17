@@ -14,7 +14,8 @@ import {
 import { storeGraphContexts } from './analysis-cache-vue';
 import { removeStaleGeneratedFiles } from './artifact-ledger';
 import { writeGeneratedContent } from './artifact-writer';
-import { bindCachedGraph } from './cached-graph-binding';
+import { bindCachedGraph, type BoundCachedGraph } from './cached-graph-binding';
+import { recordFrameworkInferenceAmbiguities } from './core-collection-run';
 import { hasValidRestoredDeclarationContexts } from './declaration-context-candidate';
 import { hasBoundGeneratedReferences } from './generated-reference-binding';
 import { hasValidLibraryProjections } from './library-projection';
@@ -33,7 +34,7 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-const key = 'generated-graph-declaration-governance-v23';
+const key = 'generated-graph-declaration-governance-v24';
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
@@ -80,7 +81,7 @@ interface GraphRestoreInput {
 }
 async function readGraph(
   options: GraphRestoreInput,
-): Promise<CachedGraphData | undefined> {
+): Promise<BoundCachedGraph | undefined> {
   const version = versions(options.config, options.workspace);
   if (version === undefined) {
     options.cache.fallback(graphFallbackReason(options.config));
@@ -91,7 +92,7 @@ async function readGraph(
 async function readVersionedGraph(
   options: GraphRestoreInput,
   version: { workspaceVersion: string },
-): Promise<CachedGraphData | undefined> {
+): Promise<BoundCachedGraph | undefined> {
   const record = await options.cache.restoreGraphRecord(
     key,
     version.workspaceVersion,
@@ -112,7 +113,7 @@ async function decodeBoundGraph(
   record: NonNullable<
     Awaited<ReturnType<NativeAnalysisCache['restoreGraphRecord']>>
   >,
-): Promise<CachedGraphData | undefined> {
+): Promise<BoundCachedGraph | undefined> {
   const stored = decodeGraph(record.data, options.cache);
   return isRestorableGraph(stored, options)
     ? bindAndRestoreGraph(options, { stored, record })
@@ -138,7 +139,7 @@ async function bindAndRestoreGraph(
       Awaited<ReturnType<NativeAnalysisCache['restoreGraphRecord']>>
     >;
   },
-): Promise<CachedGraphData | undefined> {
+): Promise<BoundCachedGraph | undefined> {
   const { stored, record } = input;
   return bindCachedGraph({
     ...options,
@@ -165,14 +166,22 @@ export async function restoreGeneratedGraph(
     ...options,
     generation: options.preparation.projectConfigCache?.generation,
   });
-  return data === undefined ||
+  if (
+    data === undefined ||
     !hasValidRestoredDeclarationContexts(
-      data,
+      data.graph,
       options.preparation.projectDependencyCaches?.metrics,
       options.config.rootDir,
     )
-    ? undefined
-    : rebindArtifacts(data, options);
+  )
+    return undefined;
+  const graph = await rebindArtifacts(data.graph, options);
+  if (options.preparation.projectDependencyCaches !== undefined)
+    recordFrameworkInferenceAmbiguities(
+      options.preparation.projectDependencyCaches,
+      data.ambiguities,
+    );
+  return graph;
 }
 export async function restoreCachedDependencyAnalysis(
   config: ResolvedLiminaInputs,
@@ -188,17 +197,22 @@ async function restoredAnalysis(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<DependencyAnalysisResult | undefined> {
-  return (
-    await readGraph({
-      cache,
+  const restored = await readGraph({
+    cache,
+    config,
+    generation: options.projectConfigCache?.generation,
+    workspace: await getBuildGraphWorkspace({
       config,
-      generation: options.projectConfigCache?.generation,
-      workspace: await getBuildGraphWorkspace({
-        config,
-        workspaceContext: options.workspaceContext,
-      }),
-    })
-  )?.dependencyAnalysis;
+      workspaceContext: options.workspaceContext,
+    }),
+  });
+  if (restored === undefined) return undefined;
+  if (options.projectDependencyCaches !== undefined)
+    recordFrameworkInferenceAmbiguities(
+      options.projectDependencyCaches,
+      restored.ambiguities,
+    );
+  return restored.graph.dependencyAnalysis;
 }
 async function rebindArtifacts(
   data: CachedGraphData,

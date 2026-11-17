@@ -289,6 +289,19 @@ export function analyzeAndCompleteGeneratedGraph(options: {
       : allGovernedSources,
     options.state.dependencyEdges,
   );
+  for (const [configPath, ownership] of options.state.checkerOwnershipPlan
+    .typeConfigs) {
+    if (
+      options.state.purpose === 'producer-build' &&
+      ownership.finalOwner !== undefined &&
+      !isBuildCapablePreset(ownership.finalOwner)
+    )
+      continue;
+    if (!analysis.candidate.configPaths.includes(configPath))
+      options.state.problems.push(
+        `Selected source config is missing from the build candidate: ${configPath}`,
+      );
+  }
   analysis.diagnostics.push(...options.state.problems);
   analysis.diagnostics = [...new Set(analysis.diagnostics)];
   finishAnalysisOutcome(

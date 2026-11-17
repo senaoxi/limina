@@ -1,4 +1,5 @@
 import { formatCheckSummaryBlock } from '../../reporting';
+import { isFrameworkInferenceWarning } from '../framework-inference';
 import {
   DEFAULT_PRIMARY_BLOCKER_LIMIT,
   type HumanPrimaryBlocker,
@@ -39,7 +40,26 @@ function selectPrimaryBlockers(options: {
   const limit = options.verbose
     ? options.issues.length
     : DEFAULT_PRIMARY_BLOCKER_LIMIT;
-  return selectHumanPrimaryBlockers(options.issues, limit);
+  return selectHumanPrimaryBlockers(
+    options.issues.filter((issue) => !isFrameworkInferenceWarning(issue)),
+    limit,
+  );
+}
+
+function formatInferenceWarnings(
+  issues: CheckRunSummaryHumanOptions['issues'],
+): string[] {
+  const warnings = issues.filter(isFrameworkInferenceWarning);
+  if (warnings.length === 0) return [];
+  return [
+    'Warnings:',
+    ...warnings.flatMap((issue) => [
+      `  ${issue.title}: ${issue.filePath ?? issue.scope}`,
+      ...(issue.detailLines ?? []).map((line) => `    ${line}`),
+      `    ${issue.reason}`,
+      ...(issue.fix === undefined ? [] : [`    ${issue.fix}`]),
+    ]),
+  ];
 }
 
 function getQueryContext(
@@ -176,6 +196,7 @@ function createRunSummaryLines(options: {
       primaryBlockers: options.primaryBlockers,
       verbose: options.verbose,
     }),
+    ...formatInferenceWarnings(options.request.issues),
   ];
 }
 

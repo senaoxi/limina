@@ -9,11 +9,16 @@ import {
 } from '#core/build-graph/runner';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { resolveGeneratedGraphCheckerSelections } from './build-graph/checker-resolution';
-import { beginCoreCollection } from './build-graph/core-collection-run';
+import {
+  beginCoreCollection,
+  type FrameworkInferenceAmbiguity,
+  readFrameworkInferenceAmbiguities,
+} from './build-graph/core-collection-run';
 import type { ProducerBuildReceipt } from './build-graph/producer-receipt';
 import { canExcludeSvelteProjects } from './build-graph/svelte-route-precheck';
 import type { ImportCore } from './imports';
 import type { ProjectDependencyCaches } from './project-dependencies/contracts';
+import { createProjectDependencyCaches } from './project-dependencies/runner';
 import { mapPromise } from './promise';
 import type { WorkspaceCore } from './workspace';
 
@@ -37,6 +42,9 @@ export class BuildGraphCore {
   #svelteProjects: Promise<boolean> | undefined;
   #svelteExclusion: Promise<boolean> | undefined;
   #producerReceipt: ProducerBuildReceipt | undefined;
+  #frameworkInferenceAmbiguities:
+    | readonly FrameworkInferenceAmbiguity[]
+    | undefined;
 
   constructor(options: {
     artifactNamespace: LiminaArtifactNamespace;
@@ -63,21 +71,26 @@ export class BuildGraphCore {
     ]);
     const graphPromise = mapPromise(
       workspacePromise,
-      ([topology, workspacePathIndex]) =>
+      ([workspaceContext, workspacePathIndex]) =>
         prepareGeneratedTsconfigGraph(this.#config, {
           producerBuildReceipt: this.#producerReceipt,
           artifactNamespace: this.#artifactNamespace,
           importAnalysisContext: this.#imports.context,
           projectDependencyCaches: this.#projectDependencies,
           projectConfigCache: this.#projectConfigs,
-          workspaceContext: topology,
+          workspaceContext,
           workspacePathIndex,
         }),
     );
-    return mapPromise(graphPromise, (graph) => {
-      this.#onGraphPrepared(graph);
-      return graph;
-    });
+    return (async () => {
+      try {
+        const graph = await graphPromise;
+        this.#onGraphPrepared(graph);
+        return graph;
+      } finally {
+        this.#retainInferenceDiagnostics(this.#projectDependencies);
+      }
+    })();
   }
 
   async #prepareProducers(): Promise<ProducerBuildPlan> {
@@ -85,13 +98,25 @@ export class BuildGraphCore {
       this.#workspace.getValidatedContext(),
       this.#workspace.getPathIndex(),
     ]);
-    return prepareProducerBuildPlan(this.#config, {
-      artifactNamespace: this.#artifactNamespace,
-      importAnalysisContext: this.#imports.context,
-      projectConfigCache: this.#projectConfigs,
-      workspaceContext,
-      workspacePathIndex,
-    });
+    const dependencies = createProjectDependencyCaches();
+    try {
+      return await prepareProducerBuildPlan(this.#config, {
+        artifactNamespace: this.#artifactNamespace,
+        importAnalysisContext: this.#imports.context,
+        projectConfigCache: this.#projectConfigs,
+        projectDependencyCaches: dependencies,
+        workspaceContext,
+        workspacePathIndex,
+      });
+    } finally {
+      this.#retainInferenceDiagnostics(dependencies);
+    }
+  }
+
+  #retainInferenceDiagnostics(caches: ProjectDependencyCaches): void {
+    const ambiguities = readFrameworkInferenceAmbiguities(caches);
+    if (ambiguities !== undefined)
+      this.#frameworkInferenceAmbiguities = ambiguities;
   }
 
   getGraph(): Promise<GeneratedTsconfigGraphResult> {
@@ -131,17 +156,21 @@ export class BuildGraphCore {
         this.#workspace.getPathIndex(),
       ]);
       beginCoreCollection(this.#projectDependencies);
-      const resolution = await resolveGeneratedGraphCheckerSelections({
-        config: this.#config,
-        workspaceContext,
-        workspacePathIndex,
-        importAnalysisContext: this.#imports.context,
-        projectConfigCache: this.#projectConfigs,
-        projectDependencyCaches: this.#projectDependencies,
-      });
-      return resolution.selections.some(
-        ({ checker }) => checker.name === 'svelte-check',
-      );
+      try {
+        const resolution = await resolveGeneratedGraphCheckerSelections({
+          config: this.#config,
+          workspaceContext,
+          workspacePathIndex,
+          importAnalysisContext: this.#imports.context,
+          projectConfigCache: this.#projectConfigs,
+          projectDependencyCaches: this.#projectDependencies,
+        });
+        return resolution.selections.some(
+          ({ checker }) => checker.name === 'svelte-check',
+        );
+      } finally {
+        this.#retainInferenceDiagnostics(this.#projectDependencies);
+      }
     })();
     return this.#svelteProjects;
   }
@@ -149,6 +178,12 @@ export class BuildGraphCore {
   getProducerBuildPlan(): Promise<ProducerBuildPlan> {
     this.#producerPromise ??= this.#prepareProducers();
     return this.#producerPromise;
+  }
+
+  getFrameworkInferenceAmbiguities():
+    | readonly FrameworkInferenceAmbiguity[]
+    | undefined {
+    return this.#frameworkInferenceAmbiguities;
   }
 
   async getSourceToDts(checkerName: string): Promise<Map<string, string>> {

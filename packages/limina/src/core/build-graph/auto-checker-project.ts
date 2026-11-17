@@ -2,11 +2,14 @@ import {
   type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   getBuildCheckerSupportedExtensions,
+  isNativeTypeScriptProjectInput,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
+import { isLiminaSolutionConfig, readJsonConfig } from '#core/tsconfig/actions';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { isPlainRecord } from '#utils/values';
 import { getRawReferencePaths } from '../tsconfig/actions';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
@@ -49,7 +52,7 @@ function parseNeutralProject(options: {
     checkerPresets: ['tsc'],
     extensions: capabilityDiscoveryExtensions,
   };
-  const parsed = parseCheckerProjectConfigForContext({
+  let parsed = parseCheckerProjectConfigForContext({
     allowNoInputDiagnostics: true,
     cache: options.projectConfigCache,
     configPath: options.configPath,
@@ -57,24 +60,81 @@ function parseNeutralProject(options: {
     projectRootDir: options.config.rootDir,
     virtualFiles: options.config.virtualFiles,
   });
+  const customExtensions = configuredVueExtensions(
+    options.config,
+    parsed,
+    options.configPath,
+  );
+  if (customExtensions.length > 0) {
+    context.extensions = [
+      ...new Set([...context.extensions, ...customExtensions]),
+    ];
+    parsed = parseCheckerProjectConfigForContext({
+      allowNoInputDiagnostics: true,
+      cache: options.projectConfigCache,
+      configPath: options.configPath,
+      context,
+      projectRootDir: options.config.rootDir,
+      virtualFiles: options.config.virtualFiles,
+    });
+  }
   const fileNames = parsed.fileNames
     .map(normalizeAbsolutePath)
     .sort(compareCodeUnits);
-  return {
-    context,
-    fileNames,
-    parsed,
-    partition: partitionSourceFiles(fileNames),
-  };
+  const partition = partitionSourceFiles(fileNames);
+  partition.vueFiles = [
+    ...new Set([
+      ...partition.vueFiles,
+      ...fileNames.filter((file) =>
+        customExtensions.includes(getFileExtension(file)),
+      ),
+    ]),
+  ].sort(compareCodeUnits);
+  return { context, fileNames, parsed, partition };
 }
-function hasVueCandidate(
+function configuredVueExtensions(
+  config: ResolvedLiminaInputs,
+  parsed: ParsedCheckerProject,
+  configPath: string,
+): string[] {
+  const byKey = new Map<string, string[]>();
+  const configFile = parsed.options.configFile;
+  const paths: string[] =
+    isPlainRecord(configFile) && Array.isArray(configFile.extendedSourceFiles)
+      ? configFile.extendedSourceFiles
+          .filter((value): value is string => typeof value === 'string')
+          .toReversed()
+      : [];
+  paths.push(configPath);
+  for (const filePath of paths) {
+    const value = readJsonConfig(config, filePath).vueCompilerOptions;
+    if (!isPlainRecord(value)) continue;
+    for (const key of [
+      'extensions',
+      'petiteVueExtensions',
+      'vitePressExtensions',
+    ] as const) {
+      if (!Object.hasOwn(value, key)) continue;
+      const configured = value[key];
+      if (Array.isArray(configured))
+        byKey.set(
+          key,
+          configured.filter((item): item is string => typeof item === 'string'),
+        );
+    }
+  }
+  return [...new Set(byKey.values().toArray().flat())];
+}
+
+function initialFrameworkCheckers(
   neutral: NeutralProjectEvidence,
-  intentHints: readonly FrameworkIntentHint[],
-): boolean {
-  return (
-    neutral.partition.vueFiles.length > 0 ||
-    intentHints.some((hint) => hint.family === 'vue')
-  );
+  hints: readonly FrameworkIntentHint[],
+): string[] {
+  const families = new Set(hints.map((hint) => hint.family));
+  if (neutral.partition.astroFiles.length > 0) families.add('astro');
+  if (neutral.partition.svelteFiles.length > 0) families.add('svelte');
+  if (neutral.partition.vueFiles.length > 0) families.add('vue');
+  return [...families];
 }
 
 function parseVueProject(options: {
@@ -193,20 +253,47 @@ export function createAutoScopeProject(options: {
   packageRootDir: string;
   projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScopeProject {
-  const neutral = parseNeutralProject(options);
-  const vue = parseVueProject({
-    ...options,
-    enabled: hasVueCandidate(neutral, options.intentHints),
+  const native = parseCheckerProjectConfigForContext({
+    allowNoInputDiagnostics: true,
+    cache: options.projectConfigCache,
+    configPath: options.configPath,
+    context: { checkerPresets: ['tsc'], extensions: [] },
+    projectRootDir: options.config.rootDir,
+    virtualFiles: options.config.virtualFiles,
   });
+  if (
+    isLiminaSolutionConfig({
+      configPath: options.configPath,
+      configObject: readJsonConfig(options.config, options.configPath),
+      fileNames: native.fileNames,
+    })
+  ) {
+    return createExplicitScopeProject({ ...options, checkerName: 'tsc' });
+  }
+  const neutral = parseNeutralProject(options);
+  const families = initialFrameworkCheckers(neutral, options.intentHints);
+  let vue: VueProjectEvidence = {
+    context: { checkerPresets: ['vue-tsc'], extensions: [] },
+    parsed: undefined,
+  };
+  if (families.length === 1 && families[0] === 'vue') {
+    try {
+      vue = parseVueProject({ ...options, enabled: true });
+    } catch {
+      /*
+      The selected checker retries through scoped Core collection.
+      */
+    }
+  }
   const vueFileNames = collectVueFileNames(vue.parsed);
   const fileNames = [...new Set([...neutral.fileNames, ...vueFileNames])].sort(
     compareCodeUnits,
   );
   const filePartition = partitionSourceFiles(fileNames);
   filePartition.vueFiles = [
-    ...new Set([...filePartition.vueFiles, ...vueFileNames]),
+    ...new Set([...neutral.partition.vueFiles, ...vueFileNames]),
   ].sort(compareCodeUnits);
-  return {
+  const project: AutoScopeProject = {
     analysisGeneration: options.projectConfigCache?.generation ?? 0,
     configClosure: selectProjectConfigClosure({ neutral, vue }),
     configPath: options.configPath,
@@ -230,6 +317,7 @@ export function createAutoScopeProject(options: {
       (referencePath) => ({ path: referencePath }),
     ),
   };
+  return project;
 }
 
 export function createExplicitScopeProject(options: {
@@ -252,6 +340,13 @@ export function createExplicitScopeProject(options: {
   const fileNames = parsed.fileNames
     .map(normalizeAbsolutePath)
     .sort(compareCodeUnits);
+  if (
+    (options.checkerName === 'tsc' || options.checkerName === 'tsgo') &&
+    fileNames.some((file) => !isNativeTypeScriptProjectInput(file))
+  )
+    throw new Error(
+      `Native TypeScript cannot compile an explicitly selected root in ${options.configPath}.`,
+    );
   const filePartition = partitionSourceFiles(fileNames);
   addExplicitVueFiles({
     checkerName: options.checkerName,

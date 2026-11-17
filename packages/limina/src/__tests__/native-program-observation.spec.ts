@@ -198,6 +198,73 @@ describe('compiler-owned Native Program observations', () => {
     });
   });
 
+  it('retains an independent explicit checker conflict beside a malformed selected config', async () => {
+    const fixture = await createSemanticRepairFixture({
+      'package.json': JSON.stringify({ name: 'native-fixture', private: true }),
+      'limina.config.mjs': 'export default {};',
+      'tsconfig.json': JSON.stringify({
+        files: [],
+        references: [
+          { path: './good/tsconfig.json' },
+          { path: './tsconfig.bad.json' },
+        ],
+      }),
+      'good/tsconfig.json': config(['main.ts']),
+      'tsconfig.bad.json': '{ "compilerOptions": ',
+      'good/main.ts': 'import "./missing.js"; export {};',
+    });
+    cleanups.push(fixture.cleanup);
+    const inputs = withFixtureGovernanceRoot({
+      configPath: fixture.path('limina.config.mjs'),
+      rootDir: fixture.root,
+      scope: {
+        checkers: {
+          tsc: { include: ['good/tsconfig.json'] },
+          tsgo: { include: ['good/tsconfig.json'] },
+        },
+      },
+    });
+    const workspace = await collectValidatedWorkspaceContext({
+      config: inputs,
+      rawPackages: [
+        {
+          directory: fixture.root,
+          name: 'native-fixture',
+          manifest: { name: 'native-fixture', private: true },
+        },
+      ],
+    });
+    const analysis = await analyzeProjectDependencies(inputs, {
+      artifactNamespace: createLiminaArtifactNamespace({
+        generation: 0,
+        rootDir: fixture.root,
+      }),
+      workspaceContext: workspace,
+    });
+    expect(analysis.outcome).toMatchObject({
+      execution: 'partial',
+      traversal: 'incomplete',
+      governance: { state: 'violations' },
+      buildAdmission: { state: 'denied' },
+    });
+    expect(
+      analysis.nativeEvidence
+        ?.flatMap((item) => item.snapshot.failures)
+        .filter(
+          (failure) =>
+            failure.kind === 'config-parse' &&
+            failure.detail.includes('TS1109') &&
+            failure.evidenceIds.includes(fixture.path('tsconfig.bad.json')),
+        ),
+    ).toHaveLength(1);
+    expect(analysis.outcome!.governance.diagnostics.join('\n')).toContain(
+      'Checker ownership conflict',
+    );
+    expect(
+      analysis.nativeEvidence?.flatMap((item) => item.snapshot.requests),
+    ).toContainEqual(expect.objectContaining({ specifier: './missing.js' }));
+  });
+
   it('records raw leaf references before governance without granting the referenced config source ownership', async () => {
     const fixture = await createSemanticRepairFixture({
       'package.json': JSON.stringify({ name: 'native-fixture', private: true }),

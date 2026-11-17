@@ -10,6 +10,8 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   graphAccessDenied: 'LIMINA_GRAPH_ACCESS_DENIED',
   graphCheckFailed: 'LIMINA_GRAPH_CHECK_FAILED',
   graphConfigInvalid: 'LIMINA_GRAPH_CONFIG_INVALID',
+  graphFrameworkInferenceAmbiguous:
+    'LIMINA_GRAPH_FRAMEWORK_INFERENCE_AMBIGUOUS',
   graphImportTargetUnmapped: 'LIMINA_GRAPH_IMPORT_TARGET_UNMAPPED',
   graphMaterializeFailed: 'LIMINA_GRAPH_MATERIALIZE_FAILED',
   graphPrepareFailed: 'LIMINA_GRAPH_PREPARE_FAILED',

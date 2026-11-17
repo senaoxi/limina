@@ -59,6 +59,111 @@ export interface SupplementalAssessment {
   readonly obligation: NativeCompilationObligation;
 }
 
+export function assessUnselectedFrameworkRequest(input: {
+  context: NativeEvidenceContext;
+  premises: NativeModulePremises;
+  discovery: SupplementalResolution;
+  coverage: NativeCoverage;
+  roots: readonly string[];
+  emitOptions: ts.CompilerOptions;
+  occurrence: ImportRecord;
+}): SupplementalAssessment {
+  const site = { context: input.context, requestId: input.premises.requestId };
+  const independent = independentModuleInputAbsence({
+    role: input.premises.role,
+    options: input.premises.options,
+    roots: input.roots,
+    target: input.coverage.target.lexicalPath,
+  });
+  const reason = 'framework-semantic-authority-required';
+  const assessment: SupplementalAssessment = freezeNativeData({
+    ...input,
+    source: 'qualified-supplement',
+    baselineContextId: input.context.id,
+    requestId: site.requestId,
+    capability: reason,
+    obligation: {
+      ...obligationIdentity(site),
+      id: nativeFingerprint([input.context.id, site.requestId, reason]),
+      targetConfigId:
+        input.coverage.members.length === 1
+          ? input.coverage.members[0]!.configId
+          : null,
+      existence: existence(site, independent ?? { state: 'unknown', reason }),
+      structure: { state: 'unknown', reason },
+      artifact: { state: 'unknown', reason },
+    },
+  });
+  liveAssessments.add(assessment);
+  return assessment;
+}
+
+export function assessNativeSupplement(input: {
+  previous: SupplementalAssessment;
+  context: NativeEvidenceContext;
+  premises: NativeModulePremises;
+  roots: readonly string[];
+  emitOptions: ts.CompilerOptions;
+  obligation?: NativeCompilationObligation;
+}): SupplementalAssessment {
+  const site = { context: input.context, requestId: input.premises.requestId };
+  const independent = independentModuleInputAbsence({
+    role: input.premises.role,
+    options: input.premises.options,
+    roots: input.roots,
+    target: input.previous.coverage.target.lexicalPath,
+  });
+  const assessment: SupplementalAssessment = freezeNativeData({
+    ...input.previous,
+    context: input.context,
+    requestId: site.requestId,
+    premises: input.premises,
+    roots: input.roots,
+    emitOptions: input.emitOptions,
+    obligation: input.obligation ?? {
+      ...obligationIdentity(site),
+      id: nativeFingerprint([
+        input.context.id,
+        site.requestId,
+        'native-supplement',
+      ]),
+      targetConfigId: input.previous.obligation.targetConfigId,
+      existence: existence(
+        site,
+        independent ?? {
+          state: 'unknown',
+          reason: 'framework-semantic-authority-required',
+        },
+      ),
+      structure: {
+        state: 'unknown',
+        reason: 'framework-semantic-authority-required',
+      },
+      artifact: {
+        state: 'unknown',
+        reason: 'framework-semantic-authority-required',
+      },
+    },
+  });
+  liveAssessments.add(assessment);
+  return assessment;
+}
+
+export function unavailableSupplement(
+  previous: SupplementalAssessment,
+  reason: string,
+): SupplementalAssessment {
+  return freezeNativeData({
+    ...previous,
+    obligation: {
+      ...previous.obligation,
+      existence: { state: 'unknown', gapIds: [reason] },
+      structure: { state: 'unknown', reason },
+      artifact: { state: 'unknown', reason },
+    },
+  });
+}
+
 /** Observe the consumer's actual Vue resolver before choosing a compiler
  * member. Oxc's physical target remains independent discovery evidence. */
 export function resolveSupplementalVueTarget(input: {

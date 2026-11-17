@@ -17,6 +17,7 @@ export default defineConfig({
   description: 'TypeScript project graph and architecture governance',
   cleanUrls: true,
   lastUpdated: true,
+  srcExclude: ['reviews/**'],
   markdown: {
     theme: {
       light: 'vitesse-light',

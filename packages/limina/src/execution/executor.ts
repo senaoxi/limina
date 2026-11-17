@@ -1,3 +1,4 @@
+import { collectFrameworkInferenceIssues } from '../check-reporting/framework-inference';
 import { createPreflightGenerationController } from '../preflight/generation';
 import {
   abortCheckAttempt,
@@ -146,6 +147,7 @@ async function runExecutionPlanWithController(
       context.state.finish(completedOutcome);
       finishCheckRecording(options.checkRunRecorder, completedOutcome);
       const issues = collectExecutionIssues({
+        diagnostics: collectFrameworkInferenceIssues(options.preflight),
         orderedTasks: context.orderedTasks,
         outcomes: context.outcomes,
         rootDir: options.rootDir,

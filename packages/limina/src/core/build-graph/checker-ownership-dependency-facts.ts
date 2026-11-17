@@ -1,10 +1,24 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
+import { hasModuleSpecifierQueryOrFragment } from '#utils/module-specifier';
 import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
-import type { ImportAnalysisContext } from '../import-analysis/runner';
+import type {
+  ImportAnalysisContext,
+  ImportRecord,
+} from '../import-analysis/runner';
+import { discoverSupplementalTarget } from '../import-analysis/supplemental-resolution';
+import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
-import { createProjectDependencyCaches } from '../project-dependencies/runner';
+import {
+  getDependencyCheckerTarget,
+  type ProjectDependencyEvidence,
+} from '../project-dependencies/evidence';
+import {
+  collectProjectDependencies,
+  createAutoProjectSemanticContext,
+  createProjectDependencyCaches,
+} from '../project-dependencies/runner';
 import { TypeEvidenceCore } from '../type-evidence';
 import {
   createWorkspaceSourceBoundaryFromProjects,
@@ -13,13 +27,18 @@ import {
 import type { AutoScopeProject } from './auto-checker-types';
 import { collectCanonicalOwnerProblems } from './canonical-owner-problems';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
+import { uniqueFrameworkInference } from './checker-ownership-evidence';
 import { collectLockedProjectFacts } from './checker-ownership-locked-facts';
-import { createActualMembershipIndex } from './checker-ownership-membership';
+import {
+  createActualMembershipIndex,
+  frameworkCheckerForTarget,
+} from './checker-ownership-membership';
 import { collectPendingOwnershipEvidence } from './checker-ownership-pending-facts';
 import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
+import { getCheckerSemanticFamily } from './checker-semantic-authority';
 import type { FileOwnerLookup } from './file-owner-lookup';
 import { collectIndependentCoreWork } from './independent-core-work';
 import { prepareLockedSemanticProject } from './locked-semantic-project';
@@ -88,6 +107,168 @@ function collectProjectFacts(options: {
       >;
     },
     workspaceSourceBoundary: options.base.workspaceSourceBoundary,
+  });
+}
+
+/** Selection may inspect one normally inferred framework's own requests. Its
+ * temporary collection cannot publish locked evidence or execution failures;
+ * the final authority always recollects into the real Core run after freeze. */
+export function collectFrameworkInferenceFacts(options: {
+  config: ResolvedLiminaInputs;
+  discovery: CheckerOwnershipDiscovery;
+  importAnalysis: ImportAnalysisContext;
+  projectConfigCache?: CheckerProjectConfigCache;
+}): void {
+  const boundary = createWorkspaceSourceBoundaryFromProjects(
+    options.discovery.projectByConfigPath.values(),
+    undefined,
+    options.discovery.sourceConfigCoverage,
+  );
+  for (const project of options.discovery.projectByConfigPath.values()) {
+    const state = options.discovery.plan.typeConfigs.get(project.configPath)!;
+    const inference = uniqueFrameworkInference(state);
+    if (inference === undefined || state.authoritativeOwner !== undefined)
+      continue;
+    const family = getCheckerSemanticFamily(inference.checker);
+    if (family === 'typescript') continue;
+    const files =
+      family === 'vue'
+        ? project.filePartition.vueFiles
+        : family === 'astro'
+          ? project.filePartition.astroFiles
+          : project.filePartition.svelteFiles;
+    if (files.length === 0) continue;
+    try {
+      const authority = {
+        kind: 'locked',
+        family,
+        source: inference.source as 'config' | 'root-file' | 'dependency',
+      } as const;
+      const prepared = prepareLockedSemanticProject({
+        project,
+        authority,
+        projectConfigCache: options.projectConfigCache,
+        rootDir: options.config.rootDir,
+      });
+      const context = createAutoProjectSemanticContext({
+        authority,
+        project: prepared,
+        workspaceSourceBoundary: boundary,
+      });
+      const collection = collectProjectDependencies({
+        compilationObligationScope: 'generated-declaration-project-v1',
+        caches: createProjectDependencyCaches(),
+        context,
+        importAnalysis: options.importAnalysis,
+      });
+      const records = [
+        ...collection.dependencies,
+        ...collection.failures.flatMap((failure) =>
+          failure.importRecord === undefined
+            ? []
+            : [
+                {
+                  importRecord: failure.importRecord,
+                  evidence: failure.evidence,
+                },
+              ],
+        ),
+        ...collection.observations.flatMap((observation) =>
+          observation.kind === 'missing' ? [observation] : [],
+        ),
+      ];
+      for (const { importRecord: record, evidence } of records)
+        collectObservedFrameworkRequirement({
+          ...options,
+          project,
+          files,
+          evidence,
+          record,
+        });
+    } catch {
+      // A unique final framework reports its normal preparation failure in Core.
+    }
+  }
+}
+
+function collectObservedFrameworkRequirement(
+  input: Parameters<typeof collectFrameworkInferenceFacts>[0] & {
+    project: AutoScopeProject;
+    files: readonly string[];
+    evidence: ProjectDependencyEvidence;
+    record: ImportRecord;
+  },
+): void {
+  if (
+    !shouldInferDeclarationReferenceFromImportRecord(input.record) ||
+    hasModuleSpecifierQueryOrFragment(input.record.specifier)
+  )
+    return;
+  const target = getDependencyCheckerTarget(input.evidence);
+  if (target !== null) {
+    appendObservedFrameworkRequirement(input, {
+      physicalTargetPath: target.resolvedFileName,
+      physicalTargetProvenance: 'checker-source',
+      typeEvidenceKind: 'checker-source',
+    });
+    return;
+  }
+  // Only an authored request in this framework's actual inputs may use
+  // physical discovery. Compiler-generated and support requests stay owned
+  // by their existing semantic collector.
+  if (
+    !input.files.includes(input.record.filePath) ||
+    input.record.locator.sourceStart < 0 ||
+    input.record.locator.sourceEnd < 0
+  )
+    return;
+  const discovery = (
+    input.importAnalysis.resolveSupplementalImport ?? discoverSupplementalTarget
+  )({
+    contextId: input.project.configPath,
+    requestId: JSON.stringify(input.record),
+    importer: input.record.filePath,
+    specifier: input.record.specifier,
+    mode:
+      input.record.compilerRequest?.mode === 1
+        ? 1
+        : input.record.compilerRequest?.mode === 99
+          ? 99
+          : undefined,
+    configPath: input.project.configPath,
+    options: input.project.options,
+    extensions: input.project.context.extensions,
+  });
+  if (discovery.state !== 'resolved') return;
+  appendObservedFrameworkRequirement(input, {
+    physicalTargetPath: discovery.target,
+    physicalTargetProvenance: 'pending-framework-candidate',
+    typeEvidenceKind: 'unobserved',
+    supplementalDiscovery: discovery,
+  });
+}
+
+function appendObservedFrameworkRequirement(
+  input: Parameters<typeof collectObservedFrameworkRequirement>[0],
+  target: Pick<
+    CheckerDependencyFact,
+    | 'physicalTargetPath'
+    | 'physicalTargetProvenance'
+    | 'typeEvidenceKind'
+    | 'supplementalDiscovery'
+  > & { physicalTargetPath: string },
+): void {
+  const owner = input.discovery.projectByConfigPath
+    .values()
+    .find((project) =>
+      project.filePartition.vueFiles.includes(target.physicalTargetPath),
+    );
+  if (frameworkCheckerForTarget(target.physicalTargetPath, owner) === undefined)
+    return;
+  input.discovery.plan.dependencyFacts.push({
+    ...target,
+    consumerConfigPath: input.project.configPath,
+    importRecord: input.record,
   });
 }
 

@@ -18,7 +18,7 @@ The key identifies the checker, its execution tool, and its associated caches. T
 
 ## Automatic discovery {#automatic-discovery}
 
-Automatic discovery is always enabled, even when you also configure named checkers. Ordinary TypeScript projects use `tsc` by default when no other checker is required. Limina also identifies Vue, Astro, and Svelte projects from framework configuration, actual files, and dependencies.
+Automatic entry discovery and framework inference are enabled by default, even when you also configure named checkers. Supported configuration, source-file and dependency features determine implicit ownership. Ordinary TypeScript projects use `tsc` when no unique framework inference or declaration-build relationship determines their execution checker.
 
 | Project                           | Typical checker |
 | --------------------------------- | --------------- |
@@ -68,7 +68,55 @@ Paths and patterns are relative to `config.rootDir`. This excludes only the **au
 
 If no selected entry covers the playground's source, `proof:check` may report those files as uncovered. Select an appropriate checker entry for them, or adjust the source scope if they should not be governed in this run. When changing the source scope, also check whether another selected config still includes those files.
 
-For a Vue project with custom component extensions, `vueCompilerOptions` alone is not enough. Limina also inspects the files actually resolved by the config. A custom extension prompts `vue-tsc` selection only when a matching Vue file exists.
+### Framework inference
+
+Automatic inference is an ownership policy. Limina collects supported features from the resolved source config, discovered framework files and dependency analysis, then deduplicates them by exact checker name before selecting ownership. A framework parser does not need to prove ownership before a supported feature can participate.
+
+| Distinct inferred framework checkers | Source analysis semantics | Local checker selection                                                                         |
+| ------------------------------------ | ------------------------- | ----------------------------------------------------------------------------------------------- |
+| None                                 | TypeScript                | Pending until declaration-build coloring or Auto fallback.                                      |
+| One                                  | The inferred framework    | The inferred checker.                                                                           |
+| More than one                        | TypeScript                | Pending until declaration-build coloring or Auto fallback; the final report includes a warning. |
+
+Several Vue features still count as one `vue-tsc` result. Vue and Astro count as two different checkers. Discovery order does not choose a winner. In the multiple-framework case, TypeScript semantics do not immediately select `tsc`: a valid declaration relationship can still select `vue-tsc` for execution, or Auto fallback can select `tsc` / `tsgo` according to `useTsgo`.
+
+These are the supported configuration and file triggers. Each trigger contributes the checker shown; it does not need a separate ownership qualification.
+
+| Checker        | Effective configuration triggers                                                                                                                                                                                                                                                                        | Discovered file triggers                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `astro`        | An effective `extends` of `astro/tsconfigs/base`, `astro/tsconfigs/strict` or `astro/tsconfigs/strictest` (optionally `.json`); `compilerOptions.types` containing exactly `astro/client` or `astro/env`; a plugin named exactly `@astrojs/ts-plugin`; a `files` or `include` entry ending in `.astro`. | `.astro` files.                                                                                                                            |
+| `vue-tsc`      | An effective `vueCompilerOptions` object, including `{}`; a `files` or `include` entry ending in `.vue`.                                                                                                                                                                                                | `.vue` files and files using effective `extensions`, `petiteVueExtensions` or `vitePressExtensions` configured under `vueCompilerOptions`. |
+| `svelte-check` | An effective `extends` whose final path components are `.svelte-kit/tsconfig` or `.svelte-kit/tsconfig.json`; a `files` or `include` entry ending in `.svelte`.                                                                                                                                         | `.svelte` files.                                                                                                                           |
+
+Dependency inference also counts an actually resolved framework target: its `.astro`, `.svelte` or `.vue` suffix, or a discovered Vue custom-extension profile. The module name alone is insufficient. Query/fragment imports and resource imports retain their existing filters. This is a feature of the consumer's request; it does not copy the provider's final execution checker into semantic ownership.
+
+Configuration triggers do not require matching component files. An effective Astro preset can select `astro` in a TypeScript-only project; an unfilled `**/*.vue` selector can still select `vue-tsc`. Selector matching here requires the whole string to end in the framework suffix. `**/*.{ts,vue}` is not a selector trigger by itself, although actual `.vue` files found by discovery still count. Merely installing a package or putting a framework name in an arbitrary string does not trigger inference.
+
+Inherited `types`, plugins, `files` and `include` use TypeScript's effective values. An Astro or Svelte preset must occur in the resolved inheritance closure and still contribute to effective compiler options, `files`, `include` or `exclude`; a preset whose contributions have all been overridden does not trigger inference by itself. Vue-specific settings follow the installed Vue toolchain's inheritance order. For `@vue/language-core` 3.2.4, precedence between multiple bases can differ from TypeScript's `compilerOptions` precedence; set the intended Vue extension fields in the leaf config when bases disagree.
+
+Vue custom-extension inputs keep their normal discovery path even when Native TypeScript finds no roots. Their discovery does not add them to Native roots.
+
+To choose the checker yourself, use a named selection:
+
+```ts
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  scope: {
+    checkers: {
+      'vue-tsc': { include: ['apps/site/tsconfig.json'] },
+    },
+  },
+});
+```
+
+Named selections and their terminal solution constraints take precedence over implicit inference. Alternatively, remove configuration or source features that trigger an unwanted framework inference. Automatic inference has no separate global switch; `auto: false` is not supported.
+
+The `LIMINA_GRAPH_FRAMEWORK_INFERENCE_AMBIGUOUS` warning identifies the source config and sorted checker names, states that TypeScript semantics were retained, and explains that the local owner was pending before build coloring. Each affected source config produces one warning in the final report, including when another independent problem fails the workflow. `limina check` lists these in its final Warnings section; standalone commands print them to stderr after completion, preserving machine-readable graph JSON on stdout. The warning itself does not change admission, governance results or the command's exit status.
+
+The warning supplies no missing compilation capability. Independently established framework input requirements, missing inputs, declaration obligations and real checker failures retain their existing diagnostics and admission rules. A uniquely inferred checker that is unavailable does not silently fall back to TypeScript. Framework discovery never adds `.vue`, `.astro`, `.svelte` or custom extensions to Native TypeScript roots.
+
+A complete Reference Graph does not guarantee a successful type check. An explicitly selected `tsc` can finish resolving a `.vue` import without selecting a file input, so no project reference is required for that request, while the actual type check can still report `TS2307`. A physical file or another project's `vue-tsc` owner alone does not justify adding an edge. Separately established necessary framework inputs that the selected semantics cannot handle still follow admission rules.
 
 ## Choose a checker for an entry {#named-entry-constraints-and-solution-closures}
 
@@ -153,9 +201,9 @@ An explicitly selected `astro` checker covers TypeScript and `.astro` files; `sv
 
 ::: details When dependency analysis is uncertain
 
-Limina determines analysis semantics from explicit selection, configuration, actual files, and confirmed framework dependencies. Once determined, changing the build checker to share a declaration cache does not change how imports are interpreted.
+Limina determines analysis semantics from an explicit selection or the complete set of supported framework inferences. A unique framework is selected directly; zero or multiple frameworks retain the TypeScript baseline. Once semantics are frozen, changing the build checker to share a declaration cache does not change how imports are interpreted.
 
-For a project whose framework is not yet determined, Limina starts with TypeScript analysis. Only when TypeScript explicitly finds missing type evidence may Oxc help identify a physical framework source file for checker selection. Ordinary files, resources, excluded files, and files with ambiguous ownership cannot select a framework this way. Conflicting framework requirements produce an error rather than a choice based on import order.
+For a project whose framework is not yet determined, Limina starts with TypeScript analysis. Existing dependency facts can supply framework requirements alongside configuration and file features. A physical lookup does not replace TypeScript's observations, add compiler roots or prove that a necessary declaration relationship is satisfied. A provider with multiple inferred frameworks cannot pass an arbitrary framework owner to its consumers. Multiple distinct implicit requirements produce the warning described above; incompatible named selections remain errors.
 
 Once the framework is determined, dependency resolution uses that framework's toolchain. If Limina cannot reliably resolve a dependency, identify its source location, or use the toolchain, it reports failure rather than inventing an approximate project dependency. Framework-generated imports that cannot be uniquely mapped to user source do not create source dependency relationships.
 

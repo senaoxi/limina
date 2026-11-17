@@ -8,9 +8,10 @@ import {
 } from './analysis-cache-schema';
 import { restoreGraphContexts } from './analysis-cache-vue';
 import { rebindCachedCompilation } from './cached-candidate-binding';
-import { hasCurrentOwnership } from './cached-ownership-replay';
+import { replayCurrentOwnership } from './cached-ownership-replay';
 import { hasBoundCachedReferences } from './cached-reference-reconstruction';
 import { reconstructVueReferences } from './cached-vue-references';
+import type { FrameworkInferenceAmbiguity } from './core-collection-run';
 import { validateRestoredReferences } from './reference-validation';
 
 interface Binding {
@@ -22,19 +23,31 @@ interface Binding {
   generation: number;
 }
 
+export interface BoundCachedGraph {
+  graph: CachedGraphData;
+  ambiguities: readonly FrameworkInferenceAmbiguity[];
+}
+
 /**
 Restored semantic contexts supply evidence; graph projections grant no authority.
 */
 export async function bindCachedGraph(
   input: Binding,
-): Promise<CachedGraphData | undefined> {
+): Promise<BoundCachedGraph | undefined> {
   const restored = restoreGraphContexts({ ...input, data: input.stored });
   if (restored === undefined) return undefined;
   rebindCachedCompilation(restored, input.cache);
   try {
-    return (await hasCurrentOwnership(restored, input.config, input.workspace))
-      ? validateReferences(input, restored)
-      : undefined;
+    const ownership = await replayCurrentOwnership(
+      restored,
+      input.config,
+      input.workspace,
+    );
+    if (ownership === undefined) return undefined;
+    const graph = validateReferences(input, restored);
+    return graph === undefined
+      ? undefined
+      : { graph, ambiguities: ownership.ambiguities };
   } catch {
     return undefined;
   }

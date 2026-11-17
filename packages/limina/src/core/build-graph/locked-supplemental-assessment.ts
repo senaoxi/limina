@@ -2,9 +2,14 @@ import type {
   CheckerProjectConfigCache,
   VueProjectSemanticIdentity,
 } from '#checkers';
+import { parseTypeScriptCommandLine } from '../../checker/project-base';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { discoverSupplementalTarget } from '../import-analysis/supplemental-resolution';
+import {
+  createTypeScriptDependencyContext,
+  createWorkspaceSourceBoundary,
+} from '../typescript-semantic';
 import { deriveCompilerCoverage } from '../typescript-semantic/compiler-coverage';
 import { createImportRecordIdentity } from '../typescript-semantic/import-record';
 import { captureModulePremises } from '../typescript-semantic/native-context-inventory';
@@ -15,9 +20,11 @@ import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import type { CheckerDependencyFact } from './checker-ownership-types';
 import { prepareLockedSemanticProject } from './locked-semantic-project';
 import {
+  assessNativeSupplement,
   assessPendingSupplement,
   resolveSupplementalVueTarget,
   type SupplementalAssessment,
+  unavailableSupplement,
 } from './pending-supplemental-assessment';
 
 interface RebindInput {
@@ -32,6 +39,19 @@ export function rebindSupplementalAssessments(
 ): SupplementalAssessment[] {
   return input.discovery.plan.dependencyFacts.flatMap((fact) => {
     if (fact.supplementalAssessment === undefined) return [];
+    const authority = input.discovery.plan.typeConfigs.get(
+      fact.consumerConfigPath,
+    )?.semanticAuthority;
+    // The actual frozen Framework collector replaces an unselected request
+    // assessment. Native authority must instead re-prove absence or retain it.
+    if (
+      fact.supplementalAssessment.capability ===
+        'framework-semantic-authority-required' &&
+      authority?.kind === 'locked' &&
+      authority.family !== 'typescript' &&
+      authority.family === fact.frameworkCandidate?.family
+    )
+      return [];
     const current = rebindAssessment(input, fact);
     const bound = input.facts.find(
       (item) =>
@@ -78,10 +98,9 @@ function rebindAssessment(
   const authority = input.discovery.plan.typeConfigs.get(
     project.configPath,
   )!.semanticAuthority;
-  if (authority.kind !== 'locked' || authority.family !== 'vue')
-    throw new Error(
-      'Supplemental request has no current Vue semantic authority.',
-    );
+  if (authority.kind !== 'locked')
+    return unavailableSupplement(previous, 'semantic-authority-unavailable');
+  if (authority.family !== 'vue') return rebindNativeAssessment(input, fact);
   const owner = input.discovery.projectByConfigPath.get(
     previous.obligation.targetConfigId!,
   )?.context.vueSemanticIdentity;
@@ -145,6 +164,67 @@ function rebindAssessment(
     occurrence: fact.importRecord,
     locked: true,
   });
+}
+
+function rebindNativeAssessment(
+  input: RebindInput,
+  fact: CheckerDependencyFact,
+): SupplementalAssessment {
+  const project = input.discovery.projectByConfigPath.get(
+    fact.consumerConfigPath,
+  )!;
+  const { parsed } = parseTypeScriptCommandLine({
+    parseOptions: {
+      configPath: project.configPath,
+      projectRootDir: input.rootDir,
+      allowNoInputDiagnostics: true,
+      virtualFiles: project.virtualFiles,
+    },
+  });
+  const context = createTypeScriptDependencyContext({
+    configPath: project.configPath,
+    fileNames: parsed.fileNames,
+    options: parsed.options,
+    projectReferences: parsed.projectReferences,
+    virtualFiles: project.virtualFiles,
+    analysisBinding: { phase: 'locked', checker: 'tsc' },
+    compilationObligationScope: 'generated-declaration-project-v1',
+    workspaceSourceBoundary: createWorkspaceSourceBoundary(
+      [],
+      undefined,
+      input.discovery.sourceConfigCoverage,
+    ),
+  });
+  try {
+    const current = context.getDependencyFact(fact.importRecord);
+    const requestId = current.nativeEvidence?.requestId;
+    const premises = context.nativeInventory?.modules?.find(
+      (module) => module.requestId === requestId,
+    );
+    const identity = context.nativeEvidence?.contexts[0];
+    if (premises === undefined || identity === undefined)
+      return unavailableSupplement(
+        fact.supplementalAssessment!,
+        'locked-native-request-unavailable',
+      );
+    const target = current.resolution.target;
+    const obligation =
+      target !== null &&
+      target.resolvedFileName ===
+        fact.supplementalAssessment!.coverage.target.lexicalPath
+        ? (current.nativeEvidence?.obligation ?? undefined)
+        : undefined;
+    return assessNativeSupplement({
+      previous: fact.supplementalAssessment!,
+      context: identity,
+      premises,
+      roots: parsed.fileNames,
+      emitOptions: parsed.options,
+      obligation,
+    });
+  } finally {
+    context.dispose();
+  }
 }
 function currentPremises(
   identity: VueProjectSemanticIdentity,

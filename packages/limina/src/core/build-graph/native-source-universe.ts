@@ -1,7 +1,6 @@
 import {
   type CheckerProjectConfigCache,
   isNativeTypeScriptProjectInput,
-  parseCheckerProjectConfigForContext,
 } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import {
@@ -10,20 +9,20 @@ import {
   readJsonConfig,
 } from '#core/tsconfig/actions';
 import ts from 'typescript';
-import { TypeScriptConfigInputError } from '../../checker/project-base';
+import {
+  parseTypeScriptCommandLine,
+  TypeScriptConfigInputError,
+} from '../../checker/project-base';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { NativeEvidenceFailure } from '../../domain/analysis/native-evidence';
 import { TsconfigInputError } from '../tsconfig/config-paths';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import {
-  NativeObservationError,
   nativeObservationFailureKind,
   observationErrorDetail,
 } from '../typescript-semantic/native-observation-failure';
-import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-references';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
-import { inspectFrameworkIntent } from './framework-intent';
-import { capabilityDiscoveryExtensions } from './generated/file-extensions';
+import type { AutoScopeProject } from './auto-checker-types';
 import { SourceConfigDiscovery } from './source-config-discovery';
 
 interface DiscoveredNativeProject {
@@ -40,6 +39,7 @@ export interface NativeSourceUniverse {
 }
 
 interface UniverseInput {
+  discoveredProjects?: ReadonlyMap<string, AutoScopeProject>;
   config: ResolvedLiminaInputs;
   entries: readonly string[];
   activatedRegions: WorkspaceRegionPathIndex;
@@ -126,18 +126,15 @@ function visitNativeConfig(state: DiscoveryState, config: string): void {
 
 function collectNativeConfig(state: DiscoveryState, configPath: string): void {
   const configObject = readJsonConfig(state.input.config, configPath);
-  const parsed = parseCheckerProjectConfigForContext({
-    allowNoInputDiagnostics: true,
-    cache: state.input.projectConfigCache,
-    configPath,
-    context: {
-      checkerPresets: ['tsc'],
-      extensions: capabilityDiscoveryExtensions,
+  const { parsed, configClosure } = parseTypeScriptCommandLine({
+    parseOptions: {
+      allowNoInputDiagnostics: true,
+      configPath,
+      projectRootDir: state.input.config.rootDir,
+      virtualFiles: state.input.config.virtualFiles,
     },
-    projectRootDir: state.input.config.rootDir,
-    virtualFiles: state.input.config.virtualFiles,
   });
-  const references = nativeRawReferences(state, configPath);
+  const references = parsed.projectReferences ?? [];
   const isSolution = isLiminaSolutionConfig({
     configObject,
     configPath,
@@ -146,7 +143,7 @@ function collectNativeConfig(state: DiscoveryState, configPath: string): void {
   if (isSolution) {
     state.discovery.parsed(configPath, parsed.fileNames, {
       isSolution,
-      basis: parsed.configClosure,
+      basis: configClosure,
     });
     visitNativeReferences(state, references);
     return;
@@ -157,45 +154,14 @@ function collectNativeConfig(state: DiscoveryState, configPath: string): void {
     options: parsed.options,
     projectReferences: references,
   });
-  const membership = effectiveNativeMembership(state, {
-    configPath,
-    configObject,
-    parsed,
-  });
-  state.discovery.parsed(configPath, membership.fileNames, {
+  // Selected-config membership also locates Framework candidates. It does not
+  // add those files to the independent Native Program above or prove a request
+  // obligation; that requires the current compiler observation.
+  const project = state.input.discoveredProjects?.get(configPath);
+  state.discovery.parsed(configPath, project?.fileNames ?? parsed.fileNames, {
     isSolution,
-    basis: membership.configClosure,
+    basis: project?.configClosure ?? configClosure,
   });
-}
-
-function effectiveNativeMembership(
-  state: DiscoveryState,
-  input: {
-    configPath: string;
-    configObject: ReturnType<typeof readJsonConfig>;
-    parsed: ReturnType<typeof parseCheckerProjectConfigForContext>;
-  },
-) {
-  const inspection = inspectFrameworkIntent({
-    config: state.input.config,
-    ...input,
-  });
-  const hasVue =
-    input.parsed.fileNames.some((file) => file.endsWith('.vue')) ||
-    inspection.intentHints.some((hint) => hint.family === 'vue');
-  if (!hasVue) return input.parsed;
-  const vue = parseCheckerProjectConfigForContext({
-    allowNoInputDiagnostics: true,
-    cache: state.input.projectConfigCache,
-    configPath: input.configPath,
-    context: { checkerPresets: ['vue-tsc'], extensions: [] },
-    projectRootDir: state.input.config.rootDir,
-    virtualFiles: state.input.config.virtualFiles,
-  });
-  return {
-    fileNames: [...new Set([...input.parsed.fileNames, ...vue.fileNames])],
-    configClosure: [...input.parsed.configClosure, ...vue.configClosure],
-  };
 }
 
 function shouldSkipNativeConfig(
@@ -205,22 +171,6 @@ function shouldSkipNativeConfig(
   return state.seen.has(config) || !isSelectedConfig(state.input, config);
 }
 
-function nativeRawReferences(
-  state: DiscoveryState,
-  configPath: string,
-): readonly ts.ProjectReference[] {
-  const raw = parseTypeScriptProjectConfig({
-    configPath,
-    tsModule: ts,
-    virtualFiles: state.input.config.virtualFiles,
-  });
-  if (raw === undefined)
-    throw new NativeObservationError(
-      'file-read',
-      `Cannot read raw configuration: ${configPath}`,
-    );
-  return raw.projectReferences ?? [];
-}
 function visitNativeReferences(
   state: DiscoveryState,
   references: readonly ts.ProjectReference[],

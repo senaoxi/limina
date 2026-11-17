@@ -37,7 +37,13 @@ it('builds independent producers before resolving all Svelte consumers and repai
     }),
     'package-lock.json': '{"lockfileVersion":3,"packages":{"":{}}}',
     'limina.config.mjs':
-      'export default {scope:{source:{include:["**/*.{ts,vue,svelte}"]},checkers:{auto:{}}},graph:{rules:{}},source:{knip:false},proof:{allowlist:[]}};',
+      'export default {scope:{source:{include:["**/*.{ts,vue,svelte}"]},checkers:{auto:{},"svelte-check":{include:["svelte-authority/tsconfig.json"]}}},graph:{rules:{}},source:{knip:false},proof:{allowlist:[]}};',
+    // A intentionally consumes both Vue and Svelte. Pin only its semantic
+    // authority; the other four Svelte consumers still exercise Auto routing.
+    'svelte-authority/tsconfig.json': JSON.stringify({
+      files: [],
+      references: [{ path: '../tsconfig.a.json' }],
+    }),
     'a/a.svelte':
       '<script lang="ts">import B from "../b/b.vue"; import C from "../c/c.svelte"; import { g } from "../g/g.ts"; const components = [B, C]; export let value: number = g;</script><p>{value} {components.length}</p>',
     'b/b.vue':

@@ -36,19 +36,37 @@ Path 候选资格使用编译器的有效 `resolveJsonModule` 值，包括随版
 
 ## 从 ownership 候选到 locked context
 
-[checker-ownership-resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先 discovery、root evidence、dependency facts 与 requirements convergence，再 freeze semantic authority，最后进行 Vue promotion、build coloring 与 finalization。[semantic-authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 只接受 explicit、config、root-file、dependency 作为语义锁证据；build-closure、fallback、vue-promotion 不重写语义。
+[checker-ownership-resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 收集受支持的 config/root 推导与 dependency facts，全部隐式要求收敛后才提交权威。Named Checker 约束保持优先的显式权威。去重结果决定唯一框架选择，或 Pending Local Owner 与 Native baseline freeze。[Semantic authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 随后冻结解释方式，再进行 Vue promotion、Build Coloring 和 Finalization；这些执行阶段不能重写语义。
 
 同色边只来自合格声明依赖、有效声明上下文选择和 implicitRefs。Vue promotion 与组件染色共用声明关系资格判断；纯 solution 聚合和 framework schedule 不传播颜色。显式 ownership 在冻结前施加，冻结后的执行染色不改写语义解释权。
 
-Pending discovery 使用 [pending-facts](../../../packages/limina/src/core/build-graph/checker-ownership-pending-facts.ts) 的 native dependency context。framework inference 读取合格的 `pending-framework-candidate` 来源，不伪造 TypeEvidence missing 观察。[physical candidate](../../../packages/limina/src/core/build-graph/checker-ownership-physical-candidate.ts) bootstrap 中，Oxc 提供物理候选，还需已知 framework extension、governed effective membership、唯一 config 和语义域，才形成 ownership requirement。普通 TS/resource 路径不凭物理命中锁框架。native source requirement 支持编译关系，不提供 framework semantic authority；物理 declaration resolution 即使 evidence 为 missing 也禁止 Oxc bootstrap。带 query 或 fragment 的 specifier（如 `./Widget.svelte?x`）同样不 bootstrap physical candidate：checker 没有给出 target 时，Limina 无权通过 Oxc 或文件系统重新解释宿主语法。Vue custom profile 使用 owner 登记的编译器成员匹配，不通过物理归属回退。
+Pending discovery 使用 [pending-facts](../../../packages/limina/src/core/build-graph/checker-ownership-pending-facts.ts) 的 Native dependency context。[依赖推导](../../../packages/limina/src/core/build-graph/checker-ownership-membership.ts) 按受支持后缀或已发现的 Vue profile 分类实际解析到的框架目标。这是 consumer 请求自身的特征，不是 provider 的 final owner，也不伪造 TypeEvidence missing 观察。[框架请求采集](../../../packages/limina/src/core/build-graph/checker-ownership-dependency-facts.ts) 在提交推导前，完成当前唯一框架的正常依赖观察。带 query/fragment 的 specifier 或被过滤的资源请求不提供该特征。
+
+[Physical candidates](../../../packages/limina/src/core/build-graph/checker-ownership-physical-candidate.ts)及当前成员关系仍是既有 supplemental obligation 路径的输入。物理命中可以提供归属特征，但不能证明 Native 编译义务存在、接纳 SourceFile 或满足引用。Native source requirements、真实编译器目标成员关系与框架能力证据保持各自合同。Provider 的执行颜色不能把普通 TypeScript 目标变成框架要求。
 
 **Pending 受控补充：**[请求发现](../../../packages/limina/src/core/import-analysis/supplemental-resolution.ts)使用原始 Compiler Inventory occurrence、有效源文件选项、Mode、完整 specifier 和新的 Oxc resolver；Native 已有物理目标时跳过此路径。命中、正常未命中、不支持的 profile、观察不可用和执行失败分别保留，原始 Native resolution 与 obligation 不变。resolver 不增加 roots、加载授权、SourceFile 或递归源码遍历。 对具有现有 Vue profile 的目标，先由 consumer 的 Vue resolver 给出编译器路径，再选择实现输入成员归属。Oxc 原始发现保持不变，其物理路径不能替代该编译器路径。Locked supplement 重新取得编译器目标并核对已选成员关系；引用记录和去重均使用该目标，不以物理等价代替。
 
 [补充评估](../../../packages/limina/src/core/build-graph/pending-supplemental-assessment.ts)取得真实 Vue/Volar 解析及消费者与 owner 一致的 Service Script 分类，再调用 Native 共用的模块输入与义务投影。必须有物理身份和当前唯一 Coverage，单凭成员归属不能证明编译输入。Pending 评估不请求消费者 Program。既有 Locked 重采集把 occurrence、源码版本、角色及 Mode 重新绑定到真实 Compiler Inventory，读取当前选项并重新取得解析与能力证据。补充评估拥有独立上下文及 audited-rule 证明，不能通过 Native fact API 取得资格。引用输入复用 provider 选择、构建染色、贡献替换及候选／执行准入。资格未知阻止受影响的准入，包括消费者无法解释的 owner 自定义扩展。Native 命中和合格真实 Checker 贡献优先于同一请求的重复补充贡献。
 
+显式 Native 归属保留普通 Locked Native 采集路径。已完成解析、未选中文件输入的 unresolved `.vue` 请求，可以依据 [compiler-completed-resolution-without-file-input 规则](../../../packages/limina/src/core/typescript-semantic/native-program-obligations.ts)得到 Native `not-required`。物理文件或 provider Checker 本身不能制造 supplemental `unknown` 或项目引用。原始 unresolved 观察仍然保留；Graph Admission 不证明类型检查成功，真实 `tsc` 仍可能报告 `TS2307`。
+
+必要 Framework unknown 需要不同证据。对于自身同时推导 Astro 和 Vue 的 Auto consumer，真实 Vue resolver 结果、匹配的 Service Scripts 和唯一有效 Vue provider 可以在 TypeScript baseline freeze 前建立合格 supplement。如果 [Locked 重绑定](../../../packages/limina/src/core/build-graph/locked-supplemental-assessment.ts)无法将该已建立的框架输入绑定到冻结后的 Native context，补充评估保持 `unknown` 并阻断受影响准入。它不改写独立 Native 评估，也不把所有 unresolved 框架 specifier 都视为未知义务。歧义 Warning 不能丢弃已建立的补充输入要求。
+
 首个补充义务适配器覆盖 Vue 实现目标，其他框架物理候选保留选择合同。声明输入继续使用 Checker 中立的共享声明治理及其真实 tsc 或 Vue 候选适配器；不支持的自定义插件委派保持 unavailable，不能绕过能力资格。没有 Oxc 声明闭包、新 Source Config、扩大 region 或相互依赖的能力证明。生成产物可用性与义务存在性分离。`noResolve`、augmentation、root 身份、有效 JS 输入／发射规则及引用映射保持共用语义；ambient TypeEvidence、类型导入、`skipLibCheck` 和 `noCheck` 不是通用义务取消规则。
 
 Locked [ProjectSemanticContext](../../../packages/limina/src/core/project-dependencies/contracts.ts) 在类型层要求 `LockedSemanticAuthority`。它与 pending discovery 是不同入口；构造函数复制 authority 不等于对任意 JavaScript 伪造对象做完整运行时认证。生产调用合法性来自求解流程和类型边界，不能把它写成不可绕过的安全 capability。
+
+### 确定性框架推导
+
+推导是一项归属策略。Resolved Config 的受支持特征、发现的框架文件和既有依赖事实直接产生框架 Checker 要求。在提交隐式权威前完整收集三个来源，按精确 Checker 名称去重，并复用当前调用的依赖要求迭代。唯一结果选定对应框架。零结果或多个不同结果保留 Pending Local Owner 与 Pending Semantic Authority，随后按 Native baseline 冻结；多个结果不设置 `semanticAuthorityUnavailable`，也不产生权威冲突。
+
+依赖推导依据 consumer 实际观察的框架目标，包括适用的已发现 Vue profile；不借用 provider 的最终 Checker，也不从多命中 provider 中任意选取 family。裁决后，原始多框架结果不再具有归属权威：保留 Pending Owner、锁定的 TypeScript 语义和最终诊断信息。Build Coloring 消费既有声明关系，不消费推导出的 Checker 集合。显式具名约束保持权威；不兼容的显式约束或 Build Checker 身份仍是阻断冲突。
+
+[配置触发](../../../packages/limina/src/core/build-graph/framework-intent.ts)依据 Resolved Source Config 及继承属性的实际有效贡献；[公共检查器参考](../../../docs/zh/config/checkers.md#框架推导)列出精确的受支持名称和后缀规则。已被覆盖的祖先属性和任意框架名称子串不参与推导。受支持触发不需要先匹配到框架文件，也不需要 Parser Membership Qualification。安装框架包本身不是触发条件。正常框架输入发现、语义准备与编译器能力检查仍分别存在；唯一推导的 Checker 无法准备时不能静默变成 Native。
+
+Native parser roots、Native 接纳输入、真实 Program 成员、框架发现文件、Framework Parser 输入和生成声明输入保持分离。Native solution 遍历使用 Native parse 和原始 references。Selected-config Coverage 索引可以包含正常发现的框架成员；它不等于 Native Program 成员集，也不能把物理成员关系变成 Native 请求义务证明。显式 unsupported root 不能被过滤成空 solution。Native roots 为空时，已选自定义扩展 leaf 仍保留正常框架发现机会。无关框架准备失败不能截断独立 Native 工作。
+
+每个多命中 Source Config 在最终报告中产生一条稳定 Warning，列出排序后的精确 Checker 名称。Warning 记录 TypeScript 权威与染色前 Pending 的 Owner，不建立新的 candidate 或持久缓存状态。它不改变 analysis completeness、治理违规、准入拒绝原因或退出状态，并与独立错误一起保留。真实 required、already-satisfied 和必要 unknown 义务继续遵循既有规则。Native baseline freeze 本身不证明框架义务不存在；声明义务仍需有效声明 producer/reference，framework schedule 不能替代它。
 
 ## 一个项目的原生语义输入
 

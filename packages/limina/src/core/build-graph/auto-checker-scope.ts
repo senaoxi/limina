@@ -24,6 +24,8 @@ import type { SourceConfigDiscovery } from './source-config-discovery';
 import type { AutoScope, CheckerSourceConfigCollection } from './types';
 
 interface CollectAutoSourceConfigModulesOptions {
+  onInputError?: (configPath: string, error: Error) => void;
+  sourceConfigParser: (configPath: string) => AutoScope['projects'][number];
   activatedRegions: WorkspaceRegionPathIndex;
   collection: CheckerSourceConfigCollection;
   config: ResolvedLiminaInputs;
@@ -59,10 +61,20 @@ function collectAutoSourceConfigModules(
     seenConfigs: new Set(),
     sourceConfigPath: options.entryConfigPath,
     sourceConfigInspector: options.sourceConfigInspector,
+    sourceConfigParser: options.sourceConfigParser,
+    onInputError:
+      options.onInputError ??
+      ((configPath, error) => {
+        options.problems.push(
+          `Source config discovery failed: ${configPath}\n${error.message}`,
+        );
+      }),
   });
 }
 
 function createAutoScope(options: {
+  onInputError?: (configPath: string, error: Error) => void;
+  explicitOwnerByConfigPath?: ReadonlyMap<string, CheckerName>;
   onProblems?: (problems: string[]) => void;
   sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
@@ -76,7 +88,9 @@ function createAutoScope(options: {
   collection.sourceDiscovery = options.sourceDiscovery;
   const problems: string[] = [];
   const intentHintsByConfigPath = new Map<string, FrameworkIntentHint[]>();
+  const parsedProjects = new Map<string, AutoScope['projects'][number]>();
   collectAutoSourceConfigModules({
+    onInputError: options.onInputError,
     activatedRegions: options.activatedRegions,
     collection,
     config: options.config,
@@ -84,6 +98,25 @@ function createAutoScope(options: {
     entryConfigPath: options.entryConfigPath,
     problems,
     projectConfigCache: options.projectConfigCache,
+    sourceConfigParser: (configPath) => {
+      const explicitChecker =
+        options.explicitOwnerByConfigPath?.get(configPath);
+      const base = {
+        ...options,
+        configPath,
+        intentHints: intentHintsByConfigPath.get(configPath) ?? [],
+        packageRootDir: collection.packageRootBySourcePath.get(configPath)!,
+      };
+      const project =
+        explicitChecker === undefined
+          ? createAutoScopeProject(base)
+          : createExplicitScopeProject({
+              ...base,
+              checkerName: explicitChecker,
+            });
+      parsedProjects.set(configPath, project);
+      return project;
+    },
     sourceConfigInspector: ({ configObject, sourceConfigPath }) => {
       const inspection = inspectFrameworkIntent({
         config: options.config,
@@ -111,14 +144,7 @@ function createAutoScope(options: {
       if (packageRootDirectory === undefined) {
         throw new Error(`Missing auto checker package root for ${configPath}.`);
       }
-      return createAutoScopeProject({
-        activatedRegions: options.activatedRegions,
-        config: options.config,
-        configPath,
-        intentHints: intentHintsByConfigPath.get(configPath) ?? [],
-        packageRootDir: packageRootDirectory,
-        projectConfigCache: options.projectConfigCache,
-      });
+      return parsedProjects.get(configPath)!;
     });
   const projectByConfigPath = new Map(
     projects.map((project) => [project.configPath, project]),
@@ -142,6 +168,8 @@ function createAutoScope(options: {
 }
 
 export function collectAutoScope(options: {
+  onInputError?: (configPath: string, error: Error) => void;
+  explicitOwnerByConfigPath?: ReadonlyMap<string, CheckerName>;
   onProblems?: (problems: string[]) => void;
   sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
@@ -170,6 +198,7 @@ function getExplicitParsing(checkerName: CheckerName): {
 }
 
 export function collectExplicitScope(options: {
+  onInputError?: (configPath: string, error: Error) => void;
   onProblems?: (problems: string[]) => void;
   sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
@@ -180,6 +209,7 @@ export function collectExplicitScope(options: {
 }): AutoScope | null {
   const parsing = getExplicitParsing(options.checkerName);
   const collection = collectCheckerSourceConfigs({
+    onInputError: options.onInputError,
     onProblems: options.onProblems,
     sourceDiscovery: options.sourceDiscovery,
     activatedRegions: options.activatedRegions,

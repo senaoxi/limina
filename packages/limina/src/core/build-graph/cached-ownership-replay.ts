@@ -6,34 +6,41 @@ import {
 } from '../workspace/validated-context';
 import type { CachedGraphData } from './analysis-cache-schema';
 import { discoverCheckerOwnership } from './checker-ownership-discovery';
-import { applyRootFileEvidence } from './checker-ownership-evidence';
+import {
+  applyRootFileEvidence,
+  commitFrameworkInference,
+} from './checker-ownership-evidence';
 import {
   finalizeLockedOwnership,
   runDependencyRequirements,
 } from './checker-ownership-resolution';
 import { freezeSemanticAuthorities } from './checker-semantic-authority';
+import type { FrameworkInferenceAmbiguity } from './core-collection-run';
 
 /**
 Recreate seeds from current inputs; cached final colors never confer authority.
 */
-export async function hasCurrentOwnership(
+export async function replayCurrentOwnership(
   graph: CachedGraphData,
   config: ResolvedLiminaInputs,
   workspace: ValidatedWorkspaceContext,
-): Promise<boolean> {
+): Promise<
+  { ambiguities: readonly FrameworkInferenceAmbiguity[] } | undefined
+> {
   const stored = graph.ownershipPlan;
   if (
     !stored.coloringInputs ||
     !stored.ownershipSelectionFacts ||
     !graph.sourceConfigCoverage
   )
-    return false;
+    return undefined;
   const discovery = await discoverCheckerOwnership({
     config,
     activatedRegions: new WorkspaceRegionPathIndex(workspace),
     workspaceSourceConfigPaths: workspace.sourceConfigPaths,
     restoredSourceCoverage: graph.sourceConfigCoverage,
   });
+  if (discovery.collectionInputFailure !== undefined) return undefined;
   discovery.collectionProblems!.push(
     ...applyRootFileEvidence({
       config,
@@ -44,13 +51,15 @@ export async function hasCurrentOwnership(
   discovery.plan.dependencyFacts = [...stored.ownershipSelectionFacts];
   discovery.plan.dependencyFactPhase = 'selection';
   runDependencyRequirements({ config, discovery });
+  const inference = commitFrameworkInference({ config, plan: discovery.plan });
   discovery.collectionProblems!.push(
+    ...inference.problems,
     ...freezeSemanticAuthorities({
       config,
       states: discovery.plan.typeConfigs.values(),
     }),
   );
-  if (discovery.collectionProblems!.length > 0) return false;
+  if (discovery.collectionProblems!.length > 0) return undefined;
   const fingerprint = (states: Map<string, unknown>) =>
     nativeFingerprint(
       [...states].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
@@ -59,16 +68,16 @@ export async function hasCurrentOwnership(
     fingerprint(discovery.plan.typeConfigs) !==
     fingerprint(stored.coloringInputs.seeds)
   )
-    return false;
+    return undefined;
   discovery.plan.dependencyFacts = stored.dependencyFacts;
   discovery.plan.dependencyFactPhase = 'locked';
   discovery.plan.declarationContexts = stored.declarationContexts;
   finalizeLockedOwnership({ config, discovery });
-  return (
+  const isCurrent =
     fingerprint(discovery.plan.typeConfigs) ===
       fingerprint(stored.typeConfigs) &&
     fingerprint(discovery.plan.solutions) === fingerprint(stored.solutions) &&
     fingerprint(discovery.plan.sourceConfigPathsByEntry) ===
-      fingerprint(stored.sourceConfigPathsByEntry)
-  );
+      fingerprint(stored.sourceConfigPathsByEntry);
+  return isCurrent ? { ambiguities: inference.ambiguities } : undefined;
 }

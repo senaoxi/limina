@@ -36,13 +36,17 @@ Source config 是唯一执行归属单位。嵌套 solution 的 DFS 收集所有
 | 维度                | 来源                                                                                                                                             | 拒绝的跨维度推导                                                  |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | Workspace authority | [validated create](../../../packages/limina/src/core/workspace/validated/create.ts)：raw discovery → exclusions/overlap/islands/output authority | “manager adapter 找到包”不能证明它在本次治理范围                  |
-| Semantic authority  | explicit/config/root/dependency evidence 在 ownership 求解中锁定                                                                                 | “最后由 vue-tsc 构建”不能改写成 Vue 解析                          |
+| Semantic authority  | 显式选择或去重后的唯一 config/root/dependency 推导结果在 ownership 求解中锁定                                                                    | “最后由 vue-tsc 构建”不能改写成 Vue 解析                          |
 | Execution ownership | explicit leaf closure、equality coloring、fallback、finalization                                                                                 | 构建身份不证明 runtime import 被 package 授权                     |
 | Source ownership    | 实际 root membership、validated package/source rules                                                                                             | 目录最接近、exports 名称、Oxc 找到文件都不能替代实际 owner        |
 | Artifact authority  | namespace/authenticated plan/revision 与 managed-output attribution                                                                              | 输出反向归属不重新创造源码 reference；有输出路径不等于允许写      |
 | Mutation authority  | trusted base 的物理 identity、scope、generation、path/identity guards                                                                            | lexical containment 不充分；计划写某路径不能授权沿 symlink 改别处 |
 
 一个项目可以有 TypeScript semantic authority、`vue-tsc` final owner、source package owner 与独立 output authority；这是合法组合。[I01–I12](./invariants.md) 说明哪些转换受保护。
+
+隐式归属与执行归属保持分离。推导出零个或多个不同框架 Checker 时，Local Owner 保持 Pending，Freeze 锁定 Native TypeScript baseline；唯一推导结果直接选定对应框架。多个隐式结果在最终报告中产生 Warning，不进入 Conflicting 或 Unavailable Authority 状态。不兼容显式选择或精确 Build Checker 身份仍遵循既有冲突规则。框架选择可以已知，而所需工具链仍不可用。这些规则复用已有 Owner/Authority 字段，不引入 Candidate 状态或全局枚举。
+
+已选入口及其必要终端配置必须在 discovery、ownership plan、Core work 与具体 candidate 之间保留身份。失败配置或仍在正常框架输入发现中的已选配置，不能因为过滤后的 plan 中没有它而消失。已知空配置保留既有角色。Candidate admission 仍限定在该 candidate 必须满足的入口与关系内，无关的 unavailable 工作不是全局否决。参见[推导语义](./semantics.md#确定性框架推导)。
 
 ## 工作区发现 authority
 
@@ -139,7 +143,7 @@ Svelte 混合构建使用独立的 `ProducerBuildPlan`，不能以部分准入�
 | Load / validate           | config export + root → normalized config/validated plan                                                                   | schema/config 失败可发生在 attempt 发布之前，不能承诺每个 CLI 失败都有新 inventory                                                                                            |
 | Workspace validation      | raw package/config候选 → ValidatedWorkspaceContext                                                                        | overlap、重复物理 package、无效 scope/output authority 阻断后续投影；rawPackages 留作原始证据                                                                                 |
 | Ownership discovery       | default entries、raw references、named scopes → type/solution states                                                      | named solution 的 authoritative closure 此时已参与；不能说所有 solution constraints 都发生在 freeze 后                                                                        |
-| Evidence convergence      | pending native facts / locked checker facts → 完整 dependency requirement set、locked semantic family                     | 先收集全部 pending requirements 再应用依赖锁，避免首个 import 隐藏跨框架冲突                                                                                                  |
+| Evidence convergence      | pending native facts / locked checker facts → 完整 dependency requirement set、locked semantic family                     | 收齐 config/root/dependency 要求后再提交隐式权威；精确 Checker 去重，多框架保持 Pending 与 Native 语义                                                                        |
 | Freeze / color / finalize | locked semantic facts → frozen authority、exact owner、solution closure、checker entries                                  | [resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先 freeze，后 Vue promotion / build coloring / finalization；后面只能改变执行归属 |
 | Graph projection          | requirements + 实际 source membership + implicit refs → declaration / framework relations、generated files、artifact plan | 找不到唯一 owner、deny、checker identity conflict 不能靠最近目录或弱 resolver补齐                                                                                             |
 | Validation                | graph/route/source evidence → 域内 finding、issue/outcome                                                                 | graph、source、proof 各自有前置阶段；proof 的 route/config 失败会限制后续 coverage 判断                                                                                       |

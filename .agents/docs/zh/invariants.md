@@ -26,13 +26,15 @@
 - **Statement / Applies when**：managed type config 的 semantic authority 在 facts convergence 后 freeze；后续 promotion/coloring/fallback/finalization 不能改变它。成功 finalization 为 leaf 确定唯一执行 owner。
 - **Problem**：为共享 declaration build 选用 Vue checker，可能错误地把原生 TS import 改为 Vue module semantics。
 - **Root cause**：解释源码与安排构建使用不同 authority，二者都曾容易被称为 owner。
-- **Enforcement / Why it works**：[ownership types](../../../packages/limina/src/core/build-graph/checker-ownership-types.ts) 分字段；[semantic authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 限定 lock evidence、保存 frozen 值并在 coloring/finalization 后比对；[resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先收齐 requirements 再应用锁。执行选择无法冒充新的语义证据。pending inference 必须具有独立来源的合格 pending-framework-candidate；native source requirement 本身不能锁定 framework authority。
+- **Enforcement / Why it works**：[ownership types](../../../packages/limina/src/core/build-graph/checker-ownership-types.ts) 分字段；[semantic authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 限定 lock evidence、保存 frozen 值并在 coloring/finalization 后比对；[resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先收齐 requirements 再应用锁。执行选择无法冒充新的语义证据。Dependency inference 分类 consumer 实际观察的框架目标；provider 的最终执行 Checker 不是语义证据。物理发现不能证明 Native 编译义务。
 - **Concrete example**：`generated-graph.spec.ts` 中 TS app 导入 Vue project 的 theme TS 后可由 `vue-tsc` 构建，同时 semantic/frozen authority 保持 TypeScript。
-- **Protected property**：语义稳定、import 顺序不隐藏跨框架冲突。
+- **Protected property**：语义稳定，发现顺序不能在多个隐式框架中选出胜者。
 - **Evidence / Strength / Confidence**：[generated graph tests](../../../packages/limina/src/__tests__/generated-graph.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：freeze 是快照与校验机制，不是全对象 deep freeze；named solution 的 explicit ownership constraints 在 discovery 阶段已经存在。
 
 **Native 阶段资格**：[pending baseline](../../../packages/limina/src/core/build-graph/pending-native-context.ts)在最终 Checker 初始化前建立；locked 阶段重新采集而不重标 pending 对象。框架物理候选有独立来源，不授予 Program 加载权。合格补充评估复用 Native 义务规则，重新取得 Locked 绑定后才能参与引用投影及准入；未取得资格的物理命中仅支持选择。输入/epoch/phase 变化撤销旧资格，冻结后冲突显式报告，不循环重选。
+
+**隐式归属守卫**：完整收集 config/root/dependency 要求，按精确 Checker 名称去重后再提交隐式权威。唯一结果直接选定框架；多个不同结果保留 Pending Local Owner 并冻结 TypeScript 语义，最终产生一条非阻断 Warning，不设置 `semanticAuthorityUnavailable`。显式冲突仍然阻断。Coloring 消费有效声明关系，不消费原始推导 Checker 集合。Warning 和 Native baseline freeze 都不证明编译义务不存在。[语义 owner](./semantics.md#确定性框架推导)记录该策略，[实施审查](../../../docs/reviews/checker-ownership-semantic-authority-review.md)记录验收范围。
 
 ## I03 — Importer roots、支撑准入与解析相互独立
 
@@ -108,7 +110,7 @@
 - **Statement / Applies when**：成功的 declaration-provider 两端 exact checker identity 相同，`cacheReuse` 为 reusable；参与执行的 SCC 不能含内部 declaration relation，纯 framework scheduling SCC 可以执行。
 - **Problem**：不同 checker 的中间声明缓存不可仅因语义 family 相近而视作一个构建；禁止所有环又会错杀纯 framework 顺序分组。
 - **Root cause**：identity equality 与 execution dependency direction 是不同关系。
-- **Enforcement / Why it works**：[build coloring](../../../packages/limina/src/core/build-graph/checker-build-coloring.ts) 将合法 declaration/solution equality 组成无向 component，单色传播、多色拒绝，再由 [graph-validation](../../../packages/limina/src/core/build-graph/graph-validation.ts) 检查最终边；dependency plan 区分 declaration subset 后检查 SCC。
+- **Enforcement / Why it works**：[build coloring](../../../packages/limina/src/core/build-graph/checker-build-coloring.ts) 将合格声明依赖、已选声明上下文和有效 `implicitRefs` 组成无向 component，单色传播、多色拒绝。纯 solution 聚合和 framework scheduling 不传播颜色。[graph-validation](../../../packages/limina/src/core/build-graph/graph-validation.ts) 随后检查最终边；dependency plan 区分 declaration subset 后检查 SCC。
 - **Concrete example**：已明确为 tsc 和 tsgo 的两个 leaf 不能通过 declaration edge 混色；全部框架调度边组成的 SCC 则不因此产生 declaration cycle error。
 - **Protected property**：编译缓存兼容与执行计划的可解释性。
 - **Evidence / Strength / Confidence**：[generated graph](../../../packages/limina/src/__tests__/generated-graph.spec.ts)、[execution](../../../packages/limina/src/__tests__/execution.spec.ts)；**Strongly executable / Confirmed**。

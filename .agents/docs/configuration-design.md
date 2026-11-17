@@ -32,6 +32,12 @@ Use validated project facts and established defaults wherever they already deter
 
 Expose complexity when customization becomes necessary. Omission should preserve the relevant default, but an explicit empty object or array is not automatically equivalent to omission. For example, [source selection](../../docs/en/config/source-boundary.md) gives `...` a specific default-expansion meaning, and the [cache schema](../../packages/limina/src/config/schema/root.ts) requires `dependencies` in object-form cache configuration. Examples must respect those contracts instead of filling every domain with `{}`.
 
+## Framework inference policy
+
+Automatic framework inference is a deterministic ownership policy, not a separate qualification process. Supported effective config, root-file and dependency features are collected completely and deduplicated by exact checker identity. A unique result selects the framework directly; zero or multiple results retain a pending local owner and freeze the Native TypeScript baseline. Multiple results produce a final nonblocking warning.
+
+There is no new inference switch. Named checker selections, including terminal solution constraints, express an explicit choice; users can also remove features that trigger an unwanted inference. This keeps common framework projects automatic without adding a second configuration policy. Inference does not require separate parser membership approval, candidate grades or a qualification cache. Neither the warning nor explicit selection supplies missing compilation capability. The [semantic record](./semantics.md#from-ownership-candidates-to-a-locked-context) owns collection, freeze and failure semantics; the [checker reference](../../docs/en/config/checkers.md#framework-inference) owns the supported public triggers and examples.
+
 ## Applying the model to Limina
 
 Keep governance scope, checking policy, workflow definition, concurrency control, and analysis-cache reuse distinguishable. `pipelines` answers which steps run and in what order; concurrency options control parallel work; `cache` controls persistent analysis reuse, not every checker-owned cache. Their mechanisms remain owned by the [pipeline reference](../../docs/en/config/pipelines.md), [concurrency reference](../../docs/en/config/execution.md), and [lifecycle record](./lifecycle.md).

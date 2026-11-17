@@ -1,8 +1,5 @@
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
-import {
-  addLocalCheckerRequirement,
-  problemArray,
-} from './checker-ownership-evidence';
+import { addEvidenceIfMissing } from './checker-ownership-evidence';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import type { AutoScope } from './types';
 
@@ -21,18 +18,13 @@ function applyTypeConfigHint(options: {
   const state = options.plan.typeConfigs.get(options.configPath);
   if (state === undefined) return [];
   if (state.authoritativeOwner !== undefined) return [];
-  return problemArray(
-    addLocalCheckerRequirement({
-      config: options.config,
-      evidence: {
-        checker: options.checker,
-        configPath: options.configPath,
-        detail: options.detail,
-        source: 'config',
-      },
-      state,
-    }),
-  );
+  addEvidenceIfMissing(state, {
+    checker: options.checker,
+    configPath: options.configPath,
+    detail: options.detail,
+    source: 'config',
+  });
+  return [];
 }
 
 function applyConfigHint(options: {

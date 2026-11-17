@@ -32,6 +32,12 @@
 
 只有需要定制时才暴露复杂度。省略选项应保留对应默认值，但显式空对象或空数组并不自动等价于省略。例如，[源码选择](../../../docs/zh/config/source-boundary.md)为 `...` 定义了明确的默认展开语义，[缓存 Schema](../../../packages/limina/src/config/schema/root.ts)则要求对象形式的缓存配置包含 `dependencies`。示例必须遵守这些契约，而不是为每个配置域填上 `{}`。
 
+## 框架推导策略
+
+框架自动推导是确定性的归属策略，不是独立资格流程。完整收集受支持的有效 config、root-file 和 dependency 特征，按精确检查器身份去重。唯一结果直接选定框架；零结果或多个结果保持 Pending Local Owner，并冻结 Native TypeScript baseline。多个结果在最终报告中产生非阻断 Warning。
+
+不增加推导开关。具名检查器选择及其聚合配置终端约束表达显式选择；也可以移除触发不期望推导的特征。这让常见框架项目保持自动路由，同时避免增加第二套配置策略。推导不要求独立 parser membership 审批、候选分级或资格缓存。Warning 和显式选择都不补足缺失的编译能力。[语义记录](./semantics.md#从-ownership-候选到-locked-context)负责收集、冻结和失败语义，[检查器参考](../../../docs/zh/config/checkers.md#框架推导)负责受支持的公开触发规则和示例。
+
 ## 在 Limina 中的应用边界
 
 区分治理范围、检查策略、工作流定义、并发控制与分析缓存复用。`pipelines` 回答执行哪些步骤以及顺序；并发选项控制并行工作数量；`cache` 控制持久化分析复用，并非所有 checker 自身的缓存。具体机制仍由[流水线参考](../../../docs/zh/config/pipelines.md)、[并发参考](../../../docs/zh/config/execution.md)和[生命周期记录](./lifecycle.md)维护。

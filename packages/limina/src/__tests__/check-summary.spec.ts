@@ -3,6 +3,7 @@ import {
   LIMINA_CHECK_ISSUE_CODES,
   type LiminaWritableCheckIssueCode,
 } from '../check-reporting/codes';
+import { createFrameworkInferenceIssue } from '../check-reporting/framework-inference';
 import { CHECK_ISSUE_SNAPSHOT_VERSION } from '../check-reporting/snapshot';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 import {
@@ -51,6 +52,60 @@ function createIssue(options: {
 }
 
 describe('check run summary reporting', () => {
+  it('reports every inferred checker ambiguity separately from real blockers', () => {
+    const warnings = Array.from({ length: 7 }, (_, index) =>
+      createFrameworkInferenceIssue({
+        rootDir: '/repo',
+        ambiguity: {
+          sourceConfigPath: `/repo/packages/app-${index}/tsconfig.json`,
+          checkers: ['astro', 'svelte-check'],
+        },
+      }),
+    );
+    const failure = createIssue({
+      code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
+      task: 'source:check',
+      title: 'Actual source failure',
+    });
+    for (const issues of [warnings, [failure, ...warnings]]) {
+      const output = stripAnsi(
+        formatCheckRunSummaryHuman({
+          issues,
+          rootDir: '/repo',
+          run: {
+            command: 'limina check',
+            configPath: '/repo/limina.config.mjs',
+            createdAt: '2026-07-17T00:00:00.000Z',
+            completedAt: '2026-07-17T00:00:01.000Z',
+            result: issues.includes(failure) ? 'failed' : 'passed',
+            tasks: [],
+          },
+        }),
+      );
+      const [beforeWarnings, warningSection] = output.split('Warnings:', 2);
+      expect(warningSection).toBeDefined();
+      expect(beforeWarnings).not.toContain(
+        'Ambiguous framework checker inference',
+      );
+      if (issues.includes(failure))
+        expect(beforeWarnings).toContain('Actual source failure');
+      for (let index = 0; index < 7; index += 1)
+        expect(warningSection).toContain(`packages/app-${index}/tsconfig.json`);
+      expect(
+        warningSection?.match(
+          /Inferred framework checkers: astro, svelte-check/gu,
+        ),
+      ).toHaveLength(7);
+      expect(warningSection).toContain(
+        'Selected semantic authority: TypeScript',
+      );
+      expect(warningSection).toContain(
+        'Local owner before Build Checker Coloring: Pending',
+      );
+      expect(warningSection).toContain('existing Auto fallback');
+    }
+  });
+
   it('creates issue overview counts for result and impact fields', () => {
     const overview = createIssueOverview([
       createIssue({

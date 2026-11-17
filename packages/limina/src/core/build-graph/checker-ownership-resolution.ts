@@ -11,6 +11,7 @@ import {
   collectCheckerDependencyFacts,
   createOwnershipDependenciesByConfig,
 } from './checker-ownership-dependencies';
+import { collectFrameworkInferenceFacts } from './checker-ownership-dependency-facts';
 import {
   type CheckerOwnershipDiscovery,
   createOwnershipSelections,
@@ -20,6 +21,7 @@ import {
   addLocalCheckerRequirement,
   applyRootFileEvidence,
   assertOwnershipPhase,
+  commitFrameworkInference,
 } from './checker-ownership-evidence';
 import {
   finalizeOwnership,
@@ -30,7 +32,10 @@ import {
   freezeSemanticAuthorities,
   validateFrozenSemanticAuthorities,
 } from './checker-semantic-authority';
-import { coreCollectionRun } from './core-collection-run';
+import {
+  coreCollectionRun,
+  recordFrameworkInferenceAmbiguities,
+} from './core-collection-run';
 import { createGeneratedGraphStructuredError } from './problems';
 import type {
   CheckerSelectionResolution,
@@ -181,6 +186,23 @@ export async function resolveCheckerOwnership(options: {
     })),
   );
   runDependencyRequirements({ config: options.config, discovery });
+  collectFrameworkInferenceFacts({
+    config: options.config,
+    discovery,
+    importAnalysis: options.importAnalysisContext,
+    projectConfigCache: options.projectConfigCache,
+  });
+  runDependencyRequirements({ config: options.config, discovery });
+  const inference = commitFrameworkInference({
+    config: options.config,
+    plan: discovery.plan,
+  });
+  discovery.collectionProblems.push(...inference.problems);
+  if (options.projectDependencyCaches !== undefined)
+    recordFrameworkInferenceAmbiguities(
+      options.projectDependencyCaches,
+      inference.ambiguities,
+    );
   discovery.collectionProblems.push(
     ...freezeSemanticAuthorities({
       config: options.config,
@@ -198,6 +220,8 @@ export async function resolveCheckerOwnership(options: {
     problems: discovery.collectionProblems,
   });
   assertCollectedExecution(options.projectDependencyCaches);
+  if (discovery.collectionInputFailure !== undefined)
+    throw discovery.collectionInputFailure;
   finalizeLockedOwnership({ config: options.config, discovery });
   return {
     ownershipPlan: discovery.plan,

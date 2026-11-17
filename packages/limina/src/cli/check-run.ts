@@ -1,6 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
 import { shouldUseColor } from '#utils/reporting';
+import {
+  collectFrameworkInferenceIssues,
+  formatFrameworkInferenceWarnings,
+} from '../check-reporting/framework-inference';
 import { DEFAULT_VISIBLE_ISSUE_LIMIT } from '../check-reporting/inventory-presentation';
 import { createCheckRunRecorder } from '../check-reporting/run-recorder';
 import { formatCheckRunSummaryHuman } from '../check-reporting/summary';
@@ -313,13 +317,22 @@ export async function runConfiguredCheck(options: {
   const executionStart = trace?.now();
   const state: CheckRunState = { passed: false };
   try {
-    state.passed = await runCheckWithCliFlowCleanup(context.flow, () =>
-      isExecuteCheckFlow(context, state),
+    try {
+      state.passed = await runCheckWithCliFlowCleanup(context.flow, () =>
+        isExecuteCheckFlow(context, state),
+      );
+    } finally {
+      if (executionStart !== undefined)
+        trace?.phase('check-execution-and-reporting', executionStart);
+      await finalizeCheckRun(context, state);
+    }
+  } catch (error) {
+    const warnings = formatFrameworkInferenceWarnings(
+      collectFrameworkInferenceIssues(context.preflight),
+      shouldUseColor(),
     );
-  } finally {
-    if (executionStart !== undefined)
-      trace?.phase('check-execution-and-reporting', executionStart);
-    await finalizeCheckRun(context, state);
+    if (warnings.length > 0) process.stderr.write(`\n${warnings}\n`);
+    throw error;
   }
   if (!state.passed) process.exitCode = 1;
   writeCheckSummary({

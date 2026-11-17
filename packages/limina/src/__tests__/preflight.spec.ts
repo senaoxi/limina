@@ -17,6 +17,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { materializeGeneratedArtifactPlan } from '../core/build-graph/materializer';
 import {
   createLiminaArtifactNamespace,
@@ -142,6 +143,124 @@ async function createFixture(): Promise<{
 }
 
 describe('LiminaPreflightManager', () => {
+  it.each([false, true])(
+    'retains converged inference diagnostics after graph completion (failure: %s)',
+    async (fails) => {
+      const fixture = await createFixture();
+      const ambiguities = [
+        {
+          sourceConfigPath: fixture.path('packages/pkg/tsconfig.json'),
+          checkers: ['astro', 'svelte-check'] as const,
+        },
+      ];
+      const failure = new Error('locked semantic failure');
+      const manager: LiminaPreflightManager = new LiminaPreflightManager({
+        config: fixture.config,
+        generatedGraphProvider: async () => {
+          vi.spyOn(
+            manager.providers.buildGraph,
+            'getFrameworkInferenceAmbiguities',
+          ).mockReturnValue(ambiguities);
+          if (fails) throw failure;
+          return createGraph(manager.artifactNamespace);
+        },
+      });
+      try {
+        if (fails)
+          await expect(manager.ensureGeneratedGraph()).rejects.toBe(failure);
+        else await manager.ensureGeneratedGraph();
+        expect(manager.getFrameworkInferenceAmbiguities()).toEqual(ambiguities);
+        createPreflightGenerationController(manager).startNextGeneration();
+        expect(manager.getFrameworkInferenceAmbiguities()).toEqual([]);
+      } finally {
+        manager.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('preserves diagnostics across an early managed refresh failure but replaces a completed empty result', async () => {
+    const fixture = await createFixture();
+    const ambiguities = [
+      {
+        sourceConfigPath: fixture.path('packages/pkg/tsconfig.json'),
+        checkers: ['astro', 'svelte-check'] as const,
+      },
+    ];
+    const manager: LiminaPreflightManager = new LiminaPreflightManager({
+      config: fixture.config,
+      generatedGraphProvider: async () => {
+        vi.spyOn(
+          manager.providers.buildGraph,
+          'getFrameworkInferenceAmbiguities',
+        ).mockReturnValue(ambiguities);
+        return createGraph(manager.artifactNamespace);
+      },
+    });
+    const failure = new Error('managed refresh failed');
+    const materialize = vi.spyOn(
+      LiminaPreflightManager.prototype,
+      'ensureExecutionArtifactsMaterialized',
+    );
+    try {
+      await manager.ensureGeneratedGraph();
+      materialize.mockRejectedValueOnce(failure);
+      await expect(manager.refreshAfterManagedOutputs()).rejects.toBe(failure);
+      expect(manager.getFrameworkInferenceAmbiguities()).toEqual(ambiguities);
+      materialize.mockImplementationOnce(async function (
+        this: LiminaPreflightManager,
+      ) {
+        vi.spyOn(
+          this.providers.buildGraph,
+          'getFrameworkInferenceAmbiguities',
+        ).mockReturnValue([]);
+        vi.spyOn(this.providers.buildGraph, 'getGraph').mockResolvedValue(
+          createGraph(this.artifactNamespace),
+        );
+        await this.ensureGeneratedGraph();
+        throw failure;
+      });
+      await expect(manager.refreshAfterManagedOutputs()).rejects.toBe(failure);
+      expect(manager.getFrameworkInferenceAmbiguities()).toEqual([]);
+    } finally {
+      materialize.mockRestore();
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('discards diagnostics from a rejected analysis attempt before retrying', async () => {
+    const fixture = await createFixture();
+    const retryFailure = new Error('retry failed before inference completed');
+    let attempts = 0;
+    const manager = new LiminaPreflightManager({
+      config: fixture.config,
+      analysisCache: true,
+      generatedGraphProvider: async () => {
+        attempts += 1;
+        if (attempts > 1) throw retryFailure;
+        vi.spyOn(
+          manager.providers.buildGraph,
+          'getFrameworkInferenceAmbiguities',
+        ).mockReturnValue([
+          {
+            sourceConfigPath: fixture.path('packages/pkg/tsconfig.json'),
+            checkers: ['astro', 'svelte-check'],
+          },
+        ]);
+        throw new AnalysisInputDriftError('fixture input drift');
+      },
+    });
+    try {
+      await expect(manager.ensureGeneratedGraph()).rejects.toBe(retryFailure);
+      expect(attempts).toBe(2);
+      expect(manager.getFrameworkInferenceAmbiguities()).toEqual([]);
+    } finally {
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   it('caches generated graph promises within a generation', async () => {
     const fixture = await createFixture();
     const namespace = createLiminaArtifactNamespace({

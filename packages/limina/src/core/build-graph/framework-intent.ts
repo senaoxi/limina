@@ -3,7 +3,12 @@ import { readJsonConfig } from '#core/tsconfig/actions';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
-import { parseTypeScriptCommandLine } from '../../checker/project-base';
+import ts from 'typescript';
+import {
+  createProjectParseHost,
+  parseTypeScriptCommandLine,
+} from '../../checker/project-base';
+import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type {
   FrameworkIntentHint,
   FrameworkIntentInspection,
@@ -21,7 +26,11 @@ function addExtendsHint(options: {
   extendsValue: string;
   hints: FrameworkIntentHint[];
 }): void {
-  if (options.extendsValue.includes('astro/tsconfigs/')) {
+  if (
+    /^astro\/tsconfigs\/(?:base|strict|strictest)(?:\.json)?$/u.test(
+      options.extendsValue,
+    )
+  ) {
     options.hints.push({
       configPath: options.configPath,
       family: 'astro',
@@ -29,7 +38,9 @@ function addExtendsHint(options: {
       value: options.extendsValue,
     });
   }
-  if (options.extendsValue.includes('.svelte-kit/tsconfig')) {
+  if (
+    /(?:^|\/)\.svelte-kit\/tsconfig(?:\.json)?$/u.test(options.extendsValue)
+  ) {
     options.hints.push({
       configPath: options.configPath,
       family: 'svelte',
@@ -40,7 +51,7 @@ function addExtendsHint(options: {
 }
 
 function isAstroType(value: unknown): value is string {
-  return typeof value === 'string' && value.includes('astro');
+  return value === 'astro/client' || value === 'astro/env';
 }
 
 function addAstroTypeHints(options: {
@@ -109,7 +120,7 @@ function getSelectorFamily(selector: string): {
     { family: 'svelte', kind: 'svelte-selector', marker: '.svelte' },
     { family: 'vue', kind: 'vue-selector', marker: '.vue' },
   ] as const;
-  return identities.find(({ marker }) => selector.includes(marker)) ?? null;
+  return identities.find(({ marker }) => selector.endsWith(marker)) ?? null;
 }
 
 function addSelectorHints(options: {
@@ -133,55 +144,85 @@ function addSelectorHints(options: {
   }
 }
 
-function collectOwnFrameworkIntentHints(options: {
-  configObject: Record<string, unknown>;
-  configPath: string;
-}): FrameworkIntentHint[] {
-  const hints: FrameworkIntentHint[] = [];
-  if (isPlainRecord(options.configObject.vueCompilerOptions)) {
-    hints.push({
-      configPath: options.configPath,
-      family: 'vue',
-      kind: 'vue-compiler-options',
-      value: 'vueCompilerOptions',
-    });
-  }
-  addCompilerOptionsHints({ ...options, hints });
-  addSelectorHints({ ...options, hints });
-  for (const extendsValue of getExtendsValues(options.configObject.extends)) {
-    addExtendsHint({
-      configPath: options.configPath,
-      extendsValue,
-      hints,
-    });
-  }
-  return hints;
-}
-
 export function inspectFrameworkIntent(options: {
   config: ResolvedLiminaInputs;
   configObject: Record<string, unknown>;
   configPath: string;
 }): FrameworkIntentInspection {
   try {
-    const { configClosure } = parseTypeScriptCommandLine({
+    const { configClosure, parsed } = parseTypeScriptCommandLine({
       parseOptions: {
         allowNoInputDiagnostics: true,
         configPath: options.configPath,
         projectRootDir: options.config.rootDir,
+        virtualFiles: options.config.virtualFiles,
       },
     });
-    const hints = configClosure.flatMap(({ filePath }) =>
-      collectOwnFrameworkIntentHints({
-        configObject: readJsonConfig(options.config, filePath),
-        configPath: filePath,
-      }),
-    );
+    const hints: FrameworkIntentHint[] = [];
+    addCompilerOptionsHints({
+      configObject: { compilerOptions: parsed.options },
+      configPath: options.configPath,
+      hints,
+    });
+    addSelectorHints({
+      configObject: parsed.raw as Record<string, unknown>,
+      configPath: options.configPath,
+      hints,
+    });
+    const presetHints: FrameworkIntentHint[] = [];
+    for (const { filePath } of configClosure) {
+      const object = readJsonConfig(options.config, filePath);
+      for (const value of getExtendsValues(object.extends))
+        addExtendsHint({
+          configPath: filePath,
+          extendsValue: value,
+          hints: presetHints,
+        });
+    }
+    for (const family of ['astro', 'svelte'] as const) {
+      const matching = presetHints.filter((hint) => hint.family === family);
+      if (
+        matching.length > 0 &&
+        hasEffectivePresetContribution({
+          ...options,
+          parsed,
+          configClosure,
+          family,
+        })
+      )
+        hints.push(...matching);
+    }
+    const configFile = parsed.options.configFile;
+    const ordered: string[] =
+      isPlainRecord(configFile) && Array.isArray(configFile.extendedSourceFiles)
+        ? configFile.extendedSourceFiles
+            .filter((value): value is string => typeof value === 'string')
+            .toReversed()
+        : [];
+    ordered.push(options.configPath);
+    let vue: unknown;
+    let vueConfigPath = options.configPath;
+    for (const filePath of ordered) {
+      const object = readJsonConfig(options.config, filePath);
+      if (!Object.hasOwn(object, 'vueCompilerOptions')) {
+        continue;
+      }
+
+      vue = object.vueCompilerOptions;
+      vueConfigPath = filePath;
+    }
+    if (isPlainRecord(vue))
+      hints.push({
+        configPath: vueConfigPath,
+        family: 'vue',
+        kind: 'vue-compiler-options',
+        value: 'vueCompilerOptions',
+      });
     return {
       intentHints: hints.sort((left, right) =>
         compareCodeUnits(
-          `${left.configPath}\0${left.family}\0${left.kind}\0${left.value}`,
-          `${right.configPath}\0${right.family}\0${right.kind}\0${right.value}`,
+          `${left.family}\0${left.kind}\0${left.value}\0${left.configPath}`,
+          `${right.family}\0${right.kind}\0${right.value}\0${right.configPath}`,
         ),
       ),
       problems: [],
@@ -199,4 +240,52 @@ export function inspectFrameworkIntent(options: {
       ],
     };
   }
+}
+
+function hasEffectivePresetContribution(
+  input: Parameters<typeof inspectFrameworkIntent>[0] &
+    ReturnType<typeof parseTypeScriptCommandLine> & {
+      family: 'astro' | 'svelte';
+    },
+): boolean {
+  const entries = input.configClosure.filter(({ filePath }) =>
+    input.family === 'astro'
+      ? /\/node_modules\/astro\/tsconfigs\/(?:base|strict|strictest)\.json$/u.test(
+          filePath,
+        )
+      : /\/\.svelte-kit\/tsconfig\.json$/u.test(filePath),
+  );
+  if (entries.length === 0) return false;
+  const virtualFiles = new Map(input.config.virtualFiles);
+  for (const entry of entries) virtualFiles.set(entry.filePath, '{}');
+  // The real closure was already observed. This counterfactual must not
+  // publish substituted bytes as another read of the same analysis input.
+  const withoutPreset = ts.getParsedCommandLineOfConfigFile(
+    input.configPath,
+    {},
+    {
+      ...createProjectParseHost(virtualFiles),
+      onUnRecoverableConfigFileDiagnostic(diagnostic) {
+        throw new Error(
+          ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+        );
+      },
+    },
+  );
+  if (withoutPreset === undefined)
+    throw new Error(
+      `Cannot resolve effective preset contributions for ${input.configPath}.`,
+    );
+  const signature = (parsed: typeof input.parsed) => {
+    const options = Object.entries(
+      effectiveCompilerOptions(parsed.options),
+    ).sort(([left], [right]) => compareCodeUnits(left, right));
+    return JSON.stringify([
+      options,
+      parsed.raw?.files,
+      parsed.raw?.include,
+      parsed.raw?.exclude,
+    ]);
+  };
+  return signature(input.parsed) !== signature(withoutPreset);
 }

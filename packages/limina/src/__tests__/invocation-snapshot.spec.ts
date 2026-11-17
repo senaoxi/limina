@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'pathe';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import { createFrameworkInferenceIssue } from '../check-reporting/framework-inference';
 import {
   mergeStandaloneFailureIssues,
   readStandaloneIssueInvocation,
@@ -49,7 +50,7 @@ describe('standalone issue invocation snapshots', () => {
     ).toEqual([callerIssue, structuredIssue]);
   });
 
-  it('creates a fallback only when both issue sources are empty', async () => {
+  it('creates a fallback when no error issue explains the failure', async () => {
     const rootDirectory = await mkdtemp(
       path.join(tmpdir(), 'limina-invocation-'),
     );
@@ -87,6 +88,35 @@ describe('standalone issue invocation snapshots', () => {
       expect(fallbackInvocation.issues).toEqual([
         expect.objectContaining({ title: 'fallback' }),
       ]);
+      const warning = createFrameworkInferenceIssue({
+        rootDir: rootDirectory,
+        ambiguity: {
+          sourceConfigPath: path.join(rootDirectory, 'tsconfig.json'),
+          checkers: ['astro', 'svelte-check'],
+        },
+      });
+      const warnedFailure = await writeStandaloneFailureInvocation({
+        artifactNamespace: namespace,
+        command: 'limina graph prepare',
+        createFallbackIssue,
+        error: new Error('unstructured failure'),
+        issues: [warning],
+        rootDir: rootDirectory,
+      });
+      expect(warnedFailure.issues).toEqual([
+        expect.objectContaining({ title: 'fallback', severity: 'error' }),
+        warning,
+      ]);
+      const structuredFailure = await writeStandaloneFailureInvocation({
+        artifactNamespace: namespace,
+        command: 'limina graph prepare',
+        createFallbackIssue,
+        error: new LiminaStructuredError('failed', [structuredIssue]),
+        issues: [warning],
+        rootDir: rootDirectory,
+      });
+      expect(structuredFailure.issues).toEqual([warning, structuredIssue]);
+      expect(createFallbackIssue).toHaveBeenCalledTimes(2);
     } finally {
       await rm(rootDirectory, { force: true, recursive: true });
     }

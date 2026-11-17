@@ -97,7 +97,7 @@ Vue 声明闭包投影仅在一次[支撑贡献收集](../../../packages/limina/
 
 ## 原生持久化分析缓存
 
-声明路径成员关系使用 analysis adapter v30、Native Program adapter v14 与 Vue analysis adapter v11。持久分析 header 拒绝整个 v29 快照，包括图记录和 context。Evidence 版本保持 5，storage schema 保持 12，generated graph key 保持 v22。当前 Host 目录、大小写策略与 `toPath` 算法身份参与 Native/Vue context 资格判断。恢复对实际目标重新计算 Coverage，并验证物理绑定、输入和 context；当前 Candidate 仍用真实 Checker 执行检查。旧 canonical 证明被拒绝，不进行迁移。[Native cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)与 [Vue cache](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 回归负责拒绝及后续恢复。
+当前持久分析使用 [analysis adapter v31](../../../packages/limina/src/core/analysis-cache/contracts.ts)、[generated graph key v24](../../../packages/limina/src/core/build-graph/analysis-cache.ts)、Native Program adapter v14 与 Vue analysis adapter v11。不兼容的 analysis header 拒绝整个快照，包括图记录和 context。Evidence 版本保持 5，snapshot schema 保持 12，storage version 保持 3，目录保持 `analysis-v2`。当前 Host 目录、大小写策略与 `toPath` 算法身份参与 Native/Vue context 资格判断。恢复对实际目标重新计算 Coverage，并验证物理绑定、输入和 context；当前 Candidate 仍用真实 Checker 执行检查。旧 canonical 证明被拒绝，不进行迁移。[Native cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)与 [Vue cache](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 回归负责拒绝及后续恢复。
 
 Native／Vue snapshot 将声明解析 receipt、结果与类型环境入口一起保存。Adapter identity 使旧解释失效，缺失或不兼容的必要 receipt 触发重新分析。每次收集按当前根 membership 与入口可达性决定治理投影，包括无 membership 的负向判断。Manifest 内容、symlink 绑定、有效 types／typeRoots、声明内容和失败候选仍属于观察输入。删除最后一个合法本地入口时撤销内部贡献，其他合法入口仍保留共享贡献。更新使用现有项目替换生命周期，不扩大 `replaceProject` 的事务范围。
 
@@ -194,6 +194,14 @@ Runtime Hook 是一等依赖观测机制。配置加载／求值阶段的请求�
 普通 native CJS 在 Node 暴露实际加载源码且其他证据完整时可以恢复。[预加载 CJS 准入](../../../packages/limina/src/config/preloaded-commonjs.ts)拒绝检测到的已缓存配置入口／依赖，不把无法核实的缓存求值当作当前求值。`createRequire` 经同步 resolve／load Hook 观测，单独导入 `node:module` 不会使配置失去资格。Tsx CJS extension hook 可能绕过 Node load／源码观测，因此仍 cold；namespace 归一化本身不能证明完整。[CLI 配置边界](../../../packages/limina/src/cli/command-runtime.ts)在求值前拒绝无法识别的 Node 启动 `--require`、`--import`、`--loader` 及对应 `NODE_OPTIONS` 覆盖。Preload 可先填充 Node package 解析缓存再修改 manifest，此时仅 unknown／cold 仍会执行错误配置。仅当实际解析路径属于已安装的 tsx 包时支持该启动；不单凭包名信任。产品转换应使用 `--config-loader tsx`。任意嵌入和第三方 preload 组合不受支持。被 hook 观测到的程序化源码替换不能静默复用仅依据磁盘的摘要。不透明 scheme、未观测格式和重叠加载仍 incomplete；自动完整性仅限可靠观测到的模块加载事实，不覆盖所有 JavaScript 副作用。替换模块加载机制或启动未等待加载工作的配置不在受支持观测边界内；`cache.dependencies` 只为本地文件输入补充证据。
 
 验收归属[模块／门禁测试](../../../packages/limina/src/__tests__/config-module-cache.spec.ts)、[生命周期测试](../../../packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts)和[真实 CLI 进程测试](../../../packages/limina/integration/tests/config-process-cache.spec.ts)。必须先有 warm 正控制，再分别破坏 schema／version／module／incomplete／content／binding／edge；断言应观察旧模型采用或 graph 恢复和 Program 数量，不能只检查最终输出。跨进程用例启动新 Node 进程并复用同一磁盘快照。Loader 可信性用例区分过期求值、不安全恢复和主动 cold。Force、issue-only 查询、禁用／只读缓存、分析失败、严格漂移、clean 发布和真实竞争 writer 保留原合同。性能比较须包含完整命令及加载耗时、磁盘／输出 hash、Program、快照读取／解析／校验／写入成本及体积；测试通过或磁盘零 hash 不证明整体提速或未经测试的平台兼容性。
+
+### 框架推导重放与 Warning
+
+框架推导复用 `effectiveConfigVersion`、analysis adapter identity 和 generated-graph key，当前版本记录于[原生持久化分析缓存](#原生持久化分析缓存)。推导策略改变算法身份，不引入新的 DTO、snapshot schema、storage version 或缓存目录。Checker 自有 `.tsbuildinfo` 保持独立，不增加资格指纹、Parser 恢复或独立 Warning Cache。
+
+[Ownership replay](../../../packages/limina/src/core/build-graph/cached-ownership-replay.ts) 重建当前 config/root/dependency 要求，按精确 Checker 身份去重，使用与冷分析相同的零/唯一/多命中策略。已存 final colors 不能授予当前语义权威。Cold、warm 和 force 路径的 authority、Pending Owner 及 Warning 的 config/checker 身份必须一致。即使旧 plan 与 candidate 同时遗漏同一 leaf，也须保留必要已选配置。实际 Checker 输出继续遵循独立的执行准入合同。
+
+多框架诊断是当前 invocation 的结果。[既有 Issue Reporter](../../../packages/limina/src/check-reporting/framework-inference.ts)赋予 `LIMINA_GRAPH_FRAMEWORK_INFERENCE_AMBIGUOUS`、`graph:prepare` 和 warning severity。最终 check summary 在 blocker 上限之外逐配置列出；独立 CLI 在 finalization 中将 Warning 卡片写到 stderr，保留机器可读的 stdout。Preflight Manager 在成功和失败路径捕获诊断，replay 重建当前歧义。Warning 中的 Pending Owner 描述染色前时点，不表示最终执行归属仍未确定。Warning 不作为新 ownership 状态持久化，也不能作为权威恢复。Native/Vue 事实缓存能力及 Astro/Svelte 持久缓存支持保持不变。
 
 ## Provider-owned 原始语法复用
 

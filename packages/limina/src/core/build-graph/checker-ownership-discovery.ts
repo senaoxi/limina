@@ -10,6 +10,7 @@ import { toPosixPath, toRelativePath } from '#utils/path';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import { retainAnalysisFailure } from './analysis-failure';
 import type { AutoScopeProject } from './auto-checker-types';
 import { applyConfigEvidence } from './checker-ownership-config-evidence';
 import { resolveOwnershipEntries } from './checker-ownership-entries';
@@ -30,6 +31,7 @@ import type {
 } from './types';
 
 export interface CheckerOwnershipDiscovery {
+  collectionInputFailure?: Error;
   collectionProblems?: string[];
   sourceConfigCoverage?: SourceConfigCoverageIndex;
   activatedRegions?: WorkspaceRegionPathIndex;
@@ -121,19 +123,17 @@ export async function discoverCheckerOwnership(options: {
     config: options.config,
     sourceConfigPaths: options.workspaceSourceConfigPaths,
   });
-  const sourceCoverage =
-    options.restoredSourceCoverage ??
-    prepareNativeSourceBaseline({
-      ...options,
-      entries: activeEntryPaths,
-    }).coverageIndexes[0];
   const collectionProblems: string[] = [];
+  const inputFailures = new Map<string, Error>();
   const explicitOwnerByEntryPath = createExplicitOwnerByEntryPath({
     problems: collectionProblems,
     config: options.config,
     selections: namedSelections,
   });
   const scopes = collectOwnershipScopes({
+    onInputError: (configPath, error) => {
+      if (!inputFailures.has(configPath)) inputFailures.set(configPath, error);
+    },
     onProblems: (problems) => {
       collectionProblems.push(...problems);
     },
@@ -144,10 +144,34 @@ export async function discoverCheckerOwnership(options: {
     projectConfigCache: options.projectConfigCache,
   });
   const projectByConfigPath = createProjectByConfigPath(scopes);
+  const baseline =
+    options.restoredSourceCoverage === undefined
+      ? prepareNativeSourceBaseline({
+          ...options,
+          entries: activeEntryPaths,
+          discoveredProjects: projectByConfigPath,
+        })
+      : undefined;
+  const sourceCoverage =
+    options.restoredSourceCoverage ?? baseline?.coverageIndexes[0];
   const plan = createOwnershipPlan({
     directReferences: createDirectSolutionReferences(scopes),
     projectByConfigPath,
   });
+  const enumerations = sourceCoverage?.configurations ?? [];
+  for (const enumeration of enumerations) {
+    if (
+      enumeration.state === 'enumerated' &&
+      enumeration.members.length > 0 &&
+      !inputFailures.has(enumeration.configId) &&
+      !plan.typeConfigs.has(enumeration.configId) &&
+      !plan.solutions.has(enumeration.configId)
+    ) {
+      collectionProblems.push(
+        `Selected source config has no ownership result: ${enumeration.configId}`,
+      );
+    }
+  }
   const managedEntryPaths = activeEntryPaths.filter(
     (entryPath) =>
       plan.typeConfigs.has(entryPath) || plan.solutions.has(entryPath),
@@ -168,7 +192,47 @@ export async function discoverCheckerOwnership(options: {
     ...applyConfigEvidence({ config: options.config, plan, scopes }),
   );
   registerCoreWork(options.projectDependencyCaches, projectByConfigPath);
+  if (options.projectDependencyCaches !== undefined) {
+    for (const [configPath, error] of inputFailures) {
+      const retained = baseline?.failures.some(
+        (failure) =>
+          failure.kind === 'config-parse' &&
+          failure.evidenceIds.includes(configPath),
+      );
+      if (!retained)
+        retainAnalysisFailure(
+          options.projectDependencyCaches,
+          error,
+          configPath,
+        );
+      recordCoreWork(options.projectDependencyCaches, {
+        configPath,
+        phase: 'selection',
+        family: 'unselected',
+        eligibility: 'eligible',
+        execution: 'failed',
+        reason: error.message,
+      });
+    }
+    for (const entry of activeEntryPaths) {
+      if (
+        plan.typeConfigs.has(entry) ||
+        plan.solutions.has(entry) ||
+        (collectionProblems.length === 0 && inputFailures.size === 0)
+      )
+        continue;
+      recordCoreWork(options.projectDependencyCaches, {
+        configPath: entry,
+        phase: 'locked',
+        family: 'unselected',
+        eligibility: 'unavailable',
+        execution: 'not-run',
+        reason: 'authority-unavailable',
+      });
+    }
+  }
   return {
+    collectionInputFailure: inputFailures.values().next().value,
     collectionProblems,
     sourceConfigCoverage: sourceCoverage,
     activatedRegions: options.activatedRegions,

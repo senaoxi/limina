@@ -1,4 +1,9 @@
+import { shouldUseColor } from '#utils/reporting';
 import { defaultTaskFailureCode } from '../check-reporting/codes';
+import {
+  collectFrameworkInferenceIssues,
+  formatFrameworkInferenceWarnings,
+} from '../check-reporting/framework-inference';
 import { writeStandaloneFailureInvocation } from '../check-reporting/invocation-snapshot';
 import { createTaskFailureIssue } from '../check-reporting/snapshot';
 import {
@@ -58,7 +63,10 @@ async function writeStandaloneFailureSession(
     command: session.command,
     createFallbackIssue: () => createFallbackIssue(session, error),
     error,
-    issues: session.issues,
+    issues: [
+      ...session.issues,
+      ...collectFrameworkInferenceIssues(session.preflight),
+    ],
     rootDir: session.config.rootDir,
   });
   const queryLines = formatInvocationQueryLines(
@@ -146,6 +154,13 @@ export async function isRunStandaloneIssueFlow(options: {
     await finalizeCaughtFailure(state);
     throw error;
   } finally {
-    state.session?.preflight.dispose();
+    if (state.session !== undefined) {
+      const warnings = formatFrameworkInferenceWarnings(
+        collectFrameworkInferenceIssues(state.session.preflight),
+        shouldUseColor(),
+      );
+      if (warnings.length > 0) process.stderr.write(`\n${warnings}\n`);
+      state.session.preflight.dispose();
+    }
   }
 }

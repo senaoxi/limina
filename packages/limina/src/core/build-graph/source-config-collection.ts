@@ -39,6 +39,7 @@ import type { CheckerSourceConfigCollection } from './types';
 
 interface CollectionContext {
   onInputError?: (configPath: string, error: Error) => void;
+  onInvalidReference?: (configPath: string, error: Error) => void;
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: ResolvedCheckerConfig['name'];
   checkerPreset: ResolvedCheckerConfig['name'];
@@ -54,6 +55,9 @@ interface CollectionContext {
   projectConfigCache?: CheckerProjectConfigCache;
   seenConfigs: Set<string>;
   sourceConfigInspector?: SourceConfigInspector;
+  sourceConfigParser?: (
+    configPath: string,
+  ) => Pick<SourceConfigAnalysis, 'configClosure' | 'fileNames' | 'options'>;
 }
 
 type SourceConfigInspector = (options: {
@@ -74,6 +78,7 @@ interface SourceConfigAnalysis {
 }
 
 interface CollectCheckerSourceConfigsOptions {
+  onInputError?: (configPath: string, error: Error) => void;
   onProblems?: (problems: string[]) => void;
   sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
@@ -219,11 +224,11 @@ function collectSolutionReference(options: {
       options.context.config.rootDir,
     )
   ) {
-    const { config, onInputError, problems } = options.context;
+    const { config, onInvalidReference, problems } = options.context;
     const reason =
       'Solution membership target is missing or is not an ordinary config';
-    if (onInputError) {
-      onInputError(
+    if (onInvalidReference) {
+      onInvalidReference(
         options.fromConfigPath,
         new TsconfigInputError(`${reason}: ${options.referencePath}`),
       );
@@ -446,17 +451,19 @@ function parseSourceConfig(options: ConfigVisit): SourceConfigAnalysis | null {
   ) {
     return null;
   }
-  const parsed = parseCheckerProjectConfigForContext({
-    allowNoInputDiagnostics: true,
-    cache: options.projectConfigCache,
-    configPath: options.sourceConfigPath,
-    context: {
-      checkerPresets: [options.checkerPreset],
-      extensions: resolveDiscoveryExtensions(options),
-    },
-    projectRootDir: options.config.rootDir,
-    virtualFiles: options.config.virtualFiles,
-  });
+  const parsed =
+    options.sourceConfigParser?.(options.sourceConfigPath) ??
+    parseCheckerProjectConfigForContext({
+      allowNoInputDiagnostics: true,
+      cache: options.projectConfigCache,
+      configPath: options.sourceConfigPath,
+      context: {
+        checkerPresets: [options.checkerPreset],
+        extensions: resolveDiscoveryExtensions(options),
+      },
+      projectRootDir: options.config.rootDir,
+      virtualFiles: options.config.virtualFiles,
+    });
   return {
     configObject,
     configClosure: parsed.configClosure,

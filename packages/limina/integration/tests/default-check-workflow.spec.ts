@@ -330,3 +330,78 @@ it('retains the historical invocation when a later config fails to load', async 
   expect((await f.run(['check'])).code).toBe(1);
   expect(await readCheckIssueSnapshot(f.cwd)).toEqual(previous);
 });
+
+it('keeps inferred checker warnings nonblocking across cold, warm, forced and failed checks', async () => {
+  const f = await fixture();
+  await f.config({ scope });
+  const tsconfigPath = f.file('packages/app/tsconfig.json');
+  const original = await readFile(tsconfigPath, 'utf8');
+  await writeFile(
+    tsconfigPath,
+    original.replace(
+      '"src/**/*.ts"',
+      '"src/**/*.ts", "src/**/*.svelte", "src/**/*.astro", "src/other/**/*.astro"',
+    ),
+  );
+  let warningId: string | undefined;
+  for (const arguments_ of [['check'], ['check'], ['check', '--force']]) {
+    const result = await f.run(arguments_);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const snapshot = await inventory(f);
+    const warnings = snapshot.issues.filter(
+      (issue) => issue.code === codes.graphFrameworkInferenceAmbiguous,
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      severity: 'warning',
+      filePath: 'packages/app/tsconfig.json',
+      detailLines: expect.arrayContaining([
+        'Inferred framework checkers: astro, svelte-check',
+      ]),
+    });
+    warningId ??= warnings[0]!.id;
+    expect(warnings[0]!.id).toBe(warningId);
+    expect(snapshot.run!.result).toBe('passed');
+    expect(result.stdout).toContain('Warnings:');
+    expect(
+      result.stdout.match(/Ambiguous framework checker inference/gu),
+    ).toHaveLength(1);
+    expect(result.stdout).toContain(
+      'Local owner before Build Checker Coloring: Pending',
+    );
+  }
+  const prepared = await f.run(['graph', 'prepare']);
+  expect(prepared.code, prepared.stdout + prepared.stderr).toBe(0);
+  expect(
+    prepared.stderr.match(/Ambiguous framework checker inference/gu),
+  ).toHaveLength(1);
+  const exported = await f.run(['graph', 'export']);
+  expect(exported.code, exported.stdout + exported.stderr).toBe(0);
+  expect(() => JSON.parse(exported.stdout)).not.toThrow();
+  await writeFile(
+    f.file('packages/app/src/index.ts'),
+    'export const value: number = "invalid";\n',
+  );
+  const failed = await f.run(['check']);
+  expect(failed.code, failed.stdout + failed.stderr).not.toBe(0);
+  const failedSnapshot = await inventory(f);
+  expect(
+    failedSnapshot.issues.filter(
+      (issue) => issue.code === codes.graphFrameworkInferenceAmbiguous,
+    ),
+  ).toHaveLength(1);
+  expect(
+    failedSnapshot.issues.some((issue) => issue.severity === 'error'),
+  ).toBe(true);
+  expect(failed.stdout).toContain('Warnings:');
+  expect(failedSnapshot.run!.result).toBe('failed');
+  await writeFile(tsconfigPath, original);
+  await writeFile(
+    f.file('packages/app/src/index.ts'),
+    'export const value = 1;\n',
+  );
+  const resolved = await f.run(['check']);
+  expect(resolved.code, resolved.stdout + resolved.stderr).toBe(0);
+  expect((await inventory(f)).issues).toEqual([]);
+  expect(resolved.stdout).not.toContain('Warnings:');
+});

@@ -25,7 +25,10 @@ import type {
 import type { FileOwnerLookup } from './file-owner-lookup';
 import { prepareLockedSemanticProject } from './locked-semantic-project';
 import { qualifiedPendingContext } from './pending-native-context';
-import { assessPendingSupplement } from './pending-supplemental-assessment';
+import {
+  assessPendingSupplement,
+  assessUnselectedFrameworkRequest,
+} from './pending-supplemental-assessment';
 
 interface PendingOwnershipEvidence {
   failures?: string[];
@@ -216,8 +219,17 @@ function pendingCandidate(
     supplementalDiscovery,
     supplementalCoverage,
   };
-  if (supplementalDiscovery === undefined || candidate.family !== 'vue')
-    return result;
+  if (supplementalDiscovery === undefined) return result;
+  result.supplementalAssessment = assessUnselectedFrameworkRequest({
+    context: native.nativeEvidence!.contexts[0]!,
+    premises,
+    discovery: supplementalDiscovery,
+    coverage: candidate.coverage,
+    roots: native.nativeInventory!.roots.map((item) => item.root),
+    emitOptions: context.semantic.project.options,
+    occurrence: options.importRecord,
+  });
+  if (candidate.family !== 'vue') return result;
   const owner = context.discovery.projectByConfigPath.get(
     candidate.owningConfigPath,
   )?.context.vueSemanticIdentity;

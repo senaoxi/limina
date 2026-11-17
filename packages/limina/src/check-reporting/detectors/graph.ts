@@ -3,6 +3,17 @@ import { FALLBACK_CONTRACT_TEST, FAULT_FIXTURE_TEST } from './shared';
 import type { PartialDetectorCoverageRegistry } from './types';
 
 export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
+  [LIMINA_CHECK_ISSUE_CODES.graphFrameworkInferenceAmbiguous]: {
+    kind: 'integration',
+    producers: [
+      'packages/limina/src/check-reporting/framework-inference.ts#createFrameworkInferenceIssue',
+    ],
+    task: 'graph:prepare',
+    tests: [
+      'packages/limina/integration/tests/default-check-workflow.spec.ts',
+      'packages/limina/src/__tests__/check-summary.spec.ts',
+    ],
+  },
   [LIMINA_CHECK_ISSUE_CODES.graphAccessDenied]: {
     kind: 'fixture',
     producers: [

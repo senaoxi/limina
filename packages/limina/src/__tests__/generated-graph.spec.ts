@@ -32,6 +32,7 @@ import {
   projectCompilationPrerequisite,
   projectSupplementalPrerequisite,
 } from '../core/build-graph/compilation-prerequisite';
+import { readFrameworkInferenceAmbiguities } from '../core/build-graph/core-collection-run';
 import { hasValidRestoredDeclarationContexts } from '../core/build-graph/declaration-context-candidate';
 import * as generatedConfigs from '../core/build-graph/generated-configs';
 import type { DependencyAnalysisResult } from '../core/build-graph/types';
@@ -318,6 +319,541 @@ async function readGeneratedReferences(options: {
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
+  it('does not probe unused Vue tools for an explicit Native solution terminal', async () => {
+    const fixture = await createFixture({
+      'packages/solution/tsconfig.json': json({
+        files: [],
+        references: [{ path: '../app' }],
+      }),
+      'packages/app/src/index.ts': 'export const value = 1;',
+      'packages/app/src/App.vue': '<template>Hello</template>',
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*'],
+      }),
+    });
+    try {
+      await rm(path.join(fixture.rootDir, 'node_modules/vue-tsc'));
+      const graph = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        scope: {
+          ...fixture.config.scope,
+          checkers: { tsc: { include: ['packages/solution/tsconfig.json'] } },
+        },
+      });
+      expect(
+        graph.ownershipPlan.typeConfigs.get(
+          fixture.path('packages/app/tsconfig.json'),
+        ),
+      ).toMatchObject({
+        authoritativeOwner: 'tsc',
+        finalOwner: 'tsc',
+        frozenSemanticAuthority: { family: 'typescript', source: 'explicit' },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not infer Astro from a preset whose effective contributions are all overridden', async () => {
+    const presetPath = path.join(
+      resolveInstalledPackageRoot({
+        installedName: 'astro',
+        packageName: 'astro',
+      }),
+      'tsconfigs/base.json',
+    );
+    const preset = ts.parseConfigFileTextToJson(
+      presetPath,
+      readFileSync(presetPath, 'utf8'),
+    ).config as { compilerOptions: Record<string, unknown> };
+    const fixture = await createFixture({
+      'packages/app/src/index.ts': 'export const value = 1;',
+      'packages/app/tsconfig.json': json({
+        extends: 'astro/tsconfigs/base',
+        compilerOptions: {
+          ...preset.compilerOptions,
+          types: [],
+          plugins: [],
+          noLib: true,
+        },
+        include: ['src/**/*.ts'],
+        exclude: [],
+      }),
+    });
+    try {
+      await linkAstroToolchain(fixture.rootDir);
+      const graph = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        scope: { ...fixture.config.scope, checkers: {} },
+      });
+      expect(
+        graph.ownershipPlan.typeConfigs.get(
+          fixture.path('packages/app/tsconfig.json'),
+        ),
+      ).toMatchObject({
+        finalOwner: 'tsc',
+        frozenSemanticAuthority: { family: 'typescript' },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each([false, true])(
+    'matches Vue parser extension precedence through multiple extends: leaf override=%s',
+    async (leafOverride) => {
+      const fixture = await createFixture({
+        'base-a.json': json({ vueCompilerOptions: { extensions: ['.md'] } }),
+        'base-b.json': json({ vueCompilerOptions: { extensions: ['.html'] } }),
+        'packages/app/src/App.md':
+          '<template>Excluded inherited extension</template>',
+        'packages/app/src/App.html': '<template>Current extension</template>',
+        'packages/app/tsconfig.json': json({
+          extends: ['../../base-a.json', '../../base-b.json'],
+          ...(leafOverride && {
+            vueCompilerOptions: { extensions: ['.html'] },
+          }),
+          compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+        }),
+      });
+      try {
+        const graph = await prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          scope: { ...fixture.config.scope, checkers: {} },
+        });
+        const files = graph.governedSources
+          .get('vue-tsc')!
+          .values()
+          .flatMap((unit) => unit.ownedFileNames)
+          .toArray();
+        expect(files).toContain(
+          fixture.path(`packages/app/src/App${leafOverride ? '.html' : '.md'}`),
+        );
+        expect(files).not.toContain(
+          fixture.path(`packages/app/src/App${leafOverride ? '.md' : '.html'}`),
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'preserves obligations after an Auto consumer infers multiple frameworks: noResolve=%s',
+    async (noResolve) => {
+      const fixture = await createFixture({
+        'packages/app/src/index.ts':
+          "import Component from '../../view/src/App.vue'; export const value = Component;",
+        'packages/app/tsconfig.json': json({
+          compilerOptions: {
+            ...managedOutputCompilerOptions(),
+            noLib: true,
+            noResolve,
+          },
+          include: ['src/**/*.ts', 'src/**/*.astro'],
+        }),
+        'packages/view/src/index.ts': 'export const value = 1;',
+        'packages/view/src/App.vue':
+          '<script setup lang="ts">const value = 1;</script>',
+        'packages/view/tsconfig.json': json({
+          compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+          include: ['src/**/*'],
+        }),
+      });
+      const caches = createProjectDependencyCaches();
+      try {
+        const result = prepareGeneratedTsconfigGraph(
+          {
+            ...fixture.config,
+            scope: {
+              ...fixture.config.scope,
+              checkers: {},
+            },
+          },
+          { projectDependencyCaches: caches },
+        );
+        if (noResolve) {
+          const graph = await result;
+          expect(graph.dependencyEdges).toEqual([]);
+          expect(
+            graph.ownershipPlan.typeConfigs.get(
+              fixture.path('packages/view/tsconfig.json'),
+            ),
+          ).toMatchObject({
+            finalOwner: 'vue-tsc',
+            frozenSemanticAuthority: { family: 'vue' },
+          });
+        } else
+          await expect(result).rejects.toThrow(
+            'framework-semantic-authority-required',
+          );
+        expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
+          {
+            sourceConfigPath: fixture.path('packages/app/tsconfig.json'),
+            checkers: ['astro', 'vue-tsc'],
+          },
+        ]);
+        expect(caches.supplementalAssessments).toHaveLength(1);
+        const assessment = caches.supplementalAssessments![0]!;
+        expect(assessment.capability).not.toBe(
+          'framework-semantic-authority-required',
+        );
+        expect(assessment.coverage.state).toBe('unique');
+        expect(assessment.context.authority).toMatchObject({
+          phase: 'locked',
+          family: 'typescript',
+        });
+        if (!noResolve)
+          expect(assessment.obligation.existence).toEqual({
+            state: 'unknown',
+            gapIds: ['framework-semantic-authority-required'],
+          });
+        expect(
+          caches.supplementalAssessments?.map((assessment) =>
+            summarizeCompilationObligation(assessment.obligation),
+          ),
+        ).toEqual([noResolve ? 'not-required' : 'unknown']);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('retains Native unsupported-root errors after ambiguous framework inference', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/App.vue': '<template>Hello</template>',
+      'packages/app/src/Page.astro': '<div />',
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        files: ['src/App.vue', 'src/Page.astro'],
+      }),
+    });
+    const caches = createProjectDependencyCaches();
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph(
+          {
+            ...fixture.config,
+            scope: { ...fixture.config.scope, checkers: {} },
+          },
+          { projectDependencyCaches: caches },
+        ),
+      ).rejects.toThrow(
+        'Native TypeScript cannot compile an explicitly selected root',
+      );
+      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
+        {
+          sourceConfigPath: fixture.path('packages/app/tsconfig.json'),
+          checkers: ['astro', 'vue-tsc'],
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each([false, true])(
+    'keeps ambiguous framework inference pending until Native build fallback: tsgo=%s',
+    async (useTsgo) => {
+      const fixture = await createFixture({
+        'packages/app/src/index.ts': 'export const value = 1;',
+        'packages/app/tsconfig.json': json({
+          compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+          include: ['src/**/*.ts', 'src/**/*.astro', 'src/**/*.svelte'],
+          vueCompilerOptions: {},
+        }),
+      });
+      const caches = createProjectDependencyCaches();
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(
+          {
+            ...fixture.config,
+            scope: { ...fixture.config.scope, checkers: { auto: { useTsgo } } },
+          },
+          { projectDependencyCaches: caches },
+        );
+        const state = graph.ownershipPlan.typeConfigs.get(
+          fixture.path('packages/app/tsconfig.json'),
+        );
+        expect(state).toMatchObject({
+          finalOwner: useTsgo ? 'tsgo' : 'tsc',
+          frozenSemanticAuthority: { family: 'typescript', kind: 'locked' },
+        });
+        expect(state?.semanticAuthorityUnavailable).toBeUndefined();
+        expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
+          {
+            sourceConfigPath: fixture.path('packages/app/tsconfig.json'),
+            checkers: ['astro', 'svelte-check', 'vue-tsc'],
+          },
+        ]);
+        expect(graph.dependencyEdges).toEqual([]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([
+    'extensions',
+    'vitePressExtensions',
+    'petiteVueExtensions',
+  ] as const)(
+    'discovers default-glob Vue members for %s before deciding an empty source',
+    async (key) => {
+      const extension = key === 'petiteVueExtensions' ? '.html' : '.md';
+      const fixture = await createFixture({
+        [`packages/app/src/App${extension}`]:
+          '<script setup lang="ts">const value = 1;</script><template>Hello</template>',
+        'packages/app/tsconfig.json': json({
+          compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+          vueCompilerOptions: { [key]: [extension] },
+        }),
+        'packages/empty/tsconfig.json': json({ files: [] }),
+      });
+      try {
+        const graph = await prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          scope: { ...fixture.config.scope, checkers: {} },
+        });
+        expect(
+          graph.ownershipPlan.typeConfigs.get(
+            fixture.path('packages/app/tsconfig.json'),
+          ),
+        ).toMatchObject({
+          finalOwner: 'vue-tsc',
+          semanticAuthority: { family: 'vue' },
+        });
+        expect(
+          graph.ownershipPlan.typeConfigs.has(
+            fixture.path('packages/empty/tsconfig.json'),
+          ),
+        ).toBe(false);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('uses effective config features after ancestor types plugins and selectors are overridden', async () => {
+    const fixture = await createFixture({
+      'base.json': json({
+        compilerOptions: {
+          types: ['astro/client'],
+          plugins: [{ name: '@astrojs/ts-plugin' }],
+        },
+        files: ['ignored.astro'],
+        include: ['**/*.svelte'],
+      }),
+      'packages/app/src/index.ts': 'export const value = 1;',
+      'packages/app/tsconfig.json': json({
+        extends: '../../base.json',
+        compilerOptions: {
+          ...managedOutputCompilerOptions(),
+          noLib: true,
+          plugins: [],
+        },
+        files: ['src/index.ts'],
+        include: [],
+      }),
+    });
+    const caches = createProjectDependencyCaches();
+    try {
+      const graph = await prepareGeneratedTsconfigGraph(
+        { ...fixture.config, scope: { ...fixture.config.scope, checkers: {} } },
+        { projectDependencyCaches: caches },
+      );
+      const state = graph.ownershipPlan.typeConfigs.get(
+        fixture.path('packages/app/tsconfig.json'),
+      );
+      expect(state).toMatchObject({
+        finalOwner: 'tsc',
+        semanticAuthority: { family: 'typescript' },
+      });
+      expect(
+        state?.evidence.filter((item) => item.source === 'config'),
+      ).toEqual([]);
+      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('collects Config Astro and Native Dependency Vue before committing authority', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import Component from '../../view/src/App.vue'; export const value = Component;",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+        include: ['src/**/*.ts', 'src/**/*.astro'],
+      }),
+      'packages/view/src/App.vue':
+        '<script setup lang="ts">const value = 1;</script>',
+      'packages/view/tsconfig.json': json({
+        compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+        include: ['src/**/*'],
+      }),
+    });
+    const caches = createProjectDependencyCaches();
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph(
+          {
+            ...fixture.config,
+            scope: { ...fixture.config.scope, checkers: {} },
+          },
+          { projectDependencyCaches: caches },
+        ),
+      ).rejects.toThrow('framework-semantic-authority-required');
+      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
+        {
+          sourceConfigPath: fixture.path('packages/app/tsconfig.json'),
+          checkers: ['astro', 'vue-tsc'],
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each(['auto', 'explicit-framework', 'literal-root'] as const)(
+    'preserves Native solution references without reclassifying real source roots: %s',
+    async (mode) => {
+      const fixture = await createFixture({
+        'packages/app/tsconfig.json': json({
+          compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+          ...(mode === 'literal-root'
+            ? { files: ['src/Loose.vue'] }
+            : { include: ['src/**/*'] }),
+          references: [{ path: './tsconfig.lib.json' }],
+        }),
+        'packages/app/tsconfig.lib.json': json({
+          compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+          include: ['lib/**/*'],
+        }),
+        'packages/app/src/Loose.vue': '<template>Hello</template>',
+        'packages/app/lib/index.ts': 'export const value = 1;',
+      });
+      const caches = createProjectDependencyCaches();
+      try {
+        if (mode === 'auto')
+          await rm(path.join(fixture.rootDir, 'node_modules/vue-tsc'));
+        const result = prepareGeneratedTsconfigGraph(
+          {
+            ...fixture.config,
+            scope: {
+              ...fixture.config.scope,
+              checkers:
+                mode === 'explicit-framework'
+                  ? { 'vue-tsc': { include: ['packages/app/tsconfig.json'] } }
+                  : {},
+            },
+          },
+          { projectDependencyCaches: caches },
+        );
+        if (mode === 'auto') {
+          const graph = await result;
+          expect(
+            graph.ownershipPlan.solutions.get(
+              fixture.path('packages/app/tsconfig.json'),
+            )?.sourceConfigPaths,
+          ).toEqual([fixture.path('packages/app/tsconfig.lib.json')]);
+          expect(
+            graph.ownershipPlan.typeConfigs.get(
+              fixture.path('packages/app/tsconfig.lib.json'),
+            ),
+          ).toMatchObject({
+            finalOwner: 'tsc',
+            frozenSemanticAuthority: { family: 'typescript' },
+          });
+          expect(
+            caches.nativeSourceEvidence?.contexts.map(
+              (context) => context.inputs.config,
+            ),
+          ).toContain(fixture.path('packages/app/tsconfig.lib.json'));
+          expect(readFrameworkInferenceAmbiguities(caches)).toEqual([]);
+        } else
+          await expect(result).rejects.toThrow(
+            'Source typecheck config declares project references',
+          );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('retains a custom Vue profile requested from an Astro script during inference', async () => {
+    const fixture = await createFixture({
+      'packages/astro/src/Page.astro':
+        "---\nimport App from '../../vue/src/App.md';\n---\n<App />",
+      'packages/astro/src/index.ts': 'export const value = 1;',
+      'packages/astro/tsconfig.json': json({
+        compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+        include: ['src/**/*'],
+      }),
+      'packages/vue/src/App.md':
+        '<script setup lang="ts">const value = 1;</script><template>Hello</template>',
+      'packages/vue/tsconfig.json': json({
+        compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+        vueCompilerOptions: { extensions: ['.md'] },
+      }),
+    });
+    const caches = createProjectDependencyCaches();
+    try {
+      const graph = await prepareGeneratedTsconfigGraph(
+        { ...fixture.config, scope: { ...fixture.config.scope, checkers: {} } },
+        { projectDependencyCaches: caches },
+      );
+      expect(
+        graph.ownershipPlan.typeConfigs.get(
+          fixture.path('packages/astro/tsconfig.json'),
+        ),
+      ).toMatchObject({
+        finalOwner: 'tsc',
+        frozenSemanticAuthority: { family: 'typescript' },
+      });
+      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
+        {
+          sourceConfigPath: fixture.path('packages/astro/tsconfig.json'),
+          checkers: ['astro', 'vue-tsc'],
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('collects Root Vue and framework-script Dependency Astro before committing authority', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/App.vue':
+        "<script setup lang='ts'>import Page from '../../page/src/Page.astro'; const value = Page;</script>",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+        include: ['src/**/*'],
+      }),
+      'packages/page/src/Page.astro': '---\n---\n<div />',
+      'packages/page/tsconfig.json': json({
+        compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
+        include: ['src/**/*'],
+      }),
+    });
+    const caches = createProjectDependencyCaches();
+    try {
+      await prepareGeneratedTsconfigGraph(
+        { ...fixture.config, scope: { ...fixture.config.scope, checkers: {} } },
+        { projectDependencyCaches: caches },
+      );
+      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
+        {
+          sourceConfigPath: fixture.path('packages/app/tsconfig.json'),
+          checkers: ['astro', 'vue-tsc'],
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it.each(['tsc', 'vue-tsc'])(
     'respects Native coverage and framework authority for non-root type environments: %s',
     async (checker) => {
@@ -1777,90 +2313,115 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('promotes TypeScript auto consumers that import Vue auto scopes', async () => {
-    const fixture = await createFixture({
-      'packages/app/src/index.ts':
-        "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
-      'packages/app/tsconfig.json': json({
-        compilerOptions: {
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          strict: true,
-          target: 'ES2023',
-          types: [],
-        },
-        include: ['src/**/*.ts'],
-      }),
-      'packages/theme/src/Theme.vue':
-        '<script setup lang="ts">const value = 1;</script>\n',
-      'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
-      'packages/theme/tsconfig.json': json({
-        compilerOptions: {
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          strict: true,
-          target: 'ES2023',
-          types: [],
-        },
-        include: ['src/**/*'],
-      }),
-    });
-
-    try {
-      const result = await prepareGeneratedTsconfigGraph({
-        ...fixture.config,
-        scope: {
-          regions: fixture.config.scope?.regions,
-          checkers: { auto: {} },
-        },
-      });
-
-      expect(result.checkers).toMatchObject([
-        {
+  it.each([false, true])(
+    'promotes TypeScript auto consumers that import Vue auto scopes: ambiguous=%s',
+    async (ambiguous) => {
+      const fixture = await createFixture({
+        'packages/app/src/index.ts':
+          "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
+        'packages/app/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
           include: [
-            'packages/app/tsconfig.json',
-            'packages/theme/tsconfig.json',
+            'src/**/*.ts',
+            ...(ambiguous ? ['src/**/*.astro', 'src/**/*.svelte'] : []),
           ],
-          name: 'vue-tsc',
-        },
-      ]);
-      expect(Object.keys(result.manifest.checkers)).toEqual(['vue-tsc']);
-      expect(result.manifest.dependencyEdges).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            cacheReuse: 'reusable',
-            fromChecker: 'vue-tsc',
-            kind: 'declaration-provider',
-            toChecker: 'vue-tsc',
-          }),
-        ]),
-      );
-      expect(result.manifest.checkers['vue-tsc']?.sourceToDts).toMatchObject({
-        'packages/app/tsconfig.json':
-          '.limina/tsconfig/checkers/vue-tsc/projects/packages/app/tsconfig.dts.json',
-        'packages/theme/tsconfig.json':
-          '.limina/tsconfig/checkers/vue-tsc/projects/packages/theme/tsconfig.dts.json',
+        }),
+        'packages/theme/src/Theme.vue':
+          '<script setup lang="ts">const value = 1;</script>\n',
+        'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
+        'packages/theme/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*'],
+        }),
       });
-      const appState = result.ownershipPlan.typeConfigs.get(
-        normalizeAbsolutePath(
-          path.join(fixture.rootDir, 'packages/app/tsconfig.json'),
-        ),
-      );
-      expect(appState).toMatchObject({
-        finalOwner: 'vue-tsc',
-        frozenSemanticAuthority: {
-          family: 'typescript',
-          kind: 'locked',
-        },
-        semanticAuthority: {
-          family: 'typescript',
-          kind: 'locked',
-        },
-      });
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+
+      const caches = createProjectDependencyCaches();
+      try {
+        const result = await prepareGeneratedTsconfigGraph(
+          {
+            ...fixture.config,
+            scope: {
+              regions: fixture.config.scope?.regions,
+              checkers: { auto: {} },
+            },
+          },
+          { projectDependencyCaches: caches },
+        );
+
+        expect(result.checkers).toMatchObject([
+          {
+            include: [
+              'packages/app/tsconfig.json',
+              'packages/theme/tsconfig.json',
+            ],
+            name: 'vue-tsc',
+          },
+        ]);
+        expect(Object.keys(result.manifest.checkers)).toEqual(['vue-tsc']);
+        expect(result.manifest.dependencyEdges).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              cacheReuse: 'reusable',
+              fromChecker: 'vue-tsc',
+              kind: 'declaration-provider',
+              toChecker: 'vue-tsc',
+            }),
+          ]),
+        );
+        expect(result.manifest.checkers['vue-tsc']?.sourceToDts).toMatchObject({
+          'packages/app/tsconfig.json':
+            '.limina/tsconfig/checkers/vue-tsc/projects/packages/app/tsconfig.dts.json',
+          'packages/theme/tsconfig.json':
+            '.limina/tsconfig/checkers/vue-tsc/projects/packages/theme/tsconfig.dts.json',
+        });
+        const appState = result.ownershipPlan.typeConfigs.get(
+          normalizeAbsolutePath(
+            path.join(fixture.rootDir, 'packages/app/tsconfig.json'),
+          ),
+        );
+        expect(
+          result.ownershipPlan.coloringInputs?.seeds.get(
+            fixture.path('packages/app/tsconfig.json'),
+          )?.localOwner,
+        ).toEqual({ kind: 'pending' });
+        expect(readFrameworkInferenceAmbiguities(caches)).toEqual(
+          ambiguous
+            ? [
+                {
+                  sourceConfigPath: fixture.path('packages/app/tsconfig.json'),
+                  checkers: ['astro', 'svelte-check'],
+                },
+              ]
+            : [],
+        );
+        expect(appState).toMatchObject({
+          finalOwner: 'vue-tsc',
+          frozenSemanticAuthority: {
+            family: 'typescript',
+            kind: 'locked',
+          },
+          semanticAuthority: {
+            family: 'typescript',
+            kind: 'locked',
+          },
+        });
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('promotes TypeScript auto consumers transitively through dependency chains', async () => {
     const fixture = await createFixture({
@@ -2082,15 +2643,20 @@ describe('prepareGeneratedTsconfigGraph', () => {
             checkers: { auto: {} },
           },
         }),
-      ).rejects.toThrow(
-        /multiple framework checker requirements[\s\S]*astro[\s\S]*svelte-check/u,
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'tsc',
+            include: ['packages/consumer/tsconfig.json'],
+          }),
+        ]),
       );
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('reports the same pending framework conflict in reverse import order', async () => {
+  it('retains the same pending framework requirements in reverse import order', async () => {
     const fixture = await createFixture({
       'packages/astro/src/Page.astro': '<h1>Astro</h1>\n',
       'packages/astro/tsconfig.json': json({ include: ['src/**/*'] }),
@@ -2121,10 +2687,24 @@ describe('prepareGeneratedTsconfigGraph', () => {
           },
           { importAnalysisContext: analysis.context },
         ),
-      ).rejects.toThrow(
-        /multiple framework checker requirements[\s\S]*astro[\s\S]*svelte-check/u,
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'tsc',
+            include: ['packages/consumer/tsconfig.json'],
+          }),
+        ]),
       );
-      expect(analysis.resolveSupplementalImport).toHaveBeenCalledTimes(2);
+      expect(
+        analysis.resolveSupplementalImport.mock.calls.map(
+          ([request]) => request.specifier,
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          '../../astro/src/Page.astro',
+          '../../svelte/src/App.svelte',
+        ]),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -2875,7 +3455,13 @@ export default component;
       'packages/consumer/src/index.ts':
         "import './not-resolved-by-typescript';\nexport const value = true;\n",
       'packages/consumer/tsconfig.json': json({ include: ['src/**/*.ts'] }),
-      'packages/vue/src/App.vue': '<template><div /></template>\n',
+      'packages/vue/src/App.vue': [
+        '<script setup lang="ts">',
+        "import { ordinary } from './ordinary';",
+        'void ordinary;',
+        '</script>',
+        '<template><div /></template>',
+      ].join('\n'),
       'packages/vue/src/ordinary.ts': 'export const ordinary = true;\n',
       'packages/vue/tsconfig.json': json({ include: ['src/**/*'] }),
     });
@@ -3546,7 +4132,7 @@ export default component;
     ['vue', 'svelte'],
     ['vue', 'astro', 'svelte'],
   ] as const)(
-    'rejects multiple framework root families in one type config: %s',
+    'keeps multiple framework root families under Native semantic authority: %s',
     async (...files) => {
       const sourceFiles = Object.fromEntries(
         files.map((extension) => [
@@ -3571,17 +4157,21 @@ export default component;
       });
 
       try {
-        await expect(
-          prepareGeneratedTsconfigGraph({
-            ...fixture.config,
-            scope: {
-              regions: fixture.config.scope?.regions,
-              checkers: { auto: {} },
-            },
-          }),
-        ).rejects.toThrow(
-          /Semantic authority conflict|generated graph preparation problems/u,
-        );
+        const graph = await prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
+        });
+        expect(
+          graph.ownershipPlan.typeConfigs.get(
+            fixture.path('packages/app/tsconfig.json'),
+          ),
+        ).toMatchObject({
+          finalOwner: 'tsc',
+          frozenSemanticAuthority: { family: 'typescript' },
+        });
       } finally {
         await fixture.cleanup();
       }
@@ -3712,7 +4302,7 @@ export default component;
     },
   );
 
-  it('rejects combined Astro and Svelte root ownership', async () => {
+  it('reports combined Astro and Svelte roots without a semantic conflict', async () => {
     const fixture = await createFixture({
       'packages/app/src/App.astro': '<h1>Astro</h1>\n',
       'packages/app/src/App.svelte': '<h1>Svelte</h1>\n',
@@ -3723,15 +4313,21 @@ export default component;
     });
 
     try {
-      await expect(
-        prepareGeneratedTsconfigGraph({
-          ...fixture.config,
-          scope: {
-            regions: fixture.config.scope?.regions,
-            checkers: { auto: {} },
-          },
-        }),
-      ).rejects.toThrow('Semantic authority conflict');
+      const graph = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: { auto: {} },
+        },
+      });
+      expect(
+        graph.ownershipPlan.typeConfigs.get(
+          fixture.path('packages/app/tsconfig.json'),
+        ),
+      ).toMatchObject({
+        finalOwner: 'tsc',
+        semanticAuthority: { family: 'typescript' },
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -3914,7 +4510,10 @@ export default component;
         ...fixture.config,
         scope: {
           regions: fixture.config.scope?.regions,
-          checkers: { auto: {} },
+          checkers: {
+            auto: {},
+            astro: { include: ['packages/a/tsconfig.json'] },
+          },
         },
       });
       const configPath = (packageName: string) =>
@@ -3966,6 +4565,46 @@ export default component;
         }),
       ]);
       expect(result.dependencyEdges).toEqual(frameworkRelationsMatcher);
+      expect(result.ownershipPlan.typeConfigs.get(aConfigPath)).toMatchObject({
+        frozenSemanticAuthority: { family: 'astro' },
+        finalOwner: 'astro',
+      });
+
+      const caches = createProjectDependencyCaches();
+      const automatic = await prepareGeneratedTsconfigGraph(
+        {
+          ...fixture.config,
+          scope: {
+            regions: fixture.config.scope?.regions,
+            checkers: { auto: {} },
+          },
+        },
+        { projectDependencyCaches: caches },
+      );
+      expect(
+        automatic.ownershipPlan.typeConfigs.get(aConfigPath),
+      ).toMatchObject({
+        frozenSemanticAuthority: { family: 'typescript' },
+        finalOwner: 'tsc',
+      });
+      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
+        {
+          sourceConfigPath: aConfigPath,
+          checkers: ['astro', 'svelte-check', 'vue-tsc'],
+        },
+      ]);
+      expect(
+        automatic.dependencyEdges.filter(
+          (edge) => edge.fromConfigPath === aConfigPath,
+        ),
+      ).toEqual([]);
+      expect(automatic.dependencyEdges).toEqual([
+        expect.objectContaining({
+          fromConfigPath: vueConfigPath,
+          kind: 'declaration-provider',
+          toConfigPath: vueProviderConfigPath,
+        }),
+      ]);
     } finally {
       await fixture.cleanup();
     }

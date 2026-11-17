@@ -156,6 +156,7 @@ function isStartedOutcome(
 }
 
 export function collectExecutionIssues(options: {
+  diagnostics?: readonly LiminaCheckIssue[];
   orderedTasks: readonly ExecutionTask[];
   outcomes: ReadonlyMap<TaskId, ExecutionTaskOutcome>;
   rootDir: string;
@@ -176,7 +177,14 @@ export function collectExecutionIssues(options: {
       },
     ];
   });
-  return sortCollectedIssues(orderedStartedIssues);
+  return sortCollectedIssues([
+    ...orderedStartedIssues,
+    {
+      issues: options.diagnostics ?? [],
+      taskId: 'graph:prepare',
+      taskOrder: Number.MAX_SAFE_INTEGER,
+    },
+  ]);
 }
 
 function createStartedResultView(options: {

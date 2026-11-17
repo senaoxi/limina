@@ -12,6 +12,7 @@ import type {
   AnalysisMetricsRecorder,
   AnalysisRun,
 } from '../application/analysis/analysis-run';
+import type { FrameworkInferenceAmbiguity } from '../core/build-graph/core-collection-run';
 import {
   assertProducerBuildReceipt,
   type ProducerBuildReceipt,
@@ -55,6 +56,9 @@ export class LiminaPreflightManager {
   readonly #configuration: { assertStable(): void };
   #disposed = false;
   #producerReceipt: ProducerBuildReceipt | undefined;
+  #frameworkInferenceAmbiguities:
+    | readonly FrameworkInferenceAmbiguity[]
+    | undefined;
   #consumerPreparation:
     | { receipt: ProducerBuildReceipt; promise: Promise<void> }
     | undefined;
@@ -120,10 +124,13 @@ export class LiminaPreflightManager {
   #replaceProviderGeneration(
     isAdvance: boolean,
     slot?: PreflightGenerationCache['materializationSlot'],
+    shouldPreserveDiagnostics = true,
   ): void {
     this.#assertActive();
     this.#configuration.assertStable();
     this.#assertDefaultProvidersCanAdvance();
+    if (isAdvance || !shouldPreserveDiagnostics)
+      this.#frameworkInferenceAmbiguities = undefined;
     this.#disposeProviders();
     const analysisCache = this.#refreshAnalysis();
     if (isAdvance) {
@@ -168,7 +175,11 @@ export class LiminaPreflightManager {
   }
   #retryAnalysis(): void {
     const pending = this.#cache.generatedGraph;
-    this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
+    this.#replaceProviderGeneration(
+      false,
+      this.#cache.materializationSlot,
+      false,
+    );
     this.#cache.generatedGraph = pending;
   }
   async #prepareConsumerPhase(receipt: ProducerBuildReceipt): Promise<void> {
@@ -199,6 +210,21 @@ export class LiminaPreflightManager {
     )
       throw new Error('Svelte route inputs changed; rerun the command.');
     return graph;
+  }
+  #captureInferenceDiagnostics(generation: number): void {
+    if (generation !== this.#generation) return;
+    const ambiguities =
+      this.providers.buildGraph.getFrameworkInferenceAmbiguities?.();
+    if (ambiguities !== undefined)
+      this.#frameworkInferenceAmbiguities = ambiguities;
+  }
+  async #observeInferenceDiagnostics<T>(pending: Promise<T>): Promise<T> {
+    const generation = this.#generation;
+    try {
+      return await pending;
+    } finally {
+      this.#captureInferenceDiagnostics(generation);
+    }
   }
   get profilingMetrics(): AnalysisMetricsRecorder | undefined {
     return this.#profilingMetrics;
@@ -238,6 +264,9 @@ export class LiminaPreflightManager {
           'Managed output refresh generation changed before publication.',
         );
       // Publish one execution view only after its graph and artifacts are ready.
+      if (pending.#frameworkInferenceAmbiguities !== undefined)
+        this.#frameworkInferenceAmbiguities =
+          pending.#frameworkInferenceAmbiguities;
       this.#disposeProviders();
       this.#cache = pending.#cache;
       this.providers = pending.providers;
@@ -248,6 +277,12 @@ export class LiminaPreflightManager {
       this.#analysisCache = undefined;
       return receipt;
     } catch (error) {
+      if (
+        generation === this.run.generation &&
+        pending.#frameworkInferenceAmbiguities !== undefined
+      )
+        this.#frameworkInferenceAmbiguities =
+          pending.#frameworkInferenceAmbiguities;
       pending.dispose();
       throw error;
     }
@@ -272,20 +307,25 @@ export class LiminaPreflightManager {
     this.providers.dispose?.();
   }
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
-    this.#cache.generatedGraph ??= this.#validateSvelteRoute(
-      queries.loadAnalyzedGraph({
-        cache: this.#analysisCache,
-        configObservation: this.#configuration,
-        source: this,
-        getGraph: this.#generatedGraphProvider,
-        refresh: () => this.#retryAnalysis(),
-      }),
+    this.#cache.generatedGraph ??= this.#observeInferenceDiagnostics(
+      this.#validateSvelteRoute(
+        queries.loadAnalyzedGraph({
+          cache: this.#analysisCache,
+          configObservation: this.#configuration,
+          source: this,
+          getGraph: this.#generatedGraphProvider,
+          refresh: () => this.#retryAnalysis(),
+        }),
+      ),
     );
     return this.#cache.generatedGraph;
   }
   getMaterializedGraph(): GeneratedTsconfigGraphResult | undefined {
     const graph = this.#cache.materializationSlot.receipt?.graph;
     return graph?.purpose === 'complete' ? graph : undefined;
+  }
+  getFrameworkInferenceAmbiguities(): readonly FrameworkInferenceAmbiguity[] {
+    return this.#frameworkInferenceAmbiguities ?? [];
   }
   async hasSvelteCheckProjects(): Promise<boolean> {
     const materialized = this.getMaterializedGraph();
@@ -295,16 +335,23 @@ export class LiminaPreflightManager {
       );
     this.#refreshProducerDiscovery();
     await this.ensureWorkspaceValidated();
-    return this.#recordSvelteRoute(
-      !(await this.providers.buildGraph.canExcludeSvelteCheckProjects()) &&
-        (await this.providers.buildGraph.hasSvelteCheckProjects()),
-    );
+    const generation = this.#generation;
+    try {
+      return this.#recordSvelteRoute(
+        !(await this.providers.buildGraph.canExcludeSvelteCheckProjects()) &&
+          (await this.providers.buildGraph.hasSvelteCheckProjects()),
+      );
+    } finally {
+      this.#captureInferenceDiagnostics(generation);
+    }
   }
   async ensureProducerBuildPlan(): Promise<ProducerBuildPlan> {
     this.#refreshProducerDiscovery();
     await this.ensureWorkspaceValidated();
-    this.#cache.producerBuildPlan ??= this.#validateSvelteRoute(
-      this.providers.buildGraph.getProducerBuildPlan(),
+    this.#cache.producerBuildPlan ??= this.#observeInferenceDiagnostics(
+      this.#validateSvelteRoute(
+        this.providers.buildGraph.getProducerBuildPlan(),
+      ),
     );
     return this.#cache.producerBuildPlan;
   }

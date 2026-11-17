@@ -1,6 +1,7 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
+import { LiminaStructuredError } from '../../check-reporting/errors';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { collectAutoScope, collectExplicitScope } from './auto-checker-scope';
 import type { AutoScopeProject } from './auto-checker-types';
@@ -14,6 +15,7 @@ import type { SourceConfigDiscovery } from './source-config-discovery';
 import type { AutoScope } from './types';
 
 export function collectOwnershipScopes(options: {
+  onInputError?: (configPath: string, error: Error) => void;
   onProblems?: (problems: string[]) => void;
   sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
@@ -22,19 +24,56 @@ export function collectOwnershipScopes(options: {
   explicitOwnerByEntryPath: ReadonlyMap<string, CheckerName>;
   projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScope[] {
-  return options.entryConfigPaths.flatMap((entryConfigPath) => {
-    const explicitChecker =
-      options.explicitOwnerByEntryPath.get(entryConfigPath);
-    const scope =
-      explicitChecker === undefined
-        ? collectAutoScope({ ...options, entryConfigPath })
-        : collectExplicitScope({
-            ...options,
-            checkerName: explicitChecker,
-            entryConfigPath,
-          });
-    return scope === null ? [] : [scope];
-  });
+  const explicitOwnerByConfigPath = new Map(options.explicitOwnerByEntryPath);
+  const scopes: AutoScope[] = [];
+  const entries = [...options.entryConfigPaths].sort(
+    (left, right) =>
+      Number(explicitOwnerByConfigPath.has(right)) -
+      Number(explicitOwnerByConfigPath.has(left)),
+  );
+  for (const entryConfigPath of entries) {
+    if (
+      !options.explicitOwnerByEntryPath.has(entryConfigPath) &&
+      explicitOwnerByConfigPath.has(entryConfigPath)
+    )
+      continue;
+    try {
+      const explicitChecker =
+        options.explicitOwnerByEntryPath.get(entryConfigPath);
+      const scope =
+        explicitChecker === undefined
+          ? collectAutoScope({
+              ...options,
+              explicitOwnerByConfigPath,
+              entryConfigPath,
+            })
+          : collectExplicitScope({
+              ...options,
+              checkerName: explicitChecker,
+              entryConfigPath,
+            });
+      if (scope === null) continue;
+      scopes.push(scope);
+      if (explicitChecker !== undefined) {
+        for (const path of scope.collection.projectConfigPaths)
+          explicitOwnerByConfigPath.set(path, explicitChecker);
+      }
+    } catch (error) {
+      if (
+        options.onInputError !== undefined &&
+        error instanceof Error &&
+        !(error instanceof LiminaStructuredError)
+      ) {
+        options.onInputError(entryConfigPath, error);
+        continue;
+      }
+      if (options.onProblems === undefined) throw error;
+      options.onProblems([
+        `Checker scope discovery failed: ${entryConfigPath}\n${error instanceof Error ? error.message : String(error)}`,
+      ]);
+    }
+  }
+  return scopes;
 }
 
 function isSameProjectShape(

@@ -1,4 +1,5 @@
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
@@ -37,7 +38,7 @@ function formatLocalConflict(options: {
   ].join('\n');
 }
 
-function addEvidenceIfMissing(
+export function addEvidenceIfMissing(
   state: TypeConfigOwnershipState,
   evidence: CheckerEvidence,
 ): void {
@@ -49,6 +50,76 @@ function addEvidenceIfMissing(
       entry.source === evidence.source,
   );
   if (!isExists) state.evidence.push({ ...evidence });
+}
+
+const inferenceSourceOrder: readonly CheckerEvidence['source'][] = [
+  'config',
+  'root-file',
+  'dependency',
+];
+const frameworkCheckers = new Set<CheckerName>([
+  'astro',
+  'svelte-check',
+  'vue-tsc',
+]);
+
+export function frameworkInferenceEvidence(
+  state: TypeConfigOwnershipState,
+): CheckerEvidence[] {
+  return state.evidence
+    .filter(
+      (evidence) =>
+        frameworkCheckers.has(evidence.checker) &&
+        inferenceSourceOrder.includes(evidence.source),
+    )
+    .sort((left, right) => {
+      const rank = (source: CheckerEvidence['source']) =>
+        inferenceSourceOrder.indexOf(source);
+      return (
+        rank(left.source) - rank(right.source) ||
+        compareCodeUnits(left.checker, right.checker) ||
+        compareCodeUnits(left.detail, right.detail)
+      );
+    });
+}
+
+export function uniqueFrameworkInference(
+  state: TypeConfigOwnershipState,
+): CheckerEvidence | undefined {
+  const evidence = frameworkInferenceEvidence(state);
+  return new Set(evidence.map((entry) => entry.checker)).size === 1
+    ? evidence[0]
+    : undefined;
+}
+
+export function commitFrameworkInference(options: {
+  config: ResolvedLiminaInputs;
+  plan: CheckerOwnershipPlan;
+}): {
+  problems: string[];
+  ambiguities: { sourceConfigPath: string; checkers: CheckerName[] }[];
+} {
+  const problems: string[] = [];
+  const ambiguities: { sourceConfigPath: string; checkers: CheckerName[] }[] =
+    [];
+  for (const state of options.plan.typeConfigs.values()) {
+    if (state.authoritativeOwner !== undefined) continue;
+    const evidence = frameworkInferenceEvidence(state);
+    const checkers = [...new Set(evidence.map((entry) => entry.checker))].sort(
+      compareCodeUnits,
+    );
+    if (checkers.length > 1)
+      ambiguities.push({ sourceConfigPath: state.configPath, checkers });
+    else if (checkers.length === 1) {
+      const problem = addLocalCheckerRequirement({
+        ...options,
+        state,
+        evidence: evidence[0]!,
+      });
+      if (problem !== null) problems.push(problem);
+    }
+  }
+  return { problems, ambiguities };
 }
 
 function addAuthoritativeCheckerRequirement(options: {
@@ -231,17 +302,13 @@ function applyRootRequirement(options: {
   requirement: { checker: CheckerName; fileName: string };
   state: TypeConfigOwnershipState;
 }): string[] {
-  const problem = addLocalCheckerRequirement({
-    config: options.config,
-    evidence: {
-      checker: options.requirement.checker,
-      configPath: options.project.configPath,
-      detail: `effective root file ${toRelativePath(options.config.rootDir, options.requirement.fileName)}`,
-      source: 'root-file',
-    },
-    state: options.state,
+  addEvidenceIfMissing(options.state, {
+    checker: options.requirement.checker,
+    configPath: options.project.configPath,
+    detail: `effective root file ${toRelativePath(options.config.rootDir, options.requirement.fileName)}`,
+    source: 'root-file',
   });
-  return problemArray(problem);
+  return [];
 }
 
 export function applyRootFileEvidence(options: {

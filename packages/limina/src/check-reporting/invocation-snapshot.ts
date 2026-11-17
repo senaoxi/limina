@@ -191,9 +191,11 @@ function selectFailureIssues(options: {
 }): LiminaCheckIssue[] {
   const mergedIssues = mergeStandaloneFailureIssues(options);
 
-  return mergedIssues.length > 0
+  return mergedIssues.some(
+    (issue) => issue.severity !== 'warning' && issue.severity !== 'info',
+  )
     ? mergedIssues
-    : [options.createFallbackIssue()];
+    : [options.createFallbackIssue(), ...mergedIssues];
 }
 
 export async function writeStandaloneFailureInvocation(options: {

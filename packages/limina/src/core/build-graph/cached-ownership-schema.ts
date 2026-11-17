@@ -12,7 +12,7 @@ export const authority: z.ZodType<unknown> = z.object({
   source: z.enum(['explicit', 'config', 'root-file', 'dependency']),
 });
 const evidence = z.object({
-  checker,
+  checker: z.enum(['tsc', 'tsgo', 'vue-tsc', 'astro', 'svelte-check']),
   configPath: text,
   detail: text,
   source: z.enum([

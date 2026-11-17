@@ -15,6 +15,7 @@ import { independentModuleInputAbsence } from '../typescript-semantic/native-mod
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import type { EvidenceProject } from './checker-ownership-evidence-project';
+import { frameworkCheckerForTarget } from './checker-ownership-membership';
 import type {
   CheckerDependencyFact,
   PhysicalFrameworkCandidate,
@@ -139,15 +140,6 @@ function getOwnerStateAndProject(options: {
     : { project, state };
 }
 
-function getLockedFrameworkFamily(
-  state: TypeConfigOwnershipState,
-): PhysicalFrameworkCandidate['family'] | null {
-  if (state.semanticAuthority.kind !== 'locked') return null;
-  return state.semanticAuthority.family === 'typescript'
-    ? null
-    : state.semanticAuthority.family;
-}
-
 function createOwnedPhysicalCandidate(options: {
   context: PhysicalCandidateContext;
   owningConfigPath: string;
@@ -155,8 +147,14 @@ function createOwnedPhysicalCandidate(options: {
 }): PhysicalFrameworkCandidate | null {
   const owner = getOwnerStateAndProject(options);
   if (owner === null) return null;
-  const family = getLockedFrameworkFamily(owner.state);
-  if (family === null) return null;
+  const checker = frameworkCheckerForTarget(options.targetPath, owner.project);
+  if (checker === undefined) return null;
+  const family =
+    checker === 'astro'
+      ? 'astro'
+      : checker === 'svelte-check'
+        ? 'svelte'
+        : 'vue';
   return createFamilyCandidate({
     ...options,
     family,

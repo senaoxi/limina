@@ -127,6 +127,13 @@ function readEntry(context: InputReadContext, entry: string) {
   const { config, result, activatedRegions } = context;
   const collection = createEmptySourceConfigCollection([entry]);
   const problems: string[] = [];
+  const reportInput = (configPath: string, error: Error) => {
+    result.diagnostics.push({
+      configPath,
+      phase: 'config',
+      message: error.message,
+    });
+  };
   collectCheckerSourceConfigModules({
     activatedRegions,
     checkerName: 'tsc',
@@ -136,13 +143,8 @@ function readEntry(context: InputReadContext, entry: string) {
     problems,
     seenConfigs: new Set(),
     sourceConfigPath: entry,
-    onInputError: (configPath, error) => {
-      result.diagnostics.push({
-        configPath,
-        phase: 'config',
-        message: error.message,
-      });
-    },
+    onInputError: reportInput,
+    onInvalidReference: reportInput,
   });
   result.diagnostics.push(
     ...problems.map((message) => ({

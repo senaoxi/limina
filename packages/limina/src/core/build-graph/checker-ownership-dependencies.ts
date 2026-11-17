@@ -1,8 +1,7 @@
-import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
-import { compareCodeUnits } from '#utils/collections';
-import { toRelativePath } from '#utils/path';
+import type { ResolvedLiminaInputs } from '#config/runner';
+import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
-import { addLocalCheckerRequirement } from './checker-ownership-evidence';
+import { addEvidenceIfMissing } from './checker-ownership-evidence';
 import {
   assertLockedDependencyFacts,
   declarationDependencyTarget,
@@ -13,8 +12,6 @@ import {
 } from './checker-ownership-membership';
 import type {
   CheckerDependencyFact,
-  CheckerEvidence,
-  CheckerOwnershipPlan,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import type { FileOwnerLookup } from './file-owner-lookup';
@@ -23,75 +20,6 @@ export { collectCheckerDependencyFacts } from './checker-ownership-dependency-fa
 interface DependencyRequirementPass {
   changed: boolean;
   problems: string[];
-}
-
-function formatMultipleDependencyRequirements(options: {
-  config: ResolvedLiminaInputs;
-  evidence: ReadonlyMap<CheckerName, CheckerEvidence>;
-  state: TypeConfigOwnershipState;
-}): string {
-  return [
-    'Checker ownership conflict:',
-    `  config: ${toRelativePath(options.config.rootDir, options.state.configPath)}`,
-    ...[...options.evidence]
-      .sort(([left], [right]) => compareCodeUnits(left, right))
-      .flatMap(([checker, evidence]) => [
-        `  requirement: ${checker}`,
-        `    evidence: ${evidence.detail}`,
-      ]),
-    '  reason: dependency analysis found multiple framework checker requirements in one tsconfig.',
-  ].join('\n');
-}
-
-function hasMultiplePendingRequirements(options: {
-  evidence: ReadonlyMap<CheckerName, CheckerEvidence>;
-  state: TypeConfigOwnershipState;
-}): boolean {
-  return (
-    options.state.localOwner.kind === 'pending' && options.evidence.size > 1
-  );
-}
-
-function applyRequirementEvidence(options: {
-  config: ResolvedLiminaInputs;
-  evidence: ReadonlyMap<CheckerName, CheckerEvidence>;
-  state: TypeConfigOwnershipState;
-}): string[] {
-  const problems: string[] = [];
-  for (const evidence of options.evidence.values()) {
-    const problem = addLocalCheckerRequirement({ ...options, evidence });
-    if (problem !== null) problems.push(problem);
-  }
-  return problems;
-}
-
-function didResolvePending(
-  wasPending: boolean,
-  state: TypeConfigOwnershipState,
-): boolean {
-  return wasPending && state.localOwner.kind === 'resolved';
-}
-
-function applyConsumerRequirements(options: {
-  config: ResolvedLiminaInputs;
-  evidence: ReadonlyMap<CheckerName, CheckerEvidence>;
-  state: TypeConfigOwnershipState;
-}): DependencyRequirementPass {
-  if (options.evidence.size === 0) return { changed: false, problems: [] };
-  if (hasMultiplePendingRequirements(options)) {
-    options.state.semanticAuthorityUnavailable =
-      'ambiguous-framework-requirements';
-    return {
-      changed: false,
-      problems: [formatMultipleDependencyRequirements(options)],
-    };
-  }
-  const wasPending = options.state.localOwner.kind === 'pending';
-  const problems = applyRequirementEvidence(options);
-  return {
-    changed: didResolvePending(wasPending, options.state),
-    problems,
-  };
 }
 
 function addConsumerFact(
@@ -118,20 +46,22 @@ function applyStateRequirements(options: {
   config: ResolvedLiminaInputs;
   facts: readonly CheckerDependencyFact[];
   membership: FileOwnerLookup;
-  plan: CheckerOwnershipPlan;
+  projects: ReadonlyMap<string, AutoScopeProject>;
   state: TypeConfigOwnershipState;
 }): DependencyRequirementPass {
   if (options.state.authoritativeOwner !== undefined) {
     return { changed: false, problems: [] };
   }
   const requirements = collectRequirementsForConsumer(options);
-  const applied = applyConsumerRequirements({
-    ...options,
-    evidence: requirements.evidence,
-  });
+  const before = JSON.stringify(options.state.evidence);
+  options.state.evidence = options.state.evidence.filter(
+    (entry) => entry.source !== 'dependency',
+  );
+  for (const evidence of requirements.evidence.values())
+    addEvidenceIfMissing(options.state, evidence);
   return {
-    changed: applied.changed,
-    problems: [...requirements.problems, ...applied.problems],
+    changed: JSON.stringify(options.state.evidence) !== before,
+    problems: requirements.problems,
   };
 }
 
@@ -158,7 +88,7 @@ export function applyDependencyRequirementPass(options: {
       config: options.config,
       facts: getConsumerFacts(factsByConsumer, state.configPath),
       membership,
-      plan: options.discovery.plan,
+      projects: options.discovery.projectByConfigPath,
       state,
     });
     if (applied.changed) result.changed = true;
