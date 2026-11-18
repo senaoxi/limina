@@ -130,6 +130,38 @@ async function fixture(
 }
 
 describe('migration input topology', () => {
+  it.each(['auto', 'tsc'])(
+    'preserves solution membership under %s when its include finds only a framework sidecar',
+    async (checker) => {
+      const entry = 'packages/app/tsconfig.json';
+      const member = 'packages/app/tsconfig.lib.json';
+      const references = [{ path: './tsconfig.lib.json' }];
+      const f = await fixture({
+        'limina.config.mjs': `export default ${JSON.stringify({ scope: { checkers: { [checker]: checker === 'auto' ? {} : { include: [entry] } } } })};`,
+        [entry]: json({ include: ['src/**/*'], references }),
+        [member]: json({ files: ['./good/src/index.ts'] }),
+        'packages/app/src/Loose.vue': '<template>sidecar</template>',
+      });
+      try {
+        expect((await f.run()).inputConsumable).toBe(true);
+        const migrated = await f.read(entry);
+        expect(migrated.references).toEqual(references);
+        expect(migrated.liminaOptions?.implicitRefs).toBeUndefined();
+        const { topologies } = (await f.report()).verification;
+        expect(topologies.map((topology) => topology.command)).toEqual([
+          'check',
+          'graph',
+        ]);
+        for (const topology of topologies)
+          expect(topology.reachableSources[f.path(entry)]).toEqual([
+            f.path(member),
+          ]);
+      } finally {
+        await f.cleanup();
+      }
+    },
+  );
+
   it.each(['native', 'tsx'] as const)(
     'verifies CommonJS configuration in separate check and graph processes with %s',
     async (configLoader) => {

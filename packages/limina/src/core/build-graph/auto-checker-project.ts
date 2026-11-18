@@ -96,14 +96,12 @@ function getPackageRootForFile(options: {
   return region === null ? options.fallbackPackageRootDir : region.directory;
 }
 
-export function createScopeProject(options: {
-  activatedRegions: WorkspaceRegionPathIndex;
+export function parseScopeProjectInputs(options: {
   checkerName?: CheckerName;
   config: ResolvedLiminaInputs;
   configPath: string;
-  packageRootDir: string;
   projectConfigCache?: CheckerProjectConfigCache;
-}): AutoScopeProject {
+}): NeutralProjectEvidence {
   const context: CheckerProjectParseContext = {
     checkerPresets: [options.checkerName === 'tsgo' ? 'tsgo' : 'tsc'],
     extensions: [],
@@ -125,12 +123,7 @@ export function createScopeProject(options: {
         configObject: readJsonConfig(options.config, options.configPath),
         fileNames: native.fileNames,
       }));
-  const {
-    parsed,
-    fileNames,
-    partition,
-    context: selectedContext,
-  } = isNativeScope
+  return isNativeScope
     ? {
         parsed: native,
         fileNames: native.fileNames,
@@ -138,6 +131,22 @@ export function createScopeProject(options: {
         context,
       }
     : parseNeutralProject(options);
+}
+
+export function createScopeProject(options: {
+  activatedRegions: WorkspaceRegionPathIndex;
+  checkerName?: CheckerName;
+  config: ResolvedLiminaInputs;
+  configPath: string;
+  packageRootDir: string;
+  projectConfigCache?: CheckerProjectConfigCache;
+}): AutoScopeProject {
+  const {
+    parsed,
+    fileNames,
+    partition,
+    context: selectedContext,
+  } = parseScopeProjectInputs(options);
   return {
     analysisGeneration: options.projectConfigCache?.generation ?? 0,
     configClosure: parsed.configClosure,

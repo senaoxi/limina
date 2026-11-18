@@ -1,6 +1,8 @@
-import { parseCheckerProjectConfigForContext } from 'limina/internal/checkers';
-import type { ResolvedLiminaInputs } from 'limina/internal/config/runner';
-import { capabilityDiscoveryExtensions } from 'limina/internal/core/build-graph/generated/file-extensions';
+import type {
+  CheckerName,
+  ResolvedLiminaInputs,
+} from 'limina/internal/config/runner';
+import { parseScopeProjectInputs } from 'limina/internal/core/build-graph/auto-checker-project';
 import {
   collectReferencePathInfosFromConfigObject,
   isLiminaSolutionConfig,
@@ -16,6 +18,7 @@ export async function readMigrationTarget(options: {
   config: ResolvedLiminaInputs;
   configPath: string;
   planningVirtualFiles: Map<string, string>;
+  checkerName?: CheckerName;
 }): Promise<MigrationTarget> {
   const configPath = normalizeAbsolutePath(options.configPath);
   const originalBytes = await originalTargetBytes(
@@ -40,15 +43,10 @@ export async function readMigrationTarget(options: {
     ).references.map((reference) => ({ path: reference.rawPath }));
   const parseFiles = new Map(options.planningVirtualFiles);
   parseFiles.set(configPath, JSON.stringify(parsingObject));
-  const parsed = parseCheckerProjectConfigForContext({
-    allowNoInputDiagnostics: true,
+  const { parsed } = parseScopeProjectInputs({
+    config: { ...options.config, virtualFiles: parseFiles },
     configPath,
-    context: {
-      checkerPresets: ['tsc'],
-      extensions: capabilityDiscoveryExtensions,
-    },
-    projectRootDir: options.config.rootDir,
-    virtualFiles: parseFiles,
+    checkerName: options.checkerName,
   });
   await captureInheritedInputs(
     options.planningVirtualFiles,

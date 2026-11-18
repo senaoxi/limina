@@ -1,5 +1,10 @@
+import type { CheckerName } from 'limina/internal/config/runner';
 import { readOutputOptions } from 'limina/internal/core/build-graph/generated/config-readers';
-import { validateUserMaintainedLiminaTsconfigMetadata } from 'limina/internal/core/tsconfig/actions';
+import { readNamedInputEntries } from 'limina/internal/core/build-graph/input-topology';
+import {
+  collectReferencePathInfosFromConfigObject,
+  validateUserMaintainedLiminaTsconfigMetadata,
+} from 'limina/internal/core/tsconfig/actions';
 import { collectRawWorkspacePackages } from 'limina/internal/core/workspace/actions';
 import { collectWorkspaceInputSnapshot } from 'limina/internal/core/workspace/validated-context';
 import { validateOutputRoot } from 'limina/internal/core/workspace/validated/outputs/validation';
@@ -84,6 +89,7 @@ function register(
 async function parseTarget(
   state: MigrationPlanningState,
   file: string,
+  checkerName?: CheckerName,
 ): Promise<void> {
   try {
     register(
@@ -91,6 +97,7 @@ async function parseTarget(
       await readMigrationTarget({
         config: state.config,
         configPath: file,
+        checkerName,
         planningVirtualFiles: state.snapshot,
       }),
     );
@@ -238,7 +245,27 @@ export async function inventory(state: MigrationPlanningState): Promise<void> {
   await captureConfig(state);
   // Capture every candidate before interpreting any candidate.
   for (const file of state.paths) await capture(state, file);
-  const readable = state.paths.filter((file) => !state.isolated.has(file));
+  const readable = new Set(
+    state.paths.filter((file) => !state.isolated.has(file)),
+  );
+  const named = await readNamedInputEntries(state.config, state.paths);
+  // Named entries establish the parse context for their solution members.
+  const pending = [...named].toReversed();
+  while (pending.length > 0) {
+    const [file, checkerName] = pending.pop()!;
+    if (!readable.delete(file)) continue;
+    await parseTarget(state, file, checkerName);
+    const target = state.targets.get(file);
+    if (!target?.isLiminaSolution) continue;
+    const { references } = collectReferencePathInfosFromConfigObject(
+      state.config.rootDir,
+      file,
+      target.configObject,
+    );
+    for (const { resolvedPath } of references)
+      if (readable.has(resolvedPath) && !named.has(resolvedPath))
+        pending.push([resolvedPath, checkerName]);
+  }
   for (const file of readable) await parseTarget(state, file);
   await inventoryDeclarations(state);
 }

@@ -58,6 +58,7 @@ interface CollectionContext {
   sourceConfigInspector?: SourceConfigInspector;
   sourceConfigParser?: (
     configPath: string,
+    referencedFromConfigPath?: string,
   ) => Pick<SourceConfigAnalysis, 'configClosure' | 'fileNames' | 'options'>;
 }
 
@@ -456,7 +457,10 @@ function parseSourceConfig(options: ConfigVisit): SourceConfigAnalysis | null {
     return null;
   }
   const parsed =
-    options.sourceConfigParser?.(options.sourceConfigPath) ??
+    options.sourceConfigParser?.(
+      options.sourceConfigPath,
+      options.referencedFromConfigPath,
+    ) ??
     parseCheckerProjectConfigForContext({
       allowNoInputDiagnostics: true,
       cache: options.projectConfigCache,

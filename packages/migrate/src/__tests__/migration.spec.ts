@@ -1149,10 +1149,9 @@ describe('runMigration', () => {
     }
   });
 
-  it('treats .vue inputs as effective leaf sources', async () => {
+  it('treats .vue inputs selected by a named Vue checker as leaf sources', async () => {
     const fixture = await createFixture({
-      'limina.config.mjs': `export default {};
-`,
+      'limina.config.mjs': `export default { scope: { checkers: { 'vue-tsc': { include: ['packages/app/tsconfig.json'] } } } };`,
       'packages/app/src/App.vue': '<script setup lang="ts">\n</script>\n',
       'packages/app/tsconfig.json': json({
         compilerOptions: { declarationDir: './types' },
@@ -1164,12 +1163,9 @@ describe('runMigration', () => {
         include: ['src/**/*.ts'],
       }),
     });
-    const config = await createResolvedConfig(fixture.rootDir, {
-      checkers: {
-        tsc: {
-          include: ['packages/app/tsconfig.json'],
-        },
-      },
+    const config = await loadConfig({
+      command: 'migration',
+      cwd: fixture.rootDir,
     });
     const solutionPath = path.join(
       fixture.rootDir,
@@ -1197,6 +1193,9 @@ describe('runMigration', () => {
         include: ['src/**/*.vue'],
         compilerOptions: { declarationDir: './types' },
       });
+      expect(
+        (await readJson<Record<string, unknown>>(solutionPath)).references,
+      ).toBeUndefined();
       await expect(readJson(leafPath)).resolves.toEqual({
         $schema: nestedPackageSchemaPath,
         include: ['src/**/*.ts'],

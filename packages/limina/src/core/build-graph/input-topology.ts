@@ -1,4 +1,5 @@
 import {
+  type CheckerName,
   configContextPath,
   getActiveCheckers,
   getAutoCheckerConfig,
@@ -9,6 +10,7 @@ import { compareCodeUnits } from '#utils/collections';
 import { LiminaStructuredError } from '../../check-reporting/errors';
 import {
   CheckerEntryInputError,
+  type CheckerEntrySelectionOptions,
   createCheckerEntrySelectionOptions,
   resolveCheckerEntrySelection,
 } from '../checkers/entry-selection';
@@ -21,6 +23,7 @@ import {
   collectValidatedWorkspaceContextFromSnapshot,
   collectWorkspaceInputSnapshot,
 } from '../workspace/validated/create';
+import { parseScopeProjectInputs } from './auto-checker-project';
 import { readImplicitReferences } from './generated/config-readers';
 import {
   collectCheckerSourceConfigModules,
@@ -82,33 +85,22 @@ async function isReadWorkspace(
   }
 }
 
-function checkerSelections(config: ResolvedLiminaInputs) {
-  const auto = getAutoCheckerConfig(config.scope?.checkers);
-  return [
-    {
-      checkerName: '__auto__',
-      include: ['**/tsconfig.json'],
-      exclude: auto.exclude ?? [],
-    },
-    ...getActiveCheckers(config).map(createCheckerEntrySelectionOptions),
-  ];
-}
-
 async function readSelection(
   config: ResolvedLiminaInputs,
-  result: InputTopologyResult,
-  selection: ReturnType<typeof checkerSelections>[number],
+  sourceConfigPaths: readonly string[],
+  selection: CheckerEntrySelectionOptions,
+  diagnostics: InputTopologyDiagnostic[],
 ): Promise<string[]> {
   try {
     return (
       await resolveCheckerEntrySelection(
-        { config, sourceConfigPaths: result.workspace!.sourceConfigPaths },
+        { config, sourceConfigPaths },
         selection,
       )
     ).effectiveEntryPaths;
   } catch (error) {
     if (!(error instanceof CheckerEntryInputError)) throw error;
-    result.diagnostics.push({
+    diagnostics.push({
       configPath: configContextPath(config),
       phase: 'entry',
       message: error.message,
@@ -117,10 +109,30 @@ async function readSelection(
   }
 }
 
+export async function readNamedInputEntries(
+  config: ResolvedLiminaInputs,
+  sourceConfigPaths: readonly string[],
+  diagnostics: InputTopologyDiagnostic[] = [],
+): Promise<Map<string, CheckerName>> {
+  const entries = new Map<string, CheckerName>();
+  for (const checker of getActiveCheckers(config)) {
+    const paths = await readSelection(
+      config,
+      sourceConfigPaths,
+      createCheckerEntrySelectionOptions(checker),
+      diagnostics,
+    );
+    for (const path of paths)
+      if (!entries.has(path)) entries.set(path, checker.name);
+  }
+  return entries;
+}
+
 interface InputReadContext {
   config: ResolvedLiminaInputs;
   result: InputTopologyResult;
   activatedRegions: WorkspaceRegionPathIndex;
+  checkerByConfig: Map<string, CheckerName>;
 }
 
 function readEntry(context: InputReadContext, entry: string) {
@@ -143,6 +155,16 @@ function readEntry(context: InputReadContext, entry: string) {
     problems,
     seenConfigs: new Set(),
     sourceConfigPath: entry,
+    sourceConfigParser: (configPath, parentPath) => {
+      const checkerName =
+        context.checkerByConfig.get(configPath) ??
+        (parentPath === undefined
+          ? undefined
+          : context.checkerByConfig.get(parentPath));
+      if (checkerName) context.checkerByConfig.set(configPath, checkerName);
+      return parseScopeProjectInputs({ config, configPath, checkerName })
+        .parsed;
+    },
     onInputError: reportInput,
     onInvalidReference: reportInput,
   });
@@ -235,18 +257,30 @@ async function readTopology(
   const result = emptyTopology();
   if (!(await isReadWorkspace(config, result, readWorkspace))) return result;
   result.configPaths = [...result.workspace!.sourceConfigPaths];
-  const selected = await Promise.all(
-    checkerSelections(config).map((selection) =>
-      readSelection(config, result, selection),
-    ),
+  const named = await readNamedInputEntries(
+    config,
+    result.configPaths,
+    result.diagnostics,
   );
-  result.entries = [...new Set(selected.flat())].sort(compareCodeUnits);
+  const auto = await readSelection(
+    config,
+    result.configPaths,
+    {
+      checkerName: '__auto__',
+      include: ['**/tsconfig.json'],
+      exclude: getAutoCheckerConfig(config.scope?.checkers).exclude ?? [],
+    },
+    result.diagnostics,
+  );
+  const entries = new Set([...named.keys(), ...auto]);
+  result.entries = [...entries].sort(compareCodeUnits);
   const context: InputReadContext = {
     config,
     result,
     activatedRegions: new WorkspaceRegionPathIndex(result.workspace!),
+    checkerByConfig: named,
   };
-  const collections = result.entries.map((entry) => readEntry(context, entry));
+  const collections = [...entries].map((entry) => readEntry(context, entry));
   result.sources = [
     ...new Set(
       collections.flatMap((collection) => [...collection.projectConfigPaths]),
