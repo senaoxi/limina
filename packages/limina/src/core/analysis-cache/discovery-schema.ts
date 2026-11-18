@@ -43,6 +43,7 @@ const descriptor = z.discriminatedUnion('kind', [
   file,
   content,
   tsContent,
+  z.object({ kind: z.literal('config-text'), path: text }),
   directory,
   glob,
 ]);
@@ -51,5 +52,6 @@ export const discoveryRecordSchema: z.ZodType<unknown> = z.object({
   path: text,
   version: text,
   binding: text,
+  configStamp: text.optional(),
   descriptor,
 });

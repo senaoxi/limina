@@ -184,7 +184,7 @@ describe('persistent Vue and mixed graph analysis', () => {
   });
 
   it.each(['appears', 'disappears'] as const)(
-    'reassesses a Pending target that %s across processes',
+    'recomputes a configured Vue consumer’s reference when its target %s across processes',
     (change) => {
       const f = fixture();
       f.write(
@@ -202,7 +202,11 @@ describe('persistent Vue and mixed graph analysis', () => {
       };
       f.write(
         'vue/tsconfig.json',
-        JSON.stringify({ compilerOptions: options, files: ['a.ts'] }),
+        JSON.stringify({
+          compilerOptions: options,
+          files: ['a.ts'],
+          vueCompilerOptions: {},
+        }),
       );
       f.write(
         'vue/a.ts',
@@ -346,6 +350,13 @@ describe('persistent Vue and mixed graph analysis', () => {
         'native/src/index.ts',
         'export { value } from "../../vue/src/value.js";',
       );
+      const vueConfig = JSON.parse(
+        readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
+      );
+      f.write(
+        'vue/tsconfig.json',
+        JSON.stringify({ ...vueConfig, vueCompilerOptions: {} }),
+      );
       f.write('native/src/Widget.vue', '<template>Independent</template>');
       f.write(
         'native/tsconfig.json',
@@ -357,7 +368,7 @@ describe('persistent Vue and mixed graph analysis', () => {
             noLib: true,
             types: [],
           },
-          include: ['src/**/*', 'src/**/*.astro'],
+          include: ['src/**/*', 'src/**/*.astro', 'src/**/*.svelte'],
         }),
       );
       const declaration = f.path(

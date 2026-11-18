@@ -8,7 +8,7 @@
 
 ## 独立 Native Evidence 合同
 
-**当前实现：**[Native Evidence v5](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 12；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
+**当前实现：**[Native Evidence v5](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 13；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
 
 **Coverage 证明：**[索引合同](../../../packages/limina/src/domain/analysis/native-coverage.ts)先从已激活入口和 solution traversal 建立全集，再判断解析成功。成员查询只针对当前 Checker 的实际目标（`resolvedFileName`），使用该 Compiler 的 `toPath`、Host 当前目录与 canonical-name 策略；实际解析输入必须具有相同 key。物理身份和输入版本只校验已有的键关联，物理别名与 Resolver `originalPath` 都不能增加成员。发现闭合且当前枚举有效时才能证明零/唯一成员。同键绑定冲突即使遇到 local root 也为 unavailable；无关的未闭合发现仍保留独立 root 责任。多个已确认成员保留 ambiguity，但不完整证据不能授权委托。完整零成员是 uncovered，继续走 consumer 政策，不选择别名 Owner。
 
@@ -24,7 +24,7 @@
 
 **证明恢复：**Audited-rule 的 existence proof 将 evidence ID 绑定到请求 ID 和当前 context；通用 compiler-observation proof 保留独立的 observation ID。[Bounded 恢复](../../../packages/limina/src/core/analysis-cache/bounded-context-validity.ts)还会检查当前 Native 生产者的单请求 audited provenance、义务身份、当前请求确实存在，以及输入／context 绑定，再接纳 fact／snapshot 副本。每个保留的编译器请求都必须恰有一个义务评估，包括 absent 和 unknown。原始 references 为空时，已声明的目标必须匹配从该请求解析结果推导的唯一 Coverage；存在 references 的上下文保留编译器映射的端点优先级。评估缺失或目标错绑会撤销恢复资格并触发冷采集。副本一致与存储 checksum 正确不能代替这些语义连接。Adapter 身份使旧证明语义失效，不改变 DTO/schema 或缓存完整性定义。缓存支持的 warm 元组仍小于 cold 编译器兼容范围。[观察](../../../packages/limina/src/__tests__/native-program-observation.spec.ts)、[证明](../../../packages/limina/src/__tests__/native-evidence-contract.spec.ts)、[Admission](../../../packages/limina/src/__tests__/analysis-completion.spec.ts) 和[真实存储腐败](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)测试分别拥有这些边界。External-library qualification 仍属于逐请求证明。未受治理声明按公共责任规则保留消费者上下文分析；这不授权非 root 实现展开，也不假定 external-library emit 行为。
 
-**阶段资格：**[上下文合同](../../../packages/limina/src/domain/analysis/native-context.ts)保留实际 TypeScript 实现与版本、host、roots／options／raw references 指纹、源码与 Coverage 版本、工具链、epoch 和 collection 身份。Pending Native 观察可用于 baseline 分析及归属选择，未取得资格的物理候选只用于选择；独立合格的补充评估可以建立编译义务。锁定必须创建新 context 和 collection，TypeScript→TypeScript 锁定也适用。Locked 事实必须由已选语义族重新采集。输入、epoch、阶段、collection 或 locked selection evidence 变化撤销当前资格，不改变历史证据。归属歧义和重复锁定显式返回冲突；合同没有重试循环或最终执行 Checker 字段。这些是数据及生产者合同，不是对任意 JavaScript 伪造对象的身份认证。
+**阶段资格：**[上下文合同](../../../packages/limina/src/domain/analysis/native-context.ts)将观察绑定到 TypeScript 实现、host、roots、选项、引用、输入、epoch 和 collection。评估编译义务需要来自对应上下文的证据。物理候选、Program 成员和依赖事实均不参与选择语义权威。
 
 **物理边界：**Bounded Host 接纳真实实现 roots，以及具有当前源配置成员资格的声明 roots。共享声明仍分别作为各项目的独立输入。外部受管声明在创建 SourceFile 前物理截断，保留进入声明的请求与解析结果。生成上下文显式携带源配置身份。候选验证为已选择声明授予独立的 bounded 加载资格，其观察不回写源码分析事实，也不生成消费者的编译边。非 root 实现保持有界。未受治理声明（包括第三方声明）保留消费者上下文请求；受治理声明只有候选验证通过后才能完成委派。已安装的保留声明必须具备安装身份和 lock 覆盖证明，才能持久恢复。完整 Program 仍仅作测试 Oracle。
 
@@ -36,33 +36,33 @@ Path 候选资格使用编译器的有效 `resolveJsonModule` 值，包括随版
 
 ## 从 ownership 候选到 locked context
 
-[checker-ownership-resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 收集受支持的 config/root 推导与 dependency facts，全部隐式要求收敛后才提交权威。Named Checker 约束保持优先的显式权威。去重结果决定唯一框架选择，或 Pending Local Owner 与 Native baseline freeze。[Semantic authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 随后冻结解释方式，再进行 Vue promotion、Build Coloring 和 Finalization；这些执行阶段不能重写语义。
+[归属求解](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts)优先采用具名检查器选择及其聚合配置终端约束。其他源配置使用下文的有效配置触发规则。[语义权威](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts)先冻结选定的语义类型，之后依赖事实才能影响执行。
 
 显式 Checker 配置和文档规定的隐式归属规则决定语义权威。源码全部为 TypeScript 且只含常规编译选项的源项目同样可以归属框架。锁定的源输入将语义权威与引用事实采集所用的 roots、options、parse context 和 config closure 绑定。图构造及生成的声明／产物配置复用同一份输入。后期执行染色不能按最终 Checker 重新解析源配置并扩张成员。因此，TypeScript 源项目染成 `vue-tsc` 后仍保留 TypeScript roots；同目录 Vue 文件要进入这些 roots，必须在冻结前建立 Vue 权威。发现阶段的 Coverage 仍是独立事实，本身不授予 root 成员资格。Source Check 按治理单元的源码成员收集语义导入。Proof 独立解析生成的声明项目，将解析所得 roots 与治理单元冻结的声明输入比较。候选验证使用最终执行 Checker 及其独立的生成配置 context。
 
 同色边只来自合格声明依赖、有效声明上下文选择和 implicitRefs。Vue promotion 与组件染色共用声明关系资格判断；纯 solution 聚合和 framework schedule 不传播颜色。显式 ownership 在冻结前施加，冻结后的执行染色不改写语义解释权。
 
-Pending discovery 使用 [pending-facts](../../../packages/limina/src/core/build-graph/checker-ownership-pending-facts.ts) 的 Native dependency context。[依赖推导](../../../packages/limina/src/core/build-graph/checker-ownership-membership.ts) 按受支持后缀或已发现的 Vue profile 分类实际解析到的框架目标。这是 consumer 请求自身的特征，不是 provider 的 final owner，也不伪造 TypeEvidence missing 观察。[框架请求采集](../../../packages/limina/src/core/build-graph/checker-ownership-dependency-facts.ts) 在提交推导前，完成当前唯一框架的正常依赖观察。带 query/fragment 的 specifier 或被过滤的资源请求不提供该特征。
+[依赖收集](../../../packages/limina/src/core/build-graph/checker-ownership-dependency-facts.ts)按选定的语义确定输入要求与声明关系。修改导入可能改变必要引用或声明构建的执行检查器。
 
-[Physical candidates](../../../packages/limina/src/core/build-graph/checker-ownership-physical-candidate.ts)及当前成员关系仍是既有 supplemental obligation 路径的输入。物理命中可以提供归属特征，但不能证明 Native 编译义务存在、接纳 SourceFile 或满足引用。Native source requirements、真实编译器目标成员关系与框架能力证据保持各自合同。Provider 的执行颜色不能把普通 TypeScript 目标变成框架要求。
+仅发现物理文件不能证明 Native 编译义务存在、接纳 SourceFile 或满足引用。Native 源输入要求、编译器目标的成员关系与框架能力保留各自的合同。
 
-**Pending 受控补充：**[请求发现](../../../packages/limina/src/core/import-analysis/supplemental-resolution.ts)使用原始 Compiler Inventory occurrence、有效源文件选项、Mode、完整 specifier 和新的 Oxc resolver；Native 已有物理目标时跳过此路径。命中、正常未命中、不支持的 profile、观察不可用和执行失败分别保留，原始 Native resolution 与 obligation 不变。resolver 不增加 roots、加载授权、SourceFile 或递归源码遍历。 对具有现有 Vue profile 的目标，先由 consumer 的 Vue resolver 给出编译器路径，再选择实现输入成员归属。Oxc 原始发现保持不变，其物理路径不能替代该编译器路径。Locked supplement 重新取得编译器目标并核对已选成员关系；引用记录和去重均使用该目标，不以物理等价代替。
+**补充输入观察：**对于 Native 未解析的模块请求，[请求发现](../../../packages/limina/src/core/import-analysis/supplemental-resolution.ts)可以使用编译器记录的位置、mode 和有效选项探测物理框架目标。独立物理查找不会增加 roots，也不会改写 Native 编译器的解析结果。
 
-[补充评估](../../../packages/limina/src/core/build-graph/pending-supplemental-assessment.ts)取得真实 Vue/Volar 解析及消费者与 owner 一致的 Service Script 分类，再调用 Native 共用的模块输入与义务投影。必须有物理身份和当前唯一 Coverage，单凭成员归属不能证明编译输入。Pending 评估不请求消费者 Program。既有 Locked 重采集把 occurrence、源码版本、角色及 Mode 重新绑定到真实 Compiler Inventory，读取当前选项并重新取得解析与能力证据。补充评估拥有独立上下文及 audited-rule 证明，不能通过 Native fact API 取得资格。引用输入复用 provider 选择、构建染色、贡献替换及候选／执行准入。资格未知阻止受影响的准入，包括消费者无法解释的 owner 自定义扩展。Native 命中和合格真实 Checker 贡献优先于同一请求的重复补充贡献。
+[补充评估](../../../packages/limina/src/core/build-graph/locked-supplemental-assessment.ts)将候选与当前锁定的请求及有效成员关系绑定。`noResolve` 等独立证据可以证明该请求没有编译义务。必要输入不在冻结语义的解释能力内时，该义务保持 unknown，并可能阻断准入。两种结果都不能改变既定语义类型。
 
 显式 Native 归属保留普通 Locked Native 采集路径。已完成解析、未选中文件输入的 unresolved `.vue` 请求，可以依据 [compiler-completed-resolution-without-file-input 规则](../../../packages/limina/src/core/typescript-semantic/native-program-obligations.ts)得到 Native `not-required`。物理文件或 provider Checker 本身不能制造 supplemental `unknown` 或项目引用。原始 unresolved 观察仍然保留；Graph Admission 不证明类型检查成功，真实 `tsc` 仍可能报告 `TS2307`。
 
-必要 Framework unknown 需要不同证据。对于自身同时推导 Astro 和 Vue 的 Auto consumer，真实 Vue resolver 结果、匹配的 Service Scripts 和唯一有效 Vue provider 可以在 TypeScript baseline freeze 前建立合格 supplement。如果 [Locked 重绑定](../../../packages/limina/src/core/build-graph/locked-supplemental-assessment.ts)无法将该已建立的框架输入绑定到冻结后的 Native context，补充评估保持 `unknown` 并阻断受影响准入。它不改写独立 Native 评估，也不把所有 unresolved 框架 specifier 都视为未知义务。歧义 Warning 不能丢弃已建立的补充输入要求。
+例如，同时命中 Astro 与 Vue 配置意图的源项目采用 Native 基线。在同一次分析中，归属歧义可产生非阻断 Warning，而必要 Vue 请求的 unknown 编译义务仍可能阻断准入。
 
-首个补充义务适配器覆盖 Vue 实现目标，其他框架物理候选保留选择合同。声明输入继续使用 Checker 中立的共享声明治理及其真实 tsc 或 Vue 候选适配器；不支持的自定义插件委派保持 unavailable，不能绕过能力资格。没有 Oxc 声明闭包、新 Source Config、扩大 region 或相互依赖的能力证明。生成产物可用性与义务存在性分离。`noResolve`、augmentation、root 身份、有效 JS 输入／发射规则及引用映射保持共用语义；ambient TypeEvidence、类型导入、`skipLibCheck` 和 `noCheck` 不是通用义务取消规则。
+首个补充义务适配器覆盖 Vue 实现目标。声明输入继续使用 Checker 中立的共享声明治理及其真实 tsc 或 Vue 候选适配器；不支持的自定义插件委派保持 unavailable，不能绕过能力资格。没有 Oxc 声明闭包、新 Source Config、扩大 region 或相互依赖的能力证明。生成产物可用性与义务存在性分离。`noResolve`、augmentation、root 身份、有效 JS 输入／发射规则及引用映射保持共用语义；ambient TypeEvidence、类型导入、`skipLibCheck` 和 `noCheck` 不是通用义务取消规则。
 
 Locked [ProjectSemanticContext](../../../packages/limina/src/core/project-dependencies/contracts.ts) 在类型层要求 `LockedSemanticAuthority`。它与 pending discovery 是不同入口；构造函数复制 authority 不等于对任意 JavaScript 伪造对象做完整运行时认证。生产调用合法性来自求解流程和类型边界，不能把它写成不可绕过的安全 capability。
 
 ### 确定性框架推导
 
-推导是一项归属策略。Resolved Config 的受支持特征、发现的框架文件和既有依赖事实直接产生框架 Checker 要求。在提交隐式权威前完整收集三个来源，按精确 Checker 名称去重，并复用当前调用的依赖要求迭代。唯一结果选定对应框架。零结果或多个不同结果保留 Pending Local Owner 与 Pending Semantic Authority，随后按 Native baseline 冻结；多个结果不设置 `semanticAuthorityUnavailable`，也不产生权威冲突。
+使用源项目的有效配置，包括继承后仍然生效的设置。每个命中的检查器名称只计一次。唯一结果选定对应框架。零个或多个不同结果保留 Pending Local Owner 并冻结 Native TypeScript 语义。多个结果产生 Warning。
 
-依赖推导依据 consumer 实际观察的框架目标，包括适用的已发现 Vue profile；不借用 provider 的最终 Checker，也不从多命中 provider 中任意选取 family。裁决后，原始多框架结果不再具有归属权威：保留 Pending Owner、锁定的 TypeScript 语义和最终诊断信息。Build Coloring 消费既有声明关系，不消费推导出的 Checker 集合。显式具名约束保持权威；不兼容的显式约束或 Build Checker 身份仍是阻断冲突。
+源文件内容、发现的框架文件、解析目标、框架 Program 和检查器能力均不能改变归属。修改源配置或其基配置可能改变解析结果，而不改变语义权威，例如只修改 `strict`。不兼容的显式选择或构建检查器仍遵循原有冲突规则。
 
 [配置触发](../../../packages/limina/src/core/build-graph/framework-intent.ts)依据 Resolved Source Config 及继承属性的实际有效贡献；[公共检查器参考](../../../docs/zh/config/checkers.md#框架推导)列出精确的受支持名称和后缀规则。已被覆盖的祖先属性和任意框架名称子串不参与推导。受支持触发不需要先匹配到框架文件，也不需要 Parser Membership Qualification。安装框架包本身不是触发条件。正常框架输入发现、语义准备与编译器能力检查仍分别存在；唯一推导的 Checker 无法准备时不能静默变成 Native。
 
@@ -94,7 +94,7 @@ Checker 归属阶段的工具链／语义脚本失败保留为执行失败和受
 
 ## 持久化 importer 有效性
 
-[Bounded context capture](../../../packages/limina/src/core/analysis-cache/bounded-context-capture.ts)保存编译器完整 inventory、occurrence 事实和实际输入 receipt。Schema 12、Native adapter、领域版本和 collection mode 共同排除旧 Programless 成功图；旧缓存不转换、不删除。Roots/options/raw references、配置全集、当前 lexical/canonical 身份、正负解析探测、目录、manifest 条件与安装环境均参与恢复资格。相同 importer 文本不足以证明旧 context 有效。
+[Bounded context capture](../../../packages/limina/src/core/analysis-cache/bounded-context-capture.ts)保存编译器完整 inventory、occurrence 事实和实际输入 receipt。Schema 13、Native adapter、领域版本和 collection mode 共同排除旧 Programless 成功图；旧缓存不转换、不删除。Roots/options/raw references、配置全集、当前 lexical/canonical 身份、正负解析探测、目录、manifest 条件与安装环境均参与恢复资格。相同 importer 文本不足以证明旧 context 有效。
 
 [恢复绑定](../../../packages/limina/src/core/build-graph/native-cache-binding.ts)将图、已验证 context、原始快照与 locked ownership fact 绑定；缓存中的 summary 或 owner 字段不能自授资格。正常 Coverage stop 可完整恢复；执行失败、未知安装证据、残缺通道或伪造绑定触发冷采集。输入失效时原子替换 consumer 贡献，不把旧成功与新失败拼成完整图。纯 Native 完整命中不创建 Program；冷/变化 context 重新创建 Bounded Program，不承诺只解析变化文件。详见[生命周期](./lifecycle.md#原生持久化分析缓存)和[独立进程回归](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)。
 

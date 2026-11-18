@@ -45,6 +45,7 @@ export function analysisBlockDigest(bytes: string | Buffer): string {
 }
 function emptyRecords(): Records {
   return {
+    resolvedConfigs: {},
     inputs: {},
     files: {},
     queries: {},
@@ -64,6 +65,7 @@ function scopeReaders(
 ): Record<Group, (id: string) => string | null> {
   const shared = () => null;
   return {
+    resolvedConfigs: (id) => snapshot.resolvedConfigs[id]!.configPath,
     inputs: shared,
     files: shared,
     contributions: shared,

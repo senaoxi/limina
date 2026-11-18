@@ -3,7 +3,12 @@ import {
   createAstroSemanticProject,
 } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
+import path from 'pathe';
 import ts from 'typescript';
+import {
+  parseTypeScriptCommandLine,
+  TypeScriptConfigInputError,
+} from '../../checker/project-base';
 import type { AutoScopeProject } from '../build-graph/auto-checker-types';
 import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-types';
 import type { GovernedSourceUnit, SourceProject } from '../build-graph/types';
@@ -93,6 +98,23 @@ function getRawProjectReferences(
   configPath: string,
   virtualFiles?: ReadonlyMap<string, string>,
 ): readonly ts.ProjectReference[] {
+  // Consumers only need the resolved references for this Source Config.
+  // Generated overlays and configs with diagnostics keep the compiler's
+  // tolerant partial-result behavior.
+  if (!virtualFiles?.size) {
+    try {
+      const { parsed } = parseTypeScriptCommandLine({
+        parseOptions: {
+          configPath,
+          projectRootDir: path.dirname(configPath),
+          allowNoInputDiagnostics: true,
+        },
+      });
+      return parsed.projectReferences ?? [];
+    } catch (error) {
+      if (!(error instanceof TypeScriptConfigInputError)) throw error;
+    }
+  }
   return (
     parseTypeScriptProjectConfig({ configPath, tsModule: ts, virtualFiles })
       ?.projectReferences ?? []

@@ -34,6 +34,7 @@ import { subscribeInstallationDomains } from './installation-environment';
 import { restoreInstallationLockCoverage } from './installation-lock-coverage';
 import { AnalysisInvalidation } from './invalidation';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
+import { ResolvedConfigRecords } from './resolved-config-records';
 import { SemanticState } from './semantic-state';
 import { measuredSnapshot } from './snapshot-measurement';
 import {
@@ -75,6 +76,7 @@ export class NativeAnalysisCache {
   readonly contexts: Record<string, NativeContextRecord> = {};
   readonly graphs: Record<string, GraphRecord> = {};
   readonly vue: VueAnalysisRecords;
+  readonly resolvedConfigs: ResolvedConfigRecords;
   readonly identity: string;
   readonly configVersion: string | undefined;
   readonly configModules: ConfigModuleSnapshot;
@@ -90,6 +92,10 @@ export class NativeAnalysisCache {
     this.configModules = config.configModules;
     this.previous = config.previous;
     const state = this.previous ?? emptySnapshot(identity, this.configVersion);
+    this.resolvedConfigs = new ResolvedConfigRecords(
+      state.resolvedConfigs,
+      this.metrics,
+    );
     this.inputs = new AnalysisInputs(state.inputs, this.metrics);
     subscribeInstallationDomains(state, this.inputs);
     observePreviousVueBytes(state, this.inputs);
@@ -263,7 +269,10 @@ export class NativeAnalysisCache {
     project: TypeScriptSemanticProject,
     replay?: EpochInputReplay,
   ): TypeScriptSemanticDependencyContext | undefined {
-    return this.#contexts.restore(project, replay);
+    return this.#contexts.restore(
+      project,
+      replay ?? this.resolvedConfigs.replay(),
+    );
   }
   restoreQuery(id: string, record: ResolutionRecord): void {
     this.#resolutions.restore(id, record);

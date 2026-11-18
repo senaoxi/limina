@@ -310,13 +310,6 @@ function registerCoreWork(
   for (const configPath of projects.keys()) {
     recordCoreWork(caches, {
       configPath,
-      phase: 'selection',
-      family: 'pending',
-      eligibility: 'eligible',
-      execution: 'not-run',
-    });
-    recordCoreWork(caches, {
-      configPath,
       phase: 'locked',
       family: 'unselected',
       eligibility: 'unavailable',

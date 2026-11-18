@@ -34,7 +34,7 @@
 
 ## 框架推导策略
 
-框架自动推导是确定性的归属策略，不是独立资格流程。完整收集受支持的有效 config、root-file 和 dependency 特征，按精确检查器身份去重。唯一结果直接选定框架；零结果或多个结果保持 Pending Local Owner，并冻结 Native TypeScript baseline。多个结果在最终报告中产生非阻断 Warning。
+自动归属使用有效源配置中明确规定的触发规则。去重后只有一个检查器时，选定对应框架；没有或有多个检查器时，冻结 Native TypeScript 语义，本地执行归属保持 Pending。多个结果产生非阻断 Warning。新增组件或修改导入可能改变覆盖范围及构建关系，语义归属仍保持原值。
 
 不增加推导开关。具名检查器选择及其聚合配置终端约束表达显式选择；也可以移除触发不期望推导的特征。这让常见框架项目保持自动路由，同时避免增加第二套配置策略。推导不要求独立 parser membership 审批、候选分级或资格缓存。Warning 和显式选择都不补足缺失的编译能力。[语义记录](./semantics.md#从-ownership-候选到-locked-context)负责收集、冻结和失败语义，[检查器参考](../../../docs/zh/config/checkers.md#框架推导)负责受支持的公开触发规则和示例。
 

@@ -4,17 +4,13 @@ import type { JsonObject } from '#core/tsconfig/actions';
 import { compareCodeUnits } from '#utils/collections';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
-  createAutoScopeProject,
-  createExplicitScopeProject,
+  createScopeProject,
+  parseNeutralProject,
 } from './auto-checker-project';
-import type { AutoCheckerPreset } from './auto-checker-types';
 import { inspectFrameworkIntent } from './framework-intent';
 import { capabilityDiscoveryExtensions } from './generated/file-extensions';
 import { createGeneratedGraphStructuredError } from './problems';
-import {
-  createAutoFrameworkEvidence,
-  type FrameworkIntentHint,
-} from './source-capabilities';
+import type { FrameworkIntentHint } from './source-capabilities';
 import {
   collectCheckerSourceConfigModules,
   collectCheckerSourceConfigs,
@@ -104,16 +100,12 @@ function createAutoScope(options: {
       const base = {
         ...options,
         configPath,
-        intentHints: intentHintsByConfigPath.get(configPath) ?? [],
         packageRootDir: collection.packageRootBySourcePath.get(configPath)!,
       };
-      const project =
-        explicitChecker === undefined
-          ? createAutoScopeProject(base)
-          : createExplicitScopeProject({
-              ...base,
-              checkerName: explicitChecker,
-            });
+      const project = createScopeProject({
+        ...base,
+        checkerName: explicitChecker,
+      });
       parsedProjects.set(configPath, project);
       return project;
     },
@@ -146,21 +138,12 @@ function createAutoScope(options: {
       }
       return parsedProjects.get(configPath)!;
     });
-  const projectByConfigPath = new Map(
-    projects.map((project) => [project.configPath, project]),
-  );
   const scope: AutoScope = {
     collection,
     entryConfigPath: options.entryConfigPath,
     frameworkEvidence: [...intentHintsByConfigPath]
       .sort(([left], [right]) => compareCodeUnits(left, right))
-      .map(([configPath, intentHints]) =>
-        createAutoFrameworkEvidence({
-          configPath,
-          filePartition: projectByConfigPath.get(configPath)?.filePartition,
-          intentHints,
-        }),
-      ),
+      .map(([configPath, intentHints]) => ({ configPath, intentHints })),
     projects,
   };
   setAutoRootConfigPaths(scope);
@@ -215,6 +198,11 @@ export function collectExplicitScope(options: {
     activatedRegions: options.activatedRegions,
     checkerName: options.checkerName,
     checkerPreset: parsing.checkerPreset,
+    sourceConfigParser:
+      options.checkerName === 'tsc' || options.checkerName === 'tsgo'
+        ? undefined
+        : (configPath) =>
+            parseNeutralProject({ ...options, configPath }).parsed,
     config: options.config,
     discoveryExtensions: parsing.discoveryExtensions,
     entryConfigPaths: [options.entryConfigPath],
@@ -223,7 +211,7 @@ export function collectExplicitScope(options: {
   const projects = [...collection.projectConfigPaths]
     .sort(compareCodeUnits)
     .map((configPath) =>
-      createExplicitScopeProject({
+      createScopeProject({
         ...options,
         configPath,
         packageRootDir: collection.packageRootBySourcePath.get(configPath)!,
@@ -242,11 +230,4 @@ export function collectExplicitScope(options: {
     frameworkEvidence: [],
     projects,
   };
-}
-
-export function classifyAutoScope(scope: AutoScope): AutoCheckerPreset {
-  const isNeedsVue = scope.projects.some(
-    (project) => project.filePartition.vueFiles.length > 0,
-  );
-  return isNeedsVue ? 'vue-tsc' : 'tsc';
 }

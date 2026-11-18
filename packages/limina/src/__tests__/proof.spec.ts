@@ -548,13 +548,13 @@ describe('runProofCheck dts config semantics', () => {
         'export { value } from "../../vue/src/value.js";',
       'packages/native/tsconfig.json': stringifyConfig({
         compilerOptions,
-        include: ['src/**/*', 'src/**/*.astro'],
+        include: ['src/**/*'],
       }),
       'packages/vue/src/Widget.vue': '<template><div /></template>',
       'packages/vue/src/value.ts': 'export const value = 1;',
       'packages/vue/tsconfig.json': stringifyConfig({
         compilerOptions,
-        include: ['src/**/*'],
+        include: ['src/**/*.ts', 'src/**/*.vue'],
       }),
     });
     const config: ResolvedLiminaConfig = {
@@ -665,7 +665,7 @@ describe('runProofCheck dts config semantics', () => {
           target: 'ES2023',
           types: [],
         },
-        include: ['src/**/*'],
+        include: ['src/**/*.ts', 'src/**/*.svelte'],
       }),
       'tsconfig.json': stringifyConfig({
         files: [],

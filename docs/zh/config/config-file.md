@@ -85,6 +85,8 @@ pnpm exec limina --config ./limina.config.mts check
 
 缓存有效时，Limina 可以复用已保存的分析结果；输入变化时会重新分析受影响的部分。恢复缓存时仍会检查类型入口、源码覆盖、项目引用和输出配置等输入。实际类型诊断和构建由检查器另行执行。
 
+Limina 按物理源 `tsconfig` 及解析上下文分别保存解析记录。TypeScript 负责解析 `extends` 继承链。下次运行时，Limina 核对先前观察到的配置文件、包查找结果和源码文件列表，再决定是否复用。两个源配置继承同一个基配置时，一轮验证可共享对该基配置的检查。即使源配置没变，修改基配置或新增一个位置更近且能解析同一 `extends` 请求的包，也可能触发重新解析。只改动 `compilerOptions.strict` 不会改变[检查器归属](./checkers.md#框架推导)。
+
 ### `cache.dependencies` {#cache-dependencies}
 
 - **类型：** `string[]`（对象形式必填）

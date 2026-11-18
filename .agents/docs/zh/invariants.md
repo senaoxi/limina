@@ -23,18 +23,18 @@
 
 ## I02 — semantic authority 不随 final checker owner 改写
 
-- **Statement / Applies when**：managed type config 的 semantic authority 与引用推导所用的源输入在 facts convergence 后一同 freeze；后续 promotion/coloring/fallback/finalization 不能改变二者。成功 finalization 为 leaf 确定唯一执行 owner。
+- **Statement / Applies when**：具名 Checker 约束及有效配置中的归属意图决定语义权威。语义权威与引用推导所用的源输入一同冻结。后续执行染色、回退与最终选择都必须保留两者。
 - **Problem**：为共享 declaration build 选用 Vue checker，可能错误地把原生 TS import 改为 Vue module semantics。
 - **Root cause**：解释源码与安排构建使用不同 authority，二者都曾容易被称为 owner。
-- **Enforcement / Why it works**：[ownership types](../../../packages/limina/src/core/build-graph/checker-ownership-types.ts) 分字段；[semantic authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 限定 lock evidence、保存 frozen 值并在 coloring/finalization 后比对；[resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 先收齐 requirements 再应用锁。执行选择无法冒充新的语义证据。Dependency inference 分类 consumer 实际观察的框架目标；provider 的最终执行 Checker 不是语义证据。物理发现不能证明 Native 编译义务。
+- **Enforcement / Why it works**：[归属类型](../../../packages/limina/src/core/build-graph/checker-ownership-types.ts)分别保存语义权威与执行归属。[求解流程](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts)在使用依赖事实前应用显式或从配置推导的选择。[语义权威](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts)在染色后核对冻结值。
 - **Concrete example**：`generated-graph.spec.ts` 中 TS app 导入 Vue project 的 theme TS 后可由 `vue-tsc` 构建，同时 semantic/frozen authority 保持 TypeScript。
 - **Protected property**：语义稳定，发现顺序不能在多个隐式框架中选出胜者。
 - **Evidence / Strength / Confidence**：[generated graph tests](../../../packages/limina/src/__tests__/generated-graph.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：freeze 是快照与校验机制，不是全对象 deep freeze；named solution 的 explicit ownership constraints 在 discovery 阶段已经存在。
 
-**Native 阶段资格**：[pending baseline](../../../packages/limina/src/core/build-graph/pending-native-context.ts)在最终 Checker 初始化前建立；locked 阶段重新采集而不重标 pending 对象。框架物理候选有独立来源，不授予 Program 加载权。合格补充评估复用 Native 义务规则，重新取得 Locked 绑定后才能参与引用投影及准入；未取得资格的物理命中仅支持选择。输入/epoch/phase 变化撤销旧资格，冻结后冲突显式报告，不循环重选。
+**Native 阶段资格**：评估编译义务需要当前 context、输入和证据。仅发现物理输入既不能授予源码语义权威，也不能授权 Program 加载文件。
 
-**隐式归属守卫**：完整收集 config/root/dependency 要求，按精确 Checker 名称去重后再提交隐式权威。唯一结果直接选定框架；多个不同结果保留 Pending Local Owner 并冻结 TypeScript 语义，最终产生一条非阻断 Warning，不设置 `semanticAuthorityUnavailable`。显式冲突仍然阻断。Coloring 消费有效声明关系，不消费原始推导 Checker 集合。Warning 和 Native baseline freeze 都不证明编译义务不存在。[语义 owner](./semantics.md#确定性框架推导)记录该策略，[实施审查](../../../docs/reviews/checker-ownership-semantic-authority-review.md)记录验收范围。
+**隐式归属守卫**：按精确 Checker 名称合并文档规定的配置触发项。多个不同结果保留 Pending Local Owner，冻结 Native TypeScript 语义，产生一条非阻断 Warning。显式冲突仍然阻断。冻结后的执行 Checker 可以由声明关系决定。见[推导语义](./semantics.md#确定性框架推导)。
 
 ## I03 — Importer roots、支撑准入与解析相互独立
 

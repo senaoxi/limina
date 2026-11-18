@@ -17,13 +17,6 @@ const semanticFamilyByChecker = {
   'vue-tsc': 'vue',
 } as const satisfies Record<CheckerName, SemanticFamily>;
 
-const semanticSources = new Set<CheckerEvidence['source']>([
-  'config',
-  'dependency',
-  'explicit',
-  'root-file',
-]);
-
 export function createPendingSemanticAuthority(): SemanticAuthority {
   return { baseline: 'typescript', kind: 'pending' };
 }
@@ -34,8 +27,8 @@ export function getCheckerSemanticFamily(checker: CheckerName): SemanticFamily {
 
 function isSemanticAuthoritySource(
   source: CheckerEvidence['source'],
-): source is SemanticAuthoritySource {
-  return semanticSources.has(source);
+): source is Extract<SemanticAuthoritySource, 'explicit' | 'config'> {
+  return source === 'explicit' || source === 'config';
 }
 
 function isSameLockedAuthority(
@@ -133,7 +126,7 @@ function lockPendingTypeScriptBaseline(
   const authority: LockedSemanticAuthority = {
     family: 'typescript',
     kind: 'locked',
-    source: 'root-file',
+    source: 'baseline',
   };
   state.semanticAuthority = authority;
   return authority;

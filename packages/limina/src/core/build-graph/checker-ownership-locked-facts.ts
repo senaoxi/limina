@@ -14,11 +14,13 @@ import {
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import { retainDependencyFailure } from './analysis-failure';
 import type { AutoScopeProject } from './auto-checker-types';
+import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import { collectDeclarationContextDecisions } from './declaration-context-decisions';
+import { assessMissingNativeImports } from './locked-supplemental-assessment';
 
 function formatProjectDependencyFailure(options: {
   config: ResolvedLiminaInputs;
@@ -67,6 +69,7 @@ function createLockedDependencyFact(
 }
 
 export function collectLockedProjectFacts(options: {
+  discovery: CheckerOwnershipDiscovery;
   caches: ReturnType<typeof createProjectDependencyCaches>;
   config: ResolvedLiminaInputs;
   importAnalysis: ImportAnalysisContext;
@@ -123,9 +126,19 @@ export function collectLockedProjectFacts(options: {
     isWorkspaceFile:
       options.workspaceSourceBoundary.governance?.isWorkspaceFile,
   });
+  const supplementalProblems =
+    options.state.semanticAuthority.source === 'baseline' &&
+    collection.nativeEvidence
+      ? assessMissingNativeImports({
+          ...options,
+          facts,
+          records: collection.declarationClosure?.records ?? [],
+          snapshot: collection.nativeEvidence,
+        })
+      : [];
   return {
     facts,
-    problems: declaration.problems,
+    problems: [...declaration.problems, ...supplementalProblems],
     failures,
     declarationContexts: declaration.decisions,
   };

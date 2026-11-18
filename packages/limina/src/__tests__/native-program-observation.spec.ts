@@ -723,7 +723,7 @@ describe('compiler-owned Native Program observations', () => {
       'config-1',
     );
     expect(snapshot).toBeDefined();
-    expect(snapshot!.header.schema).toBe(12);
+    expect(snapshot!.header.schema).toBe(13);
     const warm = new NativeAnalysisCache(
       'bounded-fixture',
       snapshot,

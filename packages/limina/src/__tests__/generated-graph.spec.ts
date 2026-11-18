@@ -455,14 +455,14 @@ describe('prepareGeneratedTsconfigGraph', () => {
             noLib: true,
             noResolve,
           },
-          include: ['src/**/*.ts', 'src/**/*.astro'],
+          include: ['src/**/*.ts', 'src/**/*.astro', 'src/**/*.vue'],
         }),
         'packages/view/src/index.ts': 'export const value = 1;',
         'packages/view/src/App.vue':
           '<script setup lang="ts">const value = 1;</script>',
         'packages/view/tsconfig.json': json({
           compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
-          include: ['src/**/*'],
+          include: ['src/**/*.ts', 'src/**/*.vue'],
         }),
       });
       const caches = createProjectDependencyCaches();
@@ -500,9 +500,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
         ]);
         expect(caches.supplementalAssessments).toHaveLength(1);
         const assessment = caches.supplementalAssessments![0]!;
-        expect(assessment.capability).not.toBe(
-          'framework-semantic-authority-required',
-        );
         expect(assessment.coverage.state).toBe('unique');
         expect(assessment.context.authority).toMatchObject({
           phase: 'locked',
@@ -683,8 +680,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('collects Config Astro and Native Dependency Vue before committing authority', async () => {
+  it('keeps Astro authority when a TypeScript source imports a Vue component', async () => {
     const fixture = await createFixture({
+      'packages/app/src/Page.astro': '<div />',
       'packages/app/src/index.ts':
         "import Component from '../../view/src/App.vue'; export const value = Component;",
       'packages/app/tsconfig.json': json({
@@ -695,26 +693,20 @@ describe('prepareGeneratedTsconfigGraph', () => {
         '<script setup lang="ts">const value = 1;</script>',
       'packages/view/tsconfig.json': json({
         compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
-        include: ['src/**/*'],
+        include: ['src/**/*.vue'],
       }),
     });
-    const caches = createProjectDependencyCaches();
     try {
-      await expect(
-        prepareGeneratedTsconfigGraph(
-          {
-            ...fixture.config,
-            scope: { ...fixture.config.scope, checkers: {} },
-          },
-          { projectDependencyCaches: caches },
-        ),
-      ).rejects.toThrow('framework-semantic-authority-required');
-      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
-        {
-          sourceConfigPath: fixture.path('packages/app/tsconfig.json'),
-          checkers: ['astro', 'vue-tsc'],
-        },
-      ]);
+      const checkers = await resolveGeneratedGraphCheckers({
+        ...fixture.config,
+        scope: { ...fixture.config.scope, checkers: {} },
+      });
+      expect(checkers).toContainEqual(
+        expect.objectContaining({
+          name: 'astro',
+          include: ['packages/app/tsconfig.json'],
+        }),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -786,14 +778,14 @@ describe('prepareGeneratedTsconfigGraph', () => {
     },
   );
 
-  it('retains a custom Vue profile requested from an Astro script during inference', async () => {
+  it('keeps an Astro consumer under Astro semantics when it imports a custom Vue input', async () => {
     const fixture = await createFixture({
       'packages/astro/src/Page.astro':
         "---\nimport App from '../../vue/src/App.md';\n---\n<App />",
       'packages/astro/src/index.ts': 'export const value = 1;',
       'packages/astro/tsconfig.json': json({
         compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
-        include: ['src/**/*'],
+        include: ['src/**/*.astro', 'src/**/*.ts'],
       }),
       'packages/vue/src/App.md':
         '<script setup lang="ts">const value = 1;</script><template>Hello</template>',
@@ -813,22 +805,23 @@ describe('prepareGeneratedTsconfigGraph', () => {
           fixture.path('packages/astro/tsconfig.json'),
         ),
       ).toMatchObject({
-        finalOwner: 'tsc',
-        frozenSemanticAuthority: { family: 'typescript' },
+        finalOwner: 'astro',
+        frozenSemanticAuthority: { family: 'astro' },
       });
-      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
-        {
-          sourceConfigPath: fixture.path('packages/astro/tsconfig.json'),
-          checkers: ['astro', 'vue-tsc'],
-        },
-      ]);
+      expect(
+        graph.governedSources
+          .get('vue-tsc')
+          ?.get(fixture.path('packages/vue/tsconfig.json'))?.ownedFileNames,
+      ).toContain(fixture.path('packages/vue/src/App.md'));
+      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([]);
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('collects Root Vue and framework-script Dependency Astro before committing authority', async () => {
+  it('keeps TypeScript semantics for a broad glob containing a Vue file that imports Astro', async () => {
     const fixture = await createFixture({
+      'packages/app/src/index.ts': 'export const value = 1;',
       'packages/app/src/App.vue':
         "<script setup lang='ts'>import Page from '../../page/src/Page.astro'; const value = Page;</script>",
       'packages/app/tsconfig.json': json({
@@ -838,21 +831,24 @@ describe('prepareGeneratedTsconfigGraph', () => {
       'packages/page/src/Page.astro': '---\n---\n<div />',
       'packages/page/tsconfig.json': json({
         compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
-        include: ['src/**/*'],
+        include: ['src/**/*.astro'],
       }),
     });
     const caches = createProjectDependencyCaches();
     try {
-      await prepareGeneratedTsconfigGraph(
+      const graph = await prepareGeneratedTsconfigGraph(
         { ...fixture.config, scope: { ...fixture.config.scope, checkers: {} } },
         { projectDependencyCaches: caches },
       );
-      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
-        {
-          sourceConfigPath: fixture.path('packages/app/tsconfig.json'),
-          checkers: ['astro', 'vue-tsc'],
-        },
-      ]);
+      expect(
+        graph.ownershipPlan.typeConfigs.get(
+          fixture.path('packages/app/tsconfig.json'),
+        ),
+      ).toMatchObject({
+        finalOwner: 'tsc',
+        frozenSemanticAuthority: { family: 'typescript' },
+      });
+      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([]);
     } finally {
       await fixture.cleanup();
     }
@@ -1000,7 +996,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         [`packages/b/src/App.${family}`]: component,
         'packages/b/tsconfig.json': json({
           compilerOptions: managedOutputCompilerOptions(),
-          include: ['src/**/*'],
+          include: ['src/**/*.ts', `src/**/*.${family}`],
         }),
       });
       const analysis = createSpiedImportAnalysis();
@@ -1062,7 +1058,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           family === 'astro' ? '---\n---\n<div />' : '<div />',
         'packages/a/tsconfig.json': json({
           compilerOptions: managedOutputCompilerOptions(),
-          include: ['src/**/*'],
+          include: ['src/**/*.ts', `src/**/*.${family}`],
         }),
         'packages/b/src/value.ts': 'export const value = 1;',
         'packages/b/tsconfig.json': json({
@@ -1118,7 +1114,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         'declare const component: unknown; export default component;',
       'packages/b/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.svelte'],
       }),
     });
     const analysis = createSpiedImportAnalysis();
@@ -1708,7 +1704,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           target: 'ES2023',
           types: [],
         },
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.vue'],
       }),
     });
 
@@ -2069,7 +2065,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           target: 'ES2023',
           types: [],
         },
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.vue'],
       }),
     });
     const analysis = createSpiedImportAnalysis();
@@ -2196,7 +2192,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     },
   );
 
-  it('confirms custom Vue extensions from actual files instead of config hints alone', async () => {
+  it('selects Vue from configured custom extensions with or without matching files', async () => {
     const fixture = await createFixture({
       'packages/custom/src/App.md':
         '<script setup lang="ts">const value = 1;</script>\n',
@@ -2290,7 +2286,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
             target: 'ES2023',
             types: [],
           },
-          include: ['packages/app/src/**/*'],
+          include: ['packages/app/src/**/*', 'packages/app/src/**/*.astro'],
         }),
       },
       { astroToolchain: false },
@@ -2347,7 +2343,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
             target: 'ES2023',
             types: [],
           },
-          include: ['src/**/*'],
+          include: ['src/**/*', 'src/**/*.vue'],
         }),
       });
 
@@ -2459,7 +2455,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           'export { theme } from "../../theme/src/index.js";',
         'packages/app/tsconfig.json': json({
           compilerOptions,
-          include: ['src/**/*', 'src/**/*.astro'],
+          include: ['src/**/*'],
         }),
         'packages/lib/src/index.ts': 'export const lib = 1;',
         'packages/lib/tsconfig.json': json({
@@ -2470,7 +2466,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         'packages/theme/src/index.ts': 'export const theme = 1;',
         'packages/theme/tsconfig.json': json({
           compilerOptions,
-          include: ['src/**/*'],
+          include: ['src/**/*', 'src/**/*.vue'],
         }),
       });
 
@@ -2524,7 +2520,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         references: [{ path: './tsconfig.lib.json' }],
       }),
       'packages/app/base.json': json({
-        include: ['src/**/*', 'src/**/*.astro'],
+        include: ['src/**/*'],
       }),
       'packages/app/tsconfig.lib.json': json({
         extends: './base.json',
@@ -2536,7 +2532,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
         '<script setup lang="ts">import { lib } from "../../lib/src/index.js"; void lib;</script>',
       'packages/lib/tsconfig.json': json({ include: ['src/**/*.ts'] }),
       'packages/lib/src/index.ts': 'export const lib = 1;',
-      'packages/theme/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/theme/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.vue'],
+      }),
       'packages/theme/src/Theme.vue': '<template>Theme</template>',
     });
     try {
@@ -2595,7 +2593,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           target: 'ES2023',
           types: [],
         },
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.vue'],
       }),
     });
 
@@ -2655,7 +2653,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
   it('keeps an explicit solution closure authoritative during dependency analysis', async () => {
     const fixture = await createFixture({
       'packages/svelte/src/Page.svelte': '<h1>Svelte</h1>\n',
-      'packages/svelte/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/svelte/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.svelte'],
+      }),
       'packages/domain/src/client.ts':
         "import '../../svelte/src/Page.svelte';\nexport const client = true;\n",
       'packages/domain/src/server.ts': 'export const server = true;\n',
@@ -2717,7 +2717,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         references: [{ path: './tsconfig.lib.json' }],
       }),
       'packages/lib/tsconfig.lib.json': json({
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.astro'],
       }),
     });
     const analysis = createSpiedImportAnalysis();
@@ -2751,10 +2751,12 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('collects all dependency requirements before resolving a pending owner', async () => {
+  it('keeps the Native owner when importing two framework families', async () => {
     const fixture = await createFixture({
       'packages/astro/src/Page.astro': '<h1>Astro</h1>\n',
-      'packages/astro/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/astro/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.astro'],
+      }),
       'packages/consumer/src/index.ts': [
         "import '../../svelte/src/App.svelte';",
         "import '../../astro/src/Page.astro';",
@@ -2762,11 +2764,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
         '',
       ].join('\n'),
       'packages/consumer/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
+        compilerOptions: { ...managedOutputCompilerOptions(), noResolve: true },
         include: ['src/**/*.ts'],
       }),
       'packages/svelte/src/App.svelte': '<h1>Svelte</h1>\n',
-      'packages/svelte/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/svelte/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.svelte'],
+      }),
     });
 
     try {
@@ -2791,10 +2795,12 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('retains the same pending framework requirements in reverse import order', async () => {
+  it('keeps the Native owner in reverse framework import order', async () => {
     const fixture = await createFixture({
       'packages/astro/src/Page.astro': '<h1>Astro</h1>\n',
-      'packages/astro/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/astro/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.astro'],
+      }),
       'packages/consumer/src/index.ts': [
         "import '../../astro/src/Page.astro';",
         "import '../../svelte/src/App.svelte';",
@@ -2802,11 +2808,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
         '',
       ].join('\n'),
       'packages/consumer/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
+        compilerOptions: { ...managedOutputCompilerOptions(), noResolve: true },
         include: ['src/**/*.ts'],
       }),
       'packages/svelte/src/App.svelte': '<h1>Svelte</h1>\n',
-      'packages/svelte/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/svelte/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.svelte'],
+      }),
     });
     const analysis = createSpiedImportAnalysis();
 
@@ -2865,7 +2873,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
         references: [{ path: '../c/tsconfig.lib.json' }],
       }),
       'packages/e/tsconfig.json': json({ include: [], references: [] }),
-      'packages/c/tsconfig.lib.json': json({ include: ['src/**/*'] }),
+      'packages/c/tsconfig.lib.json': json({
+        include: ['src/**/*', 'src/**/*.vue'],
+      }),
       'packages/c/src/App.vue':
         '<script setup lang="ts">const value = 1;</script><template>{{value}}</template>',
       'packages/d/tsconfig.lib.json': json({ include: ['src/**/*.ts'] }),
@@ -2938,7 +2948,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
   it('isolates framework ownership across overlapping solutions with a shared source', async () => {
     const fixture = await createFixture({
       'packages/a/src/App.svelte': '<h1>Svelte</h1>\n',
-      'packages/a/tsconfig.lib.json': json({ include: ['src/**/*'] }),
+      'packages/a/tsconfig.lib.json': json({
+        include: ['src/**/*', 'src/**/*.svelte'],
+      }),
       'packages/b/src/index.ts': 'export const value = true;\n',
       'packages/b/tsconfig.lib.json': json({ include: ['src/**/*.ts'] }),
       'packages/s1/tsconfig.json': json({
@@ -3004,7 +3016,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
         '</script>',
         '',
       ].join('\n'),
-      'packages/vue/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/vue/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.vue'],
+      }),
     });
 
     try {
@@ -3063,7 +3077,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
         "import Component from '../../svelte/src/App.svelte';\nexport const value = Component;\n",
       'packages/consumer/tsconfig.json': json({ include: ['src/**/*'] }),
       'packages/svelte/src/App.svelte': '<h1>Svelte</h1>\n',
-      'packages/svelte/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/svelte/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.svelte'],
+      }),
     });
     const analysis = createSpiedImportAnalysis();
 
@@ -3079,13 +3095,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
         { importAnalysisContext: analysis.context },
       );
       expect(checkers).toMatchObject([
-        {
-          include: [
-            'packages/consumer/tsconfig.json',
-            'packages/svelte/tsconfig.json',
-          ],
-          name: 'svelte-check',
-        },
+        { include: ['packages/svelte/tsconfig.json'], name: 'svelte-check' },
+        { include: ['packages/consumer/tsconfig.json'], name: 'tsc' },
       ]);
       expect(analysis.resolveSupplementalImport).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -3113,7 +3124,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
 export default component;
 `,
       'packages/svelte/src/App.svelte': '<h1>Svelte</h1>\n',
-      'packages/svelte/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/svelte/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.svelte'],
+      }),
     });
     const analysis = createSpiedImportAnalysis();
 
@@ -3253,7 +3266,7 @@ export default component;
       'packages/svelte/src/App.svelte': '<h1>Included</h1>\n',
       'packages/svelte/tsconfig.json': json({
         exclude: ['misc/**/*'],
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.svelte'],
       }),
     });
 
@@ -3443,21 +3456,14 @@ export default component;
           },
           { importAnalysisContext: analysis.context },
         );
-        expect(
-          result.ownershipPlan.ownershipSelectionFacts!.filter(
-            (fact) =>
-              fact.consumerConfigPath ===
-              fixture.path('packages/a/tsconfig.json'),
-          ),
-        ).toEqual([
+        const requests = result.dependencyAnalysis?.nativeEvidence?.flatMap(
+          ({ snapshot }) => snapshot.requests,
+        );
+        expect(requests).toContainEqual(
           expect.objectContaining({
-            importRecord: expect.objectContaining({ specifier }),
-            physicalTargetPath: null,
-            physicalTargetProvenance: null,
-            referenceRequirement: null,
-            typeEvidenceKind: 'unobserved',
+            specifier,
           }),
-        ]);
+        );
         expect(result.dependencyEdges).toEqual([]);
         expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
       } finally {
@@ -3505,18 +3511,14 @@ export default component;
             fixture.path('packages/consumer/tsconfig.json'),
           )?.finalOwner,
         ).toBe('tsc');
-        expect(
-          result.ownershipPlan.ownershipSelectionFacts!.find(
-            (fact) =>
-              fact.consumerConfigPath ===
-              fixture.path('packages/consumer/tsconfig.json'),
-          ),
-        ).toMatchObject({
-          physicalTargetPath: null,
-          physicalTargetProvenance: null,
-          referenceRequirement: null,
-          typeEvidenceKind: 'unobserved',
-        });
+        const requests = result.dependencyAnalysis?.nativeEvidence?.flatMap(
+          ({ snapshot }) => snapshot.requests,
+        );
+        expect(requests).toContainEqual(
+          expect.objectContaining({
+            specifier: `../../provider/src/Widget.${extension}${suffix}`,
+          }),
+        );
         expect(result.dependencyEdges).toEqual([]);
         expect(analysis.resolveSupplementalImport).not.toHaveBeenCalled();
       } finally {
@@ -3598,7 +3600,9 @@ export default component;
         '<template><div /></template>',
       ].join('\n'),
       'packages/vue/src/ordinary.ts': 'export const ordinary = true;\n',
-      'packages/vue/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/vue/tsconfig.json': json({
+        include: ['src/**/*', 'src/**/*.vue'],
+      }),
     });
     const base = createImportAnalysisContext();
     const ordinaryTarget = normalizeAbsolutePath(
@@ -3670,7 +3674,7 @@ export default component;
           target: 'ES2023',
           types: [],
         },
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.vue'],
       }),
     });
 
@@ -4064,7 +4068,7 @@ export default component;
             target: 'ES2023',
             types: [],
           },
-          include: ['src/**/*'],
+          include: [`src/**/*.${family}`],
         }),
       });
       const analysis = createSpiedImportAnalysis();
@@ -4112,7 +4116,7 @@ export default component;
           target: 'ES2023',
           types: [],
         },
-        include: ['src/**/*'],
+        include: ['src/**/*.astro'],
       }),
       'packages/app/src/App.astro':
         '<script lang="ts">const value = 1;</script>\n',
@@ -4232,7 +4236,7 @@ export default component;
           target: 'ES2023',
           types: [],
         },
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.svelte'],
       }),
     });
 
@@ -4327,7 +4331,7 @@ export default component;
             target: 'ES2023',
             types: [],
           },
-          include: ['src/**/*'],
+          include: [`src/**/*.${family}`],
         }),
       });
 
@@ -4474,7 +4478,7 @@ export default component;
       'packages/app/src/index.ts': 'export const value = 1;\n',
       'packages/app/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.astro'],
         liminaOptions: { outputs: {} },
       }),
     });
@@ -4513,7 +4517,7 @@ export default component;
         "import { value } from '../../b/src/index.ts';\nexport { value };\n",
       'packages/a/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.astro'],
       }),
       'packages/b/src/index.ts': 'export const value = 1;\n',
       'packages/b/tsconfig.json': json({
@@ -4528,7 +4532,7 @@ export default component;
       'packages/d/src/Widget.astro': '<h2>Widget</h2>\n',
       'packages/d/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.astro'],
       }),
     });
 
@@ -4603,17 +4607,17 @@ export default component;
       'packages/a/src/index.ts': 'export const app = true;\n',
       'packages/a/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.astro'],
       }),
       'packages/astro-target/src/Widget.astro': '<h2>Astro</h2>\n',
       'packages/astro-target/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.astro'],
       }),
       'packages/svelte-target/src/Widget.svelte': '<h2>Svelte</h2>\n',
       'packages/svelte-target/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.svelte'],
       }),
       'packages/vue-target/src/Widget.vue': [
         '<script setup lang="ts">',
@@ -4626,7 +4630,7 @@ export default component;
       'packages/vue-target/src/index.ts': 'export const widget = true;\n',
       'packages/vue-target/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.vue'],
       }),
       'packages/vue-provider/src/index.ts': 'export const nested = true;\n',
       'packages/vue-provider/tsconfig.json': json({
@@ -4719,27 +4723,11 @@ export default component;
       expect(
         automatic.ownershipPlan.typeConfigs.get(aConfigPath),
       ).toMatchObject({
-        frozenSemanticAuthority: { family: 'typescript' },
-        finalOwner: 'tsc',
+        frozenSemanticAuthority: { family: 'astro', source: 'config' },
+        finalOwner: 'astro',
       });
-      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([
-        {
-          sourceConfigPath: aConfigPath,
-          checkers: ['astro', 'svelte-check', 'vue-tsc'],
-        },
-      ]);
-      expect(
-        automatic.dependencyEdges.filter(
-          (edge) => edge.fromConfigPath === aConfigPath,
-        ),
-      ).toEqual([]);
-      expect(automatic.dependencyEdges).toEqual([
-        expect.objectContaining({
-          fromConfigPath: vueConfigPath,
-          kind: 'declaration-provider',
-          toConfigPath: vueProviderConfigPath,
-        }),
-      ]);
+      expect(readFrameworkInferenceAmbiguities(caches)).toEqual([]);
+      expect(automatic.dependencyEdges).toEqual(frameworkRelationsMatcher);
     } finally {
       await fixture.cleanup();
     }
@@ -4753,7 +4741,7 @@ export default component;
         'packages/app/src/target.ts': 'export {};\n',
         'packages/app/tsconfig.json': json({
           compilerOptions: managedOutputCompilerOptions(),
-          include: ['src/**/*'],
+          include: ['src/**/*', 'src/**/*.astro'],
         }),
       },
       { astroToolchain: false },
@@ -4824,7 +4812,7 @@ export default component;
       ].join('\n'),
       'packages/a/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.svelte'],
       }),
       'packages/b/src/Widget.svelte': [
         '<script lang="ts">',
@@ -4836,7 +4824,7 @@ export default component;
       ].join('\n'),
       'packages/b/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.svelte'],
       }),
       'packages/c/src/index.ts': 'export const value = 1;\n',
       'packages/c/tsconfig.json': json({
@@ -4918,7 +4906,7 @@ export default component;
       ].join('\n'),
       'packages/app/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.svelte'],
       }),
     });
 
@@ -4972,7 +4960,7 @@ export default component;
           'packages/app/src/App.svelte': file,
           'packages/app/tsconfig.json': json({
             compilerOptions: managedOutputCompilerOptions(),
-            include: ['src/**/*'],
+            include: ['src/**/*', 'src/**/*.svelte'],
           }),
         },
         { svelteCompiler, svelteTransform },
@@ -5024,7 +5012,7 @@ export default component;
     { noResolve: false, script: 'js', allowJs: false },
     { noResolve: false, script: 'js', allowJs: true },
   ])(
-    'qualifies a Pending Vue target without granting native loading ($script, noResolve=$noResolve, allowJs=$allowJs)',
+    'reports a Native consumer import of a governed Vue target without loading its script ($script, noResolve=$noResolve, allowJs=$allowJs)',
     async ({ noResolve, script, allowJs }) => {
       const fixture = await createFixture({
         'packages/a/src/index.ts':
@@ -5045,13 +5033,13 @@ export default component;
         'packages/c/src/Button.vue': `<script setup lang="${script}">const label = "hello";</script><template>{{ label }}</template>`,
         'packages/c/tsconfig.json': json({
           compilerOptions: { ...managedOutputCompilerOptions(), allowJs: true },
-          include: ['src/**/*'],
+          include: ['src/**/*', 'src/**/*.vue'],
         }),
       });
       const caches = createProjectDependencyCaches();
       const imports = createSpiedImportAnalysis();
       try {
-        const result = await prepareGeneratedTsconfigGraph(
+        const preparation = prepareGeneratedTsconfigGraph(
           {
             ...fixture.config,
             scope: {
@@ -5064,8 +5052,18 @@ export default component;
             importAnalysisContext: imports.context,
           },
         );
-        const pending = result.ownershipPlan.ownershipSelectionFacts?.find(
-          (fact) => fact.importRecord.specifier.endsWith('Button.vue'),
+        if (!noResolve) {
+          await expect(preparation).rejects.toThrow(
+            'framework-semantic-authority-required',
+          );
+          expect(
+            caches.supplementalAssessments?.[0]?.context.authority,
+          ).toMatchObject({ phase: 'locked', family: 'typescript' });
+          return;
+        }
+        const result = await preparation;
+        const pending = result.ownershipPlan.dependencyFacts?.find((fact) =>
+          fact.importRecord.specifier.endsWith('Button.vue'),
         );
         expect(pending?.nativeEvidence?.obligation?.existence.state).toBe(
           'absent',
@@ -5082,7 +5080,7 @@ export default component;
           )?.nativeInventory?.members,
         ).not.toContain(fixture.path('packages/c/src/Button.vue'));
         const locked = result.dependencyAnalysis!.supplementalAssessments![0]!;
-        expect(locked.context.id).not.toBe(
+        expect(locked.context.id).toBe(
           pending?.supplementalAssessment?.context.id,
         );
         expect(
@@ -5102,15 +5100,14 @@ export default component;
           pending?.supplementalAssessment?.obligation.existence,
           JSON.stringify(pending?.supplementalAssessment?.obligation),
         ).toMatchObject({
-          state:
-            noResolve || (script === 'js' && !allowJs) ? 'absent' : 'present',
+          state: 'absent',
         });
         const snapshot = result.dependencyAnalysis?.nativeEvidence
           ?.map((item) => item.snapshot)
           .find((value) =>
             value.contexts.some(
               (context) =>
-                context.authority.phase === 'pending' &&
+                context.authority.phase === 'locked' &&
                 context.inputs.config ===
                   fixture.path('packages/a/tsconfig.json'),
             ),
@@ -5127,25 +5124,25 @@ export default component;
                 fixture.path('packages/a/tsconfig.json') &&
               edge.toConfigPath === fixture.path('packages/c/tsconfig.json'),
           ),
-        ).toBe(!noResolve && (script === 'ts' || allowJs));
+        ).toBe(false);
       } finally {
         await fixture.cleanup();
       }
     },
   );
 
-  it('uses an untyped Svelte import for pending ownership without admitting the Oxc bootstrap as a final edge', async () => {
+  it('keeps a Native Svelte importer under its configured semantics without admitting a physical target as an edge', async () => {
     const fixture = await createFixture({
       'packages/a/src/index.ts':
         "import '../../b/src/App.svelte';\nexport const value = 1;\n",
       'packages/a/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
+        compilerOptions: { ...managedOutputCompilerOptions(), noResolve: true },
         include: ['src/**/*.ts'],
       }),
       'packages/b/src/App.svelte': '<h1>Svelte</h1>\n',
       'packages/b/tsconfig.json': json({
         compilerOptions: managedOutputCompilerOptions(),
-        include: ['src/**/*'],
+        include: ['src/**/*', 'src/**/*.svelte'],
       }),
     });
     const analysis = createSpiedImportAnalysis();
@@ -5162,10 +5159,8 @@ export default component;
         { importAnalysisContext: analysis.context },
       );
       expect(result.checkers).toMatchObject([
-        {
-          include: ['packages/a/tsconfig.json', 'packages/b/tsconfig.json'],
-          name: 'svelte-check',
-        },
+        { include: ['packages/b/tsconfig.json'], name: 'svelte-check' },
+        { include: ['packages/a/tsconfig.json'], name: 'tsc' },
       ]);
       expect(result.dependencyEdges).toEqual([]);
       expect(analysis.resolveSupplementalImport).toHaveBeenCalledTimes(1);
@@ -7226,7 +7221,7 @@ export default component;
     }
   });
 
-  it('lets auto ownership select the checker that observes the source files', async () => {
+  it('keeps a wildcard-only config under Native semantics when a Vue root is added', async () => {
     const fixture = await createFixture({
       'packages/app/src/App.vue': '<template><div /></template>\n',
       'packages/app/src/index.ts': 'export const value = 1;\n',
@@ -7254,7 +7249,7 @@ export default component;
         expect.arrayContaining([
           expect.objectContaining({
             config: 'packages/app/tsconfig.json',
-            owner: 'vue-tsc',
+            owner: 'tsc',
           }),
         ]),
       );

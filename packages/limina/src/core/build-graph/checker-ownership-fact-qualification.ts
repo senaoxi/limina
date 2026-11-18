@@ -7,9 +7,9 @@ import type {
 import { isCurrentLockedSupplement } from './pending-supplemental-assessment';
 
 export function assertLockedDependencyFacts(plan: CheckerOwnershipPlan): void {
-  if (plan.dependencyFactPhase === 'selection')
+  if (plan.dependencyFactPhase !== 'locked')
     throw new Error(
-      'Ownership selection observations cannot drive build coloring or promotion.',
+      'Build coloring and promotion require dependency facts collected under frozen authority.',
     );
 }
 

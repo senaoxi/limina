@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { AnalysisSnapshot, ConfigModuleSnapshot } from './contracts';
-import { ANALYSIS_ADAPTER } from './contracts';
+import { ANALYSIS_ADAPTER, ANALYSIS_SCHEMA } from './contracts';
 import type { NativeAnalysisCache } from './native-cache';
 import { availableSnapshotGraphs } from './snapshot-graphs';
 import {
@@ -48,6 +48,7 @@ export function currentSnapshotRecords(
   );
   return {
     configModules: cache.configModules,
+    resolvedConfigs: cache.resolvedConfigs.records,
     inputs,
     queries,
     importers,
@@ -67,13 +68,14 @@ export function emptySnapshot(
 ): AnalysisSnapshot {
   return {
     header: {
-      schema: 12,
+      schema: ANALYSIS_SCHEMA,
       implementation: ANALYSIS_ADAPTER,
       identity,
       configVersion: configVersion ?? null,
       revision: randomUUID(),
     },
     configModules: emptyConfigModules(),
+    resolvedConfigs: {},
     inputs: {},
     projects: {},
     queries: {},
@@ -107,7 +109,7 @@ export function matchingConfigSnapshot(
     configVersion !== undefined,
     previous.header.configVersion === configVersion,
     previous.header.identity === identity,
-    previous.header.schema === 12,
+    previous.header.schema === ANALYSIS_SCHEMA,
     hasCompleteConfigModules(previous),
     previous.header.implementation === ANALYSIS_ADAPTER,
   ];
@@ -117,7 +119,7 @@ export function matchingConfigSnapshot(
 export function newSnapshot(cache: NativeAnalysisCache): AnalysisSnapshot {
   return cloneAnalysisSnapshot({
     header: {
-      schema: 12,
+      schema: ANALYSIS_SCHEMA,
       implementation: ANALYSIS_ADAPTER,
       identity: cache.identity,
       configVersion: cache.configVersion ?? null,

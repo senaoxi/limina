@@ -56,7 +56,6 @@ const dependencyView = z.looseObject({
 });
 const ownershipView = z.looseObject({
   dependencyFacts: z.array(factView),
-  ownershipSelectionFacts: z.array(factView).optional(),
 });
 const projectionView = z.looseObject({
   sourceConfigCoverage: reference.optional(),
@@ -147,10 +146,6 @@ export function storeNativeGraphViews(
         dependencyFacts: graph.ownershipPlan.dependencyFacts.map((fact) =>
           references.fact(fact),
         ),
-        ownershipSelectionFacts:
-          graph.ownershipPlan.ownershipSelectionFacts?.map((fact) =>
-            references.fact(fact),
-          ),
       },
     },
   };
@@ -227,10 +222,6 @@ export function restoreNativeGraphViews(
       dependencyFacts: projection.ownershipPlan.dependencyFacts.map((fact) =>
         readFact(cache, fact),
       ),
-      ownershipSelectionFacts:
-        projection.ownershipPlan.ownershipSelectionFacts?.map((fact) =>
-          readFact(cache, fact),
-        ),
     },
   };
 }

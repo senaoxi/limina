@@ -18,7 +18,6 @@ interface ProjectFacts {
 interface WorkInput {
   caches: ProjectDependencyCaches;
   state: TypeConfigOwnershipState;
-  phase: 'selection' | 'locked';
   membership: FileOwnerLookup;
   collect: () => ProjectFacts;
 }
@@ -35,7 +34,7 @@ function workItem(input: WorkInput): Omit<CoreWorkItem, 'id'> {
   const reason = unavailableReason(input);
   return {
     configPath: input.state.configPath,
-    phase: input.phase,
+    phase: 'locked',
     family: authority.kind === 'locked' ? authority.family : 'typescript',
     eligibility: reason === undefined ? 'eligible' : 'unavailable',
     execution: 'not-run',
@@ -46,10 +45,9 @@ function unavailableReason(input: WorkInput): string | undefined {
   return input.state.semanticAuthorityUnavailable ?? missingLock(input);
 }
 function missingLock(input: WorkInput): string | undefined {
-  return input.phase === 'locked' &&
-    input.state.semanticAuthority.kind !== 'locked'
-    ? 'authority-unavailable'
-    : undefined;
+  return input.state.semanticAuthority.kind === 'locked'
+    ? undefined
+    : 'authority-unavailable';
 }
 function executeWork(
   input: WorkInput,
@@ -75,7 +73,7 @@ function completeWork(
     execution: workExecution(result),
     reason: result.failures?.join('\n\n'),
   });
-  if (input.phase === 'locked') retainRelations(input, result.facts);
+  retainRelations(input, result.facts);
   return result;
 }
 function workExecution(result: ProjectFacts): CoreWorkItem['execution'] {

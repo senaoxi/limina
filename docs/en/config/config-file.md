@@ -83,6 +83,8 @@ Object form enables caching and requires `dependencies: string[]`. An empty arra
 
 When a cache is valid, Limina can reuse saved analysis. Changed inputs cause affected parts to be analyzed again. Restoration still checks inputs such as type entries, source coverage, project references, and output configuration. Actual type diagnostics and builds are performed separately by the checker.
 
+Limina keeps a separate parse record for each physical source `tsconfig` and parser context. TypeScript resolves its `extends` chain. On a later run, Limina checks the observed config files, package lookups and source-file listings before reusing that result. If two source configs extend the same base, they share the base check within one validation round. Changing the base or adding a nearer package that satisfies an `extends` request can require a new parse even if the source config is unchanged. Changing only `compilerOptions.strict` preserves the selected [semantic checker](./checkers.md#framework-inference).
+
 ### `cache.dependencies` {#cache-dependencies}
 
 - **Type:** `string[]` (required in object form)

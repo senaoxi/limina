@@ -7,11 +7,9 @@ import { assertCollectedExecution } from './analysis-failure';
 import { promoteDirectedCheckerDependencies } from './auto-checker-promotion';
 import { colorBuildCheckerComponents } from './checker-build-coloring';
 import {
-  applyDependencyRequirementPass,
   collectCheckerDependencyFacts,
   createOwnershipDependenciesByConfig,
 } from './checker-ownership-dependencies';
-import { collectFrameworkInferenceFacts } from './checker-ownership-dependency-facts';
 import {
   type CheckerOwnershipDiscovery,
   createOwnershipSelections,
@@ -19,7 +17,6 @@ import {
 } from './checker-ownership-discovery';
 import {
   addLocalCheckerRequirement,
-  applyRootFileEvidence,
   assertOwnershipPhase,
   commitFrameworkInference,
 } from './checker-ownership-evidence';
@@ -124,25 +121,6 @@ function runVuePromotion(options: {
   });
 }
 
-export function runDependencyRequirements(options: {
-  config: ResolvedLiminaInputs;
-  discovery: CheckerOwnershipDiscovery;
-}): void {
-  let isChanged = true;
-  while (isChanged) {
-    const pass = applyDependencyRequirementPass(options);
-    options.discovery.collectionProblems!.push(...pass.problems);
-    isChanged = pass.changed;
-    deferOwnershipProblems(options.discovery, () =>
-      validateOwnershipConstraints({
-        config: options.config,
-        discovery: options.discovery,
-        phase: 'dependency requirement analysis',
-      }),
-    );
-  }
-}
-
 export async function resolveCheckerOwnership(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
@@ -162,37 +140,6 @@ export async function resolveCheckerOwnership(options: {
       phase: 'config evidence',
     }),
   );
-  discovery.collectionProblems.push(
-    ...applyRootFileEvidence({
-      config: options.config,
-      plan: discovery.plan,
-      projectByConfigPath: discovery.projectByConfigPath,
-    }),
-  );
-  deferOwnershipProblems(discovery, () =>
-    validateOwnershipConstraints({
-      config: options.config,
-      discovery,
-      phase: 'effective root evidence',
-    }),
-  );
-  discovery.collectionProblems.push(
-    ...(await collectCheckerDependencyFacts({
-      config: options.config,
-      discovery,
-      importAnalysis: options.importAnalysisContext,
-      projectDependencyCaches: options.projectDependencyCaches,
-      projectConfigCache: options.projectConfigCache,
-    })),
-  );
-  runDependencyRequirements({ config: options.config, discovery });
-  collectFrameworkInferenceFacts({
-    config: options.config,
-    discovery,
-    importAnalysis: options.importAnalysisContext,
-    projectConfigCache: options.projectConfigCache,
-  });
-  runDependencyRequirements({ config: options.config, discovery });
   const inference = commitFrameworkInference({
     config: options.config,
     plan: discovery.plan,
@@ -279,10 +226,7 @@ async function collectFrozenDependencyFacts(
   options: Parameters<typeof resolveCheckerOwnership>[0],
   discovery: CheckerOwnershipDiscovery,
 ): Promise<void> {
-  // The phase changes the producer/context identity. Selection observations
-  // remain historical evidence; no pending object becomes a locked fact.
   const problems = await collectCheckerDependencyFacts({
-    phase: 'locked',
     config: options.config,
     discovery,
     importAnalysis: options.importAnalysisContext,

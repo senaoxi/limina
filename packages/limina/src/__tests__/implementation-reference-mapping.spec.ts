@@ -98,7 +98,11 @@ describe('required implementation reference mappings', () => {
           );
           await writeFile(
             f.path('a/tsconfig.json'),
-            JSON.stringify({ compilerOptions, files: ['index.ts'] }),
+            JSON.stringify({
+              compilerOptions,
+              files: ['index.ts'],
+              vueCompilerOptions: {},
+            }),
           );
           await writeFile(
             f.path('b/tsconfig.json'),

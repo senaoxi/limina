@@ -3,10 +3,7 @@ import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { applyConfigEvidence } from './checker-ownership-config-evidence';
 import { resolveOwnershipEntries } from './checker-ownership-entries';
-import {
-  applyExplicitRequirements,
-  applyRootFileEvidence,
-} from './checker-ownership-evidence';
+import { applyExplicitRequirements } from './checker-ownership-evidence';
 import {
   collectOwnershipScopes,
   createDirectSolutionReferences,
@@ -32,9 +29,6 @@ function collectExplicitOwners(
 function hasSvelteSeed(scope: AutoScope): boolean {
   return (
     scope.authoritativeChecker === 'svelte-check' ||
-    scope.projects.some(
-      (project) => project.filePartition.svelteFiles.length > 0,
-    ) ||
     scope.frameworkEvidence.some((evidence) =>
       evidence.intentHints.some((hint) => hint.family === 'svelte'),
     )
@@ -95,11 +89,6 @@ export async function canExcludeSvelteProjects(options: {
     }
     problems.push(
       ...applyConfigEvidence({ config: options.config, plan, scopes }),
-      ...applyRootFileEvidence({
-        config: options.config,
-        plan,
-        projectByConfigPath,
-      }),
     );
     return problems.length === 0;
   } catch {

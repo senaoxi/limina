@@ -31,10 +31,7 @@ export function hasBoundNativeOwnership(input: {
   return [
     plan.dependencyFactPhase === 'locked',
     plan.dependencyFacts.every((fact) => hasNativeQualification(fact, plan)),
-    plan.dependencyFacts.every((fact) => isBoundFact(fact, observed, true)),
-    (plan.ownershipSelectionFacts ?? []).every((fact) =>
-      isBoundFact(fact, observed, false),
-    ),
+    plan.dependencyFacts.every((fact) => isBoundFact(fact, observed)),
   ].every(Boolean);
 }
 
@@ -86,27 +83,25 @@ function importerFacts(importer: ImporterRecord | undefined): ObservedFact[] {
 function isBoundFact(
   fact: CheckerDependencyFact,
   observed: ReadonlyMap<string, ObservedFact>,
-  isLocked: boolean,
 ): boolean {
   const evidence = fact.nativeEvidence;
   if (evidence === undefined) return true;
   const raw = observed.get(evidence.requestId);
-  return raw !== undefined && isObservedFact({ fact, raw, isLocked });
+  return raw !== undefined && isObservedFact({ fact, raw });
 }
 
 function isObservedFact(input: {
   fact: CheckerDependencyFact;
   raw: ObservedFact;
-  isLocked: boolean;
 }): boolean {
-  const { fact, raw, isLocked } = input;
+  const { fact, raw } = input;
   const evidence = fact.nativeEvidence!;
   return [
     nativeFingerprint(evidence) === nativeFingerprint(raw.fact.nativeEvidence),
     createImportRecordIdentity(fact.importRecord) ===
       createImportRecordIdentity(raw.occurrence),
     fact.consumerConfigPath === evidence.origin.context.inputs.config,
-    !isLocked || evidence.origin.context.authority.phase === 'locked',
+    evidence.origin.context.authority.phase === 'locked',
     nativeFingerprint(fact.referenceRequirement ?? null) ===
       nativeFingerprint(raw.fact.referenceRequirement),
     hasPhysicalTarget(fact, raw.fact.referenceRequirement),
@@ -122,18 +117,7 @@ function hasPhysicalTarget(
       fact.physicalTargetProvenance === 'checker-source',
       fact.physicalTargetPath === requirement.targetFileName,
     ].every(Boolean);
-  return fact.frameworkCandidate === undefined
-    ? fact.physicalTargetPath === null
-    : hasFrameworkCandidate(fact);
-}
-
-function hasFrameworkCandidate(fact: CheckerDependencyFact): boolean {
-  const candidate = fact.frameworkCandidate!;
-  return [
-    fact.physicalTargetPath === candidate.targetPath,
-    fact.physicalTargetProvenance === 'pending-framework-candidate',
-    candidate.origin.source === 'framework-candidate',
-    nativeFingerprint(candidate.origin.context) ===
-      nativeFingerprint(fact.nativeEvidence!.origin.context),
-  ].every(Boolean);
+  return (
+    fact.physicalTargetPath === null && fact.physicalTargetProvenance === null
+  );
 }

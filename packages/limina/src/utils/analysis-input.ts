@@ -1,10 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { configFileStamp, readStampedConfig } from './config-file-stamp';
 
 export type AnalysisReadDescriptor =
   | { kind: 'directory' | 'directories' | 'realpath'; path: string }
   | { kind: 'file'; path: string }
   | { kind: 'content'; path: string }
   | { kind: 'typescript-content'; path: string }
+  | { kind: 'config-text'; path: string }
   | { kind: 'file-identity'; path: string }
   | { kind: 'file-binding'; path: string }
   | {
@@ -35,6 +37,7 @@ export type AnalysisReadDescriptor =
 
 export interface AnalysisRead {
   descriptor?: AnalysisReadDescriptor;
+  configStamp?: string;
   path: string;
   key: string;
   value: unknown;
@@ -73,10 +76,15 @@ export function withAdditionalAnalysisReads<T>(
   }, operation);
 }
 
-export function observeAnalysisRead(input: AnalysisRead): void {
+export function observeAnalysisRead<T>(
+  input: AnalysisRead,
+  validated?: { derive: (input: AnalysisRead) => T; value: T },
+): void {
   const observer = observations.getStore();
   if (observer === undefined) return;
-  dispatches.push({ input, derived: new Map() });
+  const derived = new Map<(input: AnalysisRead) => unknown, unknown>();
+  if (validated !== undefined) derived.set(validated.derive, validated.value);
+  dispatches.push({ input, derived });
   try {
     observer(input);
   } finally {
@@ -105,6 +113,9 @@ export function readAnalysisInput<T>(
   purpose:
     | 'content'
     | 'file'
+    | 'directory'
+    | 'directories'
+    | 'realpath'
     | 'typescript-content'
     | 'file-binding'
     | 'file-identity' = 'content',
@@ -114,6 +125,28 @@ export function readAnalysisInput<T>(
     path,
     descriptor: { kind: purpose, path },
     key: JSON.stringify([purpose, path]),
+    value,
+    read,
+  });
+  return value;
+}
+
+// Associate a physical config read with metadata from both sides of the read.
+export function readTypeScriptConfigInput(
+  path: string,
+  read: () => string | undefined,
+): string | undefined {
+  if (observations.getStore() === undefined) return read();
+  const { value, configStamp } = readStampedConfig(
+    path,
+    read,
+    configFileStamp(path),
+  );
+  observeAnalysisRead({
+    key: JSON.stringify(['config-text', path]),
+    path,
+    descriptor: { kind: 'config-text', path },
+    configStamp,
     value,
     read,
   });

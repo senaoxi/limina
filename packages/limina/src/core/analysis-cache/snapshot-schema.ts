@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { configModuleSnapshotSchema } from './config-module-schema';
-import { ANALYSIS_ADAPTER, type AnalysisSnapshot } from './contracts';
+import {
+  ANALYSIS_ADAPTER,
+  ANALYSIS_SCHEMA,
+  type AnalysisSnapshot,
+} from './contracts';
 import {
   hasDeclarationReceipt,
   requestEligibilitySchema,
@@ -115,6 +119,7 @@ const coverage = z.enum(['complete', 'unknown']);
 const inputsRecord = z.object({
   path: text,
   kind: z.enum([
+    'config-text',
     'content',
     'file',
     'directory',
@@ -128,6 +133,7 @@ const inputsRecord = z.object({
     'exports',
   ]),
   version: text,
+  fileStamp: text.optional(),
   observedMtime: optionalNumber,
   verifiedThrough: optionalNumber,
   text: text.optional(),
@@ -191,7 +197,7 @@ export function parseGraphRecords(value: unknown): AnalysisSnapshot['graphs'] {
   return z.record(text, graphRecord).parse(value) as AnalysisSnapshot['graphs'];
 }
 const header = z.object({
-  schema: z.literal(12),
+  schema: z.literal(ANALYSIS_SCHEMA),
   implementation: z.literal(ANALYSIS_ADAPTER),
   identity: text,
   configVersion: text,
@@ -217,9 +223,17 @@ const fileFacts = z.object({
   requests: z.array(requestTemplate),
   libraries: texts,
 });
+const resolvedConfig = z.object({
+  configPath: text,
+  context: text,
+  discovery: z.array(discoveryRecordSchema).nonempty(),
+  payload: text,
+  fingerprint: text,
+});
 const snapshot = z.object({
   header,
   configModules: configModuleSnapshotSchema,
+  resolvedConfigs: z.record(text, resolvedConfig),
   inputs: z.record(text, inputsRecord),
   queries: z.record(text, queriesRecord),
   importers: z.record(text, importersRecord),

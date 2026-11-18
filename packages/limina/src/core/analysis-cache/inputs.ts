@@ -1,6 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import type {
   AnalysisCacheMetrics,
   AnalysisInput,
@@ -121,17 +120,9 @@ export class AnalysisInputs {
   }
 
   #observeConfigEntry(entry: { filePath: string; contentHash: string }): void {
-    const checkedAt = Date.now();
-    const stat = inputStat(entry.filePath);
-    const text = readFileSync(entry.filePath, 'utf8');
-    if (createHash('sha256').update(text).digest('hex') !== entry.contentHash)
+    const dependency = this.observe(entry.filePath, 'config-text');
+    if (dependency.expectedVersion !== entry.contentHash)
       this.#rejectDrift(entry.filePath);
-    const dependency = this.observeText({
-      path: entry.filePath,
-      text,
-      checkedAt,
-      beforeMtime: stat!.mtimeMs,
-    });
     this.configInputs.add(dependency.inputId);
     this.consume([dependency]);
   }
@@ -157,6 +148,7 @@ export class AnalysisInputs {
     const current = readInput({
       path: input.path,
       kind: input.kind,
+      previous: input,
       metrics: this.metrics,
     });
     if (current.version !== input.version)

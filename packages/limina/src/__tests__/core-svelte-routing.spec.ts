@@ -163,7 +163,10 @@ describe('Svelte route exclusion', () => {
           files: [],
           references: [{ path: './nested/tsconfig.json' }],
         },
-        'nested/tsconfig.json': { compilerOptions, include: ['src/**/*'] },
+        'nested/tsconfig.json': {
+          compilerOptions,
+          include: ['src/**/*.svelte'],
+        },
         'nested/src/App.svelte': component,
       },
       config: {},
@@ -182,7 +185,7 @@ describe('Svelte route exclusion', () => {
     }
   });
 
-  it('retains dependency promotion from a separate Svelte owner', async () => {
+  it('keeps a Native consumer of a configured Svelte provider under its frozen authority', async () => {
     const f = await fixture({
       'tsconfig.json': {
         files: [],
@@ -191,10 +194,16 @@ describe('Svelte route exclusion', () => {
           { path: './provider/tsconfig.json' },
         ],
       },
-      'consumer/tsconfig.json': { compilerOptions, include: ['src/**/*.ts'] },
+      'consumer/tsconfig.json': {
+        compilerOptions: { ...compilerOptions, noResolve: true },
+        include: ['src/**/*.ts'],
+      },
       'consumer/src/index.ts':
         'import App from "../../provider/src/App.svelte"; export {App};',
-      'provider/tsconfig.json': { compilerOptions, include: ['src/**/*'] },
+      'provider/tsconfig.json': {
+        compilerOptions,
+        include: ['src/**/*.svelte'],
+      },
       'provider/src/App.svelte': component,
     });
     const manager = new LiminaPreflightManager({ config: f.config });
@@ -203,8 +212,8 @@ describe('Svelte route exclusion', () => {
       const owner = (
         await manager.ensureGeneratedGraph()
       ).ownershipPlan.typeConfigs.get(f.file('consumer/tsconfig.json'));
-      expect(owner?.finalOwner).toBe('svelte-check');
-      expect(owner?.semanticAuthority).toMatchObject({ source: 'dependency' });
+      expect(owner?.finalOwner).toBe('tsc');
+      expect(owner?.semanticAuthority).toMatchObject({ source: 'baseline' });
     } finally {
       manager.dispose();
     }
@@ -275,6 +284,10 @@ describe('Svelte route exclusion', () => {
     try {
       await expect(manager.hasSvelteCheckProjects()).resolves.toBe(false);
       f.write('src/App.svelte', component);
+      f.write('tsconfig.json', {
+        compilerOptions,
+        include: ['src/**/*.ts', 'src/**/*.svelte'],
+      });
       createPreflightGenerationController(manager).startNextGeneration();
       await expect(manager.hasSvelteCheckProjects()).resolves.toBe(true);
       expect(
@@ -305,6 +318,10 @@ describe('Svelte route exclusion', () => {
       try {
         await expect(manager.hasSvelteCheckProjects()).resolves.toBe(false);
         f.write('src/App.svelte', component);
+        f.write('tsconfig.json', {
+          compilerOptions,
+          include: ['src/**/*.ts', 'src/**/*.svelte'],
+        });
         await expect(
           manager.ensureExecutionArtifactsMaterialized(purpose),
         ).rejects.toThrow('Svelte route inputs changed; rerun the command.');
@@ -372,6 +389,10 @@ describe('Svelte route exclusion', () => {
         if (isGraphCompleted && !isAdded) {
           isAdded = true;
           f.write('src/App.svelte', component);
+          f.write('tsconfig.json', {
+            compilerOptions,
+            include: ['src/**/*.ts', 'src/**/*.svelte'],
+          });
         }
         assertStable.call(this);
       },
@@ -426,6 +447,10 @@ describe('Svelte route exclusion', () => {
         .map((file) => [file, readFileSync(file, 'utf8')] as const)
         .toArray();
       f.write('src/App.svelte', component);
+      f.write('tsconfig.json', {
+        compilerOptions,
+        include: ['src/**/*.ts', 'src/**/*.svelte'],
+      });
       await expect(manager.refreshAfterManagedOutputs()).rejects.toThrow(
         'Svelte route inputs changed; rerun the command.',
       );

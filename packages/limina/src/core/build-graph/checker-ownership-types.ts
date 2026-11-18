@@ -1,7 +1,6 @@
 import type { CheckerName } from '#config/runner';
 import type { ImportRecord } from '#core/import-analysis/runner';
 import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
-import type { NativeEvidenceOrigin } from '../../domain/analysis/native-context';
 import type { NativeCoverage } from '../../domain/analysis/native-coverage';
 import type { SupplementalResolution } from '../import-analysis/supplemental-resolution';
 import type {
@@ -16,11 +15,7 @@ export type CheckerOwner =
 
 export type SemanticFamily = 'astro' | 'svelte' | 'typescript' | 'vue';
 
-export type SemanticAuthoritySource =
-  | 'explicit'
-  | 'config'
-  | 'root-file'
-  | 'dependency';
+export type SemanticAuthoritySource = 'explicit' | 'config' | 'baseline';
 
 export interface LockedSemanticAuthority {
   family: SemanticFamily;
@@ -35,8 +30,6 @@ export type SemanticAuthority =
 export type CheckerEvidenceSource =
   | 'explicit'
   | 'config'
-  | 'root-file'
-  | 'dependency'
   | 'build-closure'
   | 'vue-promotion'
   | 'fallback';
@@ -71,16 +64,12 @@ export interface CheckerDependencyFact {
   supplementalDiscovery?: SupplementalResolution;
   supplementalCoverage?: NativeCoverage;
   supplementalAssessment?: SupplementalAssessment;
-  frameworkCandidate?: PhysicalFrameworkCandidate;
   nativeEvidence?: NativeDependencyFact['nativeEvidence'];
   referenceRequirement?: DeclarationReferenceRequirement | null;
   consumerConfigPath: string;
   importRecord: ImportRecord;
   physicalTargetPath: string | null;
-  physicalTargetProvenance:
-    | 'checker-source'
-    | 'pending-framework-candidate'
-    | null;
+  physicalTargetProvenance: 'checker-source' | null;
   typeEvidenceKind:
     | 'ambient'
     | 'checker-source'
@@ -89,20 +78,10 @@ export interface CheckerDependencyFact {
     | 'unobserved';
 }
 
-export interface PhysicalFrameworkCandidate {
-  origin: NativeEvidenceOrigin;
-  coverage: NativeCoverage;
-  observer: 'qualified-framework-candidate-v2';
-  family: Exclude<SemanticFamily, 'typescript'>;
-  owningConfigPath: string;
-  targetPath: string;
-}
-
 export interface CheckerOwnershipPlan {
   coloringInputs?: { version: 1; seeds: Map<string, TypeConfigOwnershipState> };
   declarationContexts?: DeclarationContextDecision[];
-  dependencyFactPhase?: 'selection' | 'locked';
-  ownershipSelectionFacts?: readonly CheckerDependencyFact[];
+  dependencyFactPhase?: 'locked';
   dependencyFacts: CheckerDependencyFact[];
   sourceConfigPathsByEntry: Map<string, string[]>;
   solutions: Map<string, SolutionOwnershipState>;

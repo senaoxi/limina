@@ -340,7 +340,7 @@ it.each([
           noLib: true,
           types: [],
         },
-        include: ['*'],
+        include: ['*.ts', '*.vue'],
       }),
       'b/value.ts': 'export const value = 1;',
       'b/Widget.vue': '<template>Provider</template>',

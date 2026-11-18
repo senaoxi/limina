@@ -1,7 +1,6 @@
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
-import type { AutoScopeProject } from './auto-checker-types';
 import type {
   CheckerEvidence,
   CheckerOwnershipPlan,
@@ -52,44 +51,26 @@ export function addEvidenceIfMissing(
   if (!isExists) state.evidence.push({ ...evidence });
 }
 
-const inferenceSourceOrder: readonly CheckerEvidence['source'][] = [
-  'config',
-  'root-file',
-  'dependency',
-];
 const frameworkCheckers = new Set<CheckerName>([
   'astro',
   'svelte-check',
   'vue-tsc',
 ]);
 
-export function frameworkInferenceEvidence(
+function frameworkInferenceEvidence(
   state: TypeConfigOwnershipState,
 ): CheckerEvidence[] {
   return state.evidence
     .filter(
       (evidence) =>
-        frameworkCheckers.has(evidence.checker) &&
-        inferenceSourceOrder.includes(evidence.source),
+        frameworkCheckers.has(evidence.checker) && evidence.source === 'config',
     )
     .sort((left, right) => {
-      const rank = (source: CheckerEvidence['source']) =>
-        inferenceSourceOrder.indexOf(source);
       return (
-        rank(left.source) - rank(right.source) ||
         compareCodeUnits(left.checker, right.checker) ||
         compareCodeUnits(left.detail, right.detail)
       );
     });
-}
-
-export function uniqueFrameworkInference(
-  state: TypeConfigOwnershipState,
-): CheckerEvidence | undefined {
-  const evidence = frameworkInferenceEvidence(state);
-  return new Set(evidence.map((entry) => entry.checker)).size === 1
-    ? evidence[0]
-    : undefined;
 }
 
 export function commitFrameworkInference(options: {
@@ -265,68 +246,6 @@ export function applyExplicitRequirements(options: {
   return [...options.explicitOwnerByEntryPath].flatMap(([entryPath, checker]) =>
     applyExplicitRequirement({ ...options, checker, entryPath }),
   );
-}
-
-function collectRootRequirements(
-  project: AutoScopeProject,
-): { checker: CheckerName; fileName: string }[] {
-  const candidates = [
-    ...project.filePartition.astroFiles.map((fileName) => ({
-      checker: 'astro' as const,
-      fileName,
-    })),
-    ...project.filePartition.svelteFiles.map((fileName) => ({
-      checker: 'svelte-check' as const,
-      fileName,
-    })),
-    ...project.filePartition.vueFiles.map((fileName) => ({
-      checker: 'vue-tsc' as const,
-      fileName,
-    })),
-  ];
-  const firstByChecker = new Map<CheckerName, string>();
-  for (const candidate of candidates) {
-    if (!firstByChecker.has(candidate.checker)) {
-      firstByChecker.set(candidate.checker, candidate.fileName);
-    }
-  }
-  return [...firstByChecker].map(([checker, fileName]) => ({
-    checker,
-    fileName,
-  }));
-}
-
-function applyRootRequirement(options: {
-  config: ResolvedLiminaInputs;
-  project: AutoScopeProject;
-  requirement: { checker: CheckerName; fileName: string };
-  state: TypeConfigOwnershipState;
-}): string[] {
-  addEvidenceIfMissing(options.state, {
-    checker: options.requirement.checker,
-    configPath: options.project.configPath,
-    detail: `effective root file ${toRelativePath(options.config.rootDir, options.requirement.fileName)}`,
-    source: 'root-file',
-  });
-  return [];
-}
-
-export function applyRootFileEvidence(options: {
-  config: ResolvedLiminaInputs;
-  plan: CheckerOwnershipPlan;
-  projectByConfigPath: ReadonlyMap<string, AutoScopeProject>;
-}): string[] {
-  return options.projectByConfigPath
-    .values()
-    .flatMap((project) => {
-      const state = options.plan.typeConfigs.get(project.configPath)!;
-      return state.authoritativeOwner === undefined
-        ? collectRootRequirements(project).flatMap((requirement) =>
-            applyRootRequirement({ ...options, project, requirement, state }),
-          )
-        : [];
-    })
-    .toArray();
 }
 
 export function assertOwnershipPhase(options: {

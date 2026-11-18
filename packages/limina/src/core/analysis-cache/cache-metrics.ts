@@ -9,6 +9,8 @@ export function emptyMetrics(): AnalysisCacheMetrics {
     hashMs: 0,
     resolverCalls: 0,
     queryHits: 0,
+    resolvedConfigHits: 0,
+    resolvedConfigParses: 0,
     factQueries: 0,
     factHits: 0,
     fallbacks: 0,

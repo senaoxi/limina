@@ -61,7 +61,7 @@ Native 建图按 context 创建物理截断 Program，不按 occurrence 创建�
 
 运行期 project dependency identity 包含 compiler options/conditions、源码文件、authority、extensions、package roots、workspace boundary 与 generation。Native fact cache 也以该 project identity 为键。证据快照在收集与缓存边界复制并冻结，不保留 live framework profile。只有已经观察到的 runtime evidence 才会被复制，克隆不会解析模块。[Project dependency 回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)覆盖上下文变化、修改尝试、原生 resource 及框架生成 observation。
 
-Pending ownership 查询可在已恢复 Native DTO 后创建新的 bounded Program；该查询不能借用旧 context 的进程内 live-inventory 或请求身份。`boundedNativeProgramsCreated` 记录这项实际构造，Native cache 的 `semanticProgramsCreated` 仍只统计缓存层所属的 context。完整 DTO 命中不代表整条命令零 Program；新增计数不会提升 graph cache 的资格或消除 supplemental replay。[Pending facts](../../../packages/limina/src/core/build-graph/checker-ownership-pending-facts.ts)和[缓存回归](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)保留两种计数的边界。
+`boundedNativeProgramsCreated` 统计本次调用中的有界 Program；Native 缓存的 `semanticProgramsCreated` 只统计该层管理的上下文。即使源上下文完全命中，候选验证等其他消费者仍可能需要创建 Program。
 
 [Runtime/source 收集器](../../../packages/limina/src/core/project-dependencies/runtime-source.ts)在一次不可变收集请求内计算一次既有语义身份，并将其传入文件循环。Purpose、managed-output lookup、options、overlay、成员集合、package ownership、framework identity 与 generation 保持原有 key 语义。逐文件 Astro/Svelte context 替换仍清除并重算 key；没有通过全局 memo 将身份带入下一请求。Runtime observation 仍不产生 Native 编译义务或 reference input。[依赖回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)同时覆盖 compiler 与 runtime 收集器的上下文变化。
 
@@ -97,7 +97,7 @@ Vue 声明闭包投影仅在一次[支撑贡献收集](../../../packages/limina/
 
 ## 原生持久化分析缓存
 
-当前持久分析使用 [analysis adapter v31](../../../packages/limina/src/core/analysis-cache/contracts.ts)、[generated graph key v24](../../../packages/limina/src/core/build-graph/analysis-cache.ts)、Native Program adapter v14 与 Vue analysis adapter v11。不兼容的 analysis header 拒绝整个快照，包括图记录和 context。Evidence 版本保持 5，snapshot schema 保持 12，storage version 保持 3，目录保持 `analysis-v2`。当前 Host 目录、大小写策略与 `toPath` 算法身份参与 Native/Vue context 资格判断。恢复对实际目标重新计算 Coverage，并验证物理绑定、输入和 context；当前 Candidate 仍用真实 Checker 执行检查。旧 canonical 证明被拒绝，不进行迁移。[Native cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)与 [Vue cache](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 回归负责拒绝及后续恢复。
+当前持久分析使用 [analysis adapter v32](../../../packages/limina/src/core/analysis-cache/contracts.ts)、[generated graph key v26](../../../packages/limina/src/core/build-graph/analysis-cache.ts)、Native Program adapter v14 与 Vue analysis adapter v11。不兼容的 analysis header 拒绝整个快照，包括图记录和 context。Evidence 版本保持 5，snapshot schema 为 13，storage version 保持 3，目录保持 `analysis-v2`。当前 Host 目录、大小写策略与 `toPath` 算法身份参与 Native/Vue context 资格判断。恢复对实际目标重新计算 Coverage，并验证物理绑定、输入和 context；当前 Candidate 仍用真实 Checker 执行检查。旧 canonical 证明被拒绝，不进行迁移。[Native cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)与 [Vue cache](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 回归负责拒绝及后续恢复。
 
 Native／Vue snapshot 将声明解析 receipt、结果与类型环境入口一起保存。Adapter identity 使旧解释失效，缺失或不兼容的必要 receipt 触发重新分析。每次收集按当前根 membership 与入口可达性决定治理投影，包括无 membership 的负向判断。Manifest 内容、symlink 绑定、有效 types／typeRoots、声明内容和失败候选仍属于观察输入。删除最后一个合法本地入口时撤销内部贡献，其他合法入口仍保留共享贡献。更新使用现有项目替换生命周期，不扩大 `replaceProject` 的事务范围。
 
@@ -131,7 +131,7 @@ checker 的 `.tsbuildinfo` 等构建缓存和 check-result query 保留各自合
 
 [Context records](../../../packages/limina/src/core/analysis-cache/context-records.ts) 与 [graph records](../../../packages/limina/src/core/analysis-cache/graph-records.ts) 在创建 Program 前校验普通 DTO。完整 clean 原生路径恢复 facts、成员、共享环境、ownership、occurrence 贡献及图投影，不创建分析 Program，不重复关系推导，也不额外完整枚举受信安装类型环境。runtime/resource evidence 和当前判定保留自己的有效性与刷新路径。恢复的生成内容取得新的认证 [artifact plan](../../../packages/limina/src/core/build-graph/analysis-cache.ts)，缺失／变化产物走正常物化。Program、AST、Symbol、host 及写权限不持久化。
 
-Vue 适配器共用上述输入、配置、lock coverage、epoch 和发布门。Schema 12 保存中立文件事实、收集方式、完整 Vue context／query receipt、图中的 context 引用，以及分别校验的类型入口／输出投影证明；旧快照冷回退，不迁移或删除。[Vue 输入观测](../../../packages/limina/src/core/analysis-cache/vue-inputs.ts)包装物理 compiler host。Volar 的虚拟声明 realpath 回退记录物理缺失状态和路径绑定，不将虚拟文件视为真实存在。构造 Volar project host 时不修改解析所得的 options 对象。Clean 混合图将 Vue identity 绑定至当前 provider generation，并创建新的 artifact plan，无需取得 Vue Program 或重新推导图。资格与不支持的 provider 边界见[语义有效性](./semantics.md#持久化-importer-有效性)。
+Vue 适配器共用上述输入、配置、lock coverage、epoch 和发布门。当前 schema 保存中立文件事实、收集方式、完整 Vue context／query receipt、图中的 context 引用，以及分别校验的类型入口／输出投影证明；旧快照冷回退，不迁移或删除。[Vue 输入观测](../../../packages/limina/src/core/analysis-cache/vue-inputs.ts)包装物理 compiler host。Volar 的虚拟声明 realpath 回退记录物理缺失状态和路径绑定，不将虚拟文件视为真实存在。构造 Volar project host 时不修改解析所得的 options 对象。Clean 混合图将 Vue identity 绑定至当前 provider generation，并创建新的 artifact plan，无需取得 Vue Program 或重新推导图。资格与不支持的 provider 边界见[语义有效性](./semantics.md#持久化-importer-有效性)。
 
 Vue 完整图恢复先重新绑定已合格的 context，再通过[生产者共用的引用投影](../../../packages/limina/src/core/build-graph/cached-vue-references.ts)核对声明引用。该校验复用有效 Vue query facts，保留声明闭包、资源观察、implicitRefs 和 provider 选择语义。根文件来自当前解析配置；缓存根文件、图边和 admission 不授予资格，也不把缺少 Native required relation 当作没有 Vue 引用。引用重建是恢复验证的一部分，不重做整个 ownership／图构建。跨项目导入移除会重新分析并删除最后一条引用；互相一致但擦除了合法引用的缓存候选仍被拒绝。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护这些正反例。
 
@@ -197,9 +197,11 @@ Runtime Hook 是一等依赖观测机制。配置加载／求值阶段的请求�
 
 ### 框架推导重放与 Warning
 
-框架推导复用 `effectiveConfigVersion`、analysis adapter identity 和 generated-graph key，当前版本记录于[原生持久化分析缓存](#原生持久化分析缓存)。推导策略改变算法身份，不引入新的 DTO、snapshot schema、storage version 或缓存目录。Checker 自有 `.tsbuildinfo` 保持独立，不增加资格指纹、Parser 恢复或独立 Warning Cache。
+每条成功的[配置解析记录](../../../packages/limina/src/core/analysis-cache/resolved-config-records.ts)属于一份源配置及其解析上下文。满足快照复用条件后，先验证记录的文件系统观察，再恢复 TypeScript 解析结果。观察覆盖入口及传递基配置、配置解析探测和源码成员查询。同一轮验证共享对基配置的观察结果。包绑定变化、新出现的候选或闭包成员变化均可使相应解析失效。记录缺失或内容不可用时，按对应上下文调用 TypeScript 解析器。schema 13 之前的快照按既有存储策略冷启动。
 
-[Ownership replay](../../../packages/limina/src/core/build-graph/cached-ownership-replay.ts) 重建当前 config/root/dependency 要求，按精确 Checker 身份去重，使用与冷分析相同的零/唯一/多命中策略。已存 final colors 不能授予当前语义权威。Cold、warm 和 force 路径的 authority、Pending Owner 及 Warning 的 config/checker 身份必须一致。即使旧 plan 与 candidate 同时遗漏同一 leaf，也须保留必要已选配置。实际 Checker 输出继续遵循独立的执行准入合同。
+[解析结果投影](../../../packages/limina/src/checker/resolved-config.ts)保存 Limina 消费的选项、引用、输入文件名及配置元数据。Compiler API 消费方需要根配置语法树时，TypeScript 根据已存根配置文本重新创建它。复用绑定到 TypeScript 版本及解析上下文。虚拟覆盖输入和不支持的编译器元数据走普通解析路径。
+
+[归属重放](../../../packages/limina/src/core/build-graph/cached-ownership-replay.ts)使用与冷分析相同的具名约束和有效配置触发项。已存执行颜色不能选择源码语义类型。重新解析后归属可能相同；归属变化时，必须按新结果冻结语义，再确定执行染色。Warning 和实际 Checker 的执行准入沿用各自流程。
 
 多框架诊断是当前 invocation 的结果。[既有 Issue Reporter](../../../packages/limina/src/check-reporting/framework-inference.ts)赋予 `LIMINA_GRAPH_FRAMEWORK_INFERENCE_AMBIGUOUS`、`graph:prepare` 和 warning severity。最终 check summary 在 blocker 上限之外逐配置列出；独立 CLI 在 finalization 中将 Warning 卡片写到 stderr，保留机器可读的 stdout。Preflight Manager 在成功和失败路径捕获诊断，replay 重建当前歧义。Warning 中的 Pending Owner 描述染色前时点，不表示最终执行归属仍未确定。Warning 不作为新 ownership 状态持久化，也不能作为权威恢复。Native/Vue 事实缓存能力及 Astro/Svelte 持久缓存支持保持不变。
 
@@ -239,7 +241,7 @@ Pending 受控补充发现仅属于当前 collection。[分析缓存](../../../p
 
 提前产生的循环 issue 保留按确定顺序排列的第一个 generated config 作为 `filePath`；仅当全部循环成员属于同一个 checker 时填写 `checkerName`。暂存与恢复验证都从图映射获取 checker 身份，不依赖生成路径的拼写；跨 checker 的循环不归属于某一个 checker。[Generated-graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)、[恢复引用回归](../../../packages/limina/src/__tests__/reference-validation.spec.ts)和 [detector fixture](../../../packages/limina/fixtures/detectors/graph/reference-cycle-mutual/case.mts)保护结构化诊断归属，同时保留物化前拒绝。
 
-Analysis adapter v27、Vue adapter v8、Native Program adapter v12 与 storage schema 12 拒绝旧声明加载及证据合同。[生成图记录](../../../packages/limina/src/core/build-graph/analysis-cache.ts)使用 identity v23，使旧记录无法绕过 solution 成员准入或复用过时的编译器选项投影。Checker-qualified evidence 为版本 5，声明验证 receipt 为版本 3。旧记录直接冷启动，不做转换。Compiler-source inventory、request inventory 和 obligation query 分别拥有合格 replay coverage，runtime syntax cache 不会升级为编译证明。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护恢复与当前候选重新验证；被拒绝的数据回退分析。
+Checker-qualified evidence 为版本 5，声明验证 receipt 为版本 3。旧记录直接冷启动，不做转换。Compiler-source inventory、request inventory 和 obligation query 分别拥有合格 replay coverage，runtime syntax cache 不会升级为编译证明。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保护恢复与当前候选重新验证；被拒绝的数据回退分析。
 
 生成的声明目录与增量缓存路径在既有 checker 和目录分区内保留完整源配置文件名，包括 `tsconfig.` 和 `.json`，因此 `tsconfig.json` 与 `tsconfig.tsconfig.json` 不再共享路径。规划阶段拒绝不同源配置占用同一路径。重新生成会更新受管配置；过期清理只依据原有所有权清单，不递归删除未登记的编译缓存或用户文件。[Namespace 守卫](../../../packages/limina/src/__tests__/artifact-namespace.spec.ts)与[图重新生成测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖路径冲突、旧所有权清单和重复规划。
 
@@ -349,7 +351,7 @@ Resolution、preparation、显式 TypeEvidence、依赖观察及支持输入枚�
 
 ## 声明上下文 receipt 与撤销
 
-Checker-qualified evidence v5 与 receipt v3 绑定源分析／执行权威、实际工具链入口、上下文、Coverage、物理绑定、显式选择、生成配置闭包、有效环境及已观察请求。Schema 12 拒绝旧记录。awaiting-selection 替换已完成贡献并撤销旧政策边，不能作为保留旧贡献的观察失败。
+Checker-qualified evidence v5 与 receipt v3 绑定源分析／执行权威、实际工具链入口、上下文、Coverage、物理绑定、显式选择、生成配置闭包、有效环境及已观察请求。快照 header 拒绝旧记录。awaiting-selection 替换已完成贡献并撤销旧政策边，不能作为保留旧贡献的观察失败。
 
 恢复从当前选择与合格事实重建政策引用，随后在持久化源分析复用之外，对每个适用候选上下文重新验证一次。源 Program 数为零不代表候选 Program 数为零。候选子进程的内容读取、文件／目录查找、目录枚举和 realpath 绑定会重新绑定消费者执行范围；输入漂移使观察被拒绝。候选观察和执行准入同时绑定实际 CLI 入口内容。凭据保留实际引用／输出映射，本身不能授权执行。执行要求当前 Node、已解析的绝对 `tsc` 或 `vue-tsc` 入口，以及已验证生成闭包。工具链、目标、source/output 用途、owner 检查选项或命令覆盖变化均不能兑换旧凭据。 声明执行凭据还绑定实际构建配置与已取得资格的 build/watch 参数。在准入前追加检查选项或改选另一份配置，也不能兑换先前的候选证明。
 
@@ -357,7 +359,7 @@ Vue 上下文身份包含 Coverage 和加载用途。graph、output、type-provi
 
 ## Source ownership 恢复与入口覆盖
 
-Manifest v7 将 source 单值 owner 与 solution 的 sources/checkers 元数据分开。Graph cache v9 要求 coloring 前的 seeds；恢复从当前选择、root/config 证据和绑定 facts 重建 seeds，然后重放 promotion、coloring 与 finalization。缺失证据或结果不同即冷回退；不使用缓存 finalOwner 作为 seed。Native storage schema 12 不变。
+Manifest 将各源配置的 owner 与 solution 的 sources/checkers 分开。图重放使用具名选择和有效配置中的归属意图重建染色前的状态，再根据合格关系重放执行提升、染色与最终选择。输入缺失或结果不同时，回退到冷分析。
 
 冻结的源输入属于当前分析 generation，不随 ownership seeds 序列化。恢复在接纳图投影前，按冻结语义权威从当前输入重建它们。缓存的受管成员与生成配置 `files`／`include` 必须匹配当前输入；缓存中的执行 Checker 不能授予新增 roots。
 

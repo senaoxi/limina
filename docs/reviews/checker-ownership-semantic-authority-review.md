@@ -1,5 +1,7 @@
 # Checker Ownership 与 Semantic Authority 实施审查
 
+本文保留提交 `7c4b890c` 的实现与验收记录。当前版本仅使用具名检查器约束和有效配置中的归属意图来决定语义权威，现行规则见[检查器配置](../zh/config/checkers.md#框架推导)。
+
 隐式 Framework 推导是一项直接、确定的 Ownership 策略。对每个 terminal Source Config 完整收集 Config、Root-file 和 Dependency 要求，按精确 Checker 身份去重：唯一结果直接选定 Framework；零结果或多个结果保留 Pending Local Owner，Freeze 使用 Native TypeScript baseline。多命中只在最终报告中产生非阻断 Warning，后续 Build Coloring 继续独立决定执行 Checker。
 
 **状态：实现、三轮独立反证与本机完整验收已完成。** 本文记录本次修正和验收范围，不替代持续维护的架构记录。测试矩阵描述合同，后面的验收记录列出实际执行结果。

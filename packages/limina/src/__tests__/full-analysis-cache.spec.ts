@@ -212,7 +212,7 @@ function analyze(
 }
 
 describe('complete native restoration and R02 scope evidence', () => {
-  it('reports bounded Program work for restored pending ownership without registering a cache context', async () => {
+  it('restores config-only ownership without creating a selection Program', async () => {
     const f = fixture();
     f.write('limina.config.mjs', 'export default {};');
     const config = await loadConfig({
@@ -258,7 +258,7 @@ describe('complete native restoration and R02 scope evidence', () => {
         events
           .filter((event) => event.name === 'bounded-program-create')
           .reduce((count, event) => count + (event.count ?? 0), 0),
-      ).toBe(1);
+      ).toBe(0);
     } finally {
       warm.dispose();
     }
@@ -1036,7 +1036,6 @@ describe('production graph snapshots and publication', () => {
         Object.values(snapshot.graphs)[0]!.data,
       ) as StoredGraphData;
       expect(before.ownershipPlan.dependencyFacts).toHaveLength(1);
-      expect(before.ownershipPlan.ownershipSelectionFacts).toHaveLength(1);
       const compilerEvidence = () =>
         Object.values(snapshot.contexts).map((context) => ({
           inventory: context.native?.inventory,
@@ -1215,7 +1214,6 @@ describe('production graph snapshots and publication', () => {
         Object.values(repaired.graphs)[0]!.data,
       ) as StoredGraphData;
       expect(graph.ownershipPlan.dependencyFacts).toHaveLength(1);
-      expect(graph.ownershipPlan.ownershipSelectionFacts).toHaveLength(1);
       expect(graph.dependencyAnalysis.outcome?.execution).toBe('completed');
       expect(repaired.header.revision).not.toBe(snapshot.header.revision);
       const recovered = f.execute<GraphRunResult>(run);

@@ -1,15 +1,11 @@
 import { z } from 'zod';
 import { nativeFactEvidenceSchema } from '../analysis-cache/native-obligation-schema';
-import {
-  nativeCoverageSchema,
-  nativeOriginSchema,
-} from '../analysis-cache/native-proof-schema';
 import { checker, stringMap, text, texts } from './cached-data-schema';
 import { declarationContextSchema } from './cached-declaration-schema';
 export const authority: z.ZodType<unknown> = z.object({
   kind: z.literal('locked'),
   family: z.enum(['typescript', 'vue']),
-  source: z.enum(['explicit', 'config', 'root-file', 'dependency']),
+  source: z.enum(['explicit', 'config', 'baseline']),
 });
 const evidence = z.object({
   checker: z.enum(['tsc', 'tsgo', 'vue-tsc', 'astro', 'svelte-check']),
@@ -18,8 +14,6 @@ const evidence = z.object({
   source: z.enum([
     'explicit',
     'config',
-    'root-file',
-    'dependency',
     'build-closure',
     'vue-promotion',
     'fallback',
@@ -84,23 +78,11 @@ const occurrence = z.object({
     .optional(),
 });
 const dependencyFact = z.object({
-  frameworkCandidate: z
-    .object({
-      origin: nativeOriginSchema,
-      coverage: nativeCoverageSchema,
-      observer: z.literal('qualified-framework-candidate-v2'),
-      family: z.enum(['vue', 'astro', 'svelte']),
-      owningConfigPath: text,
-      targetPath: text,
-    })
-    .optional(),
   nativeEvidence: nativeFactEvidenceSchema.optional(),
   consumerConfigPath: text,
   importRecord: occurrence,
   physicalTargetPath: text.nullable(),
-  physicalTargetProvenance: z
-    .enum(['checker-source', 'pending-framework-candidate'])
-    .nullable(),
+  physicalTargetProvenance: z.literal('checker-source').nullable(),
   typeEvidenceKind: z.enum([
     'ambient',
     'checker-source',
@@ -133,7 +115,6 @@ export const ownershipSchema: z.ZodType<unknown> = z.object({
   }),
   declarationContexts: z.array(declarationContextSchema).optional(),
   dependencyFactPhase: z.literal('locked'),
-  ownershipSelectionFacts: z.array(dependencyFact),
   dependencyFacts: z.array(dependencyFact),
   sourceConfigPathsByEntry: stringMap(texts),
   solutions: stringMap(solution),

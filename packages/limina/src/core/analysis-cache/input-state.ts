@@ -1,4 +1,5 @@
 import { compareCodeUnits } from '#utils/collections';
+import { configFileStamp } from '#utils/config-file-stamp';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import {
@@ -83,10 +84,41 @@ export function readInput(options: InputReadOptions): AnalysisInput {
   options.metrics.probes += 1;
   const readers: Partial<
     Record<InputKind, (options: InputReadOptions) => AnalysisInput>
-  > = { tree: readTree, content: readContent, bytes: readContent };
+  > = {
+    tree: readTree,
+    content: readContent,
+    bytes: readContent,
+    'config-text': readConfigText,
+  };
   const result = (readers[options.kind] ?? readVersioned)(options);
   options.metrics.probeMs += performance.now() - start;
   return result;
+}
+
+/**
+Config closure hashes describe the text TypeScript actually parsed, including its BOM decoding.
+*/
+function readConfigText(options: InputReadOptions): AnalysisInput {
+  const before = configFileStamp(options.path);
+  if (before !== undefined && before === options.previous?.fileStamp)
+    return options.previous;
+  const start = performance.now();
+  const text = ts.sys.readFile(options.path);
+  options.metrics.reads += 1;
+  options.metrics.readMs += performance.now() - start;
+  const version =
+    text === undefined
+      ? 'absent'
+      : createHash('sha256').update(text).digest('hex');
+  options.metrics.hashes += Number(text !== undefined);
+  if (before !== configFileStamp(options.path))
+    throw new AnalysisInputDriftError(options.path);
+  return {
+    path: options.path,
+    kind: 'config-text',
+    fileStamp: before,
+    version,
+  };
 }
 
 function readContent(options: Parameters<typeof readInput>[0]): AnalysisInput {

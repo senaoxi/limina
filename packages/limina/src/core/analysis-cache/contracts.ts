@@ -11,7 +11,8 @@ import type { TypeEnvironmentRecord } from './installation-environment';
 import type { VueContextRecord } from './vue-contracts';
 
 // Compiler occurrence/load receipts qualify restored projections.
-export const ANALYSIS_ADAPTER = 'checker-declaration-supplements-v31';
+export const ANALYSIS_ADAPTER = 'config-ownership-v32';
+export const ANALYSIS_SCHEMA = 13;
 
 export interface InputDependency {
   inputId: string;
@@ -19,6 +20,7 @@ export interface InputDependency {
 }
 
 export type InputKind =
+  | 'config-text'
   | 'content'
   | 'file'
   | 'directory'
@@ -35,6 +37,7 @@ export interface AnalysisInput {
   path: string;
   kind: InputKind;
   version: string;
+  fileStamp?: string;
   observedMtime?: number;
   verifiedThrough?: number;
   text?: string;
@@ -126,6 +129,15 @@ export interface DiscoveryRecord {
   descriptor: AnalysisReadDescriptor;
   version: string;
   binding: string;
+  configStamp?: string;
+}
+
+export interface ResolvedConfigRecord {
+  configPath: string;
+  context: string;
+  discovery: DiscoveryRecord[];
+  payload: string;
+  fingerprint: string;
 }
 
 export interface GraphRecord {
@@ -187,13 +199,14 @@ export interface ConfigModuleSnapshot {
 
 export interface AnalysisSnapshot {
   header: {
-    schema: 12;
+    schema: typeof ANALYSIS_SCHEMA;
     implementation: string;
     identity: string;
     configVersion: string | null;
     revision: string;
   };
   configModules: ConfigModuleSnapshot;
+  resolvedConfigs: Record<string, ResolvedConfigRecord>;
   inputs: Record<string, AnalysisInput>;
   queries: Record<string, ResolutionRecord>;
   importers: Record<string, ImporterRecord>;

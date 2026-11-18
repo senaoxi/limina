@@ -23,7 +23,7 @@ describes a newer contract than the installed version.
 
 | Symptom                                  | Evidence to inspect                                                          | Repair boundary                                                       |
 | ---------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Missing or conflicting checker ownership | Entry selectors, solution closure, framework files, connected build projects | Correct entry membership or the conflicting fixed assignment          |
+| Missing or conflicting checker ownership | Named selectors, solution constraints, effective configs, connected projects | Correct entry membership or the conflicting fixed assignment          |
 | Excluded entry still appears             | References from another selected solution                                    | Decide whether to change membership or an actual region boundary      |
 | Package import unauthorized              | Importing owner's dependency fields and any scoped root grant                | Declare the real dependency or correct the import                     |
 | Cross-owner relative import              | Both package owners and the checker-resolved target                          | Use a valid package entry point where that is the intended dependency |

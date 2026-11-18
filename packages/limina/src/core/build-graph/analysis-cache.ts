@@ -35,7 +35,7 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-const key = 'generated-graph-declaration-governance-v25';
+const key = 'generated-graph-config-ownership-v26';
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
@@ -107,6 +107,11 @@ async function readVersionedGraph(
     options.cache.fallback('graph-dto-invalid');
     return undefined;
   }
+  options.cache.resolvedConfigs.retainGraphSources([
+    ...options.workspace.sourceConfigPaths,
+    ...data.graph.ownershipPlan.typeConfigs.keys(),
+    ...data.graph.ownershipPlan.solutions.keys(),
+  ]);
   options.cache.increment('graphHits');
   return data;
 }

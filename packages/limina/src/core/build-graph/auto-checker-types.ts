@@ -5,8 +5,6 @@ import type {
 import type ts from 'typescript';
 import type { SourceFilePartition } from './source-capabilities';
 
-export type AutoCheckerPreset = 'tsc' | 'tsgo' | 'vue-tsc';
-
 export interface AutoScopeProject {
   virtualFiles?: ReadonlyMap<string, string>;
   analysisGeneration: number;

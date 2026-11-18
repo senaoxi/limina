@@ -45,20 +45,10 @@ function obligationMeaning(
 }
 
 function ownershipFactMeaning(fact: CheckerDependencyFact) {
-  const { nativeEvidence, frameworkCandidate, ...rest } = fact;
+  const { nativeEvidence, ...rest } = fact;
   return {
     ...rest,
     nativeEvidence: nativeEvidenceMeaning(nativeEvidence),
-    frameworkCandidate:
-      frameworkCandidate === undefined
-        ? undefined
-        : {
-            ...frameworkCandidate,
-            origin: {
-              source: frameworkCandidate.origin.source,
-              family: frameworkCandidate.origin.family,
-            },
-          },
   };
 }
 
@@ -73,8 +63,6 @@ export function graphMeaning(graph: { ownershipPlan: unknown }): unknown {
           decision,
       ),
       dependencyFacts: plan.dependencyFacts.map(ownershipFactMeaning),
-      ownershipSelectionFacts:
-        plan.ownershipSelectionFacts?.map(ownershipFactMeaning),
     },
   };
 }

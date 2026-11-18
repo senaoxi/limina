@@ -94,6 +94,7 @@ function mergeParsedProjectConfigs(options: {
   const firstConfig = requireFirstParsedConfig(options.parsedConfigs);
   return {
     configClosure: mergeConfigClosure(options.parsedConfigs),
+    configuredVueExtensions: firstConfig.configuredVueExtensions,
     extensions: normalizeExtensions([
       ...options.extensions,
       ...options.parsedConfigs.flatMap((config) => config.extensions),

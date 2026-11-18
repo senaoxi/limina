@@ -121,7 +121,7 @@ Execution identity and resolution semantics are determined separately. An ordina
 
 Once a project's resolution semantics are established, a missing checker target remains missing. Oxc, a separate resolver Limina uses in limited cases, cannot supply a new target on the declaration-inference path. Workspace export resolution, file existence, resource suffixes, and virtual-module allowlists cannot supply one either.
 
-During initial checker ownership inference, and only with `missing` type evidence, Oxc identifies eligible physical framework candidates. It is not a fallback resolver for a project whose semantics are already established. Separate physical-resource checks and runtime-oriented source checks do not generate declaration references in place of the checker either.
+Finding a framework component on disk does not select the consumer’s semantic checker. The consumer’s resolved configuration supplies that choice. Physical-resource checks and runtime-oriented source checks have separate purposes. See [Checker Configuration](./config/checkers.md#framework-inference).
 
 For an actually observed named workspace-package import, start by fixing type entries, `moduleResolution`, `paths`, `customConditions`, or the checker toolchain. A semantic observation with only ambient declaration evidence is a different case and does not establish that a runtime target exists.
 

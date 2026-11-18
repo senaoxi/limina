@@ -43,6 +43,7 @@ export interface CheckerConfigClosureEntry {
 }
 
 export interface ParsedCheckerProjectConfig {
+  configuredVueExtensions?: string[];
   configClosure: CheckerConfigClosureEntry[];
   extensions: string[];
   fileNames: string[];

@@ -31,8 +31,6 @@ export interface FrameworkIntentHint {
 
 export interface AutoFrameworkEvidence {
   configPath: string;
-  confirmedCapabilities: SourceFrameworkFamily[];
-  filePartition: SourceFilePartition;
   intentHints: FrameworkIntentHint[];
 }
 
@@ -55,15 +53,6 @@ const partitionKeyByExtension = new Map<string, SourceFilePartitionKey>([
   ),
 ]);
 
-const capabilityPartitionEntries: readonly [
-  SourceFrameworkFamily,
-  SourceFilePartitionKey,
-][] = [
-  ['astro', 'astroFiles'],
-  ['svelte', 'svelteFiles'],
-  ['vue', 'vueFiles'],
-];
-
 function createEmptySourceFilePartition(): SourceFilePartition {
   return {
     astroFiles: [],
@@ -85,28 +74,4 @@ export function partitionSourceFiles(
     if (key) partition[key].push(fileName);
   }
   return partition;
-}
-
-export function collectConfirmedFrameworkCapabilities(
-  partition: SourceFilePartition,
-): SourceFrameworkFamily[] {
-  return capabilityPartitionEntries
-    .filter(([, key]) => partition[key].length > 0)
-    .map(([family]) => family);
-}
-
-export function createAutoFrameworkEvidence(options: {
-  configPath: string;
-  filePartition?: SourceFilePartition;
-  fileNames?: readonly string[];
-  intentHints: FrameworkIntentHint[];
-}): AutoFrameworkEvidence {
-  const filePartition =
-    options.filePartition ?? partitionSourceFiles(options.fileNames ?? []);
-  return {
-    configPath: normalizeAbsolutePath(options.configPath),
-    confirmedCapabilities: collectConfirmedFrameworkCapabilities(filePartition),
-    filePartition,
-    intentHints: options.intentHints,
-  };
 }

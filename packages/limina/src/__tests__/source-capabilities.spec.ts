@@ -4,10 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { inspectFrameworkIntent } from '../core/build-graph/framework-intent';
-import {
-  collectConfirmedFrameworkCapabilities,
-  partitionSourceFiles,
-} from '../core/build-graph/source-capabilities';
+import { partitionSourceFiles } from '../core/build-graph/source-capabilities';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 async function createFixture(files: Record<string, unknown>): Promise<{
@@ -49,14 +46,9 @@ describe('source capability facts', () => {
       typescriptFiles: ['/workspace/src/index.ts'],
       vueFiles: ['/workspace/src/App.vue'],
     });
-    expect(collectConfirmedFrameworkCapabilities(partition)).toEqual([
-      'astro',
-      'svelte',
-      'vue',
-    ]);
   });
 
-  it('collects inherited intent hints without confirming capabilities', async () => {
+  it('reads inherited config intent in a project with no matched source files', async () => {
     const fixture = await createFixture({
       'base.json': {
         compilerOptions: {
@@ -87,9 +79,6 @@ describe('source capability facts', () => {
         'astro-types',
         'vue-compiler-options',
       ]);
-      expect(
-        collectConfirmedFrameworkCapabilities(partitionSourceFiles([])),
-      ).toEqual([]);
     } finally {
       await fixture.cleanup();
     }

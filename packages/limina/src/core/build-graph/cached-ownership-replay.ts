@@ -7,14 +7,8 @@ import {
 } from '../workspace/validated-context';
 import type { CachedGraphData } from './analysis-cache-schema';
 import { discoverCheckerOwnership } from './checker-ownership-discovery';
-import {
-  applyRootFileEvidence,
-  commitFrameworkInference,
-} from './checker-ownership-evidence';
-import {
-  finalizeLockedOwnership,
-  runDependencyRequirements,
-} from './checker-ownership-resolution';
+import { commitFrameworkInference } from './checker-ownership-evidence';
+import { finalizeLockedOwnership } from './checker-ownership-resolution';
 import { freezeSemanticAuthorities } from './checker-semantic-authority';
 import type { FrameworkInferenceAmbiguity } from './core-collection-run';
 import {
@@ -38,12 +32,7 @@ export async function replayCurrentOwnership(
   | undefined
 > {
   const stored = graph.ownershipPlan;
-  if (
-    !stored.coloringInputs ||
-    !stored.ownershipSelectionFacts ||
-    !graph.sourceConfigCoverage
-  )
-    return undefined;
+  if (!stored.coloringInputs || !graph.sourceConfigCoverage) return undefined;
   const discovery = await discoverCheckerOwnership({
     config,
     activatedRegions: new WorkspaceRegionPathIndex(workspace),
@@ -52,16 +41,6 @@ export async function replayCurrentOwnership(
     projectConfigCache,
   });
   if (discovery.collectionInputFailure !== undefined) return undefined;
-  discovery.collectionProblems!.push(
-    ...applyRootFileEvidence({
-      config,
-      plan: discovery.plan,
-      projectByConfigPath: discovery.projectByConfigPath,
-    }),
-  );
-  discovery.plan.dependencyFacts = [...stored.ownershipSelectionFacts];
-  discovery.plan.dependencyFactPhase = 'selection';
-  runDependencyRequirements({ config, discovery });
   const inference = commitFrameworkInference({ config, plan: discovery.plan });
   discovery.collectionProblems!.push(
     ...inference.problems,

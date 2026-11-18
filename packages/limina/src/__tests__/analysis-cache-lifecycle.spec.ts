@@ -264,6 +264,40 @@ try {
     },
   );
 
+  it('accepts the decoded TypeScript closure through UTF-8 and UTF-16 BOMs', async () => {
+    const f = fixture();
+    writeFileSync(f.path('a.ts'), 'export {};');
+    writeFileSync(
+      f.path('tsconfig.json'),
+      '\u{FEFF}{"extends":"./middle.json"}',
+    );
+    writeFileSync(
+      f.path('middle.json'),
+      Buffer.from('\u{FEFF}{"extends":"./base.json"}', 'utf16le'),
+    );
+    writeFileSync(
+      f.path('base.json'),
+      Buffer.from(
+        '\u{FEFF}{"compilerOptions":{"strict":true}}',
+        'utf16le',
+      ).swap16(),
+    );
+    const controller = new AnalysisCacheController(f.config, f.namespace);
+    const result = await controller.analyze({
+      refresh: () => controller.refresh(),
+      analyze: async () => {
+        const parsed = parseProjectConfigWithExtensions(
+          { configPath: f.path('tsconfig.json'), projectRootDir: f.rootDir },
+          [],
+        );
+        controller.cache.inputs.observeConfig(parsed.configClosure);
+        return parsed.options.strict;
+      },
+    });
+    expect(result).toBe(true);
+    await controller.publish();
+  });
+
   it('reparses effective configuration after drift and discards the old epoch', async () => {
     const f = fixture();
     writeFileSync(

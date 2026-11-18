@@ -72,7 +72,9 @@ export class AnalysisCacheController {
   async #attempt<T>(analyze: () => Promise<T>): Promise<T> {
     this.assertConfigurationStable();
     const epoch = this.cache;
-    const result = await epoch.epoch.run(analyze);
+    const result = await epoch.resolvedConfigs.run(() =>
+      epoch.epoch.run(analyze),
+    );
     if (epoch !== this.cache)
       throw new Error('Analysis epoch was replaced before completion.');
     this.assertConfigurationStable();

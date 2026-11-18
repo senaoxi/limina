@@ -38,8 +38,8 @@ it('builds independent producers before resolving all Svelte consumers and repai
     'package-lock.json': '{"lockfileVersion":3,"packages":{"":{}}}',
     'limina.config.mjs':
       'export default {scope:{source:{include:["**/*.{ts,vue,svelte}"]},checkers:{auto:{},"svelte-check":{include:["svelte-authority/tsconfig.json"]}}},graph:{rules:{}},source:{knip:false},proof:{allowlist:[]}};',
-    // A intentionally consumes both Vue and Svelte. Pin only its semantic
-    // authority; the other four Svelte consumers still exercise Auto routing.
+    // Exercise named ownership for A and implicit config intent for the
+    // other framework consumers, including D and G whose roots are TS.
     'svelte-authority/tsconfig.json': JSON.stringify({
       files: [],
       references: [{ path: '../tsconfig.a.json' }],
@@ -74,7 +74,11 @@ it('builds independent producers before resolving all Svelte consumers and repai
         lib: ['ES2022', 'DOM'],
         outDir: `./.build/${name}`,
       },
-      include: [`${name}/**/*`],
+      include: [
+        `${name}/**/*`,
+        ...(name === 'b' ? ['b/**/*.vue'] : []),
+        ...(['c', 'd', 'g', 'h'].includes(name) ? [`${name}/**/*.svelte`] : []),
+      ],
     });
   }
   files['tsconfig.json'] = JSON.stringify({

@@ -3,9 +3,11 @@ import {
   isNativeTypeScriptProjectInput,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
+import { compareCodeUnits } from '#utils/collections';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { LockedSemanticAuthority } from './checker-ownership-types';
 import { getScopedParseContext } from './explicit-checker-project-helpers';
+import { partitionSourceFiles } from './source-capabilities';
 
 export interface FrozenSemanticProject {
   readonly authority: LockedSemanticAuthority;
@@ -22,8 +24,7 @@ export function freezeSemanticProject(
 }
 
 /**
-Selection can discover Vue through a dependency of an otherwise Native project.
-The locked producer needs its own parsed identity, not the pending TS context.
+Parse the execution inputs for the family selected by config ownership.
 */
 export function prepareLockedSemanticProject(input: {
   project: AutoScopeProject;
@@ -57,8 +58,17 @@ export function prepareLockedSemanticProject(input: {
       `Native TypeScript cannot compile an explicitly selected root in ${input.project.configPath}.`,
     );
   }
+  const filePartition = partitionSourceFiles(parsed.fileNames);
+  if (parsed.vueSemanticIdentity)
+    filePartition.vueFiles = [
+      ...new Set([
+        ...filePartition.vueFiles,
+        ...parsed.vueSemanticIdentity.profilesByFileName.keys(),
+      ]),
+    ].sort(compareCodeUnits);
   return {
     ...input.project,
+    filePartition,
     configClosure: parsed.configClosure.map((entry) => ({ ...entry })),
     options: parsed.options,
     fileNames: [...parsed.fileNames],

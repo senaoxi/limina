@@ -24,6 +24,11 @@ function readContent(file: string): string | undefined {
 function optional<T>(value: T | null): T | undefined {
   return value ?? undefined;
 }
+function readTypeScriptContent(descriptor: {
+  path: string;
+}): string | undefined {
+  return ts.sys.readFile(descriptor.path);
+}
 function readDirectory(
   descriptor: Extract<AnalysisReadDescriptor, { kind: 'ts-directory' }>,
 ): string[] {
@@ -59,9 +64,8 @@ const readers = {
     inputStat(descriptor.path)?.isFile() ?? false,
   content: (descriptor: Extract<AnalysisReadDescriptor, { kind: 'content' }>) =>
     readContent(descriptor.path),
-  'typescript-content': (
-    descriptor: Extract<AnalysisReadDescriptor, { kind: 'typescript-content' }>,
-  ) => ts.sys.readFile(descriptor.path),
+  'typescript-content': readTypeScriptContent,
+  'config-text': readTypeScriptContent,
   'ts-directory': readDirectory,
   glob: readGlob,
 };

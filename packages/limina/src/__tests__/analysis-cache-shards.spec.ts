@@ -13,6 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
+import { parseProjectConfigWithExtensions } from '../checker/project-base';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import {
@@ -32,11 +33,13 @@ import {
   encodeAnalysisBlocks,
   readAnalysisBlocks,
 } from '../core/analysis-cache/snapshot-shards';
+import { nativeFingerprint } from '../core/typescript-semantic/native-file-identity';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
 import {
   analysisBlockPath,
   readStoredAnalysisSnapshot,
+  roundTripAnalysisSnapshot,
 } from './helpers/analysis-snapshot';
 import { createFixturePathResolver } from './helpers/path';
 
@@ -360,6 +363,46 @@ function records(file: (...segments: string[]) => string): AnalysisSnapshot {
   }
   return snapshot;
 }
+it('reparses an incomplete config receipt independently of other source configs', () => {
+  const f = fixture();
+  const a = f.file('a.json');
+  const b = f.file('b.json');
+  const base = f.file('base.json');
+  writeFileSync(a, '{"extends":"./base.json","files":["src.ts"]}');
+  writeFileSync(b, '{"compilerOptions":{"strict":true},"files":["src.ts"]}');
+  writeFileSync(base, '{"compilerOptions":{"strict":true}}');
+  writeFileSync(f.file('src.ts'), '');
+  const parse = (cache: NativeAnalysisCache, configPath: string) =>
+    cache.resolvedConfigs.run(() =>
+      parseProjectConfigWithExtensions(
+        { configPath, projectRootDir: f.file() },
+        [],
+      ),
+    ).options.strict;
+  const cold = f.cache();
+  expect([parse(cold, a), parse(cold, b)]).toEqual([true, true]);
+  const snapshot = cold.snapshot();
+  for (const record of Object.values(snapshot.resolvedConfigs)) {
+    record.discovery = record.discovery.filter((read) => read.path !== base);
+    record.fingerprint = nativeFingerprint([
+      record.configPath,
+      record.context,
+      record.discovery,
+      record.payload,
+    ]);
+  }
+  const decoded = parseAnalysisSnapshot(
+    roundTripAnalysisSnapshot(snapshot),
+    'fixture',
+  );
+  expect(decoded).toBeDefined();
+  writeFileSync(base, '{"compilerOptions":{"strict":false}}');
+  const warm = new NativeAnalysisCache('fixture', decoded, 'fixture-config');
+  expect([parse(warm, a), parse(warm, b)]).toEqual([false, true]);
+  expect(warm.metrics.resolvedConfigParses).toBe(1);
+  expect(warm.metrics.resolvedConfigHits).toBe(1);
+});
+
 it('keeps scope payloads independent and losslessly shares long receipt sequences', () => {
   const f = fixture();
   const snapshot = records(f.file);

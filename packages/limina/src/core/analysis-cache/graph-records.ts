@@ -5,7 +5,7 @@ import type {
   ResolutionRecord,
 } from './contracts';
 import { type DataNode, encodeData } from './data-codec';
-import { EpochInputReplay } from './epoch-inputs';
+import type { EpochInputReplay } from './epoch-inputs';
 import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
 import { availableSnapshotGraphs } from './snapshot-graphs';
@@ -114,7 +114,7 @@ export class CachedGraphRecords {
     record: GraphRecord,
     generation: number,
   ): Promise<GraphRecord | undefined> {
-    const replay = new EpochInputReplay();
+    const replay = this.#cache.resolvedConfigs.replay();
     if (
       !(await this.#cache.epoch.validate(record.discovery, replay)) ||
       record.vueContextIds.some(
@@ -129,8 +129,11 @@ export class CachedGraphRecords {
       return undefined;
     this.#cache.inputs.consume(record.dependencies);
     this.#cache.contributions.restoreValidatedGraph();
-    this.#cache.graphs[key] = record;
-    return record;
+    const discovery = this.#cache.epoch.refreshConfigStamps(record.discovery);
+    const current =
+      discovery === record.discovery ? record : { ...record, discovery };
+    this.#cache.graphs[key] = current;
+    return current;
   }
   #captureData(
     key: string,

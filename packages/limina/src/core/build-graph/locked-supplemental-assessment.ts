@@ -1,276 +1,124 @@
-import type {
-  CheckerProjectConfigCache,
-  VueProjectSemanticIdentity,
-} from '#checkers';
-import { parseTypeScriptCommandLine } from '../../checker/project-base';
-import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
-import type { ImportAnalysisContext } from '../import-analysis/runner';
-import { discoverSupplementalTarget } from '../import-analysis/supplemental-resolution';
-import {
-  createTypeScriptDependencyContext,
-  createWorkspaceSourceBoundary,
-} from '../typescript-semantic';
-import { deriveCompilerCoverage } from '../typescript-semantic/compiler-coverage';
-import { createImportRecordIdentity } from '../typescript-semantic/import-record';
-import { captureModulePremises } from '../typescript-semantic/native-context-inventory';
-import { observeNativeFileIdentity } from '../typescript-semantic/native-file-identity';
-import { nativeObservedProgram } from '../typescript-semantic/native-program-api';
-import { VueSemanticContext } from '../vue-semantic/context-handle';
-import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
+import { hasModuleSpecifierQueryOrFragment } from '#utils/module-specifier';
+import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
+import type { ImportRecord } from '../import-analysis/runner';
+import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
+import { createTypeScriptDependencyContext } from '../typescript-semantic';
+import { isLiveNativeInventory } from '../typescript-semantic/native-context-inventory';
+import type { collectLockedProjectFacts } from './checker-ownership-locked-facts';
+import { resolveSupplementalCandidate } from './checker-ownership-physical-candidate';
 import type { CheckerDependencyFact } from './checker-ownership-types';
-import {
-  assessNativeSupplement,
-  assessPendingSupplement,
-  resolveSupplementalVueTarget,
-  type SupplementalAssessment,
-  unavailableSupplement,
-} from './pending-supplemental-assessment';
+import { assessUnselectedFrameworkRequest } from './pending-supplemental-assessment';
 
-interface RebindInput {
-  discovery: CheckerOwnershipDiscovery;
+type AssessmentInput = Parameters<typeof collectLockedProjectFacts>[0] & {
   facts: CheckerDependencyFact[];
-  rootDir: string;
-  importAnalysis: ImportAnalysisContext;
-  projectConfigCache?: CheckerProjectConfigCache;
-}
-export function rebindSupplementalAssessments(
-  input: RebindInput,
-): SupplementalAssessment[] {
-  return input.discovery.plan.dependencyFacts.flatMap((fact) => {
-    if (fact.supplementalAssessment === undefined) return [];
-    const authority = input.discovery.plan.typeConfigs.get(
-      fact.consumerConfigPath,
-    )?.semanticAuthority;
-    // The actual frozen Framework collector replaces an unselected request
-    // assessment. Native authority must instead re-prove absence or retain it.
-    if (
-      fact.supplementalAssessment.capability ===
-        'framework-semantic-authority-required' &&
-      authority?.kind === 'locked' &&
-      authority.family !== 'typescript' &&
-      authority.family === fact.frameworkCandidate?.family
-    )
-      return [];
-    const current = rebindAssessment(input, fact);
-    const bound = input.facts.find(
-      (item) =>
-        item.consumerConfigPath === fact.consumerConfigPath &&
-        hasSameOccurrence(item, fact),
-    );
-    if (bound !== undefined) {
-      bound.supplementalAssessment = current;
-      if (
-        summarizeCompilationObligation(current.obligation) === 'required' &&
-        current.discovery.state === 'resolved'
-      )
-        bound.referenceRequirement = {
-          kind: 'compiler-membership',
-          targetFileName: current.coverage.target.lexicalPath,
-        };
-    }
-    return [current];
-  });
-}
-function hasSameOccurrence(
-  left: CheckerDependencyFact,
-  right: CheckerDependencyFact,
-): boolean {
-  return (
-    createImportRecordIdentity({
-      ...left.importRecord,
-      compilerRequest: undefined,
-    }) ===
-    createImportRecordIdentity({
-      ...right.importRecord,
-      compilerRequest: undefined,
-    })
-  );
-}
-function rebindAssessment(
-  input: RebindInput,
-  fact: CheckerDependencyFact,
-): SupplementalAssessment {
-  const previous = fact.supplementalAssessment!;
-  const project = input.discovery.projectByConfigPath.get(
-    fact.consumerConfigPath,
-  )!;
-  const authority = input.discovery.plan.typeConfigs.get(
-    project.configPath,
-  )!.semanticAuthority;
-  if (authority.kind !== 'locked')
-    return unavailableSupplement(previous, 'semantic-authority-unavailable');
-  if (authority.family !== 'vue') return rebindNativeAssessment(input, fact);
-  const owner = input.discovery.projectByConfigPath.get(
-    previous.obligation.targetConfigId!,
-  )?.context.vueSemanticIdentity;
-  const consumer = input.discovery.frozenProjectsByConfigPath.get(
-    project.configPath,
-  )?.project.context.vueSemanticIdentity;
-  const coverage = input.discovery.sourceConfigCoverage;
-  if (owner === undefined || consumer === undefined || coverage === undefined)
-    throw new Error('Supplemental capability became unavailable during lock.');
-  const premises = currentPremises(consumer, fact);
-  const discovery = (
-    input.importAnalysis.resolveSupplementalImport ?? discoverSupplementalTarget
-  )({
-    contextId: previous.context.id,
-    requestId: premises.requestId,
-    importer: fact.importRecord.filePath,
-    specifier: fact.importRecord.specifier,
-    mode: premises.mode,
-    options: premises.options!,
-    configPath:
-      typeof premises.options!.configFilePath === 'string'
-        ? premises.options!.configFilePath
-        : consumer.configPath,
-    extensions: [...consumer.extensions],
-  });
-  if (discovery.state !== 'resolved')
-    throw new Error(
-      `Supplemental target became ${discovery.state} during lock: ${discovery.reason}`,
-    );
-  const target =
-    resolveSupplementalVueTarget({
-      consumer,
-      premises,
-      importer: fact.importRecord.filePath,
-      specifier: fact.importRecord.specifier,
-    }) ?? previous.coverage.target.lexicalPath;
-  const currentCoverage = deriveCompilerCoverage(
-    coverage,
-    observeNativeFileIdentity(target, coverage.inputVersion),
-  );
-  if (
-    currentCoverage.state !== 'unique' ||
-    currentCoverage.members[0]?.configId !== previous.obligation.targetConfigId
-  )
-    throw new Error(
-      'Supplemental compiler input ownership changed during lock.',
-    );
-  return assessPendingSupplement({
-    baseline: fact.nativeEvidence!.origin.context,
-    premises,
-    discovery,
-    coverage: currentCoverage,
-    owner,
-    consumer,
-    roots: consumer.fileNames,
-    emitOptions: consumer.options,
-    importer: fact.importRecord.filePath,
-    specifier: fact.importRecord.specifier,
-    occurrence: fact.importRecord,
-    locked: true,
-  });
-}
+  records: readonly ImportRecord[];
+  snapshot: NativeEvidenceSnapshot;
+};
 
-function rebindNativeAssessment(
-  input: RebindInput,
-  fact: CheckerDependencyFact,
-): SupplementalAssessment {
-  const project = input.discovery.projectByConfigPath.get(
-    fact.consumerConfigPath,
-  )!;
-  const { parsed } = parseTypeScriptCommandLine({
-    parseOptions: {
-      configPath: project.configPath,
-      projectRootDir: input.rootDir,
-      allowNoInputDiagnostics: true,
-      virtualFiles: project.virtualFiles,
-    },
-  });
-  const context = createTypeScriptDependencyContext({
-    configPath: project.configPath,
-    fileNames: parsed.fileNames,
-    options: parsed.options,
-    projectReferences: parsed.projectReferences,
-    virtualFiles: project.virtualFiles,
-    analysisBinding: { phase: 'locked', checker: 'tsc' },
-    compilationObligationScope: 'generated-declaration-project-v1',
-    workspaceSourceBoundary: createWorkspaceSourceBoundary(
-      [],
-      undefined,
-      input.discovery.sourceConfigCoverage,
-    ),
-  });
-  try {
-    const current = context.getDependencyFact(fact.importRecord);
-    const requestId = current.nativeEvidence?.requestId;
-    const premises = context.nativeInventory?.modules?.find(
-      (module) => module.requestId === requestId,
-    );
-    const identity = context.nativeEvidence?.contexts[0];
-    if (premises === undefined || identity === undefined)
-      return unavailableSupplement(
-        fact.supplementalAssessment!,
-        'locked-native-request-unavailable',
-      );
-    const target = current.resolution.target;
-    const obligation =
-      target !== null &&
-      target.resolvedFileName ===
-        fact.supplementalAssessment!.coverage.target.lexicalPath
-        ? (current.nativeEvidence?.obligation ?? undefined)
-        : undefined;
-    return assessNativeSupplement({
-      previous: fact.supplementalAssessment!,
-      context: identity,
-      premises,
-      roots: parsed.fileNames,
-      emitOptions: parsed.options,
-      obligation,
-    });
-  } finally {
-    context.dispose();
-  }
-}
-function currentPremises(
-  identity: VueProjectSemanticIdentity,
-  fact: CheckerDependencyFact,
-) {
-  const previous = fact.supplementalAssessment!;
-  const context = new VueSemanticContext(identity);
-  try {
-    const source = context.program.getSourceFile(fact.importRecord.filePath);
-    const requests =
-      source === undefined
-        ? []
-        : context.compilerRequests.collect(context.program, source).filter(
-            (request) =>
-              createImportRecordIdentity({
-                ...request.record,
-                compilerRequest: undefined,
-              }) === createImportRecordIdentity(fact.importRecord) &&
-              request.role === previous.premises.role &&
-              request.mode === previous.premises.mode,
-          );
-    if (requests.length !== 1)
-      throw new Error(
-        'Supplemental occurrence cannot be rebound to current Compiler Inventory.',
-      );
-    const request = requests[0]!;
-    const premises = captureModulePremises(
-      { ...request, source: request.sourceFile, requestId: previous.requestId },
-      nativeObservedProgram(
-        context.program,
-        context.tsModule,
-        context.compilerRequests.optionsBySource,
+/** An unresolved Native request may need an independent admission decision.
+ * Its supplemental target never selects a semantic checker. */
+export function assessMissingNativeImports(input: AssessmentInput): string[] {
+  const ids = new Set(
+    input.snapshot.resolutions
+      .filter((item) => item.target === null)
+      .map((item) => item.requestId),
+  );
+  const sites = new Set(
+    input.snapshot.requests
+      .filter((request) => ids.has(request.id) && request.channel === 'module')
+      .map((request) =>
+        JSON.stringify([request.sourceFile?.lexicalPath, request.specifier]),
       ),
-      context.tsModule,
+  );
+  const unresolved = input.records.filter(
+    (record) =>
+      !hasModuleSpecifierQueryOrFragment(record.specifier) &&
+      shouldInferDeclarationReferenceFromImportRecord(record) &&
+      sites.has(JSON.stringify([record.filePath, record.specifier])),
+  );
+  if (unresolved.length === 0) return [];
+  const config = input.project.configPath;
+  const existing = input.caches.typeScriptSemanticFactsCache
+    .values()
+    .find(
+      (context) =>
+        isLiveNativeInventory(context.nativeInventory) &&
+        context.nativeEvidence?.contexts[0]?.id ===
+          input.snapshot.contexts[0]?.id,
     );
-    if (
-      premises.sourceFingerprint !== previous.premises.sourceFingerprint ||
-      premises.options === undefined
-    )
-      throw new Error(
-        'Supplemental source/options changed or became unavailable during lock.',
+  const fresh =
+    existing === undefined
+      ? createTypeScriptDependencyContext({
+          admissionMode: 'coverage-bounded',
+          analysisBinding: { phase: 'locked', checker: 'tsc' },
+          compilationObligationScope: 'generated-declaration-project-v1',
+          configPath: config,
+          sourceConfigPath: config,
+          fileNames: input.project.fileNames,
+          options: input.project.options,
+          projectReferences: input.project.references,
+          virtualFiles: input.project.virtualFiles,
+          workspaceSourceBoundary: input.workspaceSourceBoundary,
+        })
+      : undefined;
+  const context = existing ?? fresh!;
+  const problems: string[] = [];
+  try {
+    const byId = new Map(
+      input.facts.map((fact) => [fact.nativeEvidence?.requestId, fact]),
+    );
+    for (const importRecord of unresolved) {
+      const native = context.getDependencyFact(importRecord);
+      const premises = context.nativeInventory?.modules.find(
+        (item) => item.requestId === native.nativeEvidence?.requestId,
       );
-    return {
-      ...premises,
-      ...(previous.premises.sourceLoadGap !== undefined && {
-        sourceLoadGap: previous.premises.sourceLoadGap,
-      }),
-    };
+      if (premises === undefined || native.resolution.target !== null) continue;
+      const requestId = native.nativeEvidence?.requestId;
+      if (!requestId) continue;
+      let fact = byId.get(requestId);
+      if (fact === undefined) {
+        fact = {
+          consumerConfigPath: config,
+          importRecord,
+          physicalTargetPath: null,
+          physicalTargetProvenance: null,
+          referenceRequirement: null,
+          nativeEvidence: native.nativeEvidence,
+          typeEvidenceKind: 'unobserved',
+        };
+        byId.set(requestId, fact);
+        input.facts.push(fact);
+      }
+      const coverage = resolveSupplementalCandidate({
+        context: {
+          ...input,
+          typeScriptSemanticContext: context,
+        },
+        importRecord: fact.importRecord,
+        premises,
+        problems,
+        onDiscovery: (discovery, coverage) => {
+          fact.supplementalDiscovery = discovery;
+          fact.supplementalCoverage = coverage;
+          if (input.caches.analysisCache)
+            input.caches.analysisCache.requiresSupplementalReassessment = true;
+        },
+      });
+      if (coverage === null) continue;
+      const assessment = assessUnselectedFrameworkRequest({
+        context: context.nativeEvidence!.contexts[0]!,
+        premises,
+        discovery: fact.supplementalDiscovery!,
+        coverage,
+        roots: context.nativeInventory!.roots.map((entry) => entry.root),
+        emitOptions: input.project.options,
+        occurrence: fact.importRecord,
+      });
+      fact.supplementalAssessment = assessment;
+      input.caches.supplementalAssessments!.push(assessment);
+    }
+    return problems;
   } finally {
-    context.dispose();
+    fresh?.dispose();
   }
 }

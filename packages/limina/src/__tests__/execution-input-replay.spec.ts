@@ -1,4 +1,9 @@
-import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
+import {
+  observeAnalysisRead,
+  readAnalysisInput,
+  readTypeScriptConfigInput,
+} from '#utils/analysis-input';
+import { configFileStamp } from '#utils/config-file-stamp';
 import {
   readPhysicalFileBinding,
   readPhysicalFileIdentity,
@@ -18,6 +23,7 @@ import fs, {
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { afterEach, expect, it, vi } from 'vitest';
 import {
   EpochInputReplay,
@@ -113,6 +119,95 @@ it('shares restoration observations while retaining each context receipt and lat
     read.mockRestore();
     syncBuiltinESMExports();
   }
+});
+
+it('validates shared config metadata without a content read and hashes a touched base once per round', async () => {
+  const f = fixture();
+  const seed = new EpochInputs();
+  seed.run(() =>
+    readTypeScriptConfigInput(f.target, () => ts.sys.readFile(f.target)),
+  );
+  const records = seed.snapshot()!;
+  const content = vi.spyOn(ts.sys, 'readFile');
+  try {
+    const stable = new EpochInputs();
+    expect(stable.validateSynchronous(records)).toBe(true);
+    expect(stable.refreshConfigStamps(records)).toBe(records);
+    expect(content).toHaveBeenCalledTimes(
+      configFileStamp(f.target) === undefined ? 1 : 0,
+    );
+    content.mockClear();
+    const previous = statSync(f.target);
+    const touched = new Date(previous.mtimeMs + 2000);
+    utimesSync(f.target, previous.atime, touched);
+    const replay = new EpochInputReplay();
+    const first = new EpochInputs();
+    const second = new EpochInputs();
+    expect(await first.validate(records, replay)).toBe(true);
+    expect(second.validateSynchronous(records, replay)).toBe(true);
+    expect(content).toHaveBeenCalledTimes(1);
+    const refreshed = first.refreshConfigStamps(records);
+    expect(refreshed).toEqual(second.snapshot());
+    const enclosing = new EpochInputs();
+    enclosing.run(() => second.publish());
+    expect(enclosing.snapshot()).toEqual(first.snapshot());
+    await enclosing.assertStable();
+    expect(content).toHaveBeenCalledTimes(
+      configFileStamp(f.target) === undefined ? 2 : 1,
+    );
+    writeFileSync(f.target, 'export const value = 2;');
+    utimesSync(f.target, previous.atime, touched);
+    await expect(enclosing.assertStable()).rejects.toThrow(/changed|drift/u);
+    expect(new EpochInputs().validateSynchronous(records)).toBe(false);
+  } finally {
+    content.mockRestore();
+  }
+});
+
+it('rejects a config receipt after rebinding the lexical path to the same physical file', () => {
+  const f = fixture();
+  const inputs = new EpochInputs();
+  inputs.run(() =>
+    readTypeScriptConfigInput(f.target, () => ts.sys.readFile(f.target)),
+  );
+  const records = inputs.snapshot()!;
+  symlinkSync(f.file('a'), f.file('alias'), 'junction');
+  rmSync(f.file('view'));
+  symlinkSync(f.file('alias'), f.file('view'), 'junction');
+  expect(new EpochInputs().validateSynchronous(records)).toBe(false);
+});
+
+it('rechecks a missing config once across concurrent and synchronous receipts', async () => {
+  const file = fixture().file('absent.json');
+  const seed = new EpochInputs();
+  seed.run(() => readTypeScriptConfigInput(file, () => ts.sys.readFile(file)));
+  const records = seed.snapshot()!;
+  const content = vi.spyOn(ts.sys, 'readFile');
+  try {
+    const replay = new EpochInputReplay();
+    const asyncResult = new EpochInputs().validate(records, replay);
+    expect(new EpochInputs().validateSynchronous(records, replay)).toBe(true);
+    expect(await asyncResult).toBe(true);
+    expect(content).toHaveBeenCalledTimes(1);
+    writeFileSync(file, '{}');
+    expect(new EpochInputs().validateSynchronous(records)).toBe(false);
+  } finally {
+    content.mockRestore();
+  }
+});
+
+it('does not certify stale config text if the file is replaced during the read', () => {
+  const f = fixture();
+  const seed = new EpochInputs();
+  seed.run(() =>
+    readTypeScriptConfigInput(f.target, () => {
+      const text = ts.sys.readFile(f.target);
+      writeFileSync(f.file('replacement'), 'export const value = 2;');
+      renameSync(f.file('replacement'), f.target);
+      return text;
+    }),
+  );
+  expect(new EpochInputs().validateSynchronous(seed.snapshot()!)).toBe(false);
 });
 
 it('shares one read notification across collectors without reusing its next dispatch', () => {
