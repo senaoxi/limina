@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import {
+  appendFile,
   cp,
   mkdir,
   readFile,
@@ -285,86 +286,122 @@ it.each([
   },
 );
 
-it('retains generated Vue compiler inputs for a TypeScript-authority project', async () => {
-  const f = await createSemanticRepairFixture({
-    'package.json':
-      '{"name":"candidate-inputs","private":true,"type":"module"}',
-    'pnpm-workspace.yaml': 'packages:\n - a\n - b\n',
-    'limina.config.mjs': 'export default {};',
-    'a/tsconfig.json': JSON.stringify({
-      compilerOptions: {
-        module: 'ESNext',
-        moduleResolution: 'Bundler',
-        noLib: true,
-        types: [],
-      },
-      include: ['*.ts', '*.astro'],
-      vueCompilerOptions: { plugins: ['./plugin.cjs'] },
-    }),
-    'a/index.ts': 'export { value } from "../b/value.js";',
-    'a/plugin.cjs': 'module.exports = () => ({version: 2.2});',
-    'b/tsconfig.json': JSON.stringify({
-      compilerOptions: {
-        module: 'ESNext',
-        moduleResolution: 'Bundler',
-        noLib: true,
-        types: [],
-      },
-      include: ['*'],
-    }),
-    'b/value.ts': 'export const value = 1;',
-    'b/Widget.vue': '<template>Provider</template>',
-  });
-  const require = createRequire(import.meta.url);
-  await mkdir(f.path('node_modules'), { recursive: true });
-  for (const name of ['vue-tsc', 'typescript'])
-    await symlink(
-      path.dirname(require.resolve(`${name}/package.json`)),
-      f.path(`node_modules/${name}`),
-      'junction',
-    );
-  const config = withFixtureGovernanceRoot({
-    rootDir: f.root,
-    configPath: f.path('limina.config.mjs'),
-    cache: false,
-    scope: { checkers: { auto: {} } },
-  });
-  const preflight = new LiminaPreflightManager({ config });
-  try {
-    const graph = (await preflight.ensureGeneratedArtifactsMaterialized())
-      .graph;
-    expect(
-      graph.ownershipPlan.typeConfigs.get(f.path('a/tsconfig.json')),
-    ).toMatchObject({
-      frozenSemanticAuthority: { family: 'typescript' },
-      finalOwner: 'vue-tsc',
+const pluginManifest = 'node_modules/options/package.json';
+it.each([
+  { relation: 'import', changed: 'plugin.cjs' },
+  { relation: 'implicit', changed: 'plugin.cjs' },
+  { relation: 'implicit', changed: 'plugin-options.cjs' },
+  { relation: 'implicit', changed: pluginManifest },
+])(
+  'revokes Vue execution after $changed changes with $relation coloring',
+  async ({ relation, changed }) => {
+    const f = await createSemanticRepairFixture({
+      'package.json':
+        '{"name":"candidate-inputs","private":true,"type":"module"}',
+      'pnpm-workspace.yaml': 'packages:\n - a\n - b\n',
+      'limina.config.mjs': 'export default {};',
+      'a/tsconfig.json': JSON.stringify({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          noLib: true,
+          types: [],
+        },
+        include: ['*.ts', '*.astro'],
+        vueCompilerOptions: { plugins: ['./plugin.cjs'] },
+        ...(relation === 'implicit' && {
+          liminaOptions: {
+            implicitRefs: [{ path: '../b', reason: 'build prerequisite' }],
+          },
+        }),
+      }),
+      'a/index.ts':
+        relation === 'import'
+          ? 'export { value } from "../b/value.js";'
+          : 'export const value = 1;',
+      'a/plugin.cjs':
+        "const options = require('./plugin-options.cjs'); module.exports = () => options;",
+      'a/plugin-options.cjs':
+        changed === pluginManifest
+          ? "module.exports = require('./load.mjs').default;"
+          : 'module.exports = {version: 2.2};',
+      ...(changed === pluginManifest && {
+        'a/load.mjs': "export { default } from 'options';",
+        [`a/${pluginManifest}`]: JSON.stringify({
+          exports: { import: './before.mjs', require: './after.mjs' },
+        }),
+        'a/node_modules/options/before.mjs': 'export default {version: 2.2};',
+        'a/node_modules/options/after.mjs': 'export default {version: 2.2};',
+      }),
+      'b/tsconfig.json': JSON.stringify({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          noLib: true,
+          types: [],
+        },
+        include: ['*'],
+      }),
+      'b/value.ts': 'export const value = 1;',
+      'b/Widget.vue': '<template>Provider</template>',
     });
-    const target = createCheckerTarget({
-      checker: graph.checkers.find((checker) => checker.name === 'vue-tsc')!,
-      configPath: graph.checkerEntries.get('vue-tsc')!,
-      executionKind: 'build',
-      projectRootDir: f.root,
+    const require = createRequire(import.meta.url);
+    await mkdir(f.path('node_modules'), { recursive: true });
+    for (const name of ['vue-tsc', 'typescript'])
+      await symlink(
+        path.dirname(require.resolve(`${name}/package.json`)),
+        f.path(`node_modules/${name}`),
+        'junction',
+      );
+    const config = withFixtureGovernanceRoot({
+      rootDir: f.root,
+      configPath: f.path('limina.config.mjs'),
+      cache: false,
+      scope: { checkers: { auto: {} } },
     });
-    const admission = new ExecutionAdmission(preflight, graph, [target]);
-    let starts = 0;
-    const run = () =>
-      executeAuthorizedTypecheck({ admission }, target, () => {
-        starts++;
-        return { configPath: target.configPath, status: 0 };
+    const preflight = new LiminaPreflightManager({ config });
+    try {
+      const graph = (await preflight.ensureGeneratedArtifactsMaterialized())
+        .graph;
+      expect(
+        graph.ownershipPlan.typeConfigs.get(f.path('a/tsconfig.json')),
+      ).toMatchObject({
+        frozenSemanticAuthority: { family: 'typescript' },
+        finalOwner: 'vue-tsc',
       });
-    const initial = await run();
-    expect(initial.status, JSON.stringify(initial)).toBe(0);
-    await writeFile(
-      f.path('a/plugin.cjs'),
-      'module.exports = () => ({version: 2.2});\n',
-    );
-    expect((await run()).status).toBe('admission-rejected');
-    expect(starts).toBe(1);
-  } finally {
-    preflight.dispose();
-    await f.cleanup();
-  }
-});
+      const target = createCheckerTarget({
+        checker: graph.checkers.find((checker) => checker.name === 'vue-tsc')!,
+        configPath: graph.checkerEntries.get('vue-tsc')!,
+        executionKind: 'build',
+        projectRootDir: f.root,
+      });
+      const admission = new ExecutionAdmission(preflight, graph, [target]);
+      let starts = 0;
+      const run = () =>
+        executeAuthorizedTypecheck({ admission }, target, () => {
+          starts++;
+          return { configPath: target.configPath, status: 0 };
+        });
+      const initial = await run();
+      expect(initial.status, JSON.stringify(initial)).toBe(0);
+      if (changed === pluginManifest) {
+        await writeFile(
+          f.path(`a/${changed}`),
+          JSON.stringify({
+            exports: { import: './after.mjs', require: './after.mjs' },
+          }),
+        );
+      } else {
+        await appendFile(f.path(`a/${changed}`), '\n');
+      }
+      expect((await run()).status).toBe('admission-rejected');
+      expect(starts).toBe(1);
+    } finally {
+      preflight.dispose();
+      await f.cleanup();
+    }
+  },
+);
 
 it.each(['b', 'c'])(
   'matches a legal cross-Checker rule target independently (%s)',

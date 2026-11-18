@@ -1,3 +1,5 @@
+import { observePluginResolutions } from './candidate-plugin-modules';
+
 /** Runs in an isolated Node process. Keep the worker self-contained: vue-tsc
  * patches the compiler module loader and must never patch Limina's runtime. */
 export const vueCandidateWorker: string = String.raw`
@@ -23,6 +25,7 @@ for (const file of files.keys()) {
 const read = fs.readFileSync;
 const reads = new Map();
 const checks = new Map();
+${observePluginResolutions}
 const exists = fs.existsSync;
 const stat = fs.statSync;
 const readdir = fs.readdirSync;
@@ -262,6 +265,7 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
     }
   }
   observation = {
+    pluginResolutions: pluginResolutions(),
     reads: [...reads],
     checks: [...checks.values()],
     compilerVersion: ts.version,

@@ -1,3 +1,4 @@
+import type { VueProjectSemanticIdentity } from '#checkers';
 import { readAnalysisInput } from '#utils/analysis-input';
 import { isPlainRecord } from '#utils/values';
 import { spawnSync } from 'node:child_process';
@@ -22,6 +23,10 @@ import {
   observeNativeFileIdentity,
 } from '../typescript-semantic/native-file-identity';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
+import {
+  pluginResolutionsSchema,
+  retainVuePluginResolutions,
+} from './candidate-plugin-modules';
 import { vueCandidateWorker } from './candidate-worker';
 
 const text = z.string();
@@ -45,6 +50,7 @@ const checkSchema = z.discriminatedUnion('kind', [
 ]);
 const observationSchema = z.object({
   checks: z.array(checkSchema),
+  pluginResolutions: pluginResolutionsSchema,
   reads: z.array(readSchema),
   compilerVersion: text,
   contextId: text,
@@ -62,6 +68,10 @@ export function observeVueDeclarationCandidate(
   if (toolchain.adapter.kind !== 'supported')
     throw new DeclarationObservationUnavailable(toolchain.adapter.reason);
   qualifyDelegationInputs(input);
+  const plugins =
+    input.executionIdentity === undefined
+      ? []
+      : configuredPluginRequests(input.executionIdentity);
   const executionEntry = createRequire(toolchain.paths.vueTsc).resolve(
     'vue-tsc/bin/vue-tsc.js',
   );
@@ -70,6 +80,11 @@ export function observeVueDeclarationCandidate(
     cwd: path.dirname(input.sourceConfig),
     input: JSON.stringify({
       vueTsc: toolchain.paths.vueTsc,
+      pluginRequests: plugins,
+      expectPlugin:
+        isPlainRecord(input.executionIdentity?.vueOptions) &&
+        Array.isArray(input.executionIdentity.vueOptions.plugins) &&
+        input.executionIdentity.vueOptions.plugins.length > 0,
       generatedConfig: input.generatedConfig,
       sourceConfig: input.sourceConfig,
       buildInfoFile: input.parsed.options.tsBuildInfoFile,
@@ -105,6 +120,13 @@ export function observeVueDeclarationCandidate(
     throw new DeclarationObservationUnavailable(
       'Invalid Vue declaration candidate observation.',
     );
+  if (input.executionIdentity !== undefined) {
+    retainVuePluginResolutions(
+      input.executionIdentity,
+      input.sourceConfig,
+      parsed.data.pluginResolutions,
+    );
+  }
   for (const [file, expected] of parsed.data.reads) {
     const read = () =>
       readAnalysisInput(file, () => readFileSync(file, 'utf8'));
@@ -201,28 +223,57 @@ export function observeVueDeclarationCandidate(
   };
 }
 
-function qualifyDelegationInputs(input: DeclarationCandidateInput): void {
-  if (!input.requiresDelegationProof) return;
-  const identity = input.executionIdentity;
+function configPlugins(
+  identity: VueProjectSemanticIdentity,
+  filePath: string,
+): unknown {
+  const content =
+    identity.virtualFiles.get(filePath) ??
+    readAnalysisInput(filePath, () => readFileSync(filePath, 'utf8'));
+  const parsed = identity.toolchain.tsModule.parseConfigFileTextToJson(
+    filePath,
+    content,
+  );
+  return parsed.error === undefined
+    ? parsed.config?.vueCompilerOptions?.plugins
+    : null;
+}
+
+function configuredPluginRequests(
+  identity: VueProjectSemanticIdentity,
+): [string, string][] {
+  const result: [string, string][] = [];
+  for (const { filePath } of identity.configClosure) {
+    const plugins = configPlugins(identity, filePath);
+    if (!Array.isArray(plugins)) continue;
+    for (const plugin of plugins) {
+      const name = typeof plugin === 'string' ? plugin : plugin?.name;
+      if (typeof name === 'string') result.push([path.dirname(filePath), name]);
+    }
+  }
+  return result;
+}
+
+export function hasVueCandidatePlugins(
+  identity: VueProjectSemanticIdentity | undefined,
+): boolean {
+  if (identity === undefined) return false;
   const hasPlugins = (plugins: unknown) =>
     plugins !== undefined && (!Array.isArray(plugins) || plugins.length > 0);
-  if (
-    identity === undefined ||
+  return (
     !isPlainRecord(identity.vueOptions) ||
     hasPlugins(identity.vueOptions.plugins) ||
-    identity.configClosure.some(({ filePath }) => {
-      const content =
-        input.files.get(filePath) ??
-        readAnalysisInput(filePath, () => readFileSync(filePath, 'utf8'));
-      const parsed = identity.toolchain.tsModule.parseConfigFileTextToJson(
-        filePath,
-        content,
-      );
-      return (
-        parsed.error !== undefined ||
-        hasPlugins(parsed.config?.vueCompilerOptions?.plugins)
-      );
-    })
+    identity.configClosure.some(({ filePath }) =>
+      hasPlugins(configPlugins(identity, filePath)),
+    )
+  );
+}
+
+function qualifyDelegationInputs(input: DeclarationCandidateInput): void {
+  if (!input.requiresDelegationProof) return;
+  if (
+    input.executionIdentity === undefined ||
+    hasVueCandidatePlugins(input.executionIdentity)
   )
     // Arbitrary plugin filesystem/environment reads have no qualified input
     // receipt yet. Preserve local plugin analysis, but do not delegate its

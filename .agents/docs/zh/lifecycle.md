@@ -361,7 +361,7 @@ Manifest v7 将 source 单值 owner 与 solution 的 sources/checkers 元数据�
 
 冻结的源输入属于当前分析 generation，不随 ownership seeds 序列化。恢复在接纳图投影前，按冻结语义权威从当前输入重建它们。缓存的受管成员与生成配置 `files`／`include` 必须匹配当前输入；缓存中的执行 Checker 不能授予新增 roots。
 
-Vue 候选验证单独保留实际生成配置的输入观测，不与源语义输入混用。执行准入只重放所选生成配置实际到达的候选，producer 回执也保留候选读取。因此，后期选定 Vue 执行 owner 后，即使源权威仍为 TypeScript，也能检测仅由候选编译器读取的插件变化。[执行准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts)覆盖这一区别。
+Vue 候选验证单独保留实际生成配置的输入观测，不与源语义输入混用。执行准入只重放所选生成配置实际到达的候选，producer 回执也保留候选读取。对使用自定义插件的 Vue 生成项目，即使没有需要验证的声明映射，隔离编译器也会观察插件输入。准入检查实际观察到的模块内容，并在新进程中重放对应的 Node 模块解析请求。内容变化或解析目标改变，都会在编译器启动前使准入失效。该规则同样适用于源权威为 TypeScript、仅通过 `implicitRefs` 获得 Vue 构建归属的项目。[执行准入回归](../../../packages/limina/src/__tests__/execution-admission.spec.ts)覆盖这一区别。
 
 最终序列化校验独立从完整 ownership 与 build projections 求 Required，并检查生成 root 的实际可达覆盖、精确 Checker 身份、绑定及环。结构失败不交付可执行产物计划；deny.refs 仍对选中闭包执行准入，不删除事实。旧 manifest 仅保留受限产物清理用途。
 

@@ -27,7 +27,10 @@ import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
-import { observeVueDeclarationCandidate } from '../vue-semantic/declaration-candidate';
+import {
+  hasVueCandidatePlugins,
+  observeVueDeclarationCandidate,
+} from '../vue-semantic/declaration-candidate';
 import {
   declarationPackageFiles,
   validateDeclarationPackageFormat,
@@ -121,25 +124,27 @@ export function validateDeclarationContexts(
       const applicable = scope(project.sourceConfig);
       const localInputs = relevantDeclarationRoots(input, project, decisions);
       const implementations = referenceInputs.get(project.sourceConfig) ?? [];
+      const requiresMappingReceipt =
+        applicable.length > 0 ||
+        localInputs.length > 0 ||
+        implementations.length > 0;
       if (
-        applicable.length === 0 &&
-        localInputs.length === 0 &&
-        implementations.length === 0
+        !requiresMappingReceipt &&
+        !hasVueCandidatePlugins(project.executionIdentity)
       )
         continue;
       const closure = referenceClosure(project, projects);
       const start = performance.now();
       try {
-        result.receipts.push(
-          validateProject(
-            input,
-            project,
-            closure,
-            applicable,
-            localInputs,
-            implementations,
-          ),
+        const receipt = validateProject(
+          input,
+          project,
+          closure,
+          applicable,
+          localInputs,
+          implementations,
         );
+        if (requiresMappingReceipt) result.receipts.push(receipt);
       } finally {
         input.metrics?.record({
           name: 'declaration-candidate',
