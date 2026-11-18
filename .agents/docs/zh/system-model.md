@@ -46,7 +46,7 @@ Source config 是唯一执行归属单位。嵌套 solution 的 DFS 收集所有
 
 隐式归属与执行归属保持分离。推导出零个或多个不同框架 Checker 时，Local Owner 保持 Pending，Freeze 锁定 Native TypeScript baseline；唯一推导结果直接选定对应框架。多个隐式结果在最终报告中产生 Warning，不进入 Conflicting 或 Unavailable Authority 状态。不兼容显式选择或精确 Build Checker 身份仍遵循既有冲突规则。框架选择可以已知，而所需工具链仍不可用。这些规则复用已有 Owner/Authority 字段，不引入 Candidate 状态或全局枚举。
 
-已选入口及其必要终端配置必须在 discovery、ownership plan、Core work 与具体 candidate 之间保留身份。失败配置或仍在正常框架输入发现中的已选配置，不能因为过滤后的 plan 中没有它而消失。已知空配置保留既有角色。Candidate admission 仍限定在该 candidate 必须满足的入口与关系内，无关的 unavailable 工作不是全局否决。参见[推导语义](./semantics.md#确定性框架推导)。
+已选入口及其必要终端配置必须在 discovery、ownership plan、Core work 与具体 candidate 之间保留身份。失败配置或仍在正常框架输入发现中的已选配置，不能因为过滤后的 plan 中没有它而消失。已知空配置保留既有角色。已选声明构建 leaf 的冻结 roots 为空时，Reference Graph 仍保留其生成项目和有效的 `implicitRefs`。Candidate admission 仍限定在该 candidate 必须满足的入口与关系内，无关的 unavailable 工作不是全局否决。参见[推导语义](./semantics.md#确定性框架推导)。
 
 ## 工作区发现 authority
 

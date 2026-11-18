@@ -224,6 +224,7 @@ export function prepareCheckerGraph(options: {
     explicitOwnerByConfigPath: options.explicitOwnerByConfigPath,
     inheritedOwnerByConfigPath: options.inheritedOwnerByConfigPath,
     projectConfigCache: options.projectConfigCache,
+    selectedLeafConfigPaths: new Set(options.selection.sourceConfigPaths),
     sourceConfigParser: (configPath) =>
       getFrozenProject({
         configPath,

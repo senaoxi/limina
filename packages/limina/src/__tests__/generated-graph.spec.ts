@@ -2517,6 +2517,47 @@ describe('prepareGeneratedTsconfigGraph', () => {
     },
   );
 
+  it('preserves a selected leaf and its implicit reference when inherited inputs freeze to no roots', async () => {
+    const fixture = await createFixture({
+      'packages/app/tsconfig.json': json({
+        files: [],
+        references: [{ path: './tsconfig.lib.json' }],
+      }),
+      'packages/app/base.json': json({
+        include: ['src/**/*', 'src/**/*.astro'],
+      }),
+      'packages/app/tsconfig.lib.json': json({
+        extends: './base.json',
+        liminaOptions: {
+          implicitRefs: [{ path: '../theme', reason: 'Theme declarations' }],
+        },
+      }),
+      'packages/app/src/Widget.vue':
+        '<script setup lang="ts">import { lib } from "../../lib/src/index.js"; void lib;</script>',
+      'packages/lib/tsconfig.json': json({ include: ['src/**/*.ts'] }),
+      'packages/lib/src/index.ts': 'export const lib = 1;',
+      'packages/theme/tsconfig.json': json({ include: ['src/**/*'] }),
+      'packages/theme/src/Theme.vue': '<template>Theme</template>',
+    });
+    try {
+      const graph = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        scope: { ...fixture.config.scope, checkers: { auto: {} } },
+      });
+      const leaf = graph.sourceToDts
+        .get('vue-tsc')
+        ?.get(fixture.path('packages/app/tsconfig.lib.json'));
+      expect(leaf).toBeDefined();
+      expect(JSON.parse(await readFile(leaf!, 'utf8'))).toMatchObject({
+        files: [],
+        include: [],
+        references: [{ path: '../theme/tsconfig.dts.json' }],
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('promotes TypeScript auto consumers transitively through dependency chains', async () => {
     const fixture = await createFixture({
       'packages/app/src/index.ts':

@@ -53,6 +53,7 @@ interface CollectionContext {
   inheritedOwnerByConfigPath?: Map<string, ResolvedCheckerConfig['name']>;
   problems: string[];
   projectConfigCache?: CheckerProjectConfigCache;
+  selectedLeafConfigPaths?: ReadonlySet<string>;
   seenConfigs: Set<string>;
   sourceConfigInspector?: SourceConfigInspector;
   sourceConfigParser?: (
@@ -94,6 +95,7 @@ interface CollectCheckerSourceConfigsOptions {
   >;
   inheritedOwnerByConfigPath?: Map<string, ResolvedCheckerConfig['name']>;
   projectConfigCache?: CheckerProjectConfigCache;
+  selectedLeafConfigPaths?: ReadonlySet<string>;
 }
 
 export function createEmptySourceConfigCollection(
@@ -305,7 +307,8 @@ function collectLeafConfig(
 ): void {
   if (
     analysis.fileNames.length === 0 &&
-    !Object.hasOwn(analysis.configObject, 'include')
+    !Object.hasOwn(analysis.configObject, 'include') &&
+    !options.selectedLeafConfigPaths?.has(options.sourceConfigPath)
   ) {
     return;
   }
