@@ -1,6 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { isBuildGraphConfigPath } from '#core/tsconfig/actions';
 import path from 'pathe';
+import { createUnitByProjectPath } from '../core/project-dependencies/project-alignment';
 import {
   addAllowlistCoverage,
   addAllowlistFindings,
@@ -79,6 +80,7 @@ async function addRouteFindings(state: ProofRunState): Promise<void> {
 }
 
 function addProjectConfigFindings(state: ProofRunState): void {
+  const governedSources = createUnitByProjectPath(state.generatedGraph);
   const projectContexts = collectProjectContextsByPath(
     state.entryRoutes,
     state.generatedGraph,
@@ -92,6 +94,7 @@ function addProjectConfigFindings(state: ProofRunState): void {
     config: state.config,
     dtsConfigPaths: state.dtsConfigPaths,
     findings: state.findings,
+    governedSources,
     graphProjectPaths: new Set(state.entryProjectPaths),
     projectContextsByPath: projectContexts,
     projectConfigCache: state.preflight.providers.projectConfigs,
@@ -131,6 +134,7 @@ function addProjectConfigFindings(state: ProofRunState): void {
     config: state.config,
     findings: state.findings,
     generatedGraph: state.generatedGraph,
+    governedSources,
     ordinaryConfigPaths: state.ordinaryConfigPaths,
     projectConfigCache: state.preflight.providers.projectConfigs,
     workspaceLookup: state.workspaceLookup,

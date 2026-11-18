@@ -1,6 +1,9 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type {
+  GeneratedTsconfigGraphResult,
+  GovernedSourceUnit,
+} from '#core/build-graph/runner';
 import {
   compareCodeUnits,
   uniqueCodeUnitSortedStrings,
@@ -41,40 +44,37 @@ function collectConfigOwnerEntries(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   generatedGraph: GeneratedTsconfigGraphResult;
+  governedSources: ReadonlyMap<string, GovernedSourceUnit>;
   projectConfigCache?: CheckerProjectConfigCache;
 }): SourceOwnerEntry[] {
   if (isDefaultTypecheckAggregator(options)) {
     return [];
   }
 
-  const context = getActiveCheckerContext(
-    options.config,
-    options.generatedGraph,
-  );
+  const fileNames =
+    options.governedSources.get(options.configPath)?.ownedFileNames ??
+    parseProofConfig({
+      config: options.config,
+      configPath: options.configPath,
+      context: getActiveCheckerContext(options.config, options.generatedGraph),
+      projectConfigCache: options.projectConfigCache,
+    }).fileNames;
 
-  return parseProofConfig({
-    config: options.config,
-    configPath: options.configPath,
-    context,
-    projectConfigCache: options.projectConfigCache,
-  })
-    .fileNames.filter(isOrdinarySourceOwnershipCandidate)
+  return fileNames
+    .filter(isOrdinarySourceOwnershipCandidate)
     .map((fileName) => ({ configPath: options.configPath, fileName }));
 }
 
 function collectFileOwners(options: {
   config: ResolvedLiminaConfig;
   generatedGraph: GeneratedTsconfigGraphResult;
+  governedSources: ReadonlyMap<string, GovernedSourceUnit>;
   ordinaryConfigPaths: string[];
   projectConfigCache?: CheckerProjectConfigCache;
 }): Map<string, string[]> {
   const fileOwners = new Map<string, string[]>();
   const entries = options.ordinaryConfigPaths.flatMap((configPath) =>
-    collectConfigOwnerEntries({
-      config: options.config,
-      configPath,
-      generatedGraph: options.generatedGraph,
-    }),
+    collectConfigOwnerEntries({ ...options, configPath }),
   );
 
   for (const entry of entries) {
@@ -174,6 +174,7 @@ export function addDuplicateTypecheckOwnershipFindings(options: {
   config: ResolvedLiminaConfig;
   findings: ProofFinding[];
   generatedGraph: GeneratedTsconfigGraphResult;
+  governedSources: ReadonlyMap<string, GovernedSourceUnit>;
   ordinaryConfigPaths: string[];
   projectConfigCache?: CheckerProjectConfigCache;
   workspaceLookup: WorkspaceLookupIndex;

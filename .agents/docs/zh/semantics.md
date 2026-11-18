@@ -38,7 +38,7 @@ Path 候选资格使用编译器的有效 `resolveJsonModule` 值，包括随版
 
 [checker-ownership-resolution](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts) 收集受支持的 config/root 推导与 dependency facts，全部隐式要求收敛后才提交权威。Named Checker 约束保持优先的显式权威。去重结果决定唯一框架选择，或 Pending Local Owner 与 Native baseline freeze。[Semantic authority](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts) 随后冻结解释方式，再进行 Vue promotion、Build Coloring 和 Finalization；这些执行阶段不能重写语义。
 
-锁定的源输入将语义权威与引用事实采集所用的 roots、options、parse context 和 config closure 绑定。图构造及生成的声明／产物配置复用同一份输入。后期执行染色不能按最终 Checker 重新解析源配置并扩张成员。因此，TypeScript 源项目染成 `vue-tsc` 后仍保留 TypeScript roots；同目录 Vue 文件要进入这些 roots，必须在冻结前建立 Vue 权威。发现阶段的 Coverage 仍是独立事实，本身不授予 root 成员资格。候选验证仍使用最终执行 Checker 及其独立的生成配置 context，不能将候选输入写回冻结的源 context。
+显式 Checker 配置和文档规定的隐式归属规则决定语义权威。源码全部为 TypeScript 且只含常规编译选项的源项目同样可以归属框架。锁定的源输入将语义权威与引用事实采集所用的 roots、options、parse context 和 config closure 绑定。图构造及生成的声明／产物配置复用同一份输入。后期执行染色不能按最终 Checker 重新解析源配置并扩张成员。因此，TypeScript 源项目染成 `vue-tsc` 后仍保留 TypeScript roots；同目录 Vue 文件要进入这些 roots，必须在冻结前建立 Vue 权威。发现阶段的 Coverage 仍是独立事实，本身不授予 root 成员资格。Source Check 按治理单元的源码成员收集语义导入。Proof 独立解析生成的声明项目，将解析所得 roots 与治理单元冻结的声明输入比较。候选验证使用最终执行 Checker 及其独立的生成配置 context。
 
 同色边只来自合格声明依赖、有效声明上下文选择和 implicitRefs。Vue promotion 与组件染色共用声明关系资格判断；纯 solution 聚合和 framework schedule 不传播颜色。显式 ownership 在冻结前施加，冻结后的执行染色不改写语义解释权。
 

@@ -3,6 +3,7 @@ import type {
   CheckerProjectParseContext,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { GovernedSourceUnit } from '#core/build-graph/runner';
 import { toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
@@ -161,6 +162,7 @@ function validateManagedDeclarationConfig(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   findings: ProofFinding[];
+  governedSource?: GovernedSourceUnit;
   projectContext?: CheckerProjectParseContext;
   projectConfigCache?: CheckerProjectConfigCache;
   virtualFiles: ReadonlyMap<string, string>;
@@ -204,10 +206,12 @@ function validateManagedDeclarationConfig(options: {
     projectConfigCache: options.projectConfigCache,
     virtualFiles: options.virtualFiles,
   });
+  const expectedSourcePath =
+    options.governedSource?.configPath ?? localConfigPath;
   const localConfig = parseProofConfig({
     config: options.config,
-    configPath: localConfigPath,
-    context: options.projectContext,
+    configPath: expectedSourcePath,
+    context: options.governedSource?.context ?? options.projectContext,
     projectConfigCache: options.projectConfigCache,
   });
 
@@ -225,8 +229,12 @@ function validateManagedDeclarationConfig(options: {
     dtsConfig,
     dtsConfigPath: options.configPath,
     findings: options.findings,
-    localConfig,
-    localConfigPath,
+    localConfig: {
+      fileNames:
+        options.governedSource?.declarationFileNames ?? localConfig.fileNames,
+      options: localConfig.options,
+    },
+    localConfigPath: expectedSourcePath,
     workspaceLookup: options.workspaceLookup,
   });
 }
@@ -234,6 +242,7 @@ function validateManagedDeclarationConfig(options: {
 export function addDtsConfigFindings(options: {
   config: ResolvedLiminaConfig;
   findings: ProofFinding[];
+  governedSources: ReadonlyMap<string, GovernedSourceUnit>;
   graphProjectPaths: Set<string>;
   dtsConfigPaths: string[];
   projectContextsByPath: Map<string, CheckerProjectParseContext>;
@@ -256,6 +265,7 @@ export function addDtsConfigFindings(options: {
       config: options.config,
       configPath,
       findings: options.findings,
+      governedSource: options.governedSources.get(configPath),
       projectContext: options.projectContextsByPath.get(configPath),
       projectConfigCache: options.projectConfigCache,
       virtualFiles: options.virtualFiles,

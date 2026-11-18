@@ -1,7 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
-import type { ProjectInfo } from '#core/import-graph/context';
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
 import {
   type CheckCounter,
@@ -30,11 +29,7 @@ import {
   type RunSourceCheckImplOptions,
   SOURCE_CHECK_ITEM_NAMES,
 } from './runner-types';
-import {
-  collectSourceProjects,
-  createGeneratedProjectCheckerNamesByPath,
-  createSourceProjectEntries,
-} from './source-projects';
+import { createSourceProjectEntries } from './source-projects';
 import type { SourceProjectEntry } from './source-types';
 
 export interface SourceCheckState {
@@ -54,7 +49,6 @@ export interface SourceCheckState {
   readonly packages: WorkspacePackage[];
   readonly preflight: LiminaPreflightManager;
   readonly projectPaths: string[];
-  readonly projects: ProjectInfo[];
   readonly rootPackage: WorkspacePackage | null;
   readonly sourceIssues: SourceCheckIssue[];
   readonly sourceProjectEntries: SourceProjectEntry[];
@@ -62,36 +56,6 @@ export interface SourceCheckState {
   readonly workspaceDependencyDeclarations: WorkspaceDependencyDeclaration[];
   readonly workspaceLookup: WorkspaceLookupIndex;
   readonly workspacePathIndex: WorkspaceRegionPathIndex;
-}
-
-async function loadProjects(options: {
-  graphRoute: SourceCheckState['graphRoute'];
-  projectPaths: string[];
-  providers: AnalysisProviderSet;
-  workspaceLookup: WorkspaceLookupIndex;
-}): Promise<ProjectInfo[]> {
-  return collectSourceProjects({
-    projectContextsByPath: options.graphRoute.projectContextsByPath,
-    projectPaths: options.projectPaths,
-    providers: options.providers,
-    workspaceLookup: options.workspaceLookup,
-  });
-}
-
-async function loadSourceProjectEntries(options: {
-  generatedGraph: GeneratedTsconfigGraphResult;
-  projects: ProjectInfo[];
-  providers: AnalysisProviderSet;
-  workspaceLookup: WorkspaceLookupIndex;
-}): Promise<SourceProjectEntry[]> {
-  return createSourceProjectEntries({
-    checkerNamesByPath: createGeneratedProjectCheckerNamesByPath(
-      options.generatedGraph,
-    ),
-    projects: options.projects,
-    providers: options.providers,
-    workspaceLookup: options.workspaceLookup,
-  });
 }
 
 async function loadAmbientDeclarations(options: {
@@ -124,15 +88,10 @@ export async function createSourceCheckState(
     .toArray()
     .sort((left, right) => Number(left > right) - Number(left < right));
   const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
-  const projects = await loadProjects({
-    graphRoute,
-    projectPaths,
-    providers: core,
-    workspaceLookup,
-  });
-  const sourceProjectEntries = await loadSourceProjectEntries({
+  const sourceProjectEntries = await createSourceProjectEntries({
     generatedGraph,
-    projects,
+    projectContextsByPath: graphRoute.projectContextsByPath,
+    projectPaths,
     providers: core,
     workspaceLookup,
   });
@@ -170,7 +129,6 @@ export async function createSourceCheckState(
     packages,
     preflight,
     projectPaths,
-    projects,
     rootPackage: findWorkspaceRootPackage({ config, packages }),
     sourceIssues,
     sourceProjectEntries,

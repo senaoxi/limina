@@ -534,6 +534,98 @@ function findCheckerCoverageFact(
 }
 
 describe('runProofCheck dts config semantics', () => {
+  it('checks the generated Vue declaration leaf against its frozen Native inputs', async () => {
+    const compilerOptions = {
+      module: 'ESNext',
+      moduleResolution: 'Bundler',
+      strict: true,
+      target: 'ES2022',
+      types: [],
+    };
+    const fixture = await createFixture({
+      'packages/native/src/Ignored.vue': '<template><div /></template>',
+      'packages/native/src/index.ts':
+        'export { value } from "../../vue/src/value.js";',
+      'packages/native/tsconfig.json': stringifyConfig({
+        compilerOptions,
+        include: ['src/**/*', 'src/**/*.astro'],
+      }),
+      'packages/vue/src/Widget.vue': '<template><div /></template>',
+      'packages/vue/src/value.ts': 'export const value = 1;',
+      'packages/vue/tsconfig.json': stringifyConfig({
+        compilerOptions,
+        include: ['src/**/*'],
+      }),
+    });
+    const config: ResolvedLiminaConfig = {
+      ...fixture.config,
+      scope: {
+        ...fixture.config.scope,
+        checkers: { auto: {} },
+        source: {
+          include: [
+            'packages/native/src/index.ts',
+            'packages/vue/src/**/*.{ts,vue}',
+          ],
+        },
+      },
+    };
+    try {
+      const graph = await prepareAndMaterializeGeneratedTsconfigGraph(config);
+      const resolve = createFixturePathResolver(fixture.rootDir);
+      const nativeConfig = resolve('packages/native/tsconfig.json');
+      const index = resolve('packages/native/src/index.ts');
+      const native = graph.governedSources.get('vue-tsc')?.get(nativeConfig);
+      expect(native?.semanticAuthority.family).toBe('typescript');
+      expect(native?.declarationFileNames).toEqual([index]);
+      // Even the original Native glob would widen if Proof enumerated it again.
+      await writeText(resolve('packages/native/src/late.ts'), 'export {};');
+      const valid = await collectTypedProofFindings(config, {
+        generatedGraphProvider: async () => graph,
+      });
+      expect(valid.findings.map((finding) => finding.facts)).toEqual([]);
+      expect(valid.passed).toBe(true);
+
+      const corrupted = cloneFrameworkProofGraph(graph);
+      const dtsPath = graph.sourceToDts.get('vue-tsc')!.get(nativeConfig)!;
+      const declaration = JSON.parse(
+        corrupted.generatedFiles.get(dtsPath)!,
+      ) as {
+        compilerOptions: { strict: boolean };
+        files: string[];
+      };
+      const extra = resolve('packages/native/src/Ignored.vue');
+      declaration.files = [
+        toPortablePath(path.relative(path.dirname(dtsPath), extra)),
+      ];
+      declaration.compilerOptions.strict = false;
+      corrupted.generatedFiles.set(dtsPath, stringifyConfig(declaration));
+
+      const invalid = await collectTypedProofFindings(config, {
+        generatedGraphProvider: async () => corrupted,
+      });
+      expect(invalid.passed).toBe(false);
+      expect(invalid.findings.map((finding) => finding.facts)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            declarationProjectPath: dtsPath,
+            kind: 'declaration-file-set',
+            onlyInCompanion: [index],
+            onlyInDeclaration: [extra],
+          }),
+          expect.objectContaining({
+            actual: false,
+            expected: true,
+            kind: 'declaration-option-parity',
+            optionName: 'strict',
+          }),
+        ]),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('accepts a single-environment dts leaf paired with default tsconfig.json', async () => {
     const fixture = await createFixture(createPassingFiles());
 

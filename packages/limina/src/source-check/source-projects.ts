@@ -13,6 +13,7 @@ import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/colle
 import { existsSync } from 'node:fs';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
+import { createUnitByProjectPath } from '../core/project-dependencies/project-alignment';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { AmbientDeclarationIndex } from './ambient-declarations';
 import { createSourceDiagnosticFinding } from './finding-utilities';
@@ -33,26 +34,6 @@ function filterProjectInfoToActivatedRegion(
       workspaceLookup.isInsideActivatedRegion(fileName),
     ),
   };
-}
-
-export async function collectSourceProjects(options: {
-  projectContextsByPath: ReadonlyMap<string, CheckerProjectParseContext>;
-  projectPaths: string[];
-  providers: AnalysisProviderSet;
-  workspaceLookup: WorkspaceLookupIndex;
-}): Promise<ProjectInfo[]> {
-  const projects = await Promise.all(
-    options.projectPaths.map((projectPath) =>
-      options.providers.tsconfig.getProject(
-        projectPath,
-        options.projectContextsByPath.get(projectPath),
-      ),
-    ),
-  );
-
-  return projects.map((project) =>
-    filterProjectInfoToActivatedRegion(project, options.workspaceLookup),
-  );
 }
 
 function addCheckerName(
@@ -116,7 +97,7 @@ function addGovernedProjectionMapping(options: {
   );
 }
 
-export function createGeneratedProjectCheckerNamesByPath(
+function createGeneratedProjectCheckerNamesByPath(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): Map<string, string[]> {
   const namesByPath = new Map<string, string[]>();
@@ -129,52 +110,92 @@ export function createGeneratedProjectCheckerNamesByPath(
   return namesByPath;
 }
 
-async function collectSourceProjectFileNames(options: {
+async function getCompanionFileNames(options: {
   project: ProjectInfo;
   providers: AnalysisProviderSet;
-}): Promise<Set<string>> {
-  const typecheckConfigPath = options.project.resolverConfigPath;
-  if (!existsSync(typecheckConfigPath)) {
-    return new Set(options.project.fileNames);
-  }
-
+}): Promise<string[]> {
+  const companionPath = options.project.resolverConfigPath;
+  if (!existsSync(companionPath)) return [];
   const companion = await options.providers.tsconfig.getProject(
-    typecheckConfigPath,
+    companionPath,
     options.project,
   );
-  return new Set([...options.project.fileNames, ...companion.fileNames]);
+  return companion.fileNames;
 }
 
 async function createSourceProjectEntry(options: {
-  checkerNamesByPath: ReadonlyMap<string, readonly string[]>;
-  project: ProjectInfo;
+  checkerNames: readonly string[];
+  context?: CheckerProjectParseContext;
+  projectPath: string;
   providers: AnalysisProviderSet;
+  unit?: GovernedSourceUnit;
   workspaceLookup: WorkspaceLookupIndex;
 }): Promise<SourceProjectEntry> {
-  const fileNames = await collectSourceProjectFileNames(options);
+  const parsed = await options.providers.tsconfig.getProject(
+    options.projectPath,
+    options.unit?.context ?? options.context,
+  );
+  const checkerNames = [...options.checkerNames];
+  if (options.unit !== undefined) {
+    const { context, ownedFileNames } = options.unit;
+    const fileNames = ownedFileNames.filter((fileName) =>
+      options.workspaceLookup.isInsideActivatedRegion(fileName),
+    );
+    return {
+      checkerNames,
+      companionFileNames: ownedFileNames,
+      fileNames,
+      project: {
+        ...parsed,
+        checkerPresets: [...context.checkerPresets],
+        extensions: [...context.extensions],
+        vueSemanticIdentity: context.vueSemanticIdentity,
+        fileNames,
+        ownedFileNames: fileNames,
+      },
+    };
+  }
 
+  const project = filterProjectInfoToActivatedRegion(
+    parsed,
+    options.workspaceLookup,
+  );
+  const companionFileNames = await getCompanionFileNames({
+    ...options,
+    project,
+  });
   return {
-    checkerNames: [
-      ...(options.checkerNamesByPath.get(options.project.configPath) ?? []),
-    ],
-    fileNames: [...fileNames]
-      .filter((fileName) =>
+    checkerNames,
+    companionFileNames,
+    fileNames: uniqueSortedStrings(
+      [...project.fileNames, ...companionFileNames].filter((fileName) =>
         options.workspaceLookup.isInsideActivatedRegion(fileName),
-      )
-      .sort((left, right) => Number(left > right) - Number(left < right)),
-    project: options.project,
+      ),
+    ),
+    project,
   };
 }
 
 export async function createSourceProjectEntries(options: {
-  checkerNamesByPath: ReadonlyMap<string, readonly string[]>;
-  projects: ProjectInfo[];
+  generatedGraph: GeneratedTsconfigGraphResult;
+  projectContextsByPath: ReadonlyMap<string, CheckerProjectParseContext>;
+  projectPaths: string[];
   providers: AnalysisProviderSet;
   workspaceLookup: WorkspaceLookupIndex;
 }): Promise<SourceProjectEntry[]> {
+  const unitByPath = createUnitByProjectPath(options.generatedGraph);
+  const checkerNames = createGeneratedProjectCheckerNamesByPath(
+    options.generatedGraph,
+  );
   return Promise.all(
-    options.projects.map((project) =>
-      createSourceProjectEntry({ ...options, project }),
+    options.projectPaths.map((projectPath) =>
+      createSourceProjectEntry({
+        ...options,
+        checkerNames: checkerNames.get(projectPath) ?? [],
+        context: options.projectContextsByPath.get(projectPath),
+        projectPath,
+        unit: unitByPath.get(projectPath),
+      }),
     ),
   );
 }
@@ -215,8 +236,8 @@ interface ProjectOwnershipOptions {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   findings: SourceFinding[];
+  companionFileNames: string[];
   project: ProjectInfo;
-  providers: AnalysisProviderSet;
   workspaceLookup: WorkspaceLookupIndex;
 }
 
@@ -226,32 +247,26 @@ function getProjectOwnershipRole(
   return isDtsProject ? 'declaration leaf' : 'governed source';
 }
 
-async function addCompanionProjectOwnership(
+function addCompanionProjectOwnership(
   options: ProjectOwnershipOptions,
   isDtsProject: boolean,
-): Promise<void> {
+): void {
   if (!isDtsProject) return;
   const typecheckConfigPath = options.project.resolverConfigPath;
   if (!existsSync(typecheckConfigPath)) return;
-  const companion = await options.providers.tsconfig.getProject(
-    typecheckConfigPath,
-    options.project,
-  );
   addProjectOwnerProblems({
     ambientDeclarations: options.ambientDeclarations,
     checks: options.checks,
     config: options.config,
     configPath: typecheckConfigPath,
-    fileNames: companion.fileNames,
+    fileNames: options.companionFileNames,
     findings: options.findings,
     role: 'typecheck companion',
     workspaceLookup: options.workspaceLookup,
   });
 }
 
-async function addProjectOwnership(
-  options: ProjectOwnershipOptions,
-): Promise<void> {
+function addProjectOwnership(options: ProjectOwnershipOptions): void {
   addProjectLabelFinding(options);
   const isDtsProject = isDtsProjectConfig(options.project.configPath);
   addProjectOwnerProblems({
@@ -264,19 +279,18 @@ async function addProjectOwnership(
     role: getProjectOwnershipRole(isDtsProject),
     workspaceLookup: options.workspaceLookup,
   });
-  await addCompanionProjectOwnership(options, isDtsProject);
+  addCompanionProjectOwnership(options, isDtsProject);
 }
 
-export async function addSourceProjectOwnerProblems(options: {
+export function addSourceProjectOwnerProblems(options: {
   ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   findings: SourceFinding[];
-  providers: AnalysisProviderSet;
-  projects: ProjectInfo[];
+  sourceProjectEntries: SourceProjectEntry[];
   workspaceLookup: WorkspaceLookupIndex;
-}): Promise<void> {
-  for (const project of options.projects) {
-    await addProjectOwnership({ ...options, project });
+}): void {
+  for (const { project, companionFileNames } of options.sourceProjectEntries) {
+    addProjectOwnership({ ...options, project, companionFileNames });
   }
 }

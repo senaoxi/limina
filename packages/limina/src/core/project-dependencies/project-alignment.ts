@@ -16,7 +16,7 @@ function getUnitProjectPaths(unit: GovernedSourceUnit): string[] {
   ].filter((value): value is string => value !== undefined);
 }
 
-function createUnitByProjectPath(
+export function createUnitByProjectPath(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): Map<string, GovernedSourceUnit> {
   const result = new Map<string, GovernedSourceUnit>();

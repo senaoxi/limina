@@ -93,24 +93,22 @@ type SourceProjectOwnershipPhaseInput = Readonly<
     | 'checkItems'
     | 'checks'
     | 'config'
-    | 'core'
     | 'findings'
-    | 'projects'
+    | 'sourceProjectEntries'
     | 'workspaceLookup'
   >
 >;
 
-async function runSourceProjectOwnershipPhase(
+function runSourceProjectOwnershipPhase(
   state: SourceProjectOwnershipPhaseInput,
-): Promise<void> {
+): void {
   state.checkItems.start('source project ownership');
-  await addSourceProjectOwnerProblems({
+  addSourceProjectOwnerProblems({
     ambientDeclarations: state.ambientDeclarations.index,
     checks: state.checks,
     config: state.config,
     findings: state.findings,
-    providers: state.core,
-    projects: state.projects,
+    sourceProjectEntries: state.sourceProjectEntries,
     workspaceLookup: state.workspaceLookup,
   });
   state.checkItems.record('source project ownership');
@@ -224,14 +222,13 @@ export async function prepareSourceCheck(
 export async function isFinishSourceCheckAnalysis(
   state: SourceCheckState,
 ): Promise<boolean> {
-  await runSourceProjectOwnershipPhase({
+  runSourceProjectOwnershipPhase({
     ambientDeclarations: state.ambientDeclarations,
     checkItems: state.checkItems,
     checks: state.checks,
     config: state.config,
-    core: state.core,
     findings: state.findings,
-    projects: state.projects,
+    sourceProjectEntries: state.sourceProjectEntries,
     workspaceLookup: state.workspaceLookup,
   });
   await runSourceImportAuthorityPhase({

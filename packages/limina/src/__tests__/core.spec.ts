@@ -363,6 +363,66 @@ describe('AnalysisProviderSet', () => {
     }
   });
 
+  it('keeps frozen Source membership per named config when a companion glob overlaps', async () => {
+    const fixture = await createCoreFixture();
+    const file = createFixturePathResolver(fixture.rootDir);
+    const libraryConfig = file('packages/a/tsconfig.lib.json');
+    const testConfig = file('packages/a/tsconfig.test.json');
+    const sharedDirectory = 'shared/**/*';
+    try {
+      await writeText(
+        file('packages/a/tsconfig.json'),
+        stringifyJson({
+          files: [],
+          references: [
+            { path: './tsconfig.lib.json' },
+            { path: './tsconfig.test.json' },
+          ],
+        }),
+      );
+      await writeText(
+        libraryConfig,
+        stringifyJson({
+          compilerOptions: buildCompilerOptions,
+          include: ['src/**/*.ts', sharedDirectory],
+        }),
+      );
+      await writeText(
+        testConfig,
+        stringifyJson({
+          compilerOptions: buildCompilerOptions,
+          include: ['tests/**/*.ts', sharedDirectory],
+        }),
+      );
+      const testRoot = file('packages/a/tests/sample.ts');
+      await writeText(testRoot, 'export const sample = true;');
+      await writeText(
+        file('packages/a/shared/Ignored.vue'),
+        '<template>Hello</template>',
+      );
+
+      const state = await createSourceCheckState(fixture.config, {
+        preflight: new LiminaPreflightManager({
+          config: fixture.config,
+          providers: fixture.core,
+        }),
+      });
+      const sources = new Map(
+        state.sourceProjectEntries.map((entry) => [
+          entry.project.resolverConfigPath,
+          entry.fileNames,
+        ]),
+      );
+      expect(sources.get(libraryConfig)).toEqual([
+        file('packages/a/src/dep.ts'),
+        file('packages/a/src/index.ts'),
+      ]);
+      expect(sources.get(testConfig)).toEqual([testRoot]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   for (const family of ['astro', 'svelte'] as const) {
     it(
       `governs pure .${family} sources across ownership, graph, proof, and package domains`,

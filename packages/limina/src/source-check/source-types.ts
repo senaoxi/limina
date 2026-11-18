@@ -8,6 +8,7 @@ import type { SourceFinding } from './findings';
 
 export interface SourceProjectEntry {
   checkerNames: string[];
+  companionFileNames: string[];
   fileNames: string[];
   project: ProjectInfo;
 }
