@@ -181,7 +181,15 @@ function analyze(
       ? undefined
       : parseAnalysisSnapshot(JSON.parse(encoded), 'fixture');
   if (previous !== undefined) expect(snapshot).toBeDefined();
-  const cache = new NativeAnalysisCache('fixture', snapshot, 'fixture-config');
+  return analyzeWithCache(
+    project,
+    new NativeAnalysisCache('fixture', snapshot, 'fixture-config'),
+  );
+}
+function analyzeWithCache(
+  project: TypeScriptSemanticProject,
+  cache: NativeAnalysisCache,
+) {
   const restored = cache.restoreContext(project);
   const context =
     restored ??
@@ -197,6 +205,71 @@ function analyze(
 }
 
 describe('complete native restoration and R02 scope evidence', () => {
+  it.each(['unchanged', 'new source root'] as const)(
+    'restores the needed context after a producer handoff (%s)',
+    async (change) => {
+      const f = fixture();
+      f.write(
+        'tsconfig.consumer.json',
+        '{"files":["src/value.d.ts"],"compilerOptions":{"noLib":true,"types":[]}}',
+      );
+      const consumerOnly = f.project('tsconfig.consumer.json');
+      const seed = analyze(f.project()).cache;
+      analyzeWithCache(consumerOnly, seed);
+      const options = {
+        namespace: createLiminaArtifactNamespace({
+          rootDir: f.root,
+          generation: 0,
+        }),
+        configPath: f.config.configPath,
+        identity: 'fixture',
+        configVersion: 'fixture-config',
+      };
+      const writer = new AnalysisCacheStore(options);
+      await writer.publish(seed);
+      const prior = parseAnalysisSnapshot(
+        readStoredAnalysisSnapshot(writer.path),
+        'fixture',
+      );
+      expect(prior).toBeDefined();
+      if (change === 'new source root')
+        f.write('src/added.ts', "export type { V } from './value.js';");
+      const project = f.project();
+      const producer = new NativeAnalysisCache(
+        'fixture',
+        prior,
+        'fixture-config',
+      );
+      expect(analyzeWithCache(project, producer).restored).toBe(
+        change === 'unchanged',
+      );
+      const candidate = new AnalysisCacheStore(options).refresh(
+        producer,
+        'producer-handoff',
+      );
+      const consumer = new NativeAnalysisCache(
+        'fixture',
+        candidate,
+        'fixture-config',
+      );
+      if (change === 'unchanged') {
+        expect(
+          consumer
+            .restoreContext(consumerOnly)
+            ?.hasSourceFile(f.file('src/value.d.ts')),
+        ).toBe(true);
+      } else {
+        const source = f.file('src/added.ts');
+        const restored = consumer.restoreContext(project);
+        expect(restored?.hasSourceFile(source)).toBe(true);
+        const [request] = restored!.getImportRecords(source);
+        expect(
+          restored!.resolveImportRecord(request!).target?.resolvedFileName,
+        ).toBe(f.file('src/value.d.ts'));
+      }
+    },
+  );
+
   it('restores config-only ownership without creating a selection Program', async () => {
     const f = fixture();
     f.write('limina.config.mjs', 'export default {};');

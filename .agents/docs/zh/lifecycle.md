@@ -103,6 +103,8 @@ Native／Vue snapshot 将声明解析 receipt、结果与类型环境入口一�
 
 `check` 通过 [AnalysisCacheController](../../../packages/limina/src/preflight/analysis-cache.ts)请求本地分析快照。`check [pipeline] --force` 跳过既有持久化模型，执行冷分析，并通过正常发布路径发布本次具备资格的结果。它只阻止跨调用语义恢复；provider 刷新仍可复用本次调用内已验证的内存数据。刷新在检查安装门控后接续最新分析结果，包括上次磁盘快照之后的变化。尚未发布的候选使用本轮观察，没有已提交的时间基准。由于 issue query 不执行分析，[CLI 入口](../../../packages/limina/src/cli/register/check.ts)在配置求值或创建 preflight 前拒绝 `--issues --force`。
 
+托管 Svelte 生产者向消费阶段交接时，如果已发布代的物理输入仍然有效，且其中仍包含生产者本轮使用的每一个 Native 上下文，消费阶段可使用该代，包括仅消费者打开过的上下文。配置 glob 新增匹配源码时，即使全部旧文件不变，根集合或工作区边界也可能改变。生产者重新收集并替换上下文后，消费阶段接收生产者的独立快照，并在自己的 epoch 中校验。
+
 公开 `cache?: boolean | CacheOptions` 默认启用。对象形式要求 `dependencies: string[]`，接受空数组，拒绝其他字段；旧顶层 `configDependencies` 会报错。[加载器](../../../packages/limina/src/config/loader.ts)绑定执行元数据时保留自有属性描述符，因此非枚举的 `cache: false` 仍会禁用持久化，枚举可见性也继续参与配置版本计算。统一 [preflight 创建边界](../../../packages/limina/src/preflight/setup.ts)在构造控制器前应用 `cache: false`，覆盖调用者的 `analysisCache: true` 和 `read-only`。禁用后不读取、不发布分析 snapshot，即使带 force 也不改变已有 snapshot 字节及 mtime；执行期缓存、配置观测／漂移保护、issues 和独立产物仍正常工作。内部 `analysisCache: false` 与 `read-only` 控制仍保留。`cache: true` 不会为原本未请求控制器的命令创建控制器。
 
 checker 的 `.tsbuildinfo` 等构建缓存和 check-result query 保留各自合同。独立执行 `graph prepare` 时，生成文件物化成功后可以发布符合条件的分析快照，为仅运行图命令的工作流建立供后续调用使用的基线。独立执行 `graph check` 和 `source check` 时可以读取有效分析数据，持久化快照保持不变。见 [CLI 进程回归测试](../../../packages/limina/integration/tests/config-process-cache.spec.ts)。

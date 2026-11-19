@@ -267,13 +267,17 @@ export class AnalysisCacheStore {
       return committed;
     }
     // The next epoch reads the detached candidate as its previous model.
-    // A producer visits only its own slice. Let the consumer validate the
-    // original generation, including proof contexts the producer never opened.
+    // Keep unopened consumer contexts only if the prior generation also
+    // contains the producer's current Native contexts. New roots can replace
+    // those contexts while every previously recorded file remains unchanged.
     const prior = cache.previous;
     const canReuseBaseline =
       reason === 'producer-handoff' &&
       prior?.header.baselineTime !== undefined &&
       !cache.inputs.domainDirty &&
+      Object.entries(cache.contexts).every(
+        ([id, context]) => prior.contexts[id] === context,
+      ) &&
       Object.entries(prior.inputs).every(([inputId, input]) =>
         cache.inputs.valid({ inputId, expectedVersion: input.version }),
       );
