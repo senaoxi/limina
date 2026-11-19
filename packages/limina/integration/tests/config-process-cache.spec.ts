@@ -25,10 +25,11 @@ afterEach(() => {
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
-function fixture(extension: string) {
+function fixture(extension: string, relativeRoot = '.') {
   const temporary = mkdtempSync(path.join(tmpdir(), 'limina-process-cache-'));
-  const root = realpathSync.native(temporary);
-  roots.push(root);
+  const temporaryRoot = realpathSync.native(temporary);
+  roots.push(temporaryRoot);
+  const root = path.join(temporaryRoot, relativeRoot);
   const file = createFixturePathResolver(root);
   const write = (name: string, text: string) => {
     mkdirSync(path.dirname(file(name)), { recursive: true });
@@ -186,6 +187,72 @@ it.each(['read-only', 'disabled'] as const)(
     );
   },
 );
+
+it('leaves the analysis snapshot intact after deleting the only lockfile', async () => {
+  const f = fixture('mjs');
+  const seed = await check(f, 'native');
+  const bytes = readFileSync(seed.path);
+  const restored = await runProfile(f, 'native');
+  expect(count(restored.events, 'graphHits')).toBe(1);
+  expect(count(restored.events, 'read-block')).toBeGreaterThan(0);
+
+  rmSync(f.path('package-lock.json'));
+  const unproven = await runProfile(f, 'native');
+  expect(count(unproven.events, 'read-block')).toBe(0);
+  expect(count(unproven.events, 'graphHits')).toBe(0);
+  expect(count(unproven.events, 'graphBuilds')).toBeGreaterThan(0);
+  expect(readFileSync(seed.path).equals(bytes)).toBe(true);
+});
+
+it.each(['normal', 'forced'] as const)(
+  'does not publish a first analysis snapshot without a lockfile in a %s check',
+  async (mode) => {
+    const f = fixture('mjs');
+    rmSync(f.path('package-lock.json'));
+    const arguments_ = mode === 'forced' ? ['--force'] : [];
+    const first = await runProfile(f, 'native', { args: arguments_ });
+    expect(count(first.events, 'graphBuilds')).toBeGreaterThan(0);
+    expect(
+      readdirSync(f.path('.limina'), { recursive: true }).some((name) =>
+        String(name).endsWith('index.liminainfo'),
+      ),
+    ).toBe(false);
+  },
+);
+
+it('stops using the shared pnpm lockfile when the workspace excludes the config package', async () => {
+  const f = fixture('mjs', 'packages/child');
+  rmSync(f.path('package-lock.json'));
+  f.write('package.json', '{"name":"child","private":true,"type":"module"}');
+  f.write(
+    '../../package.json',
+    '{"name":"workspace","private":true,"packageManager":"pnpm@12.10.1"}',
+  );
+  f.write('../../pnpm-workspace.yaml', 'packages: [packages/*]\n');
+  f.write(
+    '../../pnpm-lock.yaml',
+    'lockfileVersion: "9.0"\nimporters:\n  .: {}\n  packages/child: {}\n',
+  );
+  f.write(
+    '../../node_modules/.modules.yaml',
+    'packageManager: pnpm@12.10.1\nvirtualStoreDir: .pnpm\n',
+  );
+  const seed = await check(f, 'native');
+  const bytes = readFileSync(seed.path);
+  const restored = await runProfile(f, 'native');
+  expect(count(restored.events, 'graphHits')).toBe(1);
+  expect(count(restored.events, 'read-block')).toBeGreaterThan(0);
+
+  f.write(
+    '../../pnpm-workspace.yaml',
+    "packages: ['packages/*', '!packages/child']\n",
+  );
+  const excluded = await runProfile(f, 'native');
+  expect(count(excluded.events, 'read-block')).toBe(0);
+  expect(count(excluded.events, 'graphHits')).toBe(0);
+  expect(count(excluded.events, 'graphBuilds')).toBeGreaterThan(0);
+  expect(readFileSync(seed.path).equals(bytes)).toBe(true);
+});
 
 it.each([
   ['native', 'mjs'],

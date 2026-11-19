@@ -165,6 +165,8 @@ observing resource pressure; concurrency is not an ordering contract.
 Omission or `cache: true` enables persistent analysis caching. `cache: false`
 prevents analysis restoration/publication and leaves existing snapshots in place.
 It does not disable checker `.tsbuildinfo`, in-memory caches, or issue records.
+If Limina cannot find a readable lockfile for an installation used by analysis,
+expect a cold run and the previous snapshot to stay in place, even with `--force`.
 
 For files read outside normal module loading, use exact file paths:
 

@@ -115,7 +115,7 @@ checker 的 `.tsbuildinfo` 等构建缓存和 check-result query 保留各自合
 
 全局[安装门禁](../../../packages/limina/src/core/analysis-cache/installation-gate.ts)在读取分析分块前检查治理根和此前选中的安装域。收据将管理器身份、解析根、锁根、安装路径和所选锁文件与其物理绑定关联。物理绑定相同且 mtime 不晚于已发布代的时间基准时，门禁复用原始字节摘要。mtime 较新时，对文件原始字节计算 SHA-256。字节一致即可继续热恢复。选择、物理绑定或摘要发生变化时，整代快照失效，配置模块也重新计算摘要。
 
-锁文件的内容只提供全局失效信号。锁格式和安装由包管理器负责。安装域选择仍观测 manifest、workspace 设置、分支锁候选和物理路径。锁缺失、不可读或安装布局无法证明时，拒绝热恢复。见[安装绑定](../../../packages/limina/src/core/analysis-cache/installation-bindings.ts)和[安装域发现](../../../packages/limina/src/core/analysis-cache/installation-domain.ts)。
+锁文件的内容只提供全局失效信号。锁格式和安装由包管理器负责。安装域选择观测 manifest、workspace 设置、分支锁候选和物理路径。包要继承祖先 pnpm workspace 的锁，必须匹配该 workspace 的成员规则，且物理路径可证明。锁缺失、不可读或安装布局无法证明时，执行冷分析并保留原有快照。见[安装归属](../../../packages/limina/src/core/analysis-cache/installation-owner.ts)、[安装绑定](../../../packages/limina/src/core/analysis-cache/installation-bindings.ts)和[快照发布](../../../packages/limina/src/preflight/analysis-cache-store.ts)。
 
 保留按 TypeScript 解析语义生效、有序且含继承路径的 typeRoots 清单。[本地指纹](../../../packages/limina/src/core/analysis-cache/directory-fingerprint.ts)递归记录路径、条目类型、普通文件 mtime、缺失／空根及链接／路径身份，排除 node_modules 内容。不读取全部文件内容 hash，也不以父目录 mtime 代替递归扫描。所有纳入的条目均参与，包括未消费及旧时间戳文件。共享目录仅在同一观测轮次复用扫描，后续消费／发布边界重新检查。根变化撤销对应共享语义环境，并通知全部配置订阅者；目录外声明依赖仍独立版本化。同路径内容变化但保留／回退 mtime 可能逃过指纹；仅 touch 可保守触发语义工作。扫描失败是错误，不能视为空目录。
 
@@ -167,7 +167,7 @@ Discovery glob 回执比较返回路径 membership 的排序副本，不修改 r
 
 Force 读取保留精确物理基线，不解码、校验或恢复旧模型。旧模型 revision 不可用于 unchanged 发布快捷路径，因此具备资格的冷分析结果继续经过与普通发布相同的 lease、输入／配置稳定性检查、基线比较及原子替换。Force 不绕过 `configuration-version-unknown`，也不为可执行配置授予持久化资格。
 
-修复信任边界之外的安装变化时，运行 `limina check --force`；指定配置时加上 `--config <path>`。它按当前项目状态刷新分析快照，后续普通 check 可恢复新模型。Force 开关本身不删除快照、缓存目录、issue 结果或 checker `.tsbuildinfo`，也不要求强制 TypeScript checker 构建。独立的受管构建状态失效规则仍在启动前执行。store 仍根据解析后的绝对配置路径计算 key。
+修复安装后运行 `limina check --force`。指定配置时加上 `--config <path>`。当前安装通过锁文件门禁时，Limina 发布新的分析快照，后续普通 check 可恢复该模型。Force 开关本身不删除快照、缓存目录、issue 结果或 checker `.tsbuildinfo`，也不要求强制 TypeScript checker 构建。独立的受管构建状态失效规则仍在启动前执行。store 仍根据解析后的绝对配置路径计算 key。
 
 分析漂移最多以新 provider、TypeScript 项目配置解析和成员发现重试一次，继续使用本次冻结的 Limina 配置；事务仅包含分析／候选规划，不重放 checker、命令或产物写入。输出变化保留物化／replan receipt 协议。迟到 epoch 结果不能提交，旧的同 context 实例 dispose 不能释放替代实例。
 

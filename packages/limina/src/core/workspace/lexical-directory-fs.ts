@@ -1,4 +1,5 @@
-import type { Dirent, readdir } from 'node:fs';
+import { isPathInsideDirectory } from '#utils/path';
+import { type Dirent, type readdir, readdirSync } from 'node:fs';
 import { readdir as readEntries, realpath, stat } from 'node:fs/promises';
 import path from 'pathe';
 
@@ -78,6 +79,24 @@ export function createLexicalDirectoryFs(): { readdir: typeof readdir } {
     ) => {
       readLexicalEntries(directory, cycleDirectories, callback);
     }) as typeof readdir,
+  };
+}
+
+export function createDirectoryBranchFs(candidate: string): {
+  readdirSync: typeof readdirSync;
+} {
+  return {
+    readdirSync: new Proxy(readdirSync, {
+      apply(read, _receiver, [directory]: [string]) {
+        if (!isPathInsideDirectory(candidate, directory)) return [];
+        const [next] = path.relative(directory, candidate).split('/', 1);
+        return next === ''
+          ? []
+          : read(directory, { withFileTypes: true }).filter(
+              (entry) => entry.name === next && entry.isDirectory(),
+            );
+      },
+    }),
   };
 }
 

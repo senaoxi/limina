@@ -2,8 +2,11 @@ import { observeAnalysisRead } from '#utils/analysis-input';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
-import { glob } from 'tinyglobby';
-import { createLexicalDirectoryFs } from './lexical-directory-fs';
+import { glob, globSync } from 'tinyglobby';
+import {
+  createDirectoryBranchFs,
+  createLexicalDirectoryFs,
+} from './lexical-directory-fs';
 import type {
   WorkspacePackageGlobGroup,
   WorkspacePackageSelectionPolicy,
@@ -11,18 +14,31 @@ import type {
 
 type ExpansionOptions = WorkspacePackageSelectionPolicy & { rootDir: string };
 
+function globOptions(options: ExpansionOptions) {
+  return {
+    absolute: true as const,
+    cwd: options.rootDir,
+    onlyDirectories: true,
+    expandDirectories: false,
+    ignore: [...options.hardIgnores],
+  };
+}
+
+function globGroups(
+  options: WorkspacePackageSelectionPolicy,
+): readonly WorkspacePackageGlobGroup[] {
+  return options.globGroups ?? [{ packageGlobs: options.packageGlobs }];
+}
+
 async function expandGroup(
   group: WorkspacePackageGlobGroup,
   options: ExpansionOptions,
 ): Promise<string[]> {
+  const settings = globOptions(options);
   const read = () =>
-    glob([...group.packageGlobs], {
+    glob(group.packageGlobs, {
+      ...settings,
       fs: createLexicalDirectoryFs(),
-      absolute: true,
-      cwd: options.rootDir,
-      onlyDirectories: true,
-      expandDirectories: false,
-      ignore: [...options.hardIgnores],
     });
   const directories = await read();
   observeAnalysisRead({
@@ -31,13 +47,7 @@ async function expandGroup(
       kind: 'glob',
       patterns: [...group.packageGlobs],
       lexicalDirectories: true,
-      options: {
-        absolute: true,
-        cwd: options.rootDir,
-        onlyDirectories: true,
-        expandDirectories: false,
-        ignore: [...options.hardIgnores],
-      },
+      options: settings,
     },
     key: JSON.stringify(['packages', options.rootDir, group.packageGlobs]),
     value: directories,
@@ -57,11 +67,30 @@ export async function expandPackageGlobs(
   options: ExpansionOptions,
 ): Promise<string[]> {
   if (options.packageGlobs.length === 0) return [];
-  const groups = options.globGroups ?? [{ packageGlobs: options.packageGlobs }];
   const directories = (
-    await Promise.all(groups.map((group) => expandGroup(group, options)))
+    await Promise.all(
+      globGroups(options).map((group) => expandGroup(group, options)),
+    )
   ).flat();
   return [...new Set(directories.map(normalizeAbsolutePath))].sort(
     compareCodeUnits,
+  );
+}
+
+export function hasPackageDirectory(
+  options: ExpansionOptions,
+  candidate: string,
+): boolean {
+  const relative = path.relative(options.rootDir, candidate);
+  const settings = {
+    ...globOptions(options),
+    fs: createDirectoryBranchFs(candidate),
+  };
+  return globGroups(options).some(
+    (group) =>
+      group.acceptsDirectory?.(relative) !== false &&
+      globSync(group.packageGlobs, settings).some(
+        (match) => normalizeAbsolutePath(match) === candidate,
+      ),
   );
 }

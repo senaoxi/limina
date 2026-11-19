@@ -536,6 +536,10 @@ it('does not replay a completed command or execution task when graph analysis re
 
 it('validates changed publication once per write boundary', async () => {
   const f = fixture();
+  writeFileSync(
+    f.path('package-lock.json'),
+    '{"lockfileVersion":3,"packages":{"":{}}}',
+  );
   const input = f.path('input');
   writeFileSync(input, 'stable');
   const controller = new AnalysisCacheController(f.config, f.namespace);

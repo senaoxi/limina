@@ -50,14 +50,18 @@ function readPackagesField(value: unknown): unknown {
     : undefined;
 }
 
-async function readPnpmGlobs(
-  workspace: ResolvedWorkspaceRoot,
-): Promise<string[]> {
-  const manifest: unknown = parse(
-    await readFile(workspace.descriptor.path, 'utf8'),
-  );
-  const packages = readPackagesField(manifest);
-  return packages === undefined ? [] : validateGlobs(packages, 'pnpm');
+export function pnpmPackageSelectionPolicy(
+  rootDirectory: string,
+  declaration: unknown,
+): WorkspacePackageSelectionPolicy {
+  const packages = readPackagesField(declaration);
+  const packageGlobs =
+    packages === undefined ? [] : validateGlobs(packages, 'pnpm');
+  return {
+    packageGlobs,
+    globGroups: [nonPruningGlobGroup(packageGlobs, rootDirectory)],
+    hardIgnores: ['**/node_modules/**', '**/bower_components/**'],
+  };
 }
 
 function readManifestGlobs(workspace: ResolvedWorkspaceRoot): string[] {
@@ -88,12 +92,10 @@ export const workspacePackageManagerAdapters: Record<
   pnpm: {
     packageManager: 'pnpm',
     async readSelectionPolicy(workspace) {
-      const packageGlobs = await readPnpmGlobs(workspace);
-      return {
-        packageGlobs,
-        globGroups: [nonPruningGlobGroup(packageGlobs, workspace.rootDir)],
-        hardIgnores: ['**/node_modules/**', '**/bower_components/**'],
-      };
+      const declaration: unknown = parse(
+        await readFile(workspace.descriptor.path, 'utf8'),
+      );
+      return pnpmPackageSelectionPolicy(workspace.rootDir, declaration);
     },
   },
   npm: {

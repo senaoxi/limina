@@ -139,7 +139,7 @@ export class AnalysisCacheStore {
       if (!this.#isBaselineCurrent()) return;
       const snapshot = snapshotModel(cache);
       snapshot.header.baselineTime = Date.now();
-      if (this.installationGate?.usable)
+      if (this.installationGate !== undefined)
         snapshot.header.installations =
           this.installationGate.receipts(snapshot);
       await this.#write(snapshot, async () => {
@@ -237,6 +237,8 @@ export class AnalysisCacheStore {
       this.#hasBaseline,
       this.#options.configVersion !== undefined,
       cache.configVersion === this.#options.configVersion,
+      this.#options.governanceRoot === undefined ||
+        this.installationGate?.usable === true,
     ].every(Boolean);
   }
   async #publishQualified(

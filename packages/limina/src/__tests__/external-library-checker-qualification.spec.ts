@@ -195,6 +195,7 @@ async function addNormalDependency(
 
 async function createCacheCheckerFixture(isCompatible: boolean) {
   const fixture = await createFixture('path');
+  const packageManager = 'pnpm@12.10.1';
   try {
     if (isCompatible) await addNormalDependency(fixture);
     await writeFile(
@@ -202,12 +203,16 @@ async function createCacheCheckerFixture(isCompatible: boolean) {
       JSON.stringify({
         name: 'fixture',
         private: true,
-        packageManager: 'pnpm@12.10.1',
+        packageManager,
       }),
     );
     await writeFile(
       fixture.path('pnpm-lock.yaml'),
       "lockfileVersion: '9.0'\nimporters:\n  .: {}\n  a: {}\n  b: {}\n  c: {}\n",
+    );
+    await writeFile(
+      fixture.path('node_modules/.modules.yaml'),
+      `packageManager: ${packageManager}\n`,
     );
     await writeFile(
       fixture.path('limina.config.mjs'),

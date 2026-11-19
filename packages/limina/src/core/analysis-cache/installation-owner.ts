@@ -1,5 +1,9 @@
+import { normalizeAbsolutePath } from '#utils/path';
 import { parsePackageManager } from '#utils/workspace-root';
+import { realpathSync } from 'node:fs';
 import path from 'pathe';
+import { hasPackageDirectory } from '../workspace/expand-package-globs';
+import { pnpmPackageSelectionPolicy } from '../workspace/selection-policy';
 import type { InputDependency } from './contracts';
 import { inputStat } from './input-state';
 import type { AnalysisInputs } from './inputs';
@@ -42,18 +46,24 @@ export function projectInstallationRoot(
   configPath: string,
   inputs: AnalysisInputs,
 ): string {
+  const options: OwnerOptions = { root: governance, inputs, dependencies: [] };
   let root = path.dirname(configPath);
+  let nearestPackage: string | undefined;
   while (root !== governance && path.dirname(root) !== root) {
-    const options: OwnerOptions = { root, inputs, dependencies: [] };
-    if (
-      hasOwnLock(options, root) ||
-      hasWorkspace(options, root) ||
-      installedManager(options, root) !== undefined
-    )
+    const hasLocalLock = hasOwnLock(options, root);
+    if (hasLocalLock && nearestPackage === undefined) return root;
+    if (hasWorkspace(options, root)) return nearestPackage ?? root;
+    if (hasLocalLock || installedManager(options, root) !== undefined)
       return root;
+    if (nearestPackage === undefined && hasFile(options, root, 'package.json'))
+      nearestPackage = root;
     root = path.dirname(root);
   }
-  return governance;
+  if (root !== governance || nearestPackage === undefined) return governance;
+  return hasWorkspace(options, governance) ||
+    installationOwner(options) !== governance
+    ? nearestPackage
+    : governance;
 }
 function hasForeignManager(options: OwnerOptions): boolean {
   const text = readInstallationText(
@@ -104,7 +114,44 @@ function ancestorBoundary(
 }
 function pnpmOwner(options: OwnerOptions, root: string): string {
   const manager = installedManager(options, root);
-  return manager !== undefined && parsePackageManager(manager) === 'pnpm'
+  return manager !== undefined &&
+    parsePackageManager(manager) === 'pnpm' &&
+    isPnpmWorkspaceMember(options, root)
     ? root
     : options.root;
+}
+
+function physicalDirectory(options: OwnerOptions, directory: string): string {
+  const physical = normalizeAbsolutePath(realpathSync.native(directory));
+  options.dependencies.push(
+    options.inputs.structural(directory, 'realpath', physical),
+    options.inputs.observe(directory, 'binding'),
+  );
+  return physical;
+}
+
+function isPnpmWorkspaceMember(
+  options: OwnerOptions,
+  rootDirectory: string,
+): boolean {
+  const candidate = options.root;
+  if (!hasFile(options, candidate, 'package.json')) return false;
+  const relative = path.relative(rootDirectory, candidate);
+  if (
+    physicalDirectory(options, candidate) !==
+    path.join(physicalDirectory(options, rootDirectory), relative)
+  )
+    return false;
+  const declaration = readInstallationYaml(
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
+    options.inputs,
+    options.dependencies,
+  );
+  return hasPackageDirectory(
+    {
+      ...pnpmPackageSelectionPolicy(rootDirectory, declaration),
+      rootDir: rootDirectory,
+    },
+    candidate,
+  );
 }
