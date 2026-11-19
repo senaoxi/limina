@@ -27,9 +27,17 @@ function hasCurrentCompilerReads(
   record: NativeContextRecord,
   replay?: EpochInputReplay,
 ): boolean {
-  return (
-    record.native === undefined ||
-    cache.epoch.validateSynchronous(record.native.discovery, replay)
+  if (record.native === undefined) return true;
+  const project = record.project.sourceConfigPath ?? record.project.configPath;
+  const closure = cache.previous?.authorities[project]?.closure;
+  const currentConfigs =
+    closure !== undefined && cache.inputs.configCurrent(closure)
+      ? new Set(closure)
+      : undefined;
+  return cache.epoch.validateSynchronous(
+    record.native.discovery,
+    replay,
+    currentConfigs,
   );
 }
 

@@ -197,8 +197,13 @@ const querySchema = z.object({
 });
 const outputProjection = z.object({
   sourceConfigPath: text,
-  options: z.record(text, z.json()),
-  fileNames: texts,
+  configs: z.record(text, text),
+});
+const moduleResolutionSchema = z.object({
+  members: texts,
+  dependencies: z.array(dependencySchema),
+  result: z.json(),
+  targetOwners: texts.nullable(),
 });
 export const vueContextSchema: z.ZodType<unknown> = z.object({
   adapter: z.literal(VUE_ANALYSIS_ADAPTER),
@@ -216,5 +221,7 @@ export const vueContextSchema: z.ZodType<unknown> = z.object({
   generated: z.record(text, text),
   queryIds: texts,
   queries: z.record(text, querySchema),
+  moduleResolutions: z.record(text, moduleResolutionSchema),
+  moduleContextId: text,
   complete: z.boolean(),
 });

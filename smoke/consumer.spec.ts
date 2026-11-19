@@ -64,10 +64,10 @@ async function assertDefaultCheckWorkflow(
         .filter((task) => task.kind === 'task')
         .map((task) => [task.label, task.state]),
     ).toEqual([
+      ['checker:build', 'passed'],
       ['graph:check', 'passed'],
       ['source:check', 'passed'],
       ['proof:check', 'passed'],
-      ['checker:build', 'passed'],
       ['checker:typecheck', 'disabled'],
     ]);
   }
@@ -94,10 +94,10 @@ async function assertDefaultCheckWorkflow(
       .filter((task: { kind: string }) => task.kind === 'task')
       .map((task: { label: string }) => task.label),
   ).toEqual([
+    'checker:build',
     'graph:check',
     'source:check',
     'proof:check',
-    'checker:build',
     'checker:typecheck',
   ]);
   expect(inventory.issues).toContainEqual(

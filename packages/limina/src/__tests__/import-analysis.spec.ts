@@ -27,7 +27,7 @@ async function createTemporaryDirectory(): Promise<string> {
 async function writeText(
   rootDirectory: string,
   filePath: string,
-  text: string,
+  text: string | Buffer,
 ) {
   const absolutePath = path.join(rootDirectory, filePath);
 
@@ -38,6 +38,19 @@ async function writeText(
 }
 
 describe('import analysis', () => {
+  it('reads standalone UTF-16 sources using compiler positions and module names', async () => {
+    const root = await createTemporaryDirectory();
+    try {
+      const text = Buffer.from('\u{FEFF}import "./觿";', 'utf16le').swap16();
+      const file = await writeText(root, 'input.ts', text);
+      expect(collectImportsFromFile(file, root)).toMatchObject([
+        { specifier: './觿', locator: { sourceStart: 7, sourceEnd: 12 } },
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('does not prepare CommonJS scopes for a declaration tree without candidate calls', () => {
     const sourceText = Array.from(
       { length: 128 },

@@ -1,8 +1,10 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
+import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { assertGeneratedManifestBinding } from './generated-manifest-binding';
 import { readImplicitReferences } from './generated/config-readers';
+import { generatedManifestPath } from './generated/paths';
 import type {
   GeneratedBuildModule,
   GeneratedTsconfigGraphResult,
@@ -18,6 +20,7 @@ type ReferenceGraph = Pick<
   | 'sourceToBuild'
   | 'configToOutputBuild'
   | 'checkerEntries'
+  | 'dependencyEdges'
   | 'ownershipPlan'
   | 'manifest'
 >;
@@ -298,10 +301,21 @@ class GeneratedReferenceBinding {
 Validate actual generated configurations against the existing source projection before materialization.
 */
 export function hasBoundGeneratedReferences(
-  graph: ReferenceGraph,
+  graph: ReferenceGraph & Pick<GeneratedTsconfigGraphResult, 'manifestPath'>,
   config: ResolvedLiminaInputs,
 ): boolean {
   try {
+    const manifestPath = normalizeAbsolutePath(
+      path.join(config.rootDir, generatedManifestPath),
+    );
+    const content = graph.generatedFiles.get(manifestPath);
+    if (
+      content === undefined ||
+      manifestPath !== graph.manifestPath ||
+      nativeFingerprint(JSON.parse(content)) !==
+        nativeFingerprint(graph.manifest)
+    )
+      return false;
     new GeneratedReferenceBinding(graph, config).assertBound();
     return true;
   } catch {

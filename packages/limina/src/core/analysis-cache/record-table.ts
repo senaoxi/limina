@@ -1,5 +1,7 @@
 import { isPlainRecord } from '#utils/values';
 
+import type { DataNode } from './data-codec';
+
 type Scalar = string | number | boolean | null;
 export type RecordReference = Scalar | [number];
 type Reference = RecordReference;
@@ -33,7 +35,12 @@ class RecordTableWriter {
   readonly #active = new Set<object>();
   readonly #strings = new Map<string, number>();
   readonly #references: [number][] = [];
-  readonly entries: Entry[] = [];
+  #nextId = 0;
+  readonly #store: (entry: Entry) => void;
+
+  constructor(store: (entry: Entry) => void) {
+    this.#store = store;
+  }
 
   #object(value: object): number {
     const prior = this.#decoded.get(value);
@@ -51,16 +58,16 @@ class RecordTableWriter {
     return id;
   }
   #append(key: string, entry: Entry): number {
-    const id = this.entries.length;
-    this.entries.push(entry);
+    const id = this.#nextId++;
+    this.#store(entry);
     this.#ids.set(key, id);
     return id;
   }
   #string(value: string): number {
     const previous = this.#strings.get(value);
     if (previous !== undefined) return previous;
-    const id = this.entries.length;
-    this.entries.push(['string', value]);
+    const id = this.#nextId++;
+    this.#store(['string', value]);
     this.#strings.set(value, id);
     return id;
   }
@@ -91,10 +98,21 @@ class RecordTableWriter {
   }
 }
 
+export function packRecordRoots(values: Iterable<unknown>): {
+  roots: RecordReference[];
+  entries: RecordEntry[];
+} {
+  const entries: Entry[] = [];
+  const writer = new RecordTableWriter((entry) => {
+    entries.push(entry);
+  });
+  const roots = Array.from(values, (value) => writer.value(value));
+  return { roots, entries };
+}
+
 export function packRecordTable(value: unknown): RecordTable {
-  const writer = new RecordTableWriter();
-  const root = writer.value(value);
-  return { version: 3, entries: writer.entries, root };
+  const { roots, entries } = packRecordRoots([value]);
+  return { version: 3, entries, root: roots[0]! };
 }
 
 function readReference(
@@ -153,6 +171,26 @@ function readEntry(
   if (value[0] === 'object') return readObject(value[1], entries, shared);
   throw new Error('Invalid cache record table kind.');
 }
+function readOwnedEntry(
+  entry: unknown,
+  entries: readonly unknown[],
+  shared: readonly unknown[],
+): unknown {
+  const value = readEntry(entry, entries, shared);
+  return typeof value === 'string' ? value : ownDecodedRecord(value);
+}
+
+/** Intern validated query payloads while a context is collecting. The wire
+ * value retains its ordered tags, and only private immutable arrays are shared. */
+export function createQueryDataPool(): (value: DataNode) => DataNode {
+  const values: unknown[] = [];
+  const writer = new RecordTableWriter((entry) => {
+    const value = readOwnedEntry(entry, values, []);
+    values.push(value);
+  });
+  return (value) => readReference(writer.value(value), values, []) as DataNode;
+}
+
 export function unpackRecordTable(
   value: unknown,
   shared: readonly unknown[] = [],
@@ -167,11 +205,7 @@ export function unpackRecordTable(
     throw new Error('Invalid cache record table.');
   const entries: unknown[] = [];
   // Backward references make cycles, missing facts and incomplete tables errors.
-  for (const entry of value.entries) {
-    const record = readEntry(entry, entries, shared);
-    entries.push(
-      typeof record === 'string' ? record : ownDecodedRecord(record),
-    );
-  }
+  for (const entry of value.entries)
+    entries.push(readOwnedEntry(entry, entries, shared));
   return readReference(value.root, entries, shared);
 }

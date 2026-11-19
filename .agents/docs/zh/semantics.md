@@ -8,7 +8,7 @@
 
 ## 独立 Native Evidence 合同
 
-**当前实现：**[Native Evidence v5](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 13；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
+**当前实现：**[Native Evidence v5](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 15；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
 
 **Coverage 证明：**[索引合同](../../../packages/limina/src/domain/analysis/native-coverage.ts)先从已激活入口和 solution traversal 建立全集，再判断解析成功。成员查询只针对当前 Checker 的实际目标（`resolvedFileName`），使用该 Compiler 的 `toPath`、Host 当前目录与 canonical-name 策略；实际解析输入必须具有相同 key。物理身份和输入版本只校验已有的键关联，物理别名与 Resolver `originalPath` 都不能增加成员。发现闭合且当前枚举有效时才能证明零/唯一成员。同键绑定冲突即使遇到 local root 也为 unavailable；无关的未闭合发现仍保留独立 root 责任。多个已确认成员保留 ambiguity，但不完整证据不能授权委托。完整零成员是 uncovered，继续走 consumer 政策，不选择别名 Owner。
 
@@ -26,7 +26,7 @@
 
 **阶段资格：**[上下文合同](../../../packages/limina/src/domain/analysis/native-context.ts)将观察绑定到 TypeScript 实现、host、roots、选项、引用、输入、epoch 和 collection。评估编译义务需要来自对应上下文的证据。物理候选、Program 成员和依赖事实均不参与选择语义权威。
 
-**物理边界：**Bounded Host 接纳真实实现 roots，以及具有当前源配置成员资格的声明 roots。共享声明仍分别作为各项目的独立输入。外部受管声明在创建 SourceFile 前物理截断，保留进入声明的请求与解析结果。生成上下文显式携带源配置身份。候选验证为已选择声明授予独立的 bounded 加载资格，其观察不回写源码分析事实，也不生成消费者的编译边。非 root 实现保持有界。未受治理声明（包括第三方声明）保留消费者上下文请求；受治理声明只有候选验证通过后才能完成委派。已安装的保留声明必须具备安装身份和 lock 覆盖证明，才能持久恢复。完整 Program 仍仅作测试 Oracle。
+**物理边界：**Bounded Host 接纳真实实现 roots，以及具有当前源配置成员资格的声明 roots。共享声明仍分别作为各项目的独立输入。外部受管声明在创建 SourceFile 前物理截断，保留进入声明的请求与解析结果。生成上下文显式携带源配置身份。候选验证为已选择声明授予独立的 bounded 加载资格，其观察不回写源码分析事实，也不生成消费者的编译边。非 root 实现保持有界。未受治理声明（包括第三方声明）保留消费者上下文请求；受治理声明只有候选验证通过后才能完成委派。恢复已保留的安装声明需要验证安装路径绑定，并通过对应 Lockfile 的全局准入。完整 Program 仍仅作测试 Oracle。
 
 Path 候选资格使用编译器的有效 `resolveJsonModule` 值，包括随版本变化的默认值。省略选项不能把已选择的 JSON 输入变成已证明不存在；未证明的 JSON emit 保留 unknown，并按候选影响执行准入。Native adapter 身份使旧选择回执失效。
 
@@ -94,7 +94,7 @@ Checker 归属阶段的工具链／语义脚本失败保留为执行失败和受
 
 ## 持久化 importer 有效性
 
-[Bounded context capture](../../../packages/limina/src/core/analysis-cache/bounded-context-capture.ts)保存编译器完整 inventory、occurrence 事实和实际输入 receipt。Schema 13、Native adapter、领域版本和 collection mode 共同排除旧 Programless 成功图；旧缓存不转换、不删除。Roots/options/raw references、配置全集、当前 lexical/canonical 身份、正负解析探测、目录、manifest 条件与安装环境均参与恢复资格。相同 importer 文本不足以证明旧 context 有效。
+[Bounded context capture](../../../packages/limina/src/core/analysis-cache/bounded-context-capture.ts)保存编译器完整 inventory、occurrence 事实和实际输入 receipt。Schema 15、Native adapter、领域版本和 collection mode 共同排除旧 Programless 成功图；旧缓存不转换、不删除。Roots/options/raw references、配置全集、当前 lexical/canonical 身份、正负解析探测、目录、manifest 条件与安装环境均参与恢复资格。相同 importer 文本不足以证明旧 context 有效。
 
 [恢复绑定](../../../packages/limina/src/core/build-graph/native-cache-binding.ts)将图、已验证 context、原始快照与 locked ownership fact 绑定；缓存中的 summary 或 owner 字段不能自授资格。正常 Coverage stop 可完整恢复；执行失败、未知安装证据、残缺通道或伪造绑定触发冷采集。输入失效时原子替换 consumer 贡献，不把旧成功与新失败拼成完整图。纯 Native 完整命中不创建 Program；冷/变化 context 重新创建 Bounded Program，不承诺只解析变化文件。详见[生命周期](./lifecycle.md#原生持久化分析缓存)和[独立进程回归](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)。
 
@@ -102,9 +102,11 @@ Checker 归属阶段的工具链／语义脚本失败保留为执行失败和受
 
 [双向缓存校验](../../../packages/limina/src/core/analysis-cache/bounded-inventory-validity.ts)要求实际 Program 成员与 source/importer 集合一致，并将具有源码 occurrence 的编译器请求与 occurrence/fact 一一对应。删除、孤立或重复记录不能借空集合取得完整性；配置级请求不强制产生源码 occurrence，合法无导入成员仍保留。原始请求与 resolution 也必须一一对应。存储解析和 [context adoption](../../../packages/limina/src/core/analysis-cache/context-records.ts) 使用同一校验，因此拒绝旧 graph 后不会复用缺失事实的上下文。Program 释放前会捕获并冻结编译器 inventory 回执：将每个原始 request 绑定到精确 occurrence（UTF-16 范围、kind、ordinal 和 synthetic 元数据），同时记录完整 SourceFile 集合、已接纳 roots 及实际加载别名。恢复时用回执校验消费投影，并将每个成功 load 反向关联到实际成员；两个同时截短的投影相等并不足够。Redirect 保留编译器实际返回的 SourceFile，不强制 lexical 路径相等。缺失回执或旧 adapter 身份必须冷采集；恢复不能从缓存投影重新生成回执。仅 graph 损坏时可以保留合法 context。校验只撤销缓存恢复资格，不把 scoped unavailable 改成执行失败，也不改写已完成 Core。损坏存储按既有完整模型策略冷回退；直接 context 恢复仍保留独立合法上下文。[真实 store 回归](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)覆盖有效 checksum 封装内的 source／occurrence／fact 损坏、重新采集、发布及下一进程恢复；这不证明正常生产者会自然生成该损坏状态。
 
-[Vue analysis records](../../../packages/limina/src/core/analysis-cache/vue-records.ts) 支持没有自定义 Vue 插件的物理项目，版本范围限定为 TypeScript 6.0.3、vue-tsc 与 language-core 3.2.4、Volar TypeScript 2.4.27。稳定 identity 包含有效选项、原始 references、source profiles、config closure 和 toolchain identity；运行期 generation 在恢复时重新绑定。受支持的 preparation facts、映射解析及 resource type evidence 使用已校验 DTO，在取得 Vue live context 前查询。查询覆盖必须完整。Host 读取、完整 manifest 内容、成功与失败探测、目录／路径绑定、生成脚本／映射摘要和安装环境构成 context receipt。未观测的目录枚举及 unsupported／opaque 结果不能授予完整性。工具模块字节和绑定在每次调用重新观测。Vue collection 使用现有 Vue context 观察直接源码依赖和支持输入，并将这些查询的覆盖与 resolution、preparation 分开记录。
+[Vue analysis records](../../../packages/limina/src/core/analysis-cache/vue-records.ts) 支持没有自定义 Vue 插件的物理项目，版本范围限定为 TypeScript 6.0.3、vue-tsc 与 language-core 3.2.4、Volar TypeScript 2.4.27。稳定 identity 包含有效选项、原始 references、source profiles、config closure 和 toolchain identity；运行期 generation 在恢复时重新绑定。受支持的 preparation facts、映射解析及 resource type evidence 使用已校验 DTO，在取得 Vue live context 前查询。查询覆盖必须完整。Host 读取、affectingLocations 的 mtime、成功与失败探测、目录／路径绑定、生成脚本／映射摘要和安装环境构成 context receipt。未观测的目录枚举及 unsupported／opaque 结果不能授予完整性。工具模块字节和绑定在每次调用重新观测。Vue collection 使用现有 Vue context 观察直接源码依赖和支持输入，并将这些查询的覆盖与 resolution、preparation 分开记录。
 
-混合图要求所有贡献的 native 与 Vue context 都完整。图中的 Vue 引用恢复为当前解析的 identity；Program、AST、Symbol、可执行 host、插件对象和 artifact authority 均不进入 DTO。自定义插件、虚拟输入及 Astro／Svelte 继续冷回退。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)覆盖独立进程、失效、残缺记录、运行期 generation 和缓存访问策略。这仅复用分析；checker 诊断与 emit 仍由 checker 执行。
+符合资格的 Volar context 重建 Program 时，可重放[单条 Vue 模块解析](../../../packages/limina/src/core/analysis-cache/vue-module-replay.ts)。每条请求分别绑定导入文件、语法位置、有效选项、affecting location 的 mtime、未命中候选的存在状态及目标路径绑定。原始解析键独立于 Program 根文件成员和声明准入。当前 Source Config Coverage 必须仍确认解析目标具有同一唯一归属或仍属未覆盖。Coverage 歧义或不可用时重新解析。当前 Program 仍决定这些判断涉及哪些请求和目标。未命中缓存的请求由 Volar 处理，包括重定向请求和编译器带有复用名称的请求。本轮 Program 只有唯一匹配编译器 occurrence 时，才可以将恢复的原始结果投影为 Vue 解析结果。声明义务、重定向和类型证据仍分别校验。类型指令回执仍由整个 context 校验。
+
+混合图要求所有贡献的 native 与 Vue context 都完整。图中的 Vue 引用恢复为当前解析的 identity；Program、AST、Symbol、可执行 host、插件对象和 artifact authority 均不进入 DTO。使用自定义插件、虚拟输入、Astro 或 Svelte 的图仍需执行框架分析。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)覆盖独立进程、失效、残缺记录、运行期 generation 和缓存访问策略。这仅复用分析；checker 诊断与 emit 仍由 checker 执行。
 
 ## Occurrence、证据与建图需求
 
@@ -148,7 +150,7 @@ TS 5.4/5.5 的 Vue adapter 保留面向 Program 的 module/type 回调选项，�
 
 [框架支持贡献](../../../packages/limina/src/core/framework-semantic/support-contributions.ts)在 Astro/Svelte 的完整依赖 preparation 中从各适配器现有 Program 和 Resolver 收集。物理非 Root 支持输入保留 direct-source 来源；生成模块请求独立于源码关联，使用实际 Compiler inventory；源码指令保留既有映射规则。模块 import 和合法 path/types 指令可以贡献义务，但不会成为 Roots。已归属其他 Scope 的实现内部依赖由其自身分析。治理层排除外部支持目标，保留 workspace 目标；声明文件中的 JSDoc 示例不属于编译 occurrence。仅解析的 preparation 仍保持惰性。
 
-Astro/Svelte 模块发现使用现有 bounded Program 与共享 Compiler 请求收据。Host 回调在屏蔽外部实现前记录原始解析；preparation 不因此授权加载这些实现。生成请求通过独立于映射的 Native 输入义务判断，包括 noResolve 和声明负例。Svelte 已映射组件的调度保留适配器源码消费合同：组件声明代理不等于 Native 实现输入。独立的 noResolve 和 augmentation absence 仍然生效；无映射组件目标缺少合格框架消费证明时保持 unsupported。Resolver 收据保留声明闭包准入需要的 resolutionOrigin。既有 direct-source support 贡献继续使用闭包限定的框架策略，不附加 Native emit 义务。请求观察不受支持或缺失时保持不可用。Astro/Svelte 仍采用 cold fallback；请求与来源分组变化会使 Vue 持久身份失效。
+Astro/Svelte 模块发现使用现有 bounded Program 与共享 Compiler 请求收据。Host 回调在屏蔽外部实现前记录原始解析；preparation 不因此授权加载这些实现。生成请求通过独立于映射的 Native 输入义务判断，包括 noResolve 和声明负例。Svelte 已映射组件的调度保留适配器源码消费合同：组件声明代理不等于 Native 实现输入。独立的 noResolve 和 augmentation absence 仍然生效；无映射组件目标缺少合格框架消费证明时保持 unsupported。Resolver 收据保留声明闭包准入需要的 resolutionOrigin。既有 direct-source support 贡献继续使用闭包限定的框架策略，不附加 Native emit 义务。请求观察不受支持或缺失时保持不可用。Astro/Svelte 组件分析仍采用 cold fallback；请求与来源分组变化会使 Vue 持久身份失效。
 
 统一的是依赖事实与编译义务，解析器、虚拟文件映射和 Program 生命周期仍由各适配器管理。Vue→Vue 继续依据能力选择 declaration-provider；Astro/Svelte 的组件关系可由治理层选择 framework-schedule。Limina 观察真实 Project Reference Redirect 结构，不重新推断其生产者，不把推断引用回灌 discovery，也不持久化 Program、AST 或 Symbol。
 
@@ -201,7 +203,7 @@ Svelte 执行投影在 `rootDirs` 中保留 Windows 盘符的两种大小写：�
 
 库回执独立于类型指令回执，绑定实际编译器、源／生成配置及选中目标。源查找查询保留已观察的正负候选；投影探测验证暂存映射，不把生成目录物化前的状态保留为不可变的源证据。持久图恢复要求这些回执及准确的暂存 manifest；缺少回执的旧图重新采集。执行前检查已物化 manifest 的字节，并重新计算源／生成配置的实际库选择，之后才允许 Checker 启动。恢复和准入也会运行这些不加载源码的投影探测；Native context 缓存命中不表示整条命令完全不创建 Program。[标准库回归](../../../packages/limina/src/__tests__/library-projection.spec.ts)覆盖真实 Checker 产物、默认库检查、配置／指令／默认入口、输出 target、跨进程恢复、候选变化及 manifest 篡改拒绝。
 
-`TypeInputProjectionReceipt` 仅证明 `config-type-directives` 入口保持，不代表完整类型环境或全部请求关系等价。现有 `outputs.target` 选择及默认值继续有效，默认库集合不同本身不是错误。独立的[输出投影](../../../packages/limina/src/core/build-graph/output-projection.ts)检查实际输出治理依赖是否被既有输出关系覆盖；未覆盖或无法观察的输入报告能力限制和来源链，不扩张源图、不推断任意声明生产者。Native 输出观察同时保留 unknown 义务：发布前按当前 output context 身份、候选影响与编译器证明的引用满足状态执行准入，不能因只过滤 source config 而丢弃。版本 2 输出回执撤销缺少此检查的旧准入。新进程分别校验类型入口保持与输出有效性。类型入口选择和证明查询使用同一观察解析缓存；图回执保留生成入口选择所用的查询，使后续局部变化在干净恢复后仍可复用它们。
+`TypeInputProjectionReceipt` 仅证明 `config-type-directives` 入口保持，不代表完整类型环境或全部请求关系等价。声明 Proof 在图已证明有序类型指令选择一致、且回执绑定两份当前配置的路径与解析选项时，接受生成配置中的 `types` 写法。缺少该绑定时仍执行原有的选项比较。现有 `outputs.target` 选择及默认值继续有效，默认库集合不同本身不是错误。独立的[输出投影](../../../packages/limina/src/core/build-graph/output-projection.ts)检查实际输出治理依赖是否被既有输出关系覆盖；未覆盖或无法观察的输入报告能力限制和来源链，不扩张源图、不推断任意声明生产者。Native 输出观察同时保留 unknown 义务：发布前按当前 output context 身份、候选影响与编译器证明的引用满足状态执行准入，不能因只过滤 source config 而丢弃。版本 2 输出回执撤销缺少此检查的旧准入。新进程分别校验类型入口保持与输出有效性。类型入口选择和证明查询使用同一观察解析缓存；图回执保留生成入口选择所用的查询，使后续局部变化在干净恢复后仍可复用它们。
 
 Vue 输出投影复用现有 `vue-tsc`／Vue Language Core／Volar provider 和共享声明闭包策略。[独立输出 identity](../../../packages/limina/src/core/vue-semantic/output-identity.ts)保留源 roots、profiles、配置闭包及工具链，并应用有效输出编译选项。Vue Owner 下的原生文件和映射后的 SFC 依赖均通过该 provider 重新收集；源与输出 target 可以不同，但每个受治理输出需求必须已有输出引用。缺失 identity、不支持的观察及未覆盖依赖继续 fail closed。[生成图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)通过真实 `vue-tsc -b` 产物检验两个 target 方向，并独立移除输出关系作为负例。不新增依赖或第二套框架 Resolver。
 

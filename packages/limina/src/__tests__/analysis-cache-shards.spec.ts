@@ -13,7 +13,6 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { parseProjectConfigWithExtensions } from '../checker/project-base';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import {
@@ -33,6 +32,7 @@ import {
   encodeAnalysisBlocks,
   readAnalysisBlocks,
 } from '../core/analysis-cache/snapshot-shards';
+import { inspectFrameworkIntent } from '../core/build-graph/framework-intent';
 import { nativeFingerprint } from '../core/typescript-semantic/native-file-identity';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
@@ -41,6 +41,7 @@ import {
   readStoredAnalysisSnapshot,
   roundTripAnalysisSnapshot,
 } from './helpers/analysis-snapshot';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const roots: string[] = [];
@@ -363,43 +364,54 @@ function records(file: (...segments: string[]) => string): AnalysisSnapshot {
   }
   return snapshot;
 }
-it('reparses an incomplete config receipt independently of other source configs', () => {
+it('rejects incomplete ownership intent proof while parsing both projects live', () => {
   const f = fixture();
   const a = f.file('a.json');
   const b = f.file('b.json');
   const base = f.file('base.json');
   writeFileSync(a, '{"extends":"./base.json","files":["src.ts"]}');
-  writeFileSync(b, '{"compilerOptions":{"strict":true},"files":["src.ts"]}');
-  writeFileSync(base, '{"compilerOptions":{"strict":true}}');
+  writeFileSync(b, '{"vueCompilerOptions":{},"files":["src.ts"]}');
+  writeFileSync(base, '{"vueCompilerOptions":{}}');
   writeFileSync(f.file('src.ts'), '');
-  const parse = (cache: NativeAnalysisCache, configPath: string) =>
+  const config = withFixtureGovernanceRoot({
+    rootDir: f.file(),
+    configPath: f.file('limina.config.mts'),
+    scope: {},
+  });
+  const inspect = (cache: NativeAnalysisCache, configPath: string) =>
     cache.resolvedConfigs.run(() =>
-      parseProjectConfigWithExtensions(
-        { configPath, projectRootDir: f.file() },
-        [],
-      ),
-    ).options.strict;
+      inspectFrameworkIntent({ config, configObject: {}, configPath }),
+    );
   const cold = f.cache();
-  expect([parse(cold, a), parse(cold, b)]).toEqual([true, true]);
+  cold.inputs.observeConfig(
+    [a, b, base].map((filePath) => ({ filePath, contentHash: '' })),
+  );
+  const expected = [a, b].map((configPath) => inspect(cold, configPath));
+  expect(expected.map(({ intentHints }) => intentHints[0]?.configPath)).toEqual(
+    [base, b],
+  );
   const snapshot = cold.snapshot();
-  for (const record of Object.values(snapshot.resolvedConfigs)) {
-    record.discovery = record.discovery.filter((read) => read.path !== base);
-    record.fingerprint = nativeFingerprint([
-      record.configPath,
-      record.context,
-      record.discovery,
-      record.payload,
-    ]);
-  }
+  snapshot.header.baselineTime = Date.now() + 1000;
+  const record = Object.values(snapshot.resolvedConfigs).find(
+    ({ configPath }) => configPath === a,
+  )!;
+  record.discovery = record.discovery.filter((read) => read.path !== base);
+  record.fingerprint = nativeFingerprint([
+    record.configPath,
+    record.context,
+    record.discovery,
+    record.payload,
+  ]);
   const decoded = parseAnalysisSnapshot(
     roundTripAnalysisSnapshot(snapshot),
     'fixture',
   );
   expect(decoded).toBeDefined();
-  writeFileSync(base, '{"compilerOptions":{"strict":false}}');
   const warm = new NativeAnalysisCache('fixture', decoded, 'fixture-config');
-  expect([parse(warm, a), parse(warm, b)]).toEqual([false, true]);
-  expect(warm.metrics.resolvedConfigParses).toBe(1);
+  expect([a, b].map((configPath) => inspect(warm, configPath))).toEqual(
+    expected,
+  );
+  expect(warm.metrics.resolvedConfigParses).toBe(2);
   expect(warm.metrics.resolvedConfigHits).toBe(1);
 });
 

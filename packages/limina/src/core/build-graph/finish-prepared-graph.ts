@@ -81,7 +81,10 @@ export async function finishPreparedGraph(input: {
   }
   if (result.purpose === 'complete')
     await completeFrameworkExecutionInputs(result, config);
-  if (result.purpose === 'complete')
+  if (
+    result.purpose === 'complete' &&
+    result.producerBuildReceipt === undefined
+  )
     capturePreparedGraph({
       config,
       options,

@@ -15,6 +15,7 @@ import { hasValidGraphRecords } from '../core/analysis-cache/snapshot-validation
 import { compareConfigModules } from './config-module-comparison';
 import type { ConfigObservation } from './config-observation';
 interface DecodeOptions {
+  admit?: (header: AnalysisSnapshot['header'] | undefined) => boolean;
   identity: string;
   configPath: string;
   configVersion?: string;
@@ -49,7 +50,10 @@ export class AnalysisSnapshotDecoder {
   #qualify(root: SnapshotRoot | undefined): boolean {
     const configObservation = this.#options.configuration;
     if (configObservation === undefined) return false;
-    const current = configObservation.snapshot(previousModules(root));
+    const current =
+      root === undefined
+        ? configObservation.capture()
+        : configObservation.snapshot(root.configModules);
     const comparison = compareConfigModules(
       previousModules(root),
       current,
@@ -105,9 +109,11 @@ export class AnalysisSnapshotDecoder {
     const value = this.#parse(bytes, shouldRestore);
     const start = performance.now();
     const root = parseAnalysisSnapshotRoot(value, this.#options.identity);
-    const isQualified = this.#qualify(root);
+    const isAdmitted = this.#options.admit?.(root?.header) ?? true;
+    const isQualified = this.#qualify(isAdmitted ? root : undefined);
     this.#record('config-modules-gate', start);
     return [
+      isAdmitted,
       isQualified,
       root?.header.configVersion === this.#options.configVersion,
     ].every(Boolean)

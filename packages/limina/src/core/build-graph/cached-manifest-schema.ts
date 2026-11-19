@@ -18,7 +18,7 @@ const checkerManifest = z.object({
   sourceToDts: textRecord,
   dtsToSource: textRecord,
 });
-const dependencyEdge = z.object({
+const dependencyEdgeFields = {
   file: text,
   fromChecker: text,
   fromConfig: text,
@@ -26,9 +26,18 @@ const dependencyEdge = z.object({
   resolvedFile: text,
   toChecker: text,
   toConfig: text,
-  kind: z.literal('declaration-provider'),
-  cacheReuse: z.enum(['non-reusable', 'reusable']),
-});
+};
+const dependencyEdge = z.discriminatedUnion('kind', [
+  z.object({
+    ...dependencyEdgeFields,
+    kind: z.literal('declaration-provider'),
+    cacheReuse: z.enum(['non-reusable', 'reusable']),
+  }),
+  z.object({
+    ...dependencyEdgeFields,
+    kind: z.literal('framework-schedule'),
+  }),
+]);
 const configOwner = z.discriminatedUnion('role', [
   z.object({ config: text, owner: checker, role: z.literal('type') }),
   z.object({ config: text, role: z.literal('solution') }),
@@ -44,10 +53,15 @@ const ownership = z.object({
   solutions: z.array(solutionOwner),
 });
 const buildTarget = z.object({ checker, entry: text, roots: texts });
-const emptyFrameworks = z.array(z.never());
+const frameworkTarget = z.object({
+  checker: z.enum(['astro', 'svelte-check']),
+  config: text,
+  packageRoot: text,
+  executionConfig: z.undefined().optional(),
+});
 const targets = z.object({
   build: z.array(buildTarget),
-  framework: emptyFrameworks,
+  framework: z.array(frameworkTarget),
 });
 const knip = z.object({ diagnostics: jsonRecords, packages: jsonRecords });
 export const manifestSchema: z.ZodType<unknown> = z.object({
@@ -58,6 +72,7 @@ export const manifestSchema: z.ZodType<unknown> = z.object({
   checkers: z.record(text, checkerManifest),
   knip,
   dependencyEdges: z.array(dependencyEdge),
+  declarationBindings: z.undefined().optional(),
   ownership,
   targets,
 });

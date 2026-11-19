@@ -93,6 +93,11 @@ function currentQuery(
   cache: NativeAnalysisCache,
   key: string,
 ): [string, ResolutionRecord] | undefined {
+  if (
+    cache.queries[key] === undefined &&
+    cache.invalidation.resolutionDirty.has(key)
+  )
+    return undefined;
   const item = preferred(cache.queries, cache.previous?.queries, key);
   return item === undefined ? undefined : qualifiedQuery(cache, key, item);
 }
@@ -107,6 +112,11 @@ function candidateFor(
   cache: NativeAnalysisCache,
   id: string,
 ): Candidate | undefined {
+  if (
+    cache.contexts[id] === undefined &&
+    cache.invalidation.contextDirty.has(id)
+  )
+    return undefined;
   const record = preferred(cache.contexts, cache.previous?.contexts, id);
   const state = preferred(cache.projects, cache.previous?.projects, id);
   return qualifiedCandidate(cache, record, state);
@@ -143,9 +153,13 @@ function completeCandidate(
 
 export class NativeContextRecords {
   readonly #cache: NativeAnalysisCache;
+  readonly #revoked = new Set<string>();
   readonly #compilerInputs = new Map<string, Map<string, InputDependency>>();
   readonly #environments = new Map<string, TypeEnvironmentRecord>();
-  readonly #restored = new Map<string, TypeScriptSemanticDependencyContext>();
+  readonly #restored = new Map<
+    string,
+    { id: string; context: TypeScriptSemanticDependencyContext }
+  >();
   constructor(cache: NativeAnalysisCache) {
     this.#cache = cache;
   }
@@ -158,7 +172,7 @@ export class NativeContextRecords {
     replay?: EpochInputReplay,
   ): TypeScriptSemanticDependencyContext | undefined {
     return (
-      this.#restored.get(identity) ??
+      this.#restored.get(identity)?.context ??
       this.#restoreNew(project, identity, replay)
     );
   }
@@ -167,7 +181,10 @@ export class NativeContextRecords {
     identity: string,
     replay?: EpochInputReplay,
   ): TypeScriptSemanticDependencyContext | undefined {
-    const candidate = candidateFor(this.#cache, nativeContextId(project));
+    const id = nativeContextId(project);
+    if (this.#cache.contexts[id] === undefined && this.#revoked.has(id))
+      return undefined;
+    const candidate = candidateFor(this.#cache, id);
     if (candidate === undefined) return undefined;
     const isValid =
       hasValidInputs(this.#cache, candidate.record.dependencies) &&
@@ -176,7 +193,11 @@ export class NativeContextRecords {
       hasValidBoundedContext(
         candidate.record,
         Object.fromEntries(candidate.importers),
-        { project: candidate.state, contextId: nativeContextId(project) },
+        {
+          project: candidate.state,
+          contextId: nativeContextId(project),
+          queries: Object.fromEntries(candidate.queries),
+        },
       );
     return isValid ? this.#adopt(project, identity, candidate) : undefined;
   }
@@ -201,10 +222,17 @@ export class NativeContextRecords {
       identity,
       candidate.record,
       cache.importers,
-      cache.epoch,
+      cache,
     );
-    this.#restored.set(identity, context);
+    this.#restored.set(identity, { id, context });
     return context;
+  }
+  evict(id: string): void {
+    this.#revoked.add(id);
+    for (const [identity, restored] of this.#restored)
+      if (restored.id === id) this.#restored.delete(identity);
+    this.#compilerInputs.delete(id);
+    this.#environments.delete(id);
   }
   begin(project: TypeScriptSemanticProject): void {
     const id = nativeContextId(project);

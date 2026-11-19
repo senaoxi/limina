@@ -1,4 +1,9 @@
-import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
+import {
+  observeAnalysisRead,
+  readAnalysisFileDigest,
+  readAnalysisInput,
+  withoutAnalysisReads,
+} from '#utils/analysis-input';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
 import { randomUUID } from 'node:crypto';
 import path from 'pathe';
@@ -27,7 +32,11 @@ async function loadConfig(file: string): Promise<LoadedConfig> {
     );
   return loaded;
 }
-function observeConfig(file: string, loaded: LoadedConfig): void {
+function observeConfig(
+  file: string,
+  loaded: LoadedConfig,
+  inputs: EpochInputs,
+): void {
   for (const input of loaded.inputs.keys())
     readAnalysisInput(
       input,
@@ -35,15 +44,28 @@ function observeConfig(file: string, loaded: LoadedConfig): void {
       'typescript-content',
     );
   loaded.evidence.assertStable();
-  observeAnalysisRead({
-    path: file,
-    key: JSON.stringify(['framework-configuration', file]),
-    value: true,
-    read: () => {
-      loaded.evidence.assertStable();
-      return true;
-    },
-  });
+  const observeLive = () =>
+    observeAnalysisRead({
+      path: file,
+      key: JSON.stringify(['framework-configuration', file]),
+      value: true,
+      read: () => {
+        loaded.evidence.assertStable();
+        return true;
+      },
+    });
+  // An empty module has no executable preprocessing or external reads. Rebind
+  // its live loader assertion after restore; persist the bytes and discoveries.
+  const source = loaded.evidence.loadedSources.get(file);
+  if (
+    source !== undefined &&
+    /^(?:export\s+default|module\.exports\s*=)\s*\{\s*\}\s*;?$/u.test(
+      source.trim(),
+    )
+  ) {
+    readAnalysisFileDigest(file, loaded.evidence.bytes.get(file));
+    withoutAnalysisReads(() => inputs.collect(observeLive));
+  } else observeLive();
 }
 function nearestConfig(directory: string): string | undefined {
   for (
@@ -111,7 +133,7 @@ export async function collectFrameworkConfigInputs(input: {
         loaded = loadConfig(file);
         input.loads.set(file, loaded);
       }
-      observeConfig(file, await loaded);
+      observeConfig(file, await loaded, input.inputs);
     }
   });
 }

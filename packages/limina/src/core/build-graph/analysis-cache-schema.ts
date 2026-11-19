@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { discoveryRecordSchema } from '../analysis-cache/discovery-schema';
+import type { FrameworkExecutionReceipt } from '../analysis-cache/framework-execution-inputs';
 import { nativeAnalysisEvidenceSchema } from '../analysis-cache/native-evidence-schema';
 import { nativeCoverageIndexSchema } from '../analysis-cache/native-proof-schema';
 import { createProjectDependencyCaches } from '../project-dependencies/cache';
@@ -28,7 +30,11 @@ export type CachedGraphData = Omit<
   GeneratedTsconfigGraphResult,
   'artifactPlan' | 'changed'
 > & { dependencyAnalysis: DependencyAnalysisResult };
-export type StoredGovernedSource = Omit<GovernedSourceUnit, 'context'> & {
+export type StoredGovernedSource = Omit<
+  GovernedSourceUnit,
+  'context' | 'astroSemanticProject' | 'svelteSemanticProject'
+> & {
+  frameworkExecutionInputs?: FrameworkExecutionReceipt;
   context: Omit<GovernedSourceUnit['context'], 'vueSemanticIdentity'> & {
     vueContextId?: string;
   };
@@ -38,6 +44,7 @@ export type StoredGraphData = Omit<CachedGraphData, 'governedSources'> & {
 };
 const build = z.object({ kind: z.enum(['project', 'solution']), path: text });
 const projection = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('framework-checker') }),
   z.object({ kind: z.literal('declaration-project'), dtsConfigPath: text }),
   z.object({ kind: z.literal('transparent-solution'), buildConfigPath: text }),
   z.object({
@@ -46,6 +53,12 @@ const projection = z.discriminatedUnion('kind', [
     dtsConfigPath: text,
   }),
 ]);
+const frameworkCapability = z.object({
+  family: z.enum(['astro', 'svelte']),
+  sourceConfigPath: text,
+  packageRootDir: text,
+  executionConfigPath: z.undefined().optional(),
+});
 const governed = z.object({
   buildProjection: projection,
   configPath: text,
@@ -57,7 +70,15 @@ const governed = z.object({
   }),
   declarationFileNames: texts,
   declarationReferences: stringSet,
-  frameworkCapabilities: z.array(z.never()),
+  checkConfigPath: z.undefined().optional(),
+  checkReferences: z.undefined().optional(),
+  frameworkCapabilities: z.array(frameworkCapability),
+  frameworkExecutionInputs: z
+    .object({
+      observations: z.array(discoveryRecordSchema).nonempty(),
+      toolchain: z.string().min(1),
+    })
+    .optional(),
   ownedFileNames: texts,
   packageRootDir: text,
   primaryCheckerName: checker,
@@ -74,11 +95,14 @@ const edgeBase = {
   toChecker: text,
   toConfigPath: text,
 };
-const edge = z.object({
-  ...edgeBase,
-  kind: z.literal('declaration-provider'),
-  cacheReuse: z.enum(['non-reusable', 'reusable']),
-});
+const edge = z.discriminatedUnion('kind', [
+  z.object({
+    ...edgeBase,
+    kind: z.literal('declaration-provider'),
+    cacheReuse: z.enum(['non-reusable', 'reusable']),
+  }),
+  z.object({ ...edgeBase, kind: z.literal('framework-schedule') }),
+]);
 const selection = z.object({
   name: checker,
   include: texts,

@@ -1,4 +1,5 @@
 import { compareCodeUnits } from '#utils/collections';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -6,13 +7,17 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
+import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
+import { bindResolutionExecutionInputs } from '../core/analysis-cache/resolution-execution-inputs';
 import { occurrenceKey } from '../core/analysis-cache/semantic-state';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import { validatedSnapshot } from '../core/analysis-cache/snapshot-validation';
@@ -91,7 +96,7 @@ function fixture() {
   roots.push(root);
   const file = createFixturePathResolver(root);
   const fixtureFiles = new Set<string>();
-  const write = (name: string, text: string) => {
+  const write = (name: string, text: string | Buffer) => {
     fixtureFiles.add(name);
     mkdirSync(path.dirname(file(name)), { recursive: true });
     writeFileSync(file(name), text);
@@ -175,6 +180,296 @@ function collect(
 }
 
 describe('bounded compiler context replacement and incremental inputs', () => {
+  it('reuses the unchanged peer callback and rebuilds the edited import in the current Program', () => {
+    const f = fixture();
+    f.write('a.ts', 'import "./one";');
+    f.write('b.ts', 'import "./one";');
+    f.write('one.ts', 'export {};');
+    f.write('two.ts', 'export {};');
+    const names = ['a.ts', 'b.ts', 'one.ts', 'two.ts'];
+    const first = collect(f.project(names));
+    expect(first.cache.metrics.resolverCalls).toBe(2);
+    f.write('a.ts', 'import "./two";');
+    const project = f.project(names);
+    const warm = collect(project, first.cache);
+    const cold = collect(project);
+    expect(warm.cache.metrics.resolverCalls).toBe(1);
+    expect(warm.cache.metrics.queryHits).toBe(1);
+    expect(warm.cache.metrics.syntaxFactBuilds).toBe(1);
+    expect(warm.records).toEqual(cold.records);
+    expect(warm.facts.map((fact) => fact.resolution.target)).toEqual(
+      cold.facts.map((fact) => fact.resolution.target),
+    );
+    const replay = collect(project, warm.cache);
+    expect(replay.cache.metrics.semanticPrograms).toBe(0);
+    expect(replay.facts).toEqual(warm.facts);
+  });
+
+  it('reparses every source and reissues every callback for an invalidated config closure', () => {
+    const f = fixture();
+    f.write('a.ts', 'import "./value";');
+    f.write('b.ts', 'import "./value";');
+    f.write('value.ts', 'export {};');
+    const project = f.project(['a.ts', 'b.ts', 'value.ts']);
+    const first = collect(project);
+    const snapshot = parseAnalysisSnapshot(
+      serializedSnapshot(first.cache),
+      'test',
+      'config',
+    )!;
+    const cache = new NativeAnalysisCache('test', snapshot, 'config');
+    expect(cache.restoreContext(project)).toBeDefined();
+    cache.invalidateSourceConfig(project.configPath);
+    expect(cache.restoreContext(project)).toBeUndefined();
+    const context = createTypeScriptDependencyContext(project, {
+      analysisCache: cache,
+    });
+    expect(cache.metrics.resolverCalls).toBe(2);
+    expect(cache.metrics.queryHits).toBe(0);
+    expect(cache.metrics.syntaxFactBuilds).toBe(3);
+    expect(context.getImportRecords(f.file('a.ts'))).toEqual(
+      first.records.filter((record) => record.filePath === f.file('a.ts')),
+    );
+  });
+
+  it.each(['affecting mtime', 'failed candidate'] as const)(
+    'protects cold and restored launch receipts from a changed %s',
+    async (change) => {
+      const f = fixture();
+      f.write('a.ts', 'import "pkg"; import "./missing";');
+      f.write(
+        'node_modules/pkg/package.json',
+        JSON.stringify({ name: 'pkg', types: 'index.d.ts' }),
+      );
+      f.write('node_modules/pkg/index.d.ts', 'export {};');
+      const project = f.project(['a.ts']);
+      const first = collect(project);
+      const second = collect(project, first.cache);
+      const scopes = [first, second].map(({ cache }) => {
+        const scope = new EpochInputs();
+        const record = Object.values(cache.contexts)[0]!;
+        expect(record.queryIds.length).toBeGreaterThan(0);
+        bindResolutionExecutionInputs(scope, cache, record.queryIds);
+        return scope;
+      });
+      for (const scope of scopes) await scope.assertStable();
+      if (change === 'failed candidate') f.write('missing.ts', 'export {};');
+      else {
+        const manifest = f.file('node_modules/pkg/package.json');
+        const future = new Date(statSync(manifest).mtimeMs + 3000);
+        utimesSync(manifest, future, future);
+      }
+      for (const scope of scopes)
+        await expect(scope.assertStable()).rejects.toThrow();
+    },
+  );
+
+  it.each(['moved', 'overlapping'] as const)(
+    'requalifies only the resolved query whose Source Config owner is %s',
+    (state) => {
+      const f = fixture();
+      f.write('a.ts', 'import "./external";');
+      f.write('b.ts', 'import "./local";');
+      f.write('local.ts', 'export {};');
+      f.write('external.ts', 'export {};');
+      const project = f.project(['a.ts', 'b.ts', 'local.ts']);
+      const first = collect(project);
+      f.write(
+        'tsconfig.other.json',
+        JSON.stringify({ files: ['external.ts'] }),
+      );
+      const configs = ['tsconfig.json', 'tsconfig.other.json'];
+      if (state === 'overlapping') configs.push('tsconfig.support.json');
+      const next = {
+        ...project,
+        workspaceSourceBoundary: createWorkspaceSourceBoundary(
+          ['a.ts', 'b.ts', 'local.ts', 'external.ts'].map((name) =>
+            f.file(name),
+          ),
+          undefined,
+          readFixtureSourceCoverage(configs.map((name) => f.file(name))),
+        ),
+      };
+      const warm = collect(next, first.cache);
+      const cold = collect(next);
+      expect(warm.cache.metrics.queryHits).toBe(1);
+      expect(warm.cache.metrics.resolverCalls).toBeLessThan(
+        cold.cache.metrics.resolverCalls,
+      );
+      const targetQuery = Object.values(warm.cache.queries).find(
+        (query) => query.file === f.file('a.ts'),
+      )!;
+      expect(targetQuery.targetOwners).toEqual(
+        state === 'moved' ? [f.file('tsconfig.other.json')] : null,
+      );
+      expect(
+        warm.facts.map((fact) => fact.nativeEvidence?.coverage?.state),
+      ).toEqual(cold.facts.map((fact) => fact.nativeEvidence?.coverage?.state));
+      expect(warm.targets).toEqual(cold.targets);
+    },
+  );
+
+  it.each([
+    ['plain UTF-8', (text: string) => Buffer.from(text, 'utf8')],
+    ['UTF-8 BOM', (text: string) => Buffer.from(`\u{FEFF}${text}`, 'utf8')],
+    [
+      'UTF-16LE BOM',
+      (text: string) => Buffer.from(`\u{FEFF}${text}`, 'utf16le'),
+    ],
+    [
+      'UTF-16BE BOM',
+      (text: string) => Buffer.from(`\u{FEFF}${text}`, 'utf16le').swap16(),
+    ],
+  ] as const)(
+    'round trips raw byte identities and compiler import locators for %s',
+    (_encoding, encode) => {
+      const f = fixture();
+      const text = 'import "./裿";';
+      const bytes = encode(text);
+      f.write('a.ts', bytes);
+      f.write('裿.ts', 'export {};');
+      const project = f.project(['a.ts', '裿.ts']);
+      const cold = collect(project);
+      const syntax = cold.cache.files[f.file('a.ts')]!;
+      expect(syntax.physicalVersion).toBe(
+        createHash('sha256').update(bytes).digest('hex'),
+      );
+      expect(cold.facts[0]?.resolution.target?.resolvedFileName).toBe(
+        f.file('裿.ts'),
+      );
+      const replay = collect(project, cold.cache);
+      expect(replay.cache.metrics.semanticPrograms).toBe(0);
+      expect(replay.records).toEqual(cold.records);
+      const [record] = replay.cache.readSourceSyntax(f.file('a.ts'))!;
+      expect(record).toMatchObject({
+        specifier: './裿',
+        locator: { sourceStart: 7, sourceEnd: 12 },
+      });
+    },
+  );
+
+  it('recollects a source when different bytes decode to identical compiler text', () => {
+    const f = fixture();
+    const text = Buffer.from('import "./dep"; // ');
+    f.write('a.ts', Buffer.concat([text, Buffer.from([0x80])]));
+    f.write('dep.ts', 'export {};');
+    const project = f.project(['a.ts', 'dep.ts']);
+    const first = collect(project);
+    const file = f.file('a.ts');
+    const decoded = ts.sys.readFile(file);
+    f.write('a.ts', Buffer.concat([text, Buffer.from([0x81])]));
+    const future = new Date(Date.now() + 3000);
+    utimesSync(file, future, future);
+    expect(ts.sys.readFile(file)).toBe(decoded);
+    const next = collect(project, first.cache);
+    expect(next.cache.metrics.semanticPrograms).toBe(1);
+    expect(next.records).toEqual(first.records);
+    expect(next.cache.files[file]?.physicalVersion).not.toBe(
+      first.cache.files[file]?.physicalVersion,
+    );
+  });
+
+  it('reuses an unchanged package query without reopening its manifest in the resolver', () => {
+    const f = fixture();
+    f.write('a.ts', 'import "pkg";');
+    f.write('b.ts', 'export const n = 1;');
+    f.write(
+      'node_modules/pkg/package.json',
+      JSON.stringify({ name: 'pkg', exports: './index.d.ts' }),
+    );
+    f.write('node_modules/pkg/index.d.ts', 'export {};');
+    const names = ['a.ts', 'b.ts'];
+    const first = collect(f.project(names));
+    expect(first.cache.metrics.resolverFileReads).toBeGreaterThan(0);
+    const manifest = f.file('node_modules/pkg/package.json');
+    const packageQuery = Object.values(first.cache.queries).find(
+      (query) => query.file === f.file('a.ts'),
+    )!;
+    expect(
+      packageQuery.dependencies.some(
+        (input) =>
+          first.cache.inputs.records[input.inputId].path === manifest &&
+          first.cache.inputs.records[input.inputId].kind === 'affecting-mtime',
+      ),
+    ).toBe(true);
+    expect(
+      packageQuery.dependencies.some(
+        (input) =>
+          first.cache.inputs.records[input.inputId].path === manifest &&
+          first.cache.inputs.records[input.inputId].kind === 'content',
+      ),
+    ).toBe(false);
+    f.write('b.ts', 'export const n = 2;');
+    const warm = collect(f.project(names), first.cache);
+    expect(warm.cache.metrics.queryHits).toBe(1);
+    expect(warm.cache.metrics.resolverCalls).toBe(0);
+    expect(warm.cache.metrics.resolverFileReads ?? 0).toBe(0);
+    expect(warm.targets).toEqual(first.targets);
+  });
+
+  it.each(['omitted subscription', 'omitted dependency'] as const)(
+    'rejects a bounded resolution with an %s even when the stored target still exists',
+    (damage) => {
+      const f = fixture();
+      f.write('a.ts', 'import "./dep";');
+      f.write('dep.ts', 'export {};');
+      const project = f.project(['a.ts', 'dep.ts']);
+      const first = collect(project);
+      const snapshot = structuredClone(first.cache.snapshot());
+      const context = Object.values(snapshot.contexts)[0]!;
+      const key = context.queryIds[0]!;
+      if (damage === 'omitted subscription') context.queryIds = [];
+      else snapshot.queries[key]!.dependencies = [];
+      expect(validatedSnapshot(snapshot)).toBeUndefined();
+      const cache = new NativeAnalysisCache('test', snapshot, 'config');
+      expect(cache.restoreContext(project)).toBeUndefined();
+      if (damage !== 'omitted dependency') return;
+      createTypeScriptDependencyContext(project, { analysisCache: cache });
+      expect(cache.metrics.resolverCalls).toBe(1);
+    },
+  );
+
+  it('shares freshly extracted text facts only within the invalidated Source Config', () => {
+    const f = fixture();
+    f.write('a.ts', 'import "./value";');
+    f.write('value.ts', 'export {};');
+    const first = f.project(['a.ts', 'value.ts']);
+    f.write(
+      'tsconfig.other.json',
+      JSON.stringify({ files: ['a.ts', 'value.ts'] }),
+    );
+    const second = { ...first, configPath: f.file('tsconfig.other.json') };
+    const cache = new NativeAnalysisCache('syntax', undefined, 'config');
+    const read = (
+      project: TypeScriptSemanticProject,
+      phase: 'locked' | 'pending',
+    ) =>
+      createTypeScriptDependencyContext(
+        { ...project, analysisBinding: { phase, checker: 'tsc' } },
+        { analysisCache: cache },
+      );
+    read(first, 'pending');
+    read(second, 'pending');
+    const priorBuilds = cache.metrics.syntaxFactBuilds;
+    const priorCalls = cache.metrics.resolverCalls;
+    cache.invalidateSourceConfig(first.configPath);
+    cache.invalidateSourceConfig(second.configPath);
+    read(first, 'pending');
+    expect(cache.metrics.syntaxFactBuilds - priorBuilds).toBe(2);
+    read(second, 'pending');
+    expect(cache.metrics.syntaxFactBuilds - priorBuilds).toBe(4);
+    for (const project of [first, second]) {
+      const context = read(project, 'locked');
+      const [occurrence] = context.getImportRecords(f.file('a.ts'));
+      expect(
+        context.getDependencyFact(occurrence!).resolution.target
+          ?.resolvedFileName,
+      ).toBe(f.file('value.ts'));
+    }
+    expect(cache.metrics.syntaxFactBuilds - priorBuilds).toBe(4);
+    expect(cache.metrics.resolverCalls - priorCalls).toBe(4);
+  });
+
   it('reuses neutral text facts while Pending and Locked retain independent compiler evidence', () => {
     const f = fixture();
     f.write(

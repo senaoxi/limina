@@ -7,7 +7,10 @@ import {
 } from '../framework-semantic/contracts';
 import type { VueSemanticContextManager } from '../vue-semantic/context';
 import { resolveVueReferenceDirective } from '../vue-semantic/reference-directives';
-import { resolveVueSemanticImport } from '../vue-semantic/resolution';
+import {
+  projectRestoredVueResolution,
+  resolveVueSemanticImport,
+} from '../vue-semantic/resolution';
 import type { ImportRecord } from './records';
 import type {
   ModuleResolutionPair,
@@ -55,6 +58,12 @@ export function resolveVueSemanticPair(options: {
       options.importRecord.line,
       occurrenceKey(options.importRecord),
     ],
+    fromModuleReceipt: () =>
+      projectRestoredVueResolution(
+        options.manager!,
+        options.identity,
+        options.importRecord,
+      ),
     collect: () => {
       uncached = resolveUncachedVuePair({
         ...options,

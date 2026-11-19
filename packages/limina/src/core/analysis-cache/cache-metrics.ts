@@ -1,11 +1,16 @@
 import type { AnalysisCacheMetrics } from './contracts';
 export function emptyMetrics(): AnalysisCacheMetrics {
   return {
+    ownershipResolutions: 0,
+    authorityRecoveries: 0,
     probes: 0,
     probeMs: 0,
     reads: 0,
     readMs: 0,
     hashes: 0,
+    contentHashes: 0,
+    configMtimeChecks: 0,
+    affectingMtimeChecks: 0,
     hashMs: 0,
     resolverCalls: 0,
     queryHits: 0,

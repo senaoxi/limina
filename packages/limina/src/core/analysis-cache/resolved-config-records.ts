@@ -10,6 +10,7 @@ import type {
   DiscoveryRecord,
   ResolvedConfigRecord,
 } from './contracts';
+import { pathBinding } from './directory-fingerprint';
 import { EpochInputReplay, EpochInputs } from './epoch-inputs';
 import { analysisHash } from './identity';
 
@@ -61,18 +62,22 @@ export class ResolvedConfigRecords {
   readonly #prior: Map<string, ResolvedConfigRecord>;
   readonly #rounds = new AsyncLocalStorage<EpochInputReplay>();
   readonly #metrics: AnalysisCacheMetrics;
+  readonly #isConfigCurrent?: (paths: readonly string[]) => boolean;
   readonly records: Record<string, ResolvedConfigRecord> = {};
 
   constructor(
     prior: Record<string, ResolvedConfigRecord>,
     metrics: AnalysisCacheMetrics,
+    isConfigCurrent?: (paths: readonly string[]) => boolean,
   ) {
     this.#prior = new Map(Object.entries(prior));
     this.#metrics = metrics;
+    this.#isConfigCurrent = isConfigCurrent;
   }
 
   #resolve<T>(
     identity: ResolvedConfigIdentity,
+    closurePaths: readonly string[],
     parse: () => T,
     codec: ResolvedConfigCodec<T>,
     replay: EpochInputReplay,
@@ -80,7 +85,13 @@ export class ResolvedConfigRecords {
     const key = analysisHash([identity.configPath, identity.context]);
     const prior = this.records[key] ?? this.#prior.get(key);
     if (prior !== undefined) {
-      const restored = this.#restore(identity, prior, codec, replay);
+      const restored = this.#restore(
+        identity,
+        closurePaths,
+        prior,
+        codec,
+        replay,
+      );
       if (restored !== undefined) {
         this.records[key] = restored.record;
         this.#metrics.resolvedConfigHits++;
@@ -90,10 +101,11 @@ export class ResolvedConfigRecords {
       this.#prior.delete(key);
     }
 
-    this.#metrics.resolvedConfigParses++;
     const reads = new EpochInputs();
     const result = reads.collect(parse);
-    const discovery = reads.snapshot();
+    const discovery = reads
+      .snapshot()
+      ?.filter((record) => record.descriptor.kind !== 'ts-directory');
     if (
       discovery !== undefined &&
       hasConfigReads(discovery, identity, result, codec)
@@ -109,6 +121,7 @@ export class ResolvedConfigRecords {
 
   #restore<T>(
     identity: ResolvedConfigIdentity,
+    closurePaths: readonly string[],
     prior: ResolvedConfigRecord,
     codec: ResolvedConfigCodec<T>,
     replay: EpochInputReplay,
@@ -119,27 +132,37 @@ export class ResolvedConfigRecords {
       fingerprint(prior) !== prior.fingerprint
     )
       return undefined;
-    const reads = new EpochInputs();
-    if (!reads.validateSynchronous(prior.discovery, replay)) return undefined;
     const value = optionalProjection(() => codec.decode(prior.payload));
+    if (value === undefined) return undefined;
+    const requiredFiles = codec.requiredFiles?.(value);
     if (
-      value === undefined ||
+      requiredFiles === undefined ||
+      analysisHash(requiredFiles) !== analysisHash(closurePaths) ||
       !hasConfigReads(prior.discovery, identity, value, codec)
     )
       return undefined;
+    const closure = new Set(closurePaths);
+    const isClosureText = (record: DiscoveryRecord) =>
+      record.descriptor.kind === 'config-text' && closure.has(record.path);
+    if (
+      this.#isConfigCurrent?.(closurePaths) !== true ||
+      prior.discovery
+        .filter(isClosureText)
+        .some(
+          ({ path, binding }) => analysisHash(pathBinding(path)) !== binding,
+        )
+    )
+      return undefined;
+    const reads = new EpochInputs();
+    if (
+      !reads.validateSynchronous(
+        prior.discovery.filter((record) => !isClosureText(record)),
+        replay,
+      )
+    )
+      return undefined;
     reads.publish();
-    const discovery = reads.refreshConfigStamps(prior.discovery);
-    if (discovery === prior.discovery) return { record: prior, value };
-    const record = { ...prior, discovery };
-    return { record: { ...record, fingerprint: fingerprint(record) }, value };
-  }
-
-  // A graph hit can skip parser contexts used to build it. Carry their
-  // candidates forward for live source configs; every later use revalidates.
-  retainGraphSources(configPaths: readonly string[]): void {
-    const sources = new Set(configPaths);
-    for (const [key, candidate] of this.#prior)
-      if (sources.has(candidate.configPath)) this.records[key] ??= candidate;
+    return { record: prior, value };
   }
 
   replay(): EpochInputReplay {
@@ -149,10 +172,26 @@ export class ResolvedConfigRecords {
   run<T>(operation: () => T): T {
     if (this.#rounds.getStore() !== undefined) return operation();
     const replay = new EpochInputReplay();
+    const parsed = new Map<string, { value: unknown; reads: EpochInputs }>();
     return this.#rounds.run(replay, () =>
       withResolvedConfigCache(
-        (identity, parse, codec) =>
-          this.#resolve(identity, parse, codec, replay),
+        {
+          resolve: (identity, closurePaths, parse, codec) =>
+            this.#resolve(identity, closurePaths, parse, codec, replay),
+          parse: <T>(operation: () => T, key: string | undefined): T => {
+            const current = key === undefined ? undefined : parsed.get(key);
+            if (current !== undefined) {
+              current.reads.publish();
+              return current.value as T;
+            }
+            this.#metrics.resolvedConfigParses++;
+            if (key === undefined) return operation();
+            const reads = new EpochInputs();
+            const value = reads.collect(operation);
+            parsed.set(key, { value, reads });
+            return value;
+          },
+        },
         operation,
       ),
     );

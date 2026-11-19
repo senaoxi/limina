@@ -1,9 +1,14 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { toRelativePath } from '#utils/path';
+import { isDeepStrictEqual } from 'node:util';
 import path from 'pathe';
 import type ts from 'typescript';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { canImportTsExtensions } from '../core/typescript-semantic/compiler-options';
+import type { TypeInputProjectionReceipt } from '../core/build-graph/type-input-projection';
+import {
+  canImportTsExtensions,
+  effectiveCompilerOptions,
+} from '../core/typescript-semantic/compiler-options';
 import { isRelativeTypeName } from '../core/typescript-semantic/effective-roots';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
@@ -242,6 +247,7 @@ export function addDtsConfigSemanticFindings(options: {
   findings: ProofFinding[];
   localConfigPath: string;
   localConfig: ParsedProofConfig;
+  typeInputProjection?: TypeInputProjectionReceipt;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
   addFileSetDifferenceFinding({
@@ -264,6 +270,22 @@ export function addDtsConfigSemanticFindings(options: {
     ...Object.keys(options.localConfig.options),
     ...Object.keys(options.dtsConfig.options),
   ]);
+  const receipt = options.typeInputProjection;
+  // The graph proved the compiler's ordered selections for this exact pair.
+  // An omitted list, a wildcard and a pinned path can have different spellings.
+  if (
+    receipt?.sourceConfig === options.localConfigPath &&
+    receipt.generatedConfig === options.dtsConfigPath &&
+    isDeepStrictEqual(
+      receipt.sourceOptions,
+      effectiveCompilerOptions(options.localConfig.options),
+    ) &&
+    isDeepStrictEqual(
+      receipt.generatedOptions,
+      effectiveCompilerOptions(options.dtsConfig.options),
+    )
+  )
+    optionNames.delete('types');
 
   const sortedOptionNames = [...optionNames].sort(
     (left, right) => Number(left > right) - Number(left < right),

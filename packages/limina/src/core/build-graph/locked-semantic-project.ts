@@ -71,6 +71,7 @@ export function prepareLockedSemanticProject(input: {
     filePartition,
     configClosure: parsed.configClosure.map((entry) => ({ ...entry })),
     options: parsed.options,
+    references: parsed.projectReferences ?? [],
     fileNames: [...parsed.fileNames],
     context: {
       checkerPresets: [...parseContext.checkerPresets],

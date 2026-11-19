@@ -45,6 +45,7 @@ export function analysisBlockDigest(bytes: string | Buffer): string {
 }
 function emptyRecords(): Records {
   return {
+    authorities: {},
     resolvedConfigs: {},
     inputs: {},
     files: {},
@@ -65,6 +66,7 @@ function scopeReaders(
 ): Record<Group, (id: string) => string | null> {
   const shared = () => null;
   return {
+    authorities: (configPath) => configPath,
     resolvedConfigs: (id) => snapshot.resolvedConfigs[id]!.configPath,
     inputs: shared,
     files: shared,
@@ -113,18 +115,20 @@ export function* encodeAnalysisBlocks(
     ([, records]) => Object.keys(records.graphs).length === 0,
   );
   const packed = packSharedRecordTables(
-    facts.map(([, records]) => encodeAnalysisRecords(records)),
+    facts.values().map(([, records]) => encodeAnalysisRecords(records)),
   );
+  const graphs = entries
+    .filter(([, records]) => Object.keys(records.graphs).length > 0)
+    .map(([scope, records]) => ({
+      scope,
+      table: packRecordTable(encodeAnalysisRecords(records)),
+    }));
+  // Capture every scope before yielding control to asynchronous block storage.
   yield encodeBlock('pool:context-facts-v1', 'pool', packed.shared);
   for (const [index, [scope]] of facts.entries())
     yield encodeBlock(scope, 'facts', packed.tables[index]);
-  for (const [scope, records] of entries)
-    if (Object.keys(records.graphs).length > 0)
-      yield encodeBlock(
-        scope,
-        'graph',
-        packRecordTable(encodeAnalysisRecords(records)),
-      );
+  for (const { scope, table } of graphs)
+    yield encodeBlock(scope, 'graph', table);
 }
 
 function encodeBlock(

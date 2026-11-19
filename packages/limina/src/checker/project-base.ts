@@ -4,7 +4,9 @@ import {
   readTypeScriptConfigInput,
   typeScriptDirectoryDescriptor,
 } from '#utils/analysis-input';
+import { cloneCompilerOptions } from '#utils/compiler-options';
 import { normalizeAbsolutePath } from '#utils/path';
+import { parseLiveConfig } from '#utils/resolved-config-cache';
 import ts from 'typescript';
 import {
   createExtraFileExtensions,
@@ -12,9 +14,7 @@ import {
   resolveExtensionsForChecker,
 } from './extensions';
 import {
-  parsedConfigCodec,
   projectResolvedConfig,
-  resolveConfigProjection,
   type ResolvedConfigProjection,
 } from './resolved-config';
 import type {
@@ -129,7 +129,7 @@ export function createParsedCheckerProjectConfig(options: {
   configClosure: CheckerConfigClosureEntry[];
   extensions: string[];
   fileNames: string[];
-  parsed: Pick<ts.ParsedCommandLine, 'options'>;
+  parsed: Pick<ts.ParsedCommandLine, 'options' | 'projectReferences'>;
   configuredVueExtensions: string[];
 }): ParsedCheckerProjectConfig {
   return {
@@ -140,6 +140,7 @@ export function createParsedCheckerProjectConfig(options: {
       .map(normalizeAbsolutePath)
       .sort((left, right) => Number(left > right) - Number(left < right)),
     options: options.parsed.options,
+    projectReferences: options.parsed.projectReferences,
   };
 }
 
@@ -151,7 +152,10 @@ export function cloneParsedCheckerProjectConfig(
     configClosure: parsedConfig.configClosure.map((entry) => ({ ...entry })),
     extensions: [...parsedConfig.extensions],
     fileNames: [...parsedConfig.fileNames],
-    options: { ...parsedConfig.options },
+    options: cloneCompilerOptions(parsedConfig.options),
+    projectReferences: parsedConfig.projectReferences?.map((reference) => ({
+      ...reference,
+    })),
     vueSemanticIdentity: parsedConfig.vueSemanticIdentity,
   };
 }
@@ -164,12 +168,20 @@ interface ConfigParseRequest {
 export function parseTypeScriptCommandLine(
   options: ConfigParseRequest,
 ): ResolvedConfigProjection {
-  return resolveConfigProjection(
-    'command-line',
-    options.parseOptions,
-    options.extraFileExtensions,
+  const { parseOptions, extraFileExtensions } = options;
+  return parseLiveConfig(
     () => parseConfig(options),
-    parsedConfigCodec(options.parseOptions.configPath),
+    parseOptions.virtualFiles?.size
+      ? undefined
+      : JSON.stringify([
+          'command-line',
+          ts.version,
+          ts.sys.getCurrentDirectory(),
+          ts.sys.useCaseSensitiveFileNames,
+          normalizeAbsolutePath(parseOptions.configPath),
+          parseOptions.allowNoInputDiagnostics === true,
+          extraFileExtensions ?? [],
+        ]),
   );
 }
 

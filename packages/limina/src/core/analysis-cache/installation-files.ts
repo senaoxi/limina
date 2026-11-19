@@ -1,3 +1,4 @@
+import { configFileStamp } from '#utils/config-file-stamp';
 import { parse as parseIni } from 'ini';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
@@ -16,17 +17,25 @@ export function readInstallationText(
   );
   const before = inputStat(file);
   if (!isRegularFile(before)) return undefined;
-  const checkedAt = Date.now();
-  const text = readFileSync(file, 'utf8');
-  const content = inputs.observeText({
-    path: file,
-    text,
-    checkedAt,
-    beforeMtime: before.mtimeMs,
-  });
-  // The existing manifest classifier already revokes the whole domain for
-  // non imports/exports changes. Do not add a third field optimization.
-  if (!file.endsWith('/package.json')) dependencies.push(content);
+  const stamp = configFileStamp(file);
+  const read = () => {
+    const bytes = readFileSync(file);
+    const content = inputs.observeContent({
+      path: file,
+      bytes,
+      beforeMtime: before.mtimeMs,
+      beforeStamp: stamp,
+    });
+    return { text: bytes.toString('utf8'), content };
+  };
+  const { text, content } =
+    stamp === undefined
+      ? read()
+      : inputs.memoizeObservation(
+          JSON.stringify(['installation-text', file, stamp]),
+          read,
+        );
+  dependencies.push(content);
   return text;
 }
 export function readInstallationYaml(
@@ -42,8 +51,6 @@ export function readInstallationYaml(
     content.inputId,
     content.expectedVersion,
   ]);
-  // The read above still observes current bytes and retains binding receipts.
-  // Reuse only parsing within this input set, and keep callers isolated.
   const parsed = inputs.memoizeObservation(
     key,
     () => parse(text) as Record<string, unknown>,

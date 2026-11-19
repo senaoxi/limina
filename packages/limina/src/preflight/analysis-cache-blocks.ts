@@ -66,6 +66,8 @@ export class AnalysisCacheBlocks {
   async write(
     snapshot: AnalysisSnapshot,
   ): Promise<{ index: AnalysisSnapshotIndex; writtenBytes: number }> {
+    const header = structuredClone(snapshot.header);
+    const configModules = structuredClone(snapshot.configModules);
     const blocks: AnalysisBlockReference[] = [];
     let writtenBytes = 0;
     for (const block of encodeAnalysisBlocks(snapshot)) {
@@ -84,8 +86,8 @@ export class AnalysisCacheBlocks {
     }
     return {
       index: {
-        header: snapshot.header,
-        configModules: snapshot.configModules,
+        header,
+        configModules,
         storage: { version: 3, blocks },
       },
       writtenBytes,

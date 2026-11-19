@@ -70,7 +70,9 @@ export class ConfigObservation {
     return this.#evidence.metrics;
   }
   snapshot(previous?: ConfigModuleSnapshot): ConfigModuleSnapshot {
-    if (this.#snapshot !== undefined) return this.#snapshot;
+    return this.#snapshot ?? this.capture(previous);
+  }
+  capture(previous?: ConfigModuleSnapshot): ConfigModuleSnapshot {
     this.#snapshot = captureConfigModuleSnapshot(this.#evidence, previous);
     warnConfigModuleCoverage(this.#evidence, this.#snapshot);
     return this.#snapshot;

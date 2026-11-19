@@ -5,6 +5,7 @@ import type {
   TypeScriptSemanticProject,
 } from '../typescript-semantic/contracts';
 import { getEffectiveImporterRoots } from '../typescript-semantic/effective-roots';
+import { boundedQueryReceipts } from './bounded-query-receipts';
 import type { DiscoveryRecord, NativeContextRecord } from './contracts';
 import { analysisHash, nativeContextId } from './identity';
 import { observeTypeEnvironment } from './installation-environment';
@@ -17,6 +18,7 @@ interface Capture {
   project: TypeScriptSemanticProject;
   cache: NativeAnalysisCache;
   discovery: DiscoveryRecord[] | undefined;
+  queryIds: Set<string>;
 }
 
 /**
@@ -51,8 +53,15 @@ function captureQualifiedBoundedContext(
   const { snapshot } = input;
   const id = nativeContextId(input.project);
   const members = [...input.context.getContributionFileNames!()];
+  const queriesByFile = Map.groupBy(
+    input.queryIds,
+    (key) => input.cache.queries[key].file,
+  );
   const sources = Object.fromEntries(
-    members.map((file) => [file, captureBoundedImporter(input, file)]),
+    members.map((file) => [
+      file,
+      captureBoundedImporter(input, file, queriesByFile.get(file) ?? []),
+    ]),
   );
   const environment = observeTypeEnvironment(
     input.project,
@@ -63,6 +72,7 @@ function captureQualifiedBoundedContext(
     native: {
       snapshot,
       inventory: input.context.nativeInventory!,
+      queryReceipts: boundedQueryReceipts(input.cache.queries, input.queryIds),
       discovery: input.discovery,
       boundaryIdentity: input.project.workspaceSourceBoundary.identity,
     },
@@ -79,7 +89,7 @@ function captureQualifiedBoundedContext(
     },
     environment,
     dependencies: environment.dependencies,
-    queryIds: [],
+    queryIds: [...input.queryIds],
     sharedEnvironment: {
       dependencies: [],
       queryIds: [],
@@ -87,7 +97,11 @@ function captureQualifiedBoundedContext(
     },
     boundary: [],
     sources,
-    complete: nativeCollectionStatus(snapshot).execution === 'completed',
+    complete:
+      nativeCollectionStatus(snapshot).execution === 'completed' &&
+      [...input.queryIds].every(
+        (key) => input.cache.queries[key].coverage === 'complete',
+      ),
   };
   input.cache.contexts[id] = retainData(
     input.cache.previous?.contexts[id],
@@ -103,7 +117,11 @@ function captureQualifiedBoundedContext(
   input.cache.increment('boundedEvidenceContexts');
 }
 
-function captureBoundedImporter(input: Capture, file: string): string {
+function captureBoundedImporter(
+  input: Capture,
+  file: string,
+  queryIds: string[],
+): string {
   const contextId = nativeContextId(input.project);
   const id = analysisHash([contextId, file]);
   const occurrences = [...input.context.getImportRecords(file)];
@@ -117,7 +135,7 @@ function captureBoundedImporter(input: Capture, file: string): string {
     ),
     membershipVersion: analysisHash(input.project.fileNames),
     dependencies: [source],
-    queryIds: [],
+    queryIds,
     occurrences,
     facts: Object.fromEntries(
       occurrences.map((occurrence) => [

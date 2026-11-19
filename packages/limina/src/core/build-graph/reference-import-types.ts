@@ -32,6 +32,7 @@ export type ResolvedProvider =
     };
 
 export interface ReferenceImportContext {
+  replayFrameworkExecutionInputs?: boolean;
   svelteConsumerView?: SvelteConsumerView;
   analysis?: DependencyAnalysisResult;
   activatedRegions: WorkspaceRegionPathIndex;

@@ -23,7 +23,10 @@ import type {
 } from './types';
 
 export async function planScopedCheckArtifacts(
-  state: GeneratedGraphPreparationState,
+  state: Pick<
+    GeneratedGraphPreparationState,
+    'purpose' | 'writeContext' | 'svelteConsumerView'
+  >,
   root: LiminaArtifactNamespace,
 ): Promise<NonNullable<PreparedTsconfigGraph['auxiliaryArtifacts']>> {
   const result: NonNullable<PreparedTsconfigGraph['auxiliaryArtifacts']> = [];

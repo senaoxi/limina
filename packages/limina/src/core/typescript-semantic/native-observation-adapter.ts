@@ -4,6 +4,7 @@ import type { NativeEvidenceContext } from '../../domain/analysis/native-context
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
+import type { BoundedResolutionQueries } from './bounded-resolution-queries';
 import { compilerPathPolicy } from './compiler-path-key';
 import type { TypeScriptSemanticProject } from './contracts';
 import { collectNativeObligations } from './native-obligation-inventory';
@@ -23,6 +24,7 @@ export interface NativeProgramObservationOptions {
   context: NativeEvidenceContext;
   coverage: SourceConfigCoverageIndex;
   metrics?: AnalysisMetricsRecorder;
+  queries?: BoundedResolutionQueries;
 }
 
 /**

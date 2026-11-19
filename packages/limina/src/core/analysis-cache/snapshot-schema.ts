@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { authorityRecordSchema } from './authority-record-schema';
 import { configModuleSnapshotSchema } from './config-module-schema';
 import {
   ANALYSIS_ADAPTER,
@@ -119,7 +120,8 @@ const coverage = z.enum(['complete', 'unknown']);
 const inputsRecord = z.object({
   path: text,
   kind: z.enum([
-    'config-text',
+    'config-mtime',
+    'affecting-mtime',
     'content',
     'file',
     'directory',
@@ -129,20 +131,19 @@ const inputsRecord = z.object({
     'binding',
     'tree',
     'bytes',
-    'imports',
-    'exports',
   ]),
   version: text,
-  fileStamp: text.optional(),
-  observedMtime: optionalNumber,
-  verifiedThrough: optionalNumber,
-  text: text.optional(),
+  contentStamp: text.optional(),
+  textVersions: z
+    .object({ utf8: text, typescript: text.optional() })
+    .optional(),
   installedTargets: z.array(text).optional(),
 });
 const queriesRecord = z.object({
   contextId: text,
   file: text,
   request: z.json(),
+  targetOwners: texts.nullable().optional(),
   result: rawResult,
   dependencies: z.array(dependency),
   coverage,
@@ -196,12 +197,27 @@ const graphRecord = z.object({
 export function parseGraphRecords(value: unknown): AnalysisSnapshot['graphs'] {
   return z.record(text, graphRecord).parse(value) as AnalysisSnapshot['graphs'];
 }
+const lockDigest = z.string().regex(/^[a-f0-9]{64}$/);
+const lockReceipt = z.tuple([text, lockDigest, text]);
+const installationReceipt = z.object({
+  root: text,
+  configPath: text,
+  kind: z.enum(['project', 'environment', 'location']),
+  installationRoot: text,
+  binding: text.optional(),
+  manager: text,
+  lockRoot: text,
+  resolutionRoot: text,
+  locks: z.array(lockReceipt).nonempty(),
+});
 const header = z.object({
   schema: z.literal(ANALYSIS_SCHEMA),
   implementation: z.literal(ANALYSIS_ADAPTER),
   identity: text,
   configVersion: text,
   revision: z.uuid(),
+  baselineTime: z.number().nonnegative().optional(),
+  installations: z.array(installationReceipt).optional(),
 });
 const requestTemplate = z.object({
   occurrence: occurrenceSchema,
@@ -215,6 +231,7 @@ const fileFacts = z.object({
   compilerVersion: text,
   filePath: text,
   sourceVersion: text,
+  physicalVersion: text,
   externalModule: z.boolean(),
   declaration: z.boolean(),
   containsJsx: z.boolean(),
@@ -233,6 +250,7 @@ const resolvedConfig = z.object({
 const snapshot = z.object({
   header,
   configModules: configModuleSnapshotSchema,
+  authorities: z.record(text, authorityRecordSchema),
   resolvedConfigs: z.record(text, resolvedConfig),
   inputs: z.record(text, inputsRecord),
   queries: z.record(text, queriesRecord),

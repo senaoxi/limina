@@ -16,6 +16,7 @@ interface Reconstruction {
   graph: StoredGraphData;
   config: ResolvedLiminaInputs;
   sources: readonly GovernedSourceUnit[];
+  nativeRelations: ReadonlyMap<string, readonly Relation[]>;
   vueReferences: ReadonlyMap<string, ReadonlySet<string>>;
 }
 function implicitTargets(
@@ -58,24 +59,24 @@ function nativeProvider(
     throw new Error('Unmapped declaration provider.');
   return provider.buildProjection.dtsConfigPath;
 }
-function requiredRelations(
-  snapshot: NativeEvidenceSnapshot,
-  source: GovernedSourceUnit,
-): Relation[] {
-  return projectNativeReferences(snapshot)
-    .relations.filter(
-      ({ obligation, summary }) =>
-        summary === 'required' &&
-        obligation.consumerConfigId === source.configPath,
-    )
-    .filter(({ obligation }) =>
-      snapshot.contexts.some(
-        (context) =>
-          context.id === obligation.consumerContextId &&
-          context.authority.phase === 'locked',
-      ),
-    )
-    .map(({ obligation }) => ({ snapshot, obligation }));
+function requiredRelations(graph: StoredGraphData) {
+  return Map.groupBy(
+    (graph.dependencyAnalysis.nativeEvidence ?? []).flatMap(({ snapshot }) => {
+      const lockedContexts = new Set(
+        snapshot.contexts
+          .filter((context) => context.authority.phase === 'locked')
+          .map((context) => context.id),
+      );
+      return projectNativeReferences(snapshot)
+        .relations.filter(
+          ({ obligation, summary }) =>
+            summary === 'required' &&
+            lockedContexts.has(obligation.consumerContextId),
+        )
+        .map(({ obligation }) => ({ snapshot, obligation }));
+    }),
+    ({ obligation }) => obligation.consumerConfigId,
+  );
 }
 function hasBoundLeaf(
   input: Reconstruction,
@@ -84,9 +85,7 @@ function hasBoundLeaf(
   if (!('dtsConfigPath' in source.buildProjection)) return true;
   if (source.semanticAuthority.family === 'vue')
     return hasVueReferences(input, source);
-  const native = nativeEvidence(input.graph).flatMap(({ snapshot }) =>
-    requiredRelations(snapshot, source),
-  );
+  const native = input.nativeRelations.get(source.configPath) ?? [];
   const expected = new Set([
     ...implicitTargets(input, source),
     ...policyTargets(input, source),
@@ -123,13 +122,15 @@ export function hasBoundCachedReferences(
     .flatMap((units) => units.values())
     .toArray();
   try {
+    const binding = { graph, config, sources };
+    if (!hasCurrentDeclarationDecisions(binding)) return false;
+    const input = {
+      ...binding,
+      nativeRelations: requiredRelations(graph),
+      vueReferences,
+    };
     return (
-      hasCurrentDeclarationDecisions(
-        inputForDecisions(graph, config, sources),
-      ) &&
-      sources.every((source) =>
-        hasBoundLeaf({ graph, config, sources, vueReferences }, source),
-      ) &&
+      sources.every((source) => hasBoundLeaf(input, source)) &&
       hasBoundGeneratedReferences(graph, config)
     );
   } catch {
@@ -140,10 +141,6 @@ export function hasBoundCachedReferences(
 function requirePrerequisite(value: unknown): void {
   if (value === undefined) throw new Error('Unbound compilation prerequisite.');
 }
-function nativeEvidence(graph: StoredGraphData) {
-  return graph.dependencyAnalysis.nativeEvidence ?? [];
-}
-
 function policyTargets(
   input: Reconstruction,
   source: GovernedSourceUnit,
@@ -165,15 +162,8 @@ function policyTargets(
   );
 }
 
-function inputForDecisions(
-  graph: StoredGraphData,
-  config: ResolvedLiminaInputs,
-  sources: readonly GovernedSourceUnit[],
-) {
-  return { graph, config, sources };
-}
 function hasCurrentDeclarationDecisions(
-  input: ReturnType<typeof inputForDecisions>,
+  input: Pick<Reconstruction, 'graph' | 'config' | 'sources'>,
 ): boolean {
   const expected = input.sources.flatMap((source) =>
     (input.graph.dependencyAnalysis.declarationEvidence ?? [])

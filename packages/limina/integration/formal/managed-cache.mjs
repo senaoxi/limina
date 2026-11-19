@@ -42,6 +42,10 @@ async function replay() {
   );
   const file = (n) => path.join(fixture, n);
   const portable = (n) => file(n).split(path.sep).join('/');
+  writeFileSync(
+    file('pnpm-lock.yaml'),
+    "lockfileVersion: '9.0'\nimporters:\n  .: {}\n",
+  );
   // The fixture config is plain ESM; avoid involving a TypeScript config loader in the cache oracle.
   renameSync(file('limina.config.mts'), file('limina.config.mjs'));
   const reports = [];

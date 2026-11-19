@@ -72,6 +72,7 @@ describe('installation YAML observations', () => {
   it('keys parsed values by observed bytes even when the mtime is retained', () => {
     const f = fixture();
     f.write('selected: first\n');
+    utimesSync(f.file, 1, 1);
     const before = statSync(f.file);
     expect(f.read().value).toEqual({ selected: 'first' });
     f.write('selected: second\n');
@@ -86,6 +87,7 @@ describe('installation YAML observations', () => {
   it('rejects changed consumed inputs before reusing a parsed value', () => {
     const f = fixture();
     f.write('selected: first\n');
+    utimesSync(f.file, 1, 1);
     const before = statSync(f.file);
     f.inputs.consume(f.read().dependencies);
     f.write('selected: second\n');

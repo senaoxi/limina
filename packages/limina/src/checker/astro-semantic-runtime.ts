@@ -8,11 +8,11 @@ import type {
   AstroFrameworkPluginRuntime,
   AstroLanguageCoreRuntime,
   AstroLanguageServerCoreRuntime,
-  AstroSemanticToolchain,
   AstroSemanticToolchainPaths,
   AstroSemanticVersionTuple,
   AstroVolarTypeScriptRuntime,
   AstroVscodeUriRuntime,
+  LoadedAstroSemanticToolchain,
 } from './astro-semantic-types';
 
 function hasFunctions(
@@ -108,33 +108,44 @@ function assertLanguagePluginShape(options: {
   >;
 }
 
-function requireInternalModule(options: {
-  manifestPath: string;
-  relativePath: string;
-}): unknown {
-  return createRequire(options.manifestPath)(
-    path.join(path.dirname(options.manifestPath), options.relativePath),
-  ) as unknown;
+function requireFromOwner(
+  manifest: string,
+  modules: LoadedAstroSemanticToolchain['runtimeModules'],
+): (specifier: string) => unknown {
+  const owner = createRequire(manifest);
+  return (specifier) => {
+    const file = owner.resolve(specifier);
+    modules.push({ specifier, file });
+    return owner(file) as unknown;
+  };
 }
 
 export function loadAstroSemanticRuntime(options: {
   paths: AstroSemanticToolchainPaths;
   versions: AstroSemanticVersionTuple;
-}): AstroSemanticToolchain {
-  const requireFromLanguageServer = createRequire(options.paths.languageServer);
-  const requireFromVolarKit = createRequire(options.paths.volarKit);
+}): LoadedAstroSemanticToolchain {
+  const runtimeModules: LoadedAstroSemanticToolchain['runtimeModules'] = [];
+  const requireFromLanguageServer = requireFromOwner(
+    options.paths.languageServer,
+    runtimeModules,
+  );
+  const requireFromVolarKit = requireFromOwner(
+    options.paths.volarKit,
+    runtimeModules,
+  );
+  const coreDirectory = path.join(
+    path.dirname(options.paths.languageServer),
+    'dist/core',
+  );
   assertRuntime({
     label: 'LS-owned @astrojs/compiler/sync',
     properties: ['convertToTSX'],
-    value: requireFromLanguageServer('@astrojs/compiler/sync') as unknown,
+    value: requireFromLanguageServer('@astrojs/compiler/sync'),
   });
   const astroCore = assertRuntime<AstroLanguageServerCoreRuntime>({
     label: '@astrojs/language-server core',
     properties: ['addAstroTypes', 'getAstroLanguagePlugin'],
-    value: requireInternalModule({
-      manifestPath: options.paths.languageServer,
-      relativePath: 'dist/core/index.js',
-    }),
+    value: requireFromLanguageServer(path.join(coreDirectory, 'index.js')),
   });
   const vueModule = assertRuntime<{
     getVueLanguagePlugin(): ReturnType<
@@ -143,10 +154,7 @@ export function loadAstroSemanticRuntime(options: {
   }>({
     label: '@astrojs/language-server Vue plugin',
     properties: ['getVueLanguagePlugin'],
-    value: requireInternalModule({
-      manifestPath: options.paths.languageServer,
-      relativePath: 'dist/core/vue.js',
-    }),
+    value: requireFromLanguageServer(path.join(coreDirectory, 'vue.js')),
   });
   const svelteModule = assertRuntime<{
     getSvelteLanguagePlugin(): ReturnType<
@@ -155,10 +163,7 @@ export function loadAstroSemanticRuntime(options: {
   }>({
     label: '@astrojs/language-server Svelte plugin',
     properties: ['getSvelteLanguagePlugin'],
-    value: requireInternalModule({
-      manifestPath: options.paths.languageServer,
-      relativePath: 'dist/core/svelte.js',
-    }),
+    value: requireFromLanguageServer(path.join(coreDirectory, 'svelte.js')),
   });
   const astroPlugin = assertLanguagePluginShape({
     label: '@astrojs/language-server Astro plugin',
@@ -173,6 +178,7 @@ export function loadAstroSemanticRuntime(options: {
     value: svelteModule.getSvelteLanguagePlugin(),
   });
   return {
+    runtimeModules,
     adapter: resolveAstroSemanticAdapter(options.versions),
     astroCore: {
       ...astroCore,
@@ -185,24 +191,22 @@ export function loadAstroSemanticRuntime(options: {
     languageCore: assertRuntime<AstroLanguageCoreRuntime>({
       label: '@volar/language-core',
       properties: ['createLanguage', 'forEachEmbeddedCode'],
-      value: requireFromLanguageServer('@volar/language-core') as unknown,
+      value: requireFromLanguageServer('@volar/language-core'),
     }),
     paths: options.paths,
     sveltePlugin: {
       getLanguagePlugin: () => sveltePlugin,
     } satisfies AstroFrameworkPluginRuntime,
     tsModule: assertTypeScriptRuntime(
-      createRequire(options.paths.check)('typescript') as unknown,
+      requireFromOwner(options.paths.check, runtimeModules)('typescript'),
     ),
     versions: options.versions,
     volarTypeScript: assertRuntime<AstroVolarTypeScriptRuntime>({
       label: '@volar/typescript',
       properties: ['createLanguageServiceHost'],
-      value: requireFromVolarKit('@volar/typescript') as unknown,
+      value: requireFromVolarKit('@volar/typescript'),
     }),
-    vscodeUri: assertVscodeUriRuntime(
-      requireFromLanguageServer('vscode-uri') as unknown,
-    ),
+    vscodeUri: assertVscodeUriRuntime(requireFromLanguageServer('vscode-uri')),
     vuePlugin: {
       getLanguagePlugin: () => vuePlugin,
     } satisfies AstroFrameworkPluginRuntime,

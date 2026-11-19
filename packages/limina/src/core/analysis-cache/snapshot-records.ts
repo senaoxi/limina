@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { AnalysisSnapshot, ConfigModuleSnapshot } from './contracts';
 import { ANALYSIS_ADAPTER, ANALYSIS_SCHEMA } from './contracts';
+import type { InstallationLockGate } from './installation-gate';
 import type { NativeAnalysisCache } from './native-cache';
 import { availableSnapshotGraphs } from './snapshot-graphs';
 import {
@@ -32,22 +33,20 @@ export function currentSnapshotRecords(
   const members = new Set(
     Object.values(cache.projects).flatMap((project) => project.members),
   );
-  const manifests = new Set(
-    [...referenced]
-      .map((id) => cache.inputs.records[id].path)
-      .filter((file) => file.endsWith('/package.json')),
+  const retainedPaths = new Set(
+    [...referenced].map((id) => cache.inputs.records[id].path),
   );
   const inputs = Object.fromEntries(
-    Object.entries(cache.inputs.records).filter(([id, input]) =>
-      [
-        referenced.has(id),
-        members.has(input.path),
-        manifests.has(input.path),
-      ].some(Boolean),
+    Object.entries(cache.inputs.records).filter(
+      ([id, input]) =>
+        referenced.has(id) ||
+        members.has(input.path) ||
+        (input.kind === 'binding' && retainedPaths.has(input.path)),
     ),
   );
   return {
     configModules: cache.configModules,
+    authorities: cache.authorities,
     resolvedConfigs: cache.resolvedConfigs.records,
     inputs,
     queries,
@@ -75,6 +74,7 @@ export function emptySnapshot(
       revision: randomUUID(),
     },
     configModules: emptyConfigModules(),
+    authorities: {},
     resolvedConfigs: {},
     inputs: {},
     projects: {},
@@ -116,8 +116,8 @@ export function matchingConfigSnapshot(
   return matches.every(Boolean) ? previous : undefined;
 }
 
-export function newSnapshot(cache: NativeAnalysisCache): AnalysisSnapshot {
-  return cloneAnalysisSnapshot({
+export function snapshotModel(cache: NativeAnalysisCache): AnalysisSnapshot {
+  return {
     header: {
       schema: ANALYSIS_SCHEMA,
       implementation: ANALYSIS_ADAPTER,
@@ -126,7 +126,10 @@ export function newSnapshot(cache: NativeAnalysisCache): AnalysisSnapshot {
       revision: randomUUID(),
     },
     ...cache.snapshotRecords(),
-  });
+  };
+}
+export function newSnapshot(cache: NativeAnalysisCache): AnalysisSnapshot {
+  return cloneAnalysisSnapshot(snapshotModel(cache));
 }
 export function isSameData(previous: unknown, current: unknown): boolean {
   return previous !== undefined && isDeepStrictEqual(previous, current);
@@ -165,6 +168,8 @@ function hasCompleteConfigModules(snapshot: AnalysisSnapshot): boolean {
   return snapshot.configModules?.complete ?? false;
 }
 export interface ConfigCacheOptions {
+  liveConfigTimes?: ReadonlyMap<string, number>;
+  installationGate?: InstallationLockGate;
   configVersion?: string;
   configModules?: ConfigModuleSnapshot;
 }

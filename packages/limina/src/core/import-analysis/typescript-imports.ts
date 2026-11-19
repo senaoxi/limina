@@ -25,6 +25,13 @@ interface TypeScriptImportCollectionOptions {
 type NormalizedTypeScriptImportCollectionOptions =
   TypeScriptImportCollectionOptions & { tsModule: typeof ts };
 
+export function readTypeScriptSourceText(filePath: string): string {
+  const text = ts.sys.readFile(filePath);
+  if (text === undefined)
+    throw new Error(`Cannot read source file ${filePath}.`);
+  return text;
+}
+
 function getFileExtension(filePath: string): string {
   const index = filePath.lastIndexOf('.');
   return index === -1 ? '' : filePath.slice(index);

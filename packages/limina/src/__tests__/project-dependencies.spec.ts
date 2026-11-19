@@ -11,12 +11,14 @@ import {
   projectDependencyCreatesSourceEdge,
   type ProjectDependencyPreparation,
   type ProjectSemanticContext,
+  withProjectDependencyReplay,
 } from '#core/project-dependencies/runner';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { parseVueQuery } from '../core/analysis-cache/vue-schema';
 import type { CompilationObligationProof } from '../core/dependency-semantics';
 import type { PreparedDependencyFact } from '../core/framework-semantic/contracts';
@@ -30,6 +32,7 @@ import {
   createWorkspaceSourceBoundary,
   createWorkspaceSourceBoundaryFromProjects,
 } from '../core/typescript-semantic';
+import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
@@ -209,6 +212,82 @@ afterEach(async () => {
 });
 
 describe('project dependency authority', () => {
+  it.each(['astro', 'svelte'] as const)(
+    'restores the physical TypeScript companion under %s authority',
+    async (family) => {
+      const fixture = await createSemanticRepairFixture({
+        'tsconfig.json': '{"files":["companion.ts","target.ts"]}',
+        'companion.ts': 'import { value } from "./target"; export { value };',
+        'target.ts': 'export const value = 1;',
+      });
+      const companion = fixture.path('companion.ts');
+      const target = fixture.path('target.ts');
+      const context = createSemanticContext({
+        family,
+        fileName: companion,
+        rootDir: fixture.root,
+      });
+      context.analysisChecker = family === 'astro' ? 'astro' : 'svelte-check';
+      context.compilerOptions = {
+        ...context.compilerOptions,
+        noLib: true,
+        types: [],
+      };
+      context.fileNames = [companion, target];
+      context.workspaceSourceBoundary = createWorkspaceSourceBoundary(
+        context.fileNames,
+        undefined,
+        readFixtureSourceCoverage([context.configPath]),
+      );
+      const collect = (cache: NativeAnalysisCache) => {
+        const importAnalysis = createImportAnalysisContext();
+        try {
+          return collectProjectDependencies({
+            context,
+            caches: createProjectDependencyCaches(cache),
+            importAnalysis,
+          });
+        } finally {
+          importAnalysis.dispose?.();
+        }
+      };
+      try {
+        const seed = new NativeAnalysisCache('fixture', undefined, 'config');
+        const original = collect(seed);
+        const prior = seed.snapshot();
+        const warm = new NativeAnalysisCache('fixture', prior, 'config');
+        const restored = collect(warm);
+        expect(warm.metrics.restoredContexts).toBe(1);
+        const records = Object.values(prior.contexts);
+        expect(records).toHaveLength(1);
+        expect(new Set(records[0]?.native?.inventory.members)).toEqual(
+          new Set([companion, target]),
+        );
+        expect(restored.failures.map((item) => item.stage)).toEqual(
+          original.failures.map((item) => item.stage),
+        );
+        expect(
+          restored.dependencies.map((item) => item.resolvedFilePath),
+        ).toEqual(original.dependencies.map((item) => item.resolvedFilePath));
+
+        context.virtualFiles = new Map([[context.configPath, '{}']]);
+        const overlay = new NativeAnalysisCache('fixture', prior, 'config');
+        collect(overlay);
+        expect(overlay.metrics.restoredContexts ?? 0).toBe(0);
+        expect(overlay.metrics[`fallback-${family}`]).toBeGreaterThan(0);
+
+        delete context.virtualFiles;
+        await writeFile(companion, 'export const changed = true;');
+        const changed = new NativeAnalysisCache('fixture', prior, 'config');
+        collect(changed);
+        expect(changed.metrics.restoredContexts ?? 0).toBe(0);
+        expect(changed.metrics.semanticPrograms).toBe(1);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each(['missing', 'unknown', 'absent'] as const)(
     'does not promote resolution alone when the Vue input proof is %s',
     (state) => {
@@ -1217,67 +1296,81 @@ describe('project dependency authority', () => {
     }
   });
 
-  it('preserves runtime evidence separately from a native checker miss across cached observations', async () => {
-    const temporaryDirectory = await mkdtemp(
-      path.join(tmpdir(), 'limina-observation-evidence-'),
-    );
-    const temporaryRoot = await realpath(temporaryDirectory);
-    temporaryRoots.push(temporaryRoot);
-    const fixturePath = createFixturePathResolver(temporaryRoot);
-    const sourceFile = fixturePath('index.ts');
-    const resourceFile = fixturePath('theme.css');
-    await writeFile(sourceFile, "import './theme.css';\n");
-    await writeFile(resourceFile, '.theme {}\n');
-    const context = createSemanticContext({
-      family: 'typescript',
-      fileName: sourceFile,
-      rootDir: temporaryRoot,
-    });
-    const caches = createProjectDependencyCaches();
-    const base = createImportAnalysisContext();
-    const resolveCheckerImportEvidence = vi.fn(
-      base.resolveCheckerImportEvidence,
-    );
-    const request = {
-      context,
-      caches,
-      importAnalysis: { ...base, resolveCheckerImportEvidence },
-    };
-    const first = collectProjectDependencies(request);
-    const cached = collectProjectDependencies(request);
-    expect(resolveCheckerImportEvidence).toHaveBeenCalledTimes(1);
-    expect(first.dependencies).toEqual([]);
-    expect(first.observations).toMatchObject([
-      {
-        kind: 'resource',
-        evidence: {
-          context: { generation: 1, packageRootDir: fixturePath() },
-          checker: {
-            kind: 'native',
-            fact: { admission: 'unresolved', resolution: { target: null } },
-          },
-          runtime: {
-            classification: 'resource',
+  it.each(['local', 'persistent'] as const)(
+    'preserves runtime evidence separately from a native checker miss in the %s replay',
+    async (mode) => {
+      const temporaryDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-observation-evidence-'),
+      );
+      const temporaryRoot = await realpath(temporaryDirectory);
+      temporaryRoots.push(temporaryRoot);
+      const fixturePath = createFixturePathResolver(temporaryRoot);
+      const sourceFile = fixturePath('index.ts');
+      const resourceFile = fixturePath('theme.css');
+      await writeFile(sourceFile, "import './theme.css';\n");
+      await writeFile(resourceFile, '.theme {}\n');
+      const context = createSemanticContext({
+        family: 'typescript',
+        fileName: sourceFile,
+        rootDir: temporaryRoot,
+      });
+      const isPersistent = mode === 'persistent';
+      const caches = createProjectDependencyCaches(
+        isPersistent ? new NativeAnalysisCache('fixture') : undefined,
+      );
+      const base = createImportAnalysisContext();
+      const resolveCheckerImportEvidence = vi.fn(
+        base.resolveCheckerImportEvidence,
+      );
+      const request = {
+        context,
+        caches,
+        importAnalysis: { ...base, resolveCheckerImportEvidence },
+      };
+      const [first, cached] = withProjectDependencyReplay(caches, () => [
+        collectProjectDependencies(request),
+        collectProjectDependencies(request),
+      ]);
+      expect(resolveCheckerImportEvidence).toHaveBeenCalledTimes(1);
+      expect(first.dependencies).toEqual([]);
+      expect(first.observations).toMatchObject([
+        {
+          kind: 'resource',
+          evidence: {
+            context: { generation: 1, packageRootDir: fixturePath() },
+            checker: {
+              kind: 'native',
+              fact: { admission: 'unresolved', resolution: { target: null } },
+            },
             runtime: {
-              kind: 'file',
-              authority: 'filesystem',
-              filePath: resourceFile,
+              classification: 'resource',
+              runtime: {
+                kind: 'file',
+                authority: 'filesystem',
+                filePath: resourceFile,
+              },
             },
           },
         },
-      },
-    ]);
-    expect(cached).toEqual(first);
-    const original = first.observations[0]!;
-    const clone = cached.observations[0]!;
-    expect(clone.evidence).not.toBe(original.evidence);
-    expect(
-      Reflect.set(clone.evidence.runtime!.runtime, 'filePath', '/wrong'),
-    ).toBe(false);
-    expect(original.evidence.runtime!.runtime).toMatchObject({
-      filePath: resourceFile,
-    });
-  });
+      ]);
+      expect(cached).toEqual(first);
+      const original = first.observations[0]!;
+      const clone = cached.observations[0]!;
+      expect(clone.evidence).not.toBe(original.evidence);
+      expect(
+        Reflect.set(clone.evidence.runtime!.runtime, 'filePath', '/wrong'),
+      ).toBe(false);
+      expect(original.evidence.runtime!.runtime).toMatchObject({
+        filePath: resourceFile,
+      });
+      cached.observations.pop();
+      expect(collectProjectDependencies(request)).toEqual(first);
+      expect(resolveCheckerImportEvidence).toHaveBeenCalledTimes(
+        isPersistent ? 2 : 1,
+      );
+      expect(caches.projectDependencyCache.size).toBe(isPersistent ? 0 : 1);
+    },
+  );
 
   it('preserves a framework resource target and provenance without fabricating runtime evidence', () => {
     const fixturePath = createFixturePathResolver('/virtual/resource-evidence');

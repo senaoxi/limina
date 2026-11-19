@@ -5,17 +5,17 @@ import type { TypeScriptSemanticDependencyContext } from '../typescript-semantic
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
 import { createTypeScriptResolutionIdentity } from '../typescript-semantic/identity';
 import type { ImporterRecord, NativeContextRecord } from './contracts';
-import type { EpochInputs } from './epoch-inputs';
 import { retainContextExecutionInputs } from './execution-inputs';
+import type { NativeAnalysisCache } from './native-cache';
 import { occurrenceKey } from './semantic-state';
 export function restoredDependencyContext(
   identity: string,
   context: NativeContextRecord,
   importers: Record<string, ImporterRecord>,
-  observations: EpochInputs,
+  cache: NativeAnalysisCache,
 ): TypeScriptSemanticDependencyContext {
   const evidence = restoredNativeEvidence(context);
-  restoreExecutionInputs(context, evidence, observations);
+  restoreExecutionInputs(context, evidence, cache);
   const restoredIdentity = restoredContextIdentity(identity, evidence);
   const importerFor = (file: string) => {
     const id = context.sources[normalizeAbsolutePath(file)];
@@ -86,11 +86,14 @@ function restoredContextIdentity(
 function restoreExecutionInputs(
   context: NativeContextRecord,
   evidence: ReturnType<typeof restoredNativeEvidence>,
-  observations: EpochInputs,
+  cache: NativeAnalysisCache,
 ): void {
   if (context.native === undefined) return;
-  const inputs = observations.selectRecords(context.native.discovery);
+  const inputs = cache.epoch.selectRecords(context.native.discovery);
   if (inputs === undefined)
     throw new Error('Restored execution evidence is no longer current.');
-  retainContextExecutionInputs(evidence, context.project.configPath, inputs);
+  retainContextExecutionInputs(evidence, context.project.configPath, inputs, {
+    cache,
+    ids: context.queryIds,
+  });
 }

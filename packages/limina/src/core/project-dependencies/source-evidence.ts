@@ -1,8 +1,10 @@
 import type { VueSourceProfile } from '#checkers';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
-import { readFileSync } from 'node:fs';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
-import { collectTypeScriptSourceTextImports } from '../import-analysis/typescript-imports';
+import {
+  collectTypeScriptSourceTextImports,
+  readTypeScriptSourceText,
+} from '../import-analysis/typescript-imports';
 import { cloneSourceEvidence } from './cache';
 import type { SourceEvidence } from './contracts';
 
@@ -88,7 +90,7 @@ function collectTypeScriptRecords(
   options.analysisCache?.increment('sourceSyntaxParses');
   return collectTypeScriptSourceTextImports({
     filePath: options.filePath,
-    sourceText: readFileSync(options.filePath, 'utf8'),
+    sourceText: readTypeScriptSourceText(options.filePath),
   });
 }
 

@@ -133,6 +133,7 @@ function resolveProjectDependencyCaches(
 }
 
 export function inferProjectReferences(options: {
+  replayFrameworkExecutionInputs?: boolean;
   svelteConsumerView?: SvelteConsumerView;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
@@ -192,6 +193,7 @@ export function inferProjectReferences(options: {
       };
     }
   const context: ReferenceImportContext = {
+    replayFrameworkExecutionInputs: options.replayFrameworkExecutionInputs,
     svelteConsumerView: options.svelteConsumerView,
     analysis,
     activatedRegions: options.activatedRegions,

@@ -212,37 +212,49 @@ export function decodeData(node: unknown, shouldShare = false): unknown {
 export function cloneData(
   value: unknown,
   stack: Set<object> = new Set(),
+  copies?: WeakMap<object, unknown>,
 ): unknown {
   if (isPublishedNativeData(value)) return value;
   const scalar = scalarNode(value);
   if (scalar !== undefined) return value;
   const object = requireObject(value, stack);
+  if (copies?.has(object)) return copies.get(object);
   stack.add(object);
   try {
-    if (Array.isArray(object))
-      return object.map((item) => cloneData(item, stack));
-    if (object instanceof Set)
-      return new Set([...object].map((item) => cloneData(item, stack)));
-    if (object instanceof Map)
-      return new Map(
-        [...object].map(([key, item]) => [
-          requireStringKey(key),
-          cloneData(item, stack),
-        ]),
-      );
-    if (![Object.prototype, null].includes(Object.getPrototypeOf(object)))
-      throw new Error('Opaque data object.');
-    return Object.fromEntries(
-      Object.entries(Object.getOwnPropertyDescriptors(object)).map(
-        ([key, property]) => {
-          if (!('value' in property)) throw new Error('Live data accessor.');
-          return [key, cloneData(property.value, stack)];
-        },
-      ),
-    );
+    const result = copyContainer(object, stack, copies);
+    copies?.set(object, result);
+    return result;
   } finally {
     stack.delete(object);
   }
+}
+
+function copyContainer(
+  object: object,
+  stack: Set<object>,
+  copies?: WeakMap<object, unknown>,
+): unknown {
+  if (Array.isArray(object))
+    return object.map((item) => cloneData(item, stack, copies));
+  if (object instanceof Set)
+    return new Set([...object].map((item) => cloneData(item, stack, copies)));
+  if (object instanceof Map)
+    return new Map(
+      [...object].map(([key, item]) => [
+        requireStringKey(key),
+        cloneData(item, stack, copies),
+      ]),
+    );
+  if (![Object.prototype, null].includes(Object.getPrototypeOf(object)))
+    throw new Error('Opaque data object.');
+  return Object.fromEntries(
+    Object.entries(Object.getOwnPropertyDescriptors(object)).map(
+      ([key, property]) => {
+        if (!('value' in property)) throw new Error('Live data accessor.');
+        return [key, cloneData(property.value, stack, copies)];
+      },
+    ),
+  );
 }
 
 /**

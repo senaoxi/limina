@@ -6,7 +6,7 @@ import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { type DataNode, encodeData } from './data-codec';
 import { analysisHash } from './identity';
 
-export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v11-compiler-request-identity';
+export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v15-resolution-members';
 
 function hasPlugins(plugins: unknown): boolean {
   return plugins !== undefined && hasPluginEntries(plugins);
@@ -60,13 +60,11 @@ function isSerializableIdentity(identity: VueProjectSemanticIdentity): boolean {
   }
 }
 
-export function vueDataIdentity(
-  identity: VueProjectSemanticIdentity,
-): DataNode {
+function vueSemanticInputs(identity: VueProjectSemanticIdentity) {
   // Config ASTs are runtime objects; their source closure is separately observed.
   const options = { ...identity.options };
   delete options.configFile;
-  return encodeData({
+  return {
     adapter: VUE_ANALYSIS_ADAPTER,
     hostContract: vueCompilerPathPolicy(identity).identity,
     declarationLoading:
@@ -74,22 +72,59 @@ export function vueDataIdentity(
         ? undefined
         : nativeFingerprint(identity.declarationLoading),
     configPath: identity.configPath,
-    outputSourceConfigPath: identity.outputSourceConfigPath,
+    outputProjection: identity.outputProjection,
     projectRootDir: identity.projectRootDir,
-    configClosure: identity.configClosure,
+    configClosure: identity.configClosure.map(({ filePath }) => filePath),
     options,
     vueOptions: identity.vueOptions,
-    fileNames: identity.fileNames,
     projectReferences: identity.projectReferences,
     extensions: identity.extensions,
-    profiles: identity.profilesByFileName,
     overlayFingerprint: identity.overlayFingerprint,
     toolchain: [
       identity.toolchain.adapter,
       identity.toolchain.paths,
       identity.toolchain.versions,
     ],
+  };
+}
+
+export function vueDataIdentity(
+  identity: VueProjectSemanticIdentity,
+): DataNode {
+  return encodeData({
+    ...vueSemanticInputs(identity),
+    fileNames: identity.fileNames,
+    profiles: identity.profilesByFileName,
   });
+}
+
+export function vueModuleContextId(
+  identity: VueProjectSemanticIdentity,
+): string {
+  // The qualified built-in Vue plugin has no extra service scripts. Volar
+  // generates the selected candidate from its own physical source snapshot.
+  return analysisHash(vueModuleProjection(vueDataIdentity(identity)));
+}
+
+function vueModuleProjection(data: DataNode): DataNode | undefined {
+  if (!Array.isArray(data) || data[0] !== 'object' || !Array.isArray(data[1]))
+    return undefined;
+  const programFields = new Set([
+    'declarationLoading',
+    'fileNames',
+    'profiles',
+  ]);
+  return [
+    'object',
+    data[1].filter(
+      (entry) => !Array.isArray(entry) || !programFields.has(entry[0]),
+    ),
+  ];
+}
+
+export function hasVueModuleContextId(data: DataNode, id: string): boolean {
+  const projection = vueModuleProjection(data);
+  return projection !== undefined && analysisHash(projection) === id;
 }
 
 export function vueContextId(identity: VueProjectSemanticIdentity): string {

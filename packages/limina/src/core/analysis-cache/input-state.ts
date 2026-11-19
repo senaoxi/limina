@@ -1,6 +1,6 @@
 import { compareCodeUnits } from '#utils/collections';
-import { configFileStamp } from '#utils/config-file-stamp';
 import { normalizeAbsolutePath } from '#utils/path';
+import { typeScriptBomText } from '#utils/typescript-bom';
 import { createHash } from 'node:crypto';
 import {
   type Dirent,
@@ -66,6 +66,9 @@ interface InputReadOptions {
   path: string;
   previous?: AnalysisInput;
   metrics: AnalysisCacheMetrics;
+  baseline?: { baselineTime: number; generation: string };
+  captureTextVersions?: boolean;
+  observeMtime?(path: string, mtime: number | undefined): void;
 }
 function readTree(options: InputReadOptions): AnalysisInput {
   const scan = directoryObservation(options.path);
@@ -88,140 +91,100 @@ export function readInput(options: InputReadOptions): AnalysisInput {
     tree: readTree,
     content: readContent,
     bytes: readContent,
-    'config-text': readConfigText,
+    'config-mtime': readModifiedTime,
+    'affecting-mtime': readModifiedTime,
   };
   const result = (readers[options.kind] ?? readVersioned)(options);
   options.metrics.probeMs += performance.now() - start;
   return result;
 }
 
-/**
-Config closure hashes describe the text TypeScript actually parsed, including its BOM decoding.
-*/
-function readConfigText(options: InputReadOptions): AnalysisInput {
-  const before = configFileStamp(options.path);
-  if (before !== undefined && before === options.previous?.fileStamp)
-    return options.previous;
-  const start = performance.now();
-  const text = ts.sys.readFile(options.path);
-  options.metrics.reads += 1;
-  options.metrics.readMs += performance.now() - start;
-  const version =
-    text === undefined
-      ? 'absent'
-      : createHash('sha256').update(text).digest('hex');
-  options.metrics.hashes += Number(text !== undefined);
-  if (before !== configFileStamp(options.path))
-    throw new AnalysisInputDriftError(options.path);
-  return {
-    path: options.path,
-    kind: 'config-text',
-    fileStamp: before,
-    version,
-  };
+function observedMtime(options: InputReadOptions): number | undefined {
+  const stat = inputStat(options.path);
+  const mtime = isRegularFile(stat) ? stat.mtimeMs : undefined;
+  options.observeMtime?.(options.path, mtime);
+  return mtime;
 }
 
-function readContent(options: Parameters<typeof readInput>[0]): AnalysisInput {
-  const stat = inputStat(options.path);
-  if (!isRegularFile(stat))
-    return {
-      path: options.path,
-      kind: options.kind,
-      version: analysisHash(null),
-    };
-  return canTrustTimestamp(options.previous, stat.mtimeMs)
-    ? { ...options.previous!, observedMtime: stat.mtimeMs }
-    : readText(options, stat.mtimeMs);
+const absentVersion = analysisHash(null);
+
+function canReusePublishedInput(
+  options: InputReadOptions,
+  mtime: number,
+): boolean {
+  return (
+    options.previous !== undefined &&
+    options.previous.version !== absentVersion &&
+    options.baseline !== undefined &&
+    mtime <= options.baseline.baselineTime
+  );
+}
+
+function readModifiedTime(options: InputReadOptions): AnalysisInput {
+  const metric =
+    options.kind === 'config-mtime'
+      ? 'configMtimeChecks'
+      : 'affectingMtimeChecks';
+  options.metrics[metric] += 1;
+  const mtime = observedMtime(options);
+  if (mtime !== undefined && canReusePublishedInput(options, mtime))
+    return options.previous!;
+  const version =
+    mtime === undefined
+      ? absentVersion
+      : analysisHash([options.baseline?.generation, mtime]);
+  return { path: options.path, kind: options.kind, version };
+}
+
+function readContent(options: InputReadOptions): AnalysisInput {
+  const mtime = observedMtime(options);
+  if (mtime === undefined)
+    return { path: options.path, kind: options.kind, version: absentVersion };
+  if (canReusePublishedInput(options, mtime)) return options.previous!;
+  const start = performance.now();
+  const bytes = readFileSync(options.path);
+  options.metrics.reads += 1;
+  options.metrics.readMs += performance.now() - start;
+  return observedFile({
+    path: options.path,
+    kind: options.kind === 'bytes' ? 'bytes' : 'content',
+    beforeMtime: mtime,
+    captureTextVersions: options.captureTextVersions,
+    bytes,
+    metrics: options.metrics,
+  });
 }
 
 export function isRegularFile(stat: Stats | undefined): stat is Stats {
   return stat !== undefined && stat.isFile();
 }
 
-function readText(
-  options: Parameters<typeof readInput>[0],
-  mtime: number,
-): AnalysisInput {
-  if (options.kind === 'bytes') return readBytes(options, mtime);
-  const checkedAt = Date.now();
-  const start = performance.now();
-  const text = readFileSync(options.path, 'utf8');
-  options.metrics.reads += 1;
-  options.metrics.readMs += performance.now() - start;
-  const result = observedContent({
-    path: options.path,
-    text,
-    checkedAt,
-    beforeMtime: mtime,
-    metrics: options.metrics,
-  });
-  if (result.verifiedThrough === undefined)
-    throw new AnalysisInputDriftError(options.path);
-  return result;
-}
-
-function readBytes(
-  options: Parameters<typeof readInput>[0],
-  mtime: number,
-): AnalysisInput {
-  const start = performance.now();
-  const bytes = readFileSync(options.path);
-  options.metrics.reads += 1;
-  options.metrics.readMs += performance.now() - start;
-  const version = createHash('sha256').update(bytes).digest('hex');
-  options.metrics.hashes += 1;
-  if (inputStat(options.path)?.mtimeMs !== mtime)
-    throw new AnalysisInputDriftError(options.path);
-  return {
-    path: options.path,
-    kind: 'bytes',
-    version,
-    observedMtime: mtime,
-    verifiedThrough: Math.min(Date.now(), mtime),
-  };
-}
-
-function canTrustTimestamp(
-  previous: AnalysisInput | undefined,
-  mtime: number,
-): boolean {
-  return (
-    previous?.observedMtime !== undefined && mtime === previous.observedMtime
-  );
-}
-
-export function observedContent(options: {
+export function observedFile(options: {
   path: string;
-  text: string;
-  checkedAt: number;
+  kind: 'bytes' | 'content';
+  bytes: Buffer;
   beforeMtime: number;
+  captureTextVersions?: boolean;
   metrics: AnalysisCacheMetrics;
 }): AnalysisInput {
   const start = performance.now();
-  const version = analysisHash(options.text);
+  const { path, kind, bytes } = options;
+  const version = createHash('sha256').update(bytes).digest('hex');
   options.metrics.hashes += 1;
+  const input: AnalysisInput = { path, kind, version };
+  if (kind === 'content') options.metrics.contentHashes += 1;
+  if (kind === 'content' && options.captureTextVersions) {
+    const utf8 = analysisHash(bytes.toString('utf8'));
+    const text = typeScriptBomText(bytes);
+    input.textVersions =
+      text === undefined ? { utf8 } : { utf8, typescript: analysisHash(text) };
+    options.metrics.textVersionHashes =
+      (options.metrics.textVersionHashes ?? 0) + (text === undefined ? 1 : 2);
+  }
   options.metrics.hashMs += performance.now() - start;
-  const after = inputStat(options.path);
-  const observedMtime = after?.mtimeMs;
-  const isStable = observedMtime === options.beforeMtime;
-  return {
-    path: options.path,
-    kind: 'content',
-    version,
-    observedMtime,
-    verifiedThrough: isStable
-      ? Math.min(options.checkedAt, observedMtime!)
-      : undefined,
-    // Only manifests need old contents for the two-field change contract.
-    text: manifestText(options),
-  };
-}
-
-function manifestText(options: {
-  path: string;
-  text: string;
-}): string | undefined {
-  return options.path.endsWith('/package.json') ? options.text : undefined;
+  if (inputStat(path)?.mtimeMs !== options.beforeMtime)
+    throw new AnalysisInputDriftError(path);
+  return input;
 }
 
 function entryVersion(entry: Dirent): unknown {

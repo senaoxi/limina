@@ -180,15 +180,17 @@ export function inspectFrameworkIntent(
     virtualFiles: options.config.virtualFiles,
   };
   try {
+    const resolved = parseTypeScriptCommandLine({ parseOptions });
+    const configFiles = resolved.configClosure.map(({ filePath }) => filePath);
     const { intentHints } = resolveConfigProjection(
-      'ownership-intent',
       parseOptions,
-      undefined,
+      configFiles,
       () => {
-        const resolved = parseTypeScriptCommandLine({ parseOptions });
+        if (!parseOptions.virtualFiles?.size)
+          parseTypeScriptCommandLine({ parseOptions });
         return {
           intentHints: effectiveHints(options, resolved),
-          configFiles: resolved.configClosure.map(({ filePath }) => filePath),
+          configFiles,
         };
       },
       {

@@ -1,6 +1,5 @@
 import type { VueSourceProfile } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { ImportRecord } from './records';
 import type {
@@ -8,7 +7,10 @@ import type {
   ImportAnalysisCaches,
   ImportAnalysisMetricsRecorder,
 } from './types';
-import { collectTypeScriptSourceTextImports } from './typescript-imports';
+import {
+  collectTypeScriptSourceTextImports,
+  readTypeScriptSourceText,
+} from './typescript-imports';
 
 interface SourceProvider {
   collectImportsFromFile(
@@ -71,7 +73,7 @@ function createSourceTextReader(options: {
       metrics: options.metrics,
     });
     if (cached !== undefined) return cached;
-    const sourceText = readFileSync(filePath, 'utf8');
+    const sourceText = readTypeScriptSourceText(filePath);
     recordSourceOperation({
       filePath,
       metrics: options.metrics,

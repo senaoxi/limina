@@ -1,8 +1,10 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
-import { readAnalysisInput } from '#utils/analysis-input';
+import {
+  readAnalysisFileDigest,
+  readAnalysisInput,
+} from '#utils/analysis-input';
 import { isPlainRecord } from '#utils/values';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -128,13 +130,12 @@ export function observeVueDeclarationCandidate(
     );
   }
   for (const [file, expected] of parsed.data.reads) {
-    const read = () =>
-      readAnalysisInput(file, () => readFileSync(file, 'utf8'));
-    const content =
+    const read = () => readAnalysisFileDigest(file);
+    const digest =
       input.executionIdentity === undefined
         ? read()
         : vueExecutionInputs(input.executionIdentity).collect(read);
-    if (createHash('sha256').update(content).digest('hex') !== expected)
+    if (digest !== expected)
       throw new DeclarationObservationUnavailable(
         `Vue candidate input changed during observation: ${file}`,
       );

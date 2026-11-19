@@ -10,10 +10,12 @@ import { BoundedEvidenceIndex } from './bounded-evidence-index';
 import { hasCompleteBoundedInventory } from './bounded-inventory-validity';
 import { hasBoundObligations } from './bounded-obligation-validity';
 import { hasBoundCompilerObservations } from './bounded-observation-validity';
+import { hasBoundedQueryReceipts } from './bounded-query-receipts';
 import type {
   ImporterRecord,
   NativeContextRecord,
   ProjectRecord,
+  ResolutionRecord,
 } from './contracts';
 import { hasBoundPathSelections } from './native-path-validity';
 
@@ -24,7 +26,11 @@ An old/partial DTO cannot obtain the new producer's consumer qualification.
 export function hasValidBoundedContext(
   record: NativeContextRecord,
   importers: Record<string, ImporterRecord>,
-  binding: { project: ProjectRecord | undefined; contextId: string },
+  binding: {
+    project: ProjectRecord | undefined;
+    contextId: string;
+    queries: Record<string, ResolutionRecord>;
+  },
 ): boolean {
   return record.native === undefined
     ? record.project.admissionMode !== 'coverage-bounded'
@@ -34,10 +40,20 @@ export function hasValidBoundedContext(
 function hasQualifiedBoundedInventory(
   record: NativeContextRecord,
   importers: Record<string, ImporterRecord>,
-  binding: { project: ProjectRecord | undefined; contextId: string },
+  binding: {
+    project: ProjectRecord | undefined;
+    contextId: string;
+    queries: Record<string, ResolutionRecord>;
+  },
 ): boolean {
   const index = new BoundedEvidenceIndex(record.native!.snapshot);
   return (
+    hasBoundedQueryReceipts(
+      record,
+      binding.contextId,
+      importers,
+      binding.queries,
+    ) &&
     hasValidBoundedProof(record, index) &&
     hasBoundCompilerObservations(record, importers) &&
     [

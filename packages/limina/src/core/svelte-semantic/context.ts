@@ -1,3 +1,4 @@
+import { readAnalysisInput } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
 import { readFileSync } from 'node:fs';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
@@ -75,7 +76,9 @@ export class SvelteSemanticContext {
   ): SvelteDependencyPreparation {
     this.assertActive();
     const normalized = normalizeAbsolutePath(fileName);
-    const sourceText = readFileSync(normalized, 'utf8');
+    const sourceText = readAnalysisInput(normalized, () =>
+      readFileSync(normalized, 'utf8'),
+    );
     const cache = this.#getPreparationCache(managedOutputLookup);
     const key = preparationKey(normalized, supportInputBoundary);
     const cached = cache.get(key);

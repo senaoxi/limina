@@ -64,7 +64,10 @@ function createResolvedTarget(
   resolved: ts.ResolvedModuleFull,
   tsModule: typeof ts,
 ): ResolvedCheckerModuleName {
-  const source = getVirtualSource(resolved.resolvedFileName, tsModule.sys);
+  const source = getVirtualSource(
+    resolved.resolvedFileName,
+    observedResolutionHost(tsModule, resolved.resolvedFileName),
+  );
   return {
     isExternalLibraryImport: resolved.isExternalLibraryImport === true,
     resolvedBy: source === undefined ? 'typescript' : 'checker-source',

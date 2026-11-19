@@ -37,6 +37,7 @@ const reference = z.object({
 const binding = z.object({
   phase: z.enum(['pending', 'locked']),
   checker: text,
+  workspaceSourceBoundaryIdentity: text.optional(),
 });
 const options = z.record(text, z.json());
 const project = z.object({
@@ -81,6 +82,7 @@ export const nativeContextSchema: z.ZodType<unknown> = z
       .object({
         snapshot: nativeEvidenceSchema,
         inventory: compilerInventory,
+        queryReceipts: z.record(text, text),
         discovery: z.array(discoveryRecordSchema),
         boundaryIdentity: text,
       })

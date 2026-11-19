@@ -138,6 +138,55 @@ async function check(
   ) as AnalysisSnapshotIndex;
   return { ...profile, snapshot, path: snapshotPath };
 }
+
+async function runStandaloneGraph(
+  f: ReturnType<typeof fixture>,
+  action: 'check' | 'prepare',
+) {
+  const result = await runLimina({
+    fixtureName: 'process-cache',
+    cwd: f.root,
+    entry: { executable: process.execPath, args: [cli] },
+    args: ['graph', action, '--config', f.path(f.entry)],
+    env: { NODE_OPTIONS: '' },
+  });
+  expect(result.code, result.stdout + result.stderr).toBe(0);
+}
+
+it('restores the persistent graph seeded by standalone graph prepare', async () => {
+  const f = fixture('mjs');
+  await runStandaloneGraph(f, 'prepare');
+  const snapshotPath = artifact(f, 'index.liminainfo');
+  const snapshot = readFileSync(snapshotPath);
+  const mtime = statSync(snapshotPath).mtimeMs;
+  await runStandaloneGraph(f, 'prepare');
+  expect(readFileSync(snapshotPath)).toEqual(snapshot);
+  expect(statSync(snapshotPath).mtimeMs).toBe(mtime);
+  const restored = await runProfile(f, 'native');
+  expect(count(restored.events, 'graphHits')).toBe(1);
+  expect(count(restored.events, 'graphBuilds')).toBe(0);
+  expect(count(restored.events, 'restoredContexts')).toBeGreaterThan(0);
+});
+
+it.each(['read-only', 'disabled'] as const)(
+  'does not seed a persistent snapshot from a %s standalone graph command',
+  async (policy) => {
+    const f = fixture('mjs');
+    if (policy === 'disabled')
+      f.write(
+        f.entry,
+        "import config from './helper.mjs'; export default {...config,cache:false};",
+      );
+    await runStandaloneGraph(f, policy === 'disabled' ? 'prepare' : 'check');
+    const artifacts = existsSync(f.path('.limina'))
+      ? readdirSync(f.path('.limina'), { recursive: true }).map(String)
+      : [];
+    expect(artifacts.some((name) => name.endsWith('index.liminainfo'))).toBe(
+      false,
+    );
+  },
+);
+
 it.each([
   ['native', 'mjs'],
   ['native', 'cjs'],
@@ -652,7 +701,11 @@ it('keeps a newer snapshot when a stale forced CLI writer resumes after its comm
   const f = fixture('mjs');
   f.write(
     'wait.mjs',
-    `import {existsSync,writeFileSync} from 'node:fs';
+    `import {existsSync,utimesSync,writeFileSync} from 'node:fs';
+if(process.env.TOUCH_CACHE_CONFIG==='1') {
+  const now = new Date();
+  utimesSync('tsconfig.json',now,now);
+}
 if(process.env.PAUSE_CACHE_WRITER==='1'){
   writeFileSync('writer-ready','yes');
   await new Promise(resolve=>{const timer=setInterval(()=>{
@@ -668,6 +721,12 @@ pipelines:{probe:[
     'graph:check',${JSON.stringify({ type: 'command', command: process.execPath, args: [f.path('wait.mjs')] })},'graph:check'
   ]}};`,
   );
+  const touched = await check(f, 'native', {
+    args: ['--force'],
+    env: { TOUCH_CACHE_CONFIG: '1' },
+  });
+  expect(count(touched.events, 'graphHits')).toBe(0);
+  expect(count(touched.events, 'graphBuilds')).toBe(2);
   const seed = await check(f, 'native');
   const old = readFileSync(seed.path);
   const stale = (async () => {
@@ -688,7 +747,7 @@ pipelines:{probe:[
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     const current = await check(f, 'native', { args: ['--force'] });
-    // The second graph task restores the snapshot published before the command.
+    // The second graph task reuses the first graph after observing unchanged inputs.
     expectRebuiltGraph(current.events, 1);
     const published = readFileSync(seed.path);
     const modified = statSync(seed.path).mtimeMs;

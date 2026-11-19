@@ -2,6 +2,7 @@ import { renameSync } from 'node:fs';
 import { mkdir, rename, symlink, writeFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ANALYSIS_SCHEMA } from '../core/analysis-cache/contracts';
 import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { nativeEvidenceSchema } from '../core/analysis-cache/native-evidence-schema';
@@ -723,7 +724,7 @@ describe('compiler-owned Native Program observations', () => {
       'config-1',
     );
     expect(snapshot).toBeDefined();
-    expect(snapshot!.header.schema).toBe(13);
+    expect(snapshot!.header.schema).toBe(ANALYSIS_SCHEMA);
     const warm = new NativeAnalysisCache(
       'bounded-fixture',
       snapshot,

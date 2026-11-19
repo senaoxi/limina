@@ -1,6 +1,7 @@
 import { isBuildCapablePreset } from '#checkers';
-import { readAnalysisInput } from '#utils/analysis-input';
+import { readAnalysisFileDigest } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
+import { typeScriptBomText } from '#utils/typescript-bom';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -11,6 +12,7 @@ import {
   graphExecutionInputScope,
 } from '../analysis-cache/execution-inputs';
 import { vueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
+import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-references';
 import { observeNativeReferenceMapping } from '../typescript-semantic/reference-redirect';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
@@ -50,9 +52,6 @@ export interface ProducerBuildReceipt extends ProducerBuildInputs {
 const issued = new WeakMap<ProducerBuildReceipt, string>();
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
-function content(file: string): string {
-  return readAnalysisInput(file, () => readFileSync(file, 'utf8'));
-}
 
 export function producerSemantics(graph: PreparedTsconfigGraph): string {
   const units = graph.governedSources
@@ -61,61 +60,55 @@ export function producerSemantics(graph: PreparedTsconfigGraph): string {
     .filter((unit) => isBuildCapablePreset(unit.primaryCheckerName))
     .toArray()
     .sort((a, b) => a.configPath.localeCompare(b.configPath));
-  return hash(
-    JSON.stringify(
-      units.map((unit) => {
-        const generated = graph.sourceToDts
-          .get(unit.primaryCheckerName)
-          ?.get(unit.configPath);
-        return {
-          config: unit.configPath,
-          checker: unit.primaryCheckerName,
-          authority: unit.semanticAuthority,
-          roots: unit.ownedFileNames,
-          declarations: graph.dependencyAnalysis?.declarationContexts
-            ?.filter((decision) => decision.consumerConfig === unit.configPath)
-            .map((decision) =>
-              JSON.stringify({
-                kind: decision.kind,
-                file: decision.file.lexicalPath,
-                selection: decision.selection,
-                owners: decision.coverage.members
-                  .map((member) => member.configId)
-                  .sort((a, b) => a.localeCompare(b)),
-              }),
-            )
-            .sort((a, b) => a.localeCompare(b)),
-          generated,
-          configContent:
-            generated === undefined
-              ? null
-              : graph.generatedFiles.get(generated),
-          toolchain: unit.context.vueSemanticIdentity?.toolchain.paths,
-          outgoing: graph.dependencyEdges.filter(
-            (edge) => edge.fromConfigPath === unit.configPath,
-          ),
-        };
-      }),
-    ),
+  return nativeFingerprint(
+    units.map((unit) => {
+      const generated = graph.sourceToDts
+        .get(unit.primaryCheckerName)
+        ?.get(unit.configPath);
+      return {
+        config: unit.configPath,
+        checker: unit.primaryCheckerName,
+        authority: unit.semanticAuthority,
+        roots: unit.ownedFileNames,
+        declarations: graph.dependencyAnalysis?.declarationContexts
+          ?.filter((decision) => decision.consumerConfig === unit.configPath)
+          .map((decision) =>
+            nativeFingerprint({
+              kind: decision.kind,
+              file: decision.file.lexicalPath,
+              selection: decision.selection,
+              owners: decision.coverage.members
+                .map((member) => member.configId)
+                .sort((a, b) => a.localeCompare(b)),
+            }),
+          )
+          .sort((a, b) => a.localeCompare(b)),
+        generated,
+        configContent:
+          generated === undefined ? null : graph.generatedFiles.get(generated),
+        toolchain: unit.context.vueSemanticIdentity?.toolchain.paths,
+        outgoing: graph.dependencyEdges.filter(
+          (edge) => edge.fromConfigPath === unit.configPath,
+        ),
+      };
+    }),
   );
 }
 
 function ownershipIdentity(graph: PreparedTsconfigGraph): string {
-  return hash(
-    JSON.stringify(
-      graph.governedSources
-        .values()
-        .flatMap((units) => units.values())
-        .map((unit) => [
-          unit.configPath,
-          unit.primaryCheckerName,
-          unit.semanticAuthority,
-          unit.packageRootDir,
-          unit.ownedFileNames,
-        ])
-        .toArray()
-        .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
-    ),
+  return nativeFingerprint(
+    graph.governedSources
+      .values()
+      .flatMap((units) => units.values())
+      .map((unit) => [
+        unit.configPath,
+        unit.primaryCheckerName,
+        unit.semanticAuthority,
+        unit.packageRootDir,
+        unit.ownedFileNames,
+      ])
+      .toArray()
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
   );
 }
 
@@ -159,7 +152,7 @@ export function captureProducerBuildInputs(
     )
       continue;
     if (statSync(file, { throwIfNoEntry: false })?.isFile())
-      inputs.set(file, hash(content(file)));
+      inputs.set(file, readAnalysisFileDigest(file));
   }
   const fromRuntime = createRequire(import.meta.url);
   for (const specifier of [
@@ -168,14 +161,14 @@ export function captureProducerBuildInputs(
     'typescript/package.json',
   ]) {
     const file = fromRuntime.resolve(specifier);
-    inputs.set(file, hash(content(file)));
+    inputs.set(file, readAnalysisFileDigest(file));
   }
   const splitCompiler = path.join(
     path.dirname(fromRuntime.resolve('typescript')),
     '_tsc.js',
   );
   if (existsSync(splitCompiler))
-    inputs.set(splitCompiler, hash(content(splitCompiler)));
+    inputs.set(splitCompiler, readAnalysisFileDigest(splitCompiler));
   // Include the ownership inputs too: a later consumer relation may not recolor
   // the already admitted producer closure.
   for (const units of plan.governedSources.values())
@@ -205,7 +198,7 @@ export function captureProducerBuildInputs(
           (entry) => entry.filePath,
         ) ?? []),
       ];
-      for (const file of files) inputs.set(file, hash(content(file)));
+      for (const file of files) inputs.set(file, readAnalysisFileDigest(file));
     }
   return {
     semantics: producerSemantics(plan),
@@ -216,7 +209,7 @@ export function captureProducerBuildInputs(
 
 function assertInputs(inputs: ReadonlyMap<string, string>): void {
   for (const [file, identity] of inputs)
-    if (hash(content(file)) !== identity)
+    if (readAnalysisFileDigest(file) !== identity)
       throw new Error(`Producer build input changed: ${file}`);
 }
 
@@ -343,8 +336,12 @@ export function issueProducerBuildReceipt(
       'Producer declaration output mapping changed during build.',
     );
   const declarations = mappings.map((mapping) => {
-    const text = content(mapping.outputFile);
-    return { ...mapping, content: text, contentIdentity: hash(text) };
+    const bytes = readFileSync(mapping.outputFile);
+    return {
+      ...mapping,
+      content: typeScriptBomText(bytes) ?? bytes.toString('utf8'),
+      contentIdentity: readAnalysisFileDigest(mapping.outputFile, bytes),
+    };
   });
   assertInputs(baseline.inputs);
   const receipt: ProducerBuildReceipt = {
@@ -379,7 +376,10 @@ export function assertProducerBuildReceipt(
     throw new Error('Producer compilation semantics changed after build.');
   assertInputs(receipt.inputs);
   for (const declaration of receipt.declarations)
-    if (hash(content(declaration.outputFile)) !== declaration.contentIdentity)
+    if (
+      readAnalysisFileDigest(declaration.outputFile) !==
+      declaration.contentIdentity
+    )
       throw new Error(
         `Producer declaration changed after build: ${declaration.outputFile}`,
       );

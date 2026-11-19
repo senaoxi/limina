@@ -6,16 +6,14 @@ import { pendingDeclarationValidation } from './declaration-context-admission';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 import { createGeneratedGraphStructuredError } from './problems';
 import { pendingReferenceValidation } from './reference-validation';
-import type { GovernedSourceUnit } from './types';
+import type { GeneratedDependencyEdge, GovernedSourceUnit } from './types';
 export function createCandidateBuildPlan(
   sources: readonly GovernedSourceUnit[],
   edges: GeneratedGraphPreparationState['dependencyEdges'],
 ): CandidateBuildPlan {
   const candidate: CandidateBuildPlan = {
     configPaths: [...new Set(sources.map((source) => source.configPath))],
-    schedules: edges
-      .filter((edge) => edge.kind === 'framework-schedule')
-      .map((edge) => ({ from: edge.fromConfigPath, to: edge.toConfigPath })),
+    schedules: projectedSchedules(edges),
     references: projectedReferences(sources),
   };
   bindCompilationProjection(candidate, sources);
@@ -47,6 +45,14 @@ export function assertGeneratedGraphAdmission(options: {
       problems: [...admission.reasons],
     });
   }
+}
+
+export function projectedSchedules(
+  edges: readonly GeneratedDependencyEdge[],
+): CandidateBuildPlan['schedules'] {
+  return edges
+    .filter((edge) => edge.kind === 'framework-schedule')
+    .map((edge) => ({ from: edge.fromConfigPath, to: edge.toConfigPath }));
 }
 
 export function projectedReferences(

@@ -4,6 +4,7 @@ import type {
   VueLanguageServiceHost,
   VueProjectSemanticIdentity,
 } from '#checkers';
+import { cloneCompilerOptions } from '#utils/compiler-options';
 import path from 'node:path';
 import type ts from 'typescript';
 import {
@@ -18,6 +19,7 @@ import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-
 import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
 import { compilerPathPolicy } from '../typescript-semantic/compiler-path-key';
 import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
+import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import {
   createMeasuredProgram,
@@ -25,6 +27,7 @@ import {
   type ProgramCreationObserver,
 } from './context-lazy-state';
 import { resolveModuleNameLiteralMap } from './context-resolution';
+import { vueProjectConfigFiles } from './output-identity';
 interface SnapshotEntry {
   snapshot: ts.IScriptSnapshot;
   text: string;
@@ -33,6 +36,7 @@ interface VueScriptStore {
   language: VolarLanguage | undefined;
   snapshots: Map<string, SnapshotEntry>;
   texts: Map<string, string>;
+  analysisTrace: VueInputTrace | undefined;
 }
 const languageIdPatterns: readonly [RegExp, string][] = [
   [/\.(?:cts|mts|ts)$/iu, 'typescript'],
@@ -103,6 +107,9 @@ function syncScript(options: {
   sys: typeof ts.sys;
   tsModule: typeof ts;
 }): void {
+  // Even a snapshot already loaded by another request is an input to the
+  // current Volar resolver when it weighs a generated file candidate.
+  options.store.analysisTrace?.script(options.id);
   const text =
     options.store.texts.get(options.id) ?? options.sys.readFile(options.id);
   if (text === undefined) {
@@ -110,6 +117,7 @@ function syncScript(options: {
     return;
   }
   // Missing inputs can appear during toolchain preparation; only retain text.
+  options.store.analysisTrace?.member(options.id);
   options.store.texts.set(options.id, text);
   updateScript({ ...options, text });
 }
@@ -117,7 +125,7 @@ function syncScript(options: {
 function createProjectHost(identity: VueProjectSemanticIdentity) {
   // Volar enables non-TS extensions on these options. Keep parser identity
   // and other semantic providers isolated from that host-local mutation.
-  const options = { ...identity.options };
+  const options = cloneCompilerOptions(identity.options);
   return {
     getCompilationSettings: () => options,
     getCurrentDirectory: () => path.dirname(identity.configPath),
@@ -218,6 +226,7 @@ export class VueSemanticContext {
       language: undefined,
       snapshots: new Map(),
       texts: this.#texts,
+      analysisTrace,
     };
     this.language = identity.toolchain.languageCore.createLanguage(
       [plugin],
@@ -236,8 +245,18 @@ export class VueSemanticContext {
     this.resolveSupplementalModule =
       resolve === undefined
         ? undefined
-        : (name, importer, options, mode) =>
-            resolve(name, importer, options, undefined, undefined, mode);
+        : (name, importer, options, mode) => {
+            const result = resolve(
+              name,
+              importer,
+              options,
+              undefined,
+              undefined,
+              mode,
+            );
+            analysisTrace?.raw(result);
+            return result;
+          };
 
     this.#snapshots = store.snapshots;
     const hostResult =
@@ -251,11 +270,19 @@ export class VueSemanticContext {
     hostResult.languageServiceHost.getProjectVersion = () =>
       `${identity.generation}:${identity.id}`;
     this.languageServiceHost = hostResult.languageServiceHost;
+    analysisTrace?.moduleReplay?.wrap(this.languageServiceHost);
+    const referenceFiles = vueProjectConfigFiles(identity);
+    const referenceHost = identity.outputProjection
+      ? withVirtualResolutionFiles(
+          this.sys,
+          new Map(Object.entries(identity.outputProjection.configs)),
+        )
+      : this.sys;
     this.languageServiceHost.getParsedCommandLine = (file) =>
       parseVueConfigWithToolchain({
         configPath: file,
         extensions: identity.extensions,
-        host: this.sys,
+        host: referenceHost,
         toolchain: identity.toolchain,
       });
     const canonicalFileName = this.tsModule.createCompilerHost(
@@ -267,8 +294,14 @@ export class VueSemanticContext {
     }).key;
     this.#boundedHost = createBoundedLanguageServiceHost({
       host: this.languageServiceHost,
-      observeModule: (input) => this.compilerRequests.observe(input),
-      observeType: (input) => this.compilerRequests.observeType(input),
+      observeModule: (input) => {
+        this.compilerRequests.observe(input);
+        analysisTrace?.raw(input.result);
+      },
+      observeType: (input) => {
+        this.compilerRequests.observeType(input);
+        analysisTrace?.raw(input.result);
+      },
       observeOptions: (input) => this.compilerRequests.observeOptions(input),
       tsModule: this.tsModule,
       project: {
@@ -284,7 +317,7 @@ export class VueSemanticContext {
         fileNames: identity.fileNames,
         options: identity.options,
         projectReferences: identity.projectReferences,
-        virtualFiles: identity.virtualFiles,
+        virtualFiles: referenceFiles,
         workspaceSourceBoundary: createWorkspaceSourceBoundary([]),
       },
     });
@@ -336,11 +369,13 @@ export class VueSemanticContext {
     literals: readonly ts.StringLiteralLike[],
   ): ReturnType<typeof resolveModuleNameLiteralMap> {
     this.assertActive();
-    return resolveModuleNameLiteralMap({
+    const resolutions = resolveModuleNameLiteralMap({
       compilerOptions: this.identity.options,
       host: this.languageServiceHost,
       literals,
     });
+    for (const result of resolutions.values()) this.analysisTrace?.raw(result);
+    return resolutions;
   }
 
   dispose(): void {

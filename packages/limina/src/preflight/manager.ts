@@ -89,7 +89,7 @@ export class LiminaPreflightManager {
     });
     this.run = this.#createRun();
     registerPreflightGenerationAdvancer(this, () =>
-      this.#replaceProviderGeneration(true),
+      this.#replaceProviderGeneration({ advance: true }),
     );
   }
   #ensureCheckerRouteSnapshot(): Promise<CheckerRoutes.CheckerRouteSnapshotCollection> {
@@ -116,30 +116,36 @@ export class LiminaPreflightManager {
       this.#cache.generatedGraph !== undefined &&
       this.#producerReceipt === undefined
     )
-      this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
+      this.#replaceProviderGeneration({
+        slot: this.#cache.materializationSlot,
+      });
   }
   #refreshProviderGenerationForMaterialization(): void {
-    this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
+    this.#replaceProviderGeneration({ slot: this.#cache.materializationSlot });
   }
   #replaceProviderGeneration(
-    isAdvance: boolean,
-    slot?: PreflightGenerationCache['materializationSlot'],
-    shouldPreserveDiagnostics = true,
+    options: {
+      advance?: true;
+      slot?: PreflightGenerationCache['materializationSlot'];
+      clearDiagnostics?: true;
+      refreshReason?: 'producer-handoff';
+    } = {},
   ): void {
     this.#assertActive();
     this.#configuration.assertStable();
     this.#assertDefaultProvidersCanAdvance();
-    if (isAdvance || !shouldPreserveDiagnostics)
+    if (options.advance || options.clearDiagnostics)
       this.#frameworkInferenceAmbiguities = undefined;
     this.#disposeProviders();
-    const analysisCache = this.#refreshAnalysis();
-    if (isAdvance) {
+    this.#analysisCache?.refresh(options.refreshReason);
+    const analysisCache = this.#analysisCache?.cache;
+    if (options.advance) {
       this.#generation += 1;
       this.#producerReceipt = undefined;
       this.#svelteRouteExcluded = false;
     }
     this.#providerGeneration += 1;
-    this.#cache = new PreflightGenerationCache(this.#generation, slot);
+    this.#cache = new PreflightGenerationCache(this.#generation, options.slot);
     this.artifactNamespace = createLiminaArtifactNamespace({
       generation: this.#providerGeneration,
       rootDir: this.config.rootDir,
@@ -160,10 +166,6 @@ export class LiminaPreflightManager {
   #assertActive(): void {
     if (this.#disposed) throw new Error('Preflight manager has been disposed.');
   }
-  #refreshAnalysis() {
-    this.#analysisCache?.refresh();
-    return this.#analysisCache?.cache;
-  }
   #createRun(): AnalysisRun {
     return setup.createPreflightRun({
       generation: this.#generation,
@@ -173,14 +175,19 @@ export class LiminaPreflightManager {
       signal: this.#signal,
     });
   }
-  #retryAnalysis(): void {
-    const pending = this.#cache.generatedGraph;
-    this.#replaceProviderGeneration(
-      false,
-      this.#cache.materializationSlot,
-      false,
-    );
-    this.#cache.generatedGraph = pending;
+  #retryAnalysis(purpose: PreparedTsconfigGraph['purpose']): void {
+    const previous = this.#cache;
+    this.#replaceProviderGeneration({
+      slot: previous.materializationSlot,
+      clearDiagnostics: true,
+    });
+    if (purpose === 'complete') {
+      this.#cache.generatedGraph = previous.generatedGraph;
+    } else {
+      this.#cache.producerBuildPlan = previous.producerBuildPlan;
+      this.#cache.producerMaterializationSlot =
+        previous.producerMaterializationSlot;
+    }
   }
   async #prepareConsumerPhase(receipt: ProducerBuildReceipt): Promise<void> {
     const generation = this.run.generation;
@@ -194,7 +201,7 @@ export class LiminaPreflightManager {
       throw new Error('Consumer preparation generation changed.');
     assertProducerBuildReceipt(receipt);
     this.#producerReceipt = receipt;
-    this.#replaceProviderGeneration(false);
+    this.#replaceProviderGeneration({ refreshReason: 'producer-handoff' });
   }
   #recordSvelteRoute(hasSvelte: boolean): boolean {
     if (!hasSvelte) this.#svelteRouteExcluded = true;
@@ -313,8 +320,10 @@ export class LiminaPreflightManager {
           cache: this.#analysisCache,
           configObservation: this.#configuration,
           source: this,
-          getGraph: this.#generatedGraphProvider,
-          refresh: () => this.#retryAnalysis(),
+          getGraph: () =>
+            this.#generatedGraphProvider?.() ??
+            this.providers.buildGraph.getGraph(),
+          refresh: () => this.#retryAnalysis('complete'),
         }),
       ),
     );
@@ -345,12 +354,17 @@ export class LiminaPreflightManager {
       this.#captureInferenceDiagnostics(generation);
     }
   }
-  async ensureProducerBuildPlan(): Promise<ProducerBuildPlan> {
+  ensureProducerBuildPlan(): Promise<ProducerBuildPlan> {
     this.#refreshProducerDiscovery();
-    await this.ensureWorkspaceValidated();
     this.#cache.producerBuildPlan ??= this.#observeInferenceDiagnostics(
       this.#validateSvelteRoute(
-        this.providers.buildGraph.getProducerBuildPlan(),
+        queries.loadAnalyzedGraph({
+          cache: this.#analysisCache,
+          configObservation: this.#configuration,
+          source: this,
+          getGraph: () => this.providers.buildGraph.getProducerBuildPlan(),
+          refresh: () => this.#retryAnalysis('producer-build'),
+        }),
       ),
     );
     return this.#cache.producerBuildPlan;
@@ -397,7 +411,7 @@ export class LiminaPreflightManager {
     return ensurePreflightGraphMaterialized({
       getCurrentSlot: () => this.#cache.producerMaterializationSlot,
       refreshProviders: () => {
-        this.#replaceProviderGeneration(false);
+        this.#replaceProviderGeneration();
         this.#cache.producerMaterializationSlot = slot;
       },
       slot,

@@ -7,6 +7,7 @@ import {
 } from '#utils/analysis-input';
 import { compareCodeUnits } from '#utils/collections';
 import { configFileStamp, readStampedConfig } from '#utils/config-file-stamp';
+import ts from 'typescript';
 import { AnalysisInputDriftError, type DiscoveryRecord } from './contracts';
 import { pathBinding, PathBindingReplay } from './directory-fingerprint';
 import {
@@ -14,9 +15,13 @@ import {
   replaySynchronousDiscoveryRead,
 } from './discovery-reads';
 import { analysisHash } from './identity';
+import type { AnalysisInputs } from './inputs';
 import { isAffectedByOutput, isManagedChange } from './managed-output-reads';
 
+const systemReadFile = ts.sys.readFile;
+
 interface Observation {
+  sourceReceipt?: true;
   version: string;
   binding: string;
   input: AnalysisRead;
@@ -76,10 +81,14 @@ function requireStable(
 function readConfigObservation(
   record: ReplayRecord,
   read: () => unknown,
+  hasCurrentMtimeProof = false,
 ): Observation {
   const { key, path, descriptor } = record;
   const before = configFileStamp(path);
-  if (before !== undefined && before === record.configStamp) {
+  if (
+    hasCurrentMtimeProof ||
+    (before !== undefined && before === record.configStamp)
+  ) {
     return {
       version: record.version,
       binding: analysisHash(pathBinding(path)),
@@ -126,6 +135,51 @@ export class EpochInputReplay {
     return value;
   }
 
+  source(
+    record: Pick<AnalysisRead, 'path' | 'key' | 'descriptor'>,
+    inputs?: AnalysisInputs,
+  ): Observation | undefined {
+    const { path, key, descriptor } = record;
+    if (
+      inputs === undefined ||
+      (descriptor?.kind !== 'source-digest' &&
+        descriptor?.kind !== 'content' &&
+        descriptor?.kind !== 'typescript-content') ||
+      descriptor.path !== path ||
+      key !== JSON.stringify([descriptor.kind, path]) ||
+      (descriptor.kind === 'typescript-content' &&
+        ts.sys.readFile !== systemReadFile)
+    )
+      return undefined;
+    if (descriptor.kind === 'source-digest') {
+      const read = () => inputs.sourceDigest(path);
+      return this.#bindings.run(() =>
+        observation({ path, key, descriptor, read, value: read() }),
+      );
+    }
+    const version = inputs.sourceTextVersion(path, descriptor.kind);
+    if (version === undefined) return undefined;
+    const binding = this.#bindings.run(() => analysisHash(pathBinding(path)));
+    const read = () => replaySynchronousDiscoveryRead(descriptor);
+    return {
+      sourceReceipt: true,
+      version,
+      binding,
+      input: {
+        path,
+        key,
+        descriptor,
+        read,
+        get value() {
+          const value = read();
+          if (analysisHash(value) !== version)
+            throw new AnalysisInputDriftError(path);
+          return value;
+        },
+      },
+    };
+  }
+
   observe(input: AnalysisRead): Observation {
     const key = JSON.stringify([input.key, input.path, input.descriptor]);
     const previous = this.#observed.get(key);
@@ -139,11 +193,15 @@ export class EpochInputReplay {
     return current;
   }
 
-  read(input: AnalysisRead, version: string): Promise<Observation> {
+  read(
+    input: AnalysisRead,
+    version: string,
+    currentConfigs?: ReadonlySet<string>,
+  ): Promise<Observation> {
     const { descriptor, key: inputKey, path, configStamp } = input;
     if (descriptor?.kind === 'config-text') {
       const record = { key: inputKey, path, descriptor, version, configStamp };
-      return Promise.resolve(this.readSynchronous(record)!);
+      return Promise.resolve(this.readSynchronous(record, currentConfigs)!);
     }
     const key = JSON.stringify([input.key, input.path, input.descriptor]);
     let current = this.#reads.get(key);
@@ -154,7 +212,10 @@ export class EpochInputReplay {
     return current;
   }
 
-  readSynchronous(record: ReplayRecord): Observation | undefined {
+  readSynchronous(
+    record: ReplayRecord,
+    currentConfigs?: ReadonlySet<string>,
+  ): Observation | undefined {
     const descriptor = record.descriptor;
     if (descriptor.kind === 'glob') return undefined;
     const key = JSON.stringify([record.key, record.path, descriptor]);
@@ -163,7 +224,7 @@ export class EpochInputReplay {
     const read = () => replaySynchronousDiscoveryRead(descriptor);
     const current = this.#bindings.run(() =>
       descriptor.kind === 'config-text' && descriptor.path === record.path
-        ? readConfigObservation(record, read)
+        ? readConfigObservation(record, read, currentConfigs?.has(record.path))
         : observation({ ...record, value: read(), read }),
     );
     this.#observed.set(key, current);
@@ -175,6 +236,10 @@ Discovery and runtime observations protect this epoch independently of native re
 */
 export class EpochInputs {
   readonly #reads = new Map<string, Observation>();
+  readonly #physicalInputs?: AnalysisInputs;
+  constructor(inputs?: AnalysisInputs) {
+    this.#physicalInputs = inputs;
+  }
   #observe(input: AnalysisRead): void {
     this.#recordObservation(observation(input));
   }
@@ -187,8 +252,11 @@ export class EpochInputs {
   #validateSynchronousRecord(
     record: DiscoveryRecord,
     replay: EpochInputReplay,
+    currentConfigs?: ReadonlySet<string>,
   ): boolean {
-    const next = replay.readSynchronous(record);
+    const next =
+      replay.source(record, this.#physicalInputs) ??
+      replay.readSynchronous(record, currentConfigs);
     if (next === undefined || !isSameVersion(record, next)) return false;
     this.#recordObservation(next);
     return true;
@@ -241,6 +309,17 @@ export class EpochInputs {
       this.#reads.set(key, value);
     }
   }
+  *governedSourceInputs(): Iterable<{ path: string; version: string }> {
+    for (const { input, version } of this.#reads.values()) {
+      const { descriptor, key, path } = input;
+      if (
+        descriptor?.kind === 'source-digest' &&
+        descriptor.path === path &&
+        key === JSON.stringify([descriptor.kind, path])
+      )
+        yield { path, version };
+    }
+  }
   get paths(): ReadonlySet<string> {
     return new Set(this.#reads.values().map((value) => value.input.path));
   }
@@ -258,7 +337,11 @@ export class EpochInputs {
     replay: EpochInputReplay = new EpochInputReplay(),
   ): Promise<void> {
     for (const prior of this.#reads.values()) {
-      const current = await replay.read(prior.input, prior.version);
+      const qualified = prior.sourceReceipt
+        ? replay.source(prior.input, this.#physicalInputs)
+        : undefined;
+      const current =
+        qualified ?? (await replay.read(prior.input, prior.version));
       requireStable(prior, current, outputs);
     }
   }
@@ -302,13 +385,17 @@ export class EpochInputs {
   async validate(
     records: readonly DiscoveryRecord[],
     replay: EpochInputReplay = new EpochInputReplay(),
+    currentConfigs?: ReadonlySet<string>,
   ): Promise<boolean> {
     for (const record of records) {
       const read = () => replayDiscoveryRead(record.descriptor);
-      const next = await replay.read(
-        { ...record, value: undefined, read },
-        record.version,
-      );
+      const next =
+        replay.source(record, this.#physicalInputs) ??
+        (await replay.read(
+          { ...record, value: undefined, read },
+          record.version,
+          currentConfigs,
+        ));
       if (!isSameVersion(record, next)) return false;
       this.#recordObservation(next);
     }
@@ -317,9 +404,10 @@ export class EpochInputs {
   validateSynchronous(
     records: readonly DiscoveryRecord[],
     replay: EpochInputReplay = new EpochInputReplay(),
+    currentConfigs?: ReadonlySet<string>,
   ): boolean {
     return records.every((record) =>
-      this.#validateSynchronousRecord(record, replay),
+      this.#validateSynchronousRecord(record, replay, currentConfigs),
     );
   }
 }

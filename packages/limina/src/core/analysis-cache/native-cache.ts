@@ -24,14 +24,16 @@ import type {
   ProjectRecord,
   ResolutionRecord,
 } from './contracts';
+import { AnalysisInputDriftError } from './contracts';
 import { ReferenceContributions } from './contributions';
 import { type EpochInputReplay, EpochInputs } from './epoch-inputs';
 import { CachedGraphRecords } from './graph-records';
 import { analysisHash, nativeContextId } from './identity';
 import { type FactRequest, ImporterFacts } from './importer-facts';
 import { AnalysisInputs } from './inputs';
+import { installationObservers } from './installation-domain';
 import { subscribeInstallationDomains } from './installation-environment';
-import { restoreInstallationLockCoverage } from './installation-lock-coverage';
+import type { InstallationLockGate } from './installation-gate';
 import { AnalysisInvalidation } from './invalidation';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
 import { ResolvedConfigRecords } from './resolved-config-records';
@@ -49,6 +51,9 @@ import { VueAnalysisRecords } from './vue-records';
 import { observePreviousVueBytes } from './vue-toolchain-inputs';
 export class NativeAnalysisCache {
   readonly #fileSyntax = new Map<string, FileDependencyFacts>();
+  readonly #invalidatedSources = new Set<string>();
+  readonly #rebuiltSyntax = new Map<string, Map<string, FileDependencyFacts>>();
+  readonly #syntaxWitnesses = new Map<string, Map<string, string>>();
   readonly #syntaxProofs = new Map<string, string>();
   readonly #resolutions: ResolutionQueries;
   readonly #facts: ImporterFacts;
@@ -63,9 +68,10 @@ export class NativeAnalysisCache {
   >();
   readonly #states = new Map<string, SemanticState>();
   requiresSupplementalReassessment = false;
-  readonly epoch: EpochInputs = new EpochInputs();
+  readonly epoch: EpochInputs;
   readonly metrics: AnalysisCacheMetrics = emptyMetrics();
   readonly inputs: AnalysisInputs;
+  readonly installationGate: InstallationLockGate | undefined;
   readonly invalidation: AnalysisInvalidation;
   readonly queries: Record<string, ResolutionRecord>;
   readonly retainedQueryIds: ReadonlySet<string>;
@@ -76,6 +82,7 @@ export class NativeAnalysisCache {
   readonly contexts: Record<string, NativeContextRecord> = {};
   readonly graphs: Record<string, GraphRecord> = {};
   readonly vue: VueAnalysisRecords;
+  readonly authorities: AnalysisSnapshot['authorities'] = {};
   readonly resolvedConfigs: ResolvedConfigRecords;
   readonly identity: string;
   readonly configVersion: string | undefined;
@@ -92,11 +99,26 @@ export class NativeAnalysisCache {
     this.configModules = config.configModules;
     this.previous = config.previous;
     const state = this.previous ?? emptySnapshot(identity, this.configVersion);
+    const baselineTime = this.previous?.header.baselineTime;
+    this.inputs = new AnalysisInputs(
+      state.inputs,
+      this.metrics,
+      baselineTime === undefined
+        ? undefined
+        : { baselineTime, generation: state.header.revision },
+      config.liveConfigTimes,
+    );
+    this.epoch = new EpochInputs(this.inputs);
     this.resolvedConfigs = new ResolvedConfigRecords(
       state.resolvedConfigs,
       this.metrics,
+      (paths) => this.inputs.configCurrent(paths),
     );
-    this.inputs = new AnalysisInputs(state.inputs, this.metrics);
+    this.installationGate = config.installationGate;
+    if (this.installationGate !== undefined) {
+      this.installationGate.seed(this.inputs, this.previous !== undefined);
+      installationObservers.set(this.inputs, this.installationGate);
+    }
     subscribeInstallationDomains(state, this.inputs);
     observePreviousVueBytes(state, this.inputs);
     this.contributions = new ReferenceContributions(
@@ -105,12 +127,12 @@ export class NativeAnalysisCache {
     );
     this.inputs.validatePrevious();
     this.invalidation = new AnalysisInvalidation(this.previous, this.inputs);
-    this.#checkConsumerCoverage();
-    restoreInstallationLockCoverage(state, this.inputs);
     this.#resolutions = new ResolutionQueries({
       inputs: this.inputs,
       metrics: this.metrics,
       previous: state.queries,
+      previousReceipt: (id, key) =>
+        state.contexts[id]?.native?.queryReceipts?.[key],
       dirty: this.invalidation.resolutionDirty,
     });
     this.#facts = new ImporterFacts({
@@ -126,25 +148,6 @@ export class NativeAnalysisCache {
     this.#graphs = new CachedGraphRecords(this);
     this.vue = new VueAnalysisRecords(this);
   }
-  #checkConsumerCoverage(): void {
-    if (this.previous === undefined) return;
-    this.#checkCoverage(this.previous);
-  }
-  #checkCoverage(previous: AnalysisSnapshot): void {
-    const isIncomplete = Object.values(previous.queries).some(
-      (query) => query.coverage === 'unknown',
-    );
-    if (!isIncomplete) return;
-    const fields = Object.values(previous.inputs).filter((input) =>
-      ['imports', 'exports'].includes(input.kind),
-    );
-    const hasChanges = fields.some(
-      (input) =>
-        this.inputs.observe(input.path, input.kind).expectedVersion !==
-        input.version,
-    );
-    this.inputs.domainDirty ||= hasChanges;
-  }
   #recordProject(id: string, record: ProjectRecord): void {
     this.projects[id] = retainData(this.previous?.projects[id], record);
   }
@@ -152,17 +155,143 @@ export class NativeAnalysisCache {
     return (project.virtualFiles?.size ?? 0) === 0;
   }
 
-  readFileSyntax(file: string, text: string): FileDependencyFacts {
+  #priorSyntax(
+    project: TypeScriptSemanticProject,
+    file: string,
+  ): FileDependencyFacts | undefined {
+    const id = nativeContextId(project);
+    if (this.invalidation.contextDirty.has(id)) return undefined;
+    const facts = this.previous?.files[file];
+    if (facts === undefined) return undefined;
+    let witnesses = this.#syntaxWitnesses.get(id);
+    if (witnesses === undefined) {
+      witnesses = new Map(
+        this.previous?.contexts[id]?.native?.inventory.syntax.map((witness) => [
+          witness.file,
+          witness.fingerprint,
+        ]),
+      );
+      this.#syntaxWitnesses.set(id, witnesses);
+    }
+    return witnesses.get(file) === nativeFingerprint(facts) ? facts : undefined;
+  }
+
+  #syntaxMemo(
+    project: TypeScriptSemanticProject | undefined,
+  ): Map<string, FileDependencyFacts> {
+    if (project === undefined) return this.#fileSyntax;
+    const owner = project.sourceConfigPath ?? project.configPath;
+    if (
+      !this.#invalidatedSources.has(owner) &&
+      !this.invalidation.contextDirty.has(nativeContextId(project))
+    )
+      return this.#fileSyntax;
+    let fresh = this.#rebuiltSyntax.get(owner);
+    if (fresh === undefined) {
+      fresh = new Map<string, FileDependencyFacts>();
+      this.#rebuiltSyntax.set(owner, fresh);
+    }
+    return fresh;
+  }
+
+  observeProjectLock(configPath: string): void {
+    this.installationGate?.project(configPath);
+  }
+  invalidateSourceConfig(configPath: string): void {
+    if (this.#invalidatedSources.has(configPath)) return;
+    this.#invalidatedSources.add(configPath);
+    this.#rebuiltSyntax.delete(configPath);
+    this.vue.invalidateSource(configPath);
+    const contexts = { ...this.previous?.contexts, ...this.contexts };
+    const owners = new Set(
+      Object.entries(contexts)
+        .filter(
+          ([, { project }]) =>
+            project.configPath === configPath ||
+            project.sourceConfigPath === configPath,
+        )
+        .map(([id]) => id),
+    );
+    for (const id of owners) this.invalidation.invalidateContext(id);
+    const queries = { ...this.previous?.queries, ...this.queries };
+    const stale = new Set<string>();
+    for (const [id, query] of Object.entries(queries)) {
+      if (!owners.has(query.contextId)) continue;
+      this.invalidation.resolutionDirty.add(id);
+      this.#resolutions.evict(id);
+      stale.add(id);
+    }
+    for (const [id, record] of Object.entries(contexts)) {
+      if (!owners.has(id) && record.queryIds.every((key) => !stale.has(key)))
+        continue;
+      this.#contexts.evict(id);
+      this.#facts.prepare(id);
+      this.#captures.delete(id);
+      this.#states.delete(id);
+      this.#syntaxWitnesses.delete(id);
+      if (owners.has(id)) {
+        for (const file of Object.keys(record.sources))
+          this.#syntaxProofs.delete(file);
+      }
+      for (const importer of Object.values(record.sources)) {
+        if (importer !== null) delete this.importers[importer];
+      }
+      delete this.projects[id];
+      delete this.contexts[id];
+    }
+    for (const [key, graph] of Object.entries(this.graphs))
+      if (
+        graph.contextIds.some((id) => owners.has(id)) ||
+        graph.queryIds.some((id) => stale.has(id))
+      )
+        delete this.graphs[key];
+    for (const [id, contributions] of Object.entries(
+      this.contributions.records,
+    ))
+      if (contributions.some((value) => value.fromConfigPath === configPath))
+        delete this.contributions.records[id];
+  }
+
+  readFileSyntax(
+    file: string,
+    text: string,
+    project?: TypeScriptSemanticProject,
+  ): FileDependencyFacts {
     const version = analysisHash(text);
-    let facts = this.#fileSyntax.get(file);
+    const physicalVersion =
+      project === undefined
+        ? undefined
+        : this.inputs.observe(file, 'content').expectedVersion;
+    const memo = this.#syntaxMemo(project);
+    let facts = memo.get(file);
+    if (
+      facts === undefined &&
+      project !== undefined &&
+      memo === this.#fileSyntax
+    )
+      facts = this.#priorSyntax(project, file);
     if (
       facts?.sourceVersion !== version ||
+      facts.physicalVersion !== physicalVersion ||
       facts.compilerVersion !== ts.version
     ) {
+      if (physicalVersion !== undefined) {
+        const witnessed = this.inputs.sourceTextVersion(
+          file,
+          'typescript-content',
+        );
+        const isWitnessed =
+          witnessed === undefined
+            ? ts.sys.readFile(file) === text
+            : witnessed === version;
+        if (!isWitnessed) throw new AnalysisInputDriftError(file);
+      }
       facts = extractFileDependencyFacts(file, text, version);
-      this.#fileSyntax.set(file, facts);
+      if (physicalVersion !== undefined)
+        facts.physicalVersion = physicalVersion;
       this.increment('syntaxFactBuilds');
     } else this.increment('syntaxFactHits');
+    memo.set(file, facts);
     // Only neutral text facts cross contexts. Current Programs still own their
     // requests, resolutions and proof; no caller can mutate this private memo.
     return structuredClone(facts);
@@ -181,7 +310,7 @@ export class NativeAnalysisCache {
       return undefined;
     if (
       this.inputs.observe(file, 'content').expectedVersion !==
-      facts.sourceVersion
+      facts.physicalVersion
     )
       return undefined;
     this.increment('sourceSyntaxHits');
@@ -325,12 +454,18 @@ export class NativeAnalysisCache {
     );
   }
 
-  restoreGraphRecord(
+  graphCandidate(
     key: string,
     workspaceVersion: string,
+  ): GraphRecord | undefined {
+    return this.#graphs.candidate(key, workspaceVersion);
+  }
+  restoreGraphRecord(
+    key: string,
+    candidate: GraphRecord,
     generation = 0,
   ): Promise<GraphRecord | undefined> {
-    return this.#graphs.restore(key, workspaceVersion, generation);
+    return this.#graphs.restore(key, candidate, generation);
   }
   captureGraphRecord(
     key: string,

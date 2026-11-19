@@ -44,6 +44,9 @@ function resolveLibrary(
         (file) => file,
       ),
     );
+  const configPaths = input.cache?.authorities[input.configPath]?.closure ?? [
+    input.configPath,
+  ];
   return input.kind === 'projection' ||
     input.cache === undefined ||
     input.files?.size
@@ -51,7 +54,13 @@ function resolveLibrary(
     : input.cache.query({
         contextId: analysisHash(['library-selection', input.compiler.version]),
         file: input.configPath,
-        identity: { name, from, libReplacement: input.libReplacement },
+        identity: {
+          name,
+          from,
+          libReplacement: input.libReplacement,
+          configPaths,
+        },
+        configPaths,
         retain: true,
         host,
         resolve,

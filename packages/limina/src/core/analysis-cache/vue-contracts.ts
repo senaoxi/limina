@@ -1,5 +1,4 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
-import type ts from 'typescript';
 import type { CheckerRequestInventory } from '../../domain/analysis/declaration-governance';
 import type {
   FrameworkSemanticDependencyPreparation,
@@ -12,6 +11,7 @@ import type { VueDependencyObservation } from '../vue-semantic/dependency-observ
 import type { InputDependency } from './contracts';
 import type { DataNode } from './data-codec';
 import type { TypeEnvironmentRecord } from './installation-environment';
+import type { VUE_ANALYSIS_ADAPTER } from './vue-identity';
 
 export interface VueQueryResults {
   'request-inventory': CheckerRequestInventory;
@@ -31,22 +31,25 @@ export interface VueQuery<K extends VueQueryKind> {
   identity: VueProjectSemanticIdentity;
   kind: K;
   request: unknown;
+  fromModuleReceipt?: () => VueQueryResults[K] | undefined;
   collect: () => VueQueryResults[K] | undefined;
 }
 export interface VueQueryRecord {
   kind: VueQueryKind;
   data: DataNode;
 }
+export interface VueModuleRecord {
+  members: string[];
+  dependencies: InputDependency[];
+  result: DataNode;
+  targetOwners: string[] | null;
+}
 export interface VueContextRecord {
-  adapter: 'vue-3.2.4-v11-compiler-request-identity';
+  adapter: typeof VUE_ANALYSIS_ADAPTER;
   project: Pick<VueProjectSemanticIdentity, 'configPath' | 'projectRootDir'> & {
     declarationLoading?: VueProjectSemanticIdentity['declarationLoading'];
     extensions: string[];
-    outputProjection?: {
-      sourceConfigPath: string;
-      options: ts.CompilerOptions;
-      fileNames: string[];
-    };
+    outputProjection?: VueProjectSemanticIdentity['outputProjection'];
   };
   identity: DataNode;
   dependencies: InputDependency[];
@@ -55,5 +58,7 @@ export interface VueContextRecord {
   generated: Record<string, string>;
   queries: Record<string, VueQueryRecord>;
   queryIds: string[];
+  moduleResolutions: Record<string, VueModuleRecord>;
+  moduleContextId: string;
   complete: boolean;
 }

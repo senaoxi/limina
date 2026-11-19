@@ -8,13 +8,12 @@ import {
 import { compareCodeUnits } from '#utils/collections';
 import { toPosixPath, toRelativePath } from '#utils/path';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { retainAnalysisFailure } from './analysis-failure';
 import type { AutoScopeProject } from './auto-checker-types';
-import { applyConfigEvidence } from './checker-ownership-config-evidence';
 import { resolveOwnershipEntries } from './checker-ownership-entries';
-import { applyExplicitRequirements } from './checker-ownership-evidence';
 import {
   collectOwnershipScopes,
   createDirectSolutionReferences,
@@ -22,9 +21,11 @@ import {
   createProjectByConfigPath,
 } from './checker-ownership-graph';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
+import type { FrameworkInferenceAmbiguity } from './core-collection-run';
 import { recordCoreWork } from './core-collection-run';
 import type { FrozenSemanticProject } from './locked-semantic-project';
 import { prepareNativeSourceBaseline } from './native-source-baseline';
+import { resolveSourceConfigAuthorities } from './source-config-authorities';
 import type {
   AutoScope,
   PrepareGeneratedTsconfigGraphOptions,
@@ -32,6 +33,8 @@ import type {
 } from './types';
 
 export interface CheckerOwnershipDiscovery {
+  authoritiesComplete?: boolean;
+  ambiguities?: readonly FrameworkInferenceAmbiguity[];
   collectionInputFailure?: Error;
   collectionProblems?: string[];
   sourceConfigCoverage?: SourceConfigCoverageIndex;
@@ -114,7 +117,8 @@ function createExplicitOwnerByEntryPath(options: {
 }
 
 export async function discoverCheckerOwnership(options: {
-  restoredSourceCoverage?: SourceConfigCoverageIndex;
+  cache?: NativeAnalysisCache;
+  restoreOnly?: boolean;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
@@ -146,20 +150,33 @@ export async function discoverCheckerOwnership(options: {
     projectConfigCache: options.projectConfigCache,
   });
   const projectByConfigPath = createProjectByConfigPath(scopes);
-  const baseline =
-    options.restoredSourceCoverage === undefined
-      ? prepareNativeSourceBaseline({
-          ...options,
-          entries: activeEntryPaths,
-          discoveredProjects: projectByConfigPath,
-        })
-      : undefined;
-  const sourceCoverage =
-    options.restoredSourceCoverage ?? baseline?.coverageIndexes[0];
+  const cache = options.cache ?? options.projectDependencyCaches?.analysisCache;
+  for (const project of projectByConfigPath.values()) {
+    cache?.observeProjectLock(project.configPath);
+    cache?.inputs.observeConfig(project.configClosure, project.virtualFiles);
+  }
   const plan = createOwnershipPlan({
     directReferences: createDirectSolutionReferences(scopes),
     projectByConfigPath,
   });
+  const authorities = resolveSourceConfigAuthorities({
+    restoreOnly: options.restoreOnly,
+    cache,
+    config: options.config,
+    namedSelections,
+    plan,
+    projects: projectByConfigPath,
+    scopes,
+  });
+  collectionProblems.push(...authorities.problems);
+  const baseline = options.restoreOnly
+    ? undefined
+    : prepareNativeSourceBaseline({
+        ...options,
+        entries: activeEntryPaths,
+        discoveredProjects: projectByConfigPath,
+      });
+  const sourceCoverage = baseline?.coverageIndexes[0];
   const enumerations = sourceCoverage?.configurations ?? [];
   for (const enumeration of enumerations) {
     if (
@@ -177,21 +194,6 @@ export async function discoverCheckerOwnership(options: {
   const managedEntryPaths = activeEntryPaths.filter(
     (entryPath) =>
       plan.typeConfigs.has(entryPath) || plan.solutions.has(entryPath),
-  );
-  collectionProblems.push(
-    ...namedSelections.flatMap((selection) =>
-      applyExplicitRequirements({
-        config: options.config,
-        explicitOwnerByEntryPath: new Map(
-          selection.selection.effectiveEntryPaths.map((entry) => [
-            entry,
-            selection.checker.name,
-          ]),
-        ),
-        plan,
-      }),
-    ),
-    ...applyConfigEvidence({ config: options.config, plan, scopes }),
   );
   registerCoreWork(options.projectDependencyCaches, projectByConfigPath);
   if (options.projectDependencyCaches !== undefined) {
@@ -234,6 +236,8 @@ export async function discoverCheckerOwnership(options: {
     }
   }
   return {
+    authoritiesComplete: authorities.complete,
+    ambiguities: authorities.ambiguities,
     collectionInputFailure: inputFailures.values().next().value,
     collectionProblems,
     sourceConfigCoverage: sourceCoverage,

@@ -25,6 +25,7 @@ export interface FileDependencyFacts {
   compilerVersion: string;
   filePath: string;
   sourceVersion: string;
+  physicalVersion?: string;
   externalModule: boolean;
   declaration: boolean;
   containsJsx: boolean;

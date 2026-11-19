@@ -1,4 +1,3 @@
-import ts from 'typescript';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import { captureBoundedContext } from '../analysis-cache/bounded-context-capture';
 import { EpochInputs } from '../analysis-cache/epoch-inputs';
@@ -24,17 +23,19 @@ export function createNativeDependencyContext(
   const { input, context } = reads.collect(() =>
     collectBoundedContext(project, cache, metrics),
   );
-  if (cache?.supports(input.project, ts))
+  if (cache && input.queries)
     captureBoundedContext({
       project: input.project,
       context,
       cache,
+      queryIds: input.queries.ids,
       discovery: reads.snapshot(),
     });
   retainContextExecutionInputs(
     context.nativeEvidence,
     project.configPath,
     reads,
+    cache && input.queries && { cache, ids: input.queries.ids },
   );
   return context;
 }
@@ -45,10 +46,10 @@ function collectBoundedContext(
   metrics: AnalysisMetricsRecorder | undefined,
 ) {
   const input = {
-    ...nativeContextInputs({
-      ...project,
-      admissionMode: 'coverage-bounded',
-    }),
+    ...nativeContextInputs(
+      { ...project, admissionMode: 'coverage-bounded' },
+      cache,
+    ),
     metrics,
   };
   try {
@@ -68,7 +69,8 @@ function collectBoundedContext(
         undefined,
         cache === undefined
           ? undefined
-          : (file, text) => cache.readFileSyntax(file, text),
+          : (file, text) =>
+              cache.readFileSyntax(file, text, input.queries && input.project),
       ),
     };
   } catch (error) {

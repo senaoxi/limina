@@ -1,4 +1,3 @@
-import ts from 'typescript';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import { captureBoundedContext } from '../analysis-cache/bounded-context-capture';
 import { EpochInputs } from '../analysis-cache/epoch-inputs';
@@ -18,10 +17,10 @@ export function createNativeSemanticContext(
   const reads = new EpochInputs();
   const result = reads.collect(() => {
     const input = {
-      ...nativeContextInputs({
-        ...project,
-        admissionMode: 'coverage-bounded',
-      }),
+      ...nativeContextInputs(
+        { ...project, admissionMode: 'coverage-bounded' },
+        cache,
+      ),
       metrics,
     };
     cache?.recordProgram();
@@ -31,15 +30,17 @@ export function createNativeSemanticContext(
         input,
         cache === undefined
           ? undefined
-          : (file, text) => cache.readFileSyntax(file, text),
+          : (file, text) =>
+              cache.readFileSyntax(file, text, input.queries && input.project),
       ),
     };
   });
-  if (cache?.supports(result.input.project, ts))
+  if (cache && result.input.queries)
     captureBoundedContext({
       context: result.context,
       project: result.input.project,
       cache,
+      queryIds: result.input.queries.ids,
       discovery: reads.snapshot(),
     });
   return result.context;

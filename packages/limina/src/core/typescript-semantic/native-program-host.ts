@@ -1,6 +1,10 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'node:path';
 import type ts from 'typescript';
+import type {
+  BoundedResolutionQueries,
+  CallbackRequest,
+} from './bounded-resolution-queries';
 import type { TypeScriptSemanticProject } from './contracts';
 import {
   type NativeHostFailures,
@@ -24,12 +28,24 @@ import {
 import { withVirtualResolutionFiles } from './virtual-resolution-host';
 
 interface HostInputs extends NativeHostFailures {
+  queries?: BoundedResolutionQueries;
   loads: NativeProgramLoads;
   project: TypeScriptSemanticProject;
   compiler: typeof ts;
   frontier: NativeProgramFrontier;
   requests: NativeProgramRequests;
   configReads: string[];
+}
+
+function resolveCallback<T>(
+  input: HostInputs,
+  host: ts.CompilerHost,
+  request: CallbackRequest,
+  resolve: (host: ts.ModuleResolutionHost) => T,
+): T {
+  return input.queries === undefined
+    ? resolve(host)
+    : input.queries.resolve(host, request, input.frontier, resolve);
 }
 
 function attachModuleResolver(
@@ -47,15 +63,29 @@ function attachModuleResolver(
         literal,
         sourceOptions,
       );
-      const raw = resolveModuleWithOrigin(
-        input.compiler,
-        literal.text,
-        from,
-        effective,
+      const raw = resolveCallback(
+        input,
         host,
-        cache,
-        redirect,
-        mode,
+        {
+          channel: 'module',
+          file: from,
+          name: literal.text,
+          mode,
+          effective,
+          redirect,
+          source,
+        },
+        (observed) =>
+          resolveModuleWithOrigin(
+            input.compiler,
+            literal.text,
+            from,
+            effective,
+            observed,
+            input.queries ? undefined : cache,
+            redirect,
+            mode,
+          ),
       );
       if (!sourceOptions.noResolve)
         input.loads.resolved(raw.resolvedModule?.resolvedFileName);
@@ -93,15 +123,31 @@ function attachTypeResolver(host: ts.CompilerHost, input: HostInputs): void {
         source,
         redirect?.commandLine.options ?? effective,
       );
-      const raw = resolveTypeWithOrigin(
-        input.compiler,
-        typeof reference === 'string' ? reference : reference.fileName,
-        from,
-        effective,
+      const name =
+        typeof reference === 'string' ? reference : reference.fileName;
+      const raw = resolveCallback(
+        input,
         host,
-        redirect,
-        undefined,
-        mode,
+        {
+          channel: 'type',
+          file: from,
+          name,
+          mode,
+          effective,
+          redirect,
+          source,
+        },
+        (observed) =>
+          resolveTypeWithOrigin(
+            input.compiler,
+            name,
+            from,
+            effective,
+            observed,
+            redirect,
+            undefined,
+            mode,
+          ),
       );
       grantType(input, raw);
       input.requests.typeCallback({
@@ -141,12 +187,24 @@ function attachLibraryResolver(
 ): void {
   (host as NativeLibraryHost).resolveLibrary = (...arguments_) => {
     const [name, from, effective, libraryFileName] = arguments_;
-    const raw = nativeCompilerApi(input.compiler).resolveLibrary(
-      name,
-      from,
-      effective,
+    const raw = resolveCallback(
+      input,
       host,
-      cache,
+      { channel: 'library', file: from, name, effective },
+      (observed) =>
+        nativeCompilerApi(input.compiler).resolveLibrary(
+          name,
+          from,
+          effective,
+          observed,
+          input.queries
+            ? input.compiler.createModuleResolutionCache(
+                path.dirname(from),
+                host.getCanonicalFileName,
+                effective,
+              )
+            : cache,
+        ),
     );
     grantLibrary(input, { effective, libraryFileName }, raw);
     input.requests.record({

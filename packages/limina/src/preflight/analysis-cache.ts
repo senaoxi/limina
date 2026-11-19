@@ -46,6 +46,7 @@ export class AnalysisCacheController {
     this.#configVersion = effectiveConfigVersion(config);
     this.#store = new AnalysisCacheStore({
       namespace,
+      governanceRoot: config.rootDir,
       identity: analysisCacheIdentity(config, this.#tools.identity),
       configPath: config.configPath,
       configVersion: this.#configVersion,
@@ -62,6 +63,7 @@ export class AnalysisCacheController {
       {
         configVersion: this.#configVersion,
         configModules: this.#configuration.snapshot(),
+        installationGate: this.#store.installationGate,
       },
     );
     if (this.#configVersion === undefined)
@@ -79,6 +81,7 @@ export class AnalysisCacheController {
       throw new Error('Analysis epoch was replaced before completion.');
     this.assertConfigurationStable();
     await this.cache.epoch.assertStable();
+    this.cache.installationGate?.assertStable();
     this.cache.inputs.assertStable();
     this.#analyzed = true;
     return result;
@@ -128,15 +131,20 @@ export class AnalysisCacheController {
     for (const [kind, value] of Object.entries(this.cache.metrics))
       this.#completedMetrics[kind] = this.#totalMetric(kind, value);
   }
-  #refreshedCache(): NativeAnalysisCache {
+  #refreshedCache(reason?: 'producer-handoff'): NativeAnalysisCache {
     // A provider refresh may reuse validated in-memory data, but cannot renew
     // the physical publication baseline of a writer that already analyzed.
     const candidate = this.#analyzed
-      ? this.cache.snapshot()
+      ? this.#store.refresh(this.cache, reason)
       : this.#store.read({ restore: !this.#force });
     return new NativeAnalysisCache(this.#store.identity, candidate, {
       configVersion: this.#configVersion,
       configModules: this.#configuration.snapshot(),
+      installationGate: this.#store.installationGate,
+      liveConfigTimes:
+        candidate !== undefined && candidate.header.baselineTime === undefined
+          ? this.cache.inputs.configTimes()
+          : undefined,
     });
   }
   #reportConfigMetrics(metrics: AnalysisMetricsRecorder): void {
@@ -144,10 +152,10 @@ export class AnalysisCacheController {
       recordCacheMetric(metrics, `config-modules-${kind}`, value);
   }
 
-  refresh(): void {
+  refresh(reason?: 'producer-handoff'): void {
     this.assertConfigurationStable();
     this.#completeMetrics();
-    this.cache = this.#refreshedCache();
+    this.cache = this.#refreshedCache(reason);
     this.#analyzed = false;
   }
 
@@ -179,6 +187,7 @@ export class AnalysisCacheController {
     if (!this.#analyzed) return;
     if (!this.#canPublish) {
       await this.cache.epoch.assertStable();
+      this.cache.installationGate?.assertStable();
       this.cache.inputs.assertStable();
       this.#reportMetrics();
       return;

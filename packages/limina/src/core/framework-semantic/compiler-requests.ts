@@ -54,6 +54,10 @@ export class FrameworkCompilerRequests {
     Map<string, ts.ResolvedModuleWithFailedLookupLocations>
   >();
   #files = new WeakMap<ts.SourceFile, FrameworkCompilerRequest[]>();
+  #byOccurrence = new WeakMap<
+    ts.SourceFile,
+    Map<string, FrameworkCompilerRequest[]>
+  >();
   readonly typeResolutions: FrameworkTypeResolution[] = [];
   readonly moduleResolutions: Resolution[] = [];
   readonly optionsBySource: Map<ts.SourceFile, ts.CompilerOptions> = new Map();
@@ -77,6 +81,7 @@ export class FrameworkCompilerRequests {
     this.moduleResolutions.length = 0;
     this.#raw = new WeakMap();
     this.#files = new WeakMap();
+    this.#byOccurrence = new WeakMap();
   }
   observeType(input: FrameworkTypeResolution): void {
     this.typeResolutions.push(input);
@@ -95,6 +100,28 @@ export class FrameworkCompilerRequests {
     raw.set(key(input.source, input.literal, mode), input.result);
     this.#raw.set(input.source, raw);
   }
+  matching(
+    program: ts.Program,
+    record: ImportRecord,
+  ): readonly FrameworkCompilerRequest[] {
+    const id = record.compilerRequest;
+    if (id === undefined || id.contextConfig !== this.configPath) return [];
+    const source = program.getSourceFile(id.fileName);
+    if (
+      source === undefined ||
+      normalizeAbsolutePath(source.fileName) !== id.fileName
+    )
+      return [];
+    let entries = this.#byOccurrence.get(source);
+    if (entries === undefined) {
+      entries = Map.groupBy(this.collect(program, source), (request) =>
+        occurrenceId(request.record.specifier, request.record.compilerRequest!),
+      );
+      this.#byOccurrence.set(source, entries);
+    }
+    return entries.get(occurrenceId(record.specifier, id)) ?? [];
+  }
+
   collect(
     program: ts.Program,
     source: ts.SourceFile,
@@ -176,22 +203,16 @@ function reusedResolution(
   return result?.resolvedModule === undefined ? undefined : result;
 }
 
-export function isMatchingFrameworkCompilerRequest(
-  request: FrameworkCompilerRequest,
-  record: ImportRecord,
-): boolean {
-  const identity = record.compilerRequest;
-  const actual = request.record.compilerRequest;
-  return (
-    identity !== undefined &&
-    actual !== undefined &&
-    record.specifier === request.record.specifier &&
-    identity.contextConfig === actual.contextConfig &&
-    identity.fileName === actual.fileName &&
-    identity.role === actual.role &&
-    identity.mode === actual.mode &&
-    identity.occurrence === actual.occurrence &&
-    identity.start === actual.start &&
-    identity.end === actual.end
-  );
+function occurrenceId(
+  specifier: string,
+  id: NonNullable<ImportRecord['compilerRequest']>,
+): string {
+  return JSON.stringify([
+    specifier,
+    id.role,
+    id.mode,
+    id.occurrence,
+    id.start,
+    id.end,
+  ]);
 }

@@ -6,6 +6,7 @@ import type {
 import type { EpochInputs } from './epoch-inputs';
 import { EpochInputReplay } from './epoch-inputs';
 import type { NativeAnalysisCache } from './native-cache';
+import { bindResolutionExecutionInputs } from './resolution-execution-inputs';
 
 interface ContextReads {
   configPath: string;
@@ -45,8 +46,12 @@ export function retainContextExecutionInputs(
   snapshot: NativeEvidenceSnapshot | undefined,
   configPath: string,
   inputs: EpochInputs,
+  queries?: { cache: NativeAnalysisCache; ids: Iterable<string> },
 ): void {
-  if (snapshot !== undefined) contexts.set(snapshot, { configPath, inputs });
+  if (snapshot === undefined) return;
+  if (queries !== undefined)
+    bindResolutionExecutionInputs(inputs, queries.cache, queries.ids);
+  contexts.set(snapshot, { configPath, inputs });
 }
 export function retainGraphExecutionInputs(
   graph: PreparedTsconfigGraph,
@@ -148,32 +153,29 @@ async function validateSelected(
 ): Promise<void> {
   for (const input of inputs) await input.assertStable(except, replay);
 }
-export async function bindRestoredGraphExecutionInputs(
+export function hasBoundRestoredGraphExecutionInputs(
   graph: PreparedTsconfigGraph,
   cache: NativeAnalysisCache,
-): Promise<void> {
+): boolean {
+  const contexts = new Map(
+    Object.values(cache.contexts).map((record) => [
+      contextIdentity(record),
+      record,
+    ]),
+  );
+  for (const { snapshot } of nativeEntries(graph)) {
+    if (!hasLockedContext(snapshot)) continue;
+    const record = contexts.get(snapshot.contexts[0]?.id);
+    if (record?.native === undefined) return false;
+    const inputs = cache.epoch.selectRecords(record.native.discovery);
+    if (inputs === undefined) return false;
+    retainContextExecutionInputs(snapshot, record.project.configPath, inputs, {
+      cache,
+      ids: record.queryIds,
+    });
+  }
   retainGraphExecutionInputs(graph, cache.epoch);
-  const evidence = nativeEntries(graph).filter((entry) =>
-    hasLockedContext(entry.snapshot),
-  );
-  for (const entry of evidence) await bindContextInputs(entry.snapshot, cache);
-}
-async function bindContextInputs(
-  snapshot: NonNullable<
-    DependencyAnalysisResult['nativeEvidence']
-  >[number]['snapshot'],
-  cache: NativeAnalysisCache,
-): Promise<void> {
-  const record = Object.values(cache.contexts).find(
-    (item) => contextIdentity(item) === snapshot.contexts[0]?.id,
-  );
-  const native = requireNativeRecord(record);
-  const inputs = cache.epoch.selectRecords(native.discovery);
-  if (inputs === undefined)
-    throw new Error(
-      'Execution context inputs were not qualified during restore.',
-    );
-  retainContextExecutionInputs(snapshot, record!.project.configPath, inputs);
+  return true;
 }
 function contextIdentity(
   record: NativeAnalysisCache['contexts'][string],
@@ -183,15 +185,6 @@ function contextIdentity(
 
 function nativeEntries(graph: PreparedTsconfigGraph) {
   return graph.dependencyAnalysis?.nativeEvidence ?? [];
-}
-
-function requireNativeRecord(
-  record: NativeAnalysisCache['contexts'][string] | undefined,
-) {
-  const native = record?.native;
-  if (native === undefined)
-    throw new Error('Missing validated context inputs.');
-  return native;
 }
 
 function requireUnrelatedSnapshot(

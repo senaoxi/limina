@@ -1,6 +1,12 @@
-import { writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { readFile, utimes, writeFile } from 'node:fs/promises';
+import ts from 'typescript';
 import { expect, it } from 'vitest';
-import { assertProducerBuildReceipt } from '../core/build-graph/producer-receipt';
+import {
+  assertProducerBuildReceipt,
+  issueProducerBuildReceipt,
+} from '../core/build-graph/producer-receipt';
+import { createSvelteDeclarationBindings } from '../core/build-graph/svelte-consumer-view';
 import { LiminaPreflightManager } from '../preflight';
 import { ensureBuilt } from '../typecheck/checker/build-runner';
 import { createDefaultRunner } from '../typecheck/targets';
@@ -42,7 +48,16 @@ it('revokes a real producer receipt after external declaration or in-memory plan
     scope: { checkers: { tsc: { include: ['tsconfig.json'] } } },
   });
   const preflight = new LiminaPreflightManager({ config });
+  const input = fixture.path('node_modules/external-value/index.d.ts');
+  const prefix = Buffer.from('export type Value = number; // ');
+  const bytes = (marker: number) =>
+    Buffer.concat([prefix, Buffer.from([marker])]);
+  const replace = async (file: string, value: Buffer) => {
+    await writeFile(file, value);
+    await utimes(file, 1000, 1000);
+  };
   try {
+    await replace(input, bytes(0x80));
     const built = await ensureBuilt({
       config,
       preflight,
@@ -53,15 +68,40 @@ it('revokes a real producer receipt after external declaration or in-memory plan
     const receipt = built.receipt!;
     expect(receipt).toBeDefined();
     expect(() => assertProducerBuildReceipt(receipt)).not.toThrow();
-    await writeFile(
-      fixture.path('node_modules/external-value/index.d.ts'),
-      'export type Value = string;',
-    );
+    await replace(input, bytes(0x80));
+    expect(() => assertProducerBuildReceipt(receipt)).not.toThrow();
+    await replace(input, bytes(0x81));
     expect(() => assertProducerBuildReceipt(receipt)).toThrow(/input changed/u);
-    await writeFile(
-      fixture.path('node_modules/external-value/index.d.ts'),
-      'export type Value = number;',
+    await writeFile(input, 'export type Value = string;');
+    expect(() => assertProducerBuildReceipt(receipt)).toThrow(/input changed/u);
+    await replace(input, bytes(0x80));
+    expect(() => assertProducerBuildReceipt(receipt)).not.toThrow();
+
+    const { outputFile } = receipt.declarations[0]!;
+    const originalOutput = await readFile(outputFile);
+    const outputText = `${ts.sys.readFile(outputFile)}// 裿\n`;
+    const toBigEndian = (text: string) =>
+      Buffer.from(`\u{FEFF}${text}`, 'utf16le').swap16();
+    const encoded = toBigEndian(outputText);
+    await replace(outputFile, encoded);
+    const reissued = issueProducerBuildReceipt(
+      receipt.plan,
+      receipt,
+      fixture.root,
     );
+    const bindings = createSvelteDeclarationBindings(reissued, fixture.root);
+    const [mirror] = bindings.values();
+    expect(mirror!.content).toBe(ts.sys.readFile(outputFile));
+    expect(mirror!.contentIdentity).toBe(
+      createHash('sha256').update(encoded).digest('hex'),
+    );
+    await replace(outputFile, encoded);
+    expect(() => assertProducerBuildReceipt(reissued)).not.toThrow();
+    await replace(outputFile, toBigEndian(outputText.replace('裿', '觿')));
+    expect(() => assertProducerBuildReceipt(reissued)).toThrow(
+      /Producer declaration changed after build/u,
+    );
+    await replace(outputFile, originalOutput);
     expect(() => assertProducerBuildReceipt(receipt)).not.toThrow();
     const generated = receipt.plan.sourceToDts
       .get('tsc')!
@@ -76,6 +116,30 @@ it('revokes a real producer receipt after external declaration or in-memory plan
     );
     files.set(generated, original);
     expect(() => assertProducerBuildReceipt(receipt)).not.toThrow();
+
+    const units = receipt.plan.governedSources.get('tsc')!;
+    const configPath = fixture.path('tsconfig.json');
+    const unit = units.get(configPath)!;
+    const { kind, family, source } = unit.semanticAuthority;
+    const projected = new Map(units).set(configPath, {
+      ...unit,
+      semanticAuthority: { kind, family, source },
+    });
+    const finalGraph = {
+      ...receipt.plan,
+      governedSources: new Map(receipt.plan.governedSources).set(
+        'tsc',
+        projected,
+      ),
+    };
+    expect(() => assertProducerBuildReceipt(receipt, finalGraph)).not.toThrow();
+    projected.set(configPath, {
+      ...unit,
+      semanticAuthority: { kind, family, source: 'baseline' },
+    });
+    expect(() => assertProducerBuildReceipt(receipt, finalGraph)).toThrow(
+      /frozen checker ownership or semantic authority/u,
+    );
   } finally {
     preflight.dispose();
     await fixture.cleanup();

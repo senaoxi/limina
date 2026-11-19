@@ -98,6 +98,12 @@ function addProjectConfigFindings(state: ProofRunState): void {
     graphProjectPaths: new Set(state.entryProjectPaths),
     projectContextsByPath: projectContexts,
     projectConfigCache: state.preflight.providers.projectConfigs,
+    typeInputProjections: new Map(
+      state.generatedGraph.typeInputProjections?.map((receipt) => [
+        receipt.generatedConfig,
+        receipt,
+      ]),
+    ),
     virtualFiles: state.generatedGraph.generatedFiles,
     workspaceLookup: state.workspaceLookup,
   });

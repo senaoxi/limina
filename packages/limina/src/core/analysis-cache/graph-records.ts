@@ -47,6 +47,17 @@ function isCurrentGraph(
     record.dependencies.every((dependency) => cache.inputs.valid(dependency)),
   ].every(Boolean);
 }
+function graphConfigPaths(cache: NativeAnalysisCache, record: GraphRecord) {
+  return new Set(
+    record.dependencies.flatMap(({ inputId }) => {
+      const input = cache.inputs.records[inputId];
+      return input?.kind === 'config-mtime' &&
+        cache.inputs.configCurrent([input.path])
+        ? [input.path]
+        : [];
+    }),
+  );
+}
 function isAllowed(allowed: Map<string, boolean>, file: string): boolean {
   return allowed.get(normalizeAbsolutePath(file)) ?? false;
 }
@@ -95,6 +106,11 @@ function isReusableGraphQuery(
   ].every(Boolean);
 }
 function didRestoreGraphQuery(cache: NativeAnalysisCache, id: string): boolean {
+  if (
+    cache.queries[id] === undefined &&
+    cache.invalidation.resolutionDirty.has(id)
+  )
+    return false;
   const query = previousGraphQuery(cache, id);
   if (!isReusableGraphQuery(cache, query)) return false;
   cache.restoreQuery(id, query);
@@ -108,32 +124,6 @@ export class CachedGraphRecords {
   readonly #cache: NativeAnalysisCache;
   constructor(cache: NativeAnalysisCache) {
     this.#cache = cache;
-  }
-  async #restoreQualified(
-    key: string,
-    record: GraphRecord,
-    generation: number,
-  ): Promise<GraphRecord | undefined> {
-    const replay = this.#cache.resolvedConfigs.replay();
-    if (
-      !(await this.#cache.epoch.validate(record.discovery, replay)) ||
-      record.vueContextIds.some(
-        (id) => !this.#cache.vue.restore(id, replay, generation),
-      ) ||
-      record.contextIds.some(
-        (id) => !canRestoreContext(this.#cache, id, replay),
-      ) ||
-      record.queryIds.some((id) => !didRestoreGraphQuery(this.#cache, id)) ||
-      this.#cache.inputs.domainDirty
-    )
-      return undefined;
-    this.#cache.inputs.consume(record.dependencies);
-    this.#cache.contributions.restoreValidatedGraph();
-    const discovery = this.#cache.epoch.refreshConfigStamps(record.discovery);
-    const current =
-      discovery === record.discovery ? record : { ...record, discovery };
-    this.#cache.graphs[key] = current;
-    return current;
   }
   #captureData(
     key: string,
@@ -162,16 +152,41 @@ export class CachedGraphRecords {
     const previous = availableSnapshotGraphs(this.#cache.previous)?.[key];
     this.#cache.graphs[key] = isSameData(previous, record) ? previous! : record;
   }
+  candidate(key: string, workspaceVersion: string): GraphRecord | undefined {
+    const old = previousGraph(this.#cache, key);
+    return old && isCurrentGraph(this.#cache, old, workspaceVersion)
+      ? old
+      : undefined;
+  }
   async restore(
     key: string,
-    workspaceVersion: string,
-    generation = 0,
+    record: GraphRecord,
+    generation: number,
   ): Promise<GraphRecord | undefined> {
-    const old = previousGraph(this.#cache, key);
-    if (old === undefined) return undefined;
-    return isCurrentGraph(this.#cache, old, workspaceVersion)
-      ? this.#restoreQualified(key, old, generation)
-      : undefined;
+    const replay = this.#cache.resolvedConfigs.replay();
+    if (
+      !(await this.#cache.epoch.validate(
+        record.discovery,
+        replay,
+        graphConfigPaths(this.#cache, record),
+      )) ||
+      record.vueContextIds.some(
+        (id) => !this.#cache.vue.restore(id, replay, generation),
+      ) ||
+      record.contextIds.some(
+        (id) => !canRestoreContext(this.#cache, id, replay),
+      ) ||
+      record.queryIds.some((id) => !didRestoreGraphQuery(this.#cache, id)) ||
+      this.#cache.inputs.domainDirty
+    )
+      return undefined;
+    this.#cache.inputs.consume(record.dependencies);
+    this.#cache.contributions.restoreValidatedGraph();
+    const discovery = this.#cache.epoch.refreshConfigStamps(record.discovery);
+    const current =
+      discovery === record.discovery ? record : { ...record, discovery };
+    this.#cache.graphs[key] = current;
+    return current;
   }
   capture(key: string, options: Capture): void {
     const discovery = this.#cache.epoch.snapshot();

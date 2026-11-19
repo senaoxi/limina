@@ -11,7 +11,7 @@ import {
   materializeAstroSemanticProject,
   resolveAstroSemanticToolchain,
 } from '#checkers';
-import { readAnalysisInput } from '#utils/analysis-input';
+import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
 import type { GovernanceRootBase } from '#utils/workspace-root';
 import type ts from 'typescript';
@@ -140,6 +140,16 @@ export class AstroSemanticContext {
     if (text === undefined) {
       this.#deleteScript(id, fileName);
       return;
+    }
+    if (/\.(?:svelte|vue)$/u.test(fileName)) {
+      // Astro resolves the editor integration relative to this physical component,
+      // outside the Compiler host. Its package lookups have no cross-process proof.
+      observeAnalysisRead({
+        key: JSON.stringify(['astro-editor-integration', fileName]),
+        path: fileName,
+        value: true,
+        read: () => true,
+      });
     }
     if (this.#hasCurrentSnapshot(fileName, text)) return;
     const snapshot = this.toolchain.tsModule.ScriptSnapshot.fromString(text);

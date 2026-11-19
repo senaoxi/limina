@@ -1,5 +1,6 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import type { AnalysisRead } from '#utils/analysis-input';
+import { configFileStamp, readStampedConfig } from '#utils/config-file-stamp';
 import ts from 'typescript';
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
 import {
@@ -7,12 +8,10 @@ import {
   AnalysisInputDriftError,
   type InputDependency,
 } from './contracts';
-import { PathBindingReplay } from './directory-fingerprint';
 import { EpochInputReplay, EpochInputs } from './epoch-inputs';
 import { analysisHash } from './identity';
-import { readInput } from './input-state';
+import { inputStat, isRegularFile, readInput } from './input-state';
 import type { AnalysisInputs } from './inputs';
-import { manifestField } from './manifest-input';
 import type { VueInputTrace } from './vue-inputs';
 
 const scopes = new WeakMap<VueProjectSemanticIdentity, EpochInputs>();
@@ -87,14 +86,6 @@ export function shareVueExecutionInputs(
   scopes.set(purpose, currentScope(source));
 }
 
-function versionRead(input: AnalysisInput, inputs: AnalysisInputs): string {
-  const options = { path: input.path, metrics: inputs.metrics };
-  return input.kind === 'imports' || input.kind === 'exports'
-    ? manifestField(readInput({ ...options, kind: 'content' }), input.kind)
-        .version
-    : readInput({ ...options, kind: input.kind }).version;
-}
-
 function dependencyRead(
   input: AnalysisInput,
   inputs: AnalysisInputs,
@@ -107,8 +98,44 @@ function dependencyRead(
         ? ts.sys.getDirectories(input.path)
         : [],
     );
-  // Re-read against the authenticated record, without memoized .valid() or mtime reuse.
-  return { value: input.version, read: () => versionRead(input, inputs) };
+  if (input.kind === 'config-mtime' || input.kind === 'affecting-mtime') {
+    const value = inputs.observedMtime(input.path);
+    return {
+      value,
+      read: () => {
+        const stat = inputStat(input.path);
+        return isRegularFile(stat) ? stat.mtimeMs : undefined;
+      },
+    };
+  }
+  const { metrics } = inputs;
+  const { path, kind, version } = input;
+  const read = () => readInput({ path, kind, metrics }).version;
+  return {
+    value: version,
+    read: kind === 'content' ? readStampedContent(input, inputs, read) : read,
+  };
+}
+
+function readStampedContent(
+  input: AnalysisInput,
+  inputs: AnalysisInputs,
+  read: () => string,
+): () => string {
+  let stamp = input.contentStamp;
+  return () => {
+    const before = configFileStamp(input.path);
+    if (before !== undefined && before === stamp) {
+      const { metrics } = inputs;
+      metrics.executionContentStampHits =
+        (metrics.executionContentStampHits ?? 0) + 1;
+      return input.version;
+    }
+    const { value, configStamp } = readStampedConfig(input.path, read, before);
+    if (before !== configStamp) throw new AnalysisInputDriftError(input.path);
+    if (value === input.version) stamp = configStamp;
+    return value;
+  };
 }
 
 function structuralRead(
@@ -138,12 +165,13 @@ export function bindVueExecutionInputs(
   replay: EpochInputReplay = new EpochInputReplay(),
 ): void {
   const scope = currentScope(identity);
-  // Reuse ancestor bindings only during this synchronous receipt-binding batch.
-  // Execution admission still replays these inputs in a fresh validation scope.
-  new PathBindingReplay().run(() => {
-    for (const dependency of dependencies)
-      scope.bind(dependencyObservation(inputs, dependency), replay);
-  });
+  for (const dependency of dependencies) {
+    scope.bind(dependencyObservation(inputs, dependency), replay);
+    const input = inputs.records[dependency.inputId];
+    if (input.kind !== 'content') continue;
+    const binding = inputs.observe(input.path, 'binding');
+    scope.bind(dependencyObservation(inputs, binding), replay);
+  }
 }
 function dependencyObservation(
   inputs: AnalysisInputs,

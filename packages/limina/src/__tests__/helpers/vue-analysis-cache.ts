@@ -111,7 +111,7 @@ import {VueSemanticContext} from ${JSON.stringify(url('core/vue-semantic/context
 import {createCheckerTarget} from ${JSON.stringify(url('typecheck/targets'))};
 import {ExecutionAdmission} from ${JSON.stringify(url('typecheck/admission/execution-admission'))};
 import {executeAuthorizedTypecheck} from ${JSON.stringify(url('typecheck/checker/typecheck-execution'))};
-import {writeFileSync} from 'node:fs';
+import {statSync,utimesSync,writeFileSync} from 'node:fs';
 const descriptor=Object.getOwnPropertyDescriptor(VueSemanticContext.prototype,'program');
 const seen=new WeakSet();let vuePrograms=0;
 Object.defineProperty(VueSemanticContext.prototype,'program',{...descriptor,get(){const program=descriptor.get.call(this);if(!seen.has(program)){seen.add(program);vuePrograms++;}return program;}});
@@ -131,7 +131,9 @@ try {
     const admission=new ExecutionAdmission(manager,graph,[target]);let starts=0;
     const run=()=>executeAuthorizedTypecheck({admission:admission},target,()=>{starts++;return {configPath:target.configPath,status:0};});
     const before=(await run()).status;
+    const times=options.executionDrift.restoreMtime?statSync(options.executionDrift.path):undefined;
     writeFileSync(options.executionDrift.path,options.executionDrift.content);
+    if(times)utimesSync(options.executionDrift.path,times.atime,times.mtime);
     execution={before,after:(await run()).status,starts};
   }
   const identities=[...graph.governedSources.values()].flatMap(units=>[...units.values()]).flatMap(unit=>unit.context.vueSemanticIdentity ? [{generation:unit.context.vueSemanticIdentity.generation,hasRuntime:typeof unit.context.vueSemanticIdentity.toolchain.tsModule.createProgram==='function'}] : []);
@@ -144,7 +146,11 @@ try {
       cache?: boolean | 'read-only';
       force?: boolean;
       refresh?: boolean;
-      executionDrift?: { path: string; content: string };
+      executionDrift?: {
+        path: string;
+        content: string;
+        restoreMtime?: boolean;
+      };
     } = {},
   ): VueCacheRun => {
     const output = execFileSync(

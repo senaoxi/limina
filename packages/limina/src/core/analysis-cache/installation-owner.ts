@@ -37,6 +37,24 @@ function installedManager(options: OwnerOptions, root: string): unknown {
 function hasWorkspace(options: OwnerOptions, root: string): boolean {
   return hasFile(options, root, 'pnpm-workspace.yaml');
 }
+export function projectInstallationRoot(
+  governance: string,
+  configPath: string,
+  inputs: AnalysisInputs,
+): string {
+  let root = path.dirname(configPath);
+  while (root !== governance && path.dirname(root) !== root) {
+    const options: OwnerOptions = { root, inputs, dependencies: [] };
+    if (
+      hasOwnLock(options, root) ||
+      hasWorkspace(options, root) ||
+      installedManager(options, root) !== undefined
+    )
+      return root;
+    root = path.dirname(root);
+  }
+  return governance;
+}
 function hasForeignManager(options: OwnerOptions): boolean {
   const text = readInstallationText(
     path.join(options.root, 'package.json'),
@@ -49,8 +67,7 @@ function hasForeignManager(options: OwnerOptions): boolean {
 }
 
 // A member's node_modules container is not an independent installation. Only
-// an observed pnpm workspace installation may claim it; lock coverage for the
-// member itself is checked by installationBindings/validateInstallationLock.
+// an observed pnpm workspace installation may claim it.
 export function installationOwner(options: OwnerOptions): string {
   return hasLocalBoundary(options) ? options.root : ancestorOwner(options);
 }

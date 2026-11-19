@@ -1596,6 +1596,34 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
+  it.each([{ types: undefined }, { types: ['*'] }])(
+    'accepts the generated projection of automatic type directives for $types',
+    async ({ types }) => {
+      const fixture = await createFixture(
+        createPassingFiles({
+          'packages/pkg/tsconfig.json': stringifyConfig({
+            compilerOptions: {
+              lib: ['ES2023'],
+              module: 'ESNext',
+              moduleResolution: 'bundler',
+              strict: true,
+              types,
+              typeRoots: ['./node_modules/@types'],
+            },
+            files: ['src/index.ts'],
+          }),
+          'packages/pkg/node_modules/@types/example/index.d.ts':
+            'declare const ambientValue: 7;',
+        }),
+      );
+      try {
+        await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it.each(['/repo', 'C:/repo'])(
     'compares source-anchored types without changing named types at %s',
     async (rootDirectory) => {
@@ -1637,6 +1665,44 @@ describe('runProofCheck dts config semantics', () => {
       }
     },
   );
+
+  it('reports changed declaration types even when a prior projection exists for the same configs', async () => {
+    const fixture = await createFixture(createPassingFiles());
+    const preflight = new LiminaPreflightManager({ config: fixture.config });
+    try {
+      const graph = await preflight.ensureGeneratedGraph();
+      const receipt = graph.typeInputProjections!.find((entry) =>
+        entry.generatedConfig.endsWith('.dts.json'),
+      )!;
+      const findings: ProofFinding[] = [];
+      addDtsConfigSemanticFindings({
+        config: fixture.config,
+        localConfigPath: receipt.sourceConfig,
+        localConfig: { fileNames: [], options: receipt.sourceOptions },
+        dtsConfigPath: receipt.generatedConfig,
+        dtsConfig: {
+          fileNames: [],
+          options: {
+            ...receipt.generatedOptions,
+            types: ['new-ambient-package'],
+          },
+        },
+        typeInputProjection: receipt,
+        findings,
+        workspaceLookup: await preflight.ensureWorkspaceLookupIndex(),
+      });
+      expect(findings.map((finding) => finding.facts)).toContainEqual(
+        expect.objectContaining({
+          kind: 'declaration-option-parity',
+          optionName: 'types',
+          actual: ['new-ambient-package'],
+        }),
+      );
+    } finally {
+      preflight.dispose();
+      await fixture.cleanup();
+    }
+  });
 
   it('ignores inert dts compiler option drift from the local typecheck config', async () => {
     const fixture = await createFixture(

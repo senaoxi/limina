@@ -188,6 +188,15 @@ function createDependencyEdgeManifest(
     : { ...base, kind: edge.kind };
 }
 
+export function createManifestDependencyEdges(
+  dependencyEdges: readonly GeneratedDependencyEdge[],
+  rootDirectory: string,
+): GeneratedTsconfigGraphManifest['dependencyEdges'] {
+  return [...dependencyEdges]
+    .sort(compareDependencyEdges)
+    .map((edge) => createDependencyEdgeManifest(edge, rootDirectory));
+}
+
 function optionalString(value: string | null | undefined): string {
   return value ?? '';
 }
@@ -295,8 +304,9 @@ export function createManifest(options: {
       governedSourcesByChecker: options.governedSourcesByChecker,
       rootDir: options.rootDir,
     }),
-    dependencyEdges: [...options.dependencyEdges]
-      .sort(compareDependencyEdges)
-      .map((edge) => createDependencyEdgeManifest(edge, options.rootDir)),
+    dependencyEdges: createManifestDependencyEdges(
+      options.dependencyEdges,
+      options.rootDir,
+    ),
   };
 }

@@ -3,6 +3,7 @@ import { summarizeCompilationObligation } from '../../domain/analysis/native-obl
 import { analysisHash, nativeContextId } from '../analysis-cache/identity';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { createTypeScriptDependencyContext } from '../typescript-semantic';
+import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
@@ -84,8 +85,8 @@ function baseReceipt(
     generatedConfig: project.outputConfigPath,
     sourceTarget: project.options.target ?? null,
     outputTarget: output.options.target ?? null,
-    optionsVersion: analysisHash(output.options),
-    roots: [...project.fileNames],
+    optionsVersion: analysisHash(effectiveCompilerOptions(output.options)),
+    roots: [...output.fileNames],
     contextId: null,
     covered: [],
   };
@@ -229,6 +230,7 @@ function isValidContext(
 export function isValidOutputProjection(
   receipt: OutputProjectionReceipt,
   cache: NativeAnalysisCache,
+  files: ReadonlyMap<string, string>,
 ): boolean {
   if (
     ![
@@ -237,14 +239,15 @@ export function isValidOutputProjection(
     ].every(Boolean)
   )
     return false;
-  return isValidProjectionContext(receipt, cache);
+  return isValidProjectionContext(receipt, cache, files);
 }
 function isValidProjectionContext(
   receipt: OutputProjectionReceipt,
   cache: NativeAnalysisCache,
+  files: ReadonlyMap<string, string>,
 ): boolean {
   if (receipt.vueContextId !== undefined)
-    return isValidVueContext(receipt, cache, receipt.vueContextId);
+    return isValidVueContext(receipt, cache, receipt.vueContextId, files);
   return receipt.contextId === null
     ? receipt.sourceTarget === receipt.outputTarget
     : isValidContext(receipt, cache, receipt.contextId);
@@ -253,13 +256,18 @@ function isValidVueContext(
   receipt: OutputProjectionReceipt,
   cache: NativeAnalysisCache,
   id: string,
+  files: ReadonlyMap<string, string>,
 ): boolean {
   const identity = cache.vue.identity(id, 0);
   if (identity === undefined) return false;
   return [
     identity.configPath === receipt.generatedConfig,
-    identity.outputSourceConfigPath === receipt.sourceConfig,
-    analysisHash(identity.options) === receipt.optionsVersion,
+    identity.outputProjection?.sourceConfigPath === receipt.sourceConfig,
+    Object.entries(identity.outputProjection?.configs ?? {}).every(
+      ([file, content]) => files.get(file) === content,
+    ),
+    analysisHash(effectiveCompilerOptions(identity.options)) ===
+      receipt.optionsVersion,
     analysisHash(identity.fileNames) === analysisHash(receipt.roots),
   ].every(Boolean);
 }

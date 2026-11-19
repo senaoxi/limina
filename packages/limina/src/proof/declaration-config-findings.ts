@@ -7,6 +7,7 @@ import type { GovernedSourceUnit } from '#core/build-graph/runner';
 import { toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import type { TypeInputProjectionReceipt } from '../core/build-graph/type-input-projection';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
   getProofCompanionConfigPath,
@@ -165,6 +166,7 @@ function validateManagedDeclarationConfig(options: {
   governedSource?: GovernedSourceUnit;
   projectContext?: CheckerProjectParseContext;
   projectConfigCache?: CheckerProjectConfigCache;
+  typeInputProjection?: TypeInputProjectionReceipt;
   virtualFiles: ReadonlyMap<string, string>;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
@@ -235,6 +237,7 @@ function validateManagedDeclarationConfig(options: {
       options: localConfig.options,
     },
     localConfigPath: expectedSourcePath,
+    typeInputProjection: options.typeInputProjection,
     workspaceLookup: options.workspaceLookup,
   });
 }
@@ -247,6 +250,7 @@ export function addDtsConfigFindings(options: {
   dtsConfigPaths: string[];
   projectContextsByPath: Map<string, CheckerProjectParseContext>;
   projectConfigCache?: CheckerProjectConfigCache;
+  typeInputProjections: ReadonlyMap<string, TypeInputProjectionReceipt>;
   virtualFiles: ReadonlyMap<string, string>;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
@@ -268,6 +272,7 @@ export function addDtsConfigFindings(options: {
       governedSource: options.governedSources.get(configPath),
       projectContext: options.projectContextsByPath.get(configPath),
       projectConfigCache: options.projectConfigCache,
+      typeInputProjection: options.typeInputProjections.get(configPath),
       virtualFiles: options.virtualFiles,
       workspaceLookup: options.workspaceLookup,
     });

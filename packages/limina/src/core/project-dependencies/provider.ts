@@ -1,3 +1,4 @@
+import { isNativeTypeScriptProjectInput } from '#checkers';
 import { PathBindingReplay } from '../analysis-cache/directory-fingerprint';
 import { collectDeclarationCompilationEvidence } from '../declaration-governance/evidence';
 import { managedOutputLookupIdentity } from '../import-graph/managed-output-provider';
@@ -19,6 +20,7 @@ import type {
   ProjectDependencyRequest,
 } from './contracts';
 import { collectionReferenceInputs } from './declaration-projection';
+import { getWorkspaceSourceBoundarySnapshotIdentity } from './identity';
 import { retainNativeObservation } from './native-evidence-retention';
 import { collectProjectDependencyFile } from './preparation';
 import { collectSupportContributions } from './support-contributions';
@@ -65,16 +67,18 @@ function readCachedCollection(
   caches: NonNullable<ProjectDependencyRequest['caches']>,
   key: string,
 ): ProjectDependencyCollection | undefined {
-  const records =
-    caches.analysisCache === undefined
-      ? caches.projectDependencyCache
-      : collectionReplays.get(caches);
-  const cached = records?.get(key);
+  const cached = collectionMemo(caches)?.get(key);
   if (cached !== undefined)
     caches.analysisCache?.increment('collectionReplayHits');
   return cached === undefined
     ? undefined
     : cloneProjectDependencyCollection(cached);
+}
+
+function collectionMemo(caches: ProjectDependencyCaches) {
+  return caches.analysisCache === undefined
+    ? caches.projectDependencyCache
+    : collectionReplays.get(caches);
 }
 
 function cacheCollection(options: {
@@ -94,9 +98,10 @@ function cacheCollection(options: {
     return;
   const caches = options.request.caches;
   if (caches === undefined) return;
-  const retained = cloneProjectDependencyCollection(options.collection);
-  caches.projectDependencyCache.set(options.cacheKey, retained);
-  collectionReplays.get(caches)?.set(options.cacheKey, retained);
+  collectionMemo(caches)?.set(
+    options.cacheKey,
+    cloneProjectDependencyCollection(options.collection),
+  );
 }
 
 function deduplicateFailures(collection: ProjectDependencyCollection): void {
@@ -122,9 +127,17 @@ function restoreCollectionContext(
   );
 }
 function collectionBinding(request: ProjectDependencyRequest) {
+  const { context } = request;
+  const family = context.semanticAuthority.family;
   return {
     phase: 'locked' as const,
-    checker: request.context.analysisChecker ?? 'tsc',
+    checker: context.analysisChecker ?? 'tsc',
+    ...((family === 'astro' || family === 'svelte') && {
+      workspaceSourceBoundaryIdentity:
+        getWorkspaceSourceBoundarySnapshotIdentity(
+          context.workspaceSourceBoundary,
+        ),
+    }),
   };
 }
 function collectionProject(request: ProjectDependencyRequest) {
@@ -338,9 +351,14 @@ function canPersistCollection(
   request: ProjectDependencyRequest,
 ): boolean {
   const family = request.context.semanticAuthority.family;
+  if (family === 'vue')
+    return cache.vue.expect(request.context.vueSemanticIdentity);
+  // Native context capture filters component roots. Each framework still
+  // collects its own mappings, declaration observations and generated inputs.
   return (
     family === 'typescript' ||
-    (family === 'vue' && cache.vue.expect(request.context.vueSemanticIdentity))
+    ((request.context.virtualFiles?.size ?? 0) === 0 &&
+      request.context.fileNames.some(isNativeTypeScriptProjectInput))
   );
 }
 function coldCollection(

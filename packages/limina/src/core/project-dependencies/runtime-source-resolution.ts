@@ -1,12 +1,14 @@
 import { resolveCheckerSourceModuleName } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
 import { classifyImportRuntimeEvidence } from '../import-analysis/runtime-evidence';
 import type { CanonicalImportResolutionEvidence } from '../import-analysis/types';
-import { getSourceFileKind } from '../import-analysis/typescript-imports';
+import {
+  getSourceFileKind,
+  readTypeScriptSourceText,
+} from '../import-analysis/typescript-imports';
 import {
   findImportRecordLiteral,
   isModuleImportRecord,
@@ -58,7 +60,9 @@ export class RuntimeSourceResolver {
   }
 
   #text(file: string): string {
-    return this.#project.virtualFiles?.get(file) ?? readFileSync(file, 'utf8');
+    return (
+      this.#project.virtualFiles?.get(file) ?? readTypeScriptSourceText(file)
+    );
   }
 
   #mode(record: ImportRecord): ts.ResolutionMode {

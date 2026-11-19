@@ -219,7 +219,8 @@ async function restorePreparedGraph(
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<GeneratedTsconfigGraphResult | undefined> {
   const cache = options.projectDependencyCaches?.analysisCache;
-  if (cache === undefined) return undefined;
+  if (cache === undefined || options.producerBuildReceipt !== undefined)
+    return undefined;
   return restoreGeneratedGraph({
     cache,
     config,

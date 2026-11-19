@@ -12,7 +12,10 @@ import {
 } from '../project-dependencies/runner';
 import type { TypeScriptSemanticProject } from '../typescript-semantic';
 import { VueSemanticContextManager } from '../vue-semantic/context';
-import { createVueOutputIdentity } from '../vue-semantic/output-identity';
+import {
+  createVueOutputIdentity,
+  vueProjectConfigFiles,
+} from '../vue-semantic/output-identity';
 import type { SourceProject } from './types';
 
 function disposeImportAnalysis(context: ImportAnalysisContext): void {
@@ -39,6 +42,10 @@ export function collectVueOutputDependencies(options: {
       `Vue output projection has no source identity: ${project.configPath}`,
     );
   const identity = createVueOutputIdentity(source, output);
+  if (identity === undefined)
+    throw new Error(
+      `Cannot bind staged Vue output references: ${output.configPath}`,
+    );
   const contexts = new VueSemanticContextManager(options.metrics, cache);
   const importAnalysis = createImportAnalysisContext({
     vueSemanticContexts: contexts,
@@ -55,7 +62,9 @@ export function collectVueOutputDependencies(options: {
         configPath: output.configPath,
         resolverConfigPath: output.configPath,
         compilerOptions: output.options,
-        references: [],
+        fileNames: output.fileNames,
+        references: output.projectReferences ?? [],
+        virtualFiles: vueProjectConfigFiles(identity),
         vueSemanticIdentity: identity,
       },
       caches: createProjectDependencyCaches(cache, options.metrics),

@@ -1,3 +1,4 @@
+import { captureFrameworkExecutionReceipt } from '../analysis-cache/framework-execution-inputs';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { vueContextId } from '../analysis-cache/vue-identity';
 import type {
@@ -7,71 +8,68 @@ import type {
 } from './analysis-cache-schema';
 import type { GovernedSourceUnit } from './types';
 
-function storeUnit(unit: GovernedSourceUnit): StoredGovernedSource {
+function mapGovernedSources<Input, Output>(
+  sources: Map<string, Map<string, Input>>,
+  transform: (unit: Input) => Output | undefined,
+): Map<string, Map<string, Output>> | undefined {
+  const mapped = new Map<string, Map<string, Output>>();
+  for (const [checker, units] of sources) {
+    const group = new Map<string, Output>();
+    for (const [file, unit] of units) {
+      const value = transform(unit);
+      if (value === undefined) return undefined;
+      group.set(file, value);
+    }
+    mapped.set(checker, group);
+  }
+  return mapped;
+}
+
+function storeUnit(unit: GovernedSourceUnit): StoredGovernedSource | undefined {
   const { vueSemanticIdentity, ...context } = unit.context;
-  return {
+  const stored = {
     ...unit,
-    context:
-      vueSemanticIdentity === undefined
-        ? context
-        : {
-            ...context,
-            vueContextId: vueContextId(vueSemanticIdentity),
-          },
+    astroSemanticProject: undefined,
+    svelteSemanticProject: undefined,
+    context: vueSemanticIdentity
+      ? { ...context, vueContextId: vueContextId(vueSemanticIdentity) }
+      : context,
   };
-}
-
-export function storeGraphContexts(data: CachedGraphData): StoredGraphData {
-  return {
-    ...data,
-    governedSources: new Map(
-      [...data.governedSources].map(([checker, units]) => [
-        checker,
-        new Map([...units].map(([file, unit]) => [file, storeUnit(unit)])),
-      ]),
-    ),
-  };
-}
-
-function restoreUnit(options: {
-  cache: NativeAnalysisCache;
-  allowed: ReadonlySet<string>;
-  generation: number;
-  unit: StoredGovernedSource;
-}): GovernedSourceUnit | undefined {
-  const { unit } = options;
-  const id = unit.context.vueContextId;
-  return id === undefined
-    ? restoreNativeUnit(unit)
-    : restoreVueUnit(options, id);
-}
-function restoreNativeUnit(
-  unit: StoredGovernedSource,
-): GovernedSourceUnit | undefined {
-  return unit.semanticAuthority.family === 'vue'
+  if (unit.frameworkCapabilities.length === 0) return stored;
+  const receipt = captureFrameworkExecutionReceipt(unit);
+  return receipt === undefined
     ? undefined
-    : { ...unit, context: unit.context };
+    : { ...stored, frameworkExecutionInputs: receipt };
 }
-function restoreVueUnit(
-  options: Parameters<typeof restoreUnit>[0],
-  id: string,
-): GovernedSourceUnit | undefined {
-  return options.allowed.has(id) ? bindVueUnit(options, id) : undefined;
+
+export function storeGraphContexts(
+  data: CachedGraphData,
+): StoredGraphData | undefined {
+  const governedSources = mapGovernedSources(data.governedSources, storeUnit);
+  return governedSources === undefined
+    ? undefined
+    : { ...data, governedSources };
 }
-function bindVueUnit(
-  options: Parameters<typeof restoreUnit>[0],
-  id: string,
+
+function restoreUnit(
+  unit: StoredGovernedSource,
+  cache: NativeAnalysisCache,
+  allowed: ReadonlySet<string>,
+  generation: number,
 ): GovernedSourceUnit | undefined {
-  const { unit, cache } = options;
-  const context = { ...unit.context };
-  delete context.vueContextId;
-  const identity = cache.vue.identity(id, options.generation);
-  return identity?.configPath === unit.configPath
-    ? {
-        ...unit,
-        context: { ...context, vueSemanticIdentity: identity },
-      }
-    : undefined;
+  const { vueContextId, ...context } = unit.context;
+  const restored = { ...unit, context };
+  delete restored.frameworkExecutionInputs;
+  if (vueContextId !== undefined) {
+    if (!allowed.has(vueContextId)) return undefined;
+    const identity = cache.vue.identity(vueContextId, generation);
+    if (identity?.configPath !== unit.configPath) return undefined;
+    return {
+      ...restored,
+      context: { ...context, vueSemanticIdentity: identity },
+    };
+  }
+  return unit.semanticAuthority.family === 'vue' ? undefined : restored;
 }
 
 export function restoreGraphContexts(options: {
@@ -80,25 +78,12 @@ export function restoreGraphContexts(options: {
   contextIds: readonly string[];
   generation: number;
 }): CachedGraphData | undefined {
-  const governedSources: CachedGraphData['governedSources'] = new Map();
   const allowed = new Set(options.contextIds);
-  for (const [checker, units] of options.data.governedSources) {
-    const restored = restoreUnits({ ...options, allowed }, units);
-    if (restored === undefined) return undefined;
-    governedSources.set(checker, restored);
-  }
-  return { ...options.data, governedSources };
-}
-
-function restoreUnits(
-  options: Omit<Parameters<typeof restoreUnit>[0], 'unit'>,
-  units: Map<string, StoredGovernedSource>,
-): Map<string, GovernedSourceUnit> | undefined {
-  const restored = new Map<string, GovernedSourceUnit>();
-  for (const [file, unit] of units) {
-    const current = restoreUnit({ ...options, unit });
-    if (current === undefined) return undefined;
-    restored.set(file, current);
-  }
-  return restored;
+  const governedSources = mapGovernedSources(
+    options.data.governedSources,
+    (unit) => restoreUnit(unit, options.cache, allowed, options.generation),
+  );
+  return governedSources === undefined
+    ? undefined
+    : { ...options.data, governedSources };
 }

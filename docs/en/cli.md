@@ -157,6 +157,8 @@ pnpm exec limina graph export --view source --output graph.json
 
 `graph prepare` validates inputs and generates the project graph and checker entries under `.limina`. It does not run the full `graph check` or invoke the compiler. Managed builds and typechecks automatically materialize the files they need; run it separately to inspect or refresh files on disk. `graph check`, `source check`, and `proof check` calculate the graph in memory without materializing checker configs.
 
+With analysis caching enabled, a successful `graph prepare` can save a validated analysis snapshot for later invocations. `graph check` can read an existing snapshot and leaves its persistent state unchanged.
+
 `graph check` checks whether the generated graph is consistent with source import relationships. It covers project references, source graph routing, reference completeness, graph rules, workspace package dependency declarations, and some resolution boundaries. Typical issues include missing project references for source imports, extra project references, missing dependency declarations for cross-package project references, graph-rule denials, and workspace imports that cannot resolve or whose targets are not in the generated graph.
 
 `graph export` outputs a package-level dependency graph as `JSON`. `--view` can be `all`, `source`, or `artifact`; the default is `all`. Without `--output`, it writes to stdout. With `--output <path>`, it writes to a file, resolving a relative path from the current working directory. It creates missing parent directories and overwrites an existing file at that path.

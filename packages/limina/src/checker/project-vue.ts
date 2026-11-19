@@ -1,3 +1,4 @@
+import { cloneCompilerOptions } from '#utils/compiler-options';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import type ts from 'typescript';
 import { createFormatHost } from './project-base';
@@ -100,7 +101,8 @@ export function parseVueProjectConfig(
     fileNames: result.parsed.fileNames
       .map(normalizeAbsolutePath)
       .sort((left, right) => Number(left > right) - Number(left < right)),
-    options: { ...result.parsed.options },
+    options: cloneCompilerOptions(result.parsed.options),
+    projectReferences: result.parsed.projectReferences,
     vueSemanticIdentity: result.identity,
   };
 }

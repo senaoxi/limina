@@ -49,6 +49,7 @@ export interface ParsedCheckerProjectConfig {
   fileNames: string[];
   options: ts.CompilerOptions;
   vueSemanticIdentity?: VueProjectSemanticIdentity;
+  projectReferences?: readonly ts.ProjectReference[];
 }
 
 export interface CheckerProjectParseContext {

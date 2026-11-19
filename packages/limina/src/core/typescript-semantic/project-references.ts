@@ -1,6 +1,7 @@
 import {
   observeAnalysisRead,
   readAnalysisInput,
+  readTypeScriptConfigInput,
   typeScriptDirectoryDescriptor,
 } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
@@ -12,6 +13,7 @@ function createParseConfigHost(
 ): ts.ParseConfigFileHost {
   return {
     fileExists: (fileName) =>
+      virtualFiles?.has(normalizeAbsolutePath(fileName)) ||
       readAnalysisInput(
         fileName,
         () => tsModule.sys.fileExists(fileName),
@@ -35,10 +37,8 @@ function createParseConfigHost(
     },
     readFile: (fileName) =>
       virtualFiles?.get(normalizeAbsolutePath(fileName)) ??
-      readAnalysisInput(
-        fileName,
-        () => tsModule.sys.readFile(fileName),
-        'typescript-content',
+      readTypeScriptConfigInput(fileName, () =>
+        tsModule.sys.readFile(fileName),
       ),
     useCaseSensitiveFileNames: tsModule.sys.useCaseSensitiveFileNames,
   };
@@ -46,6 +46,7 @@ function createParseConfigHost(
 
 export function parseTypeScriptProjectConfig(options: {
   configPath: string;
+  extraFileExtensions?: readonly ts.FileExtensionInfo[];
   tsModule: typeof ts;
   virtualFiles?: ReadonlyMap<string, string>;
 }): ts.ParsedCommandLine | undefined {
@@ -53,6 +54,9 @@ export function parseTypeScriptProjectConfig(options: {
     options.configPath,
     undefined,
     createParseConfigHost(options.tsModule, options.virtualFiles),
+    undefined,
+    undefined,
+    options.extraFileExtensions,
   );
 }
 

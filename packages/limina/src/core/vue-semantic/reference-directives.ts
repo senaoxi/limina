@@ -53,7 +53,7 @@ function typeTarget(
   record: ImportRecord,
   mode: ts.ResolutionMode,
 ): ResolvedCheckerModuleName | null {
-  const target = resolveTypeWithOrigin(
+  const result = resolveTypeWithOrigin(
     context.tsModule,
     record.specifier,
     record.filePath,
@@ -62,7 +62,9 @@ function typeTarget(
     undefined,
     undefined,
     mode,
-  ).resolvedTypeReferenceDirective;
+  );
+  context.analysisTrace?.raw(result);
+  const target = result.resolvedTypeReferenceDirective;
   return target?.resolvedFileName === undefined
     ? null
     : {

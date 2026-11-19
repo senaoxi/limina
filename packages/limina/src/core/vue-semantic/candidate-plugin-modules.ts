@@ -90,12 +90,31 @@ if (input.pluginRequests.length) {
       }
     },
     load(url, context, next) {
+      const file = url.startsWith('file:') ? fileURLToPath(url) : undefined;
+      const stamp = file === undefined ? undefined : fileStamp(file);
       const result = next(url, context);
-      if (url.startsWith('file:') && result.source != null)
-        pluginContents.set(url, crypto.createHash('sha256').update(result.source).digest('hex'));
+      if (file !== undefined && result.source != null) {
+        const source = result.source;
+        const bytes = source instanceof ArrayBuffer ? Buffer.from(source) : source;
+        pluginContents.set(url, ArrayBuffer.isView(bytes)
+          ? digestBytes(bytes)
+          : { stamp, textDigest: digestBytes(Buffer.from(source)) });
+      }
       return result;
     },
   });
+}
+function recordPluginRead(url, content) {
+  const file = fileURLToPath(url);
+  if (typeof content === 'string') {
+    recordRead(file, content);
+    return;
+  }
+  const bytes = read(file);
+  if (content.stamp === undefined || content.stamp !== fileStamp(file) ||
+      content.textDigest !== digestBytes(Buffer.from(bytes.toString('utf8'))))
+    throw new Error('Cannot qualify Vue plugin source: ' + url);
+  recordRead(file, digestBytes(bytes));
 }
 function pluginResolutions() {
   if (input.expectPlugin && !pluginRoots.size) throw new Error('Cannot observe Vue plugin module resolution.');
@@ -107,8 +126,8 @@ function pluginResolutions() {
   const reachable = new Set(pluginRoots);
   for (const key of reachable) {
     const { resolved } = resolutionEdges.get(key);
-    const digest = pluginContents.get(resolved);
-    if (digest !== undefined) reads.set(normalize(fileURLToPath(resolved)), digest);
+    const content = pluginContents.get(resolved);
+    if (content !== undefined) recordPluginRead(resolved, content);
     for (const child of children.get(resolved) ?? []) reachable.add(child);
   }
   return [...reachable].map(key => resolutionEdges.get(key));

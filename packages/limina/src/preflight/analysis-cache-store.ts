@@ -4,9 +4,15 @@ import { performance } from 'node:perf_hooks';
 import path from 'pathe';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
 import { writeJsonAtomically } from '../check-reporting/atomic-writer';
-import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
+import {
+  AnalysisInputDriftError,
+  type AnalysisSnapshot,
+} from '../core/analysis-cache/contracts';
 import { analysisHash } from '../core/analysis-cache/identity';
+import { InstallationLockGate } from '../core/analysis-cache/installation-gate';
 import type { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
+import { cloneAnalysisSnapshot } from '../core/analysis-cache/snapshot-receipts';
+import { snapshotModel } from '../core/analysis-cache/snapshot-records';
 import {
   assertArtifactPathOperationSafe,
   type LiminaArtifactNamespace,
@@ -21,6 +27,7 @@ import { AnalysisSnapshotDecoder } from './analysis-cache-decode';
 import type { ConfigObservation } from './config-observation';
 
 interface CacheStoreOptions {
+  governanceRoot?: string;
   namespace: LiminaArtifactNamespace;
   identity: string;
   configPath: string;
@@ -32,9 +39,11 @@ interface CacheStoreOptions {
 export class AnalysisCacheStore {
   readonly #options: CacheStoreOptions;
   #hasBaseline = true;
+  #publishedIndex: Buffer | undefined;
   #storedRevision: string | undefined;
   #baseline: string | undefined;
   readonly #blocks: AnalysisCacheBlocks;
+  installationGate?: InstallationLockGate;
   readonly path: string;
   readonly identity: string;
   constructor(options: CacheStoreOptions) {
@@ -93,7 +102,8 @@ export class AnalysisCacheStore {
           await rename(from, to);
         },
       });
-      this.#baseline = physicalRevision(Buffer.from(`${encoded}\n`));
+      this.#publishedIndex = Buffer.from(`${encoded}\n`);
+      this.#baseline = physicalRevision(this.#publishedIndex);
       this.#storedRevision = snapshot.header.revision;
       this.#record({
         name: 'analysis-cache',
@@ -127,8 +137,14 @@ export class AnalysisCacheStore {
       await assertCurrent();
       cache.inputs.assertStable();
       if (!this.#isBaselineCurrent()) return;
-      await this.#write(cache.snapshot(), async () => {
+      const snapshot = snapshotModel(cache);
+      snapshot.header.baselineTime = Date.now();
+      if (this.installationGate?.usable)
+        snapshot.header.installations =
+          this.installationGate.receipts(snapshot);
+      await this.#write(snapshot, async () => {
         await assertCurrent();
+        this.installationGate?.assertStable();
         cache.inputs.assertStable();
       });
     } finally {
@@ -139,6 +155,8 @@ export class AnalysisCacheStore {
     return [
       this.#storedRevision !== undefined,
       cache.previous?.header.revision === this.#storedRevision,
+      !this.installationGate?.needsCheckpoint,
+      !cache.inputs.needsCheckpoint,
       cache.isUnchanged(),
     ].every(Boolean);
   }
@@ -162,6 +180,7 @@ export class AnalysisCacheStore {
   ): AnalysisSnapshot | undefined {
     return new AnalysisSnapshotDecoder({
       ...this.#options,
+      admit: (header) => this.#admit(header),
       readBlock: (reference) => {
         const start = performance.now();
         const bytes = this.#blocks.read(reference);
@@ -177,6 +196,42 @@ export class AnalysisCacheStore {
     }).decode(bytes, shouldRestore);
   }
 
+  #admit(
+    header: AnalysisSnapshot['header'] | undefined,
+    isInMemory = false,
+  ): boolean {
+    try {
+      return this.#observeInstallations(header, isInMemory);
+    } catch (error) {
+      if (!(error instanceof AnalysisInputDriftError)) throw error;
+      this.#record({
+        name: 'analysis-cache',
+        kind: 'lockGateRetries',
+        count: 1,
+      });
+      return this.#observeInstallations(undefined, false);
+    }
+  }
+  #observeInstallations(
+    header: AnalysisSnapshot['header'] | undefined,
+    isInMemory: boolean,
+  ): boolean {
+    const { governanceRoot, configPath } = this.#options;
+    if (governanceRoot === undefined) return true;
+    this.installationGate = new InstallationLockGate(
+      governanceRoot,
+      configPath,
+      header,
+      (kind) => this.#record({ name: 'analysis-cache', kind, count: 1 }),
+    );
+    const isAdmitted = this.installationGate.admit(isInMemory);
+    this.#record({
+      name: 'analysis-cache',
+      kind: isAdmitted ? 'lockGateHits' : 'lockGateMisses',
+      count: 1,
+    });
+    return isAdmitted;
+  }
   #canPublish(cache: NativeAnalysisCache): boolean {
     return [
       this.#hasBaseline,
@@ -196,13 +251,60 @@ export class AnalysisCacheStore {
     }
     await this.#publishChanged(cache, assertCurrent);
   }
+  refresh(
+    cache: NativeAnalysisCache,
+    reason?: 'producer-handoff',
+  ): AnalysisSnapshot | undefined {
+    if (this.#publishedIndex !== undefined) {
+      const requiresCold = this.installationGate?.requiresCold;
+      const committed = this.#decodeSnapshot(
+        this.#publishedIndex,
+        !requiresCold,
+      );
+      this.#publishedIndex = undefined;
+      return committed;
+    }
+    // The next epoch reads the detached candidate as its previous model.
+    // A producer visits only its own slice. Let the consumer validate the
+    // original generation, including proof contexts the producer never opened.
+    const prior = cache.previous;
+    const canReuseBaseline =
+      reason === 'producer-handoff' &&
+      prior?.header.baselineTime !== undefined &&
+      !cache.inputs.domainDirty &&
+      Object.entries(prior.inputs).every(([inputId, input]) =>
+        cache.inputs.valid({ inputId, expectedVersion: input.version }),
+      );
+    const previous =
+      canReuseBaseline || cache.isUnchanged()
+        ? cache.previous!
+        : cloneAnalysisSnapshot(snapshotModel(cache), true);
+    if (this.#options.governanceRoot === undefined) return previous;
+    const wasUsable =
+      this.installationGate?.usable && !this.installationGate.requiresCold;
+    const isInMemory = previous.header.baselineTime === undefined;
+    const header = isInMemory
+      ? {
+          ...previous.header,
+          baselineTime: undefined,
+          installations: this.installationGate?.receipts(previous),
+        }
+      : previous.header;
+    const isAdmitted = this.#admit(header, isInMemory);
+    if (wasUsable && isAdmitted) return previous;
+    this.#options.configuration?.capture();
+    return undefined;
+  }
   read(options: { restore?: boolean } = {}): AnalysisSnapshot | undefined {
     const start = performance.now();
     this.#hasBaseline = true;
     const bytes = this.#readMeasuredBytes();
     this.#baseline = physicalRevision(bytes);
     // A forced cold start still needs the physical publication baseline.
-    const snapshot = this.#decodeSnapshot(bytes, options.restore !== false);
+    const shouldRestore =
+      options.restore !== false && !this.installationGate?.requiresCold;
+    const snapshot = this.#decodeSnapshot(bytes, shouldRestore);
+    this.#publishedIndex = undefined;
     this.#storedRevision = snapshot?.header.revision;
     this.#record({
       name: 'analysis-cache',
@@ -218,6 +320,7 @@ export class AnalysisCacheStore {
       // Direct callers have no additional invocation observations.
     },
   ): Promise<void> {
+    this.installationGate?.assertStable();
     if (!this.#canPublish(cache)) {
       await assertCurrent();
       cache.inputs.assertStable();

@@ -1,3 +1,4 @@
+import { cloneCompilerOptions } from '#utils/compiler-options';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 
@@ -123,7 +124,9 @@ export function resolveModuleWithOrigin(
   const [name, file, options, host, cache, redirect, mode] = arguments_;
   const trace = new OriginTrace();
   const observedHost = traceHost(host, options, trace);
-  const observedOptions = { ...options, traceResolution: true };
+  const observedOptions = cloneCompilerOptions(options, {
+    traceResolution: true,
+  });
   let result = compiler.resolveModuleName(
     name,
     file,
@@ -157,7 +160,9 @@ export function resolveTypeWithOrigin(
   const [name, file, options, host, redirect, cache, mode] = arguments_;
   const trace = new OriginTrace();
   const observedHost = traceHost(host, options, trace);
-  const observedOptions = { ...options, traceResolution: true };
+  const observedOptions = cloneCompilerOptions(options, {
+    traceResolution: true,
+  });
   let result = compiler.resolveTypeReferenceDirective(
     name,
     file,

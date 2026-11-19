@@ -1,5 +1,5 @@
 import {
-  packRecordTable,
+  packRecordRoots,
   type RecordEntry,
   type RecordReference,
   type RecordTable,
@@ -16,14 +16,14 @@ function visitScope(
   entries: RecordEntry[],
   owners: Int32Array,
 ): void {
-  const seen = new Set<number>();
   const pending = [root];
   while (pending.length > 0) {
     const reference = pending.pop()!;
-    if (!Array.isArray(reference) || seen.has(reference[0])) continue;
+    if (!Array.isArray(reference)) continue;
     const id = reference[0];
-    seen.add(id);
-    owners[id] = owners[id] === -2 || owners[id] === scope ? scope : -1;
+    const owner = owners[id];
+    if (owner === scope || owner === -1) continue;
+    owners[id] = owner === -2 ? scope : -1;
     const children = references(entries[id]!);
     for (const child of children) pending.push(child);
   }
@@ -77,23 +77,18 @@ function mapEntries(
   // Preserve reference interning when partitioning the global table. One
   // destination needs one tuple per index, not one allocation per occurrence.
   const references = new Map<number, [number]>();
-  return entries.map((entry): RecordEntry => {
-    if (entry[0] === 'string') return entry;
-    return entry[0] === 'array'
-      ? [
-          'array',
-          entry[1].map((reference) =>
-            remap(reference, scope, index, references),
-          ),
-        ]
-      : [
-          'object',
-          entry[1].map(([key, reference]) => [
-            key,
-            remap(reference, scope, index, references),
-          ]),
-        ];
-  });
+  for (const entry of entries) {
+    if (entry[0] === 'array') {
+      const items = entry[1];
+      for (let position = 0; position < items.length; position++)
+        items[position] = remap(items[position]!, scope, index, references);
+    } else if (entry[0] === 'object') {
+      const fields = entry[1];
+      for (const pair of fields)
+        pair[1] = remap(pair[1], scope, index, references);
+    }
+  }
+  return entries;
 }
 
 /**
@@ -101,15 +96,12 @@ Cross-scope facts share one immutable pool. A shared node's entire closure is
 shared; local blocks can only refer backward or into this qualified pool.
 Projection blocks use a separate table and never enlarge the fact read closure.
 */
-export function packSharedRecordTables(values: unknown[]): {
+export function packSharedRecordTables(values: Iterable<unknown>): {
   shared: RecordTable;
   tables: RecordTable[];
 } {
-  const table = packRecordTable(values);
-  const root = table.entries[(table.root as [number])[0]]!;
-  if (root[0] !== 'array') throw new Error('Invalid record table roots.');
-  const roots = root[1];
-  const index = partition(table.entries, roots);
+  const { entries, roots } = packRecordRoots(values);
+  const index = partition(entries, roots);
   const common = mapEntries(index.common, -1, index);
   const all: RecordReference[] = common.map((_entry, id) => [id]);
   return {

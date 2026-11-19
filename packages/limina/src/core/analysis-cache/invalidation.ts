@@ -1,114 +1,67 @@
-import type {
-  AnalysisSnapshot,
-  ImporterRecord,
-  InputDependency,
-} from './contracts';
+import type { AnalysisSnapshot, InputDependency } from './contracts';
 import type { AnalysisInputs } from './inputs';
-
-function subscribe(
-  index: Map<string, Set<string>>,
-  input: string,
-  consumer: string,
-): void {
-  const consumers = index.get(input) ?? new Set<string>();
-  consumers.add(consumer);
-  index.set(input, consumers);
-}
 
 /**
 Rebuilt from forward records; no second persistent source of truth.
 */
 export class AnalysisInvalidation {
   readonly #snapshot: AnalysisSnapshot | undefined;
-  readonly inputQueries: Map<string, Set<string>> = new Map<
-    string,
-    Set<string>
-  >();
-  readonly queryImporters: Map<string, Set<string>> = new Map<
-    string,
-    Set<string>
-  >();
-  readonly semanticConsumers: Map<string, Set<string>> = new Map<
-    string,
-    Set<string>
-  >();
   readonly resolutionDirty: Set<string> = new Set<string>();
   readonly semanticDirty: Set<string> = new Set<string>();
+  readonly contextDirty: Set<string> = new Set<string>();
   readonly syntaxDirty: Set<string> = new Set<string>();
 
   constructor(snapshot: AnalysisSnapshot | undefined, inputs: AnalysisInputs) {
     this.#snapshot = snapshot;
     if (snapshot === undefined) return;
-    const changed = Object.entries(snapshot.inputs)
-      .filter(
-        ([id, input]) =>
-          !inputs.valid({ inputId: id, expectedVersion: input.version }),
-      )
-      .map(([id]) => id);
-    this.#invalidate(snapshot, changed);
+    const changed = new Set<string>();
+    for (const [id, input] of Object.entries(snapshot.inputs))
+      if (!inputs.valid({ inputId: id, expectedVersion: input.version }))
+        changed.add(id);
+    if (changed.size > 0) this.#invalidate(snapshot, changed);
     this.#invalidateSyntax(snapshot, inputs);
-  }
-
-  #index(snapshot: AnalysisSnapshot): void {
-    for (const [id, query] of Object.entries(snapshot.queries))
-      this.#subscribeInputs(this.inputQueries, query.dependencies, id);
-    this.#indexEnvironments(snapshot);
-    for (const [id, importer] of Object.entries(snapshot.importers)) {
-      this.#indexImporter(id, importer);
+    for (const [id, { project }] of Object.entries(snapshot.contexts)) {
+      const authority =
+        snapshot.authorities[project.configPath] ??
+        snapshot.authorities[project.sourceConfigPath ?? ''];
+      if (authority !== undefined && !inputs.configCurrent(authority.closure))
+        this.invalidateContext(id);
     }
   }
 
-  #indexEnvironments(snapshot: AnalysisSnapshot): void {
-    for (const [id, importer] of Object.entries(snapshot.importers)) {
-      const context = snapshot.contexts[importer.contextId];
-      if (context === undefined) {
-        continue;
+  #invalidate(snapshot: AnalysisSnapshot, changed: Set<string>): void {
+    const isInputChanged = (input: InputDependency): boolean =>
+      changed.has(input.inputId);
+    const isQueryDirty = (id: string): boolean => this.resolutionDirty.has(id);
+    const resolutionContexts = new Set<string>();
+    const semanticContexts = new Set<string>();
+    for (const [id, context] of Object.entries(snapshot.contexts)) {
+      if (context.environment.dependencies.some(isInputChanged)) {
+        resolutionContexts.add(id);
+        semanticContexts.add(id);
+      } else if (context.sharedEnvironment.dependencies.some(isInputChanged)) {
+        semanticContexts.add(id);
       }
-
-      this.#subscribeEnvironment(id, context.sharedEnvironment);
-      this.#subscribeInputs(
-        this.semanticConsumers,
-        context.environment.dependencies,
-        id,
-      );
-      for (const query of importer.queryIds)
-        this.#subscribeInputs(
-          this.inputQueries,
-          context.environment.dependencies,
-          query,
-        );
     }
-  }
 
-  #subscribeEnvironment(
-    id: string,
-    environment: AnalysisSnapshot['contexts'][string]['sharedEnvironment'],
-  ): void {
-    this.#subscribeInputs(this.semanticConsumers, environment.dependencies, id);
-    for (const queryId of environment.queryIds)
-      subscribe(this.queryImporters, queryId, id);
-  }
-  #indexImporter(id: string, importer: ImporterRecord): void {
-    this.#subscribeInputs(this.semanticConsumers, importer.dependencies, id);
-    for (const query of importer.queryIds)
-      subscribe(this.queryImporters, query, id);
-  }
+    for (const [id, query] of Object.entries(snapshot.queries))
+      if (query.dependencies.some(isInputChanged)) this.resolutionDirty.add(id);
+    if (resolutionContexts.size > 0)
+      for (const importer of Object.values(snapshot.importers))
+        if (resolutionContexts.has(importer.contextId))
+          for (const id of importer.queryIds) this.resolutionDirty.add(id);
 
-  #subscribeInputs(
-    index: Map<string, Set<string>>,
-    dependencies: InputDependency[],
-    consumer: string,
-  ): void {
-    for (const dependency of dependencies)
-      subscribe(index, dependency.inputId, consumer);
-  }
-
-  #invalidate(snapshot: AnalysisSnapshot, changed: string[]): void {
-    // Forward records remain authoritative. A clean invocation needs no
-    // reverse subscriptions; changed inputs still use the complete index.
-    if (changed.length === 0) return;
-    this.#index(snapshot);
-    for (const id of changed) this.#invalidateInput(id);
+    // A query dirtied in one context can also serve another context.
+    for (const [id, context] of Object.entries(snapshot.contexts))
+      if (context.sharedEnvironment.queryIds.some(isQueryDirty))
+        semanticContexts.add(id);
+    for (const [id, importer] of Object.entries(snapshot.importers))
+      if (
+        semanticContexts.has(importer.contextId) ||
+        importer.dependencies.some(isInputChanged) ||
+        importer.queryIds.some(isQueryDirty)
+      )
+        this.semanticDirty.add(id);
   }
 
   #invalidateSyntax(snapshot: AnalysisSnapshot, inputs: AnalysisInputs): void {
@@ -121,19 +74,8 @@ export class AnalysisInvalidation {
     }
   }
 
-  #invalidateInput(input: string): void {
-    for (const query of subscribers(this.inputQueries, input))
-      this.#invalidateQuery(query);
-    for (const importer of subscribers(this.semanticConsumers, input))
-      this.semanticDirty.add(importer);
-  }
-
-  #invalidateQuery(query: string): void {
-    this.resolutionDirty.add(query);
-    for (const importer of subscribers(this.queryImporters, query))
-      this.semanticDirty.add(importer);
-  }
   invalidateContext(id: string): void {
+    this.contextDirty.add(id);
     const snapshot = this.#snapshot;
     if (snapshot === undefined) return;
     for (const [key, query] of Object.entries(snapshot.queries))
@@ -141,11 +83,4 @@ export class AnalysisInvalidation {
     for (const [key, importer] of Object.entries(snapshot.importers))
       if (importer.contextId === id) this.semanticDirty.add(key);
   }
-}
-
-function subscribers(
-  index: Map<string, Set<string>>,
-  key: string,
-): Iterable<string> {
-  return index.get(key) ?? [];
 }

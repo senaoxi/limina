@@ -1,15 +1,21 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import { compareCodeUnits } from '#utils/collections';
-import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
+import { encodeData } from './data-codec';
 import { analysisHash } from './identity';
 import { observeTypeEnvironment } from './installation-environment';
 import type { NativeAnalysisCache } from './native-cache';
+import { createQueryDataPool } from './record-table';
 import { retainData } from './snapshot-records';
 import type { VueContextRecord, VueQueryRecord } from './vue-contracts';
 import { bindVueExecutionInputs } from './vue-execution-inputs';
-import { VUE_ANALYSIS_ADAPTER, vueDataIdentity } from './vue-identity';
+import {
+  VUE_ANALYSIS_ADAPTER,
+  vueDataIdentity,
+  vueModuleContextId,
+} from './vue-identity';
 import { VueInputTrace } from './vue-inputs';
+import { VueModuleReplay } from './vue-module-replay';
 import { observeVueTools } from './vue-toolchain-inputs';
 
 function vueEnvironmentProject(
@@ -23,19 +29,8 @@ function vueEnvironmentProject(
     workspaceSourceBoundary: { identity: '', has: () => true },
   };
 }
-function outputProjection(
-  identity: VueProjectSemanticIdentity,
-): VueContextRecord['project']['outputProjection'] {
-  return identity.outputSourceConfigPath === undefined
-    ? undefined
-    : {
-        sourceConfigPath: identity.outputSourceConfigPath,
-        options: effectiveCompilerOptions(identity.options),
-        fileNames: [...identity.fileNames],
-      };
-}
-
 export class VueRecordState {
+  #queryData?: ReturnType<typeof createQueryDataPool>;
   readonly trace: VueInputTrace;
   readonly queries: Record<string, VueQueryRecord>;
   readonly identity: VueProjectSemanticIdentity;
@@ -44,10 +39,18 @@ export class VueRecordState {
     identity: VueProjectSemanticIdentity,
     cache: NativeAnalysisCache,
     previous?: VueContextRecord,
+    reusableModules?: VueContextRecord,
   ) {
     this.identity = identity;
     this.cache = cache;
     this.trace = new VueInputTrace(cache.inputs, identity);
+    this.trace.moduleReplay = new VueModuleReplay({
+      cache,
+      identity,
+      trace: this.trace,
+      previous: previous ?? reusableModules,
+      restored: previous !== undefined,
+    });
     this.queries = { ...previous?.queries };
     if (previous !== undefined) this.#inherit(previous);
     bindVueExecutionInputs(
@@ -64,7 +67,17 @@ export class VueRecordState {
     Object.assign(this.trace.generated, previous.generated);
   }
 
+  captureQuery(
+    key: string,
+    kind: VueQueryRecord['kind'],
+    result: unknown,
+  ): void {
+    this.#queryData ??= createQueryDataPool();
+    this.queries[key] = { kind, data: this.#queryData(encodeData(result)) };
+  }
+
   capture(previous: VueContextRecord | undefined): VueContextRecord {
+    this.#queryData = undefined;
     observeVueTools(this.identity, this.trace);
     const members = [...this.trace.members].sort(compareCodeUnits);
     const environment = observeTypeEnvironment(
@@ -82,7 +95,7 @@ export class VueRecordState {
         configPath: this.identity.configPath,
         projectRootDir: this.identity.projectRootDir,
         extensions: [...this.identity.extensions],
-        outputProjection: outputProjection(this.identity),
+        outputProjection: this.identity.outputProjection,
       },
       identity: vueDataIdentity(this.identity),
       dependencies: dependencies.values().toArray(),
@@ -91,6 +104,8 @@ export class VueRecordState {
       generated: { ...this.trace.generated },
       queries: { ...this.queries },
       queryIds: Object.keys(this.queries).sort(compareCodeUnits),
+      moduleResolutions: this.trace.moduleReplay?.records ?? {},
+      moduleContextId: vueModuleContextId(this.identity),
       complete: this.trace.complete && environment.evidence !== 'unknown',
     });
   }
@@ -104,6 +119,9 @@ export function isCurrentVueRecord(
   const valid = [
     record.complete,
     !cache.inputs.domainDirty,
+    cache.inputs.configCurrent(
+      identity.configClosure.map(({ filePath }) => filePath),
+    ),
     analysisHash(record.identity) === analysisHash(vueDataIdentity(identity)),
     record.dependencies.every((input) => cache.inputs.valid(input)),
   ];

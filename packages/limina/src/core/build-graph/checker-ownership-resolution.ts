@@ -18,17 +18,13 @@ import {
 import {
   addLocalCheckerRequirement,
   assertOwnershipPhase,
-  commitFrameworkInference,
 } from './checker-ownership-evidence';
 import {
   finalizeOwnership,
   validateOwnershipConstraints,
 } from './checker-ownership-finalization';
 import type { TypeConfigOwnershipState } from './checker-ownership-types';
-import {
-  freezeSemanticAuthorities,
-  validateFrozenSemanticAuthorities,
-} from './checker-semantic-authority';
+import { validateFrozenSemanticAuthorities } from './checker-semantic-authority';
 import {
   coreCollectionRun,
   recordFrameworkInferenceAmbiguities,
@@ -140,24 +136,11 @@ export async function resolveCheckerOwnership(options: {
       phase: 'config evidence',
     }),
   );
-  const inference = commitFrameworkInference({
-    config: options.config,
-    plan: discovery.plan,
-  });
-  discovery.collectionProblems.push(...inference.problems);
   if (options.projectDependencyCaches !== undefined)
     recordFrameworkInferenceAmbiguities(
       options.projectDependencyCaches,
-      inference.ambiguities,
+      discovery.ambiguities ?? [],
     );
-  discovery.collectionProblems.push(
-    ...freezeSemanticAuthorities({
-      config: options.config,
-      states: discovery.plan.typeConfigs
-        .values()
-        .filter((state) => state.semanticAuthorityUnavailable === undefined),
-    }),
-  );
   await collectFrozenDependencyFacts(options, discovery);
   if (options.projectDependencyCaches)
     coreCollectionRun(options.projectDependencyCaches).closed = true;

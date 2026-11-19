@@ -5,6 +5,8 @@ import { createRequire } from 'node:module';
 import ts from 'typescript';
 import type { NativeEvidenceContext } from '../../domain/analysis/native-context';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import { BoundedResolutionQueries } from './bounded-resolution-queries';
 import type { TypeScriptSemanticProject } from './contracts';
 import { nativeFingerprint } from './native-file-identity';
 import type { NativeProgramObservationOptions } from './native-observation-adapter';
@@ -18,6 +20,7 @@ Actual loaded baseline and input identity, independent of final Checker startup.
 */
 export function nativeContextInputs(
   input: TypeScriptSemanticProject,
+  cache?: NativeAnalysisCache,
 ): NativeProgramObservationOptions {
   const project = {
     ...input,
@@ -51,6 +54,9 @@ export function nativeContextInputs(
   return {
     project,
     coverage,
+    queries: cache?.supports(project, ts)
+      ? new BoundedResolutionQueries(cache, project)
+      : undefined,
     context: createNativeObservationContext({
       project,
       coverage,

@@ -1,4 +1,6 @@
-import {
+import { configFileStamp } from '#utils/config-file-stamp';
+import { createHash } from 'node:crypto';
+import fs, {
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -7,10 +9,11 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { AnalysisInputs } from '../core/analysis-cache/inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
@@ -281,9 +284,9 @@ describe('persistent native analysis facts', () => {
     const next = analyze(input, first.cache);
     expect(next.cache.metrics.hashes).toBeGreaterThan(0);
     expect(next.cache.metrics.factQueries).toBe(0);
-    expect(next.cache.invalidation.inputQueries.size).toBe(0);
-    expect(next.cache.invalidation.queryImporters.size).toBe(0);
-    expect(next.cache.invalidation.semanticConsumers.size).toBe(0);
+    expect(next.cache.invalidation.resolutionDirty.size).toBe(0);
+    expect(next.cache.invalidation.semanticDirty.size).toBe(0);
+    expect(next.cache.invalidation.syntaxDirty.size).toBe(0);
     expectCold(next, input);
   });
 
@@ -311,10 +314,9 @@ describe('persistent native analysis facts', () => {
     cache.inputs.consume([dependency]);
     write('a.ts', 'export const next = 1;');
     expect(() =>
-      cache.inputs.observeText({
+      cache.inputs.observeContent({
         path: file('a.ts'),
-        text: 'export const next = 1;',
-        checkedAt: Date.now(),
+        bytes: fs.readFileSync(file('a.ts')),
         beforeMtime: statSync(file('a.ts')).mtimeMs,
       }),
     ).toThrow(AnalysisInputDriftError);
@@ -770,34 +772,96 @@ it('compares augmentation membership and environment order before reusing facts'
   }
 });
 
-it('keeps per-input timestamp checkpoints and reconciles text actually read by the Program', () => {
+it('replays a native source without opening untouched text and checks edits before publication', async () => {
   const { file, write } = fixture();
-  write('a.ts', 'import "./value"; export {};');
-  write('value.ts', 'export {};');
-  const input = project(file('tsconfig.json'), [file('a.ts')]);
-  const first = analyze(input);
-  const contentId = JSON.stringify(['physical', 'content', file('a.ts')]);
-  const checkpoint = first.cache.inputs.records[contentId]!;
-  const oldTime = statSync(file('a.ts')).mtime;
-  write('a.ts', 'import "./missing"; export {};');
-  utimesSync(file('a.ts'), oldTime, oldTime);
-  const trusted = new NativeAnalysisCache(
-    'fixture',
-    parseAnalysisSnapshot(diskSnapshot(first.cache), 'fixture'),
-    'fixture-config',
+  write('a.ts', 'export const a = 1;');
+  const source = file('a.ts');
+  const input = project(file('tsconfig.json'), [source]);
+  const bounded = withCoverage(input);
+  const cold = analyze(input);
+  const snapshot = parseAnalysisSnapshot(diskSnapshot(cold.cache), 'fixture')!;
+  snapshot.header.baselineTime = statSync(source).mtimeMs;
+  const read = vi.spyOn(fs, 'readFileSync');
+  syncBuiltinESMExports();
+  const reads = () => read.mock.calls.filter(([p]) => p === source).length;
+  try {
+    const restore = async () => {
+      const cache = new NativeAnalysisCache(
+        'fixture',
+        snapshot,
+        'fixture-config',
+      );
+      expect(cache.restoreContext(bounded)).toBeDefined();
+      await cache.epoch.assertStable();
+      return cache;
+    };
+    const untouched = await restore();
+    const untouchedReads = reads();
+    if (configFileStamp(source) === undefined)
+      expect(untouchedReads).toBeGreaterThan(0);
+    else expect(untouchedReads).toBe(0);
+    const record = untouched.epoch
+      .snapshot()!
+      .find(
+        (item) =>
+          item.path === source && item.descriptor.kind === 'typescript-content',
+      )!;
+    expect(
+      untouched.epoch.validateSynchronous([
+        { ...record, version: 'unrelated' },
+      ]),
+    ).toBe(false);
+    expect(
+      await untouched.epoch.validate([{ ...record, binding: 'unrelated' }]),
+    ).toBe(false);
+    expect(untouched.metrics.contentHashes).toBe(0);
+    write('a.ts', 'export const a = 1;');
+    const beforeTouch = reads();
+    const touched = await restore();
+    if (configFileStamp(source) === undefined)
+      expect(reads() - beforeTouch).toBeGreaterThan(1);
+    else expect(reads() - beforeTouch).toBe(1);
+    expect(touched.metrics.contentHashes).toBe(1);
+    write('a.ts', 'export const a = 2;');
+    await expect(touched.epoch.assertStable()).rejects.toThrow(
+      /changed|drift/u,
+    );
+  } finally {
+    read.mockRestore();
+    syncBuiltinESMExports();
+  }
+});
+
+it('uses one published cutoff for the same file in source and resolution roles', () => {
+  const { file, write } = fixture();
+  write('package.json', '{"type":"module"}');
+  const path = file('package.json');
+  const cold = new NativeAnalysisCache('fixture');
+  const content = cold.inputs.observe(path, 'content');
+  const affecting = cold.inputs.observe(path, 'affecting-mtime');
+  const cutoff = statSync(path).mtimeMs;
+  const published = { baselineTime: cutoff, generation: 'first' };
+  const warm = new AnalysisInputs(
+    cold.inputs.records,
+    { ...cold.metrics },
+    published,
   );
-  expect(trusted.inputs.observe(file('a.ts'), 'content').expectedVersion).toBe(
-    checkpoint.version,
+  expect(warm.valid(content)).toBe(true);
+  expect(warm.valid(affecting)).toBe(true);
+  expect(warm.metrics.contentHashes).toBe(cold.metrics.contentHashes);
+  utimesSync(path, (cutoff + 2000) / 1000, (cutoff + 2000) / 1000);
+  const touched = new AnalysisInputs(
+    cold.inputs.records,
+    { ...cold.metrics },
+    published,
   );
-  expect(trusted.inputs.records[contentId]!.verifiedThrough).toBe(
-    checkpoint.verifiedThrough,
+  expect(touched.valid(content)).toBe(true);
+  expect(touched.valid(affecting)).toBe(false);
+  expect(touched.metrics.contentHashes).toBe(cold.metrics.contentHashes + 1);
+  expect(touched.needsCheckpoint).toBe(true);
+  expect(content.expectedVersion).toBe(
+    createHash('sha256').update(fs.readFileSync(path)).digest('hex'),
   );
-  // The timestamp fast path trusts the old version, but an actual compiler read
-  // supersedes it. A cold invocation also observes the new unresolved import.
-  const next = analyze(input, first.cache);
-  expectCold(next, input);
-  expect(next.facts[0]!.record.specifier).toBe('./missing');
-  expect(next.cache.metrics.semanticPrograms).toBe(1);
 });
 
 it.each(['content', 'bytes'] as const)(
@@ -958,21 +1022,22 @@ it('preserves JSON semantics, clone isolation and distinct expected versions thr
     f.file('source.ts'),
     f.file('value.ts'),
   ]);
-  const snapshot = analyze(input).cache.snapshot();
-  // Resolution records remain an independently supported storage contract.
-  snapshot.queries.storageFixture = {
-    contextId: 'storage-fixture',
-    file: f.file('source.ts'),
-    request: ['storage'],
-    result: {},
-    dependencies: [],
-    coverage: 'unknown',
-  };
+  const { cache } = analyze(input);
+  const file = f.file('source.ts');
   // Large requests must retain the existing JSON treatment of undefined slots.
-  (Object.values(snapshot.queries)[0]!.request as unknown[]).push(
-    'long-request-boundary'.repeat(100),
-    undefined,
-  );
+  cache.query({
+    contextId: 'storage-fixture',
+    file,
+    identity: ['./value.js', 'long-request-boundary'.repeat(100), undefined],
+    retain: true,
+    host: ts.sys,
+    resolve: (host) =>
+      ts.resolveModuleName('./value.js', file, input.options, host),
+  });
+  const snapshot = cache.snapshot();
+  const [storageId, storageQuery] = Object.entries(snapshot.queries).find(
+    ([, query]) => query.contextId === 'storage-fixture',
+  )!;
   const index = f.file('index.liminainfo');
   writeStoredAnalysisSnapshot(index, snapshot);
   const encoded = readStoredAnalysisSnapshot(index);
@@ -980,7 +1045,7 @@ it('preserves JSON semantics, clone isolation and distinct expected versions thr
   const expected = parseAnalysisSnapshot(JSON.parse(raw), 'fixture');
   expect(expected).toBeDefined();
   expect(parseAnalysisSnapshot(encoded, 'fixture')).toEqual(expected);
-  const request = Object.values(snapshot.queries)[0]!.request as unknown[];
+  const request = storageQuery.request as unknown[];
   const nested = { values: ['original', undefined] };
   request.push({
     data: {
@@ -994,8 +1059,7 @@ it('preserves JSON semantics, clone isolation and distinct expected versions thr
   });
   const cloned = cloneAnalysisSnapshot(snapshot);
   expect(cloned).toEqual(snapshot);
-  const clonedRequest = Object.values(cloned.queries)[0]!
-    .request as typeof request;
+  const clonedRequest = cloned.queries[storageId]!.request as typeof request;
   const clonedValue = clonedRequest.at(-1) as {
     data: {
       ordered: Map<string, typeof nested>;

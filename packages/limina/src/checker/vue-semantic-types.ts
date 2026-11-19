@@ -173,7 +173,10 @@ export interface VueConfigClosureEntry {
 export interface VueProjectSemanticIdentity {
   declarationBaseId?: string;
   declarationLoading?: DeclarationLoadingPlan;
-  outputSourceConfigPath?: string;
+  outputProjection?: {
+    sourceConfigPath: string;
+    configs: Record<string, string>;
+  };
   configClosure: readonly VueConfigClosureEntry[];
   configPath: string;
   extensions: readonly string[];

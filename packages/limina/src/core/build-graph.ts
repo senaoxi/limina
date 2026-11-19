@@ -98,7 +98,9 @@ export class BuildGraphCore {
       this.#workspace.getValidatedContext(),
       this.#workspace.getPathIndex(),
     ]);
-    const dependencies = createProjectDependencyCaches();
+    const dependencies = createProjectDependencyCaches(
+      this.#projectDependencies.analysisCache,
+    );
     try {
       return await prepareProducerBuildPlan(this.#config, {
         artifactNamespace: this.#artifactNamespace,

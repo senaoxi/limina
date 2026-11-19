@@ -32,6 +32,7 @@ interface VisitOptions {
   shouldSortKeys?: boolean;
   decoded?: WeakMap<object, object>;
   canonical?: WeakMap<object, object>;
+  opaqueData?: WeakMap<object, unknown>;
 }
 function visit(value: unknown, options: VisitOptions): unknown {
   // These JSON proofs are privately owned and recursively immutable. Snapshot
@@ -43,9 +44,9 @@ function visit(value: unknown, options: VisitOptions): unknown {
   const result = Array.isArray(value)
     ? value.map((item) => visit(item, options))
     : visitRecord(value, options);
-  // One encoding may encounter the same published proof many times. Retain
-  // its canonical view without branding transformed receipt data as evidence.
-  if (isPublishedNativeData(value)) options.canonical?.set(value, result);
+  // The synchronous scope encoder owns this view, including repeated mutable
+  // source objects whose contents cannot change while their scope is packed.
+  options.canonical?.set(value, result);
   if (
     isDecodedRecord(value) &&
     !options.shouldSortKeys &&
@@ -89,7 +90,10 @@ function visitUnpacked(
   // These values are opaque to receipt encoding. Preserve ordered compiler
   // configuration and resolution requests, while omitting non-enumerable
   // compiler AST attachments from their plain data view.
-  if (key === 'data') return item;
+  if (key === 'data')
+    return options.opaqueData === undefined
+      ? item
+      : cloneData(item, undefined, options.opaqueData);
   const opaque = [
     'options',
     'request',
@@ -101,7 +105,9 @@ function visitUnpacked(
   // their accessors before the codec can reject live data.
   return visit(
     item,
-    opaque.includes(key) ? { transform: (_key, value) => value } : options,
+    opaque.includes(key)
+      ? { transform: (_key, value) => value, opaqueData: options.opaqueData }
+      : options,
   );
 }
 function isDependencyList(value: unknown): value is InputDependency[] {
@@ -199,15 +205,23 @@ function encodeRecords(
   records: Record<string, unknown>,
   encodeRecord: (record: unknown) => unknown,
   shouldSortKeys: boolean,
+  shouldPreserveSharing = false,
 ): Record<string, unknown> {
   const encoder = new ReceiptEncoder();
-  const canonical = shouldSortKeys ? new WeakMap<object, object>() : undefined;
+  const canonical =
+    shouldSortKeys || shouldPreserveSharing
+      ? new WeakMap<object, object>()
+      : undefined;
+  const opaqueData = shouldSortKeys
+    ? new WeakMap<object, unknown>()
+    : undefined;
   const encoded = mapAnalysisRecords(records, (record) =>
     encodeRecord(
       visit(record, {
         transform: (key, item) => encoder.field(key, item),
         shouldSortKeys,
         canonical,
+        opaqueData,
       }),
     ),
   );
@@ -221,14 +235,23 @@ export function encodeAnalysisRecords(
 }
 export function cloneAnalysisSnapshot(
   snapshot: AnalysisSnapshot,
+  shouldPreserveSharing = false,
 ): AnalysisSnapshot {
   const { header, configModules, ...records } = snapshot;
   // Copy compact tagged values without serializing or compressing them. Receipt
   // parsing owns the tuples; opaque values and runtime identity order survive.
-  const encoded = encodeRecords(records, cloneData, false);
+  const copies = shouldPreserveSharing
+    ? new WeakMap<object, unknown>()
+    : undefined;
+  const encoded = encodeRecords(
+    records,
+    (record) => cloneData(record, undefined, copies),
+    false,
+    shouldPreserveSharing,
+  );
   return {
     ...structuredClone({ header, configModules }),
-    ...decodeAnalysisRecords(encoded, false),
+    ...decodeAnalysisRecords(encoded, false, shouldPreserveSharing),
   } as AnalysisSnapshot;
 }
 function receiptList(
@@ -274,6 +297,7 @@ function decodeField(
 export function decodeAnalysisRecords(
   value: Record<string, unknown>,
   shouldShareValidated = true,
+  shouldPreserveSharing = false,
 ): Record<string, unknown> {
   const tables = encoding.parse(value.receiptEncoding);
   if (shouldShareValidated)
@@ -285,6 +309,7 @@ export function decodeAnalysisRecords(
     visit(record, {
       transform: (key, item) => decodeField(key, item, tables),
       decoded: shouldShareValidated ? shared : undefined,
+      canonical: shouldPreserveSharing ? shared : undefined,
     }),
   );
   return decoded;

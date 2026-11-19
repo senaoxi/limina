@@ -14,9 +14,9 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { AnalysisMetricMeasurement } from '../application/analysis/analysis-run';
 import { parseTypeScriptCommandLine } from '../checker/project-base';
 import {
@@ -27,8 +27,6 @@ import { loadConfig } from '../config/loader';
 import { getActiveCheckers } from '../config/runtime';
 import { createAnalysisProviders } from '../core';
 import { directoryFingerprint } from '../core/analysis-cache/directory-fingerprint';
-import { observeInstallationDomain } from '../core/analysis-cache/installation-domain';
-import { validateInstallationLock } from '../core/analysis-cache/installation-locks';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { occurrenceKey } from '../core/analysis-cache/semantic-state';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
@@ -46,24 +44,14 @@ import {
   readStoredAnalysisSnapshot,
   writeStoredAnalysisSnapshot,
 } from './helpers/analysis-snapshot';
+import { corruptFrameworkSnapshot } from './helpers/framework-cache-corruption';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { graphMeaning, nativeFactMeaning } from './helpers/native-meaning';
 import { createFixturePathResolver } from './helpers/path';
 
 const roots: string[] = [];
-vi.mock('../core/analysis-cache/installation-locks', async (original) => {
-  const locks =
-    await original<
-      typeof import('../core/analysis-cache/installation-locks')
-    >();
-  return {
-    ...locks,
-    validateInstallationLock: vi.fn(locks.validateInstallationLock),
-  };
-});
 afterEach(() => {
-  vi.clearAllMocks();
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
@@ -72,12 +60,9 @@ function fixture() {
   const root = realpathSync.native(temporary);
   roots.push(root);
   const file = createFixturePathResolver(root);
-  let mtime = Date.now();
   const write = (name: string, content: string) => {
     mkdirSync(path.dirname(file(name)), { recursive: true });
     writeFileSync(file(name), content);
-    mtime += 1000;
-    utimesSync(file(name), mtime / 1000, mtime / 1000);
   };
   write(
     'package.json',
@@ -161,13 +146,13 @@ async function runCache(options={}) {
     if(options.materialize)await manager.ensureGeneratedArtifactsMaterialized();
     const graph=await manager.ensureGeneratedGraph();
     const isPassed=options.check ? await isRunGraphCheckImpl(config,{preflight:manager}) : true;
-    await manager.publishAnalysisCache();
+    if(!options.deferPublish)await manager.publishAnalysisCache();
     if(options.refresh) {
       createPreflightGenerationController(manager).startNextGeneration();
       await manager.ensureGeneratedGraph();
       await manager.publishAnalysisCache();
     }
-    return {graph:{manifest:graph.manifest,ownershipPlan:graph.ownershipPlan,edges:graph.dependencyEdges},events,isPassed};
+    return {graph:{manifest:graph.manifest,ownershipPlan:graph.ownershipPlan,edges:graph.dependencyEdges},events,isPassed,ambiguities:manager.getFrameworkInferenceAmbiguities()};
   }finally{manager.dispose();}
 }
 ${script}`,
@@ -218,9 +203,18 @@ describe('complete native restoration and R02 scope evidence', () => {
     const config = await loadConfig({
       configPath: f.file('limina.config.mjs'),
     });
+    const store = new AnalysisCacheStore({
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
+      configPath: config.configPath,
+      identity: 'fixture',
+      configVersion: 'fixture-config',
+    });
     const coldCache = new NativeAnalysisCache(
       'fixture',
-      undefined,
+      store.read(),
       'fixture-config',
     );
     const cold = createAnalysisProviders(config, undefined, undefined, {
@@ -228,11 +222,14 @@ describe('complete native restoration and R02 scope evidence', () => {
     });
     try {
       await cold.buildGraph.getGraph();
+      await store.publish(coldCache);
     } finally {
       cold.dispose();
     }
-    const encoded = JSON.stringify(coldCache.snapshot());
-    const snapshot = parseAnalysisSnapshot(JSON.parse(encoded), 'fixture');
+    const snapshot = parseAnalysisSnapshot(
+      readStoredAnalysisSnapshot(store.path),
+      'fixture',
+    );
     expect(snapshot).toBeDefined();
     const cache = new NativeAnalysisCache(
       'fixture',
@@ -252,6 +249,7 @@ describe('complete native restoration and R02 scope evidence', () => {
     );
     try {
       expect(await warm.buildGraph.hasSvelteCheckProjects()).toBe(false);
+      expect(cache.metrics.authorityRecoveries).toBe(1);
       expect(cache.metrics.restoredContexts).toBeGreaterThan(0);
       expect(cache.metrics.semanticPrograms).toBe(0);
       expect(
@@ -364,7 +362,8 @@ describe('complete native restoration and R02 scope evidence', () => {
     const f = fixture();
     f.write('one.json', '{"type":"module"}');
     f.write('two.json', '{"type":"module"}');
-    const same = statSync(f.file('one.json')).mtime;
+    const same = Math.floor(statSync(f.file('one.json')).mtimeMs / 1000);
+    utimesSync(f.file('one.json'), same, same);
     utimesSync(f.file('two.json'), same, same);
     symlinkSync(f.file('one.json'), f.file('src/package.json'));
     const first = analyze(f.project());
@@ -381,16 +380,11 @@ describe('complete native restoration and R02 scope evidence', () => {
 });
 
 describe('R01 effective local metadata and installation trust', () => {
-  it.each([
-    { explicitRoots: false, environmentDocument: false },
-    { explicitRoots: true, environmentDocument: false },
-    { explicitRoots: false, environmentDocument: true },
-    { explicitRoots: true, environmentDocument: true },
-  ])(
-    'restores a shared pnpm member without scanning installed roots (explicit: $explicitRoots, env document: $environmentDocument)',
-    ({ explicitRoots, environmentDocument }) => {
+  it.each([false, true])(
+    'restores a shared pnpm member without scanning installed roots (explicit roots: %s)',
+    (explicitRoots) => {
       const f = fixture();
-      const pnpmVersion = environmentDocument ? '12.10.1' : '11.28.3';
+      const pnpmVersion = '12.10.1';
       f.write(
         'package.json',
         JSON.stringify({
@@ -400,12 +394,7 @@ describe('R01 effective local metadata and installation trust', () => {
       );
       rmSync(f.file('package-lock.json'));
       f.write('pnpm-workspace.yaml', 'packages: [packages/*]\n');
-      const environment = environmentDocument
-        ? `---\nlockfileVersion: 9\nimporters:\n  .:\n    configDependencies: {}\n    packageManagerDependencies:\n      pnpm: {specifier: 12.10.1, version: 12.10.1}\n---\n`
-        : '';
-      const projectLock =
-        'lockfileVersion: 9\nimporters:\n  .: {}\n  packages/member: {}\n';
-      f.write('pnpm-lock.yaml', environment + projectLock);
+      f.write('pnpm-lock.yaml', 'opaque lock identity');
       f.write(
         'node_modules/.modules.yaml',
         `packageManager: pnpm@${pnpmVersion}\nvirtualStoreDir: .pnpm\n`,
@@ -446,14 +435,11 @@ describe('R01 effective local metadata and installation trust', () => {
         }),
       );
       const first = analyze(f.project('packages/member/tsconfig.json'));
-      const parses = vi.mocked(validateInstallationLock).mock.calls.length;
-      expect(parses).toBeGreaterThan(0);
       const warm = analyze(
         f.project('packages/member/tsconfig.json'),
         first.cache,
       );
       expect(warm.restored).toBe(true);
-      expect(validateInstallationLock).toHaveBeenCalledTimes(parses);
       expect(warm.cache.metrics.semanticPrograms).toBe(0);
       expect(warm.cache.metrics.localRootScans ?? 0).toBe(0);
       expect(warm.facts).toEqual(first.facts);
@@ -478,51 +464,21 @@ describe('R01 effective local metadata and installation trust', () => {
         for (const item of value.environment.domains)
           item.adapter = 'physical-installation-v1';
       expect(parseAnalysisSnapshot(legacy, 'fixture')).toBeUndefined();
-      f.write(
-        'packages/uncovered/package.json',
-        '{"name":"uncovered","private":true}',
+      f.write('pnpm-lock.yaml', 'changed opaque lock');
+      const changed = analyze(
+        f.project('packages/member/tsconfig.json'),
+        warm.cache,
       );
-      f.write('packages/uncovered/tsconfig.json', '{}');
-      const other = new NativeAnalysisCache(
-        'fixture',
-        first.cache.snapshot(),
-        'fixture-config',
+      expect(changed.restored).toBe(false);
+      expect(changed.cache.metrics.semanticPrograms).toBe(1);
+      expect(changed.cache.metrics.factHits).toBe(0);
+      expect(changed.facts.map(nativeFactMeaning)).toEqual(
+        first.facts.map(nativeFactMeaning),
       );
-      expect(other.inputs.domainDirty).toBe(false);
-      expect(() =>
-        observeInstallationDomain({
-          root: f.file(),
-          configPath: f.file('packages/uncovered/tsconfig.json'),
-          inputs: other.inputs,
-        }),
-      ).toThrow(
-        `Lock does not cover resolution root: ${f.file('packages/uncovered')}`,
-      );
-      expect(validateInstallationLock).toHaveBeenCalledTimes(parses + 1);
-      if (environmentDocument) {
-        f.write(
-          'pnpm-lock.yaml',
-          environment.replaceAll('12.10.1', '12.10.2') + projectLock,
-        );
-        const changed = analyze(
-          f.project('packages/member/tsconfig.json'),
-          warm.cache,
-        );
-        expect(changed.restored).toBe(false);
-        expect(
-          vi.mocked(validateInstallationLock).mock.calls.length,
-        ).toBeGreaterThan(parses + 1);
-        expect(changed.cache.inputs.domainDirty).toBe(false);
-        expect(changed.cache.metrics.semanticPrograms).toBe(1);
-        expect(changed.cache.metrics.factHits).toBe(0);
-        expect(changed.facts.map(nativeFactMeaning)).toEqual(
-          first.facts.map(nativeFactMeaning),
-        );
-        expect(
-          analyze(f.project('packages/member/tsconfig.json'), changed.cache)
-            .restored,
-        ).toBe(true);
-      }
+      expect(
+        analyze(f.project('packages/member/tsconfig.json'), changed.cache)
+          .restored,
+      ).toBe(true);
       f.write('packages/member/package-lock.json', '{"lockfileVersion":3}');
       const independent = analyze(
         f.project('packages/member/tsconfig.json'),
@@ -530,21 +486,10 @@ describe('R01 effective local metadata and installation trust', () => {
       );
       expect(independent.restored).toBe(false);
       expect(
-        Object.values(independent.cache.contexts)[0]?.environment.evidence,
-      ).toBe('unknown');
-      rmSync(f.file('packages/member/package-lock.json'));
-      f.write(
-        'pnpm-lock.yaml',
-        `${environment}lockfileVersion: 9\nimporters:\n  .: {}\n`,
-      );
-      const uncovered = analyze(
-        f.project('packages/member/tsconfig.json'),
-        warm.cache,
-      );
-      expect(uncovered.restored).toBe(false);
-      expect(
-        Object.values(uncovered.cache.contexts)[0]?.environment.evidence,
-      ).toBe('unknown');
+        Object.values(independent.cache.contexts)[0]?.environment.domains.map(
+          (domain) => domain.lockRoot,
+        ),
+      ).toContain(f.file('packages/member'));
     },
   );
 
@@ -635,7 +580,8 @@ describe('R01 effective local metadata and installation trust', () => {
     const f = fixture();
     f.write('types/pkg/a.d.ts', 'old');
     const file = f.file('types/pkg/a.d.ts');
-    const before = statSync(file).mtime;
+    const before = Math.floor(statSync(file).mtimeMs / 1000);
+    utimesSync(file, before, before);
     const hash = directoryFingerprint(f.file('types'));
     writeFileSync(file, 'new');
     utimesSync(file, before, before);
@@ -923,6 +869,7 @@ console.log(JSON.stringify([config.pipelines,Object.isFrozen(config.pipelines)])
 });
 
 interface GraphRunResult {
+  ambiguities: { sourceConfigPath: string; checkers: string[] }[];
   graph: {
     manifest: unknown;
     ownershipPlan: unknown;
@@ -932,7 +879,456 @@ interface GraphRunResult {
   isPassed: boolean;
 }
 
+function solutionRetirementFixture() {
+  const f = fixture();
+  const leaf = 'retired/tsconfig.leaf.json';
+  const active = 'active/tsconfig.leaf.json';
+  const compilerOptions = { noLib: true, types: [], module: 'NodeNext' };
+  const setSolution = (paths: string[]) =>
+    f.write(
+      'tsconfig.json',
+      JSON.stringify({
+        files: [],
+        references: paths.map((path) => ({ path })),
+      }),
+    );
+  const setActive = (base?: string) =>
+    f.write(
+      active,
+      JSON.stringify({
+        ...(base !== undefined && { extends: `../${base}` }),
+        compilerOptions,
+        files: ['entry.ts', 'value.ts'],
+      }),
+    );
+  const setLeaf = (isStrict: boolean) =>
+    f.write(
+      leaf,
+      JSON.stringify({
+        compilerOptions: { ...compilerOptions, strict: isStrict },
+        files: ['value.ts'],
+      }),
+    );
+  setLeaf(false);
+  f.write('retired/value.ts', 'export const retired = 1;');
+  f.write('active/value.ts', 'export const active = 1;');
+  f.write('active/entry.ts', 'export { active } from "./value.js";');
+  const run = () =>
+    f.execute<GraphRunResult>('console.log(JSON.stringify(await runCache()));');
+  const store = new AnalysisCacheStore({
+    namespace: createLiminaArtifactNamespace({
+      rootDir: f.root,
+      generation: 0,
+    }),
+    configPath: f.config.configPath,
+    identity: 'unused',
+  });
+  return { ...f, active, leaf, run, setActive, setLeaf, setSolution, store };
+}
+
+describe('retirement of graph config inputs', () => {
+  it.each(['solution leaf', 'extends ancestor'] as const)(
+    'does not rebuild when an unconsumed %s changes',
+    (kind) => {
+      const f = solutionRetirementFixture();
+      const ancestor = '00-config/base.json';
+      const retiredPath = kind === 'solution leaf' ? f.leaf : ancestor;
+      const setAncestor = (isStrict: boolean) =>
+        f.write(
+          ancestor,
+          JSON.stringify({ compilerOptions: { strict: isStrict } }),
+        );
+      setAncestor(false);
+      f.setActive(kind === 'extends ancestor' ? ancestor : undefined);
+      f.setSolution(kind === 'solution leaf' ? [f.active, f.leaf] : [f.active]);
+      f.run();
+      const cold = readStoredAnalysisSnapshot(f.store.path);
+      const receipt = JSON.stringify([
+        'physical',
+        'config-mtime',
+        f.file(retiredPath),
+      ]);
+      expect(cold.inputs[receipt]).toBeDefined();
+
+      if (kind === 'solution leaf') f.setSolution([f.active]);
+      else f.setActive();
+      const current = f.run();
+      const index = readFileSync(f.store.path);
+      const stored = readStoredAnalysisSnapshot(f.store.path);
+
+      if (kind === 'solution leaf') f.setLeaf(true);
+      else setAncestor(true);
+      const restored = f.run();
+      expect(
+        restored.events.find(({ kind }) => kind === 'graphHits')?.count,
+      ).toBe(1);
+      expect(
+        restored.events.find(({ kind }) => kind === 'graphBuilds')?.count ?? 0,
+      ).toBe(0);
+      expect(
+        restored.events.find(({ kind }) => kind === 'resolvedConfigParses')
+          ?.count,
+      ).toBeLessThanOrEqual(2);
+      expect(graphMeaning(restored.graph)).toEqual(graphMeaning(current.graph));
+      expect(readFileSync(f.store.path)).toEqual(index);
+      expect(stored.inputs[receipt]).toBeUndefined();
+    },
+  );
+
+  it('keeps a retired leaf live through extends and resolves its ownership when it re-enters the solution', () => {
+    const f = solutionRetirementFixture();
+    f.setActive(f.leaf);
+    f.setSolution([f.active, f.leaf]);
+    const cold = f.run();
+    expect(
+      cold.events.find(({ kind }) => kind === 'resolverCalls')?.count,
+    ).toBeGreaterThan(0);
+
+    f.setSolution([f.active]);
+    const retired = f.run();
+    expect(
+      retired.events.find(({ kind }) => kind === 'resolverCalls')?.count,
+    ).toBe(0);
+
+    f.setLeaf(true);
+    const changed = f.run();
+    expect(changed.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
+    );
+    expect(changed.events).toContainEqual(
+      expect.objectContaining({ kind: 'ownershipResolutions', count: 1 }),
+    );
+
+    f.setSolution([f.active, f.leaf]);
+    const reentered = f.run();
+    expect(reentered.events).toContainEqual(
+      expect.objectContaining({ kind: 'ownershipResolutions', count: 1 }),
+    );
+    expect(reentered.graph.manifest).toEqual(cold.graph.manifest);
+  });
+});
+
+function frameworkBindingFixture(checker: 'astro' | 'svelte-check') {
+  const f = fixture();
+  const packages: [string, string][] =
+    checker === 'astro'
+      ? [
+          ['astro', 'astro'],
+          ['@astrojs/check', '@astrojs/check'],
+        ]
+      : [
+          ['svelte', 'svelte-v4-min'],
+          ['svelte-check', 'svelte-check-v4-min'],
+          ['svelte2tsx', 'svelte2tsx'],
+        ];
+  const dependencies: [string, string][] = [
+    ['typescript', 'typescript'],
+    ...packages,
+  ];
+  for (const [name, installed] of dependencies) {
+    const installedPackage = new URL(
+      `../../node_modules/${installed}`,
+      import.meta.url,
+    );
+    const target = f.file('node_modules', name);
+    mkdirSync(path.dirname(target), { recursive: true });
+    symlinkSync(
+      realpathSync.native(fileURLToPath(installedPackage)),
+      target,
+      'junction',
+    );
+  }
+  if (checker === 'astro') {
+    const versions = Object.fromEntries(
+      dependencies.map(([name]) => {
+        const manifest = JSON.parse(
+          readFileSync(f.file('node_modules', name, 'package.json'), 'utf8'),
+        ) as { version: string };
+        return [name, manifest.version] as const;
+      }),
+    );
+    f.write(
+      'package.json',
+      JSON.stringify({
+        name: 'fixture',
+        private: true,
+        type: 'commonjs',
+        packageManager: 'npm@11.6.1',
+        devDependencies: versions,
+      }),
+    );
+  }
+  f.write(
+    'limina.config.mjs',
+    `export default {scope:{source:{include:["provider/src/**/*","consumer/src/**/*"]},checkers:{tsc:{include:["provider/tsconfig.json"]},"${checker}":{include:["consumer/tsconfig.json"]}}}};`,
+  );
+  f.write(
+    'tsconfig.json',
+    JSON.stringify({
+      files: [],
+      references: [{ path: './provider' }, { path: './consumer' }],
+    }),
+  );
+  const compilerOptions = {
+    composite: true,
+    declaration: true,
+    noLib: true,
+    types: [],
+    module: 'ESNext',
+    moduleResolution: 'Bundler',
+  };
+  f.write(
+    'provider/tsconfig.json',
+    JSON.stringify({ compilerOptions, files: ['src/value.ts'] }),
+  );
+  f.write(
+    'consumer/tsconfig.json',
+    JSON.stringify({ compilerOptions, include: ['src/**/*'] }),
+  );
+  f.write('provider/src/value.ts', 'export const value = 1;');
+  f.write('consumer/src/local.ts', 'export const local = 1;');
+  const imports =
+    'import { value } from "../../provider/src/value.js"; import { local } from "./local.js";';
+  if (checker === 'astro')
+    f.write(
+      'consumer/src/App.astro',
+      `---\n${imports}\n---\n<p>{value + local}</p>`,
+    );
+  else
+    f.write(
+      'consumer/src/App.svelte',
+      `<script lang="ts">${imports}</script><p>{value + local}</p>`,
+    );
+  return f;
+}
+
+describe('framework graph binding', () => {
+  it.each([
+    'schedule occurrence',
+    'locked occurrence',
+    'manifest bytes',
+  ] as const)(
+    'rebuilds a valid-envelope snapshot after corrupting a %s',
+    (fault) => {
+      const f = frameworkBindingFixture('svelte-check');
+      const run =
+        'console.log(JSON.stringify(await runCache({materialize:true})));';
+      const initial = f.execute<GraphRunResult>(run);
+      const manifest = f.file('.limina', 'manifest.json');
+      const initialManifest = readFileSync(manifest);
+      expect(initial.graph.edges).toContainEqual(
+        expect.objectContaining({
+          kind: 'framework-schedule',
+          fromConfigPath: f.file('consumer/tsconfig.json'),
+          toConfigPath: f.file('provider/tsconfig.json'),
+          importedSpecifier: '../../provider/src/value.js',
+        }),
+      );
+      const store = new AnalysisCacheStore({
+        namespace: createLiminaArtifactNamespace({
+          rootDir: f.root,
+          generation: 0,
+        }),
+        configPath: f.config.configPath,
+        identity: 'unused',
+      });
+      corruptFrameworkSnapshot(store.path, fault);
+      const rebuilt = f.execute<GraphRunResult>(run);
+      expect(rebuilt.events).toContainEqual(
+        expect.objectContaining({
+          kind: 'fallback-graph-dto-invalid',
+          count: 1,
+        }),
+      );
+      expect(rebuilt.events).toContainEqual(
+        expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
+      );
+      expect(graphMeaning(rebuilt.graph)).toEqual(graphMeaning(initial.graph));
+      expect(readFileSync(manifest)).toEqual(initialManifest);
+      const restored = f.execute<GraphRunResult>(run);
+      expect(restored.events).toContainEqual(
+        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      );
+      expect(graphMeaning(restored.graph)).toEqual(graphMeaning(initial.graph));
+      expect(readFileSync(manifest)).toEqual(initialManifest);
+    },
+    60_000,
+  );
+
+  it('exports from a fresh process after Astro graph checking observes another compiler boundary', () => {
+    const f = frameworkBindingFixture('astro');
+    const prepared = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache({materialize:true, check:true})));',
+    );
+    expect(prepared.isPassed).toBe(true);
+    const store = new AnalysisCacheStore({
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
+      configPath: f.config.configPath,
+      identity: 'unused',
+    });
+    const original = readFileSync(store.path);
+    const runner = new URL('../graph-check/runner.ts', import.meta.url).href;
+    const exportGraph = (analysisCache: boolean | 'read-only') =>
+      f.execute(`
+const config=await loadConfig({configPath:${JSON.stringify(f.config.configPath)}});
+const {runGraphExportImpl}=await import(${JSON.stringify(runner)});
+const preflight=new LiminaPreflightManager({config,analysisCache:${JSON.stringify(analysisCache)}});
+try { console.log(JSON.stringify(await runGraphExportImpl(config, { preflight, view: 'all' }))); }
+finally { preflight.dispose(); }
+`);
+    expect(exportGraph('read-only')).toEqual(exportGraph(false));
+    expect(readFileSync(store.path)).toEqual(original);
+  }, 60_000);
+});
+
 describe('production graph snapshots and publication', () => {
+  it('binds the live producer receipt separately from a restorable ordinary graph', () => {
+    const f = fixture();
+    f.write('src/a.ts', 'export const value = 1;');
+    f.write(
+      'src/globals.d.ts',
+      [
+        'Array<T>',
+        'Boolean',
+        'CallableFunction',
+        'Function',
+        'IArguments',
+        'NewableFunction',
+        'Number',
+        'Object',
+        'RegExp',
+        'String',
+      ]
+        .map((name) => `interface ${name} {}`)
+        .join('\n'),
+    );
+    const result = f.execute<{
+      declared: number;
+      ordinaryHits: number;
+      boundReceipt: boolean;
+    }>(`
+const { ensureBuilt } = await import(${JSON.stringify(new URL('../typecheck/checker/build-runner.ts', import.meta.url).href)});
+const { createDefaultRunner } = await import(${JSON.stringify(new URL('../typecheck/targets.ts', import.meta.url).href)});
+const config = await loadConfig({ configPath: ${JSON.stringify(f.config.configPath)} });
+const builder = new LiminaPreflightManager({ config });
+const seed = new LiminaPreflightManager({ config, analysisCache: true });
+try {
+  const {receipt} = await ensureBuilt({config, preflight:builder, cwd:${JSON.stringify(f.root)}, runner:createDefaultRunner({stdio:'ignore'})});
+  await builder.prepareConsumerPhase(receipt);
+  await seed.ensureGeneratedArtifactsMaterialized();
+  await seed.publishAnalysisCache();
+  const events=[];
+  const ordinary = new LiminaPreflightManager({config, analysisCache:true, metrics:{record:event=>events.push(event)}});
+  const consumer = new LiminaPreflightManager({config, analysisCache:true});
+  try {
+    await consumer.prepareConsumerPhase(receipt);
+    await ordinary.ensureGeneratedGraph();
+    await ordinary.publishAnalysisCache();
+    const {graph} = await consumer.ensureGeneratedArtifactsMaterialized();
+    console.log(JSON.stringify({
+      declared: receipt.declarations.length,
+      ordinaryHits: events.find(event=>event.kind==='graphHits')?.count,
+      boundReceipt: graph.producerBuildReceipt === receipt,
+    }));
+  }finally{ordinary.dispose();consumer.dispose();}
+}finally{seed.dispose();builder.dispose();}
+`);
+    expect(result).toEqual({
+      declared: 1,
+      ordinaryHits: 1,
+      boundReceipt: true,
+    });
+  });
+
+  it.each([
+    'changed options',
+    'rebound extends',
+    'new installation directory',
+  ] as const)(
+    'applies the installation gate and rebuilds the affected authorities after %s',
+    (change) => {
+      const f = fixture();
+      f.write('limina.config.mjs', 'export default {};');
+      f.write('src/a.ts', 'export const independent = 1;');
+      const rootConfig = JSON.parse(
+        readFileSync(f.file('tsconfig.json'), 'utf8'),
+      );
+      rootConfig.include.push('src/**/*.astro', 'src/**/*.svelte');
+      f.write('tsconfig.json', JSON.stringify(rootConfig));
+      const preset = 'node_modules/fixture-preset/tsconfig.json';
+      const base = '{"compilerOptions":{"strict":false}}';
+      f.write(preset, base);
+      f.write(
+        'provider/tsconfig.json',
+        JSON.stringify({
+          extends: 'fixture-preset/tsconfig.json',
+          compilerOptions: { noLib: true, types: [], module: 'NodeNext' },
+          include: ['*.ts'],
+        }),
+      );
+      f.write('provider/value.ts', 'export const provider = 1;');
+      f.write('provider/index.ts', "export {provider} from './value.js';");
+      if (change === 'rebound extends') {
+        // Keep the installation fixed while TypeScript selects a nearer preset.
+        const installed = f.file('node_modules/fixture-host/node_modules');
+        mkdirSync(installed, { recursive: true });
+        symlinkSync(installed, f.file('provider/node_modules'), 'junction');
+      }
+      const run = 'console.log(JSON.stringify(await runCache()));';
+      const cold = f.execute<GraphRunResult>(run);
+      expect(cold.events).toContainEqual(
+        expect.objectContaining({ kind: 'ownershipResolutions', count: 2 }),
+      );
+      if (change === 'changed options') {
+        f.write(preset, '{"compilerOptions":{"strict":true}}');
+      } else {
+        const ancestorTime = statSync(f.file(preset)).mtime;
+        const localPreset = `provider/${preset}`;
+        f.write(localPreset, base);
+        utimesSync(f.file(localPreset), ancestorTime, ancestorTime);
+      }
+      const changed = f.execute<GraphRunResult>(run);
+      if (change === 'new installation directory') {
+        expect(changed.events).toContainEqual(
+          expect.objectContaining({ kind: 'lockGateMisses', count: 1 }),
+        );
+        expect(changed.events.some(({ kind }) => kind === 'read-block')).toBe(
+          false,
+        );
+        expect(changed.events).toContainEqual(
+          expect.objectContaining({ kind: 'ownershipResolutions', count: 2 }),
+        );
+      } else {
+        for (const kind of [
+          'lockGateHits',
+          'ownershipResolutions',
+          'authorityRecoveries',
+        ])
+          expect(changed.events).toContainEqual(
+            expect.objectContaining({ kind, count: 1 }),
+          );
+      }
+      const resolutions = changed.events.find(
+        ({ kind }) => kind === 'resolverCalls',
+      );
+      expect(resolutions?.count).toBeGreaterThan(0);
+      const clean = f.execute<GraphRunResult>(
+        'console.log(JSON.stringify(await runCache({cache:false})));',
+      );
+      expect(changed.ambiguities).toEqual([
+        {
+          sourceConfigPath: f.file('tsconfig.json'),
+          checkers: ['astro', 'svelte-check'],
+        },
+      ]);
+      expect(changed.ambiguities).toEqual(clean.ambiguities);
+      expect(graphMeaning(changed.graph)).toEqual(graphMeaning(clean.graph));
+    },
+  );
+
   it('rebuilds a corrupt graph projection from qualified context facts and repairs the next invocation', () => {
     const f = fixture();
     const first = f.execute<GraphRunResult>(
@@ -944,6 +1340,16 @@ describe('production graph snapshots and publication', () => {
     expect(control.events).toContainEqual(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),
     );
+    expect(first.events).toContainEqual(
+      expect.objectContaining({ kind: 'ownershipResolutions', count: 1 }),
+    );
+    for (const [kind, count] of [
+      ['ownershipResolutions', 0],
+      ['authorityRecoveries', 1],
+    ] as const)
+      expect(control.events).toContainEqual(
+        expect.objectContaining({ kind, count }),
+      );
     const store = new AnalysisCacheStore({
       namespace: createLiminaArtifactNamespace({
         rootDir: f.root,
@@ -967,6 +1373,12 @@ describe('production graph snapshots and publication', () => {
     );
     expect(repaired.events).toContainEqual(
       expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
+    );
+    expect(repaired.events).toContainEqual(
+      expect.objectContaining({ kind: 'authorityRecoveries', count: 1 }),
+    );
+    expect(repaired.events).toContainEqual(
+      expect.objectContaining({ kind: 'ownershipResolutions', count: 0 }),
     );
     const next = f.execute<GraphRunResult>(
       'console.log(JSON.stringify(await runCache()));',
@@ -1703,9 +2115,9 @@ describe('production graph snapshots and publication', () => {
     );
     expect(changed.graph.edges).toEqual(first.graph.edges);
     expect(changed.graph.manifest).toEqual(first.graph.manifest);
-    expect(changed.events).toContainEqual(
-      expect.objectContaining({ kind: 'resolverCalls', count: 0 }),
-    );
+    expect(
+      changed.events.find((event) => event.kind === 'resolverCalls')?.count,
+    ).toBeGreaterThan(0);
     expect(
       changed.events.find((event) => event.kind === 'semanticPrograms')?.count,
     ).toBeGreaterThan(0);
@@ -1750,6 +2162,20 @@ describe('production graph snapshots and publication', () => {
       expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
     );
     expect(readFileSync(store.path)).toEqual(refreshed);
+  });
+  it('reuses the updated graph across a provider refresh before publication', () => {
+    const f = fixture();
+    f.execute('console.log(JSON.stringify(await runCache()));');
+    f.write('src/a.ts', 'export const changed = 1;');
+    const result = f.execute<GraphRunResult>(
+      'console.log(JSON.stringify(await runCache({refresh:true,deferPublish:true})));',
+    );
+    expect(result.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
+    );
+    expect(result.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
   });
   it('reuses validated analysis from the forced invocation after a provider refresh', () => {
     const f = fixture();
@@ -1876,10 +2302,10 @@ it.each(['Coverage', 'explicit choice'] as const)(
     const run = 'console.log(JSON.stringify(await runCache()));';
     const first = f.execute<GraphRunResult>(run);
     const warm = f.execute<GraphRunResult>(run);
-    expect(warm.graph).toEqual(first.graph);
     expect(warm.events).toContainEqual(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),
     );
+    expect(warm.graph).toEqual(first.graph);
     if (change === 'Coverage') {
       f.write('tsconfig.b2.json', JSON.stringify(b));
       writeSolution([

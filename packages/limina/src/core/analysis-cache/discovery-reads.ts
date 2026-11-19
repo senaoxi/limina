@@ -1,4 +1,5 @@
 import type { AnalysisReadDescriptor } from '#utils/analysis-input';
+import { digestFile } from '#utils/file-digest';
 import {
   readPhysicalFileBinding,
   readPhysicalFileIdentity,
@@ -64,6 +65,12 @@ const readers = {
     inputStat(descriptor.path)?.isFile() ?? false,
   content: (descriptor: Extract<AnalysisReadDescriptor, { kind: 'content' }>) =>
     readContent(descriptor.path),
+  'file-size': (descriptor: { path: string }) =>
+    ts.sys.getFileSize?.(descriptor.path),
+  'file-digest': (descriptor: { path: string }) =>
+    digestFile(descriptor.path).hash,
+  'source-digest': (descriptor: { path: string }) =>
+    digestFile(descriptor.path).hash,
   'typescript-content': readTypeScriptContent,
   'config-text': readTypeScriptContent,
   'ts-directory': readDirectory,

@@ -48,6 +48,7 @@ export function createBoundedProgramClosure(
     const host = createNativeProgramHost({
       project,
       compiler,
+      queries: options.queries,
       frontier,
       loads,
       configReads,

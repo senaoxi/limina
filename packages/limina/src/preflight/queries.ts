@@ -31,14 +31,6 @@ export async function loadCheckerRouteSnapshot(
   return collectCheckerRouteSnapshot(config, result, getMetrics());
 }
 
-export async function loadGeneratedGraph(
-  validated: Promise<ValidatedWorkspaceContext>,
-  getGraph: () => Promise<GeneratedTsconfigGraphResult>,
-): Promise<GeneratedTsconfigGraphResult> {
-  await validated;
-  return getGraph();
-}
-
 export async function loadWorkspacePackages(
   validated: Promise<ValidatedWorkspaceContext>,
 ): Promise<WorkspacePackage[]> {
@@ -108,22 +100,17 @@ async function analyzeWithoutCache<T>(
   return result;
 }
 
-export function loadAnalyzedGraph(options: {
+export function loadAnalyzedGraph<T>(options: {
   cache: AnalysisCacheController | undefined;
   configObservation?: Pick<ConfigObservation, 'assertStable'>;
-  source: Pick<
-    LiminaPreflightManager,
-    'ensureWorkspaceValidated' | 'providers'
-  >;
-  getGraph: (() => Promise<GeneratedTsconfigGraphResult>) | undefined;
+  source: Pick<LiminaPreflightManager, 'ensureWorkspaceValidated'>;
+  getGraph: () => Promise<T>;
   refresh(): void;
-}): Promise<GeneratedTsconfigGraphResult> {
-  const analyze = () =>
-    loadGeneratedGraph(
-      options.source.ensureWorkspaceValidated(),
-      () =>
-        options.getGraph?.() ?? options.source.providers.buildGraph.getGraph(),
-    );
+}): Promise<T> {
+  const analyze = async () => {
+    await options.source.ensureWorkspaceValidated();
+    return options.getGraph();
+  };
   return options.cache === undefined
     ? analyzeWithoutCache(options.configObservation, analyze)
     : options.cache.analyze({ analyze, refresh: options.refresh });

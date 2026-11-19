@@ -10142,6 +10142,73 @@ describe('ambient references and compiler membership', () => {
       await fixture.cleanup();
     }
   });
+  it('uses the generated output config package scope for NodeNext imports and self-name exports', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/package.json': json({
+        name: 'scope-probe',
+        type: 'module',
+        imports: { '#local': './dist/inner.d.mts' },
+        exports: { './value': { require: './dist/other.d.cts' } },
+      }),
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          module: 'NodeNext',
+          rootDir: 'src',
+          outDir: 'source-out',
+          types: [],
+        },
+        include: ['src/**/*'],
+        liminaOptions: { outputs: { rootDir: 'src', outDir: 'dist' } },
+      }),
+      'packages/pkg/src/inner.mts': "export type Value = 'source';",
+      'packages/pkg/src/other.cts': "export type Value = 'source';",
+      'packages/pkg/dist/inner.d.mts': "export type Value = 'declaration';",
+      'packages/pkg/dist/other.d.cts': "export type Value = 'declaration';",
+      'packages/pkg/src/main.mts':
+        "import type { Value } from '#local'; export const value: Value = 'declaration';",
+      'packages/pkg/src/main.cts':
+        "import type { Value } from 'scope-probe/value'; export const value: Value = 'declaration';",
+    });
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const output = result.configToOutputBuild
+        .get('tsc')!
+        .get(fixture.path('packages/pkg/tsconfig.json'))!.path;
+      const evidence = result.dependencyAnalysis!.nativeEvidence!.find(
+        ({ snapshot }) =>
+          snapshot.contexts.some((context) => context.inputs.config === output),
+      )!.snapshot;
+      const target = (specifier: string) => {
+        const request = evidence.requests.find(
+          (entry) => entry.specifier === specifier,
+        )!;
+        return evidence.resolutions.find(
+          (entry) => entry.requestId === request.id,
+        )?.target?.lexicalPath;
+      };
+      expect(target('#local')).toBe(
+        fixture.path('packages/pkg/dist/inner.d.mts'),
+      );
+      expect(target('scope-probe/value')).toBe(
+        fixture.path('packages/pkg/dist/other.d.cts'),
+      );
+      await execFileAsync(
+        process.execPath,
+        [
+          requireFromTest.resolve('typescript/bin/tsc'),
+          '-p',
+          output,
+          '--noEmit',
+          '--pretty',
+          'false',
+        ],
+        { cwd: fixture.rootDir },
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it.each([
     'relative',
     'inherited-relative',
@@ -11514,11 +11581,39 @@ describe('ambient references and compiler membership', () => {
           });
           return;
         }
+        const outputs = new Map<string, (string | undefined)[]>();
+        const acquire = VueSemanticContextManager.prototype.acquire;
+        const contexts = vi
+          .spyOn(VueSemanticContextManager.prototype, 'acquire')
+          .mockImplementation(function (
+            this: VueSemanticContextManager,
+            identity,
+          ) {
+            const context = acquire.call(this, identity);
+            if (
+              identity.outputProjection &&
+              !outputs.has(identity.configPath)
+            ) {
+              outputs.set(
+                identity.configPath,
+                context.program
+                  .getResolvedProjectReferences()
+                  ?.map((reference) => reference?.sourceFile.fileName) ?? [],
+              );
+            }
+            return context;
+          });
         const graph = await prepareGeneratedTsconfigGraph(fixture.config);
         const source = fixture.path('packages/a/tsconfig.json');
         const output = graph.configToOutputBuild
           .get('vue-tsc')!
           .get(source)!.path;
+        contexts.mockRestore();
+        expect(outputs.get(output)).toEqual([
+          graph.configToOutputBuild
+            .get('vue-tsc')!
+            .get(fixture.path('packages/b/tsconfig.json'))!.path,
+        ]);
         const parsed = parseProject(fixture.config, output);
         expect(parsed.options.target).toBe(
           ts.ScriptTarget[outputTarget as 'ES2020' | 'ES2023'],

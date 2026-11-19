@@ -82,6 +82,7 @@ export function projectTypeDirectiveNames(
   const generated = collectConfigTypeInputs({
     compiler,
     configPath: generatedConfig,
+    sourceConfigPath: project.configPath,
     options,
     cache,
     files: projection.files,
@@ -117,6 +118,7 @@ export function proveTypeInputProjection(
   const generated = collectConfigTypeInputs({
     compiler,
     configPath: generatedConfig,
+    sourceConfigPath: project.configPath,
     options: generatedOptions,
     cache,
     files: new Map(
@@ -125,10 +127,7 @@ export function proveTypeInputProjection(
         .flatMap((receipt) => [...libraryProjectionFiles(receipt)]),
     ),
   });
-  if (
-    source.length !== generated.length ||
-    source.some((entry, index) => !hasSameTypeInput(entry, generated[index]))
-  ) {
+  if (!hasEquivalentTypeInputs(source, generated)) {
     throw new Error(
       `Type input projection cannot preserve config-type-directives:\n  source: ${project.configPath}\n  generated: ${generatedConfig}\n  source entries: ${JSON.stringify(source)}\n  generated entries: ${JSON.stringify(generated)}`,
     );
@@ -168,13 +167,25 @@ export function isValidTypeInputProjection(
   const generated = collectConfigTypeInputs({
     compiler: ts,
     configPath: receipt.generatedConfig,
+    sourceConfigPath: receipt.sourceConfig,
     options: receipt.generatedOptions,
     cache,
     files,
   });
   return (
+    hasEquivalentTypeInputs(source, generated) &&
     JSON.stringify(source) === JSON.stringify(receipt.source) &&
     JSON.stringify(generated) === JSON.stringify(receipt.generated)
+  );
+}
+
+function hasEquivalentTypeInputs(
+  source: EffectiveTypeInput[],
+  generated: EffectiveTypeInput[],
+): boolean {
+  return (
+    source.length === generated.length &&
+    source.every((entry, index) => hasSameTypeInput(entry, generated[index]))
   );
 }
 

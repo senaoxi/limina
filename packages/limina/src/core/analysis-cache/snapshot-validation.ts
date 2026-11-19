@@ -7,6 +7,7 @@ import { analysisHash } from './identity';
 import { hasBrokenInstallationCoverage } from './installation-lock-coverage';
 import { hasResolutionReceipt } from './resolution-queries';
 import { occurrenceKey } from './semantic-state';
+import { hasVueModuleContextId } from './vue-identity';
 import { hasValidVueQuery } from './vue-schema';
 
 function hasBrokenInputs(
@@ -57,11 +58,13 @@ function hasBrokenFacts(snapshot: AnalysisSnapshot): boolean {
 
 function hasBrokenFile(snapshot: AnalysisSnapshot, file: string): boolean {
   const facts = snapshot.files[file];
+  const input = snapshot.inputs[JSON.stringify(['physical', 'content', file])];
+  const text = input?.textVersions;
   return [
     facts.filePath !== file,
     facts.compilerVersion !== ts.version,
-    snapshot.inputs[JSON.stringify(['physical', 'content', file])]?.version !==
-      facts.sourceVersion,
+    input === undefined || input.version !== facts.physicalVersion,
+    (text?.typescript ?? text?.utf8) !== facts.sourceVersion,
     facts.requests.some((request) => request.occurrence.filePath !== file),
   ].some(Boolean);
 }
@@ -174,6 +177,7 @@ export function validatedSnapshot(
         !hasValidBoundedContext(context, snapshot.importers, {
           project: snapshot.projects[id],
           contextId: id,
+          queries: snapshot.queries,
         }),
     ),
     Object.values(snapshot.queries).some(
@@ -200,12 +204,28 @@ function isVueRecordValid(
   id: string,
   context: AnalysisSnapshot['vueContexts'][string],
 ): boolean {
+  const members = new Set(context.members);
+  const dependencies = new Map(
+    context.dependencies.map((dependency) => [
+      dependency.inputId,
+      dependency.expectedVersion,
+    ]),
+  );
   return [
     analysisHash(context.identity) === id,
+    hasVueModuleContextId(context.identity, context.moduleContextId),
     context.queryIds.length === Object.keys(context.queries).length,
     context.queryIds.every((key) => context.queries[key] !== undefined),
     Object.values(context.queries).every((query) =>
       hasValidVueQuery(query.kind, query.data),
+    ),
+    Object.values(context.moduleResolutions).every(
+      (resolution) =>
+        resolution.members.every((file) => members.has(file)) &&
+        resolution.dependencies.every(
+          (dependency) =>
+            dependencies.get(dependency.inputId) === dependency.expectedVersion,
+        ),
     ),
   ].every(Boolean);
 }
@@ -216,7 +236,7 @@ function hasDifferentSourceVersion(
   id: string,
 ): boolean {
   return (
-    snapshot.files[file]?.sourceVersion !==
+    snapshot.files[file]?.physicalVersion !==
     snapshot.importers[id]?.sourceVersion
   );
 }

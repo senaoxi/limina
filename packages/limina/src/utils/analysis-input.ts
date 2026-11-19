@@ -1,10 +1,15 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'node:crypto';
 import { configFileStamp, readStampedConfig } from './config-file-stamp';
+import { digestFile } from './file-digest';
 
 export type AnalysisReadDescriptor =
   | { kind: 'directory' | 'directories' | 'realpath'; path: string }
   | { kind: 'file'; path: string }
   | { kind: 'content'; path: string }
+  | { kind: 'file-digest'; path: string }
+  | { kind: 'source-digest'; path: string }
+  | { kind: 'file-size'; path: string }
   | { kind: 'typescript-content'; path: string }
   | { kind: 'config-text'; path: string }
   | { kind: 'file-identity'; path: string }
@@ -51,6 +56,10 @@ interface ReadDispatch {
   derived: Map<(input: AnalysisRead) => unknown, unknown>;
 }
 const dispatches: ReadDispatch[] = [];
+
+export function withoutAnalysisReads<T>(operation: () => T): T {
+  return observations.exit(operation);
+}
 
 /**
 Scoped to a provider epoch; these callbacks are never persisted.
@@ -113,6 +122,8 @@ export function readAnalysisInput<T>(
   purpose:
     | 'content'
     | 'file'
+    | 'file-size'
+    | 'source-digest'
     | 'directory'
     | 'directories'
     | 'realpath'
@@ -125,6 +136,22 @@ export function readAnalysisInput<T>(
     path,
     descriptor: { kind: purpose, path },
     key: JSON.stringify([purpose, path]),
+    value,
+    read,
+  });
+  return value;
+}
+
+export function readAnalysisFileDigest(path: string, bytes?: Buffer): string {
+  const read = () => digestFile(path).hash;
+  const value =
+    bytes === undefined
+      ? read()
+      : createHash('sha256').update(bytes).digest('hex');
+  observeAnalysisRead({
+    path,
+    descriptor: { kind: 'file-digest', path },
+    key: JSON.stringify(['file-digest', path]),
     value,
     read,
   });

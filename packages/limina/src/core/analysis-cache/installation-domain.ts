@@ -1,46 +1,13 @@
-import { readFileSync } from 'node:fs';
 import path from 'pathe';
 import type { InputDependency } from './contracts';
 import { inputStat } from './input-state';
 import type { AnalysisInputs } from './inputs';
 import { installationBindings } from './installation-bindings';
 import type { InstallationDomain } from './installation-environment';
-import { pnpmLockCoverageKey } from './installation-lock-coverage';
-import { validateInstallationLock } from './installation-locks';
 import { installationOwner } from './installation-owner';
 
 function isLockFile(file: string): boolean {
   return inputStat(file)?.isFile() ?? false;
-}
-function lockBytes(
-  file: string,
-  inputs: AnalysisInputs,
-): { bytes: Buffer; version: string } {
-  const before = inputStat(file)!;
-  const bytes = readFileSync(file);
-  const dependency = inputs.observeBytes({
-    path: file,
-    bytes,
-    beforeMtime: before.mtimeMs,
-  });
-  return { bytes, version: dependency.expectedVersion };
-}
-function validateObservedLock(
-  inputs: AnalysisInputs,
-  options: Parameters<typeof validateInstallationLock>[0],
-  version: string,
-): void {
-  if (options.manager !== 'pnpm') {
-    validateInstallationLock(options);
-    return;
-  }
-  const key = pnpmLockCoverageKey(options.file, options.roots, version);
-  // Reuse only the pure coverage decision. Each caller still observes current
-  // bytes and bindings before using a restored or invocation-local decision.
-  inputs.memoizeObservation(key, () => {
-    validateInstallationLock(options);
-    return true;
-  });
 }
 function observeLockCandidates(
   candidates: string[],
@@ -72,10 +39,33 @@ function domainBindings(
     }),
   };
 }
-export function observeInstallationDomain(options: {
+export interface InstallationLockObserver {
+  observe(options: DomainOptions): InstallationDomain;
+  resolved(file: string): void;
+}
+export interface DomainOptions {
   root: string;
   configPath: string;
   inputs: AnalysisInputs;
+}
+export const installationObservers: WeakMap<
+  AnalysisInputs,
+  InstallationLockObserver
+> = new WeakMap();
+
+export function observeInstallationDomain(
+  options: DomainOptions,
+): InstallationDomain {
+  return (
+    installationObservers.get(options.inputs)?.observe(options) ??
+    readInstallationDomain(options)
+  );
+}
+export function readInstallationDomain(options: {
+  root: string;
+  configPath: string;
+  inputs: AnalysisInputs;
+  readLocks?: (locks: string[], dependencies: InputDependency[]) => void;
 }): InstallationDomain {
   const dependencies: InputDependency[] = [];
   const { root, binding } = domainBindings(options, dependencies);
@@ -88,14 +78,12 @@ export function observeInstallationDomain(options: {
     throw new Error(
       `Usable ${binding.manager} lockfile missing: ${binding.lockRoot}`,
     );
-  const { bytes, version } = lockBytes(locks[0]!, options.inputs);
-  validateObservedLock(
-    options.inputs,
-    { manager: binding.manager, file: locks[0]!, bytes, roots: binding },
-    version,
-  );
-  for (const file of locks)
-    dependencies.push(options.inputs.observe(file, 'bytes'));
+  if (options.readLocks === undefined) {
+    for (const file of locks)
+      dependencies.push(options.inputs.observe(file, 'bytes'));
+  } else {
+    options.readLocks(locks, dependencies);
+  }
   return {
     adapter: 'physical-installation-v2',
     root,

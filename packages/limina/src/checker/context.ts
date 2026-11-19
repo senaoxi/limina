@@ -103,6 +103,7 @@ function mergeParsedProjectConfigs(options: {
       options.parsedConfigs.flatMap((config) => config.fileNames),
     ).sort(compareCodeUnits),
     options: firstConfig.options,
+    projectReferences: firstConfig.projectReferences,
     vueSemanticIdentity: options.parsedConfigs.find(
       (config) => config.vueSemanticIdentity !== undefined,
     )?.vueSemanticIdentity,

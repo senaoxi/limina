@@ -2,7 +2,10 @@ import { compareCodeUnits } from '#utils/collections';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { StoredGraphData } from './analysis-cache-schema';
-import { projectedReferences } from './candidate-build-plan';
+import {
+  projectedReferences,
+  projectedSchedules,
+} from './candidate-build-plan';
 import {
   bindCompilationProjection,
   bindCurrentCompilationContexts,
@@ -26,7 +29,17 @@ export function hasBoundCandidate(graph: StoredGraphData): boolean {
   );
   return [
     hasSameSet(candidate.configPaths, configs),
-    candidate.schedules.length === 0,
+    hasSameSet(
+      candidate.schedules.map(nativeFingerprint),
+      projectedSchedules(graph.dependencyEdges).map(nativeFingerprint),
+    ),
+    graph.dependencyEdges.every(
+      (edge) =>
+        graph.ownershipPlan.typeConfigs.get(edge.fromConfigPath)?.finalOwner ===
+          edge.fromChecker &&
+        graph.ownershipPlan.typeConfigs.get(edge.toConfigPath)?.finalOwner ===
+          edge.toChecker,
+    ),
     hasSameSet(
       candidate.references.map(nativeFingerprint),
       references.map(nativeFingerprint),

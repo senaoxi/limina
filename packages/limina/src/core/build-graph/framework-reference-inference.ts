@@ -2,7 +2,10 @@ import { isBuildCapablePreset } from '#checkers';
 import type { formatImportRecordLocation } from '#core/import-graph/context';
 import { formatImportRecordLocation as importLocation } from '#core/import-graph/context';
 import { uniqueCodeUnitSortedStrings } from '#utils/collections';
-import { collectFrameworkExecutionInputs } from '../analysis-cache/framework-execution-inputs';
+import {
+  collectFrameworkExecutionInputs,
+  hasFrameworkExecutionInputs,
+} from '../analysis-cache/framework-execution-inputs';
 import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
   collectProjectDependencies,
@@ -285,11 +288,15 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
   const frameworkFiles = new Set(
     getFrameworkSourceFileNames(options.source, project),
   );
-  const collection = collectFrameworkExecutionInputs(
+  const collectInputs = options.context.replayFrameworkExecutionInputs
+    ? replayFrameworkInputs
+    : collectFrameworkExecutionInputs;
+  const collection = collectInputs(
     {
       source: options.source,
       project,
       analysis: options.context.importAnalysis,
+      cache: options.context.projectDependencyCaches.analysisCache,
     },
     () => {
       const semantic = options.source.svelteSemanticProject;
@@ -384,6 +391,21 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
     observations: collection.observations,
     source: options.source,
   });
+}
+
+function replayFrameworkInputs(
+  { source }: { source: GovernedSourceUnit },
+  collect: () => ReturnType<typeof collectProjectDependencies>,
+): ReturnType<typeof collectProjectDependencies> {
+  if (
+    source.frameworkCapabilities.length > 0 &&
+    !hasFrameworkExecutionInputs(source)
+  )
+    throw new Error('Framework execution inputs are unbound.');
+  const result = collect();
+  if (result.failures.length > 0)
+    throw new Error('Framework dependency reconstruction is incomplete.');
+  return result;
 }
 
 export function processFrameworkSourceReferences(options: {

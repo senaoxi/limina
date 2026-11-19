@@ -69,7 +69,7 @@ async function isExecuteGraphValidation(options: {
   );
   const preflight = new LiminaPreflightManager({
     config,
-    analysisCache: 'read-only',
+    analysisCache: options.action === 'prepare' || 'read-only',
   });
   const command = `limina graph ${options.action}`;
   const issues: LiminaCheckIssue[] = [];
@@ -82,7 +82,7 @@ async function isExecuteGraphValidation(options: {
     task: descriptor.task,
     title: descriptor.title,
   });
-  return descriptor.run(config, {
+  const isPassed = await descriptor.run(config, {
     clearScreen: false,
     deferSnapshot: true,
     flow: options.flow,
@@ -90,6 +90,9 @@ async function isExecuteGraphValidation(options: {
     preflight,
     report: { command, verbose: options.flags.verbose },
   });
+  if (isPassed && options.action === 'prepare')
+    await preflight.publishAnalysisCache();
+  return isPassed;
 }
 
 async function runGraphValidationAction(options: {

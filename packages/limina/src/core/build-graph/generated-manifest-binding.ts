@@ -1,6 +1,7 @@
 import { compareCodeUnits } from '#utils/collections';
 import { toPosixPath, toRelativePath } from '#utils/path';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
+import { createManifestDependencyEdges } from './manifest';
 import {
   createExecutionTargets,
   createOwnershipManifest,
@@ -20,6 +21,7 @@ type ManifestGraph = Pick<
   | 'dtsToSource'
   | 'sourceToBuild'
   | 'configToOutputBuild'
+  | 'dependencyEdges'
 >;
 
 function projectPaths<Value, Projected>(
@@ -82,6 +84,10 @@ export function assertGeneratedManifestBinding(
   );
   const expected = {
     checkers,
+    dependencyEdges: createManifestDependencyEdges(
+      graph.dependencyEdges,
+      rootDirectory,
+    ),
     ownership: createOwnershipManifest({
       ownershipPlan: graph.ownershipPlan,
       rootDir: rootDirectory,
@@ -97,7 +103,12 @@ export function assertGeneratedManifestBinding(
       ),
     }),
   };
-  for (const field of ['checkers', 'ownership', 'targets'] as const)
+  for (const field of [
+    'checkers',
+    'dependencyEdges',
+    'ownership',
+    'targets',
+  ] as const)
     if (
       nativeFingerprint(expected[field]) !==
       nativeFingerprint(graph.manifest[field])

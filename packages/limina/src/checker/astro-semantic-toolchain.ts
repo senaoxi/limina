@@ -16,8 +16,8 @@ import {
 } from './astro-semantic-discovery';
 import { loadAstroSemanticRuntime } from './astro-semantic-runtime';
 import type {
-  AstroSemanticToolchain,
   AstroSemanticVersionTuple,
+  LoadedAstroSemanticToolchain,
 } from './astro-semantic-types';
 
 export {
@@ -72,7 +72,7 @@ function assertSupportedTuple(options: {
 export function resolveAstroSemanticToolchain(
   packageRootDirectory: string,
   manifest?: PackageManifest,
-): AstroSemanticToolchain {
+): LoadedAstroSemanticToolchain {
   let versions: AstroSemanticVersionTuple | undefined;
   try {
     const normalizedRoot = normalizeAbsolutePath(packageRootDirectory);

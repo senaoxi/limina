@@ -6,6 +6,7 @@ import type {
 import type { ImportRecord } from '#core/import-analysis/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
+import type { VueQueryResults } from '../analysis-cache/vue-contracts';
 import type { FrameworkSemanticFailureStage } from '../framework-semantic/contracts';
 import { getResolutionOrigin } from '../typescript-semantic/resolution-origin';
 import type { VueSemanticContextManager } from './context';
@@ -104,6 +105,55 @@ function createCheckerResolution(options: {
       : 'typescript',
     resolvedFileName,
   };
+}
+
+/**
+Only a current Program request can project a requalified raw Volar receipt.
+*/
+export function projectRestoredVueResolution(
+  manager: VueSemanticContextManager,
+  identity: VueProjectSemanticIdentity,
+  record: ImportRecord,
+): VueQueryResults['resolution'] | undefined {
+  let projection;
+  if (
+    record.compilerRequest !== undefined &&
+    !['triple-slash-path', 'triple-slash-types'].includes(record.kind)
+  ) {
+    try {
+      projection = projectBoundModule(manager.acquire(identity), record);
+    } catch {
+      // The normal resolution path reports context and language-service failures.
+    }
+  }
+  return projection;
+}
+
+function projectBoundModule(
+  context: ReturnType<VueSemanticContextManager['acquire']>,
+  record: ImportRecord,
+): VueQueryResults['resolution'] | undefined {
+  const requests = context.compilerRequests.matching(context.program, record);
+  const request = requests.length === 1 ? requests[0] : undefined;
+  const raw = request?.raw;
+  return raw !== undefined &&
+    context.analysisTrace?.moduleReplay?.wasRestored(raw)
+    ? {
+        framework: 'vue',
+        provenance: 'compiler-request',
+        profile: undefined,
+        resolutionMode: String(request!.mode),
+        semanticSpecifier: request!.literal.text,
+        sourceRecord: structuredClone(record),
+        target:
+          raw.resolvedModule === undefined
+            ? null
+            : createCheckerResolution({
+                context,
+                resolvedModule: raw.resolvedModule,
+              }),
+      }
+    : undefined;
 }
 
 function canonicalCandidate(candidate: ResolvedSemanticCandidate): string {

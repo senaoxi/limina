@@ -183,6 +183,10 @@ export interface AstroSemanticToolchain {
   vuePlugin: AstroFrameworkPluginRuntime;
 }
 
+export interface LoadedAstroSemanticToolchain extends AstroSemanticToolchain {
+  runtimeModules: { specifier: string; file: string }[];
+}
+
 export interface AstroSemanticSeed {
   analysisGeneration: number;
   configPath: string;

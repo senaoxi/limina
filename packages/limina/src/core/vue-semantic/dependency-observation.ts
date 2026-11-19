@@ -5,7 +5,6 @@ import type {
   CompilerMembership,
   ProjectReferenceRedirect,
 } from '../dependency-semantics';
-import { isMatchingFrameworkCompilerRequest } from '../framework-semantic/compiler-requests';
 import { rangeIdentity } from '../framework-semantic/generated-dependencies';
 import {
   canonicalTypeEvidenceIdentity,
@@ -147,20 +146,21 @@ function graphObligation(
       reason: 'compiler-request-source-or-mapping-unavailable',
       requests: [],
     };
-  const requests = context.compilerRequests
-    .collect(context.program, source)
-    .filter((request) => {
-      if (importRecord.compilerRequest !== undefined)
-        return isMatchingFrameworkCompilerRequest(request, importRecord);
-      const { sourceStart, sourceEnd } = request.record.locator;
-      return (
-        request.literal.text === importRecord.specifier &&
-        [
-          rangeIdentity(sourceStart, sourceEnd),
-          rangeIdentity(sourceStart + 1, sourceEnd - 1),
-        ].some((range) => ranges.has(range))
-      );
-    });
+  const requests =
+    importRecord.compilerRequest === undefined
+      ? context.compilerRequests
+          .collect(context.program, source)
+          .filter((request) => {
+            const { sourceStart, sourceEnd } = request.record.locator;
+            return (
+              request.literal.text === importRecord.specifier &&
+              [
+                rangeIdentity(sourceStart, sourceEnd),
+                rangeIdentity(sourceStart + 1, sourceEnd - 1),
+              ].some((range) => ranges.has(range))
+            );
+          })
+      : context.compilerRequests.matching(context.program, importRecord);
   const proof = vueCompilationObligation(context, requests);
   if (importRecord.compilerRequest !== undefined && requests.length !== 1)
     return {

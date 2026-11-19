@@ -17,6 +17,7 @@ export interface EffectiveTypeInput {
 export function collectConfigTypeInputs(input: {
   compiler: typeof ts;
   configPath: string;
+  sourceConfigPath?: string;
   options: ts.CompilerOptions;
   cache?: NativeAnalysisCache;
   files?: ReadonlyMap<string, string>;
@@ -24,7 +25,13 @@ export function collectConfigTypeInputs(input: {
   const { compiler, configPath, options, cache } = input;
   if (options.types?.length === 0) return [];
   const file = normalizeAbsolutePath(configPath);
+  const source = normalizeAbsolutePath(input.sourceConfigPath ?? file);
   const effective = effectiveCompilerOptions(options);
+  const configPaths = cache?.authorities[source]?.closure ?? [
+    source,
+    ...((options.configFile as ts.TsConfigSourceFile | undefined)
+      ?.extendedSourceFiles ?? []),
+  ];
   const host = withVirtualResolutionFiles(
     observedResolutionHost(compiler, file),
     input.files,
@@ -39,7 +46,8 @@ export function collectConfigTypeInputs(input: {
       : cache.query({
           contextId,
           file,
-          identity: { options: effective, request },
+          identity: { options: effective, request, configPaths },
+          configPaths,
           retain: true,
           host,
           resolve,

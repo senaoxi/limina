@@ -25,13 +25,27 @@ for (const file of files.keys()) {
 const read = fs.readFileSync;
 const reads = new Map();
 const checks = new Map();
-${observePluginResolutions}
+const digestBytes = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
+function recordRead(file, digest) {
+  const name = normalize(file);
+  const before = reads.get(name);
+  if (before !== undefined && before !== digest) throw new Error('Candidate input changed: ' + name);
+  reads.set(name, digest);
+}
 const exists = fs.existsSync;
 const stat = fs.statSync;
 const readdir = fs.readdirSync;
 const realpath = fs.realpathSync;
 const sample = stat(process.cwd());
-fs.readFileSync = (file, encoding) => {
+function fileStamp(file) {
+  try {
+    const value = stat(file, { bigint: true });
+    if (!value.isFile() || value.ino === 0n || value.ctimeNs <= 0n || value.ctimeNs % 1000000n === 0n) return undefined;
+    return [value.dev, value.ino, value.size, value.mtimeNs, value.ctimeNs].join(':');
+  } catch { return undefined; }
+}
+${observePluginResolutions}
+fs.readFileSync = (file, options) => {
   // Always construct a fresh candidate. Incremental state is an output that
   // the subsequent build may replace, not evidence for the Reference Map.
   if (typeof file === 'string' && normalize(file) === buildInfoFile) {
@@ -40,9 +54,22 @@ fs.readFileSync = (file, encoding) => {
     throw error;
   }
   const text = typeof file === 'string' ? files.get(normalize(file)) : undefined;
-  if (text !== undefined) return encoding ? text : Buffer.from(text);
-  const value = read(file, encoding);
-  if (typeof file === 'string') reads.set(normalize(file), crypto.createHash('sha256').update(String(value)).digest('hex'));
+  if (text !== undefined) return options ? text : Buffer.from(text);
+  if (typeof file !== 'string') return read(file, options);
+  if (typeof options === 'string' && Buffer.isEncoding(options)) {
+    const bytes = read(file);
+    recordRead(file, digestBytes(bytes));
+    return bytes.toString(options);
+  }
+  const stamp = options && typeof options === 'object' ? fileStamp(file) : undefined;
+  const value = read(file, options);
+  if (Buffer.isBuffer(value)) recordRead(file, digestBytes(value));
+  else if (typeof value === 'string') {
+    const bytes = read(file);
+    if (stamp === undefined || stamp !== fileStamp(file) || bytes.toString(options.encoding) !== value)
+      throw new Error('Cannot qualify encoded candidate input: ' + normalize(file));
+    recordRead(file, digestBytes(bytes));
+  }
   return value;
 };
 fs.existsSync = file => typeof file === 'string' && (files.has(normalize(file)) || directories.has(normalize(file))) || exists(file);

@@ -1,14 +1,31 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { statSync } from 'node:fs';
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rename,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { parseTypeScriptCommandLine } from '../checker/project-base';
+import {
+  CheckerProjectConfigCache,
+  parseCheckerProjectConfigForContext,
+} from '../checker/context';
 import { emptyMetrics } from '../core/analysis-cache/cache-metrics';
 import { ResolvedConfigRecords } from '../core/analysis-cache/resolved-config-records';
 import { inspectFrameworkIntent } from '../core/build-graph/framework-intent';
 import { readExplicitSourceCompilerTarget } from '../core/build-graph/generated/compiler-target';
+import { createNativeSemanticContext } from '../core/typescript-semantic/native-semantic-factory';
+import { resolveModuleWithOrigin } from '../core/typescript-semantic/resolution-origin';
+import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
+import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { createFixturePathResolver } from './helpers/path';
 
 async function createFixture(files: Record<string, unknown>) {
@@ -208,14 +225,17 @@ describe('TypeScript inherited config identity', () => {
         problems: [],
       });
       const metrics = emptyMetrics();
+      const baseline = (await stat(configPath)).mtimeMs;
       const restored = new ResolvedConfigRecords(
         structuredClone(receipts.records),
         metrics,
+        (paths) =>
+          paths.every((filePath) => statSync(filePath).mtimeMs <= baseline),
       );
       expect(restored.run(inspect)).toEqual(initial);
       expect(metrics).toMatchObject({
         resolvedConfigHits: 1,
-        resolvedConfigParses: 0,
+        resolvedConfigParses: 1,
       });
       await writeFile(
         configPath,
@@ -225,6 +245,8 @@ describe('TypeScript inherited config identity', () => {
           files: ['index.ts'],
         }),
       );
+      const changedTime = new Date(baseline + 2000);
+      await utimes(configPath, changedTime, changedTime);
       expect(restored.run(inspect)).toEqual({ intentHints: [], problems: [] });
       expect(inspect()).toEqual({ intentHints: [], problems: [] });
     } finally {
@@ -232,11 +254,13 @@ describe('TypeScript inherited config identity', () => {
     }
   });
 
-  it('preserves compiler paths and package-scope output remapping on restoration', async () => {
+  it('preserves compiler paths and package-scope output remapping through Checker config caching and Native resolution', async () => {
     const fixture = await createFixture({
       'config/base.json': {
         compilerOptions: {
           rootDir: '../pkg/src',
+          noLib: true,
+          types: [],
           outDir: '../pkg/dist',
           module: 'NodeNext',
           paths: { alias: ['./alias.ts'] },
@@ -246,22 +270,35 @@ describe('TypeScript inherited config identity', () => {
       'pkg/package.json': {
         name: 'receiver',
         type: 'module',
-        imports: { '#self': './dist/inner.js' },
+        imports: { '#self': './dist/inner.d.ts' },
       },
       'pkg/src/inner.ts': {},
+      'pkg/src/main.ts': {},
+      'pkg/tsconfig.json': {
+        extends: '../config/base.json',
+        include: ['src/**/*.ts'],
+      },
       'tsconfig.json': {
         extends: './config/base.json',
-        files: ['pkg/src/inner.ts'],
+        files: ['pkg/src/main.ts', 'pkg/src/inner.ts'],
       },
     });
     try {
       const configPath = fixture.path('tsconfig.json');
-      const containing = fixture.path('pkg/src/inner.ts');
-      const scope = (options: ts.CompilerOptions) =>
+      const containing = fixture.path('pkg/src/main.ts');
+      const sourcePath = fixture.path('pkg/src/inner.ts');
+      await writeFile(sourcePath, 'export type Value = number;');
+      await writeFile(
+        containing,
+        "import type { Value } from '#self'; export type Local = Value;",
+      );
+      const scope = (options: ts.CompilerOptions, isTraced = false) =>
         ['#self', 'alias'].map(
           (name) =>
-            ts.resolveModuleName(name, containing, options, ts.sys)
-              .resolvedModule?.resolvedFileName,
+            (isTraced
+              ? resolveModuleWithOrigin(ts, name, containing, options, ts.sys)
+              : ts.resolveModuleName(name, containing, options, ts.sys)
+            ).resolvedModule?.resolvedFileName,
         );
       const reference = ts.getParsedCommandLineOfConfigFile(
         configPath,
@@ -276,22 +313,76 @@ describe('TypeScript inherited config identity', () => {
       const expected = [undefined, fixture.path('config/alias.ts')];
       expect(scope(reference.options)).toEqual(expected);
       // A plain options object wrongly rebinds #self to the nested package's own source.
-      expect(scope({ ...reference.options })[0]).toBe(containing);
-      const parse = () =>
-        parseTypeScriptCommandLine({
-          parseOptions: { configPath, projectRootDir: fixture.rootDir },
+      expect(scope({ ...reference.options })[0]).toBe(sourcePath);
+      const parse = (
+        file = configPath,
+        cache = new CheckerProjectConfigCache(),
+      ) =>
+        parseCheckerProjectConfigForContext({
+          configPath: file,
+          projectRootDir: fixture.rootDir,
+          context: { checkerPresets: ['tsc'], extensions: [] },
+          cache,
         });
-      const receipts = new ResolvedConfigRecords({}, emptyMetrics());
-      expect(scope(receipts.run(parse).parsed.options)).toEqual(expected);
+      const previous = new ResolvedConfigRecords({}, emptyMetrics());
+      const checkerCache = new CheckerProjectConfigCache();
+      expect(
+        scope(
+          previous.run(() => parse(configPath, checkerCache)).options,
+          true,
+        ),
+      ).toEqual(expected);
+      expect(
+        scope(
+          previous.run(() => parse(configPath, checkerCache)).options,
+          true,
+        ),
+      ).toEqual(expected);
+      const localConfig = fixture.path('pkg/tsconfig.json');
+      const local = previous.run(() => parse(localConfig));
+      expect(local.fileNames).toEqual([sourcePath, containing]);
+      expect(scope(local.options, true)).toEqual([
+        sourcePath,
+        fixture.path('config/alias.ts'),
+      ]);
+      const resolveInBoundedProgram = (file: string) => {
+        const parsed = parse(file);
+        const context = createNativeSemanticContext({
+          configPath: file,
+          fileNames: parsed.fileNames,
+          options: parsed.options,
+          projectReferences: parsed.projectReferences,
+          workspaceSourceBoundary: createWorkspaceSourceBoundary(
+            parsed.fileNames,
+            undefined,
+            readFixtureSourceCoverage([file]),
+          ),
+        });
+        try {
+          return context.resolveImportRecord(
+            context.getImportRecords(containing)[0]!,
+          ).target;
+        } finally {
+          context.dispose();
+        }
+      };
+      expect(resolveInBoundedProgram(configPath)).toBeNull();
+      expect(resolveInBoundedProgram(localConfig)).toMatchObject({
+        resolvedFileName: sourcePath,
+      });
       const metrics = emptyMetrics();
-      const restored = new ResolvedConfigRecords(
-        structuredClone(receipts.records),
+      const current = new ResolvedConfigRecords(
+        structuredClone(previous.records),
         metrics,
       );
-      expect(scope(restored.run(parse).parsed.options)).toEqual(expected);
+      const renamed = fixture.path('pkg/src/replacement.ts');
+      await rename(sourcePath, renamed);
+      const config = current.run(() => parse(localConfig));
+      expect(config.fileNames).toEqual([containing, renamed]);
+      expect(scope(config.options, true)).toEqual(expected);
       expect(metrics).toMatchObject({
-        resolvedConfigHits: 1,
-        resolvedConfigParses: 0,
+        resolvedConfigHits: 0,
+        resolvedConfigParses: 1,
       });
     } finally {
       await fixture.cleanup();

@@ -1,4 +1,5 @@
 import { compareCodeUnits } from '#utils/collections';
+import { cloneCompilerOptions } from '#utils/compiler-options';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import type ts from 'typescript';
@@ -64,7 +65,7 @@ export function materializeAstroSemanticProject(
       checkerExtensions: [
         ...new Set(snapshot.checkerExtensions.map((extension) => extension)),
       ].sort((left, right) => Number(left > right) - Number(left < right)),
-      compilerOptions: { ...snapshot.compilerOptions },
+      compilerOptions: cloneCompilerOptions(snapshot.compilerOptions),
       configClosure: snapshot.configClosure
         .map((entry) => ({
           contentHash: entry.contentHash,

@@ -157,6 +157,8 @@ pnpm exec limina graph export --view source --output graph.json
 
 `graph prepare` 验证输入并生成 `.limina` 下的工程图与检查器入口，但不运行完整的 `graph check` 或调用编译器。受管构建和类型检查会自动生成所需文件，需要单独查看或刷新磁盘文件时再运行它。`graph check`、`source check` 和 `proof check` 在内存中计算图，不生成检查器配置。
 
+启用分析缓存时，`graph prepare` 成功后可以保存经过校验的分析快照，供后续调用使用。`graph check` 可以读取已有快照，持久化状态保持不变。
+
 `graph check` 检查生成图与源码事实是否一致。它覆盖项目引用、源码图路由、引用完整性、图规则、工作区包依赖声明和部分解析边界。典型问题包括：源码导入对应的项目引用缺失；项目引用多余；跨包项目引用缺少依赖声明；图规则拒绝访问；工作区导入无法解析或目标不在工程图中。
 
 `graph export` 输出包级依赖图 `JSON`。`--view` 可取 `all`、`source` 或 `artifact`，默认是 `all`。不传 `--output` 时输出到标准输出。传入 `--output <path>` 时写入文件，相对路径以当前工作目录为准。缺少的父目录会自动创建，已有的同名文件会被覆盖。

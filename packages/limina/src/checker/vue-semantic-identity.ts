@@ -1,5 +1,6 @@
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { parseLiveConfig } from '#utils/resolved-config-cache';
 import { createHash } from 'node:crypto';
 import path from 'pathe';
 import type ts from 'typescript';
@@ -114,17 +115,19 @@ export function parseVueConfigWithToolchain(options: {
     configPath: options.configPath,
     host: options.host,
   });
-  return options.toolchain.tsModule.parseJsonSourceFileConfigFileContent(
-    configFile,
-    options.host,
-    path.dirname(options.configPath),
-    {},
-    options.configPath,
-    undefined,
-    createVueExtraFileExtensions({
-      extensions: options.extensions,
-      tsModule: options.toolchain.tsModule,
-    }),
+  return parseLiveConfig(() =>
+    options.toolchain.tsModule.parseJsonSourceFileConfigFileContent(
+      configFile,
+      options.host,
+      path.dirname(options.configPath),
+      {},
+      options.configPath,
+      undefined,
+      createVueExtraFileExtensions({
+        extensions: options.extensions,
+        tsModule: options.toolchain.tsModule,
+      }),
+    ),
   );
 }
 

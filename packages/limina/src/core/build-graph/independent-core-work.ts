@@ -9,6 +9,7 @@ import type {
 } from './checker-ownership-types';
 import { coreCollectionRun, recordCoreWork } from './core-collection-run';
 import type { FileOwnerLookup } from './file-owner-lookup';
+import type { SemanticSourceRelation } from './types';
 
 interface ProjectFacts {
   failures?: string[];
@@ -84,15 +85,23 @@ function retainRelations(
   facts: readonly CheckerDependencyFact[],
 ): void {
   const retained = coreCollectionRun(input.caches).facts;
+  for (const relation of projectCoreRelations(facts, input.membership))
+    retained.push(relation);
+}
+
+export function* projectCoreRelations(
+  facts: readonly CheckerDependencyFact[],
+  membership: FileOwnerLookup,
+): IterableIterator<SemanticSourceRelation> {
   for (const fact of facts) {
-    const target = relationTarget(fact, input.membership);
+    const target = relationTarget(fact, membership);
     if (target === null) continue;
-    retained.push({
+    yield {
       fromConfigPath: fact.consumerConfigPath,
       toConfigPath: target,
       file: fact.importRecord.filePath,
       specifier: fact.importRecord.specifier,
-    });
+    };
   }
 }
 function relationTarget(

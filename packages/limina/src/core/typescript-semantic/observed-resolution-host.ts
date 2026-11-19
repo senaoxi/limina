@@ -67,6 +67,10 @@ export function observedCompilerSystem(
       });
       return value;
     },
+    ...(system.getFileSize && {
+      getFileSize: (file: string) =>
+        readAnalysisInput(file, () => system.getFileSize!(file), 'file-size'),
+    }),
     useCaseSensitiveFileNames: system.useCaseSensitiveFileNames,
   };
 }

@@ -4,7 +4,7 @@ import { checker, stringMap, text, texts } from './cached-data-schema';
 import { declarationContextSchema } from './cached-declaration-schema';
 export const authority: z.ZodType<unknown> = z.object({
   kind: z.literal('locked'),
-  family: z.enum(['typescript', 'vue']),
+  family: z.enum(['typescript', 'vue', 'astro', 'svelte']),
   source: z.enum(['explicit', 'config', 'baseline']),
 });
 const evidence = z.object({
@@ -45,7 +45,14 @@ const occurrence = z.object({
       end: z.number(),
     })
     .optional(),
-  domain: z.enum(['typescript', 'vue']),
+  domain: z.enum([
+    'typescript',
+    'vue-script',
+    'vue-script-attribute',
+    'vue-generic-attribute',
+    'astro-frontmatter',
+    'astro-client-script',
+  ]),
   filePath: text,
   kind: z.enum([
     'static',
@@ -61,6 +68,8 @@ const occurrence = z.object({
     'jsx-import-source',
     'environment-pragma',
     'module-augmentation',
+    'vue-script-src',
+    'vue-generic-type',
   ]),
   line: z.number(),
   locator: z.object({

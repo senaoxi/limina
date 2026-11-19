@@ -1,5 +1,7 @@
+import type { CheckerName } from '#config/runner';
 import type { AnalysisReadDescriptor } from '#utils/analysis-input';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
+import type { TypeConfigOwnershipState } from '../build-graph/checker-ownership-types';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
@@ -11,8 +13,8 @@ import type { TypeEnvironmentRecord } from './installation-environment';
 import type { VueContextRecord } from './vue-contracts';
 
 // Compiler occurrence/load receipts qualify restored projections.
-export const ANALYSIS_ADAPTER = 'config-ownership-v32';
-export const ANALYSIS_SCHEMA = 13;
+export const ANALYSIS_ADAPTER = 'config-ownership-v33';
+export const ANALYSIS_SCHEMA = 15;
 
 export interface InputDependency {
   inputId: string;
@@ -20,7 +22,8 @@ export interface InputDependency {
 }
 
 export type InputKind =
-  | 'config-text'
+  | 'config-mtime'
+  | 'affecting-mtime'
   | 'content'
   | 'file'
   | 'directory'
@@ -29,18 +32,14 @@ export type InputKind =
   | 'realpath'
   | 'binding'
   | 'tree'
-  | 'bytes'
-  | 'imports'
-  | 'exports';
+  | 'bytes';
 
 export interface AnalysisInput {
   path: string;
   kind: InputKind;
   version: string;
-  fileStamp?: string;
-  observedMtime?: number;
-  verifiedThrough?: number;
-  text?: string;
+  contentStamp?: string;
+  textVersions?: { utf8: string; typescript?: string };
   installedTargets?: string[];
 }
 
@@ -48,6 +47,7 @@ export interface ResolutionRecord {
   contextId: string;
   file: string;
   request: unknown;
+  targetOwners?: string[] | null;
   result: unknown;
   dependencies: InputDependency[];
   coverage: 'complete' | 'unknown';
@@ -90,6 +90,7 @@ export interface NativeContextRecord {
   native?: {
     snapshot: NativeEvidenceSnapshot;
     inventory: NativeContextInventory;
+    queryReceipts: Record<string, string>;
     discovery: DiscoveryRecord[];
     boundaryIdentity: string;
   };
@@ -137,6 +138,15 @@ export interface ResolvedConfigRecord {
   context: string;
   discovery: DiscoveryRecord[];
   payload: string;
+  fingerprint: string;
+}
+
+export interface AuthorityRecord {
+  policy: number;
+  projection: string;
+  closure: string[];
+  seed: TypeConfigOwnershipState;
+  ambiguousCheckers: CheckerName[];
   fingerprint: string;
 }
 
@@ -197,6 +207,18 @@ export interface ConfigModuleSnapshot {
   otherUnknownReasons: string[];
 }
 
+export interface InstallationReceipt {
+  root: string;
+  configPath: string;
+  kind: 'project' | 'environment' | 'location';
+  installationRoot: string;
+  binding?: string;
+  manager: string;
+  lockRoot: string;
+  resolutionRoot: string;
+  locks: [path: string, hash: string, binding: string][];
+}
+
 export interface AnalysisSnapshot {
   header: {
     schema: typeof ANALYSIS_SCHEMA;
@@ -204,8 +226,11 @@ export interface AnalysisSnapshot {
     identity: string;
     configVersion: string | null;
     revision: string;
+    baselineTime?: number;
+    installations?: InstallationReceipt[];
   };
   configModules: ConfigModuleSnapshot;
+  authorities: Record<string, AuthorityRecord>;
   resolvedConfigs: Record<string, ResolvedConfigRecord>;
   inputs: Record<string, AnalysisInput>;
   queries: Record<string, ResolutionRecord>;

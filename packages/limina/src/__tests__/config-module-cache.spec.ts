@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   mkdirSync,
   mkdtempSync,
@@ -16,7 +17,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, expect, it } from 'vitest';
 import type { AnalysisMetricMeasurement } from '../application/analysis/analysis-run';
-import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
+import { type AnalysisSnapshot } from '../core/analysis-cache/contracts';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
 import { createFixturePathResolver } from './helpers/path';
@@ -47,9 +48,14 @@ function fixture(extension = 'mjs') {
       packageManager: 'pnpm@11.28.3',
     }),
   );
+  writeFileSync(file('pnpm-workspace.yaml'), 'packages: []\n');
+  writeFileSync(
+    file('pnpm-lock.yaml'),
+    "lockfileVersion: '9.0'\nimporters:\n  .: {}\n",
+  );
   write('analysis-input', 'unchanged');
-  write(
-    'tsconfig.json',
+  writeFileSync(
+    file('tsconfig.json'),
     '{"compilerOptions":{"noLib":true,"types":[]},"files":["analysis-input.ts"]}',
   );
   write('analysis-input.ts', 'export {};');
@@ -64,7 +70,7 @@ import {parseProjectConfigWithExtensions} from ${JSON.stringify(url('checker/pro
 import {AnalysisCacheController} from ${JSON.stringify(url('preflight/analysis-cache'))};
 import {AnalysisCacheStore} from ${JSON.stringify(url('preflight/analysis-cache-store'))};
 import {createLiminaArtifactNamespace} from ${JSON.stringify(url('domain/artifacts/namespace'))};
-import {readFileSync,writeFileSync} from 'node:fs';
+import {readFileSync,rmSync,writeFileSync} from 'node:fs';
 import {registerHooks} from 'node:module';
 if(process.argv.includes('--transform'))registerHooks({
   load(url,context,next){
@@ -79,12 +85,18 @@ const namespace = createLiminaArtifactNamespace({rootDir:config.rootDir,generati
 const events=[];
 const controller = new AnalysisCacheController(config,namespace,{force:process.argv.includes('--force'),metrics:{record:event=>events.push(event)}});
 const restored=controller.cache.previous!==undefined;
-const adoptedInputs=Object.keys(controller.cache.inputs.records);
+const adoptedInputs=[...new Set(Object.values(controller.cache.inputs.records)
+  .filter(input=>input.path!==${JSON.stringify(file('pnpm-lock.yaml'))})
+  .map(input=>input.path))];
+const analyzedEpochs=[];
 let analyses=0;
 let error;
 try {
   await controller.analyze({analyze:async()=>{
     analyses++;
+    if(analyses===1 && process.argv.includes('--remove-lock'))rmSync(${JSON.stringify(file('pnpm-lock.yaml'))});
+    if(process.argv.includes('--leaf'))controller.cache.observeProjectLock(${JSON.stringify(file('leaf', 'tsconfig.json'))});
+    analyzedEpochs.push(controller.cache.previous!==undefined);
     controller.cache.inputs.observeConfig(parseProjectConfigWithExtensions({configPath:${JSON.stringify(file('tsconfig.json'))},projectRootDir:${JSON.stringify(root)}},[]).configClosure);
     if(process.argv.includes('--drift'))writeFileSync(config.configPath,'export default {}; // changed during invocation');
     if(process.argv.includes('--dependency-drift'))writeFileSync(config.cache.dependencies[0],'changed while analyzing');
@@ -94,7 +106,7 @@ try {
 const store=new AnalysisCacheStore({namespace,identity:'path-only',configPath:config.configPath});
 let snapshot;
 try{snapshot=JSON.parse(readFileSync(store.path,'utf8'));}catch{}
-console.log(JSON.stringify({restored,events,snapshot,cachePath:store.path,adoptedInputs,analyses,error}));`,
+console.log(JSON.stringify({restored,events,snapshot,cachePath:store.path,adoptedInputs,analyses,analyzedEpochs,error}));`,
   );
   const run = (
     loader = 'native',
@@ -120,6 +132,7 @@ console.log(JSON.stringify({restored,events,snapshot,cachePath:store.path,adopte
         snapshot: AnalysisSnapshot;
         cachePath: string;
         analyses: number;
+        analyzedEpochs: boolean[];
         adoptedInputs: string[];
         error?: string;
       }),
@@ -134,6 +147,144 @@ function count(events: AnalysisMetricMeasurement[], kind: string): number {
     .filter((event) => event.kind === kind)
     .reduce((total, event) => total + (event.count ?? 0), 0);
 }
+
+it('reuses the governing lock hash through its committed time and checkpoints a byte-identical touch', () => {
+  const f = fixture();
+  const cold = f.run();
+  expect(cold.error).toBeUndefined();
+  expect(cold.restored).toBe(false);
+  expect(count(cold.events, 'lockHashes')).toBe(1);
+  const warm = f.run();
+  expect(warm.restored).toBe(true);
+  expect(count(warm.events, 'lockHashes')).toBe(0);
+  const lock = f.path('pnpm-lock.yaml');
+  const now = new Date();
+  utimesSync(lock, now, now);
+  const touched = f.run();
+  expect(touched.error, JSON.stringify(touched.events)).toBeUndefined();
+  expect(touched.restored).toBe(true);
+  expect(count(touched.events, 'lockHashes')).toBe(1);
+  expect(touched.snapshot.header.revision).not.toBe(
+    cold.snapshot.header.revision,
+  );
+  expect(touched.snapshot.header.baselineTime).toBeGreaterThanOrEqual(
+    statSync(lock).mtimeMs,
+  );
+  expect(count(f.run().events, 'lockHashes')).toBe(0);
+});
+
+it.each(['changed', 'opaque', 'missing'])(
+  'rejects a %s governing lock before reading any fact block',
+  (fault) => {
+    const f = fixture();
+    const cold = f.run();
+    expect(cold.error).toBeUndefined();
+    expect(f.run().restored).toBe(true);
+    const lock = f.path('pnpm-lock.yaml');
+    if (fault === 'missing') rmSync(lock);
+    else
+      writeFileSync(
+        lock,
+        fault === 'opaque'
+          ? Buffer.from([0xff, 0, 0, 0x80])
+          : "lockfileVersion: '9.0'\nimporters:\n  .: {}\n# changed\n",
+      );
+    const result = f.run();
+    expect(result.error).toBeUndefined();
+    expect(result.restored).toBe(false);
+    expect(count(result.events, 'read-block')).toBe(0);
+    expect(result.adoptedInputs).toEqual([]);
+    expect(f.run().restored).toBe(fault !== 'missing');
+  },
+);
+
+it('discards an admitted epoch when its lock disappears before analysis completes', () => {
+  const f = fixture();
+  expect(f.run().error).toBeUndefined();
+  const removed = f.run('native', ['--remove-lock']);
+  expect(removed.error).toBeUndefined();
+  expect(removed.analyzedEpochs).toEqual([true, false]);
+  expect(count(removed.events, 'epoch-retry')).toBe(1);
+  expect(f.run().restored).toBe(false);
+});
+
+it('uses a headerless Yarn lock as a byte signal across processes', () => {
+  const f = fixture();
+  rmSync(f.path('pnpm-workspace.yaml'));
+  rmSync(f.path('pnpm-lock.yaml'));
+  f.write('package.json', '{"name":"fixture","packageManager":"yarn@1.22.22"}');
+  const lock = f.path('yarn.lock');
+  writeFileSync(lock, Buffer.from([0xff, 0x80]));
+  const seed = f.run();
+  expect(seed.error).toBeUndefined();
+  expect(seed.snapshot.header.installations).toContainEqual(
+    expect.objectContaining({
+      locks: [[lock, expect.any(String), expect.any(String)]],
+    }),
+  );
+  expect(f.run().restored).toBe(true);
+  writeFileSync(lock, Buffer.from([0xff, 0x81]));
+  utimesSync(lock, Date.now() / 1000 + 2, Date.now() / 1000 + 2);
+  const changed = f.run();
+  expect(changed.error).toBeUndefined();
+  expect(changed.restored).toBe(false);
+  expect(count(changed.events, 'read-block')).toBe(0);
+});
+
+it('gates the physical installation and detects a link rebound with identical lock bytes', () => {
+  const f = fixture();
+  for (const target of ['first', 'second']) {
+    f.write(
+      `${target}/package.json`,
+      '{"name":"install","packageManager":"npm@11.0.0"}',
+    );
+    f.write(`${target}/package-lock.json`, 'opaque');
+    mkdirSync(f.path(target, 'node_modules'));
+  }
+  const mount = f.path('node_modules');
+  symlinkSync(f.path('first', 'node_modules'), mount, 'junction');
+  expect(f.run().restored).toBe(false);
+  expect(f.run().restored).toBe(true);
+  rmSync(mount);
+  symlinkSync(f.path('second', 'node_modules'), mount, 'junction');
+  const rebound = f.run();
+  expect(rebound.restored).toBe(false);
+  expect(count(rebound.events, 'read-block')).toBe(0);
+  expect(f.run().restored).toBe(true);
+  rmSync(f.path('second', 'package-lock.json'));
+  const unknown = f.run();
+  expect(unknown.error).toBeUndefined();
+  expect(unknown.restored).toBe(false);
+  expect(f.run().restored).toBe(false);
+});
+
+it('restarts cold when a newly discovered project uses an independent lock, then gates that lock globally', () => {
+  const f = fixture();
+  const first = f.run();
+  expect(first.error).toBeUndefined();
+  f.write('leaf/package.json', '{"name":"leaf","packageManager":"npm@11.0.0"}');
+  f.write(
+    'leaf/tsconfig.json',
+    '{"files":[],"compilerOptions":{"noLib":true}}',
+  );
+  const lock = f.path('leaf', 'package-lock.json');
+  writeFileSync(lock, '{"lockfileVersion":3,"packages":{"":{}}}');
+  const leaf = () => f.run('native', ['--leaf']);
+  const discovered = leaf();
+  expect(discovered.error).toBeUndefined();
+  expect(discovered.restored).toBe(true);
+  expect(discovered.analyses).toBe(2);
+  expect(discovered.analyzedEpochs).toEqual([false]);
+  expect(leaf().analyzedEpochs).toEqual([true]);
+  writeFileSync(
+    lock,
+    '{"lockfileVersion":3,"packages":{"":{"name":"changed"}}}',
+  );
+  const changed = leaf();
+  expect(changed.restored).toBe(false);
+  expect(count(changed.events, 'read-block')).toBe(0);
+  expect(changed.analyzedEpochs).toEqual([false]);
+});
 
 it('allows unexecuted variable imports without inventing dependencies or warnings', () => {
   const f = fixture();
@@ -378,6 +529,29 @@ it('makes changed resolution edges cold when members, bytes and effective values
   expect(count(changed.events, 'config-modules-hashes')).toBe(0);
 });
 
+it('publishes fresh configuration module hashes after a governing lock change', () => {
+  const f = fixture();
+  f.write('helper.mjs', 'export default 1;');
+  f.write('limina.config.mjs', "import './helper.mjs'; export default {};");
+  const helper = f.path('helper.mjs');
+  utimesSync(helper, 1, 1);
+  f.run();
+  const changed = 'export default 2;';
+  writeFileSync(helper, changed);
+  utimesSync(helper, 1, 1);
+  f.write('pnpm-lock.yaml', "lockfileVersion: '9.0'\nimporters: {'.': {}}");
+  const cold = f.run();
+  expect(cold.error).toBeUndefined();
+  expect(cold.restored).toBe(false);
+  expect(count(cold.events, 'read-block')).toBe(0);
+  expect(cold.snapshot.configModules.files).toContainEqual(
+    expect.objectContaining({
+      path: helper,
+      contentHash: createHash('sha256').update(changed).digest('hex'),
+    }),
+  );
+});
+
 it('preserves explicit user queries, effective values, forced cold publication, and the drift stop boundary', () => {
   const f = fixture();
   f.write('helper.mjs', 'export default {};');
@@ -601,7 +775,7 @@ it.each<{
     const cold = f.run();
     const warm = f.run();
     expect(warm.restored).toBe(true);
-    expect(warm.adoptedInputs).toHaveLength(1);
+    expect(warm.adoptedInputs).toEqual([f.path('tsconfig.json')]);
     const baseline = readFileSync(cold.cachePath, 'utf8');
     const snapshot = JSON.parse(baseline) as AnalysisSnapshot;
     corrupt(snapshot, f.path('helper.mjs'));

@@ -32,7 +32,11 @@ export interface TypeScriptSemanticProject {
     allowedDeclarations: readonly string[];
   };
   compilationObligationScope?: 'generated-declaration-project-v1';
-  analysisBinding?: { phase: 'pending' | 'locked'; checker: string };
+  analysisBinding?: {
+    phase: 'pending' | 'locked';
+    checker: string;
+    workspaceSourceBoundaryIdentity?: string;
+  };
   virtualFiles?: ReadonlyMap<string, string>;
   admissionMode?: TypeScriptSemanticAdmissionMode;
   configPath: string;

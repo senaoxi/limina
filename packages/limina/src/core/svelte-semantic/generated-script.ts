@@ -1,3 +1,4 @@
+import { readAnalysisInput } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
 import { TraceMap } from '@jridgewell/trace-mapping';
 import path from 'node:path';
@@ -8,6 +9,8 @@ import {
 } from '../framework-semantic/compiler-requests';
 import { buildLineStarts } from '../import-analysis/records';
 import { TypeScriptInclusionLedger } from '../typescript-semantic/admission';
+import { observeNativeHostInputs } from '../typescript-semantic/native-host-inputs';
+import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
 import { resolveModuleWithOrigin } from '../typescript-semantic/resolution-origin';
 import { prepareTypeScriptSupportInputs } from '../typescript-semantic/support-inputs';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
@@ -49,7 +52,10 @@ export function createGeneratedSemanticScript(options: {
     options.toolchain.tsModule.getImpliedNodeFormatForFile(
       filePath as ts.Path,
       undefined,
-      options.toolchain.tsModule.sys,
+      observedResolutionHost(
+        options.toolchain.tsModule,
+        options.project.configPath,
+      ),
       options.project.options,
     );
   return {
@@ -77,8 +83,10 @@ function createOverlayHost(options: {
 }): ts.CompilerHost {
   const tsModule = options.toolchain.tsModule;
   const generatedPath = normalizeAbsolutePath(options.generated.filePath);
+  const physical = tsModule.createCompilerHost(options.project.options, true);
+  observeNativeHostInputs(physical);
   const host = withVirtualResolutionFiles(
-    tsModule.createCompilerHost(options.project.options, true),
+    physical,
     options.project.virtualFiles,
   );
   if (options.project.references !== undefined)
@@ -125,7 +133,11 @@ export function observeSvelteNativeComponentRequests(
     .flatMap((file) => {
       const sourceFile = toolchain.tsModule.createSourceFile(
         file,
-        toolchain.tsModule.sys.readFile(file)!,
+        readAnalysisInput(
+          file,
+          () => toolchain.tsModule.sys.readFile(file),
+          'typescript-content',
+        )!,
         toolchain.tsModule.ScriptTarget.Latest,
         true,
       );

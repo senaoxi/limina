@@ -1,10 +1,12 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
+import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import { invocationDataVersion } from '../../config/invocation-data';
 import { assertArtifactPathLexicallyContained } from '../../domain/artifacts/namespace';
 import { createRevisionedArtifactPlan } from '../../domain/artifacts/plan';
 import { decodeData } from '../analysis-cache/data-codec';
-import { bindRestoredGraphExecutionInputs } from '../analysis-cache/execution-inputs';
+import { hasBoundRestoredGraphExecutionInputs } from '../analysis-cache/execution-inputs';
+import { completeFrameworkExecutionInputs } from '../analysis-cache/framework-execution-inputs';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
 import {
@@ -16,6 +18,8 @@ import { storeGraphContexts } from './analysis-cache-vue';
 import { removeStaleGeneratedFiles } from './artifact-ledger';
 import { writeGeneratedContent } from './artifact-writer';
 import { bindCachedGraph, type BoundCachedGraph } from './cached-graph-binding';
+import { restoreOwnershipInputs } from './cached-ownership-replay';
+import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import { recordFrameworkInferenceAmbiguities } from './core-collection-run';
 import { hasValidRestoredDeclarationContexts } from './declaration-context-candidate';
 import { hasBoundGeneratedReferences } from './generated-reference-binding';
@@ -27,6 +31,7 @@ import {
   storeNativeGraphViews,
 } from './native-graph-views';
 import { isValidOutputProjection } from './output-projection';
+import { planScopedCheckArtifacts } from './scoped-check-artifacts';
 import { isValidTypeInputProjection } from './type-input-projection';
 import type {
   DependencyAnalysisResult,
@@ -35,7 +40,7 @@ import type {
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 import { getBuildGraphWorkspace } from './workspace-input';
-const key = 'generated-graph-config-ownership-v26';
+const key = 'generated-graph-config-ownership-v27';
 function hasVirtualInputs(config: ResolvedLiminaInputs): boolean {
   return (config.virtualFiles?.size ?? 0) > 0;
 }
@@ -80,6 +85,8 @@ interface GraphRestoreInput {
   workspace: ValidatedWorkspaceContext;
   generation?: number;
   projectConfigCache?: CheckerProjectConfigCache;
+  metrics?: AnalysisMetricsRecorder;
+  importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
 }
 async function readGraph(
   options: GraphRestoreInput,
@@ -95,32 +102,35 @@ async function readVersionedGraph(
   options: GraphRestoreInput,
   version: { workspaceVersion: string },
 ): Promise<BoundCachedGraph | undefined> {
+  const candidate = options.cache.graphCandidate(key, version.workspaceVersion);
+  if (candidate === undefined) return undefined;
+  const ownershipInputs = await restoreOwnershipInputs(
+    options.config,
+    options.workspace,
+    options.cache,
+    options.projectConfigCache,
+  );
+  if (ownershipInputs === undefined) return undefined;
   const record = await options.cache.restoreGraphRecord(
     key,
-    version.workspaceVersion,
+    candidate,
     restoredGeneration(options),
   );
   if (record === undefined) return undefined;
-  const data = await decodeBoundGraph(options, record);
+  const data = decodeBoundGraph({ ...options, ownershipInputs }, record);
   if (data === undefined) {
     delete options.cache.graphs[key];
     options.cache.fallback('graph-dto-invalid');
     return undefined;
   }
-  options.cache.resolvedConfigs.retainGraphSources([
-    ...options.workspace.sourceConfigPaths,
-    ...data.graph.ownershipPlan.typeConfigs.keys(),
-    ...data.graph.ownershipPlan.solutions.keys(),
-  ]);
-  options.cache.increment('graphHits');
   return data;
 }
-async function decodeBoundGraph(
-  options: GraphRestoreInput,
+function decodeBoundGraph(
+  options: GraphRestoreInput & { ownershipInputs: CheckerOwnershipDiscovery },
   record: NonNullable<
     Awaited<ReturnType<NativeAnalysisCache['restoreGraphRecord']>>
   >,
-): Promise<BoundCachedGraph | undefined> {
+): BoundCachedGraph | undefined {
   const stored = decodeGraph(record.data, options.cache);
   return isRestorableGraph(stored, options)
     ? bindAndRestoreGraph(options, { stored, record })
@@ -138,15 +148,15 @@ function isRestorableGraph(
     ].every(Boolean)
   );
 }
-async function bindAndRestoreGraph(
-  options: GraphRestoreInput,
+function bindAndRestoreGraph(
+  options: GraphRestoreInput & { ownershipInputs: CheckerOwnershipDiscovery },
   input: {
     stored: StoredGraphData;
     record: NonNullable<
       Awaited<ReturnType<NativeAnalysisCache['restoreGraphRecord']>>
     >;
   },
-): Promise<BoundCachedGraph | undefined> {
+): BoundCachedGraph | undefined {
   const { stored, record } = input;
   return bindCachedGraph({
     ...options,
@@ -173,6 +183,8 @@ export async function restoreGeneratedGraph(
     ...options,
     generation: options.preparation.projectConfigCache?.generation,
     projectConfigCache: options.preparation.projectConfigCache,
+    importAnalysisContext: options.preparation.importAnalysisContext,
+    metrics: options.preparation.projectDependencyCaches?.metrics,
   });
   if (
     data === undefined ||
@@ -184,6 +196,12 @@ export async function restoreGeneratedGraph(
   )
     return undefined;
   const graph = await rebindArtifacts(data.graph, options);
+  if (!hasBoundRestoredGraphExecutionInputs(graph, options.cache)) {
+    delete options.cache.graphs[key];
+    options.cache.fallback('graph-execution-inputs-incomplete');
+    return undefined;
+  }
+  options.cache.increment('graphHits');
   if (options.preparation.projectDependencyCaches !== undefined)
     recordFrameworkInferenceAmbiguities(
       options.preparation.projectDependencyCaches,
@@ -196,7 +214,7 @@ export async function restoreCachedDependencyAnalysis(
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<DependencyAnalysisResult | undefined> {
   const cache = options.projectDependencyCaches?.analysisCache;
-  return cache === undefined
+  return cache === undefined || options.producerBuildReceipt !== undefined
     ? undefined
     : restoredAnalysis(cache, config, options);
 }
@@ -210,12 +228,15 @@ async function restoredAnalysis(
     config,
     generation: options.projectConfigCache?.generation,
     projectConfigCache: options.projectConfigCache,
+    importAnalysisContext: options.importAnalysisContext,
+    metrics: options.projectDependencyCaches?.metrics,
     workspace: await getBuildGraphWorkspace({
       config,
       workspaceContext: options.workspaceContext,
     }),
   });
   if (restored === undefined) return undefined;
+  cache.increment('graphHits');
   if (options.projectDependencyCaches !== undefined)
     recordFrameworkInferenceAmbiguities(
       options.projectDependencyCaches,
@@ -244,6 +265,10 @@ async function rebindArtifacts(
   );
   for (const [filePath, content] of data.generatedFiles)
     await writeGeneratedContent({ context, filePath, content });
+  const auxiliaryArtifacts = await planScopedCheckArtifacts(
+    { purpose: data.purpose, writeContext: context },
+    namespace,
+  );
   await removeStaleGeneratedFiles({ context, previousOwnedPaths });
   const artifactPlan = createRevisionedArtifactPlan(
     namespace,
@@ -254,8 +279,13 @@ async function rebindArtifacts(
       ownedPaths: [...context.expectedFiles],
     },
   );
-  const graph = { ...data, changed: context.changed, artifactPlan };
-  await bindRestoredGraphExecutionInputs(graph, options.cache);
+  const graph = {
+    ...data,
+    changed: context.changed,
+    artifactPlan,
+    auxiliaryArtifacts,
+  };
+  await completeFrameworkExecutionInputs(graph, options.config);
   return graph;
 }
 export function captureGeneratedGraph(options: {
@@ -277,11 +307,11 @@ function captureSupportedGraph(
   version: { workspaceVersion: string },
 ): void {
   if (
-    options.result.checkers.some(
-      (checker) => !['tsc', 'tsgo', 'vue-tsc'].includes(checker.name),
-    )
+    options.result.purpose !== 'complete' ||
+    options.result.producerBuildReceipt !== undefined ||
+    (options.result.auxiliaryArtifacts?.length ?? 0) > 0
   ) {
-    options.cache.fallback('graph-framework');
+    options.cache.fallback('graph-managed-execution-view');
     return;
   }
   options.cache.captureLiveContexts();
@@ -304,6 +334,10 @@ function captureGraphData(
   delete value.auxiliaryArtifacts;
   // Runtime authority never crosses the persistence boundary.
   const stored = storeGraphContexts(value as CachedGraphData);
+  if (stored === undefined) {
+    options.cache.fallback('graph-framework-inputs-incomplete');
+    return;
+  }
   if (
     !hasBoundNativeGraph(
       stored,
@@ -329,7 +363,7 @@ function hasValidProjections(
     ) &&
     hasValidLibraryProjections(stored, cache) &&
     stored.outputProjections!.every((receipt) =>
-      isValidOutputProjection(receipt, cache),
+      isValidOutputProjection(receipt, cache, stored.generatedFiles),
     )
   );
 }
