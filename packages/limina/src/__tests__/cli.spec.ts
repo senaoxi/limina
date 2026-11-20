@@ -1590,36 +1590,39 @@ export default {scope: {checkers: {
   }, 45_000);
 
   it('runs managed output build from the public command', async () => {
-    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
-      const result = await execFileAsync(
-        process.execPath,
-        [
-          cliPath,
-          '--config',
-          path.join(rootDir, 'limina.config.mjs'),
-          'build',
-          'packages/pkg/tsconfig.lib.json',
-        ],
-        {
-          cwd: rootDir,
-          env: {
-            ...process.env,
-            CI: 'true',
+    await withCliBuildFixture(
+      async ({ cliPath, rootDir }) => {
+        const result = await execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            '--config',
+            path.join(rootDir, 'limina.config.mjs'),
+            'build',
+            'packages/pkg/tsconfig.lib.json',
+          ],
+          {
+            cwd: rootDir,
+            env: {
+              ...process.env,
+              CI: 'true',
+            },
           },
-        },
-      );
-      const tscArguments = await readFile(
-        path.join(rootDir, 'tsc-args.txt'),
-        'utf8',
-      );
+        );
+        const tscArguments = await readFile(
+          path.join(rootDir, 'tsc-args.txt'),
+          'utf8',
+        );
 
-      expect(result.stdout).toContain('limina build');
-      expect(result.stdout).toContain('limina build passed');
-      expect(tscArguments).toContain(
-        '.limina/tsconfig/checkers/tsc/outputs/projects/packages/pkg/tsconfig.lib.output.json',
-      );
-    });
-  });
+        expect(result.stdout).toContain('limina build');
+        expect(result.stdout).toContain('limina build passed');
+        expect(tscArguments).toContain(
+          '.limina/tsconfig/checkers/tsc/outputs/projects/packages/pkg/tsconfig.lib.output.json',
+        );
+      },
+      { noLib: true },
+    );
+  }, 60_000);
 
   it('rejects rootDir-escaping effective emit paths before public managed build spawn', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {

@@ -1,4 +1,5 @@
 import { compareCodeUnits } from '#utils/collections';
+import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
@@ -186,7 +187,7 @@ async function collectSourceRuntimeFiles(
   const sourceRoot = path.join(packageRoot, 'src');
   const binRoot = path.join(packageRoot, 'bin');
   for (const root of [sourceRoot, binRoot]) {
-    if ((await realpath(root)) !== root) {
+    if (normalizeAbsolutePath(await realpath(root)) !== root) {
       throw new Error(
         `Source runtime directory must not be a symbolic link: ${root}.`,
       );
@@ -205,13 +206,15 @@ export async function collectRuntimeTreeIdentity(options: {
 }): Promise<RuntimeTreeIdentity> {
   const packageLogicalPath = path.resolve(options.packageLogicalPath);
   const executableLogicalPath = path.resolve(options.executableLogicalPath);
-  const packageRealPath = await realpath(packageLogicalPath);
-  const executableRealPath = await realpath(executableLogicalPath);
-  const expectedExecutableRealPath = await realpath(
-    path.resolve(
-      packageLogicalPath,
-      await readPackageBinPath(packageLogicalPath),
-    ),
+  const packageRealPath = normalizeAbsolutePath(
+    await realpath(packageLogicalPath),
+  );
+  const executableRealPath = normalizeAbsolutePath(
+    await realpath(executableLogicalPath),
+  );
+  const binPath = await readPackageBinPath(packageLogicalPath);
+  const expectedExecutableRealPath = normalizeAbsolutePath(
+    await realpath(path.resolve(packageLogicalPath, binPath)),
   );
 
   const isSourceEntry =

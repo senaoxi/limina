@@ -16,6 +16,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import {
   resolveAstroSemanticAdapter,
@@ -25,6 +26,7 @@ import { isRunSourceCheck } from '../commands/source';
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { AstroSemanticContextManager } from '../core/astro-semantic/context';
+import { prepareAstroSemanticDependencies } from '../core/astro-semantic/preparation';
 import { LiminaDependencyError } from '../dependency-contract';
 import { LiminaPreflightManager } from '../preflight/manager';
 import type { SourceCheckIssue } from '../source-check/report';
@@ -392,6 +394,80 @@ async function createToolchainFixture(
 }
 
 describe('Astro semantic toolchain', () => {
+  it.each([
+    { explicitRoot: false, source: 'a transitive component' },
+    { explicitRoot: true, source: 'a component listed as a root' },
+  ])('binds compiler requests for $source', async ({ explicitRoot }) => {
+    const fixture = await createInstalledToolchainFixture({
+      astroInstalledName: 'astro',
+    });
+    const file = createFixturePathResolver(fixture.rootDir);
+    const component = file('src/Component.astro');
+    const support = file('src/support.d.ts');
+    const render = file('src/render.ts');
+    const client = file('src/client.ts');
+    const manager = new AstroSemanticContextManager();
+    try {
+      await Promise.all([
+        writeText(
+          component,
+          [
+            '---',
+            'import { value } from "./render";',
+            '---',
+            '<output>{value}</output>',
+            '<script>import "./client";</script>',
+          ].join('\n'),
+        ),
+        writeText(support, 'import "./Component.astro";'),
+        writeText(render, 'export const value = 1;'),
+        writeText(client, 'export {};'),
+      ]);
+      const context = manager.acquire(
+        createAstroSemanticProject({
+          analysisGeneration: 0,
+          configPath: file('tsconfig.json'),
+          packageRootDir: fixture.rootDir,
+          projectFingerprint: 'component-requests',
+          readSnapshot: () => ({
+            checkerExtensions: ['.astro'],
+            compilerOptions: {
+              moduleResolution: ts.ModuleResolutionKind.Bundler,
+              noLib: true,
+              types: [],
+            },
+            configClosure: [],
+            fileNames: [
+              support,
+              render,
+              client,
+              ...(explicitRoot ? [component] : []),
+            ],
+            projectReferences: undefined,
+          }),
+        }),
+      );
+      const preparation = prepareAstroSemanticDependencies({
+        context,
+        filePath: component,
+      });
+      if (preparation.kind === 'unsupported')
+        throw new Error(preparation.reason);
+      const requests = new Map(
+        preparation.facts.map(({ importRecord, target }) => [
+          importRecord.specifier,
+          target?.resolvedFileName,
+        ]),
+      );
+      expect(requests.get('./render')).toBe(render);
+      if (explicitRoot) expect(requests.get('./client')).toBe(client);
+      else expect(requests.has('./client')).toBe(false);
+    } finally {
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   // Real Astro declaration graphs exceeded 30s on Windows CI (up to 93s).
   it('retains package-import Astro facts and scheduling edges through source checking', async () => {
     const fixture = await createInstalledToolchainFixture({

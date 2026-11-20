@@ -46,6 +46,27 @@ type PreparationFailure = Extract<
   { kind: 'unsupported' }
 >;
 
+function isUnregisteredTransitiveExtra(
+  options: { context: AstroSemanticContext; filePath: string },
+  script: AstroMaterializedServiceScript,
+): boolean {
+  const extraFile = script.serviceScript.fileName;
+  if (
+    extraFile === undefined ||
+    !options.context.isUnregisteredExtraServiceScript(extraFile)
+  ) {
+    return false;
+  }
+  const { program } = options.context;
+  const primary = program.getSourceFile(options.filePath);
+  return (
+    primary !== undefined &&
+    program
+      .getRootFileNames()
+      .every((root) => program.getSourceFile(root) !== primary)
+  );
+}
+
 function collectServiceCandidates(options: {
   context: AstroSemanticContext;
   directSourceRecords: ImportRecord[];
@@ -62,11 +83,13 @@ function collectServiceCandidates(options: {
     const sourceFile = options.context.program.getSourceFile(
       detached.sourceFile.fileName,
     );
-    if (sourceFile === undefined)
+    if (sourceFile === undefined) {
+      if (isUnregisteredTransitiveExtra(options, detached)) continue;
       return createFailure(
         'Astro service script is absent from the Compiler Program.',
         'service-script-materialization',
       );
+    }
     const service = { ...detached, sourceFile };
     const mapped = mapAstroServiceCandidates({ ...options, service });
     if (mapped.kind === 'unsupported') return mapped;

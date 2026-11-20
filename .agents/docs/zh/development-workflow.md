@@ -64,6 +64,8 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 [CLI 测试](../../../packages/limina/src/__tests__/cli.spec.ts)的内部运行目录用例也为数值导出设置 `noLib`。它们通过真实 CLI 检查 build-info 和声明目录中的链接在编译器 shim 启动前被拒绝。保留外部标记文件、目录内容断言及 30 秒时限。
 
+同一 CLI 套件中的受管输出构建成功用例为数值导出设置 `noLib`，并给隔离的 CLI 和编译器 shim 预留 60 秒。[Windows CI](https://github.com/senaoxi/limina/actions/runs/44591937530/job/135804859785)曾触发原先的 30 秒时限。用例仍验证构建成功及 shim 收到的确切生成输出配置参数。
+
 [外部库缓存测试](../../../packages/limina/src/__tests__/external-library-checker-qualification.spec.ts)为执行器替换和 Native API 缺失分别使用新夹具。执行器用例先恢复原图，再要求替换执行器后重新构图，并保留 tsgo 执行成功和失败的对照。API 缺失用例使用真实 tsgo 二进制文件构建并恢复图，期间修改未使用的观察器文件。每例在 30 秒时限内最多启动三个 runner。
 
 真实 HTTP timeout fixture 的客户端预算须容纳首次客户端初始化与进程调度，服务端延迟须大于该预算。[Metadata](../../../packages/limina/fixtures/detectors/release/registry-metadata-timeout/case.mts) 与 [tarball](../../../packages/limina/fixtures/detectors/release/registry-tarball-timeout/case.mts) timeout fixture 保留精确的请求次数与身份断言，以及包含配置预算的类型化 timeout evidence。同步调整两个时序输入时，仍保留刻意超时的条件；生产时限与 test runner deadline 保持独立。

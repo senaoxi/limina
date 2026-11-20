@@ -3,6 +3,7 @@ import type {
   AstroMaterializedProject,
   AstroSemanticProject,
   AstroSemanticToolchain,
+  AstroServiceScript,
   AstroSourceScript,
   AstroUri,
 } from '#checkers';
@@ -49,6 +50,9 @@ export class AstroSemanticContext {
   readonly #uriByFileName = new Map<string, AstroUri>();
   #languageService: ts.LanguageService | undefined;
   readonly #boundedHost: ReturnType<typeof createBoundedLanguageServiceHost>;
+  readonly #getExtraServiceScript:
+    | ((fileName: string) => AstroServiceScript | undefined)
+    | undefined;
   #program: ts.Program | undefined;
   #disposed = false;
   readonly identity: string;
@@ -73,16 +77,18 @@ export class AstroSemanticContext {
       sync: (id) => this.#syncScript(id),
       toolchain: options.toolchain,
     });
-    const host = options.toolchain.volarTypeScript.createLanguageServiceHost(
-      originTracingCompiler(options.toolchain.tsModule),
-      observedCompilerSystem(
-        options.toolchain.tsModule,
-        options.project.seed.configPath,
-      ),
-      this.language,
-      (fileName) => this.asUri(fileName),
-      createAstroProjectHost(options.project),
-    ).languageServiceHost;
+    const { getExtraServiceScript, languageServiceHost: host } =
+      options.toolchain.volarTypeScript.createLanguageServiceHost(
+        originTracingCompiler(options.toolchain.tsModule),
+        observedCompilerSystem(
+          options.toolchain.tsModule,
+          options.project.seed.configPath,
+        ),
+        this.language,
+        (fileName) => this.asUri(fileName),
+        createAstroProjectHost(options.project),
+      );
+    this.#getExtraServiceScript = getExtraServiceScript;
     options.toolchain.astroCore.addAstroTypes(
       options.toolchain.astroInstall,
       options.toolchain.tsModule,
@@ -197,6 +203,12 @@ export class AstroSemanticContext {
       sourceScript,
       toolchain: this.toolchain,
     });
+  }
+  isUnregisteredExtraServiceScript(fileName: string): boolean {
+    return (
+      this.#getExtraServiceScript !== undefined &&
+      this.#getExtraServiceScript(fileName) === undefined
+    );
   }
   resolveModuleNameLiterals(
     literals: readonly ts.StringLiteralLike[],

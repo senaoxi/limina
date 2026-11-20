@@ -154,6 +154,8 @@ Astro/Svelte 模块发现使用现有 bounded Program 与共享 Compiler 请求�
 
 统一的是依赖事实与编译义务，解析器、虚拟文件映射和 Program 生命周期仍由各适配器管理。Vue→Vue 继续依据能力选择 declaration-provider；Astro/Svelte 的组件关系可由治理层选择 framework-schedule。Limina 观察真实 Project Reference Redirect 结构，不重新推断其生产者，不把推断引用回灌 discovery，也不持久化 Program、AST 或 Symbol。
 
+[Astro 依赖 preparation](../../../packages/limina/src/core/astro-semantic/preparation.ts)以 Compiler Program 判定 service script 的成员关系。Volar 为项目根文件注册附加脚本。组件经间接加载且其主脚本已进入 Program 时，preparation 略过 Volar 未注册的附加脚本。主脚本缺失或已注册的附加脚本未进入 Program 时，preparation 仍返回 unsupported。
+
 | Family     | 实际语义通道                                                                                                                                                                           | 必须保留的限制                                                                                                                                                           |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | TypeScript | 编译器驱动的物理 Coverage-bounded Program                                                                                                                                              | collection 保留 roots 和合法支持贡献；支持输入不因此取得 Ownership                                                                                                       |
