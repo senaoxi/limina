@@ -12074,18 +12074,71 @@ describe('declaration context candidate legality', () => {
     },
   );
 
-  it.each(['skipLibCheck', 'noCheck'] as const)(
-    'refuses an owner that disables declaration checking with %s',
+  it.each(['skipLibCheck', 'noCheck', 'skipDefaultLibCheck'] as const)(
+    'admits an external declaration context that configures %s',
     async (option) => {
-      const files = declarationPolicyFiles();
+      const files = declarationPolicyFiles(
+        option === 'skipDefaultLibCheck'
+          ? '/// <reference no-default-lib="true"/>\nexport interface Value { ok: true }\n'
+          : undefined,
+      );
       const b = JSON.parse(files['packages/b/tsconfig.json']!);
       b.compilerOptions[option] = true;
       files['packages/b/tsconfig.json'] = json(b);
       const fixture = await createFixture(files);
       try {
-        await expect(
-          prepareGeneratedTsconfigGraph(fixture.config),
-        ).rejects.toThrow('owner must check declarations');
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(graph.dependencyAnalysis?.declarationValidation?.state).toBe(
+          'admitted',
+        );
+        expect(
+          graph.dependencyEdges.map((edge) => [
+            edge.fromConfigPath,
+            edge.toConfigPath,
+          ]),
+        ).toEqual([
+          [
+            fixture.path('packages/a/tsconfig.json'),
+            fixture.path('packages/b/tsconfig.json'),
+          ],
+        ]);
+        expect(graph.dependencyAnalysis?.declarationContexts).toContainEqual(
+          expect.objectContaining({
+            consumerConfig: fixture.path('packages/a/tsconfig.json'),
+            selection: {
+              state: 'selected',
+              config: fixture.path('packages/b/tsconfig.json'),
+              basis: 'unique-coverage',
+            },
+          }),
+        );
+        const generatedB = graph.sourceToDts
+          .get('tsc')!
+          .get(fixture.path('packages/b/tsconfig.json'))!;
+        const parsedB = ts.getParsedCommandLineOfConfigFile(
+          generatedB,
+          {},
+          {
+            ...ts.sys,
+            onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+              throw new Error(
+                ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+              );
+            },
+          },
+        );
+        expect(parsedB?.options[option]).toBe(true);
+        await execFileAsync(
+          process.execPath,
+          [
+            requireFromTest.resolve('typescript/bin/tsc'),
+            '-b',
+            graph.checkerEntries.get('tsc')!,
+            '--pretty',
+            'false',
+          ],
+          { cwd: fixture.rootDir },
+        );
       } finally {
         await fixture.cleanup();
       }
@@ -12136,7 +12189,7 @@ describe('declaration context candidate legality', () => {
 
 describe('declaration consumption responsibilities', () => {
   it.each(['skipLibCheck', 'noCheck'] as const)(
-    'keeps local %s checking policy until the config is selected externally',
+    'preserves %s checking policy across local and external selection while retaining mapping protection',
     async (option) => {
       const files = declarationPolicyFiles();
       const a = JSON.parse(files['packages/a/tsconfig.json']!);
@@ -12162,9 +12215,58 @@ describe('declaration consumption responsibilities', () => {
           fixture.path('packages/b/b.d.ts'),
           'export type { Value } from "../a/local";',
         );
+        const external = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(external.dependencyAnalysis?.declarationValidation?.state).toBe(
+          'admitted',
+        );
+        expect(
+          external.dependencyEdges.map((edge) => [
+            edge.fromConfigPath,
+            edge.toConfigPath,
+          ]),
+        ).toEqual([
+          [
+            fixture.path('packages/b/tsconfig.json'),
+            fixture.path('packages/a/tsconfig.json'),
+          ],
+        ]);
+        expect(external.dependencyAnalysis?.declarationContexts).toContainEqual(
+          expect.objectContaining({
+            consumerConfig: fixture.path('packages/b/tsconfig.json'),
+            selection: {
+              state: 'selected',
+              config: fixture.path('packages/a/tsconfig.json'),
+              basis: 'unique-coverage',
+            },
+          }),
+        );
+        await writeText(
+          fixture.path('packages/a2/package.json'),
+          json({ name: '@example/a2', private: true }),
+        );
+        await writeText(
+          fixture.path('packages/a2/tsconfig.json'),
+          json({
+            compilerOptions: { types: [], [option]: true },
+            files: ['../a/local.d.ts'],
+          }),
+        );
+        const b = JSON.parse(files['packages/b/tsconfig.json']!);
+        b.liminaOptions = {
+          declarationContexts: [
+            { file: '../a/local.d.ts', config: '../a/tsconfig.json' },
+          ],
+          implicitRefs: [
+            {
+              path: '../a2/tsconfig.json',
+              reason: 'Competing declaration mapping',
+            },
+          ],
+        };
+        await writeText(fixture.path('packages/b/tsconfig.json'), json(b));
         await expect(
           prepareGeneratedTsconfigGraph(fixture.config),
-        ).rejects.toThrow('owner must check declarations');
+        ).rejects.toThrow('Declaration context mismatch');
       } finally {
         await fixture.cleanup();
       }

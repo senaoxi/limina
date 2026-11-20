@@ -181,7 +181,7 @@ If a real declaration-build relationship is invisible to static analysis, such a
 
 ## Choose a declaration configuration context
 
-When a consumer uses a managed `.d.ts`, `.d.mts`, or `.d.cts`, Limina needs to know which source config should check that declaration. If complete coverage identifies one config, Limina selects it automatically. This can also create a reference to a project that contains only declarations. If multiple configs cover the declaration, an external consumer must choose one.
+When a consumer uses a managed `.d.ts`, `.d.mts`, or `.d.cts`, Limina needs to know which source config provides the configuration context for that declaration. If complete coverage identifies one config, Limina selects it automatically. This can also create a reference to a project that contains only declarations. If multiple configs cover the declaration, an external consumer must choose one.
 
 For example, suppose `packages/app` depends on the workspace package `@acme/types`, which exposes `packages/types/api.d.ts`. That file is included by `packages/types/tsconfig.json`. You can add this field to the consumer's `packages/app/tsconfig.json` to select that config explicitly:
 
@@ -199,7 +199,7 @@ Choosing a context does not bypass [source ownership rules](./config/source-boun
 
 ::: details Declaration checking and toolchain requirements
 
-This choice lets another project take responsibility for checking a consumed declaration. The following limitations refer to that arrangement as cross-project declaration delegation.
+This choice delegates a consumed declaration's configuration context to another project. The following limitations refer to that arrangement as cross-project declaration delegation.
 
 Not every request that resolves to a declaration triggers context selection. For example, `noResolve` suppresses module imports and per-file path or type references. These requests do not create a reference merely because a resolver finds the file. Configured root files and explicit or automatically discovered type entries still follow their own input rules.
 
@@ -209,7 +209,7 @@ If a declaration is actually consumed but its selected context is missing or una
 
 `tsc` and `vue-tsc` use the same declaration rules, but their toolchains must provide the necessary declaration-input information. Native TypeScript 5.9.0–5.9.2 lacks that information. Overriding the checker command or using a custom Vue plugin also prevents cross-project declaration delegation; local analysis with a custom Vue plugin remains available.
 
-A config selected to handle declarations for an external consumer must actually check them. It cannot skip declaration checking through `skipLibCheck`, `noCheck`, or an applicable `skipDefaultLibCheck`. Ordinary local declaration consumption keeps its own checking options. Output and checker-identity rules still apply.
+Declaration context selection is separate from declaration type-checking policy. A selected provider keeps its own `skipLibCheck`, `skipDefaultLibCheck`, and `noCheck` settings; those options do not disqualify cross-project declaration delegation or remove generated project references. Output, reference-target, and checker-identity rules still apply.
 
 Project references can affect module-resolution options used for a consumed declaration, but the consumer still uses its own type checker. The selected project's independent check is a separate responsibility. Incremental builds can reuse a previous result rather than run that check again.
 

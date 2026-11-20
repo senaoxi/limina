@@ -99,7 +99,7 @@
 
 **Native 与 runtime**：TS require/createRequire/require.resolve 可继续贡献 runtime/source/package 治理，但不自动形成 Native references 或 Checker coloring 关系。Deny 是独立裁定，不从原始关系或候选投影删除边；unknown relation 保留完整性缺口。原始显式 references 和 implicitRefs 不依赖伪造 import。
 
-声明映射检查保留完整可达引用闭包，请求一致性仅约束候选实际加载的声明。本地 roots 不继承外部 provider 的 skip 限制；被其他消费者选中时则承担该责任。Own ambient 证明与 resolved、unresolved、unavailable 请求保持区别。[声明治理回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖这些独立责任。
+声明映射检查保留完整可达引用闭包，请求一致性仅约束候选实际加载的声明。无论是本地 roots 还是外部选定的声明 provider，都不会因 `skipLibCheck`、`skipDefaultLibCheck` 或 `noCheck` 被取消资格；类型检查策略与声明上下文准入及映射校验保持分离。Own ambient 证明与 resolved、unresolved、unavailable 请求保持区别。[声明治理回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)覆盖这些独立责任。
 
 实现输入必须按编译器文件键属于所选 provider，并证明生成引用投影保留该成员关系及声明输出。物理身份和配置边本身不足以证明覆盖。冷生成和恢复共享证明边界；已限定的 Native 结构证明无需新建 Program，其他情况保留实际 Checker 观察。参见[语义投影](./semantics.md#配置投影的边界)和[映射回归](../../../packages/limina/src/__tests__/implementation-reference-mapping.spec.ts)。
 

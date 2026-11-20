@@ -2484,7 +2484,7 @@ it('counts restored declaration candidates and revokes the last independent type
 }, 60_000);
 
 it.each(['skipLibCheck', 'noCheck'] as const)(
-  'revokes a restored external owner after enabling %s',
+  'rebuilds and restores an external declaration owner after enabling %s',
   (option) => {
     const f = fixture();
     const compilerOptions = {
@@ -2510,7 +2510,7 @@ it.each(['skipLibCheck', 'noCheck'] as const)(
     const b = { compilerOptions, files: ['src/value.d.ts'] };
     f.write('tsconfig.b.json', JSON.stringify(b));
     const run = 'console.log(JSON.stringify(await runCache()));';
-    f.execute<GraphRunResult>(run);
+    const first = f.execute<GraphRunResult>(run);
     const warm = f.execute<GraphRunResult>(run);
     expect(warm.events).toContainEqual(
       expect.objectContaining({ kind: 'graphHits', count: 1 }),
@@ -2522,10 +2522,30 @@ it.each(['skipLibCheck', 'noCheck'] as const)(
         compilerOptions: { ...compilerOptions, [option]: true },
       }),
     );
-    const rejected = f.execute<{ error: string }>(
-      'try { await runCache(); console.log(JSON.stringify({error:"not refused"})); } catch(error) { console.log(JSON.stringify({error:error.message})); }',
+    const updated = f.execute<GraphRunResult>(run);
+    expect(
+      updated.events.find((event) => event.kind === 'graphHits')?.count ?? 0,
+    ).toBe(0);
+    expect(updated.events).toContainEqual(
+      expect.objectContaining({
+        name: 'declaration-candidate',
+        kind: 'generation',
+        count: 1,
+      }),
     );
-    expect(rejected.error).toContain('owner must check declarations');
+    expect(updated.graph.edges).toEqual(first.graph.edges);
+    const restored = f.execute<GraphRunResult>(run);
+    expect(restored.graph).toEqual(updated.graph);
+    expect(restored.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    expect(restored.events).toContainEqual(
+      expect.objectContaining({
+        name: 'declaration-candidate',
+        kind: 'restore',
+        count: 1,
+      }),
+    );
   },
   60_000,
 );

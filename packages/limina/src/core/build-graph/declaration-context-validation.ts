@@ -366,7 +366,7 @@ function expectedContexts(
       );
     if (previousEntry !== undefined) expected.delete(previousEntry[0]);
     expected.set(decision.file.lexicalPath, owner);
-    checkOwner(owner, selection.state === 'selected');
+    checkOwner(owner);
   }
   // A root may be remapped by references even without an import in that root.
   for (const file of localInputs) expected.set(file, project);
@@ -384,16 +384,12 @@ function expectedContexts(
   return expected;
 }
 
-function checkOwner(owner: CandidateProject, isDelegated: boolean): void {
+function checkOwner(owner: CandidateProject): void {
   if (!['tsc', 'vue-tsc'].includes(owner.preset ?? owner.checker))
     throw new UnavailableDeclarationContext(
       `Declaration context checking is not qualified for ${owner.checker}: ${owner.sourceConfig}`,
     );
   const options = owner.parsed.options;
-  if (isDelegated && (options.skipLibCheck || options.noCheck))
-    throw new DeclarationContextConflict(
-      `Declaration context owner must check declarations (skipLibCheck/noCheck): ${owner.sourceConfig}`,
-    );
   if (!options.composite || options.declaration === false || options.noEmit)
     throw new DeclarationContextConflict(
       `Invalid declaration context reference target: ${owner.generatedConfig}`,
@@ -462,11 +458,10 @@ function validateProject(
       vueProfiles: provider.executionIdentity?.profilesByFileName,
     });
   }
-  const sources = new Map(
-    observation.sources.map((source) => [
+  const sources = new Set(
+    observation.sources.map((source) =>
       fileKey(input, source.file, project.sourceConfig),
-      source,
-    ]),
+    ),
   );
   for (const decision of decisions) {
     if (
@@ -477,17 +472,6 @@ function validateProject(
     )
       throw new UnavailableDeclarationContext(
         `Selected declaration was not loaded: ${decision.file.lexicalPath}`,
-      );
-    if (
-      decision.selection.state === 'selected' &&
-      decision.selection.config === project.sourceConfig &&
-      project.parsed.options.skipDefaultLibCheck &&
-      sources.get(
-        fileKey(input, decision.file.lexicalPath, project.sourceConfig),
-      )?.defaultLibrary
-    )
-      throw new DeclarationContextConflict(
-        `Declaration context owner skips this default library: ${decision.file.lexicalPath}`,
       );
   }
   const mappings = [...expected].map(([file, owner]) => {
