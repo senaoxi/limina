@@ -1944,35 +1944,38 @@ export default {scope: {checkers: {
   });
 
   it('passes watch flags through checker build from the public command', async () => {
-    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
-      await execFileAsync(
-        process.execPath,
-        [
-          cliPath,
-          '--config',
-          path.join(rootDir, 'limina.config.mjs'),
-          'checker',
-          'build',
-          'packages/pkg/tsconfig.lib.json',
-          '-w',
-        ],
-        {
-          cwd: rootDir,
-          env: {
-            ...process.env,
-            CI: 'true',
+    await withCliBuildFixture(
+      async ({ cliPath, rootDir }) => {
+        await execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            '--config',
+            path.join(rootDir, 'limina.config.mjs'),
+            'checker',
+            'build',
+            'packages/pkg/tsconfig.lib.json',
+            '-w',
+          ],
+          {
+            cwd: rootDir,
+            env: {
+              ...process.env,
+              CI: 'true',
+            },
           },
-        },
-      );
-      const watchTscArguments = await readFile(
-        path.join(rootDir, 'tsc-args.txt'),
-        'utf8',
-      );
+        );
+        const watchTscArguments = await readFile(
+          path.join(rootDir, 'tsc-args.txt'),
+          'utf8',
+        );
 
-      expect(watchTscArguments).toContain('--watch');
-      expect(watchTscArguments).toContain('--preserveWatchOutput');
-    });
-  });
+        expect(watchTscArguments).toContain('--watch');
+        expect(watchTscArguments).toContain('--preserveWatchOutput');
+      },
+      { noLib: true },
+    );
+  }, 60_000);
 
   it('hides checker build process output from the check command', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {

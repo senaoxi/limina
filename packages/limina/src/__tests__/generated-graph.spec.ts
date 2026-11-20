@@ -4590,9 +4590,12 @@ export default component;
     }
   }, 120_000);
 
-  // Real Astro declaration graphs exceeded 30s on Windows CI (up to 93s).
-  it('keeps Astro source authority while routing Astro, Svelte, Vue, and TypeScript targets through their owning policies', async () => {
-    const fixture = await createFixture({
+  // These text-only and boolean-export projects omit default libraries: their
+  // contract is framework routing, while repeated library discovery pushed one
+  // combined explicit/automatic case past 120s on Windows CI.
+  function createAstroRoutingFixture() {
+    const compilerOptions = { ...managedOutputCompilerOptions(), noLib: true };
+    return createFixture({
       'packages/a/src/App.astro': [
         '---',
         "import '../../astro-target/src/Widget.astro';",
@@ -4606,17 +4609,17 @@ export default component;
       ].join('\n'),
       'packages/a/src/index.ts': 'export const app = true;\n',
       'packages/a/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
+        compilerOptions,
         include: ['src/**/*', 'src/**/*.astro'],
       }),
       'packages/astro-target/src/Widget.astro': '<h2>Astro</h2>\n',
       'packages/astro-target/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
+        compilerOptions,
         include: ['src/**/*', 'src/**/*.astro'],
       }),
       'packages/svelte-target/src/Widget.svelte': '<h2>Svelte</h2>\n',
       'packages/svelte-target/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
+        compilerOptions,
         include: ['src/**/*', 'src/**/*.svelte'],
       }),
       'packages/vue-target/src/Widget.vue': [
@@ -4629,57 +4632,46 @@ export default component;
       ].join('\n'),
       'packages/vue-target/src/index.ts': 'export const widget = true;\n',
       'packages/vue-target/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
+        compilerOptions,
         include: ['src/**/*', 'src/**/*.vue'],
       }),
       'packages/vue-provider/src/index.ts': 'export const nested = true;\n',
       'packages/vue-provider/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
+        compilerOptions,
         include: ['src/**/*.ts'],
       }),
       'packages/ts-target/src/index.ts': 'export const direct = true;\n',
       'packages/ts-target/tsconfig.json': json({
-        compilerOptions: managedOutputCompilerOptions(),
+        compilerOptions,
         include: ['src/**/*.ts'],
       }),
     });
+  }
 
-    try {
-      const result = await prepareGeneratedTsconfigGraph({
-        ...fixture.config,
-        scope: {
-          regions: fixture.config.scope?.regions,
-          checkers: {
-            auto: {},
-            astro: { include: ['packages/a/tsconfig.json'] },
-          },
-        },
-      });
-      const configPath = (packageName: string) =>
-        normalizeAbsolutePath(
-          path.join(fixture.rootDir, 'packages', packageName, 'tsconfig.json'),
-        );
-      const aConfigPath = configPath('a');
-      const astroConfigPath = configPath('astro-target');
-      const svelteConfigPath = configPath('svelte-target');
-      const vueConfigPath = configPath('vue-target');
-      const vueProviderConfigPath = configPath('vue-provider');
-      const tsConfigPath = configPath('ts-target');
+  function astroRoutingExpectations(rootDirectory: string) {
+    const configPath = (packageName: string) =>
+      normalizeAbsolutePath(
+        path.join(rootDirectory, 'packages', packageName, 'tsconfig.json'),
+      );
+    const aConfigPath = configPath('a');
+    const vueConfigPath = configPath('vue-target');
 
-      const frameworkRelationsMatcher = expect.arrayContaining([
+    return {
+      aConfigPath,
+      relations: expect.arrayContaining([
         expect.objectContaining({
           file: expect.stringContaining('packages/a/src/App.astro:'),
           fromConfigPath: aConfigPath,
           importedSpecifier: '../../astro-target/src/Widget.astro',
           kind: 'framework-schedule',
-          toConfigPath: astroConfigPath,
+          toConfigPath: configPath('astro-target'),
         }),
         expect.objectContaining({
           file: expect.stringContaining('packages/a/src/App.astro:'),
           fromConfigPath: aConfigPath,
           importedSpecifier: '../../svelte-target/src/Widget.svelte',
           kind: 'framework-schedule',
-          toConfigPath: svelteConfigPath,
+          toConfigPath: configPath('svelte-target'),
         }),
         expect.objectContaining({
           file: expect.stringContaining('packages/a/src/App.astro:'),
@@ -4693,22 +4685,51 @@ export default component;
           fromConfigPath: aConfigPath,
           importedSpecifier: '../../ts-target/src/index.ts',
           kind: 'framework-schedule',
-          toConfigPath: tsConfigPath,
+          toConfigPath: configPath('ts-target'),
         }),
         expect.objectContaining({
           file: expect.stringContaining('packages/vue-target/src/Widget.vue:'),
           fromConfigPath: vueConfigPath,
           importedSpecifier: '../../vue-provider/src/index.ts',
           kind: 'declaration-provider',
-          toConfigPath: vueProviderConfigPath,
+          toConfigPath: configPath('vue-provider'),
         }),
-      ]);
-      expect(result.dependencyEdges).toEqual(frameworkRelationsMatcher);
+      ]),
+    };
+  }
+
+  it('keeps explicit Astro source authority while routing Astro, Svelte, Vue, and TypeScript targets through their owning policies', async () => {
+    const fixture = await createAstroRoutingFixture();
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        scope: {
+          regions: fixture.config.scope?.regions,
+          checkers: {
+            auto: {},
+            astro: { include: ['packages/a/tsconfig.json'] },
+          },
+        },
+      });
+      const { aConfigPath, relations } = astroRoutingExpectations(
+        fixture.rootDir,
+      );
+
+      expect(result.dependencyEdges).toEqual(relations);
       expect(result.ownershipPlan.typeConfigs.get(aConfigPath)).toMatchObject({
         frozenSemanticAuthority: { family: 'astro' },
         finalOwner: 'astro',
       });
+    } finally {
+      await fixture.cleanup();
+    }
+  }, 120_000);
 
+  it('infers Astro config authority without ambiguity while routing Astro, Svelte, Vue, and TypeScript targets through their owning policies', async () => {
+    const fixture = await createAstroRoutingFixture();
+
+    try {
       const caches = createProjectDependencyCaches();
       const automatic = await prepareGeneratedTsconfigGraph(
         {
@@ -4720,6 +4741,10 @@ export default component;
         },
         { projectDependencyCaches: caches },
       );
+      const { aConfigPath, relations } = astroRoutingExpectations(
+        fixture.rootDir,
+      );
+
       expect(
         automatic.ownershipPlan.typeConfigs.get(aConfigPath),
       ).toMatchObject({
@@ -4727,7 +4752,7 @@ export default component;
         finalOwner: 'astro',
       });
       expect(readFrameworkInferenceAmbiguities(caches)).toEqual([]);
-      expect(automatic.dependencyEdges).toEqual(frameworkRelationsMatcher);
+      expect(automatic.dependencyEdges).toEqual(relations);
     } finally {
       await fixture.cleanup();
     }
