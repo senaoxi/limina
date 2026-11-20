@@ -1139,15 +1139,29 @@ describe('compiler host case policy for roots and JSON membership', () => {
           },
         ],
       };
-      const jsonInputs = jsonMembershipInputs(
-        jsonSnapshot,
-        context.id,
-        fileKey,
-      );
-      expect(jsonInputs.size).toBe(caseSensitive ? 0 : 1);
-      expect(jsonInputs.get(requestId)).toBe(
-        caseSensitive ? undefined : '/repo/src/Data.JSON',
-      );
+      const jsonInputs = jsonMembershipInputs(jsonSnapshot, context.id);
+      expect(jsonInputs.size).toBe(1);
+      expect(jsonInputs.get(requestId)).toBe('/repo/src/Data.JSON');
+      const validateUpper = () =>
+        validateJsonInputMembership(
+          jsonInputs.values(),
+          ['/repo/src/data.json'],
+          '/repo/tsconfig.json',
+          fileKey,
+        );
+      if (caseSensitive)
+        expect(validateUpper).toThrow(
+          'Generated JSON input is outside source membership',
+        );
+      else expect(validateUpper).not.toThrow();
+      expect(() =>
+        validateJsonInputMembership(
+          jsonInputs.values(),
+          ['/repo/src/Data.JSON'],
+          '/repo/tsconfig.json',
+          fileKey,
+        ),
+      ).not.toThrow();
     },
   );
 });

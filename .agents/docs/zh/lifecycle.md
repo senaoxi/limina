@@ -97,7 +97,7 @@ Vue 声明闭包投影仅在一次[支撑贡献收集](../../../packages/limina/
 
 ## 原生持久化分析缓存
 
-当前持久分析使用 [analysis adapter v33](../../../packages/limina/src/core/analysis-cache/contracts.ts)、[generated graph key v26](../../../packages/limina/src/core/build-graph/analysis-cache.ts)、Native Program adapter v15 与 Vue analysis adapter v16。不兼容的 analysis header 拒绝整个快照，包括图记录和 context。Evidence 版本保持 5，snapshot schema 为 15，storage version 保持 3，目录保持 `analysis-v2`。当前 Host 目录、大小写策略与 `toPath` 算法身份参与 Native/Vue context 资格判断。恢复对实际目标重新计算 Coverage，并验证物理绑定、输入和 context；当前 Candidate 仍用真实 Checker 执行检查。旧 canonical 证明被拒绝，不进行迁移。[Native cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)与 [Vue cache](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 回归负责拒绝及后续恢复。
+当前持久分析使用 [analysis adapter v33](../../../packages/limina/src/core/analysis-cache/contracts.ts)、[generated graph key v27](../../../packages/limina/src/core/build-graph/analysis-cache.ts)、Native Program adapter v15 与 Vue analysis adapter v16。不兼容的 analysis header 拒绝整个快照，包括图记录和 context。Evidence 版本保持 5，snapshot schema 为 15，storage version 保持 3，目录保持 `analysis-v2`。当前 Host 目录、大小写策略与 `toPath` 算法身份参与 Native/Vue context 资格判断。恢复对实际目标重新计算 Coverage，并验证物理绑定、输入和 context；当前 Candidate 仍用真实 Checker 执行检查。旧 canonical 证明被拒绝，不进行迁移。[Native cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)与 [Vue cache](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 回归负责拒绝及后续恢复。
 
 Native／Vue snapshot 将声明解析 receipt、结果与类型环境入口一起保存。Adapter identity 使旧解释失效，缺失或不兼容的必要 receipt 触发重新分析。每次收集按当前根 membership 与入口可达性决定治理投影，包括无 membership 的负向判断。Manifest 内容、symlink 绑定、有效 types／typeRoots、声明内容和失败候选仍属于观察输入。删除最后一个合法本地入口时撤销内部贡献，其他合法入口仍保留共享贡献。更新使用现有项目替换生命周期，不扩大 `replaceProject` 的事务范围。
 

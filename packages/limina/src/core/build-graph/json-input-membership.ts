@@ -9,7 +9,6 @@ import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 export function jsonMembershipInputs(
   snapshot: NativeEvidenceSnapshot,
   contextId: string,
-  fileKey: (file: string) => string = compilerFileKey,
 ): Map<string, string> {
   const requests = new Set(
     snapshot.requests
@@ -27,7 +26,7 @@ export function jsonMembershipInputs(
       requests.has(resolution.requestId) &&
       resolution.state === 'resolved' &&
       resolution.target !== null &&
-      fileKey(resolution.target.lexicalPath).endsWith('.json') &&
+      /\.json$/iu.test(resolution.target.lexicalPath) &&
       resolution.externalLibrary !== true &&
       snapshot.obligations.some(
         (obligation) =>
