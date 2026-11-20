@@ -36,7 +36,10 @@ function observedImpact(
   target: string,
 ): NativeModuleImpact {
   return (
-    independentModuleAbsence(input) ??
+    independentModuleAbsence({
+      ...input,
+      fileKey: input.frontier.fileKey,
+    }) ??
     scopedImpact(
       input,
       observeNativeModuleImpact({
@@ -97,7 +100,10 @@ function unresolvedObligation(
     input.observation.source,
   ).ambientModuleNames.includes(input.observation.literal.text);
   const impact: NativeModuleImpact =
-    independentModuleAbsence(input) ??
+    independentModuleAbsence({
+      ...input,
+      fileKey: input.frontier.fileKey,
+    }) ??
     (isAmbient
       ? { state: 'absent', rule: 'compiler-local-ambient-module' }
       : missingModuleImpact(input.observation));

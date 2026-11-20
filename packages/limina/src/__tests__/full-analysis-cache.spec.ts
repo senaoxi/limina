@@ -2668,3 +2668,44 @@ it('recomputes logical declaration membership after alias retargeting across fre
     expect.objectContaining({ kind: 'graphHits', count: 1 }),
   );
 }, 60_000);
+
+it.skipIf(ts.sys.useCaseSensitiveFileNames)(
+  'caches and restores a consumer project with a case-variant root import across fresh processes',
+  () => {
+    const f = fixture();
+    f.write(
+      'tsconfig.json',
+      JSON.stringify({
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          forceConsistentCasingInFileNames: false,
+          noLib: true,
+          types: [],
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          outDir: 'dist',
+        },
+        files: ['src/index.ts', 'src/Foo.ts'],
+      }),
+    );
+    f.write('src/Foo.ts', 'export const value = 1;');
+    f.write(
+      'src/index.ts',
+      'import { value } from "./foo.js"; export const result = value;',
+    );
+    const run = 'console.log(JSON.stringify(await runCache()));';
+    const cold = f.execute<GraphRunResult>(run);
+    expect(cold.graph.edges).toEqual([]);
+    const warm = f.execute<GraphRunResult>(run);
+    expect(warm.graph).toEqual(cold.graph);
+    expect(warm.events).toContainEqual(
+      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    );
+    expect(
+      warm.events.find((event) => event.kind === 'semanticPrograms')?.count ??
+        0,
+    ).toBe(0);
+  },
+  60_000,
+);

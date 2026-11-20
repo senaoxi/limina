@@ -14040,4 +14040,129 @@ describe('declaration compiler path identity', () => {
       await fixture.cleanup();
     }
   });
+
+  it
+    .skipIf(ts.sys.useCaseSensitiveFileNames)
+    .each([
+      'module',
+      'path',
+      'json-module',
+      'json-path',
+      'json-transitive',
+      'json-outputs',
+    ] as const)(
+    'matches case-variant consumer roots and listed JSON inputs by compiler host policy (%s)',
+    async (variant) => {
+      const compilerOptions = {
+        composite: true,
+        declaration: true,
+        resolveJsonModule: true,
+        forceConsistentCasingInFileNames: false,
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        target: 'ES2022',
+        types: [],
+      };
+      const isJsonPath = variant === 'json-path';
+      const jsonFile = isJsonPath ? 'src/Data.JSON' : 'src/Data.json';
+      const isJson = variant.startsWith('json-');
+      const files: Record<string, string> = {
+        'packages/a/tsconfig.json': json({
+          compilerOptions,
+          files: ['src/index.ts', isJson ? jsonFile : 'src/Foo.ts'],
+          ...(variant === 'json-outputs' && {
+            liminaOptions: {
+              outputs: { rootDir: './src', outDir: './out' },
+            },
+          }),
+        }),
+        'packages/a/src/Foo.ts': 'export const value = 1;\n',
+        [`packages/a/${jsonFile}`]: '{"value":1}\n',
+        'packages/a/src/bridge.d.ts':
+          'import data from "./data.json"; export type Value = typeof data;\n',
+        'packages/a/src/index.ts':
+          variant === 'module'
+            ? 'import { value } from "./foo.js"; export const result = value;\n'
+            : variant === 'path'
+              ? '/// <reference path="./FOO.ts" />\nexport const result = 1;\n'
+              : variant === 'json-path'
+                ? '/// <reference path="./data.json" />\nexport const result = 1;\n'
+                : variant === 'json-transitive'
+                  ? 'import type { Value } from "./bridge.js"; export const result: Value = { value: 1 };\n'
+                  : 'import data from "./data.json"; export const result: number = data.value;\n',
+      };
+      const fixture = await createFixture(files);
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(graph.dependencyEdges).toEqual([]);
+        const sourceConfig = fixture.path('packages/a/tsconfig.json');
+        const snapshot = graph.dependencyAnalysis!.nativeEvidence!.find(
+          (entry) =>
+            entry.snapshot.contexts.some(
+              (context) =>
+                context.inputs.sourceConfig === sourceConfig &&
+                context.authority.phase === 'locked',
+            ),
+        )!.snapshot;
+        expect(
+          snapshot.obligations.some(
+            (obligation) =>
+              obligation.existence.state === 'absent' &&
+              obligation.existence.proof.ruleOrObservation ===
+                'consumer-root-has-no-cross-unit-obligation',
+          ),
+        ).toBe(true);
+        const entry = graph.sourceToDts.get('tsc')!.get(sourceConfig)!;
+        const entries =
+          variant === 'json-outputs'
+            ? [
+                entry,
+                graph.configToOutputBuild.get('tsc')!.get(sourceConfig)!.path,
+              ]
+            : [entry];
+        expect(
+          ts
+            .createSolutionBuilder(
+              ts.createSolutionBuilderHost(ts.sys),
+              entries,
+              { force: true },
+            )
+            .build(),
+        ).toBe(0);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.skipIf(ts.sys.useCaseSensitiveFileNames)(
+    'rejects an unlisted uppercase .JSON path directive on case-insensitive hosts',
+    async () => {
+      const fixture = await createFixture({
+        'packages/a/tsconfig.json': json({
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            resolveJsonModule: true,
+            forceConsistentCasingInFileNames: false,
+            module: 'NodeNext',
+            moduleResolution: 'NodeNext',
+            target: 'ES2022',
+            types: [],
+          },
+          files: ['src/index.ts'],
+        }),
+        'packages/a/src/Data.JSON': '{"value":1}\n',
+        'packages/a/src/index.ts':
+          '/// <reference path="./Data.JSON" />\nexport const result = 1;\n',
+      });
+      try {
+        await expect(
+          prepareGeneratedTsconfigGraph(fixture.config),
+        ).rejects.toThrow('Generated JSON input is outside source membership');
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 });

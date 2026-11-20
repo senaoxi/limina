@@ -1,3 +1,4 @@
+import { vueCompilerPathPolicy } from '../../checker/vue-semantic-identity';
 import type { CompilationObligationProof } from '../dependency-semantics';
 import { rangeIdentity } from '../framework-semantic/generated-dependencies';
 import type { ImportRecord } from '../import-analysis/records';
@@ -100,12 +101,15 @@ export function vueDirectiveObligation(
   const target = receipt.selection.logicalTarget;
   proof.requests[0]!.target = target;
   if (receipt.selection.state === 'unavailable') return proof;
+  const fileKey = vueCompilerPathPolicy(context.identity).key;
+  const targetKey = target === null ? null : fileKey(target);
   const hasAbsence = [
     options.noResolve,
     target === null,
     receipt.redirect !== undefined,
     target !== null && isDeclarationFile(target),
-    target !== null && program.getRootFileNames().includes(target),
+    targetKey !== null &&
+      program.getRootFileNames().some((root) => fileKey(root) === targetKey),
     program.isSourceFileFromExternalLibrary(source),
   ].some(Boolean);
   if (hasAbsence)

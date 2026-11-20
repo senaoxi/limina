@@ -21,6 +21,7 @@ interface CompilerContext {
   tsModule: typeof ts;
   compilerRequests: FrameworkCompilerRequests;
   configPath: string;
+  fileKey?: (file: string) => string;
   getService?: (
     fileName: string,
   ) => { extension?: string; scriptKind?: ts.ScriptKind } | undefined;
@@ -73,7 +74,11 @@ function requestImpact(
     raw: request.raw,
     requestId: '',
   };
-  const independent = independentModuleAbsence({ program, observation });
+  const independent = independentModuleAbsence({
+    program,
+    observation,
+    fileKey: context.fileKey,
+  });
   if (independent !== undefined) return independent;
   if (request.ambient)
     return {

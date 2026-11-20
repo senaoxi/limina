@@ -82,7 +82,12 @@ function rootOrImplementationImpact(
   input: PathObligationInput,
   target: string,
 ): NativeModuleImpact {
-  if (input.program.getRootFileNames().includes(target))
+  const targetKey = input.frontier.fileKey(target);
+  if (
+    input.program
+      .getRootFileNames()
+      .some((root) => input.frontier.fileKey(root) === targetKey)
+  )
     return {
       state: 'absent',
       rule: 'consumer-root-has-no-cross-unit-obligation',

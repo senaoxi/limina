@@ -12,13 +12,18 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { TypeEvidenceCore } from '../core/type-evidence';
 import { isSupportedVueTypeEvidenceVersionTuple } from '../core/type-evidence/vue-provider';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import { VueSemanticContextManager } from '../core/vue-semantic/context';
-import { observeVueDependency } from '../core/vue-semantic/dependency-observation';
+import {
+  observeVueDependency,
+  observeVueGraphDependency,
+} from '../core/vue-semantic/dependency-observation';
 import { prepareVueSemanticDependencies } from '../core/vue-semantic/preparation';
+import { resolveVueSemanticImport } from '../core/vue-semantic/resolution';
 import {
   type AnalysisMetricAggregate,
   createProfilingMetricsRecorder,
@@ -409,4 +414,90 @@ describe('Vue resource type evidence', () => {
       await fixture.cleanup();
     }
   });
+
+  it.skipIf(ts.sys.useCaseSensitiveFileNames)(
+    'matches case-variant consumer roots for Vue module and path directive obligations',
+    async () => {
+      const fixture = await createFixture({
+        'src/Helper.ts': 'export const value = 1;\n',
+        'src/main.ts':
+          '/// <reference path="./HELPER.ts" />\nimport { value } from "./helper";\nexport const out = value;\n',
+        'src/App.vue':
+          '<script setup lang="ts">import { value } from "./helper"; const out = value;</script><template>{{ out }}</template>\n',
+        'tsconfig.json': JSON.stringify({
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            forceConsistentCasingInFileNames: false,
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            target: 'ES2022',
+            skipLibCheck: true,
+            types: [],
+          },
+          files: ['src/App.vue', 'src/main.ts', 'src/Helper.ts'],
+        }),
+      });
+      const contexts = new VueSemanticContextManager();
+      try {
+        await linkVueToolchain(fixture.rootDir);
+        const project = createVueProject(fixture.rootDir);
+        const context = contexts.acquire(project.vueSemanticIdentity!);
+        const importAnalysis = createImportAnalysisContext({
+          projectRootDir: fixture.rootDir,
+          vueSemanticContexts: contexts,
+        });
+        const mainPath = path.join(fixture.rootDir, 'src/main.ts');
+        const records = importAnalysis.collectImportsFromFile(
+          mainPath,
+          fixture.rootDir,
+        );
+        const pathRecord = records.find(
+          (record) => record.kind === 'triple-slash-path',
+        )!;
+        const moduleRecord = records.find(
+          (record) => record.specifier === './helper',
+        )!;
+        const resolved = resolveVueSemanticImport({
+          identity: project.vueSemanticIdentity!,
+          importRecord: moduleRecord,
+          manager: contexts,
+        });
+        expect(resolved.kind).toBe('resolved');
+        if (resolved.kind !== 'resolved') return;
+        const target = resolved.resolution;
+        expect(target).not.toBeNull();
+        expect(
+          observeVueDependency({
+            context,
+            importRecord: moduleRecord,
+            target,
+          }).compilerMembership,
+        ).toBe('covered');
+        expect(
+          observeVueGraphDependency({
+            context,
+            importRecord: moduleRecord,
+            target,
+          }).compilationObligation,
+        ).toMatchObject({
+          state: 'absent',
+          reason: 'consumer-root-has-no-cross-unit-obligation',
+        });
+        expect(
+          observeVueGraphDependency({
+            context,
+            importRecord: pathRecord,
+            target: null,
+          }).compilationObligation,
+        ).toMatchObject({
+          state: 'absent',
+          reason: 'compiler-directive-has-no-cross-unit-input',
+        });
+      } finally {
+        contexts.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
 });

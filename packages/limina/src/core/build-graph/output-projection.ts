@@ -1,8 +1,10 @@
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
+import { vueCompilerPathPolicy } from '../../checker/vue-semantic-identity';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { analysisHash, nativeContextId } from '../analysis-cache/identity';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { createTypeScriptDependencyContext } from '../typescript-semantic';
+import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type {
   TypeScriptSemanticDependencyContext,
@@ -101,12 +103,16 @@ function frameworkReceipt(
     );
   return receipt;
 }
+function outputFileKey(project: SourceProject): (file: string) => string {
+  const vue = project.context.vueSemanticIdentity;
+  return vue === undefined ? compilerFileKey : vueCompilerPathPolicy(vue).key;
+}
 function foreignOwner(
   owners: Map<string, SourceProject>,
   target: string,
   project: SourceProject,
 ): SourceProject | undefined {
-  const owner = owners.get(target);
+  const owner = owners.get(outputFileKey(project)(target));
   return owner?.configPath === project.configPath ? undefined : owner;
 }
 function coveredTarget(
@@ -202,9 +208,10 @@ export function proveOutputProjection(
   input: ProjectionInput,
 ): OutputProjectionReceipt {
   const projects = input.state.projectsByChecker.values().toArray().flat();
+  const fileKey = outputFileKey(input.project);
   const owners = new Map(
     projects.flatMap((owner) =>
-      owner.ownedFileNames.map((file) => [file, owner] as const),
+      owner.ownedFileNames.map((file) => [fileKey(file), owner] as const),
     ),
   );
   const output = outputSemanticProject(input.project, input.state, owners);

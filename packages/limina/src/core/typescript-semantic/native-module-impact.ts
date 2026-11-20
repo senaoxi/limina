@@ -1,5 +1,6 @@
 import type ts from 'typescript';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import { compilerFileKey } from './compiler-coverage';
 import {
   nativeCompilerApi,
   type NativeObservedProgram,
@@ -17,7 +18,9 @@ interface ImpactInput {
   compiler: typeof ts;
   reference: NativeReferenceObservation | undefined;
 }
-type RequestInput = Pick<ImpactInput, 'observation' | 'program'>;
+type RequestInput = Pick<ImpactInput, 'observation' | 'program'> & {
+  fileKey?: (file: string) => string;
+};
 interface TargetInput {
   service?: { extension: string; scriptKind: ts.ScriptKind };
   target: string;
@@ -38,6 +41,7 @@ export function independentModuleAbsence(
     options: input.program.getCompilerOptionsForFile(input.observation.source),
     target: moduleTarget(input.observation),
     roots: input.program.getRootFileNames(),
+    fileKey: input.fileKey,
   });
 }
 export function independentModuleInputAbsence(input: {
@@ -45,17 +49,22 @@ export function independentModuleInputAbsence(input: {
   options: ts.CompilerOptions | undefined;
   target: string | undefined;
   roots: readonly string[];
+  fileKey?: (file: string) => string;
 }): NativeModuleImpact | undefined {
   if (input.role === 'augmentation')
     return {
       state: 'absent',
       rule: 'compiler-augmentation-does-not-add-input',
     };
-  if (input.target !== undefined && input.roots.includes(input.target))
-    return {
-      state: 'absent',
-      rule: 'consumer-root-has-no-cross-unit-obligation',
-    };
+  if (input.target !== undefined) {
+    const fileKey = input.fileKey ?? compilerFileKey;
+    const targetKey = fileKey(input.target);
+    if (input.roots.some((root) => fileKey(root) === targetKey))
+      return {
+        state: 'absent',
+        rule: 'consumer-root-has-no-cross-unit-obligation',
+      };
+  }
   return input.options?.noResolve
     ? { state: 'absent', rule: 'compiler-noResolve-disables-module-input' }
     : undefined;

@@ -1,6 +1,7 @@
 import { compareCodeUnits } from '#utils/collections';
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
+import { compilerPathPolicy } from '../typescript-semantic/compiler-path-key';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import type {
   InputDependency,
@@ -46,6 +47,7 @@ interface SemanticStateOptions {
 
 export class SemanticState {
   readonly #referenceInputs: Map<string, string[]>;
+  readonly #fileKey: (file: string) => string;
   readonly contextId: string;
   readonly environmentDependencies: InputDependency[];
   readonly projectRecord: ProjectRecord;
@@ -58,6 +60,10 @@ export class SemanticState {
   readonly options: SemanticStateOptions;
   constructor(options: SemanticStateOptions) {
     this.options = options;
+    this.#fileKey = compilerPathPolicy(
+      options.tsModule,
+      options.tsModule.createCompilerHost(options.project.options),
+    ).key;
     this.contextId = nativeContextId(options.project);
     this.#referenceInputs = projectReferenceInputs(
       options.program,
@@ -73,8 +79,9 @@ export class SemanticState {
         .map((file) => file.fileName),
       references: options.project.projectReferences ?? [],
     };
+    const memberKeys = new Set(this.projectRecord.members.map(this.#fileKey));
     this.implicitQueryIds = [...this.queriesByFile]
-      .filter(([file]) => !this.projectRecord.members.includes(file))
+      .filter(([file]) => !memberKeys.has(this.#fileKey(file)))
       .flatMap(([, ids]) => [...ids]);
     const environmentPaths = new Set(
       this.projectRecord.environment.flatMap((file) => this.#closure(file)),
@@ -129,14 +136,17 @@ export class SemanticState {
   }
 
   #membership(file: string) {
+    const key = this.#fileKey(file);
     const source = this.options.program.getSourceFile(file);
     const isReferencedInput = this.#references().some((reference) =>
-      reference?.commandLine.fileNames.includes(file),
+      reference?.commandLine.fileNames.some(
+        (name) => this.#fileKey(name) === key,
+      ),
     );
     return [
       file,
-      this.projectRecord.roots.includes(file),
-      this.projectRecord.members.includes(file),
+      this.projectRecord.roots.some((name) => this.#fileKey(name) === key),
+      this.projectRecord.members.some((name) => this.#fileKey(name) === key),
       isReferencedInput,
       this.options.project.workspaceSourceBoundary.has(file),
       source?.impliedNodeFormat,

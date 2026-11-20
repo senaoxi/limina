@@ -1,12 +1,16 @@
 import type ts from 'typescript';
 import type { CompilerMembership } from '../dependency-semantics';
+import { compilerFileKey } from './compiler-coverage';
 
 function hasOriginalReferenceInput(
   program: ts.Program,
-  target: string,
+  targetKey: string,
+  fileKey: (file: string) => string,
 ): boolean {
   return (program.getResolvedProjectReferences() ?? []).some((reference) =>
-    reference?.commandLine.fileNames.includes(target),
+    reference?.commandLine.fileNames.some(
+      (file) => fileKey(file) === targetKey,
+    ),
   );
 }
 function hasExternalInput(program: ts.Program, target: string): boolean {
@@ -19,10 +23,12 @@ function hasExternalInput(program: ts.Program, target: string): boolean {
 export function observeCompilerMembership(
   program: ts.Program,
   target: string,
+  fileKey: (file: string) => string = compilerFileKey,
 ): CompilerMembership {
+  const targetKey = fileKey(target);
   return [
-    program.getRootFileNames().includes(target),
-    hasOriginalReferenceInput(program, target),
+    program.getRootFileNames().some((file) => fileKey(file) === targetKey),
+    hasOriginalReferenceInput(program, targetKey, fileKey),
     hasExternalInput(program, target),
   ].some(Boolean)
     ? 'covered'

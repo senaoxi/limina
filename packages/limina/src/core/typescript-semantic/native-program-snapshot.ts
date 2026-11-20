@@ -137,6 +137,7 @@ export function createNativeProgramSnapshot(options: {
     traversal: nativeTraversalLinks({
       entries,
       roots: program.getRootFileNames(),
+      fileKey: frontier.fileKey,
     }),
     resolutions: entries.map(({ resolution }) =>
       resolutionLoad(resolution, program, targetAttempt(resolution, attempts)),

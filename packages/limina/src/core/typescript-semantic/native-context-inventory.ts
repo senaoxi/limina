@@ -77,6 +77,7 @@ export function captureNativeContextInventory(
       request,
       resolution: resolutions.get(request.id)!,
     })),
+    adapter.frontier.fileKey,
   );
   const inventory = freezeNativeData({
     modules: adapter.modules.map((observation) => ({

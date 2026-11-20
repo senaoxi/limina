@@ -28,6 +28,7 @@ export function collectNativeObligations(
   const unqualified = unqualifiedNativeLoads(
     input.program,
     input.requests.entries,
+    input.frontier.fileKey,
   );
   const paths = [...input.paths].map(([requestId, receipt]) =>
     pathObligation(input, { requestId, receipt }, unqualified),

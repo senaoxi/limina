@@ -2,12 +2,14 @@ import { normalizeAbsolutePath } from '#utils/path';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import { DeclarationObservationUnavailable } from '../declaration-governance/candidate';
+import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 
 /** Already observed consumer inputs only. External, suppressed and delegated
  * requests cannot establish a new local membership requirement here. */
 export function jsonMembershipInputs(
   snapshot: NativeEvidenceSnapshot,
   contextId: string,
+  fileKey: (file: string) => string = compilerFileKey,
 ): Map<string, string> {
   const requests = new Set(
     snapshot.requests
@@ -24,7 +26,8 @@ export function jsonMembershipInputs(
     if (
       requests.has(resolution.requestId) &&
       resolution.state === 'resolved' &&
-      resolution.target?.lexicalPath.endsWith('.json') &&
+      resolution.target !== null &&
+      fileKey(resolution.target.lexicalPath).endsWith('.json') &&
       resolution.externalLibrary !== true &&
       snapshot.obligations.some(
         (obligation) =>
@@ -42,10 +45,13 @@ export function validateJsonInputMembership(
   targets: Iterable<string>,
   roots: readonly string[],
   consumer: string,
+  fileKey: (file: string) => string = compilerFileKey,
 ): void {
-  const members = new Set(roots.map(normalizeAbsolutePath));
+  const members = new Set(
+    roots.map((root) => fileKey(normalizeAbsolutePath(root))),
+  );
   for (const target of targets)
-    if (!members.has(target))
+    if (!members.has(fileKey(normalizeAbsolutePath(target))))
       throw new DeclarationObservationUnavailable(
         `Generated JSON input is outside source membership: ${target}; consumer: ${consumer}. Include the JSON input in the source config files/include before generating an emitting project.`,
       );

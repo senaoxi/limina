@@ -4,7 +4,6 @@ import type {
   ObligationExistence,
 } from '../../domain/analysis/native-obligation';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
-import { compilerFileKey } from './compiler-coverage';
 import { nativeFingerprint } from './native-file-identity';
 import type { NativeObservedProgram } from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
@@ -100,7 +99,7 @@ function typeInputExistence(
     isDeclarationFile(resolution.target.lexicalPath)
   )
     return undefined;
-  const key = (file: string) => compilerFileKey(normalizeAbsolutePath(file));
+  const key = (file: string) => frontier.fileKey(normalizeAbsolutePath(file));
   const target = key(resolution.target.lexicalPath);
   const isRoot = program
     .getRootFileNames()

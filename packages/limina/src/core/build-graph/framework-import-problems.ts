@@ -12,6 +12,7 @@ import { isPathInsideDirectory, toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { isKnownFrameworkVirtualSpecifier } from '../import-analysis/virtual-modules';
 import type { ProjectDependency } from '../project-dependencies/contracts';
+import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import type { ReferenceImportContext } from './reference-import-types';
 import { isInsideNodeModules } from './source-projects';
 import type { GovernedSourceUnit, SourceProject } from './types';
@@ -125,8 +126,9 @@ function isSupportContribution(
   options: ContributionOptions,
   fileName: string,
 ): boolean {
+  const key = compilerFileKey(fileName);
   return (
-    !options.project.fileNames.includes(fileName) &&
+    options.project.fileNames.every((root) => compilerFileKey(root) !== key) &&
     isGovernedSupportTarget(options)
   );
 }

@@ -1,7 +1,13 @@
 import ts from 'typescript';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import {
+  jsonMembershipInputs,
+  validateJsonInputMembership,
+} from '../core/build-graph/json-input-membership';
 import { compilerFileKey } from '../core/typescript-semantic/compiler-coverage';
+import { observeCompilerMembership } from '../core/typescript-semantic/compiler-membership';
 import { compilerPathPolicy } from '../core/typescript-semantic/compiler-path-key';
+import { independentModuleInputAbsence } from '../core/typescript-semantic/native-module-impact';
 import {
   captureNativeEvidenceOrigin,
   lockNativeEvidenceContext,
@@ -1037,4 +1043,111 @@ describe('immutable, non-executable native evidence publication', () => {
     ).toThrow('accessors');
     expect(isInvoked).toBe(false);
   });
+});
+
+describe('compiler host case policy for roots and JSON membership', () => {
+  it.each([false, true])(
+    'matches consumer roots, compiler membership and JSON inputs by host case sensitivity (caseSensitive=%s)',
+    (caseSensitive) => {
+      const fileKey = compilerPathPolicy(ts, {
+        getCurrentDirectory: () => '/repo',
+        getCanonicalFileName: (name) =>
+          caseSensitive ? name : name.toLowerCase(),
+      }).key;
+      const absence = independentModuleInputAbsence({
+        role: 'import',
+        options: {},
+        target: '/repo/src/foo.ts',
+        roots: ['/repo/src/Foo.ts'],
+        fileKey,
+      });
+      expect(absence).toEqual(
+        caseSensitive
+          ? undefined
+          : {
+              state: 'absent',
+              rule: 'consumer-root-has-no-cross-unit-obligation',
+            },
+      );
+      const membership = observeCompilerMembership(
+        {
+          getRootFileNames: () => ['/repo/src/Foo.ts'],
+          getResolvedProjectReferences: () => {},
+          getSourceFile: () => {},
+        } as unknown as ts.Program,
+        '/repo/src/foo.ts',
+        fileKey,
+      );
+      expect(membership).toBe(caseSensitive ? 'not-covered' : 'covered');
+      const validate = () =>
+        validateJsonInputMembership(
+          ['/repo/src/data.json'],
+          ['/repo/src/Data.json'],
+          '/repo/tsconfig.json',
+          fileKey,
+        );
+      if (caseSensitive)
+        expect(validate).toThrow(
+          'Generated JSON input is outside source membership',
+        );
+      else expect(validate).not.toThrow();
+
+      const context = pending();
+      const base = snapshot();
+      const requestId = 'req-json-upper';
+      const jsonSnapshot: NativeEvidenceSnapshot = {
+        ...base,
+        requests: [
+          {
+            id: requestId,
+            consumerContextId: context.id,
+            channel: 'path-directive',
+            specifier: './Data.JSON',
+            resolutionMode: null,
+            sourceFile: file('/repo/src/index.ts'),
+            predecessorId: null,
+            entry: {
+              kind: 'source',
+              file: file('/repo/src/index.ts'),
+              position: 0,
+            },
+            origin: origin(context),
+          },
+        ],
+        resolutions: [
+          {
+            requestId,
+            state: 'resolved',
+            target: file('/repo/src/Data.JSON'),
+            externalLibrary: false,
+            compilerLoad: 'not-observed',
+            evidenceIds: [],
+            rawRedirectEvidenceIds: [],
+          },
+        ],
+        obligations: [
+          {
+            id: 'obl-json-upper',
+            requestIds: [requestId],
+            consumerContextId: context.id,
+            consumerConfigId: '/repo/tsconfig.json',
+            rawReferenceFingerprint: context.inputs.rawReferences,
+            targetConfigId: null,
+            existence: { state: 'unknown', gapIds: ['json-unproved'] },
+            structure: { state: 'unknown', reason: 'unproved' },
+            artifact: { state: 'unknown', reason: 'unproved' },
+          },
+        ],
+      };
+      const jsonInputs = jsonMembershipInputs(
+        jsonSnapshot,
+        context.id,
+        fileKey,
+      );
+      expect(jsonInputs.size).toBe(caseSensitive ? 0 : 1);
+      expect(jsonInputs.get(requestId)).toBe(
+        caseSensitive ? undefined : '/repo/src/Data.JSON',
+      );
+    },
+  );
 });

@@ -1,5 +1,6 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import type ts from 'typescript';
+import { vueCompilerPathPolicy } from '../../checker/vue-semantic-identity';
 import type {
   CompilationObligationProof,
   CompilerMembership,
@@ -44,6 +45,7 @@ function compilerMembership(options: ObservationOptions): CompilerMembership {
     : observeCompilerMembership(
         options.context.program,
         options.target.resolvedFileName,
+        vueCompilerPathPolicy(options.context.identity).key,
       );
 }
 function compilerInputEvidence(options: ObservationOptions): TypeEvidence {

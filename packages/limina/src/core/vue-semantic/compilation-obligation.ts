@@ -1,3 +1,4 @@
+import { vueCompilerPathPolicy } from '../../checker/vue-semantic-identity';
 import type { CompilationObligationProof } from '../dependency-semantics';
 import { frameworkCompilationObligation } from '../framework-semantic/compilation-obligation';
 import type { FrameworkCompilerRequest } from '../framework-semantic/compiler-requests';
@@ -14,6 +15,7 @@ export function vueCompilationObligation(
       tsModule: context.tsModule,
       compilerRequests: context.compilerRequests,
       configPath: context.identity.configPath,
+      fileKey: vueCompilerPathPolicy(context.identity).key,
       getService: (fileName) =>
         getVueServiceScript({ context, fileName })?.serviceScript,
     },

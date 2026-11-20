@@ -3,6 +3,7 @@ import { decideReferenceRequirement } from '../dependency-semantics';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import { isTypeScriptSemanticSource } from '../project-dependencies/source-evidence';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
+import { compilerPathPolicy } from '../typescript-semantic/compiler-path-key';
 import { isDependencyContributionInput } from '../typescript-semantic/contribution-inputs';
 import {
   type DeclarationClosure,
@@ -50,8 +51,13 @@ interface SupportOptions {
 }
 
 function isSupportFile(options: SupportOptions, file: ts.SourceFile): boolean {
+  const fileKey = compilerPathPolicy(
+    options.tsModule,
+    options.tsModule.createCompilerHost(options.program.getCompilerOptions()),
+  ).key;
+  const key = fileKey(file.fileName);
   return [
-    !options.rootNames.includes(file.fileName),
+    options.rootNames.every((root) => fileKey(root) !== key),
     isTypeScriptSemanticSource(file.fileName),
     // Generated files need their adapter's source mapping, never a guessed owner.
     options.tsModule.sys.fileExists(file.fileName),
@@ -63,6 +69,7 @@ function isSupportFile(options: SupportOptions, file: ts.SourceFile): boolean {
         workspaceSourceBoundary: options.boundary,
       },
       file.fileName,
+      fileKey,
     ),
   ].every(Boolean);
 }
