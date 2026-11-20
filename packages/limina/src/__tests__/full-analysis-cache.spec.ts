@@ -1254,7 +1254,7 @@ finally { preflight.dispose(); }
 `);
     expect(exportGraph('read-only')).toEqual(exportGraph(false));
     expect(readFileSync(store.path)).toEqual(original);
-  }, 60_000);
+  }, 120_000);
 });
 
 describe('production graph snapshots and publication', () => {

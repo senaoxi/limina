@@ -11,6 +11,7 @@ const checkers = [
     name: 'astro',
     extension: 'astro',
     packages: { astro: 'astro', '@astrojs/check': '@astrojs/check' },
+    options: { timeout: 60_000 },
   },
   {
     name: 'svelte-check',
@@ -20,12 +21,13 @@ const checkers = [
       'svelte-check': 'svelte-check-v4-min',
       svelte2tsx: 'svelte2tsx',
     },
+    options: {},
   },
 ] as const;
 
-it.each(checkers)(
-  'restores $name source roots and its execution scope on a graph hit',
-  async ({ name, extension, packages }) => {
+for (const { name, extension, packages, options } of checkers) {
+  const title = `restores '${name}' source roots and its execution scope on a graph hit`;
+  it(title, options, async () => {
     const installedPackages = Object.entries({
       typescript: 'typescript',
       ...packages,
@@ -52,6 +54,7 @@ it.each(checkers)(
           target: 'ES2022',
           module: 'ESNext',
           moduleResolution: 'Bundler',
+          noLib: name === 'astro' || undefined,
           skipLibCheck: true,
           types: [],
         },
@@ -101,5 +104,5 @@ it.each(checkers)(
     } finally {
       await fixture.cleanup();
     }
-  },
-);
+  });
+}

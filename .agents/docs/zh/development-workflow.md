@@ -86,6 +86,10 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 [执行输入交接 fixture](../../../packages/limina/src/__tests__/execution-input-handoff.spec.ts)使用 `noLib: true`，保留既有空 `types` 列表。四个项目只使用基础类型与本地声明；反复发现标准库与受管输出 receipt 合同无关，且已在 Windows CI 超过 30 秒。保留相同的每例时限、源码漂移及相关输出拒绝控制、无关输出接纳、独立 target 并发与刷新发布屏障。生产输入验证及标准库专项测试保持既有行为。
 
+[Windows / Node 22 分片 4](https://github.com/senaoxi/limina/actions/runs/44685298583/job/136120001962)中的两个 [Vue 缓存用例](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)和 [Astro 导出用例](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)超过了 60 秒。Vue 归属迁移和最后一条导入移除的 fixture 为数值源码项目省略默认标准库。归属迁移保留 60 秒时限、精确引用断言和强制冷分析对照。导入移除用例为四次新进程和变更前后两次 warm 恢复预留 90 秒。Astro 导出用例为图检查和两次独立导出预留 120 秒，保留导出相等及只读快照字节不变的断言。
+
+[Windows / Node 22 分片 2](https://github.com/senaoxi/limina/actions/runs/44685298583/job/136120001968)中的 [Astro 执行作用域恢复用例](../../../packages/limina/src/__tests__/framework-analysis-cache.spec.ts)超过了 30 秒。纯文本组件和数值 companion 省略默认标准库，两次独立进程使用 60 秒时限。保留图命中、warm 阶段零次 Program 创建、根文件及配置身份和执行作用域漂移拒绝断言。Svelte 与全局测试时限沿用既有配置。
+
 [Checker 执行测试](../../../packages/limina/src/__tests__/typecheck.spec.ts)中的 Svelte target 排除和物化后重规划用例，为仅含文本的组件使用 `noLib: true` 和空 `types`。这些用例负责 target 选择、局部受管配置移除、package root 变化及 receipt 新鲜度；注入的 runner 不检查标准库诊断。排除和 add-replan 用例曾在 macOS CI 超过 30 秒；省去无关的默认标准库发现可减少多轮真实 Svelte generation 的工作量，同时保留原时限。保留真实框架转换、两个 manager、全部 target/cwd 断言及 stale-receipt 负向控制。[缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)中的 Vue 引用擦除用例保留冷启动发布、篡改拒绝及重建后的新进程恢复，在既有 60 秒内启动三次 runner。相邻用例继续覆盖未变化的跨项目恢复，不在每个篡改用例重复第四次启动。
 
 [CI Git 路径 fixture](../../../packages/gates/src/ci/ci.spec.ts)通过 `mktree -z` 和 `commit-tree` 创建包含控制字符的文件名。Git for Windows 即使通过 `update-index --index-info` 也可能拒绝这些路径，输出忽略路径的诊断却以成功状态退出。Tree object 保留真实 NUL 分隔 diff，无须创建 Windows 不允许的工作树路径，也不关闭路径保护。保留 rename 两端、净回退、新目录及格式错误／特殊 entry 拒绝断言。本地 object 协议重放不替代原生 Windows 验收。

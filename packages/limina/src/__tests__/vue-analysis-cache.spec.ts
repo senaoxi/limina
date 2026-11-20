@@ -22,8 +22,8 @@ const snapshotCodec = {
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup();
 });
-function fixture() {
-  const result = createVueCacheFixture();
+function fixture(options?: Parameters<typeof createVueCacheFixture>[0]) {
+  const result = createVueCacheFixture(options);
   fixtures.push(result);
   return result;
 }
@@ -39,8 +39,8 @@ function expectCold(run: VueCacheRun) {
   expect(cacheMetric(run, 'graphBuilds')).toBeGreaterThan(0);
 }
 
-function crossProjectFixture() {
-  const f = fixture();
+function crossProjectFixture(options: { noLib?: boolean } = {}) {
+  const f = fixture(options);
   f.write(
     'limina.config.mjs',
     `export default {scope:{source:{include:['vue/src/**/*.{ts,vue}','vue/provider/*.ts','native/src/**/*.ts']},checkers:{'vue-tsc':{include:['vue/tsconfig.json','vue/provider/tsconfig.json']},tsc:{include:['native/tsconfig.json']}}}};`,
@@ -52,6 +52,7 @@ function crossProjectFixture() {
       compilerOptions: {
         composite: true,
         declaration: true,
+        noLib: options.noLib,
         types: [],
         target: 'ES2022',
         module: 'ESNext',
@@ -109,7 +110,7 @@ describe('persistent Vue and mixed graph analysis', () => {
   });
 
   it('reruns Vue requests whose target moves to another Source Config', () => {
-    const f = crossProjectFixture();
+    const f = crossProjectFixture({ noLib: true });
     const entry = 'vue/provider/tsconfig.json';
     const first = 'vue/provider/tsconfig.first.json';
     const second = 'vue/provider/tsconfig.second.json';
@@ -407,7 +408,7 @@ describe('persistent Vue and mixed graph analysis', () => {
   });
 
   it('restores cross-project Vue declaration references and removes them after the last import changes', () => {
-    const f = crossProjectFixture();
+    const f = crossProjectFixture({ noLib: true });
     const cold = f.run();
     expectCold(cold);
     const stored = () =>
@@ -429,7 +430,7 @@ describe('persistent Vue and mixed graph analysis', () => {
     expectCold(f.run());
     expect(references()).toEqual(new Set());
     expectRestored(f.run());
-  });
+  }, 90_000);
 
   it.each([
     'workspace changes',

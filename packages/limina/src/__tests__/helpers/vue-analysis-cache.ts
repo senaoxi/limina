@@ -33,7 +33,7 @@ export interface VueCacheRun {
   };
 }
 
-export function createVueCacheFixture() {
+export function createVueCacheFixture(options: { noLib?: boolean } = {}) {
   const temporary = mkdtempSync(path.join(tmpdir(), 'limina-vue-cache-'));
   const rootDirectory = realpathSync.native(temporary);
   const file = createFixturePathResolver(rootDirectory);
@@ -65,9 +65,10 @@ export function createVueCacheFixture() {
     'limina.config.mjs',
     `export default {scope:{source:{include:['vue/src/**/*.{ts,vue}','native/src/**/*.ts']},checkers:{'vue-tsc':{include:['vue/tsconfig.json']},tsc:{include:['native/tsconfig.json']}}}};`,
   );
-  const options = {
+  const compilerOptions = {
     composite: true,
     declaration: true,
+    noLib: options.noLib,
     types: [],
     target: 'ES2022',
     module: 'ESNext',
@@ -77,11 +78,11 @@ export function createVueCacheFixture() {
   };
   write(
     'vue/tsconfig.json',
-    JSON.stringify({ compilerOptions: options, include: ['src/**/*'] }),
+    JSON.stringify({ compilerOptions, include: ['src/**/*'] }),
   );
   write(
     'native/tsconfig.json',
-    JSON.stringify({ compilerOptions: options, include: ['src/**/*'] }),
+    JSON.stringify({ compilerOptions, include: ['src/**/*'] }),
   );
   write('native/src/index.ts', 'export const native = 1;');
   write(
