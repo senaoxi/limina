@@ -277,9 +277,9 @@ Holder 发布的 rename 返回 `EEXIST` 或 `ENOTEMPTY` 时已经证明发生争
 
 执行准入不比较宿主 TypeScript 与 tsgo 的输入集合、版本化类型分支或外部库排除关系。Reservation 和 permit 不再使用 Native preview observer 或其专属异步重放。通用图／输入重放、精确 Checker identity、声明责任、artifact lease 和副作用边界检查保持完整。缓存恢复合格的宿主事实，不恢复执行许可。生成图缓存版本 22 撤销版本 21 的准入；Native evidence DTO、schema 与 adapter 版本不变。工具身份保留 tsgo 包、启动入口／执行文件、平台二进制及宿主编译器，不再扫描未使用的 Native observer JavaScript。详见[语义权威](./semantics.md)。
 
-独立增量链保持为 `native-module-impact` → `compiler-external-library-input-is-not-emitted-by-consumer` → `sourceInputConsumers()` → `requiresFullCheck` → `invalidateStaleBuildInfo()`。完整检查要求属于已认证的 mutation proof，在执行授权之后应用，不是跨版本 Checker 兼容性凭据。
+受管 Checker 根据冻结的 Native 请求证据和实际生成的 leaf 根集决定是否复用 build-info。外部实现输入、已加载或尝试加载的非根声明，以及尚未解析的非库请求，都可能使已有增量结果过期。包删除最后一个声明后，请求仍在，而当前 Program 已没有可供比较的声明路径。编译器自带库属于工具链，真实解析到的替换包按声明输入处理。
 
-Native external-library implementation input 可以为消费者提供类型，却不建立消费者 emit 义务或生成 Project Reference。源码包变化后，编译器 solution builder 因而可能跳过未变化的消费者。[受管构建状态证明](../../../packages/limina/src/typecheck/managed/build-info.ts)保守地将带有该 locked Native absence proof 的消费者标记为完整检查。既有写入授权边界在启动前只删除这些消费者已认证的 build-info 文件，同时适用于内部声明和用户输出构建。该策略参与 mutation fingerprint；无关 leaf 保留增量状态及既有缺失输出恢复规则。不解析编译器私有 build-info 格式，不虚构 producer 或 reference，也不额外选择进程目标。即使输入未变，这些消费者也会重建；选择性复用需要独立的已消费输入证明。[独立进程回归](../../../packages/limina/integration/tests/source-package-incremental.spec.ts)覆盖公共类型变化、保留 mtime 的传递变化、analysis force、无关 leaf 复用及受管输出构建。
+这一策略进入受管 mutation proof。执行授权后，只对命中的 leaf 删除已认证的 build-info，覆盖内部声明和用户输出构建。输入未变的命中 leaf 也重新检查；无关 leaf 保留增量。编译义务、Project References 和用户检查选项各自由原有责任方决定。[增量输入判定](../../../packages/limina/src/typecheck/managed/incremental-inputs.ts) · [独立进程回归](../../../packages/limina/integration/tests/source-package-incremental.spec.ts)
 
 [引用闭包](../../../packages/limina/src/typecheck/admission/reference-closure.ts) 从本次命令的实际配置开始。生成声明／输出配置的 alias 保留源配置与 Checker 身份。实际引用（包括传递 `implicitRefs`）决定可达性，依赖调度边不能替代它。solution 与 wrapper 只提供可达性，不满足声明义务，也不引入容器标签政策。Astro 源码命令继续使用自身 source config 和能力 context。Svelte 命令保留原始源码身份，消费已准入的检查配置及其完整 Project References。仅有 schedule 不选择额外进程。[纯引用治理](../../../packages/limina/src/graph-check/reference-governance.ts) 复用既有规则规范化、标签匹配、alias 与 finding，只裁定该执行范围内适用的 `deny.refs`。规则规范化认识所有合法 Checker 映射，匹配仍针对当前边；无关的合法跨 Checker 规则目标不是 unavailable 映射。
 

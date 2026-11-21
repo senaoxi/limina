@@ -3,6 +3,7 @@ import {
   readFile,
   stat,
   symlink,
+  unlink,
   utimes,
   writeFile,
 } from 'node:fs/promises';
@@ -117,6 +118,51 @@ describe('source package incremental checking', () => {
       await utimes(leaf, before.atime, before.mtime);
       await expectTypeFailure(prepared, ['check', '--force']);
       await directCompilerFailure(prepared);
+    } finally {
+      await prepared.cleanup();
+    }
+  });
+
+  it('rechecks an installed non-root declaration after its type changes or disappears', async () => {
+    const prepared = await fixture();
+    try {
+      const directory = prepared.path(
+        'repo/packages/app/node_modules/@audit/types',
+      );
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        prepared.path(
+          'repo/packages/app/node_modules/@audit/types/package.json',
+        ),
+        JSON.stringify({
+          name: '@audit/types',
+          type: 'module',
+          exports: { '.': { types: './index.d.ts' } },
+        }),
+      );
+      const declaration = prepared.path(
+        'repo/packages/app/node_modules/@audit/types/index.d.ts',
+      );
+      await writeFile(declaration, 'export declare const label: string;');
+      await writeFile(
+        prepared.path('repo/packages/app/src/index.ts'),
+        "import {label} from '@audit/types'; export const result: string = label;",
+      );
+      expectLiminaSuccess(
+        await runFixtureLimina(prepared, ['checker', 'build']),
+      );
+      const before = await stat(declaration);
+      await writeFile(declaration, 'export declare const label: number;');
+      await utimes(declaration, before.atime, before.mtime);
+      const changed = await expectTypeFailure(prepared, ['checker', 'build']);
+      expect(changed.stdout + changed.stderr).toContain('TS2322');
+      await writeFile(declaration, 'export declare const label: string;');
+      expectLiminaSuccess(
+        await runFixtureLimina(prepared, ['checker', 'build']),
+      );
+      await unlink(declaration);
+      const missing = await expectTypeFailure(prepared, ['checker', 'build']);
+      expect(missing.stdout + missing.stderr).toContain('TS2307');
     } finally {
       await prepared.cleanup();
     }

@@ -5,9 +5,9 @@ import ts from 'typescript';
 import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import type { TypecheckTarget } from '../targets';
-import { sourceInputConsumers } from './build-info';
 import { collectLeafClassifications, collectTargetLeafConfigs } from './config';
 import { getCheckerImplementationFingerprint, hashValue } from './identity';
+import { collectIncrementalInputs } from './incremental-inputs';
 import { proveLeafMutation } from './leaf';
 import {
   type ConfigDependencyIdentity,
@@ -195,7 +195,7 @@ export async function proveManagedCheckerMutationContext(options: {
       workspaceContext: options.workspaceContext,
     });
   }
-  const fullCheckConsumers = sourceInputConsumers(options.generatedGraph);
+  const incrementalInputs = collectIncrementalInputs(options.generatedGraph);
   const leafProofs = await Promise.all(
     closure.leafPaths.map(async (configPath) => {
       const classification = classifications.get(configPath);
@@ -216,7 +216,7 @@ export async function proveManagedCheckerMutationContext(options: {
                 .map((output) => output.outputFile)
             : undefined,
         projectRootDir: options.projectRootDir,
-        requiresFullCheck: fullCheckConsumers.has(
+        incrementalInputs: incrementalInputs.get(
           classification.sourceConfigPath,
         ),
         workspaceContext: options.workspaceContext,

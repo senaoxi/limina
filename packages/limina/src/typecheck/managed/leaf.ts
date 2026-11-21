@@ -7,6 +7,10 @@ import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import { parseConfigWithDependencyProof } from './config';
 import { hashValue } from './identity';
 import {
+  type IncrementalInputs,
+  requiresFullCheck,
+} from './incremental-inputs';
+import {
   addBuildInfoTarget,
   addOutputMutationTargets,
   assertProjectionInside,
@@ -145,7 +149,7 @@ export async function proveLeafMutation(options: {
   classification: ManagedLeafClassification;
   configPath: string;
   projectRootDir: string;
-  requiresFullCheck: boolean;
+  incrementalInputs: IncrementalInputs | undefined;
   workspaceContext: ValidatedWorkspaceContext;
 }): Promise<ManagedLeafMutationProof> {
   const preparation = prepareLeafProject(options);
@@ -201,7 +205,10 @@ export async function proveLeafMutation(options: {
     outputPaths,
     preparation,
     projection,
-    requiresFullCheck: options.requiresFullCheck,
+    requiresFullCheck: requiresFullCheck(
+      options.incrementalInputs,
+      preparation.parsed.fileNames,
+    ),
     tsBuildInfoFile,
   });
 }
