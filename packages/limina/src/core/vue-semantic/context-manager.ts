@@ -1,5 +1,6 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import type ts from 'typescript';
+import { currentProfile } from '../../application/analysis/observability';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import type {
   VueQuery,
@@ -8,6 +9,7 @@ import type {
 } from '../analysis-cache/vue-contracts';
 import { retainVueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
 import type { VueInputTrace } from '../analysis-cache/vue-inputs';
+import { observeWork } from '../analysis-profile';
 import type { TypeEvidenceMetricsRecorder } from '../type-evidence/cache';
 import { VueSemanticContext } from './context-handle';
 
@@ -111,16 +113,27 @@ export class VueSemanticContextManager {
       return reusable;
     }
     disposeProcessWideContext();
-    const context = new VueSemanticContext(
-      identity,
-      ({ durationMs, program }) =>
-        recordProgramCreation({
-          elapsedMs: durationMs,
-          metrics: this.#metrics,
-          program,
-        }),
-      trace,
+    const observer = currentProfile();
+    const project = observer?.project(
+      identity.declarationLoading?.sourceConfig ?? identity.configPath,
     );
+    const context = observeWork(
+      observer,
+      'vue-context-create',
+      () =>
+        new VueSemanticContext(
+          identity,
+          ({ durationMs, program }) =>
+            recordProgramCreation({
+              elapsedMs: durationMs,
+              metrics: this.#metrics,
+              program,
+            }),
+          trace,
+        ),
+      project === undefined ? undefined : ['project', project],
+    );
+    context.profileScope(observer);
     processWideVueContextSlot.context = context;
     processWideVueContextSlot.owners.add(this);
     return context;

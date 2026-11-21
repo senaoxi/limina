@@ -1,4 +1,5 @@
 import { shouldUseColor } from '#utils/reporting';
+import { currentProfile } from '../application/analysis/observability';
 import { defaultTaskFailureCode } from '../check-reporting/codes';
 import {
   collectFrameworkInferenceIssues,
@@ -10,6 +11,7 @@ import {
   createStandaloneInvocationCommand,
   renderGeneratedCommandVariants,
 } from '../check-reporting/standalone-invocation-command';
+import { runObservedTask } from '../execution/task-observers';
 import { formatErrorMessage } from '../logger';
 import type { CliFlowBoundary } from './flow';
 import { isRunCliFlowWithCleanup } from './flow';
@@ -23,6 +25,7 @@ interface StandaloneFlowState {
   commandPassed: boolean;
   commandSettled: boolean;
   finalizationAttempted: boolean;
+  profileTaskStartedAt?: number;
   session?: StandaloneIssueSession;
 }
 
@@ -90,8 +93,10 @@ async function finalizeStandaloneFailure(
 function registerSession(
   state: StandaloneFlowState,
 ): RegisterStandaloneIssueSession {
+  const observer = currentProfile();
   return (session) => {
     state.session = session;
+    if (observer !== undefined) state.profileTaskStartedAt = performance.now();
   };
 }
 
@@ -99,15 +104,40 @@ async function isExecuteStandaloneCommand(options: {
   execute: (register: RegisterStandaloneIssueSession) => Promise<boolean>;
   state: StandaloneFlowState;
 }): Promise<boolean> {
+  const observer = currentProfile();
+  const taskId = 'standalone-task';
+  const register = registerSession(options.state);
   try {
-    options.state.commandPassed = await options.execute(
-      registerSession(options.state),
-    );
+    options.state.commandPassed = await (observer === undefined
+      ? options.execute(register)
+      : runObservedTask({
+          observer,
+          operation: 'execution.standalone-action',
+          taskId,
+          execute: () => options.execute(register),
+          isPassed: Boolean,
+        }));
     options.state.commandSettled = true;
     return options.state.commandPassed;
   } catch (error) {
     options.state.commandError = error;
     throw error;
+  } finally {
+    const { profileTaskStartedAt, session } = options.state;
+    if (observer !== undefined)
+      try {
+        const isPassed = options.state.commandPassed;
+        observer.task(taskId, {
+          name: session?.task,
+          runnerUs:
+            profileTaskStartedAt === undefined
+              ? undefined
+              : Math.round((performance.now() - profileTaskStartedAt) * 1000),
+          state: isPassed ? 'passed' : 'failed',
+        });
+      } catch {
+        // Profiling does not own the standalone result.
+      }
   }
 }
 

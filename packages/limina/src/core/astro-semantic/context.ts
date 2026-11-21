@@ -16,6 +16,15 @@ import { observeAnalysisRead, readAnalysisInput } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
 import type { GovernanceRootBase } from '#utils/workspace-root';
 import type ts from 'typescript';
+import {
+  currentProfile,
+  type ProfileScope,
+} from '../../application/analysis/observability';
+import {
+  observeWork,
+  priorProfileContextScope,
+  profileContextScope,
+} from '../analysis-profile';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
 import type { ImportAnalysisMetricsRecorder } from '../import-analysis/types';
@@ -163,9 +172,22 @@ export class AstroSemanticContext {
     this.language.scripts.set(id, snapshot, getAstroLanguageId(fileName));
   }
   #createProgram(): ts.Program {
+    const observer = currentProfile();
+    const scope = this.profileScope(observer);
+    let pass = 0;
     do {
       this.#boundedHost.begin();
-      const program = this.#requireProgram();
+      const program =
+        observer === undefined
+          ? this.#requireProgram()
+          : observeWork(
+              observer,
+              'astro-program-create',
+              () => this.#requireProgram(),
+              scope,
+              ++pass,
+              'computed',
+            );
       if (!this.#boundedHost.needsRebuild()) return program;
       this.#disposeLanguageService();
     } while (true);
@@ -175,6 +197,18 @@ export class AstroSemanticContext {
     if (program === undefined)
       throw new Error('Astro Language Service did not create a Program.');
     return program;
+  }
+  profileScope(
+    observer: ReturnType<typeof currentProfile>,
+  ): ProfileScope | undefined {
+    if (observer === undefined) return undefined;
+    return profileContextScope(observer, {
+      instance: this,
+      configPath: this.project.seed.configPath,
+      checker: 'astro',
+      provider: 'astro',
+      role: 'source',
+    });
   }
   get program(): ts.Program {
     this.assertActive();
@@ -230,13 +264,21 @@ export class AstroSemanticContext {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
-    this.compilerRequests.dispose();
-    this.#disposeLanguageService();
-    this.#program = undefined;
-    this.#deleteRegisteredScripts();
-    this.#snapshots.clear();
-    this.#scriptRegistry.clear();
-    this.#uriByFileName.clear();
+    const observer = currentProfile();
+    observeWork(
+      observer,
+      'astro-context-dispose',
+      () => {
+        this.compilerRequests.dispose();
+        this.#disposeLanguageService();
+        this.#program = undefined;
+        this.#deleteRegisteredScripts();
+        this.#snapshots.clear();
+        this.#scriptRegistry.clear();
+        this.#uriByFileName.clear();
+      },
+      priorProfileContextScope(observer, this),
+    );
   }
 }
 
@@ -298,12 +340,22 @@ export class AstroSemanticContextManager {
       });
       return reusable.active;
     }
-    const materializedProject = materializeAstroSemanticProject(project);
-    this.#disposeActive();
-    this.#active = new AstroSemanticContext({
-      project: materializedProject,
-      toolchain,
-    });
+    const observer = currentProfile();
+    const projectId = observer?.project(project.seed.configPath);
+    this.#active = observeWork(
+      observer,
+      'astro-context-create',
+      () => {
+        const materializedProject = materializeAstroSemanticProject(project);
+        this.#disposeActive();
+        return new AstroSemanticContext({
+          project: materializedProject,
+          toolchain,
+        });
+      },
+      projectId === undefined ? undefined : ['project', projectId],
+    );
+    this.#active.profileScope(observer);
     recordAstroMetric({
       metrics: this.#metrics,
       name: 'astro-context-materialize',

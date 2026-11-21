@@ -1,3 +1,4 @@
+import type { AnalysisObserver } from '../application/analysis/observability';
 import type { ExecutionTask, TaskId } from './tasks';
 
 export type PendingReason =
@@ -75,9 +76,14 @@ export class ExecutionTrace {
   readonly #origin = performance.now();
   readonly #wallOrigin = performance.timeOrigin + this.#origin;
   readonly #tasks = new Map<TaskId, TaskTrace>();
+  readonly #profileTaskIds?: Map<TaskId, string>;
   readonly #phases: PhaseInterval[] = [];
   #schedulerStart?: number;
   #schedulerEnd?: number;
+
+  constructor(shouldProfileTasks = false) {
+    if (shouldProfileTasks) this.#profileTaskIds = new Map();
+  }
 
   #predecessors(task: TaskTrace): TaskTrace[] {
     const candidates = new Set([
@@ -157,6 +163,16 @@ export class ExecutionTrace {
     };
   }
 
+  profileTaskId(id: TaskId): string | undefined {
+    const ids = this.#profileTaskIds;
+    if (ids === undefined) return undefined;
+    const taskId = ids.get(id);
+    if (taskId !== undefined) return taskId;
+    const allocated = `task-${ids.size + 1}`;
+    ids.set(id, allocated);
+    return allocated;
+  }
+
   now(): number {
     return performance.now() - this.#origin;
   }
@@ -168,6 +184,7 @@ export class ExecutionTrace {
   beginScheduler(tasks: readonly ExecutionTask[]): void {
     this.#schedulerStart = this.now();
     for (const task of tasks) {
+      if (this.#profileTaskIds !== undefined) this.profileTaskId(task.id);
       this.#tasks.set(task.id, {
         after: [
           ...new Set([
@@ -245,6 +262,37 @@ export class ExecutionTrace {
       const pending = task.pending.at(-1);
       if (pending !== undefined) pending.endMs = this.#schedulerEnd;
       task.outcome = 'not-started-infrastructure-failure';
+    }
+  }
+
+  reportProfileTasks(
+    observer: AnalysisObserver,
+    tasks: readonly ExecutionTask[],
+  ): void {
+    for (const task of tasks) {
+      const profileId = this.profileTaskId(task.id);
+      if (profileId === undefined) continue;
+      const observed = this.#tasks.get(task.id);
+      const queueWaitMs =
+        observed?.dispatchedMs === undefined ||
+        this.#schedulerStart === undefined
+          ? undefined
+          : observed.dispatchedMs - this.#schedulerStart;
+      const runnerMs =
+        observed?.runnerStartedMs === undefined ||
+        observed.runnerCompletedMs === undefined
+          ? undefined
+          : observed.runnerCompletedMs - observed.runnerStartedMs;
+      observer.task(profileId, {
+        name: task.issueTask,
+        queueWaitUs:
+          queueWaitMs === undefined
+            ? undefined
+            : Math.round(queueWaitMs * 1000),
+        runnerUs:
+          runnerMs === undefined ? undefined : Math.round(runnerMs * 1000),
+        state: observed?.outcome ?? 'planned',
+      });
     }
   }
 

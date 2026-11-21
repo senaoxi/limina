@@ -7,6 +7,7 @@ import {
   prepareProducerBuildPlan,
   type ProducerBuildPlan,
 } from '#core/build-graph/runner';
+import { currentProfile } from '../application/analysis/observability';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { resolveGeneratedGraphCheckerSelections } from './build-graph/checker-resolution';
 import {
@@ -14,6 +15,7 @@ import {
   type FrameworkInferenceAmbiguity,
   readFrameworkInferenceAmbiguities,
 } from './build-graph/core-collection-run';
+import { observeGraphRequest } from './build-graph/graph-profile';
 import type { ProducerBuildReceipt } from './build-graph/producer-receipt';
 import { canExcludeSvelteProjects } from './build-graph/svelte-route-precheck';
 import type { ImportCore } from './imports';
@@ -121,10 +123,36 @@ export class BuildGraphCore {
       this.#frameworkInferenceAmbiguities = ambiguities;
   }
 
-  getGraph(): Promise<GeneratedTsconfigGraphResult> {
-    this.#graphPromise ??= this.#prepareGraph();
+  #requestCoreGraph<T extends GeneratedTsconfigGraphResult | ProducerBuildPlan>(
+    purpose: T['purpose'],
+    pending: Promise<T> | undefined,
+    prepare: () => Promise<T>,
+  ): Promise<T> {
+    const profile = currentProfile();
+    if (profile === undefined || profile.currentProviderRun() !== undefined)
+      return pending ?? prepare();
+    return observeGraphRequest(
+      purpose,
+      pending,
+      () => {
+        const generation = this.#artifactNamespace.generation;
+        const providerRun = profile.provider(
+          this,
+          generation,
+          generation,
+          'direct-provider',
+        );
+        return profile.withProviderRun(providerRun, prepare);
+      },
+      'core',
+    );
+  }
 
-    return this.#graphPromise;
+  getGraph(): Promise<GeneratedTsconfigGraphResult> {
+    const request = this.#requestCoreGraph('complete', this.#graphPromise, () =>
+      this.#prepareGraph(),
+    );
+    return (this.#graphPromise ??= request);
   }
 
   useProducerBuildReceipt(receipt: ProducerBuildReceipt): void {
@@ -178,8 +206,12 @@ export class BuildGraphCore {
   }
 
   getProducerBuildPlan(): Promise<ProducerBuildPlan> {
-    this.#producerPromise ??= this.#prepareProducers();
-    return this.#producerPromise;
+    const request = this.#requestCoreGraph(
+      'producer-build',
+      this.#producerPromise,
+      () => this.#prepareProducers(),
+    );
+    return (this.#producerPromise ??= request);
   }
 
   getFrameworkInferenceAmbiguities():

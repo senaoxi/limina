@@ -9,9 +9,11 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { z } from 'zod';
+import { currentProfile } from '../../application/analysis/observability';
 import { createVueOverlaySystem } from '../../checker/vue-semantic-identity';
 import { resolveVueSemanticToolchain } from '../../checker/vue-semantic-toolchain';
 import { vueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
+import { observeWork, profileContextScope } from '../analysis-profile';
 import {
   type DeclarationCandidateInput,
   type DeclarationCandidateObservation,
@@ -63,6 +65,7 @@ const observationSchema = z.object({
 
 export function observeVueDeclarationCandidate(
   input: DeclarationCandidateInput,
+  attribution: 'project' | 'aggregate' = 'project',
 ): DeclarationCandidateObservation {
   const toolchain = resolveVueSemanticToolchain(
     input.executionRoot ?? path.dirname(input.sourceConfig),
@@ -78,37 +81,56 @@ export function observeVueDeclarationCandidate(
     'vue-tsc/bin/vue-tsc.js',
   );
   const start = performance.now();
-  const result = spawnSync(process.execPath, ['-e', vueCandidateWorker], {
-    cwd: path.dirname(input.sourceConfig),
-    input: JSON.stringify({
-      vueTsc: toolchain.paths.vueTsc,
-      pluginRequests: plugins,
-      expectPlugin:
-        isPlainRecord(input.executionIdentity?.vueOptions) &&
-        Array.isArray(input.executionIdentity.vueOptions.plugins) &&
-        input.executionIdentity.vueOptions.plugins.length > 0,
-      generatedConfig: input.generatedConfig,
-      sourceConfig: input.sourceConfig,
-      buildInfoFile: input.parsed.options.tsBuildInfoFile,
-      files: [...input.files],
-      declarations: input.declarations,
-      referenceInputs: input.referenceInputs ?? [],
-      configs: input.configs,
-      coverage: input.coverage,
-    }),
-    encoding: 'utf8',
-    timeout: 120_000,
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  input.metrics?.record({
-    name: 'bounded-program-create',
-    count: 1,
-    durationMs: performance.now() - start,
-  });
-  if (result.error || result.status !== 0)
-    throw new DeclarationObservationUnavailable(
-      `Vue declaration candidate failed: ${result.error?.message ?? result.stdout ?? result.stderr}`,
-    );
+  const observer = currentProfile();
+  const scope =
+    attribution === 'aggregate'
+      ? undefined
+      : profileContextScope(observer, {
+          instance: input,
+          configPath: input.sourceConfig,
+          checker: input.checker,
+          provider: 'vue',
+          role: 'declaration-candidate',
+        });
+  const result = observeWork(
+    observer,
+    'vue-declaration-candidate-process',
+    () => {
+      const result = spawnSync(process.execPath, ['-e', vueCandidateWorker], {
+        cwd: path.dirname(input.sourceConfig),
+        input: JSON.stringify({
+          vueTsc: toolchain.paths.vueTsc,
+          pluginRequests: plugins,
+          expectPlugin:
+            isPlainRecord(input.executionIdentity?.vueOptions) &&
+            Array.isArray(input.executionIdentity.vueOptions.plugins) &&
+            input.executionIdentity.vueOptions.plugins.length > 0,
+          generatedConfig: input.generatedConfig,
+          sourceConfig: input.sourceConfig,
+          buildInfoFile: input.parsed.options.tsBuildInfoFile,
+          files: [...input.files],
+          declarations: input.declarations,
+          referenceInputs: input.referenceInputs ?? [],
+          configs: input.configs,
+          coverage: input.coverage,
+        }),
+        encoding: 'utf8',
+        timeout: 120_000,
+        maxBuffer: 32 * 1024 * 1024,
+      });
+      input.metrics?.record({
+        name: 'bounded-program-create',
+        count: 1,
+        durationMs: performance.now() - start,
+      });
+      if (result.error || result.status !== 0)
+        throw new DeclarationObservationUnavailable(
+          `Vue declaration candidate failed: ${result.error?.message ?? result.stdout ?? result.stderr}`,
+        );
+      return result;
+    },
+    scope,
+  );
   let decoded: unknown;
   try {
     decoded = JSON.parse(result.stdout);

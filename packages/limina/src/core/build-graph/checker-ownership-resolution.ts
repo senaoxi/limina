@@ -1,6 +1,8 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { toRelativePath } from '#utils/path';
+import { currentProfile } from '../../application/analysis/observability';
 import { LiminaStructuredError } from '../../check-reporting/errors';
+import { observeAsyncWork, observeWork } from '../analysis-profile';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { assertCollectedExecution } from './analysis-failure';
@@ -127,7 +129,12 @@ export async function resolveCheckerOwnership(options: {
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceSourceConfigPaths: readonly string[];
 }): Promise<CheckerSelectionResolution> {
-  const discovery = await discoverCheckerOwnership(options);
+  const observer = currentProfile();
+  const discovery = await observeAsyncWork(
+    observer,
+    'checker-ownership-discovery',
+    () => discoverCheckerOwnership(options),
+  );
   discovery.collectionProblems ??= [];
   deferOwnershipProblems(discovery, () =>
     validateOwnershipConstraints({
@@ -141,7 +148,9 @@ export async function resolveCheckerOwnership(options: {
       options.projectDependencyCaches,
       discovery.ambiguities ?? [],
     );
-  await collectFrozenDependencyFacts(options, discovery);
+  await observeAsyncWork(observer, 'locked-dependency-analysis', () =>
+    collectFrozenDependencyFacts(options, discovery),
+  );
   if (options.projectDependencyCaches)
     coreCollectionRun(options.projectDependencyCaches).closed = true;
   assertOwnershipPhase({
@@ -152,7 +161,9 @@ export async function resolveCheckerOwnership(options: {
   assertCollectedExecution(options.projectDependencyCaches);
   if (discovery.collectionInputFailure !== undefined)
     throw discovery.collectionInputFailure;
-  finalizeLockedOwnership({ config: options.config, discovery });
+  observeWork(observer, 'checker-ownership-finalization', () =>
+    finalizeLockedOwnership({ config: options.config, discovery }),
+  );
   return {
     frozenProjectsByConfigPath: discovery.frozenProjectsByConfigPath,
     ownershipPlan: discovery.plan,

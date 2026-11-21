@@ -17,6 +17,10 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import {
+  AnalysisObserver,
+  runWithProfile,
+} from '../application/analysis/observability';
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { materializeGeneratedArtifactPlan } from '../core/build-graph/materializer';
 import {
@@ -349,9 +353,10 @@ describe('LiminaPreflightManager', () => {
       ],
       [generatedPath],
     );
+    const graphReady = deferred<GeneratedTsconfigGraphResult>();
     const manager = new LiminaPreflightManager({
       config: fixture.config,
-      generatedGraphProvider: vi.fn(async () => graph),
+      generatedGraphProvider: () => graphReady.promise,
       providers: createFakeCore({
         config: fixture.config,
         namespace,
@@ -359,16 +364,276 @@ describe('LiminaPreflightManager', () => {
     });
 
     try {
-      const receipts = await Promise.all([
-        manager.ensureGeneratedArtifactsMaterialized(),
-        manager.ensureGeneratedArtifactsMaterialized(),
-        manager.ensureGeneratedArtifactsMaterialized(),
-      ]);
+      const profile = new AnalysisObserver('graph prepare', performance.now());
+      const receipts = await runWithProfile(profile, async () => {
+        const prepared = manager.ensureGeneratedGraph();
+        const requests = [
+          manager.ensureGeneratedArtifactsMaterialized(),
+          manager.ensureGeneratedArtifactsMaterialized(),
+          manager.ensureGeneratedArtifactsMaterialized(),
+        ];
+        const waiting = profile
+          .snapshot()
+          .work.filter(
+            ({ op, end }) => op.startsWith('graph.wait.') && end === 'open',
+          )
+          .map(({ op }) => op);
+        graphReady.resolve(graph);
+        const joined = await Promise.all(requests);
+        expect(await prepared).toBe(joined[0]?.graph);
+        expect(waiting).toEqual([
+          'graph.wait.preparation',
+          'graph.wait.materialization',
+          'graph.wait.materialization',
+        ]);
+        return [
+          ...joined,
+          await manager.ensureGeneratedArtifactsMaterialized(),
+        ];
+      });
       expect(receipts[0]).toBe(receipts[1]);
       expect(receipts[1]).toBe(receipts[2]);
+      expect(receipts[2]).toBe(receipts[3]);
       expect(receipts[0]?.generation).toBe(0);
       expect(await readFile(generatedPath, 'utf8')).toBe('{}\n');
+      const snapshot = profile.snapshot();
+      const completion = snapshot.graphs.find(
+        (row) => row.receipt !== undefined,
+      );
+      expect(completion?.prepared?.map(({ gate }) => gate)).toEqual([
+        'preflight',
+      ]);
+      expect(completion?.applied?.atUs).toBeLessThanOrEqual(
+        completion?.receipt?.atUs ?? -1,
+      );
+      const attempts = snapshot.work.filter(
+        ({ op }) => op === 'graph.materialize',
+      );
+      expect(attempts).toHaveLength(1);
+      const waiters = snapshot.work
+        .filter((work) => work.end === 'shared' && work.reuse === 'joined')
+        .filter(({ op }) => op === 'graph.wait.materialization');
+      expect(waiters).toHaveLength(2);
+      for (const waiter of waiters) {
+        expect(waiter.producer).toEqual({ work: attempts[0]?.id });
+        expect(waiter.time[0]).toBeLessThan(waiter.time[1]);
+        expect(waiter.time[1]).toBeGreaterThanOrEqual(
+          completion?.applied?.atUs ?? -1,
+        );
+      }
+      expect(snapshot.work).toContainEqual(
+        expect.objectContaining({
+          op: 'graph.wait.preparation',
+          end: 'shared',
+          reuse: 'joined',
+        }),
+      );
+      expect(
+        snapshot.providerRuns.find(({ id }) => id === completion?.providerRun)
+          ?.view,
+      ).toBe(completion?.receipt?.view);
+      const requests = snapshot.graphs.filter(
+        (row) => row.requestGate === 'receipt' && row.result === completion?.id,
+      );
+      expect(requests).toHaveLength(4);
+      const relations = snapshot.links
+        .filter(
+          ({ from, to }) =>
+            requests.some((row) => row.request === from) &&
+            to === attempts[0]?.id,
+        )
+        .map(({ kind }) => kind);
+      expect(relations).toEqual(['uses-result', 'uses-result']);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not describe a rejected memoized graph as a ready shared result', async () => {
+    const fixture = await createFixture();
+    const failure = new Error('Rejected graph');
+    const graphReady = deferred<GeneratedTsconfigGraphResult>();
+    const providerStarted = deferred<void>();
+    const getGraph = vi.fn(() => {
+      providerStarted.resolve();
+      return graphReady.promise;
+    });
+    const manager = new LiminaPreflightManager({
+      config: fixture.config,
+      generatedGraphProvider: getGraph,
+    });
+    try {
+      const profile = new AnalysisObserver('graph check', performance.now());
+      await runWithProfile(profile, async () => {
+        const results = Promise.allSettled([
+          manager.ensureGeneratedGraph(),
+          manager.ensureGeneratedArtifactsMaterialized(),
+          manager.ensureGeneratedArtifactsMaterialized(),
+        ]);
+        await providerStarted.promise;
+        graphReady.reject(failure);
+        expect(await results).toEqual(
+          Array.from({ length: 3 }, () => ({
+            status: 'rejected',
+            reason: failure,
+          })),
+        );
+        await expect(manager.ensureGeneratedGraph()).rejects.toBe(failure);
+      });
+      expect(getGraph).toHaveBeenCalledTimes(1);
+      const snapshot = profile.snapshot();
+      expect(
+        snapshot.graphs.filter((row) => row.requestGate === 'preflight'),
+      ).toHaveLength(3);
+      expect(
+        snapshot.graphs.some(
+          (row) => row.result !== undefined || row.source === 'shared',
+        ),
+      ).toBe(false);
+      expect(snapshot.work.some((work) => work.end === 'shared')).toBe(false);
+      const failedWaits = snapshot.work
+        .filter((work) => work.end === 'failed')
+        .filter(({ op }) => op.startsWith('graph.wait.'));
+      expect(failedWaits.map(({ op }) => op)).toEqual([
+        'graph.wait.preparation',
+        'graph.wait.materialization',
+      ]);
+      for (const wait of failedWaits) {
+        expect(wait.time?.[0]).toBeLessThan(wait.time?.[1] ?? -1);
+        expect(snapshot.links).toContainEqual(
+          expect.objectContaining({
+            kind: 'waits-for',
+            from: wait.id,
+          }),
+        );
+      }
+    } finally {
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('withholds aggregate application and a receipt when an auxiliary fails after the root writes', async () => {
+    const fixture = await createFixture();
+    const namespace = createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: fixture.rootDir,
+    });
+    const scope = fixture.path('packages/pkg');
+    const auxiliaryNamespace = createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: scope,
+    });
+    const otherNamespace = createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: scope,
+    });
+    const file = fixture.path('.limina', 'generated.json');
+    const graph = createGraph(
+      namespace,
+      [
+        {
+          artifact: {
+            content: '{}\n',
+            kind: 'generated-config',
+            origin: { domain: 'test' },
+            path: file,
+          },
+          status: 'create',
+        },
+      ],
+      [file],
+    );
+    graph.auxiliaryArtifacts = [
+      {
+        namespace: auxiliaryNamespace,
+        plan: createArtifactPlan(otherNamespace, [], []),
+        retiring: false,
+        replan: async () => {
+          throw new Error('Unexpected auxiliary replan');
+        },
+      },
+    ];
+    const manager = new LiminaPreflightManager({
+      config: fixture.config,
+      generatedGraphProvider: async () => graph,
+      providers: createFakeCore({ config: fixture.config, namespace }),
+    });
+    try {
+      const profile = new AnalysisObserver('graph prepare', performance.now());
+      await runWithProfile(profile, () =>
+        expect(manager.ensureGeneratedArtifactsMaterialized()).rejects.toThrow(
+          'different preflight generation',
+        ),
+      );
+      expect(await readFile(file, 'utf8')).toBe('{}\n');
+      const snapshot = profile.snapshot();
+      expect(
+        snapshot.graphs.some((row) =>
+          row.prepared?.some(({ gate }) => gate === 'preflight'),
+        ),
+      ).toBe(true);
+      expect(
+        snapshot.graphs.some(
+          (row) => row.applied !== undefined || row.receipt !== undefined,
+        ),
+      ).toBe(false);
+      expect(manager.getMaterializedGraph()).toBeUndefined();
+    } finally {
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('records the managed receipt only when the active manager adopts its materialized view', async () => {
+    const fixture = await createFixture();
+    const manager = new LiminaPreflightManager({ config: fixture.config });
+    const profile = new AnalysisObserver('checker build', performance.now());
+    const materialize =
+      LiminaPreflightManager.prototype.ensureExecutionArtifactsMaterialized;
+    const staged = vi.spyOn(
+      LiminaPreflightManager.prototype,
+      'ensureExecutionArtifactsMaterialized',
+    );
+    try {
+      await runWithProfile(profile, async () => {
+        const initial = await manager.ensureGeneratedArtifactsMaterialized();
+        staged.mockImplementationOnce(async function (
+          this: LiminaPreflightManager,
+          purpose,
+        ) {
+          const receipt = await materialize.call(this, purpose);
+          expect(manager.getMaterializedGraph()).toBe(initial.graph);
+          const applied = profile
+            .snapshot()
+            .graphs.find(
+              (row) => row.id === profile.identity(receipt.graph, 'graph'),
+            );
+          expect(applied?.applied).toBeDefined();
+          expect(applied?.receipt).toBeUndefined();
+          return receipt;
+        });
+        const refreshed = await manager.refreshAfterManagedOutputs();
+        expect(manager.getMaterializedGraph()).toBe(refreshed.graph);
+        const snapshot = profile.snapshot();
+        const receipts = snapshot.graphs.filter(
+          (row) => row.receipt !== undefined,
+        );
+        expect(receipts.map(({ id }) => id)).toEqual([
+          profile.identity(initial.graph, 'graph'),
+          profile.identity(refreshed.graph, 'graph'),
+        ]);
+        expect(receipts[0]?.receipt?.view).not.toBe(receipts[1]?.receipt?.view);
+        for (const receipt of receipts)
+          expect(
+            snapshot.providerRuns.find(({ id }) => id === receipt.providerRun)
+              ?.view,
+          ).toBe(receipt.receipt?.view);
+      });
+      expect(staged).toHaveBeenCalledOnce();
+    } finally {
+      staged.mockRestore();
+      manager.dispose();
       await fixture.cleanup();
     }
   });
@@ -413,7 +678,10 @@ describe('LiminaPreflightManager', () => {
       return providers.vueSemanticContexts.acquire(parsed.vueSemanticIdentity);
     };
     try {
-      const graph = await manager.ensureGeneratedGraph();
+      const profile = new AnalysisObserver('graph prepare', performance.now());
+      const graph = await runWithProfile(profile, () =>
+        manager.ensureGeneratedGraph(),
+      );
       const initialProviders = manager.providers;
       const first = acquire(initialProviders);
       const source = first.language.scripts.get(sourcePath)?.snapshot;
@@ -430,7 +698,9 @@ describe('LiminaPreflightManager', () => {
         sourcePath,
         '<script setup lang="ts">const value = "after"</script>',
       );
-      const receipt = await manager.ensureGeneratedArtifactsMaterialized();
+      const receipt = await runWithProfile(profile, () =>
+        manager.ensureGeneratedArtifactsMaterialized(),
+      );
       expect(receipt.generation).toBe(0);
       expect(manager.run.generation).toBe('0');
       expect(manager.providers).not.toBe(initialProviders);
@@ -443,6 +713,25 @@ describe('LiminaPreflightManager', () => {
       expect(materialized?.getText(0, materialized.getLength())).toBe(
         await readFile(generatedPath, 'utf8'),
       );
+      const snapshot = profile.snapshot();
+      const original = profile.identity(graph, 'graph');
+      const replacement = profile.identity(receipt.graph, 'graph');
+      expect(
+        snapshot.graphs
+          .filter((row) => row.applied !== undefined)
+          .map(({ id }) => id),
+      ).toEqual([replacement]);
+      const originalProducer = snapshot.graphs.find(
+        (row) => row.requestGate === 'preflight' && row.result === original,
+      )?.producer;
+      const replacementProducer = snapshot.graphs.find(
+        (row) => row.requestGate === 'preflight' && row.result === replacement,
+      )?.producer;
+      expect(snapshot.links).toContainEqual({
+        kind: 'supersedes',
+        from: replacementProducer,
+        to: originalProducer,
+      });
     } finally {
       manager.dispose();
       competingProviders.dispose?.();
@@ -720,30 +1009,49 @@ describe('LiminaPreflightManager', () => {
         manager.ensureGeneratedArtifactsMaterialized(),
       ).resolves.toMatchObject({ generation: 1 });
 
-      createPreflightGenerationController(manager).startNextGeneration();
-      const generationTwoNamespace = manager.artifactNamespace;
-      const lateOld = deferred<GeneratedTsconfigGraphResult>();
-      const latest = deferred<GeneratedTsconfigGraphResult>();
-      provider
-        .mockReturnValueOnce(lateOld.promise)
-        .mockReturnValueOnce(latest.promise);
-      const generationTwo = manager.ensureGeneratedArtifactsMaterialized();
-      await vi.waitFor(() => {
-        expect(provider).toHaveBeenCalledTimes(3);
+      const profile = new AnalysisObserver('graph prepare', performance.now());
+      await runWithProfile(profile, async () => {
+        createPreflightGenerationController(manager).startNextGeneration();
+        const generationTwoNamespace = manager.artifactNamespace;
+        const lateOld = deferred<GeneratedTsconfigGraphResult>();
+        const latest = deferred<GeneratedTsconfigGraphResult>();
+        provider
+          .mockReturnValueOnce(lateOld.promise)
+          .mockReturnValueOnce(latest.promise);
+        const generationTwo = manager.ensureGeneratedArtifactsMaterialized();
+        await vi.waitFor(() => {
+          expect(provider).toHaveBeenCalledTimes(3);
+        });
+        createPreflightGenerationController(manager).startNextGeneration();
+        const generationThreeNamespace = manager.artifactNamespace;
+        const generationThree = manager.ensureGeneratedArtifactsMaterialized();
+        await vi.waitFor(() => {
+          expect(provider).toHaveBeenCalledTimes(4);
+        });
+        const currentGraph = createGraph(generationThreeNamespace);
+        latest.resolve(currentGraph);
+        await expect(generationThree).resolves.toMatchObject({ generation: 3 });
+        const staleGraph = createGraph(generationTwoNamespace);
+        lateOld.resolve(staleGraph);
+        await expect(generationTwo).resolves.toMatchObject({ generation: 2 });
+        await expect(
+          manager.ensureGeneratedArtifactsMaterialized(),
+        ).resolves.toMatchObject({ generation: 3 });
+        const snapshot = profile.snapshot();
+        expect(
+          snapshot.graphs
+            .filter((row) => row.receipt !== undefined)
+            .map(({ id }) => id),
+        ).toEqual([profile.identity(currentGraph, 'graph')]);
+        const stale = snapshot.graphs.find(
+          (row) => row.id === profile.identity(staleGraph, 'graph'),
+        );
+        expect(stale?.applied).toBeDefined();
+        expect(stale?.prepared).toBeUndefined();
+        expect(
+          snapshot.work.find(({ id }) => id === stale?.applied?.work)?.end,
+        ).toBe('superseded');
       });
-      createPreflightGenerationController(manager).startNextGeneration();
-      const generationThreeNamespace = manager.artifactNamespace;
-      const generationThree = manager.ensureGeneratedArtifactsMaterialized();
-      await vi.waitFor(() => {
-        expect(provider).toHaveBeenCalledTimes(4);
-      });
-      latest.resolve(createGraph(generationThreeNamespace));
-      await expect(generationThree).resolves.toMatchObject({ generation: 3 });
-      lateOld.resolve(createGraph(generationTwoNamespace));
-      await expect(generationTwo).resolves.toMatchObject({ generation: 2 });
-      await expect(
-        manager.ensureGeneratedArtifactsMaterialized(),
-      ).resolves.toMatchObject({ generation: 3 });
     } finally {
       await fixture.cleanup();
     }

@@ -38,6 +38,10 @@ Proof 声明验证必须经由[声明验证入口](../../../packages/limina/src/
 
 Profile 的 CLI 阶段覆盖配置、setup、执行／报告、缓存发布、issue 快照发布与 disposal。模块加载、Profile 写入、summary 输出和进程退出超出内部 Trace，外部进程计时仍是端到端基准。[运行时身份](../../../packages/limina/src/profiling/identity.ts)区分精确源码入口的 source/bin/manifest 清单与已安装二进制的完整包清单。两者均保留 canonical containment 和预期身份检查；源码身份不为 workspace 配置或依赖内容建立指纹。[Profiling 回归](../../../packages/limina/src/__tests__/profiling.spec.ts)保护入口、符号链接和内容检查。
 
+[调用观测器](../../../packages/limina/src/application/analysis/observability.ts)独立于旧版 check profile，记录第 2 版报告。在主进程内，观测到的时间点和区间使用单调时钟，以微秒表示。[摘要](../../../packages/limina/src/application/analysis/observability-summary.ts)区分建图请求交付、Core 和 Preflight 就绪、工件应用，以及完整凭据提交。复用生产者结果时，记录会引用该生产者的工作。项目工作取区间并集，重叠区间只计一次。缺少必要证据时，摘要会将相应值标记为不可用。缓存的查找、准入、采用与发布分别记录不同的状态转换。读取了磁盘文件或检查未报错，都不足以证明已采用此前的磁盘结果。
+
+[序列化边界](../../../packages/limina/src/profiling/report-schema.ts)先筛选并验证字段，再写入报告。报告保留项目相对路径，外部路径使用观测器分配的调用内标识符。第 2 版省略用户命令、环境变量值和绝对运行时路径。[工件写入器](../../../packages/limina/src/profiling/report-storage.ts)使用调用 UUID，发布完整报告并避免替换其他调用的工件。默认写入专用的工件目录，并清理可识别的七天前默认第 2 版文件。显式指定的位置可以是专用报告目录或治理输入根目录以外的路径，其文件由使用者负责保留。程序在运行结果确定后生成报告，诊断报告写入失败不会令检查失败。`LIMINA_PROFILE=1` 对应的现有 check 工件仍保留为独立的兼容格式。
+
 [Svelte 路由预检](../../../packages/limina/src/core/build-graph/svelte-route-precheck.ts)复用入口、作用域、solution references、ownership 和显式需求的解析规则，仅证明不存在 Svelte seed。它使用独立的短期配置解析缓存，路由发现不能把旧文件成员预填到正式建图缓存。存在 seed、所有权冲突或无法完成预检时，仍调用完整 Core 查询；不能把 unknown 当作无 Svelte。完整 Core 查询保留语义观测，完整建图和 Checker 准入保留各自的输入观测与资格校验。
 
 [Preflight manager](../../../packages/limina/src/preflight/manager.ts)已经返回的 negative 路由决定属于 analysis generation，因为调用者已经选择 producer／consumer 分支。Provider 替换和后续 positive 路由查询不能撤销这个决定。所有 graph-cache retry 或 producer-plan 查询结束后、物化之前，manager 拒绝与它冲突的最终 Svelte 图。Pending managed refresh 继承此约束；推进 analysis generation 才解除。该冲突是要求新调用的普通失败，不是能自动重试并丢失调用者分支选择的 input error。当前有效的 analysis DTO 仍可发布，但不授予执行许可。[路由回归](../../../packages/limina/src/__tests__/core-svelte-routing.spec.ts)覆盖作用域冲突、解析缓存隔离、epoch retry、两种 preparation purpose、managed refresh、决定保留及新 generation 恢复。
@@ -61,7 +65,7 @@ Native 建图按 context 创建物理截断 Program，不按 occurrence 创建�
 
 运行期 project dependency identity 包含 compiler options/conditions、源码文件、authority、extensions、package roots、workspace boundary 与 generation。Native fact cache 也以该 project identity 为键。证据快照在收集与缓存边界复制并冻结，不保留 live framework profile。只有已经观察到的 runtime evidence 才会被复制，克隆不会解析模块。[Project dependency 回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)覆盖上下文变化、修改尝试、原生 resource 及框架生成 observation。
 
-`boundedNativeProgramsCreated` 统计本次调用中的有界 Program；Native 缓存的 `semanticProgramsCreated` 只统计该层管理的上下文。即使源上下文完全命中，候选验证等其他消费者仍可能需要创建 Program。
+在旧版报告中，`bounded-program-create` 汇总有界 Program 创建和候选验证观测。Native 缓存的 `semanticPrograms` 统计该层管理的上下文构造尝试。第 2 版按项目、上下文和操作归属已观测到的构造尝试和成功次数。即使源上下文完全命中，候选验证仍可能需要额外的 Program。
 
 [Runtime/source 收集器](../../../packages/limina/src/core/project-dependencies/runtime-source.ts)在一次不可变收集请求内计算一次既有语义身份，并将其传入文件循环。Purpose、managed-output lookup、options、overlay、成员集合、package ownership、framework identity 与 generation 保持原有 key 语义。逐文件 Astro/Svelte context 替换仍清除并重算 key；没有通过全局 memo 将身份带入下一请求。Runtime observation 仍不产生 Native 编译义务或 reference input。[依赖回归](../../../packages/limina/src/__tests__/project-dependencies.spec.ts)同时覆盖 compiler 与 runtime 收集器的上下文变化。
 

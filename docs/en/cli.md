@@ -93,6 +93,24 @@ Runtime `--package` selects output entries for `package:check` and `release:chec
 
 Inspect [task and analyzer states](./built-in-tasks.md#task-status) after a command completes. For example, `checker:typecheck` is `disabled` when there are no framework targets. Missing optional package analyzers may be `skipped` while the process exits successfully. Neither means that check actually passed.
 
+#### Profile analysis
+
+Use `--profile` with `check [pipeline]`, `graph check`, `graph prepare`, `graph export`, or `source check`. Limina prints a summary to stderr and writes one versioned JSON report per invocation. Issue queries do not run analysis and reject these options.
+
+```sh
+pnpm exec limina check --profile
+pnpm exec limina check --profile --verbose
+pnpm exec limina graph prepare --profile-output ../profiles
+```
+
+By default, the report goes to `.limina/profiles/<invocation-id>.json` under the governance root. A successful default write removes recognized reports older than seven days from that directory. `--profile-output <dir>` enables profiling and resolves the directory from the current working directory. Choose the dedicated `.limina/profiles` directory or a location outside the governance root. To keep reports longer, choose a separate directory.
+
+The report distinguishes graph preparation from the first complete materialization receipt. It records observed work, reuse and cache decisions. Timestamps and durations use microseconds. Concurrent or nested durations can overlap. A missing milestone or `null` duration means the observer could not report that value. Use an external process timer for launch-to-exit measurements.
+
+The installed package includes the machine-readable schema at `limina/schemas/analysis-profile-v2.schema.json`. Version 2 uses project-relative paths and opaque aliases for external paths. The stderr report includes project rows. Add `--verbose` for context work, recorded operations and cache classification causes. A report write failure leaves the check result intact. If configuration loading fails before the governance root is known, use a safe explicit directory outside the invocation's working directory to capture the failure.
+
+`LIMINA_PROFILE=1` also writes the legacy `.limina/check/last-profile.json` on `check` for existing readers. The legacy report can contain absolute paths. Environment-only profiling leaves the human profile summary off.
+
 #### Query Saved Issues
 
 ```sh

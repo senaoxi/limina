@@ -69,7 +69,14 @@ export function projectLibraryInputs(input: {
   const { project, generatedConfigPath, cache } = input;
   const compiler =
     project.context.vueSemanticIdentity?.toolchain.tsModule ?? ts;
-  const base = { compiler, libReplacement: project.options.libReplacement };
+  const base = {
+    compiler,
+    libReplacement: project.options.libReplacement,
+    profile: {
+      sourceConfigPath: project.configPath,
+      checker: project.checkerName,
+    },
+  };
   const selections = collectLibrarySelections({
     kind: 'source',
     ...base,
@@ -125,7 +132,14 @@ export function isValidLibraryProjection(input: {
   const { receipt, cache, files } = input;
   const compiler = input.compiler ?? ts;
   if (receipt.compilerVersion !== compiler.version) return false;
-  const base = { compiler, libReplacement: receipt.libReplacement };
+  const base = {
+    compiler,
+    libReplacement: receipt.libReplacement,
+    profile: {
+      sourceConfigPath: receipt.sourceConfig,
+      checker: receipt.checkerName,
+    },
+  };
   const source = collectLibrarySelections({
     kind: 'source',
     ...base,

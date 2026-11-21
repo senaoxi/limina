@@ -16,6 +16,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { glob } from 'tinyglobby';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  AnalysisObserver,
+  runWithProfile,
+} from '../application/analysis/observability';
 import { parseProjectConfigWithExtensions } from '../checker/project-base';
 import { loadConfig } from '../config/loader';
 import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
@@ -659,7 +663,11 @@ it.each(['incompatible', 'corrupt', 'forced'] as const)(
       ...options,
       identity: staleIdentity,
     });
-    expect(stale.read({ restore: baseline !== 'forced' })).toBeUndefined();
+    const profile = new AnalysisObserver('cache test', performance.now());
+    profile.setRoot(f.rootDir);
+    runWithProfile(profile, () => {
+      expect(stale.read({ restore: baseline !== 'forced' })).toBeUndefined();
+    });
     const current = new AnalysisCacheStore({
       ...options,
       identity: 'other-tools',
@@ -669,10 +677,41 @@ it.each(['incompatible', 'corrupt', 'forced'] as const)(
       new NativeAnalysisCache('other-tools', undefined, 'fixture-config'),
     );
     const published = readFileSync(seed.path, 'utf8');
-    await stale.publish(
-      new NativeAnalysisCache(staleIdentity, undefined, 'fixture-config'),
+    await runWithProfile(profile, () =>
+      stale.publish(
+        new NativeAnalysisCache(staleIdentity, undefined, 'fixture-config'),
+      ),
     );
     expect(readFileSync(seed.path, 'utf8')).toBe(published);
+    expect(profile.snapshot().decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          layer: 'analysis-snapshot',
+          stage: 'lookup',
+          outcome: 'found',
+        }),
+        expect.objectContaining({
+          layer: 'analysis-snapshot',
+          stage: 'admission',
+          outcome: baseline === 'forced' ? 'bypassed' : 'rejected',
+          causes: [
+            {
+              code: {
+                forced: 'force-skip-restore',
+                incompatible: 'identity-mismatch',
+                corrupt: 'invalid-index-json',
+              }[baseline],
+            },
+          ],
+        }),
+        expect.objectContaining({
+          layer: 'analysis-snapshot',
+          stage: 'publication',
+          outcome: 'not-published',
+          causes: [{ code: 'writer-superseded' }],
+        }),
+      ]),
+    );
   },
 );
 
@@ -700,6 +739,53 @@ it('propagates a late observation failure even when it has a filesystem error co
   ).rejects.toThrow('observed module became unreadable');
   expect(checks).toBe(2);
   expect(store.read()).toBeUndefined();
+});
+
+it('retains the publication outcome when releasing the lease fails after index replacement', async () => {
+  const f = fixture();
+  const store = new AnalysisCacheStore({
+    namespace: f.namespace,
+    configPath: f.config.configPath,
+    configVersion: 'fixture-config',
+    identity: 'fixture',
+  });
+  const profile = new AnalysisObserver('cache test', performance.now());
+  profile.setRoot(f.rootDir);
+  store.read();
+  let checks = 0;
+  const lease = path.join(f.namespace.canonicalRootDir, '.state', 'leases');
+  await expect(
+    runWithProfile(profile, () =>
+      store.publish(
+        new NativeAnalysisCache('fixture', undefined, 'fixture-config'),
+        async () => {
+          if (++checks !== 2) return;
+          const [entry] = await glob('analysis-*/writer/owner-*.json', {
+            cwd: lease,
+          });
+          expect(entry).toBeDefined();
+          rmSync(path.join(lease, entry!));
+        },
+      ),
+    ),
+  ).rejects.toThrow(/lease ownership changed before release/);
+  const report = profile.snapshot();
+  const decisions = report.decisions.filter(
+    ({ stage }) => stage === 'publication',
+  );
+  expect(decisions).toMatchObject([
+    { layer: 'analysis-snapshot', outcome: 'published' },
+  ]);
+  expect(report.work).toContainEqual(
+    expect.objectContaining({
+      op: 'snapshot.lease-release',
+      end: 'failed',
+      reason: 'lease-release-failed',
+    }),
+  );
+  expect(
+    parseAnalysisSnapshot(readStoredAnalysisSnapshot(store.path), 'fixture'),
+  ).toBeDefined();
 });
 
 it('does not equate physically different corrupt snapshot bytes after UTF-8 replacement', async () => {

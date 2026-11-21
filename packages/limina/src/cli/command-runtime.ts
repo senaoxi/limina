@@ -6,11 +6,13 @@ import {
 } from '#config/runner';
 import { createRequire } from 'node:module';
 import path from 'pathe';
+import { currentProfile } from '../application/analysis/observability';
 import {
   createGlobalQueryCommandContext,
   type GlobalQueryCommandContext,
 } from '../check-reporting/standalone-invocation-command';
 import { parseConfigLoader } from './parse';
+import { bindCliProfileRoot, observeCliPhase } from './profiling';
 import type { GlobalFlags } from './types';
 
 export interface StandaloneCommandContext {
@@ -32,7 +34,7 @@ export async function loadCliConfig(
   flags: GlobalFlags,
   command: LiminaCommand,
 ): Promise<ResolvedLiminaConfig> {
-  return loadConfig({
+  return loadObservedConfig({
     command,
     configLoader: cliConfigLoader(flags),
     configPath: flags.config,
@@ -41,13 +43,24 @@ export async function loadCliConfig(
   });
 }
 
+function loadObservedConfig(
+  options: Parameters<typeof loadConfig>[0],
+): Promise<ResolvedLiminaConfig> {
+  const observer = currentProfile();
+  return observer === undefined
+    ? loadConfig(options)
+    : observeCliPhase('cli.config-load', () =>
+        loadConfig(options, bindCliProfileRoot),
+      );
+}
+
 export async function loadStandaloneContext(
   flags: GlobalFlags,
   command: LiminaCommand,
 ): Promise<StandaloneCommandContext> {
   const configLoader = cliConfigLoader(flags);
   const mode = getConfigMode(flags);
-  const config = await loadConfig({
+  const config = await loadObservedConfig({
     command,
     configLoader,
     configPath: flags.config,

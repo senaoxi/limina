@@ -1,7 +1,9 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
+import { currentProfile } from '../../application/analysis/observability';
 import { EpochInputs } from '../analysis-cache/epoch-inputs';
 import { retainGraphExecutionInputs } from '../analysis-cache/execution-inputs';
+import { recordCacheMiss } from '../analysis-cache/profile-decisions';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
 import {
   type ValidatedWorkspaceContext,
@@ -18,6 +20,7 @@ import {
 import { resolveGeneratedGraphCheckerSelections } from './checker-resolution';
 import { beginCoreCollection } from './core-collection-run';
 import { finishPreparedGraph } from './finish-prepared-graph';
+import { recordGraphPreparation } from './graph-profile';
 import {
   analyzeAndCompleteGeneratedGraph,
   validateAndCompleteGeneratedGraph,
@@ -218,9 +221,19 @@ async function restorePreparedGraph(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<GeneratedTsconfigGraphResult | undefined> {
-  const cache = options.projectDependencyCaches?.analysisCache;
-  if (cache === undefined || options.producerBuildReceipt !== undefined)
+  if (options.producerBuildReceipt !== undefined) {
+    recordCacheMiss('analysis-graph', 'managed-execution-view', {
+      bypassed: true,
+    });
     return undefined;
+  }
+  const cache = options.projectDependencyCaches?.analysisCache;
+  if (cache === undefined) {
+    recordCacheMiss('analysis-graph', 'cache-controller-unavailable', {
+      bypassed: true,
+    });
+    return undefined;
+  }
   return restoreGeneratedGraph({
     cache,
     config,
@@ -231,33 +244,73 @@ async function restorePreparedGraph(
 async function prepareCurrentGraph(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
+  restored?: () => void,
 ): Promise<GeneratedTsconfigGraphResult> {
   const workspaceContext = await getBuildGraphWorkspace({
     config,
     workspaceContext: options.workspaceContext,
   });
   const current = { ...options, workspaceContext };
-  return (
-    (await restorePreparedGraph(config, current)) ??
-    ((await prepareGraph(
-      config,
-      current,
-      false,
-    )) as GeneratedTsconfigGraphResult)
-  );
+  const graph = await restorePreparedGraph(config, current);
+  if (graph !== undefined) {
+    restored?.();
+    return graph;
+  }
+  return (await prepareGraph(
+    config,
+    current,
+    false,
+  )) as GeneratedTsconfigGraphResult;
 }
 
 export async function analyzeProjectDependencies(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<DependencyAnalysisResult> {
+  const profile = currentProfile();
+  if (profile === undefined) return analyzeDependencies(config, options);
+  const id = profile.id('dependency-analysis');
+  const work = profile.start('graph.prepare.dependency-analysis', [
+    'graph',
+    id,
+  ]);
+  let source: 'computed' | 'restored' = 'computed';
+  const analysis = await profile.inWork(work, () =>
+    analyzeDependencies(config, options, () => {
+      source = 'restored';
+    }),
+  );
+  profile.graph(id, { purpose: 'dependency-analysis', producer: work, source });
+  profile.finish(
+    work,
+    analysis.complete ? source : 'failed',
+    analysis.complete ? undefined : 'analysis-incomplete',
+  );
+  return analysis;
+}
+
+async function analyzeDependencies(
+  config: ResolvedLiminaInputs,
+  options: PrepareGeneratedTsconfigGraphOptions,
+  restored?: () => void,
+): Promise<DependencyAnalysisResult> {
   const caches =
     options.projectDependencyCaches ?? createProjectDependencyCaches();
   try {
-    return await analyzePreparedDependencies(config, {
+    const current = {
       ...options,
       projectDependencyCaches: caches,
-    });
+    };
+    const analysis = await restoreCachedDependencyAnalysis(config, current);
+    if (analysis !== undefined) {
+      restored?.();
+      return analysis;
+    }
+    return (await prepareGraph(
+      config,
+      current,
+      true,
+    )) as DependencyAnalysisResult;
   } catch (error) {
     return failedGraphAnalysis(
       error,
@@ -267,15 +320,6 @@ export async function analyzeProjectDependencies(
   }
 }
 
-async function analyzePreparedDependencies(
-  config: ResolvedLiminaInputs,
-  options: PrepareGeneratedTsconfigGraphOptions,
-): Promise<DependencyAnalysisResult> {
-  return (
-    (await restoreCachedDependencyAnalysis(config, options)) ??
-    ((await prepareGraph(config, options, true)) as DependencyAnalysisResult)
-  );
-}
 function dependencyCaches(options: PrepareGeneratedTsconfigGraphOptions) {
   const caches =
     options.projectDependencyCaches ?? createProjectDependencyCaches();
@@ -337,33 +381,59 @@ function returnFailedGraph(
   throw createGraphPreparationError(error, analysis);
 }
 
-export async function prepareGeneratedTsconfigGraph(
+export function prepareGeneratedTsconfigGraph(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<GeneratedTsconfigGraphResult> {
-  const inputs = new EpochInputs();
-  const graph = await inputs.collect(() =>
-    prepareCurrentGraph(config, options),
-  );
-  retainGraphExecutionInputs(graph, inputs);
-  return graph;
+  return observeCorePreparation(async (restored) => {
+    const inputs = new EpochInputs();
+    const graph = await inputs.collect(() =>
+      prepareCurrentGraph(config, options, restored),
+    );
+    retainGraphExecutionInputs(graph, inputs);
+    return graph;
+  });
 }
 
-export async function prepareProducerBuildPlan(
+export function prepareProducerBuildPlan(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<ProducerBuildPlan> {
-  const inputs = new EpochInputs();
-  const graph = await inputs.collect(() =>
-    prepareGraph(config, options, false, 'producer-build'),
-  );
-  if (!('purpose' in graph) || graph.purpose !== 'producer-build')
-    throw new Error(
-      'Producer preparation did not establish a producer build plan.',
+  return observeCorePreparation(async () => {
+    const inputs = new EpochInputs();
+    const graph = await inputs.collect(() =>
+      prepareGraph(config, options, false, 'producer-build'),
     );
-  graph.declarationOutputs = await inputs.collect(() =>
-    observeProducerOutputMappings(graph, config.rootDir),
-  );
-  retainGraphExecutionInputs(graph, inputs);
-  return graph;
+    if (!('purpose' in graph) || graph.purpose !== 'producer-build')
+      throw new Error(
+        'Producer preparation did not establish a producer build plan.',
+      );
+    graph.declarationOutputs = await inputs.collect(() =>
+      observeProducerOutputMappings(graph, config.rootDir),
+    );
+    retainGraphExecutionInputs(graph, inputs);
+    return graph;
+  });
+}
+
+function observeCorePreparation<T extends PreparedTsconfigGraph>(
+  prepare: (restored?: () => void) => Promise<T>,
+): Promise<T> {
+  const profile = currentProfile();
+  if (profile === undefined) return prepare();
+  const work = profile.start('graph.prepare.core');
+  let source: 'computed' | 'restored' = 'computed';
+  return profile.inWork(work, async () => {
+    try {
+      const graph = await prepare(() => {
+        source = 'restored';
+      });
+      recordGraphPreparation(profile, graph, 'core', work, source);
+      profile.finish(work, source);
+      return graph;
+    } catch (error) {
+      profile.finish(work, 'failed', 'graph-preparation-failed');
+      throw error;
+    }
+  });
 }

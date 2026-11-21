@@ -2,10 +2,12 @@ import { isBuildCapablePreset } from '#checkers';
 import type { formatImportRecordLocation } from '#core/import-graph/context';
 import { formatImportRecordLocation as importLocation } from '#core/import-graph/context';
 import { uniqueCodeUnitSortedStrings } from '#utils/collections';
+import { currentProfile } from '../../application/analysis/observability';
 import {
   collectFrameworkExecutionInputs,
   hasFrameworkExecutionInputs,
 } from '../analysis-cache/framework-execution-inputs';
+import { observeWork } from '../analysis-profile';
 import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
   collectProjectDependencies,
@@ -414,7 +416,16 @@ export function processFrameworkSourceReferences(options: {
   governedSources: readonly GovernedSourceUnit[];
   primaryProjectsByConfigPath: ReadonlyMap<string, SourceProject>;
 }): void {
+  const observer = currentProfile();
   for (const source of options.governedSources) {
-    processFrameworkSource({ ...options, source });
+    const input = { ...options, source };
+    if (observer === undefined) processFrameworkSource(input);
+    else
+      observeWork(
+        observer,
+        'reference-analysis',
+        () => processFrameworkSource(input),
+        ['project', observer.project(source.configPath)],
+      );
   }
 }

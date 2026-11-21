@@ -9,6 +9,7 @@ import { decodeData, encodeData } from './data-codec';
 import { resolutionOriginSchema } from './declaration-schema';
 import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
+import { recordCacheHit, recordCacheMiss } from './profile-decisions';
 import type { VueContextRecord, VueModuleRecord } from './vue-contracts';
 import { bindVueExecutionInputs } from './vue-execution-inputs';
 import type { VueInputTrace } from './vue-inputs';
@@ -123,29 +124,72 @@ export class VueModuleReplay {
     return owners;
   }
 
-  #restore(id: string): ModuleResult | undefined {
+  #restore(id: string, file: string): ModuleResult | undefined {
     const current = this.records[id];
     const record = current ?? this.#previous?.moduleResolutions[id];
-    if (
-      record === undefined ||
-      this.#cache.inputs.domainDirty ||
-      record.dependencies.some(
-        (dependency) => !this.#cache.inputs.valid(dependency),
-      )
-    )
+    if (record === undefined) {
+      recordCacheMiss('vue-resolution', 'vue-resolution-record-absent', {
+        file,
+        absent: true,
+      });
       return undefined;
+    }
+    if (this.#cache.inputs.domainDirty) {
+      recordCacheMiss('vue-resolution', 'manifest-domain-changed', { file });
+      return undefined;
+    }
+    const stale = record.dependencies.find(
+      (dependency) => !this.#cache.inputs.valid(dependency),
+    );
+    if (stale !== undefined) {
+      const inputs = this.#cache.inputs;
+      const input =
+        inputs.records[stale.inputId] ?? inputs.previous[stale.inputId];
+      recordCacheMiss('vue-resolution', 'vue-resolution-input-stale', {
+        file,
+        input:
+          input === undefined
+            ? undefined
+            : { kind: input.kind, file: input.path },
+      });
+      return undefined;
+    }
     const result = decodeResult(record.result);
-    if (result === undefined) return undefined;
+    if (result === undefined) {
+      recordCacheMiss('vue-resolution', 'vue-resolution-payload-invalid', {
+        file,
+      });
+      return undefined;
+    }
     const owners = this.#targetOwners(result);
-    if (owners === null || record.targetOwners === null) return undefined;
+    if (owners === null || record.targetOwners === null) {
+      recordCacheMiss(
+        'vue-resolution',
+        'vue-resolution-target-ownership-unknown',
+        { file },
+      );
+      return undefined;
+    }
     if (
       owners.length !== record.targetOwners.length ||
       owners[0] !== record.targetOwners[0]
     ) {
       this.#cache.increment('vueModuleOwnerMisses');
+      recordCacheMiss(
+        'vue-resolution',
+        'vue-resolution-target-ownership-changed',
+        { file },
+      );
       return undefined;
     }
     this.#cache.increment('vueModuleResolutionHits');
+    recordCacheHit(
+      'vue-resolution',
+      record === this.#previous?.moduleResolutions[id]
+        ? this.#cache.previousOrigin
+        : 'invocation-memory',
+      file,
+    );
     if (record === this.#previous?.moduleResolutions[id])
       this.#restored.add(result);
     if (current !== undefined) return result;
@@ -167,7 +211,7 @@ export class VueModuleReplay {
     clear: () => void;
     collect: () => ModuleResult;
   }): ModuleResult {
-    const restored = this.#restore(options.id);
+    const restored = this.#restore(options.id, options.file);
     if (restored !== undefined) return restored;
 
     // A Volar/TypeScript memo hit omits probes used to choose synthetic

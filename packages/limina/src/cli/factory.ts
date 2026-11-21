@@ -13,6 +13,11 @@ export function createLiminaCli(): ReturnType<typeof cac> {
   cli.option('--config <path>', 'Path to a Limina config file');
   cli.option('--config-loader <loader>', 'Config loader to use: native, tsx');
   cli.option('--mode <mode>', 'Mode passed to limina config functions');
+  cli.option('--profile', 'Report analysis profiling for this invocation');
+  cli.option(
+    '--profile-output <dir>',
+    'Write the analysis profile to this directory',
+  );
   cli.help();
   registerSetupCommands(cli);
   registerCheckCommand(cli);

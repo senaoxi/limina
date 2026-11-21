@@ -4,6 +4,7 @@ import type { AnalysisSnapshot, ConfigModuleSnapshot } from './contracts';
 import { ANALYSIS_ADAPTER, ANALYSIS_SCHEMA } from './contracts';
 import type { InstallationLockGate } from './installation-gate';
 import type { NativeAnalysisCache } from './native-cache';
+import type { CacheOrigin } from './profile-decisions';
 import { availableSnapshotGraphs } from './snapshot-graphs';
 import {
   referencedSnapshotInputs,
@@ -168,6 +169,7 @@ function hasCompleteConfigModules(snapshot: AnalysisSnapshot): boolean {
   return snapshot.configModules?.complete ?? false;
 }
 export interface ConfigCacheOptions {
+  previousOrigin?: CacheOrigin;
   liveConfigTimes?: ReadonlyMap<string, number>;
   installationGate?: InstallationLockGate;
   configVersion?: string;

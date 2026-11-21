@@ -7,11 +7,13 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import ts from 'typescript';
+import { currentProfile } from '../../application/analysis/observability';
 import {
   declarationCandidateExecutionInputs,
   graphExecutionInputScope,
 } from '../analysis-cache/execution-inputs';
 import { vueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
+import { observeWork } from '../analysis-profile';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-references';
 import { observeNativeReferenceMapping } from '../typescript-semantic/reference-redirect';
@@ -267,30 +269,40 @@ export function observeProducerOutputMappings(
     };
     const mappings =
       checker === 'vue-tsc'
-        ? observeVueDeclarationCandidate({
-            checker,
-            sourceConfig: configs.keys().toArray()[0]!,
-            generatedConfig: probe,
-            executionRoot: projectRootDirectory,
-            parsed,
-            files,
-            coverage: plan.sourceConfigCoverage!,
-            roots: [],
-            configs: files
-              .keys()
-              .filter((file) => file.endsWith('.json'))
-              .toArray(),
-            declarations: [],
-            referenceInputs: sourceInputs,
-            requiresDelegationProof: false,
-          }).mappings
+        ? observeVueDeclarationCandidate(
+            {
+              checker,
+              sourceConfig: configs.keys().toArray()[0]!,
+              generatedConfig: probe,
+              executionRoot: projectRootDirectory,
+              parsed,
+              files,
+              coverage: plan.sourceConfigCoverage!,
+              roots: [],
+              configs: files
+                .keys()
+                .filter((file) => file.endsWith('.json'))
+                .toArray(),
+              declarations: [],
+              referenceInputs: sourceInputs,
+              requiresDelegationProof: false,
+            },
+            'aggregate',
+          ).mappings
         : (() => {
-            const program = ts.createProgram({
-              rootNames: [],
-              options: parsed.options,
-              projectReferences: parsed.projectReferences,
-              host,
-            });
+            const program = observeWork(
+              currentProfile(),
+              'producer-output-mapping-program-create',
+              () =>
+                ts.createProgram({
+                  rootNames: [],
+                  options: parsed.options,
+                  projectReferences: parsed.projectReferences,
+                  host,
+                }),
+              undefined,
+              1,
+            );
             return sourceInputs.map((file) => ({
               file,
               ...observeNativeReferenceMapping(program, file, ts),

@@ -1,3 +1,5 @@
+import { currentProfile } from '../../application/analysis/observability';
+import { observeWork } from '../analysis-profile';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { observationErrorDetail } from '../typescript-semantic/native-observation-failure';
 import { retainAnalysisFailure } from './analysis-failure';
@@ -20,11 +22,19 @@ function observeOutput(input: {
   project: SourceProject;
 }): void {
   try {
-    const receipt = proveOutputProjection({
-      ...input,
-      cache: input.caches.analysisCache,
-      metrics: input.caches.metrics,
-    });
+    const observer = currentProfile();
+    const project = observer?.project(input.project.configPath);
+    const receipt = observeWork(
+      observer,
+      'graph-projection',
+      () =>
+        proveOutputProjection({
+          ...input,
+          cache: input.caches.analysisCache,
+          metrics: input.caches.metrics,
+        }),
+      project === undefined ? undefined : ['project', project],
+    );
     (input.project.outputProjections ??= []).push(receipt);
   } catch (error) {
     input.state.dependencyAnalysis.diagnostics.push(

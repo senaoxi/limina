@@ -1,20 +1,27 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { performance } from 'node:perf_hooks';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
+import { currentProfile } from '../application/analysis/observability';
 import { effectiveConfigVersion } from '../config/analysis-version';
-import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
+import {
+  AnalysisInputDriftError,
+  type AnalysisSnapshot,
+} from '../core/analysis-cache/contracts';
 import type { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
+import { cacheCause } from '../core/analysis-cache/profile-decisions';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { analysisCacheIdentity } from './analysis-cache-identity';
 import { AnalysisCacheStore } from './analysis-cache-store';
 import { AnalysisToolObservation } from './analysis-cache-tools';
 import { ConfigObservation } from './config-observation';
+import { isObserverOnlyMetrics } from './profile-metrics';
 
 export class AnalysisCacheController {
   readonly #store: AnalysisCacheStore;
   readonly #tools: AnalysisToolObservation;
   readonly #configuration: ConfigObservation;
+  readonly #configPath: string;
   readonly #metrics: AnalysisMetricsRecorder | undefined;
   #analyzed = false;
   readonly #managedOutputs = new Map<string, EpochInputs>();
@@ -44,6 +51,7 @@ export class AnalysisCacheController {
     this.#force = options.force === true;
     const metrics = options.metrics;
     this.#configuration = new ConfigObservation(config);
+    this.#configPath = config.configPath;
     this.#metrics = metrics;
     this.#configVersion = effectiveConfigVersion(config);
     this.#store = new AnalysisCacheStore({
@@ -59,17 +67,48 @@ export class AnalysisCacheController {
   }
 
   #createCache(): NativeAnalysisCache {
-    const cache = new NativeAnalysisCache(
-      this.#store.identity,
+    const cache = this.#cacheFromCandidate(
       this.#store.read({ restore: !this.#force }),
-      {
-        configVersion: this.#configVersion,
-        configModules: this.#configuration.snapshot(),
-        installationGate: this.#store.installationGate,
-      },
     );
     if (this.#configVersion === undefined)
       cache.fallback('configuration-version-unknown');
+    return cache;
+  }
+
+  #cacheFromCandidate(
+    candidate: AnalysisSnapshot | undefined,
+    liveConfigTimes?: ReadonlyMap<string, number>,
+  ) {
+    const admission = this.#store.admissionDecision;
+    const cache = new NativeAnalysisCache(this.#store.identity, candidate, {
+      configVersion: this.#configVersion,
+      configModules: this.#configuration.snapshot(),
+      installationGate: this.#store.installationGate,
+      previousOrigin: this.#store.candidateOrigin,
+      liveConfigTimes,
+    });
+    const profile = currentProfile();
+    const basis = admission === undefined ? undefined : [admission];
+    cache.snapshotDecision = profile?.decision(
+      'analysis-snapshot',
+      cache.previous === undefined
+        ? {
+            stage: 'adoption',
+            outcome: 'not-adopted',
+            causes: [
+              candidate === undefined
+                ? cacheCause(admission, 'no-snapshot-candidate')
+                : { code: 'candidate-binding-rejected' },
+            ],
+          }
+        : {
+            stage: 'adoption',
+            outcome: 'adopted',
+            origin: cache.previousOrigin,
+            basis,
+          },
+      profile.path(this.#configPath),
+    );
     return cache;
   }
 
@@ -99,7 +138,7 @@ export class AnalysisCacheController {
 
   #reportMetrics(): void {
     const metrics = this.#metrics;
-    if (metrics === undefined) return;
+    if (metrics === undefined || isObserverOnlyMetrics(metrics)) return;
     this.#reportConfigMetrics(metrics);
     this.cache.metrics.uniquePaths = new Set(
       Object.values(this.cache.inputs.records).map((input) => input.path),
@@ -139,15 +178,12 @@ export class AnalysisCacheController {
     const candidate = this.#analyzed
       ? this.#store.refresh(this.cache, reason)
       : this.#store.read({ restore: !this.#force });
-    return new NativeAnalysisCache(this.#store.identity, candidate, {
-      configVersion: this.#configVersion,
-      configModules: this.#configuration.snapshot(),
-      installationGate: this.#store.installationGate,
-      liveConfigTimes:
-        candidate !== undefined && candidate.header.baselineTime === undefined
-          ? this.cache.inputs.configTimes()
-          : undefined,
-    });
+    return this.#cacheFromCandidate(
+      candidate,
+      candidate !== undefined && candidate.header.baselineTime === undefined
+        ? this.cache.inputs.configTimes()
+        : undefined,
+    );
   }
   #reportConfigMetrics(metrics: AnalysisMetricsRecorder): void {
     for (const [kind, value] of Object.entries(this.#configuration.metrics))
@@ -169,6 +205,15 @@ export class AnalysisCacheController {
     this.cache.installationGate?.assertStable();
     for (const receipt of this.#managedOutputs.values())
       await receipt.assertStable();
+  }
+
+  #recordSkippedPublication(code: string): void {
+    const profile = currentProfile();
+    profile?.decision(
+      'analysis-snapshot',
+      { stage: 'publication', outcome: 'not-published', causes: [{ code }] },
+      profile.path(this.#configPath),
+    );
   }
 
   refresh(reason?: 'producer-handoff'): void {
@@ -208,7 +253,10 @@ export class AnalysisCacheController {
   */
   async publish(): Promise<void> {
     this.assertConfigurationStable();
-    if (!this.#analyzed) return;
+    if (!this.#analyzed) {
+      this.#recordSkippedPublication('analysis-not-completed');
+      return;
+    }
     try {
       if (this.#canPublish) {
         await this.#store.publish(this.cache, async () => {
@@ -219,9 +267,17 @@ export class AnalysisCacheController {
         await this.cache.epoch.assertStable();
         this.cache.installationGate?.assertStable();
         this.cache.inputs.assertStable();
+        this.#recordSkippedPublication('read-only');
       }
     } catch (error) {
-      await this.#validateManagedDrift(error);
+      try {
+        await this.#validateManagedDrift(error);
+      } catch (error_) {
+        if (error_ instanceof AnalysisInputDriftError)
+          this.#recordSkippedPublication('analysis-input-drift');
+        throw error_;
+      }
+      this.#recordSkippedPublication('managed-output-drift-discard');
     }
     this.#reportMetrics();
   }

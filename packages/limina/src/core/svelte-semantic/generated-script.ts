@@ -3,6 +3,8 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { TraceMap } from '@jridgewell/trace-mapping';
 import path from 'node:path';
 import type ts from 'typescript';
+import { currentProfile } from '../../application/analysis/observability';
+import { observeWork, profileContextScope } from '../analysis-profile';
 import {
   type FrameworkCompilerRequest,
   FrameworkCompilerRequests,
@@ -247,10 +249,22 @@ export function createBoundedProgram(options: {
     },
   };
   let program: ts.Program;
+  const observer = currentProfile();
+  const scope =
+    observer === undefined
+      ? undefined
+      : profileContextScope(observer, {
+          instance: options.generated,
+          configPath: project.configPath,
+          checker: 'svelte-check',
+          provider: 'svelte',
+          role: 'component',
+        });
+  let pass = 0;
   do {
     prepareTypeScriptSupportInputs({ admission, host: raw, project, tsModule });
     admission.beginProgram();
-    program = tsModule.createProgram({
+    const request = {
       host,
       options: project.options,
       rootNames: project.fileNames,
@@ -258,7 +272,18 @@ export function createBoundedProgram(options: {
         options.project.references === undefined
           ? undefined
           : [...options.project.references],
-    });
+    };
+    program =
+      observer === undefined
+        ? tsModule.createProgram(request)
+        : observeWork(
+            observer,
+            'svelte-program-create',
+            () => tsModule.createProgram(request),
+            scope,
+            ++pass,
+            'computed',
+          );
     prepareTypeScriptSupportInputs({ admission, host: raw, project, tsModule });
   } while (admission.needsProgramRebuild());
   options.generated.program = program;

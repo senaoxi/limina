@@ -25,6 +25,7 @@ export interface NativeProgramObservationOptions {
   coverage: SourceConfigCoverageIndex;
   metrics?: AnalysisMetricsRecorder;
   queries?: BoundedResolutionQueries;
+  profileRole?: 'type-evidence';
 }
 
 /**

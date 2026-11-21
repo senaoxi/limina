@@ -1,3 +1,4 @@
+import { currentProfile } from '../application/analysis/observability';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import type { LiminaCheckIssue } from '../check-reporting/snapshot';
 import { createTaskFailureIssue } from '../check-reporting/snapshot';
@@ -8,6 +9,7 @@ import type {
   StartDecision,
 } from './executor-types';
 import { createTaskProgressReporter } from './progress';
+import { runObservedTask } from './task-observers';
 import type {
   ExecutionTask,
   ExecutionTaskRunResult,
@@ -94,8 +96,20 @@ export async function normalizeRunnerResult(options: {
     };
   };
   let timing: ReturnType<typeof finish> | undefined;
+  const observer = currentProfile();
+  const profileId =
+    observer === undefined ? undefined : trace?.profileTaskId(options.task.id);
   try {
-    const result = await options.task.run(context);
+    const result = await (observer === undefined || profileId === undefined
+      ? options.task.run(context)
+      : runObservedTask({
+          observer,
+          operation: 'execution.task-runner',
+          taskId: profileId,
+          execute: () => options.task.run(context),
+          isPassed: (value) =>
+            value.status === 'disabled' || value.status === 'passed',
+        }));
     timing = finish();
     assertRunnerStatus(result, options.task);
     return { ...result, ...timing };

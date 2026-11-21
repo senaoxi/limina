@@ -39,9 +39,11 @@ function configMode(options: LoadConfigOptions): string {
 
 export async function loadConfig(
   options: LoadConfigOptions = {},
+  observeRoot?: (rootDirectory: string) => void,
 ): Promise<ResolvedLiminaConfig> {
   const location = resolveExecutionConfigLocation(options);
   const governanceRoot = resolveGovernanceRoot(location.configPath);
+  observeRoot?.(governanceRoot.rootDir);
   const loader = resolveConfigLoader(options.configLoader);
   const loaderIdentity = configLoaderIdentity(loader);
   const namespace = loader === 'tsx' ? randomUUID() : undefined;

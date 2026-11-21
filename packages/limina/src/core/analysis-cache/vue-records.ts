@@ -9,6 +9,7 @@ import { encodeData } from './data-codec';
 import type { EpochInputReplay } from './epoch-inputs';
 import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
+import { recordCacheHit, recordCacheMiss } from './profile-decisions';
 import { QueryTrace } from './query-trace';
 import type {
   VueContextRecord,
@@ -23,7 +24,7 @@ import {
 import { isVueAnalysisSupported, vueModuleContextId } from './vue-identity';
 import type { VueInputTrace } from './vue-inputs';
 import { VueAnalysisMemo } from './vue-memo';
-import { isCurrentVueRecord, VueRecordState } from './vue-record-state';
+import { vueRecordRejection, VueRecordState } from './vue-record-state';
 import { parseVueQuery } from './vue-schema';
 import { observeVueTools } from './vue-toolchain-inputs';
 
@@ -84,7 +85,13 @@ export class VueAnalysisRecords {
   #qualify(identity: VueProjectSemanticIdentity): boolean {
     const isSupported = isVueAnalysisSupported(identity);
     this.#eligibility.set(identity, isSupported);
-    if (!isSupported) return this.#reject('vue-unsupported-inputs');
+    if (!isSupported) {
+      recordCacheMiss('vue-context', 'vue-unsupported-inputs', {
+        file: identity.configPath,
+        bypassed: true,
+      });
+      return this.#reject('vue-unsupported-inputs');
+    }
     observeVueTools(identity, new QueryTrace(this.cache.inputs));
     this.#expected.add(this.#memo.contextId(identity));
     return true;
@@ -139,12 +146,14 @@ export class VueAnalysisRecords {
   #restore(
     identity: VueProjectSemanticIdentity,
     replay?: EpochInputReplay,
+    onMiss?: (decision: string) => void,
   ): VueContextRecord | undefined {
-    if (this.cache.inputs.domainDirty) return undefined;
+    if (this.cache.inputs.domainDirty)
+      return this.#miss('manifest-domain-changed', identity.configPath, onMiss);
     const id = this.#memo.contextId(identity);
     const record = this.#qualified.has(id)
       ? this.records[id]
-      : this.#validate(identity, id);
+      : this.#validate(identity, id, onMiss);
     this.#bindExecutionInputs(identity, record, replay);
     return record;
   }
@@ -167,35 +176,71 @@ export class VueAnalysisRecords {
   #validate(
     identity: VueProjectSemanticIdentity,
     id: string,
+    onMiss?: (decision: string) => void,
   ): VueContextRecord | undefined {
     const record = this.#previous(id);
-    if (
-      record === undefined ||
-      !isCurrentVueRecord(this.cache, identity, record)
-    )
-      return undefined;
+    if (record === undefined)
+      return this.#miss(
+        'vue-context-record-absent',
+        identity.configPath,
+        onMiss,
+      );
+    const rejection = vueRecordRejection(this.cache, identity, record);
+    if (rejection !== undefined)
+      return this.#miss(rejection, identity.configPath, onMiss);
     this.cache.inputs.consume(record.dependencies);
     this.cache.inputs.consumeNative();
     this.cache.increment('restoredVueContexts');
+    recordCacheHit(
+      'vue-context',
+      this.records[id] === record
+        ? 'invocation-memory'
+        : this.cache.previousOrigin,
+      identity.configPath,
+    );
     this.records[id] = record;
     this.#qualified.add(id);
     return record;
+  }
+
+  #miss(
+    code: string,
+    file?: string,
+    onMiss?: (decision: string) => void,
+  ): undefined {
+    const decision = recordCacheMiss('vue-context', code, {
+      file,
+      absent: code === 'vue-context-record-absent' || undefined,
+      basis: this.cache.snapshotDecision,
+    });
+    if (decision !== undefined) onMiss?.(decision);
   }
 
   #parseIdentity(
     id: string,
     generation: number,
     replay?: EpochInputReplay,
+    onMiss?: (decision: string) => void,
   ): VueProjectSemanticIdentity | undefined {
     const record = this.#previous(id);
-    if (record === undefined) return undefined;
+    if (record === undefined)
+      return this.#miss('vue-context-record-absent', undefined, onMiss);
     const parsed = parseRecordedProject(record, generation);
     const identity = recordedIdentity(record, parsed.identity);
-    if (identity === undefined) return undefined;
+    if (identity === undefined)
+      return this.#miss(
+        'vue-context-identity-unavailable',
+        record.project.configPath,
+        onMiss,
+      );
     const valid = [parsed.diagnostics.length === 0, this.supports(identity)];
     return valid.every(Boolean)
-      ? this.#bindIdentity(identity, id, generation, replay)
-      : undefined;
+      ? this.#bindIdentity(identity, id, generation, replay, onMiss)
+      : this.#miss(
+          'vue-context-identity-unqualified',
+          identity.configPath,
+          onMiss,
+        );
   }
 
   #bindIdentity(
@@ -203,14 +248,17 @@ export class VueAnalysisRecords {
     id: string,
     generation: number,
     replay?: EpochInputReplay,
+    onMiss?: (decision: string) => void,
   ): VueProjectSemanticIdentity | undefined {
-    if (
-      [
-        this.#memo.contextId(identity) !== id,
-        this.#restore(identity, replay) === undefined,
-      ].some(Boolean)
-    )
-      return undefined;
+    const isIdentityChanged = this.#memo.contextId(identity) !== id;
+    const restored = this.#restore(identity, replay, onMiss);
+    if (isIdentityChanged)
+      return this.#miss(
+        'vue-context-identity-changed',
+        identity.configPath,
+        onMiss,
+      );
+    if (restored === undefined) return undefined;
     this.#identities.set(`${id}:${generation}`, identity);
     return identity;
   }
@@ -227,9 +275,28 @@ export class VueAnalysisRecords {
   ): VueQueryResults[K] | undefined {
     if (this.cache.inputs.domainDirty) return undefined;
     const context = this.#context(query.identity);
-    return context === undefined
-      ? undefined
-      : this.#memo.decode(query.kind, context.queries[key]);
+    const record = context?.queries[key];
+    const restored = this.#memo.decode(query.kind, record);
+    if (restored === undefined) {
+      recordCacheMiss(
+        'vue-query',
+        record === undefined
+          ? 'vue-query-record-absent'
+          : 'vue-query-payload-invalid',
+        {
+          file: query.identity.configPath,
+          absent: record === undefined || undefined,
+        },
+      );
+    } else {
+      const id = this.#memo.contextId(query.identity);
+      const origin =
+        this.cache.previous?.vueContexts[id]?.queries[key] === record
+          ? this.cache.previousOrigin
+          : 'invocation-memory';
+      recordCacheHit('vue-query', origin, query.identity.configPath);
+    }
+    return restored;
   }
 
   #collect<K extends VueQueryKind>(
@@ -295,16 +362,24 @@ export class VueAnalysisRecords {
     id: string,
     generation: number,
     replay?: EpochInputReplay,
+    onMiss?: (decision: string) => void,
   ): VueProjectSemanticIdentity | undefined {
-    if (this.cache.inputs.domainDirty) return undefined;
+    if (this.cache.inputs.domainDirty)
+      return this.#miss('manifest-domain-changed', undefined, onMiss);
     const key = `${id}:${generation}`;
     return (
-      this.#identities.get(key) ?? this.#parseIdentity(id, generation, replay)
+      this.#identities.get(key) ??
+      this.#parseIdentity(id, generation, replay, onMiss)
     );
   }
 
-  restore(id: string, replay?: EpochInputReplay, generation = 0): boolean {
-    return this.identity(id, generation, replay) !== undefined;
+  restore(
+    id: string,
+    replay?: EpochInputReplay,
+    generation = 0,
+    onMiss?: (decision: string) => void,
+  ): boolean {
+    return this.identity(id, generation, replay, onMiss) !== undefined;
   }
 
   query<K extends VueQueryKind>(

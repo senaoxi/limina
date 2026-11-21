@@ -1,5 +1,8 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type {
+  GeneratedTsconfigGraphResult,
+  PreparedTsconfigGraph,
+} from '#core/build-graph/runner';
 import {
   type CheckerRouteSnapshotCollection,
   type CollectCheckerGraphProjectRoutesResult,
@@ -11,6 +14,11 @@ import {
 } from '#core/tsconfig/actions';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
+import {
+  type AnalysisObserver,
+  currentProfile,
+} from '../application/analysis/observability';
+import { graphPreparationWork } from '../core/build-graph/graph-profile';
 import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import {
   createPackageEntrySelectionPlan,
@@ -100,18 +108,58 @@ async function analyzeWithoutCache<T>(
   return result;
 }
 
-export function loadAnalyzedGraph<T>(options: {
+export function loadAnalyzedGraph<T extends PreparedTsconfigGraph>(options: {
   cache: AnalysisCacheController | undefined;
   configObservation?: Pick<ConfigObservation, 'assertStable'>;
   source: Pick<LiminaPreflightManager, 'ensureWorkspaceValidated'>;
   getGraph: () => Promise<T>;
+  providerRun: (profile: AnalysisObserver) => string;
   refresh(): void;
 }): Promise<T> {
+  const profile = currentProfile();
+  let previousAttempt: string | undefined;
+  let attempt = 0;
   const analyze = async () => {
-    await options.source.ensureWorkspaceValidated();
-    return options.getGraph();
+    if (profile === undefined) {
+      await options.source.ensureWorkspaceValidated();
+      return options.getGraph();
+    }
+    const number = ++attempt;
+    const work = profile.start('graph.attempt', undefined, undefined, number);
+    if (previousAttempt !== undefined) {
+      profile.finish(previousAttempt, 'superseded', 'analysis-input-drift');
+      profile.link('retry-of', work, previousAttempt);
+    }
+    previousAttempt = work;
+    return profile.inWork(work, async () => {
+      await options.source.ensureWorkspaceValidated();
+      const providerRun = options.providerRun(profile);
+      const graph = await profile.withProviderRun(
+        providerRun,
+        options.getGraph,
+      );
+      const producer = graphPreparationWork(profile, graph);
+      if (producer !== undefined) profile.link('uses-result', work, producer);
+      profile.graph(profile.identity(graph, 'graph'), {
+        attempt: number,
+        providerRun,
+      });
+      return graph;
+    });
   };
-  return options.cache === undefined
-    ? analyzeWithoutCache(options.configObservation, analyze)
-    : options.cache.analyze({ analyze, refresh: options.refresh });
+  const result =
+    options.cache === undefined
+      ? analyzeWithoutCache(options.configObservation, analyze)
+      : options.cache.analyze({ analyze, refresh: options.refresh });
+  if (profile === undefined) return result;
+  (async () => {
+    try {
+      await result;
+      if (previousAttempt !== undefined) profile.finish(previousAttempt);
+    } catch {
+      if (previousAttempt !== undefined)
+        profile.finish(previousAttempt, 'failed', 'graph-attempt-failed');
+    }
+  })();
+  return result;
 }

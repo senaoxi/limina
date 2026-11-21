@@ -1,5 +1,7 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
+import { currentProfile } from '../../application/analysis/observability';
+import { observeWork } from '../analysis-profile';
 import { frameworkCompilationObligation } from '../framework-semantic/compilation-obligation';
 import type {
   FrameworkSemanticDependencyPreparation,
@@ -141,13 +143,20 @@ function prepareUnchecked(options: {
   toolchain: SvelteSemanticToolchain;
 }): FrameworkSemanticDependencyPreparation {
   const filePath = normalizeAbsolutePath(options.filePath);
-  const generatedOutput = options.toolchain.transform(options.sourceText, {
+  const observer = currentProfile();
+  const transformOptions = {
     filename: filePath,
     isTsFile: isSvelteTypeScriptSource(options.sourceText),
     parse: options.toolchain.compiler.parse as never,
     version: options.toolchain.compilerVersion,
     namespace: options.project.svelteOptions?.namespace,
-  });
+  };
+  const generatedOutput =
+    observer === undefined
+      ? options.toolchain.transform(options.sourceText, transformOptions)
+      : observeWork(observer, 'svelte-transform', () =>
+          options.toolchain.transform(options.sourceText, transformOptions),
+        );
   const generated = createGeneratedSemanticScript({
     filePath,
     generated: generatedOutput,

@@ -1,6 +1,15 @@
 import { readAnalysisInput } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
 import { readFileSync } from 'node:fs';
+import {
+  currentProfile,
+  type ProfileScope,
+} from '../../application/analysis/observability';
+import {
+  observeWork,
+  priorProfileContextScope,
+  profileContextScope,
+} from '../analysis-profile';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { SvelteDependencyPreparation } from './dependency';
@@ -83,16 +92,39 @@ export class SvelteSemanticContext {
     const key = preparationKey(normalized, supportInputBoundary);
     const cached = cache.get(key);
     if (cached?.sourceText === sourceText) return cached.preparation;
-    const preparation = prepareSvelteSemanticDependencies({
+    const observer = currentProfile();
+    const request = {
       filePath: normalized,
       supportInputBoundary,
       managedOutputLookup,
       project: this.project,
       sourceText,
       toolchain: this.toolchain,
-    });
+    };
+    const preparation =
+      observer === undefined
+        ? prepareSvelteSemanticDependencies(request)
+        : observeWork(
+            observer,
+            'svelte-component-preparation',
+            () => prepareSvelteSemanticDependencies(request),
+            this.profileScope(observer),
+          );
     cache.set(key, { preparation, sourceText });
     return preparation;
+  }
+
+  profileScope(
+    observer: ReturnType<typeof currentProfile>,
+  ): ProfileScope | undefined {
+    if (observer === undefined) return undefined;
+    return profileContextScope(observer, {
+      instance: this,
+      configPath: this.project.configPath,
+      checker: 'svelte-check',
+      provider: 'svelte',
+      role: 'source',
+    });
   }
 
   assertActive(): void {
@@ -103,7 +135,15 @@ export class SvelteSemanticContext {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
-    this.#preparedByFileName.clear();
+    const observer = currentProfile();
+    observeWork(
+      observer,
+      'svelte-context-dispose',
+      () => {
+        this.#preparedByFileName.clear();
+      },
+      priorProfileContextScope(observer, this),
+    );
   }
 }
 
@@ -145,8 +185,18 @@ export class SvelteSemanticContextManager {
     if (active !== undefined) return active;
     this.#active?.dispose();
     const packageRootDirectory = normalizeAbsolutePath(project.packageRootDir);
-    const toolchain = this.getToolchain(packageRootDirectory);
-    this.#active = new SvelteSemanticContext({ project, toolchain });
+    const observer = currentProfile();
+    const projectId = observer?.project(project.configPath);
+    this.#active = observeWork(
+      observer,
+      'svelte-context-create',
+      () => {
+        const toolchain = this.getToolchain(packageRootDirectory);
+        return new SvelteSemanticContext({ project, toolchain });
+      },
+      projectId === undefined ? undefined : ['project', projectId],
+    );
+    this.#active.profileScope(observer);
     this.#activeIdentity = identity;
     return this.#active;
   }

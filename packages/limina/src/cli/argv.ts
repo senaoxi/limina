@@ -98,12 +98,16 @@ function readGlobalOptionAt(options: {
 }
 
 function isGlobalOption(argument: string | undefined): boolean {
-  return getGlobalOptionDescriptor(argument) !== undefined;
+  return (
+    getGlobalOptionDescriptor(argument) !== undefined ||
+    argument === '--profile-output' ||
+    argument?.startsWith('--profile-output=') === true
+  );
 }
 
 function shouldSkipNextArgument(argument: string | undefined): boolean {
   const descriptor = getGlobalOptionDescriptor(argument);
-  return descriptor?.separate === true;
+  return descriptor?.separate === true || argument === '--profile-output';
 }
 
 export function readGlobalFlagsFromArgv(argv: readonly string[]): GlobalFlags {

@@ -1,4 +1,5 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
+import { currentProfile } from '../../application/analysis/observability';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import { assertOwnershipPhase } from './checker-ownership-evidence';
 
@@ -31,6 +32,7 @@ export function finalizeOwnership(options: {
   discovery: CheckerOwnershipDiscovery;
 }): void {
   const { plan, autoChecker, activeEntryPaths } = options.discovery;
+  const observer = currentProfile();
   for (const state of plan.typeConfigs.values()) {
     state.finalOwner =
       state.localOwner.kind === 'resolved'
@@ -38,6 +40,12 @@ export function finalizeOwnership(options: {
         : autoChecker;
   }
   validateOwnershipConstraints({ ...options, phase: 'source finalization' });
+  for (const state of plan.typeConfigs.values())
+    observer?.project(state.configPath, {
+      executionChecker: state.finalOwner,
+      role: 'source',
+      seenVia: 'checker-ownership',
+    });
   for (const entry of activeEntryPaths) {
     const sources =
       plan.solutions.get(entry)?.sourceConfigPaths ??

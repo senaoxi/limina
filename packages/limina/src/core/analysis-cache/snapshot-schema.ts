@@ -292,14 +292,34 @@ function isMatchingConfigVersion(
   return expected === undefined || actual === expected;
 }
 
-export function parseAnalysisSnapshotRoot(
+type SnapshotRoot = Pick<AnalysisSnapshot, 'header' | 'configModules'>;
+
+export function qualifyAnalysisSnapshotRoot(
   value: unknown,
   identity: string,
-): Pick<AnalysisSnapshot, 'header' | 'configModules'> | undefined {
+):
+  | { kind: 'qualified'; root: SnapshotRoot }
+  | { kind: 'invalid-header' | 'incompatible-header' | 'identity-mismatch' } {
   const parsed = z
     .object({ header, configModules: configModuleSnapshotSchema })
     .safeParse(value);
-  return parsed.success && parsed.data.header.identity === identity
-    ? parsed.data
-    : undefined;
+  if (!parsed.success) {
+    const isIncompatible = parsed.error.issues.some(
+      ({ path }) =>
+        path[0] === 'header' &&
+        (path[1] === 'schema' || path[1] === 'implementation'),
+    );
+    return { kind: isIncompatible ? 'incompatible-header' : 'invalid-header' };
+  }
+  return parsed.data.header.identity === identity
+    ? { kind: 'qualified', root: parsed.data }
+    : { kind: 'identity-mismatch' };
+}
+
+export function parseAnalysisSnapshotRoot(
+  value: unknown,
+  identity: string,
+): SnapshotRoot | undefined {
+  const result = qualifyAnalysisSnapshotRoot(value, identity);
+  return result.kind === 'qualified' ? result.root : undefined;
 }

@@ -8,6 +8,7 @@ import { type DataNode, encodeData } from './data-codec';
 import type { EpochInputReplay } from './epoch-inputs';
 import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
+import { recordCacheMiss } from './profile-decisions';
 import { availableSnapshotGraphs } from './snapshot-graphs';
 import { isSameData } from './snapshot-records';
 function isCompleteContext(context: NativeContextRecord): boolean {
@@ -24,28 +25,11 @@ function hasCompletedNativeCollection(context: NativeContextRecord): boolean {
     context.native === undefined || context.native.snapshot.run === 'completed'
   );
 }
-function previousGraph(
-  cache: NativeAnalysisCache,
-  key: string,
-): GraphRecord | undefined {
-  return cache.graphs[key] ?? availableSnapshotGraphs(cache.previous)?.[key];
-}
 function previousContext(
   cache: NativeAnalysisCache,
   key: string,
 ): NativeContextRecord | undefined {
   return cache.contexts[key] ?? cache.previous?.contexts[key];
-}
-function isCurrentGraph(
-  cache: NativeAnalysisCache,
-  record: GraphRecord,
-  workspaceVersion: string,
-): boolean {
-  return [
-    !cache.inputs.domainDirty,
-    record.workspaceVersion === workspaceVersion,
-    record.dependencies.every((dependency) => cache.inputs.valid(dependency)),
-  ].every(Boolean);
 }
 function graphConfigPaths(cache: NativeAnalysisCache, record: GraphRecord) {
   return new Set(
@@ -65,6 +49,7 @@ function canRestoreContext(
   cache: NativeAnalysisCache,
   id: string,
   replay: EpochInputReplay,
+  onMiss: (decision: string) => void,
 ): boolean {
   const context = previousContext(cache, id);
   if (context === undefined) return false;
@@ -79,6 +64,7 @@ function canRestoreContext(
         },
       },
       replay,
+      onMiss,
     ) !== undefined
   );
 }
@@ -152,11 +138,52 @@ export class CachedGraphRecords {
     const previous = availableSnapshotGraphs(this.#cache.previous)?.[key];
     this.#cache.graphs[key] = isSameData(previous, record) ? previous! : record;
   }
+  #miss(code: string, cause?: string): undefined {
+    recordCacheMiss('analysis-graph', code, {
+      cause,
+      absent: code === 'graph-record-absent' || undefined,
+      basis: this.#cache.snapshotDecision,
+    });
+  }
   candidate(key: string, workspaceVersion: string): GraphRecord | undefined {
-    const old = previousGraph(this.#cache, key);
-    return old && isCurrentGraph(this.#cache, old, workspaceVersion)
-      ? old
-      : undefined;
+    const cache = this.#cache;
+    const current = cache.graphs[key];
+    const prior =
+      current === undefined
+        ? availableSnapshotGraphs(cache.previous)
+        : undefined;
+    const old = current ?? prior?.[key];
+    if (old === undefined) {
+      return this.#miss(
+        prior === undefined && cache.previous !== undefined
+          ? 'graph-projection-unavailable'
+          : 'graph-record-absent',
+      );
+    }
+    const validation = {
+      isDomainCurrent: !cache.inputs.domainDirty,
+      stale: old.dependencies.find(
+        (dependency) => !cache.inputs.valid(dependency),
+      ),
+    };
+    if (!validation.isDomainCurrent)
+      return this.#miss('manifest-domain-changed');
+    if (old.workspaceVersion !== workspaceVersion)
+      return this.#miss('workspace-version-changed');
+    if (validation.stale !== undefined) {
+      const { inputId } = validation.stale;
+      const input =
+        cache.inputs.records[inputId] ?? cache.inputs.previous[inputId];
+      recordCacheMiss('analysis-graph', 'graph-input-stale', {
+        basis: cache.snapshotDecision,
+        input:
+          input === undefined
+            ? undefined
+            : { kind: input.kind, file: input.path },
+      });
+      return undefined;
+    }
+    return old;
   }
   async restore(
     key: string,
@@ -169,17 +196,29 @@ export class CachedGraphRecords {
         record.discovery,
         replay,
         graphConfigPaths(this.#cache, record),
-      )) ||
-      record.vueContextIds.some(
-        (id) => !this.#cache.vue.restore(id, replay, generation),
-      ) ||
-      record.contextIds.some(
-        (id) => !canRestoreContext(this.#cache, id, replay),
-      ) ||
-      record.queryIds.some((id) => !didRestoreGraphQuery(this.#cache, id)) ||
-      this.#cache.inputs.domainDirty
+      ))
     )
-      return undefined;
+      return this.#miss('graph-discovery-changed');
+    let cause: string | undefined;
+    const onMiss = (decision: string) => {
+      cause = decision;
+    };
+    if (
+      record.vueContextIds.some(
+        (id) => !this.#cache.vue.restore(id, replay, generation, onMiss),
+      )
+    )
+      return this.#miss('graph-vue-context-unqualified', cause);
+    if (
+      record.contextIds.some(
+        (id) => !canRestoreContext(this.#cache, id, replay, onMiss),
+      )
+    )
+      return this.#miss('graph-native-context-unqualified', cause);
+    if (record.queryIds.some((id) => !didRestoreGraphQuery(this.#cache, id)))
+      return this.#miss('graph-resolution-unqualified');
+    if (this.#cache.inputs.domainDirty)
+      return this.#miss('manifest-domain-changed');
     this.#cache.inputs.consume(record.dependencies);
     this.#cache.contributions.restoreValidatedGraph();
     const discovery = this.#cache.epoch.refreshConfigStamps(record.discovery);

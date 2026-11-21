@@ -24,6 +24,7 @@ import {
   type TypeEnvironmentRecord,
 } from './installation-environment';
 import type { NativeAnalysisCache } from './native-cache';
+import { recordCacheHit, recordCacheMiss } from './profile-decisions';
 import { hasResolutionReceipt } from './resolution-queries';
 import { restoredDependencyContext } from './restored-context';
 import type { SemanticState } from './semantic-state';
@@ -111,38 +112,34 @@ function preferred<T>(
 function candidateFor(
   cache: NativeAnalysisCache,
   id: string,
-): Candidate | undefined {
+): Candidate | string {
   if (
     cache.contexts[id] === undefined &&
     cache.invalidation.contextDirty.has(id)
   )
-    return undefined;
+    return 'context-dirty';
   const record = preferred(cache.contexts, cache.previous?.contexts, id);
+  if (record === undefined) return 'context-record-absent';
   const state = preferred(cache.projects, cache.previous?.projects, id);
-  return qualifiedCandidate(cache, record, state);
-}
-function qualifiedCandidate(
-  cache: NativeAnalysisCache,
-  record: NativeContextRecord | undefined,
-  state: ProjectRecord | undefined,
-): Candidate | undefined {
-  return [record?.complete, state !== undefined].every(Boolean)
-    ? completeCandidate(cache, record!, state!)
-    : undefined;
+  return state === undefined || !record.complete
+    ? 'context-record-incomplete'
+    : completeCandidate(cache, record, state);
 }
 function completeCandidate(
   cache: NativeAnalysisCache,
   record: NativeContextRecord,
   state: ProjectRecord,
-): Candidate | undefined {
+): Candidate | string {
   const importers = Object.values(record.sources)
     .filter((key): key is string => key !== null)
     .map((key) => currentImporter(cache, key));
   const queries = record.queryIds.map((key) => currentQuery(cache, key));
-  if (
-    [importers.includes(undefined), queries.includes(undefined)].some(Boolean)
-  )
-    return undefined;
+  const hasMissingImporter = importers.includes(undefined);
+  const hasMissingQuery = queries.includes(undefined);
+  if (hasMissingImporter || hasMissingQuery)
+    return hasMissingImporter
+      ? 'context-importer-unqualified'
+      : 'context-resolution-unqualified';
   return {
     record,
     state,
@@ -166,31 +163,27 @@ export class NativeContextRecords {
   #compilerDependencies(id: string): Iterable<InputDependency> {
     return this.#compilerInputs.get(id)?.values() ?? [];
   }
-  #memoized(
-    project: TypeScriptSemanticProject,
-    identity: string,
-    replay?: EpochInputReplay,
-  ): TypeScriptSemanticDependencyContext | undefined {
-    return (
-      this.#restored.get(identity)?.context ??
-      this.#restoreNew(project, identity, replay)
-    );
-  }
   #restoreNew(
     project: TypeScriptSemanticProject,
     identity: string,
-    replay?: EpochInputReplay,
+    replay: EpochInputReplay | undefined,
+    miss: (code: string, input?: InputDependency) => undefined,
   ): TypeScriptSemanticDependencyContext | undefined {
     const id = nativeContextId(project);
     if (this.#cache.contexts[id] === undefined && this.#revoked.has(id))
-      return undefined;
+      return miss('context-revoked');
     const candidate = candidateFor(this.#cache, id);
-    if (candidate === undefined) return undefined;
-    const isValid =
-      hasValidInputs(this.#cache, candidate.record.dependencies) &&
-      isCurrentContextShape(project, candidate) &&
-      hasCurrentContextEnvironment(this.#cache, project, candidate, replay) &&
-      hasValidBoundedContext(
+    if (typeof candidate === 'string') return miss(candidate);
+    const stale = candidate.record.dependencies.find(
+      (dependency) => !this.#cache.inputs.valid(dependency),
+    );
+    if (stale !== undefined) return miss('context-input-stale', stale);
+    if (!isCurrentContextShape(project, candidate))
+      return miss('context-shape-changed');
+    if (!hasCurrentContextEnvironment(this.#cache, project, candidate, replay))
+      return miss('context-environment-or-compiler-reads-changed');
+    if (
+      !hasValidBoundedContext(
         candidate.record,
         Object.fromEntries(candidate.importers),
         {
@@ -198,8 +191,17 @@ export class NativeContextRecords {
           contextId: nativeContextId(project),
           queries: Object.fromEntries(candidate.queries),
         },
-      );
-    return isValid ? this.#adopt(project, identity, candidate) : undefined;
+      )
+    )
+      return miss('context-inventory-binding-invalid');
+    recordCacheHit(
+      'native-context',
+      this.#cache.contexts[id] === candidate.record
+        ? 'invocation-memory'
+        : this.#cache.previousOrigin,
+      project.sourceConfigPath ?? project.configPath,
+    );
+    return this.#adopt(project, identity, candidate);
   }
   #adopt(
     project: TypeScriptSemanticProject,
@@ -277,18 +279,45 @@ export class NativeContextRecords {
   restore(
     project: TypeScriptSemanticProject,
     replay?: EpochInputReplay,
+    onMiss?: (decision: string) => void,
   ): TypeScriptSemanticDependencyContext | undefined {
     const cache = this.#cache;
-    if (
-      ![
-        cache.supports(project, ts),
-        cache.hasReusableFacts(project),
-        !cache.inputs.domainDirty,
-      ].every(Boolean)
-    )
-      return undefined;
+    const file = project.sourceConfigPath ?? project.configPath;
+    const miss = (code: string, input?: InputDependency): undefined => {
+      const observation =
+        input === undefined
+          ? undefined
+          : (cache.inputs.records[input.inputId] ??
+            cache.inputs.previous[input.inputId]);
+      const decision = recordCacheMiss('native-context', code, {
+        file,
+        absent: code === 'context-record-absent' || undefined,
+        bypassed:
+          ['unsupported-native-context', 'executable-native-context'].includes(
+            code,
+          ) || undefined,
+        input:
+          observation === undefined
+            ? undefined
+            : { kind: observation.kind, file: observation.path },
+        basis: cache.snapshotDecision,
+      });
+      if (decision !== undefined) onMiss?.(decision);
+    };
+    const checks = [
+      [cache.supports(project, ts), 'unsupported-native-context'],
+      [cache.hasReusableFacts(project), 'executable-native-context'],
+    ] as const;
+    const incompatible = checks.find(([isQualified]) => !isQualified);
+    if (incompatible !== undefined) return miss(incompatible[1]);
+    if (cache.inputs.domainDirty) return miss('manifest-domain-changed');
     const identity = createTypeScriptSemanticContextIdentity(project);
-    return this.#memoized(project, identity, replay);
+    const memoized = this.#restored.get(identity);
+    if (memoized !== undefined) {
+      recordCacheHit('native-context', 'invocation-memory', file);
+      return memoized.context;
+    }
+    return this.#restoreNew(project, identity, replay, miss);
   }
 }
 

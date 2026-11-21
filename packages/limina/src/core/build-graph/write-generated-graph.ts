@@ -2,7 +2,9 @@ import type {
   ResolvedCheckerConfig,
   ResolvedLiminaInputs,
 } from '#config/runner';
+import { currentProfile } from '../../application/analysis/observability';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import { observeWork } from '../analysis-profile';
 import { writeGeneratedContent, writeGeneratedJson } from './artifact-writer';
 import { declarationPackageFiles } from './declaration-package-format';
 import {
@@ -31,15 +33,23 @@ function writeDtsProjects(options: {
   state: GeneratedGraphPreparationState;
   checkerName: string;
 }): Promise<void>[] {
+  const observer = currentProfile();
   return getArrayValue(
     options.state.projectsByChecker,
     options.checkerName,
   ).map(async (project) => {
-    const value = createGeneratedDtsConfig({
-      cache: options.cache,
-      config: options.config,
-      project,
-    });
+    const projectId = observer?.project(project.configPath);
+    const value = observeWork(
+      observer,
+      'graph-projection',
+      () =>
+        createGeneratedDtsConfig({
+          cache: options.cache,
+          config: options.config,
+          project,
+        }),
+      projectId === undefined ? undefined : ['project', projectId],
+    );
     await writeGeneratedJson({
       context: options.state.writeContext,
       filePath: project.dtsConfigPath,
@@ -98,15 +108,23 @@ function writeOutputProjects(options: {
   state: GeneratedGraphPreparationState;
   checkerName: string;
 }): Promise<void>[] {
+  const observer = currentProfile();
   return getArrayValue(
     options.state.outputProjectsByChecker,
     options.checkerName,
   ).map((project) => {
-    const value = createGeneratedOutputProjectConfig({
-      cache: options.cache,
-      config: options.config,
-      project,
-    });
+    const projectId = observer?.project(project.configPath);
+    const value = observeWork(
+      observer,
+      'graph-projection',
+      () =>
+        createGeneratedOutputProjectConfig({
+          cache: options.cache,
+          config: options.config,
+          project,
+        }),
+      projectId === undefined ? undefined : ['project', projectId],
+    );
     return writeGeneratedJson({
       context: options.state.writeContext,
       filePath: project.outputConfigPath,

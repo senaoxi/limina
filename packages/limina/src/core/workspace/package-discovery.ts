@@ -2,6 +2,8 @@ import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
+import { currentProfile } from '../../application/analysis/observability';
+import { observeAsyncWork } from '../analysis-profile';
 import { expandPackageGlobs } from './expand-package-globs';
 import { getManifestPackageName, readJsonFile } from './package-manifest';
 import type {
@@ -106,7 +108,12 @@ function mergeWorkspacePackages(
 export async function collectRawWorkspacePackages(
   config: ResolvedLiminaInputs,
 ): Promise<WorkspacePackage[]> {
-  return mergeWorkspacePackages(await collectDeclaredWorkspacePackages(config));
+  const observer = currentProfile();
+  return observer === undefined
+    ? mergeWorkspacePackages(await collectDeclaredWorkspacePackages(config))
+    : observeAsyncWork(observer, 'workspace-package-discovery', async () =>
+        mergeWorkspacePackages(await collectDeclaredWorkspacePackages(config)),
+      );
 }
 
 export async function collectWorkspacePackages(

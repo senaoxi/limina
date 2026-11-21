@@ -1,4 +1,5 @@
 import type { cac } from 'cac';
+import { currentProfile } from '../../application/analysis/observability';
 import { isRunSourceCheck } from '../../commands/source';
 import { LiminaPreflightManager } from '../../preflight';
 import type { SourceCheckIssue } from '../../source-check/report';
@@ -33,6 +34,9 @@ async function isExecuteSourceCheck(options: {
   const { commandContext, config } = await loadStandaloneContext(
     options.flags,
     'source',
+  );
+  currentProfile()?.setPolicy(
+    config.cache === false ? 'disabled' : 'read-only',
   );
   const preflight = new LiminaPreflightManager({
     config,

@@ -1,6 +1,7 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
+import { currentProfile } from '../../application/analysis/observability';
 import { invocationDataVersion } from '../../config/invocation-data';
 import { assertArtifactPathLexicallyContained } from '../../domain/artifacts/namespace';
 import { createRevisionedArtifactPlan } from '../../domain/artifacts/plan';
@@ -8,6 +9,10 @@ import { decodeData } from '../analysis-cache/data-codec';
 import { hasBoundRestoredGraphExecutionInputs } from '../analysis-cache/execution-inputs';
 import { completeFrameworkExecutionInputs } from '../analysis-cache/framework-execution-inputs';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import {
+  type CacheOrigin,
+  recordCacheMiss,
+} from '../analysis-cache/profile-decisions';
 import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
 import {
   type CachedGraphData,
@@ -88,12 +93,58 @@ interface GraphRestoreInput {
   metrics?: AnalysisMetricsRecorder;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
 }
+interface RestoredGraphProjection {
+  readonly data: BoundCachedGraph;
+  readonly origin: CacheOrigin;
+  readonly snapshotDecision?: string;
+}
+
+function recordGraphAdoption(
+  graph: object,
+  { origin, snapshotDecision }: RestoredGraphProjection,
+): void {
+  const profile = currentProfile();
+  if (profile === undefined) return;
+  const subject = profile.identity(graph, 'graph');
+  const lookup = profile.decision(
+    'analysis-graph',
+    {
+      stage: 'lookup',
+      outcome: 'found',
+      basis: snapshotDecision === undefined ? undefined : [snapshotDecision],
+    },
+    subject,
+  );
+  const admission = profile.decision(
+    'analysis-graph',
+    {
+      stage: 'admission',
+      outcome: 'admitted',
+      basis: [lookup],
+    },
+    subject,
+  );
+  profile.decision(
+    'analysis-graph',
+    {
+      stage: 'adoption',
+      outcome: 'adopted',
+      origin,
+      basis: [admission],
+    },
+    subject,
+  );
+}
+
 async function readGraph(
   options: GraphRestoreInput,
-): Promise<BoundCachedGraph | undefined> {
+): Promise<RestoredGraphProjection | undefined> {
   const version = versions(options.config, options.workspace);
   if (version === undefined) {
     options.cache.fallback(graphFallbackReason(options.config));
+    recordCacheMiss('analysis-graph', graphFallbackReason(options.config), {
+      bypassed: true,
+    });
     return undefined;
   }
   return readVersionedGraph(options, version);
@@ -101,16 +152,23 @@ async function readGraph(
 async function readVersionedGraph(
   options: GraphRestoreInput,
   version: { workspaceVersion: string },
-): Promise<BoundCachedGraph | undefined> {
+): Promise<RestoredGraphProjection | undefined> {
   const candidate = options.cache.graphCandidate(key, version.workspaceVersion);
   if (candidate === undefined) return undefined;
+  const origin =
+    options.cache.graphs[key] === candidate
+      ? 'invocation-memory'
+      : options.cache.previousOrigin;
   const ownershipInputs = await restoreOwnershipInputs(
     options.config,
     options.workspace,
     options.cache,
     options.projectConfigCache,
   );
-  if (ownershipInputs === undefined) return undefined;
+  if (ownershipInputs === undefined) {
+    recordCacheMiss('analysis-graph', 'ownership-inputs-replay-rejected');
+    return undefined;
+  }
   const record = await options.cache.restoreGraphRecord(
     key,
     candidate,
@@ -121,9 +179,10 @@ async function readVersionedGraph(
   if (data === undefined) {
     delete options.cache.graphs[key];
     options.cache.fallback('graph-dto-invalid');
+    recordCacheMiss('analysis-graph', 'graph-dto-or-binding-invalid');
     return undefined;
   }
-  return data;
+  return { data, origin, snapshotDecision: options.cache.snapshotDecision };
 }
 function decodeBoundGraph(
   options: GraphRestoreInput & { ownershipInputs: CheckerOwnershipDiscovery },
@@ -179,29 +238,34 @@ export async function restoreGeneratedGraph(
     preparation: PrepareGeneratedTsconfigGraphOptions;
   },
 ): Promise<GeneratedTsconfigGraphResult | undefined> {
-  const data = await readGraph({
+  const restored = await readGraph({
     ...options,
     generation: options.preparation.projectConfigCache?.generation,
     projectConfigCache: options.preparation.projectConfigCache,
     importAnalysisContext: options.preparation.importAnalysisContext,
     metrics: options.preparation.projectDependencyCaches?.metrics,
   });
+  if (restored === undefined) return undefined;
+  const { data } = restored;
   if (
-    data === undefined ||
     !hasValidRestoredDeclarationContexts(
       data.graph,
       options.preparation.projectDependencyCaches?.metrics,
       options.config.rootDir,
     )
-  )
+  ) {
+    recordCacheMiss('analysis-graph', 'declaration-candidate-rejected');
     return undefined;
+  }
   const graph = await rebindArtifacts(data.graph, options);
   if (!hasBoundRestoredGraphExecutionInputs(graph, options.cache)) {
     delete options.cache.graphs[key];
     options.cache.fallback('graph-execution-inputs-incomplete');
+    recordCacheMiss('analysis-graph', 'execution-inputs-incomplete');
     return undefined;
   }
   options.cache.increment('graphHits');
+  recordGraphAdoption(graph, restored);
   if (options.preparation.projectDependencyCaches !== undefined)
     recordFrameworkInferenceAmbiguities(
       options.preparation.projectDependencyCaches,
@@ -214,9 +278,17 @@ export async function restoreCachedDependencyAnalysis(
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<DependencyAnalysisResult | undefined> {
   const cache = options.projectDependencyCaches?.analysisCache;
-  return cache === undefined || options.producerBuildReceipt !== undefined
-    ? undefined
-    : restoredAnalysis(cache, config, options);
+  if (cache === undefined || options.producerBuildReceipt !== undefined) {
+    recordCacheMiss(
+      'analysis-graph',
+      cache === undefined
+        ? 'cache-controller-unavailable'
+        : 'managed-execution-view',
+      { bypassed: true },
+    );
+    return undefined;
+  }
+  return restoredAnalysis(cache, config, options);
 }
 async function restoredAnalysis(
   cache: NativeAnalysisCache,
@@ -237,12 +309,14 @@ async function restoredAnalysis(
   });
   if (restored === undefined) return undefined;
   cache.increment('graphHits');
+  const { data } = restored;
+  recordGraphAdoption(data.graph.dependencyAnalysis, restored);
   if (options.projectDependencyCaches !== undefined)
     recordFrameworkInferenceAmbiguities(
       options.projectDependencyCaches,
-      restored.ambiguities,
+      data.ambiguities,
     );
-  return restored.graph.dependencyAnalysis;
+  return data.graph.dependencyAnalysis;
 }
 async function rebindArtifacts(
   data: CachedGraphData,

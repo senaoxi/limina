@@ -93,6 +93,24 @@ pnpm exec limina check --package @scope/pkg
 
 命令结束后还应查看[任务与分析器状态](./built-in-tasks.md#任务状态)。例如没有框架目标时 `checker:typecheck` 为 `disabled`；可选包分析器缺失可能为 `skipped`，同时进程正常退出。这些情况都不代表该项检查实际通过。
 
+#### 分析性能报告
+
+在执行 `check [pipeline]`、`graph check`、`graph prepare`、`graph export` 或 `source check` 时，可以添加 `--profile`。Limina 会将摘要打印到 stderr，并为每次调用写入一个带版本的 JSON 报告。问题查询不会执行分析，也不接受这些选项。
+
+```sh
+pnpm exec limina check --profile
+pnpm exec limina check --profile --verbose
+pnpm exec limina graph prepare --profile-output ../profiles
+```
+
+默认将报告写到治理根目录下的 `.limina/profiles/<invocation-id>.json`。默认写入成功后，Limina 会从该目录清理可识别的七天前报告。`--profile-output <dir>` 会开启性能报告，并从当前工作目录解析指定目录。请选择专用的 `.limina/profiles` 目录，或治理根目录以外的位置。如需延长保留时间，请选择单独的目录。
+
+报告分别记录建图准备和第一份完整的物化凭据，以及观测到的工作、复用和缓存决策。时间戳和耗时以微秒表示。并发或嵌套的持续时间可能重叠。缺少里程碑或耗时为 `null`，表示观测器无法提供该值。要测量从启动到退出的耗时，请在进程外计时。
+
+安装的包在 `limina/schemas/analysis-profile-v2.schema.json` 提供机器可读的 schema。第 2 版使用项目相对路径，外部路径以不透明的标识符表示。stderr 报告包含项目行。添加 `--verbose` 可查看上下文工作、已记录操作和缓存分类原因。报告写入失败不会改变检查结果。若尚未确定治理根目录时就发生配置加载错误，可显式指定调用工作目录以外的安全目录来记录这次失败。
+
+`LIMINA_PROFILE=1` 执行 `check` 时还会写入旧版 `.limina/check/last-profile.json`，供现有工具读取。旧版报告可能包含绝对路径。仅通过环境变量开启性能报告时，终端不会显示性能摘要。
+
 #### 查询已有问题
 
 ```sh

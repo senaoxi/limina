@@ -1,4 +1,6 @@
 import { toRelativePath } from '#utils/path';
+import { currentProfile } from '../../application/analysis/observability';
+import { observeWork } from '../analysis-profile';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
@@ -231,7 +233,18 @@ export function processProjectReferenceImports(options: {
   project: SourceProject;
   source?: GovernedSourceUnit;
 }): void {
-  addProjectDependencyFailures(options);
+  const observer = currentProfile();
+  if (observer === undefined) {
+    addProjectDependencyFailures(options);
+    return;
+  }
+  const project = observer.project(options.project.configPath);
+  observeWork(
+    observer,
+    'reference-analysis',
+    () => addProjectDependencyFailures(options),
+    ['project', project],
+  );
 }
 
 function markAnalysisIncomplete(context: ReferenceImportContext): void {

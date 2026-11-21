@@ -7,6 +7,14 @@ import {
 import { createLiminaCli } from './cli/factory';
 import { isPrintCheckIssueFilterHelpIfRequested } from './cli/filter-help';
 import { isForwardMigrationIfRequested } from './cli/migration-forward';
+import {
+  assertCliProfileOptions,
+  beginCliProfiling,
+  captureProfiledParseFailure,
+  type CliProfiling,
+  executeProfiledCommand,
+  finishCliProfiling,
+} from './cli/profiling';
 import { clearCliScreen, CliLogger, formatErrorMessage } from './logger';
 
 export { createLiminaCli } from './cli/factory';
@@ -26,12 +34,18 @@ function assertCheckCommandArguments(
   }
 }
 
-export async function executeCli(argv: string[]): Promise<void> {
+export async function executeCli(
+  argv: string[],
+  profiling?: CliProfiling,
+): Promise<void> {
   if (await isForwardMigrationIfRequested(argv)) return;
-  await executeProductCli(argv);
+  await executeProductCli(argv, profiling);
 }
 
-async function executeProductCli(argv: string[]): Promise<void> {
+async function executeProductCli(
+  argv: string[],
+  profiling: CliProfiling | undefined,
+): Promise<void> {
   clearCliScreen();
 
   const cli = createLiminaCli();
@@ -43,25 +57,49 @@ async function executeProductCli(argv: string[]): Promise<void> {
     isDisplayedCommandHelp = cli.matchedCommand !== undefined;
     return sections;
   };
-  cli.parse(argv, { run: false });
+  try {
+    cli.parse(argv, { run: false });
+  } catch (error) {
+    if (profiling !== undefined) captureProfiledParseFailure(profiling, argv);
+    throw error;
+  }
+  if (profiling === undefined)
+    return executeMatchedProductCli(cli, argv, isDisplayedCommandHelp);
+  return executeProfiledCommand({
+    cli,
+    isHelp: isDisplayedCommandHelp || cli.options.help === true,
+    profiling,
+    execute: () => executeMatchedProductCli(cli, argv, isDisplayedCommandHelp),
+  });
+}
+
+async function executeMatchedProductCli(
+  cli: ReturnType<typeof createLiminaCli>,
+  argv: string[],
+  isDisplayedCommandHelp: boolean,
+): Promise<void> {
   assertCheckCommandArguments(cli);
   assertIssueInventoryLimitArgv(argv);
   if (
     isDisplayedCommandHelp ||
     (await isPrintCheckIssueFilterHelpIfRequested(argv))
-  ) {
+  )
     return;
-  }
   assertMatchedCommand(cli);
+  assertCliProfileOptions(cli);
   await cli.runMatchedCommand();
 }
 
 export async function runCli(argv: string[] = process.argv): Promise<void> {
+  const profiling = beginCliProfiling(argv, import.meta.url);
   try {
-    await executeCli(argv);
+    await executeCli(argv, profiling);
   } catch (error) {
     CliLogger.error(`limina failed: ${formatErrorMessage(error)}`);
     process.exitCode = 1;
+  } finally {
+    if (profiling !== undefined)
+      await finishCliProfiling(profiling, Number(process.exitCode ?? 0) === 0);
   }
 }
 

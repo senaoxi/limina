@@ -8,6 +8,11 @@ import type { NativeDependencyFact } from '../typescript-semantic/dependency-fac
 import type { AnalysisCacheMetrics, ImporterRecord } from './contracts';
 import { analysisHash, nativeContextId } from './identity';
 import type { AnalysisInputs } from './inputs';
+import {
+  type CacheOrigin,
+  recordCacheHit,
+  recordCacheMiss,
+} from './profile-decisions';
 import type { SemanticState } from './semantic-state';
 import { occurrenceKey } from './semantic-state';
 import { retainData } from './snapshot-records';
@@ -22,12 +27,14 @@ export interface FactRequest {
 interface FactContext {
   importer: ImporterRecord;
   previous: ImporterRecord | undefined;
+  origin: CacheOrigin;
 }
 interface FactCacheOptions {
   inputs: AnalysisInputs;
   metrics: AnalysisCacheMetrics;
   previous: Record<string, ImporterRecord>;
   dirty: ReadonlySet<string>;
+  origin?: CacheOrigin;
 }
 
 function resolutionContract(value: TypeScriptSemanticResolution): unknown {
@@ -122,6 +129,9 @@ export class ImporterFacts {
     const failed = checks.find(([, valid]) => !valid);
     if (failed === undefined) return true;
     this.#count(`miss-${failed[0]}`);
+    recordCacheMiss('importer-facts', `importer-${failed[0]}-changed`, {
+      file: current.filePath,
+    });
     return false;
   }
 
@@ -149,11 +159,16 @@ export class ImporterFacts {
       return existing;
     }
     const importer = this.#create(request, state);
-    const old = this.records[id] ?? this.#options.previous[id];
+    const current = this.records[id];
+    const old = current ?? this.#options.previous[id];
     const previous = this.#selectPrevious(old, importer);
     this.#options.inputs.consumeNative();
     this.records[id] = importer;
-    const context = { importer, previous };
+    const origin =
+      current === undefined
+        ? (this.#options.origin ?? 'unknown')
+        : 'invocation-memory';
+    const context = { importer, previous, origin } satisfies FactContext;
     this.#contexts.set(id, context);
     this.#options.inputs.consume([
       ...importer.dependencies,
@@ -168,6 +183,10 @@ export class ImporterFacts {
   ): ImporterRecord | undefined {
     if (old === undefined) {
       this.#count('miss-new-importer');
+      recordCacheMiss('importer-facts', 'importer-record-absent', {
+        file: current.filePath,
+        absent: true,
+      });
       return undefined;
     }
     return this.#canReuse(old, current) ? old : undefined;
@@ -176,12 +195,25 @@ export class ImporterFacts {
   #collect(
     cached: NativeDependencyFact | undefined,
     request: FactRequest,
+    context: FactContext,
   ): NativeDependencyFact {
     if (hasSameResolution(cached, request.resolution)) {
       this.#recordImporter(request, true);
       this.#options.metrics.factHits += 1;
+      recordCacheHit('importer-facts', context.origin, request.record.filePath);
       return bind(cached, request.resolution);
     }
+    if (context.previous !== undefined)
+      recordCacheMiss(
+        'importer-facts',
+        cached === undefined
+          ? 'importer-occurrence-absent'
+          : 'importer-resolution-contract-changed',
+        {
+          file: request.record.filePath,
+          absent: cached === undefined || undefined,
+        },
+      );
     this.#recordImporter(request, false);
     this.#options.metrics.factQueries += 1;
     return this.#measureQuery(request);
@@ -223,9 +255,16 @@ export class ImporterFacts {
     const context = this.#context(request, state);
     const key = occurrenceKey(request.record);
     const current = context.importer.facts[key];
-    if (current !== undefined) return bind(current, request.resolution);
+    if (current !== undefined) {
+      recordCacheHit(
+        'importer-facts',
+        'invocation-memory',
+        request.record.filePath,
+      );
+      return bind(current, request.resolution);
+    }
     const cached = context.previous?.facts[key];
-    const fact = this.#collect(cached, request);
+    const fact = this.#collect(cached, request, context);
     context.importer.facts[key] = structuredClone(fact);
     return fact;
   }

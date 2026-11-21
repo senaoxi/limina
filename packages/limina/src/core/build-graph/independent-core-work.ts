@@ -1,3 +1,4 @@
+import { currentProfile } from '../../application/analysis/observability';
 import type { CoreWorkItem } from '../../domain/analysis/core-collection';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { observationErrorDetail } from '../typescript-semantic/native-observation-failure';
@@ -24,11 +25,33 @@ interface WorkInput {
 }
 export function collectIndependentCoreWork(input: WorkInput): ProjectFacts {
   const item = workItem(input);
+  const observer = currentProfile();
   if (item.eligibility === 'unavailable') {
     recordCoreWork(input.caches, item);
+    if (observer !== undefined) {
+      const project = observer.project(item.configPath);
+      observer.notRun(
+        'locked-project-dependencies',
+        ['project', project],
+        'authority-unavailable',
+      );
+    }
     return { facts: [], problems: [] };
   }
-  return executeWork(input, item);
+  if (observer === undefined) return executeWork(input, item);
+  const project = observer.project(item.configPath);
+  const work = observer.start('locked-project-dependencies', [
+    'project',
+    project,
+  ]);
+  try {
+    const result = observer.inWork(work, () => executeWork(input, item));
+    observer.finish(work, result.failures?.length ? 'failed' : 'performed');
+    return result;
+  } catch (error) {
+    observer.finish(work, 'failed');
+    throw error;
+  }
 }
 function workItem(input: WorkInput): Omit<CoreWorkItem, 'id'> {
   const authority = input.state.semanticAuthority;

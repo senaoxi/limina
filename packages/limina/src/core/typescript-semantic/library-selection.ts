@@ -1,8 +1,10 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type ts from 'typescript';
+import { currentProfile } from '../../application/analysis/observability';
 import { analysisHash } from '../analysis-cache/identity';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import { observeWork, profileContextScope } from '../analysis-profile';
 import { nativeLibraryFileNames } from './native-library-api';
 import {
   nativeCompilerApi,
@@ -25,6 +27,7 @@ export interface LibrarySelectionInput {
   libReplacement: boolean | undefined;
   cache?: NativeAnalysisCache;
   files?: ReadonlyMap<string, string>;
+  profile?: { sourceConfigPath: string; checker: string };
 }
 
 function resolveLibrary(
@@ -109,11 +112,28 @@ export function collectLibrarySelections(
       return resolveLibrary(input, host, request);
     },
   };
-  const program = compiler.createProgram({
-    rootNames: [probe],
-    options,
-    host: compilerHost,
-  }) as NativeObservedProgram;
+  const observer = currentProfile();
+  const scope =
+    input.profile === undefined
+      ? undefined
+      : profileContextScope(observer, {
+          instance: input,
+          configPath: input.profile.sourceConfigPath,
+          checker: input.profile.checker,
+          provider: 'typescript',
+          role: `library-${input.kind}`,
+        });
+  const program = observeWork(
+    observer,
+    'library-selection-program-create',
+    () =>
+      compiler.createProgram({
+        rootNames: [probe],
+        options,
+        host: compilerHost,
+      }),
+    scope,
+  ) as NativeObservedProgram;
   return [...names].map(([fileName, libraryName]) => {
     const selection = program.resolvedLibReferences?.get(fileName);
     if (selection === undefined)

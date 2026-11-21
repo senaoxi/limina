@@ -13,6 +13,11 @@ import type {
 import { pathBinding } from './directory-fingerprint';
 import { EpochInputReplay, EpochInputs } from './epoch-inputs';
 import { analysisHash } from './identity';
+import {
+  type CacheOrigin,
+  recordCacheHit,
+  recordCacheMiss,
+} from './profile-decisions';
 
 const missingContent = analysisHash(undefined);
 
@@ -63,16 +68,19 @@ export class ResolvedConfigRecords {
   readonly #rounds = new AsyncLocalStorage<EpochInputReplay>();
   readonly #metrics: AnalysisCacheMetrics;
   readonly #isConfigCurrent?: (paths: readonly string[]) => boolean;
+  readonly #origin: CacheOrigin;
   readonly records: Record<string, ResolvedConfigRecord> = {};
 
   constructor(
     prior: Record<string, ResolvedConfigRecord>,
     metrics: AnalysisCacheMetrics,
     isConfigCurrent?: (paths: readonly string[]) => boolean,
+    origin: CacheOrigin = 'unknown',
   ) {
     this.#prior = new Map(Object.entries(prior));
     this.#metrics = metrics;
     this.#isConfigCurrent = isConfigCurrent;
+    this.#origin = origin;
   }
 
   #resolve<T>(
@@ -83,8 +91,14 @@ export class ResolvedConfigRecords {
     replay: EpochInputReplay,
   ): T {
     const key = analysisHash([identity.configPath, identity.context]);
-    const prior = this.records[key] ?? this.#prior.get(key);
-    if (prior !== undefined) {
+    const current = this.records[key];
+    const prior = current ?? this.#prior.get(key);
+    if (prior === undefined) {
+      recordCacheMiss('resolved-config', 'resolved-config-record-absent', {
+        file: identity.configPath,
+        absent: true,
+      });
+    } else {
       const restored = this.#restore(
         identity,
         closurePaths,
@@ -92,13 +106,21 @@ export class ResolvedConfigRecords {
         codec,
         replay,
       );
-      if (restored !== undefined) {
+      if (typeof restored !== 'string') {
         this.records[key] = restored.record;
         this.#metrics.resolvedConfigHits++;
+        recordCacheHit(
+          'resolved-config',
+          current === undefined ? this.#origin : 'invocation-memory',
+          identity.configPath,
+        );
         return restored.value;
       }
       delete this.records[key];
       this.#prior.delete(key);
+      recordCacheMiss('resolved-config', restored, {
+        file: identity.configPath,
+      });
     }
 
     const reads = new EpochInputs();
@@ -125,22 +147,22 @@ export class ResolvedConfigRecords {
     prior: ResolvedConfigRecord,
     codec: ResolvedConfigCodec<T>,
     replay: EpochInputReplay,
-  ): { record: ResolvedConfigRecord; value: T } | undefined {
+  ): string | { record: ResolvedConfigRecord; value: T } {
     if (
       prior.configPath !== identity.configPath ||
       prior.context !== identity.context ||
       fingerprint(prior) !== prior.fingerprint
     )
-      return undefined;
+      return 'resolved-config-binding-invalid';
     const value = optionalProjection(() => codec.decode(prior.payload));
-    if (value === undefined) return undefined;
+    if (value === undefined) return 'resolved-config-payload-invalid';
     const requiredFiles = codec.requiredFiles?.(value);
     if (
       requiredFiles === undefined ||
       analysisHash(requiredFiles) !== analysisHash(closurePaths) ||
       !hasConfigReads(prior.discovery, identity, value, codec)
     )
-      return undefined;
+      return 'resolved-config-closure-changed';
     const closure = new Set(closurePaths);
     const isClosureText = (record: DiscoveryRecord) =>
       record.descriptor.kind === 'config-text' && closure.has(record.path);
@@ -152,7 +174,7 @@ export class ResolvedConfigRecords {
           ({ path, binding }) => analysisHash(pathBinding(path)) !== binding,
         )
     )
-      return undefined;
+      return 'resolved-config-mtime-or-binding-changed';
     const reads = new EpochInputs();
     if (
       !reads.validateSynchronous(
@@ -160,7 +182,7 @@ export class ResolvedConfigRecords {
         replay,
       )
     )
-      return undefined;
+      return 'resolved-config-discovery-changed';
     reads.publish();
     return { record: prior, value };
   }
@@ -182,6 +204,7 @@ export class ResolvedConfigRecords {
             const current = key === undefined ? undefined : parsed.get(key);
             if (current !== undefined) {
               current.reads.publish();
+              recordCacheHit('resolved-config-live-parse', 'invocation-memory');
               return current.value as T;
             }
             this.#metrics.resolvedConfigParses++;

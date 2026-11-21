@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { accessSync, constants, readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
+import type { CacheCause } from '../../application/analysis/observability-types';
 import { emptyMetrics } from './cache-metrics';
 import {
   AnalysisInputDriftError,
@@ -13,6 +14,7 @@ import { inputStat } from './input-state';
 import { AnalysisInputs } from './inputs';
 import {
   type DomainOptions,
+  MissingInstallationLockError,
   readInstallationDomain,
 } from './installation-domain';
 import type { InstallationDomain } from './installation-environment';
@@ -72,6 +74,7 @@ export class InstallationLockGate {
   readonly #record: (kind: string) => void;
   #isRestoring = false;
   #coldReason?: string;
+  #admissionFailure?: { code: string; file: string };
   usable = true;
   needsCheckpoint = false;
   constructor(
@@ -165,11 +168,22 @@ export class InstallationLockGate {
       mtime <= this.#time &&
       previous?.binding === binding
     ) {
-      accessSync(file, constants.R_OK);
+      try {
+        accessSync(file, constants.R_OK);
+      } catch (error) {
+        this.#admissionFailure = { code: 'lock-unreadable', file };
+        throw error;
+      }
       lock = { mtime, binding, version: previous.hash };
       this.#record('lockHashReuses');
     } else {
-      const bytes = readLockBytes(file, mtime, binding);
+      let bytes: Buffer;
+      try {
+        bytes = readLockBytes(file, mtime, binding);
+      } catch (error) {
+        this.#admissionFailure = { code: 'lock-unreadable', file };
+        throw error;
+      }
       lock = {
         mtime,
         binding,
@@ -205,7 +219,17 @@ export class InstallationLockGate {
   #unproven(error: unknown, path: string): void {
     if (error instanceof AnalysisInputDriftError) throw error;
     if (this.#isRestoring) this.#rejectNewDomain(path);
+    this.#noteFailure(error, path);
     this.usable = false;
+  }
+  #noteFailure(error: unknown, file: string): void {
+    this.#admissionFailure ??= {
+      code:
+        error instanceof MissingInstallationLockError
+          ? 'lock-missing'
+          : 'installation-unproven',
+      file,
+    };
   }
   get requiresCold(): boolean {
     return this.#coldReason !== undefined;
@@ -219,6 +243,7 @@ export class InstallationLockGate {
           this.#projectLocations(previous.configPath, false);
       } catch (error) {
         if (error instanceof AnalysisInputDriftError) throw error;
+        this.#noteFailure(error, previous.configPath);
         return false;
       }
     }
@@ -230,6 +255,38 @@ export class InstallationLockGate {
         isDeepStrictEqual(this.#prior.get(key), value),
       )
     );
+  }
+  admissionCause(pathReference: (file: string) => string): CacheCause {
+    const failure = this.#admissionFailure;
+    if (failure !== undefined)
+      return {
+        code: failure.code,
+        input: { kind: 'installation', ref: pathReference(failure.file) },
+      };
+    if (this.#current.size !== this.#prior.size)
+      return { code: 'installation-domain-set-changed' };
+    for (const [key, current] of this.#current) {
+      const prior = this.#prior.get(key);
+      if (prior === undefined)
+        return { code: 'installation-domain-set-changed' };
+      const isSameLockSet =
+        current.locks.length === prior.locks.length &&
+        current.locks.every(([file], index) => file === prior.locks[index][0]);
+      if (!isSameLockSet)
+        return { code: 'installation-lock-selection-changed' };
+      for (const [index, [file, hash, binding]] of current.locks.entries()) {
+        const [, priorHash, priorBinding] = prior.locks[index];
+        if (binding !== priorBinding || hash !== priorHash)
+          return {
+            code:
+              binding === priorBinding
+                ? 'lock-content-changed'
+                : 'lock-binding-changed',
+            input: { kind: 'lockfile', ref: pathReference(file) },
+          };
+      }
+    }
+    return { code: 'installation-receipt-changed' };
   }
   resolved(file: string): void {
     if (this.#resolved.has(file)) return;

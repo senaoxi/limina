@@ -13,12 +13,11 @@ const SHA256_PATTERN = /^[a-f\d]{64}$/u;
 const RSS_SAMPLE_INTERVAL_MS = 50;
 
 export interface CheckProfileSession {
-  readonly metrics: ProfilingMetricsRecorder;
-  finish(options: {
+  freeze(options: {
     passed: boolean;
     run?: LiminaCheckRunSummary;
     trace?: object;
-  }): Promise<void>;
+  }): () => Promise<void>;
 }
 
 interface ProfileSessionState {
@@ -28,6 +27,13 @@ interface ProfileSessionState {
   readonly metrics: ProfilingMetricsRecorder;
   readonly runtime: RuntimeTreeIdentity;
   readonly startedAt: number;
+}
+
+export interface ProfileRuntimeExpectations {
+  buildInputHash: string | undefined;
+  executablePath: string | undefined;
+  packagePath: string | undefined;
+  runtimeTreeHash: string | undefined;
 }
 
 function readOptionalEnvironment(name: string): string | undefined {
@@ -47,9 +53,10 @@ function assertSha256Hash(name: string, value: string): void {
   }
 }
 
-function readExpectedHash(name: string): string | undefined {
-  const configuredValue = readOptionalEnvironment(name);
-
+function parseExpectedHash(
+  name: string,
+  configuredValue: string | undefined,
+): string | undefined {
   if (configuredValue === undefined) {
     return undefined;
   }
@@ -75,29 +82,59 @@ function assertExpectedValue(options: {
   }
 }
 
-function resolveExpectedPath(name: string): string | undefined {
+function readExpectedPath(name: string): string | undefined {
   const value = readOptionalEnvironment(name);
   return value === undefined ? undefined : path.resolve(value);
 }
 
-function assertExpectedIdentity(identity: RuntimeTreeIdentity): void {
+function assertExpectedIdentity(
+  identity: RuntimeTreeIdentity,
+  expected: ProfileRuntimeExpectations,
+): void {
   assertExpectedValue({
     actual: identity.treeHash,
-    expected: readExpectedHash('LIMINA_PROFILE_EXPECTED_RUNTIME_TREE_HASH'),
+    expected: parseExpectedHash(
+      'LIMINA_PROFILE_EXPECTED_RUNTIME_TREE_HASH',
+      expected.runtimeTreeHash,
+    ),
     label: 'Linked Limina runtime tree hash',
   });
   assertExpectedValue({
     actual: identity.packageRealPath,
-    expected: resolveExpectedPath('LIMINA_PROFILE_EXPECTED_PACKAGE_REALPATH'),
+    expected: expected.packagePath,
     label: 'Linked Limina package realpath',
   });
   assertExpectedValue({
     actual: identity.executableRealPath,
-    expected: resolveExpectedPath(
-      'LIMINA_PROFILE_EXPECTED_EXECUTABLE_REALPATH',
-    ),
+    expected: expected.executablePath,
     label: 'Linked Limina executable realpath',
   });
+}
+
+export function readProfileRuntimeExpectations(): ProfileRuntimeExpectations {
+  return {
+    buildInputHash: readOptionalEnvironment('LIMINA_PROFILE_BUILD_INPUT_HASH'),
+    executablePath: readExpectedPath(
+      'LIMINA_PROFILE_EXPECTED_EXECUTABLE_REALPATH',
+    ),
+    packagePath: readExpectedPath('LIMINA_PROFILE_EXPECTED_PACKAGE_REALPATH'),
+    runtimeTreeHash: readOptionalEnvironment(
+      'LIMINA_PROFILE_EXPECTED_RUNTIME_TREE_HASH',
+    ),
+  };
+}
+
+export async function qualifyProfileRuntime(
+  expected: ProfileRuntimeExpectations,
+): Promise<RuntimeTreeIdentity> {
+  const executableLogicalPath = path.resolve(process.argv[1] ?? '');
+  const packageLogicalPath = path.dirname(path.dirname(executableLogicalPath));
+  const runtime = await collectRuntimeTreeIdentity({
+    executableLogicalPath,
+    packageLogicalPath,
+  });
+  assertExpectedIdentity(runtime, expected);
+  return runtime;
 }
 
 function createBuildMetadata(
@@ -108,17 +145,25 @@ function createBuildMetadata(
     : { inputHash: buildInputHash };
 }
 
-function createProcessMetadata(peakRssBytes: number): {
+function readRss(): number | undefined {
+  try {
+    return process.memoryUsage.rss();
+  } catch {
+    return undefined;
+  }
+}
+
+function createProcessMetadata(peakRssBytes: number | undefined): {
   arch: string;
-  finalRssBytes: number;
+  finalRssBytes?: number;
   nodeVersion: string;
-  peakRssBytes: number;
+  peakRssBytes?: number;
   pid: number;
   platform: NodeJS.Platform;
 } {
   return {
     arch: process.arch,
-    finalRssBytes: process.memoryUsage.rss(),
+    finalRssBytes: readRss(),
     nodeVersion: process.version,
     peakRssBytes,
     pid: process.pid,
@@ -129,7 +174,7 @@ function createProcessMetadata(peakRssBytes: number): {
 function createProfilePayload(options: {
   completedAt: string;
   passed: boolean;
-  peakRssBytes: number;
+  peakRssBytes: number | undefined;
   run?: LiminaCheckRunSummary;
   trace?: object;
   state: ProfileSessionState;
@@ -162,63 +207,59 @@ function getProfilePath(namespace: LiminaArtifactNamespace): string {
   return path.join(namespace.rootDir, 'check', 'last-profile.json');
 }
 
-export async function createCheckProfileSession(options: {
+export function createCheckProfileSession(options: {
   artifactNamespace: LiminaArtifactNamespace;
+  buildInputHash: string | undefined;
   command: string;
   metrics: ProfilingMetricsRecorder;
-}): Promise<CheckProfileSession | undefined> {
-  if (process.env.LIMINA_PROFILE !== '1') {
-    return undefined;
-  }
-
-  const executableLogicalPath = path.resolve(process.argv[1] ?? '');
-  const packageLogicalPath = path.dirname(path.dirname(executableLogicalPath));
-  const runtime = await collectRuntimeTreeIdentity({
-    executableLogicalPath,
-    packageLogicalPath,
-  });
-  assertExpectedIdentity(runtime);
-
+  runtime: RuntimeTreeIdentity;
+}): CheckProfileSession {
   const state: ProfileSessionState = {
-    buildInputHash: readExpectedHash('LIMINA_PROFILE_BUILD_INPUT_HASH'),
+    buildInputHash: parseExpectedHash(
+      'LIMINA_PROFILE_BUILD_INPUT_HASH',
+      options.buildInputHash,
+    ),
     command: options.command,
     createdAt: new Date(
       performance.timeOrigin + performance.now(),
     ).toISOString(),
     metrics: options.metrics,
-    runtime,
+    runtime: options.runtime,
     startedAt: performance.now(),
   };
-  let peakRssBytes = process.memoryUsage.rss();
-  const sampler = setInterval(() => {
-    peakRssBytes = Math.max(peakRssBytes, process.memoryUsage.rss());
-  }, RSS_SAMPLE_INTERVAL_MS);
+  let peakRssBytes = readRss();
+  function sampleRss(): void {
+    const rss = readRss();
+    if (rss !== undefined) peakRssBytes = Math.max(peakRssBytes ?? 0, rss);
+  }
+  const sampler = setInterval(sampleRss, RSS_SAMPLE_INTERVAL_MS);
   sampler.unref();
 
   return Object.freeze({
-    async finish(result: {
+    freeze(result: {
       passed: boolean;
       run?: LiminaCheckRunSummary;
       trace?: object;
-    }): Promise<void> {
+    }): () => Promise<void> {
       clearInterval(sampler);
-      peakRssBytes = Math.max(peakRssBytes, process.memoryUsage.rss());
+      sampleRss();
       const completedAt = new Date(
         performance.timeOrigin + performance.now(),
       ).toISOString();
-      await writeJsonAtomically(
-        options.artifactNamespace,
-        getProfilePath(options.artifactNamespace),
-        createProfilePayload({
-          completedAt,
-          passed: result.passed,
-          peakRssBytes,
-          run: result.run,
-          trace: result.trace,
-          state,
-        }),
-      );
+      const payload = createProfilePayload({
+        completedAt,
+        passed: result.passed,
+        peakRssBytes,
+        run: result.run,
+        trace: result.trace,
+        state,
+      });
+      return () =>
+        writeJsonAtomically(
+          options.artifactNamespace,
+          getProfilePath(options.artifactNamespace),
+          payload,
+        );
     },
-    metrics: options.metrics,
   });
 }

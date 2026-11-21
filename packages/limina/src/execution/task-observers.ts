@@ -1,3 +1,4 @@
+import type { AnalysisObserver } from '../application/analysis/observability';
 import type { CheckRunRecorder } from '../check-reporting/run-recorder';
 import type { LiminaFlowTreeNode } from '../flow';
 import type { ExecutionTask, TaskLifecycleEvent } from './tasks';
@@ -117,4 +118,43 @@ export async function projectRecorderAndFlow(options: {
 
 export function ignoreError(error: unknown): void {
   String(error);
+}
+export async function runObservedTask<T>(options: {
+  observer: AnalysisObserver;
+  operation: 'execution.standalone-action' | 'execution.task-runner';
+  taskId: string;
+  execute: () => Promise<T>;
+  isPassed: (value: T) => boolean;
+}): Promise<T> {
+  const { observer, execute } = options;
+  let work: string;
+  try {
+    work = observer.start(options.operation, ['task', options.taskId]);
+  } catch {
+    return execute();
+  }
+  let hasEnteredRunner = false;
+  let outcome: 'performed' | 'failed' | 'cancelled' = 'failed';
+  try {
+    const result = await observer.inWork(work, () => {
+      hasEnteredRunner = true;
+      return execute();
+    });
+    outcome = options.isPassed(result) ? 'performed' : 'failed';
+    return result;
+  } catch (error) {
+    if (hasEnteredRunner) throw error;
+    outcome = 'cancelled';
+    return execute();
+  } finally {
+    try {
+      observer.finish(
+        work,
+        outcome,
+        outcome === 'cancelled' ? 'profile-scope-unavailable' : undefined,
+      );
+    } catch {
+      // Profiling does not own the task outcome.
+    }
+  }
 }

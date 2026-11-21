@@ -7,8 +7,10 @@ import {
 } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toPosixPath, toRelativePath } from '#utils/path';
+import { currentProfile } from '../../application/analysis/observability';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import { observeAsyncWork, observeWork } from '../analysis-profile';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { retainAnalysisFailure } from './analysis-failure';
@@ -125,10 +127,18 @@ export async function discoverCheckerOwnership(options: {
   workspaceSourceConfigPaths: readonly string[];
   projectDependencyCaches?: ProjectDependencyCaches;
 }): Promise<CheckerOwnershipDiscovery> {
-  const { namedSelections, activeEntryPaths } = await resolveOwnershipEntries({
-    config: options.config,
-    sourceConfigPaths: options.workspaceSourceConfigPaths,
-  });
+  const observer = currentProfile();
+  const { namedSelections, activeEntryPaths } = await observeAsyncWork(
+    observer,
+    'checker-entry-selection',
+    () =>
+      resolveOwnershipEntries({
+        config: options.config,
+        sourceConfigPaths: options.workspaceSourceConfigPaths,
+      }),
+  );
+  for (const configPath of activeEntryPaths)
+    observer?.project(configPath, { entry: true, seenVia: 'entry-selection' });
   const collectionProblems: string[] = [];
   const inputFailures = new Map<string, Error>();
   const explicitOwnerByEntryPath = createExplicitOwnerByEntryPath({
@@ -136,19 +146,22 @@ export async function discoverCheckerOwnership(options: {
     config: options.config,
     selections: namedSelections,
   });
-  const scopes = collectOwnershipScopes({
-    onInputError: (configPath, error) => {
-      if (!inputFailures.has(configPath)) inputFailures.set(configPath, error);
-    },
-    onProblems: (problems) => {
-      collectionProblems.push(...problems);
-    },
-    activatedRegions: options.activatedRegions,
-    config: options.config,
-    entryConfigPaths: activeEntryPaths,
-    explicitOwnerByEntryPath,
-    projectConfigCache: options.projectConfigCache,
-  });
+  const scopes = observeWork(observer, 'checker-scope-discovery', () =>
+    collectOwnershipScopes({
+      onInputError: (configPath, error) => {
+        if (!inputFailures.has(configPath))
+          inputFailures.set(configPath, error);
+      },
+      onProblems: (problems) => {
+        collectionProblems.push(...problems);
+      },
+      activatedRegions: options.activatedRegions,
+      config: options.config,
+      entryConfigPaths: activeEntryPaths,
+      explicitOwnerByEntryPath,
+      projectConfigCache: options.projectConfigCache,
+    }),
+  );
   const projectByConfigPath = createProjectByConfigPath(scopes);
   const cache = options.cache ?? options.projectDependencyCaches?.analysisCache;
   for (const project of projectByConfigPath.values()) {
@@ -159,15 +172,17 @@ export async function discoverCheckerOwnership(options: {
     directReferences: createDirectSolutionReferences(scopes),
     projectByConfigPath,
   });
-  const authorities = resolveSourceConfigAuthorities({
-    restoreOnly: options.restoreOnly,
-    cache,
-    config: options.config,
-    namedSelections,
-    plan,
-    projects: projectByConfigPath,
-    scopes,
-  });
+  const authorities = observeWork(observer, 'checker-semantic-authority', () =>
+    resolveSourceConfigAuthorities({
+      restoreOnly: options.restoreOnly,
+      cache,
+      config: options.config,
+      namedSelections,
+      plan,
+      projects: projectByConfigPath,
+      scopes,
+    }),
+  );
   collectionProblems.push(...authorities.problems);
   const baseline = options.restoreOnly
     ? undefined
@@ -195,6 +210,33 @@ export async function discoverCheckerOwnership(options: {
     (entryPath) =>
       plan.typeConfigs.has(entryPath) || plan.solutions.has(entryPath),
   );
+  if (observer !== undefined) {
+    for (const configPath of plan.typeConfigs.keys())
+      observer.project(configPath, {
+        role: 'source',
+        seenVia: 'checker-ownership',
+      });
+    for (const configPath of plan.solutions.keys()) {
+      const project = observer.project(configPath, {
+        role: 'solution',
+        seenVia: 'checker-ownership',
+      });
+      observer.notRun(
+        'native-baseline-context',
+        ['project', project],
+        'organizing-solution',
+      );
+    }
+    for (const configPath of inputFailures.keys())
+      observer.project(configPath, { seenVia: 'config-input-failure' });
+    if (
+      inputFailures.size === 0 &&
+      collectionProblems.length === 0 &&
+      authorities.complete &&
+      sourceCoverage?.universe.discovery !== 'open'
+    )
+      observer.inventoryComplete();
+  }
   registerCoreWork(options.projectDependencyCaches, projectByConfigPath);
   if (options.projectDependencyCaches !== undefined) {
     for (const [configPath, error] of inputFailures) {

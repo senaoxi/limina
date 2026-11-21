@@ -1,6 +1,8 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
+import { currentProfile } from '../../application/analysis/observability';
+import { observeWork, profileContextScope } from '../analysis-profile';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
 import { observeNativeReferenceMapping } from '../typescript-semantic/reference-redirect';
@@ -20,12 +22,19 @@ export function observeNativeImplementationCandidate(
   input: DeclarationCandidateInput,
 ): DeclarationCandidateObservation {
   const proof = proveNativeImplementationMappings(input);
+  const observer = currentProfile();
   if (proof !== undefined) {
     input.metrics?.record({
       name: 'declaration-candidate',
       kind: 'compiler-membership',
       count: 1,
     });
+    if (observer !== undefined)
+      observer.notRun(
+        'native-program-create',
+        ['project', observer.project(input.sourceConfig)],
+        'compiler-membership-proof',
+      );
     return observation(input, proof);
   }
   const system = observedCompilerSystem(ts, input.generatedConfig);
@@ -59,12 +68,26 @@ export function observeNativeImplementationCandidate(
     // Only configuration parsing may read file content in this observer.
   };
   const start = performance.now();
-  const program = ts.createProgram({
-    rootNames: input.parsed.fileNames,
-    options: input.parsed.options,
-    projectReferences: input.parsed.projectReferences,
-    host,
+  const scope = profileContextScope(observer, {
+    instance: input,
+    configPath: input.sourceConfig,
+    checker: input.checker,
+    provider: 'typescript',
+    role: 'implementation-reference',
   });
+  const program = observeWork(
+    observer,
+    'native-program-create',
+    () =>
+      ts.createProgram({
+        rootNames: input.parsed.fileNames,
+        options: input.parsed.options,
+        projectReferences: input.parsed.projectReferences,
+        host,
+      }),
+    scope,
+    1,
+  );
   input.metrics?.record({
     name: 'bounded-program-create',
     kind: 'implementation-reference',

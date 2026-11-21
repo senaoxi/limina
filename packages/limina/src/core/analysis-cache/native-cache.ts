@@ -35,6 +35,11 @@ import { installationObservers } from './installation-domain';
 import { subscribeInstallationDomains } from './installation-environment';
 import type { InstallationLockGate } from './installation-gate';
 import { AnalysisInvalidation } from './invalidation';
+import {
+  type CacheOrigin,
+  recordCacheHit,
+  recordCacheMiss,
+} from './profile-decisions';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
 import { ResolvedConfigRecords } from './resolved-config-records';
 import { SemanticState } from './semantic-state';
@@ -88,6 +93,8 @@ export class NativeAnalysisCache {
   readonly configVersion: string | undefined;
   readonly configModules: ConfigModuleSnapshot;
   readonly previous: AnalysisSnapshot | undefined;
+  readonly previousOrigin: CacheOrigin;
+  snapshotDecision?: string;
   constructor(
     identity: string,
     previous?: AnalysisSnapshot,
@@ -98,6 +105,7 @@ export class NativeAnalysisCache {
     this.configVersion = config.configVersion;
     this.configModules = config.configModules;
     this.previous = config.previous;
+    this.previousOrigin = config.previousOrigin ?? 'unknown';
     const state = this.previous ?? emptySnapshot(identity, this.configVersion);
     const baselineTime = this.previous?.header.baselineTime;
     this.inputs = new AnalysisInputs(
@@ -113,6 +121,7 @@ export class NativeAnalysisCache {
       state.resolvedConfigs,
       this.metrics,
       (paths) => this.inputs.configCurrent(paths),
+      this.previousOrigin,
     );
     this.installationGate = config.installationGate;
     if (this.installationGate !== undefined) {
@@ -134,12 +143,14 @@ export class NativeAnalysisCache {
       previousReceipt: (id, key) =>
         state.contexts[id]?.native?.queryReceipts?.[key],
       dirty: this.invalidation.resolutionDirty,
+      origin: this.previousOrigin,
     });
     this.#facts = new ImporterFacts({
       inputs: this.inputs,
       metrics: this.metrics,
       previous: state.importers,
       dirty: this.invalidation.semanticDirty,
+      origin: this.previousOrigin,
     });
     this.queries = this.#resolutions.records;
     this.retainedQueryIds = this.#resolutions.retained;
@@ -264,6 +275,7 @@ export class NativeAnalysisCache {
         : this.inputs.observe(file, 'content').expectedVersion;
     const memo = this.#syntaxMemo(project);
     let facts = memo.get(file);
+    const isInMemory = facts !== undefined;
     if (
       facts === undefined &&
       project !== undefined &&
@@ -275,6 +287,17 @@ export class NativeAnalysisCache {
       facts.physicalVersion !== physicalVersion ||
       facts.compilerVersion !== ts.version
     ) {
+      recordCacheMiss(
+        'native-syntax',
+        facts === undefined
+          ? 'syntax-witness-or-record-absent'
+          : facts.sourceVersion === version
+            ? facts.physicalVersion === physicalVersion
+              ? 'syntax-compiler-changed'
+              : 'syntax-physical-input-changed'
+            : 'syntax-text-changed',
+        { file, absent: facts === undefined || undefined },
+      );
       if (physicalVersion !== undefined) {
         const witnessed = this.inputs.sourceTextVersion(
           file,
@@ -290,7 +313,14 @@ export class NativeAnalysisCache {
       if (physicalVersion !== undefined)
         facts.physicalVersion = physicalVersion;
       this.increment('syntaxFactBuilds');
-    } else this.increment('syntaxFactHits');
+    } else {
+      this.increment('syntaxFactHits');
+      recordCacheHit(
+        'native-syntax',
+        isInMemory ? 'invocation-memory' : this.previousOrigin,
+        file,
+      );
+    }
     memo.set(file, facts);
     // Only neutral text facts cross contexts. Current Programs still own their
     // requests, resolutions and proof; no caller can mutate this private memo.
@@ -304,16 +334,39 @@ export class NativeAnalysisCache {
   }
   readSourceSyntax(file: string): ImportRecord[] | undefined {
     const facts = this.files[file];
-    if (facts === undefined || facts.compilerVersion !== ts.version)
+    if (facts === undefined || facts.compilerVersion !== ts.version) {
+      recordCacheMiss(
+        'native-source-syntax',
+        facts === undefined
+          ? 'source-syntax-record-absent'
+          : 'syntax-compiler-changed',
+        { file, absent: facts === undefined || undefined },
+      );
       return undefined;
-    if (this.#syntaxProofs.get(file) !== nativeFingerprint(facts))
+    }
+    if (this.#syntaxProofs.get(file) !== nativeFingerprint(facts)) {
+      recordCacheMiss('native-source-syntax', 'syntax-witness-invalid', {
+        file,
+      });
       return undefined;
+    }
     if (
       this.inputs.observe(file, 'content').expectedVersion !==
       facts.physicalVersion
-    )
+    ) {
+      recordCacheMiss('native-source-syntax', 'syntax-physical-input-changed', {
+        file,
+      });
       return undefined;
+    }
     this.increment('sourceSyntaxHits');
+    recordCacheHit(
+      'native-source-syntax',
+      this.previous?.files[file] === facts
+        ? this.previousOrigin
+        : 'invocation-memory',
+      file,
+    );
     return structuredClone(
       facts.requests
         .filter((request) => !request.externalModuleOnly)
@@ -397,10 +450,12 @@ export class NativeAnalysisCache {
   restoreContext(
     project: TypeScriptSemanticProject,
     replay?: EpochInputReplay,
+    onMiss?: (decision: string) => void,
   ): TypeScriptSemanticDependencyContext | undefined {
     return this.#contexts.restore(
       project,
       replay ?? this.resolvedConfigs.replay(),
+      onMiss,
     );
   }
   restoreQuery(id: string, record: ResolutionRecord): void {

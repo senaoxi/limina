@@ -11,6 +11,11 @@ import type {
 import { normalizeSlashes, toRelativePath } from '#utils/path';
 import { prependPathEntry, shouldUseShellForCommand } from '#utils/process';
 import path from 'pathe';
+import { currentProfile } from '../application/analysis/observability';
+import type {
+  CheckerHostSpawnMeasurement,
+  CheckerHostSpawnSpec,
+} from './host-protocol';
 import { runCheckerSpawnMeasured } from './process-host';
 import {
   createCheckerTargetId,
@@ -215,7 +220,8 @@ export function createDefaultRunner(
       target.executionRootDir,
       target.cwd,
     );
-    const measurement = await runCheckerSpawnMeasured(
+    const measurement = await observeCheckerProcess(
+      target,
       {
         args: target.args,
         command: target.command,
@@ -235,6 +241,48 @@ export function createDefaultRunner(
       status: measurement.status,
     });
   };
+}
+
+function observeCheckerProcess(
+  target: TypecheckTarget,
+  spec: CheckerHostSpawnSpec,
+  options: NonNullable<Parameters<typeof runCheckerSpawnMeasured>[1]>,
+): Promise<CheckerHostSpawnMeasurement> {
+  const observer = currentProfile();
+  if (observer === undefined) return runCheckerSpawnMeasured(spec, options);
+  const source = target.sourceConfigPath;
+  const scope =
+    source !== undefined &&
+    (target.checkerFamily !== undefined || source !== target.configPath)
+      ? (['project', observer.project(source)] as const)
+      : observer.currentScope;
+  if (options.signal?.aborted) {
+    observer.notRun('checker-process', scope, 'cancelled-before-spawn');
+    return runCheckerSpawnMeasured(spec, options);
+  }
+  const work = observer.start('checker-process', scope);
+  return observer.inWork(work, async () => {
+    try {
+      const result = await runCheckerSpawnMeasured(spec, options);
+      const isCancelled =
+        result.error !== undefined &&
+        (result.error.name === 'AbortError' ||
+          result.error === options.signal?.reason);
+      observer.finish(
+        work,
+        isCancelled
+          ? 'cancelled'
+          : result.status === 0
+            ? 'performed'
+            : 'failed',
+        isCancelled ? 'checker-cancelled' : 'checker-exit',
+      );
+      return result;
+    } catch (error) {
+      observer.finish(work, 'failed', 'checker-process-error');
+      throw error;
+    }
+  });
 }
 
 /**

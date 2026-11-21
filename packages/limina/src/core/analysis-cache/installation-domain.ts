@@ -61,6 +61,8 @@ export function observeInstallationDomain(
     readInstallationDomain(options)
   );
 }
+export class MissingInstallationLockError extends Error {}
+
 export function readInstallationDomain(options: {
   root: string;
   configPath: string;
@@ -75,7 +77,7 @@ export function readInstallationDomain(options: {
   observeLockCandidates(candidates, options.inputs, dependencies);
   const locks = candidates.filter(isLockFile);
   if (locks.length === 0)
-    throw new Error(
+    throw new MissingInstallationLockError(
       `Usable ${binding.manager} lockfile missing: ${binding.lockRoot}`,
     );
   if (options.readLocks === undefined) {

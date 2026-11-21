@@ -2,6 +2,10 @@ import { renameSync } from 'node:fs';
 import { mkdir, rename, symlink, writeFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  AnalysisObserver,
+  runWithProfile,
+} from '../application/analysis/observability';
 import { ANALYSIS_SCHEMA } from '../core/analysis-cache/contracts';
 import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
@@ -108,6 +112,93 @@ function config(files: string[], extra: Record<string, unknown> = {}): string {
 }
 
 describe('compiler-owned Native Program observations', () => {
+  it('attributes pending and locked compiler passes to the source leaf of a selected solution', async () => {
+    const fixture = await createSemanticRepairFixture({
+      'package.json': '{}',
+      'limina.config.mjs': 'export default {};',
+      'tsconfig.json': JSON.stringify({
+        files: [],
+        references: [{ path: './tsconfig.leaf.json' }],
+      }),
+      'tsconfig.leaf.json': JSON.stringify({
+        compilerOptions: { ...compilerOptions, noLib: true },
+        files: ['source.ts'],
+      }),
+      'source.ts': 'export const value = 1;',
+    });
+    cleanups.push(fixture.cleanup);
+    const input = withFixtureGovernanceRoot({
+      configPath: fixture.path('limina.config.mjs'),
+      rootDir: fixture.root,
+    });
+    const observer = new AnalysisObserver(
+      'graph dependency analysis',
+      performance.now(),
+    );
+    observer.setRoot(fixture.root);
+    const providerRun = observer.provider({}, 2, 3, 'test');
+    const analysis = await runWithProfile(observer, () =>
+      observer.withProviderRun(providerRun, () =>
+        analyzeProjectDependencies(input, {
+          artifactNamespace: createLiminaArtifactNamespace({
+            generation: 0,
+            rootDir: fixture.root,
+          }),
+        }),
+      ),
+    );
+    observer.stop(analysis.complete);
+
+    const profile = observer.snapshot();
+    const solution = profile.projects.find(
+      ({ path }) => path === 'tsconfig.json',
+    );
+    const leaf = profile.projects.find(
+      ({ path }) => path === 'tsconfig.leaf.json',
+    );
+    expect(solution).toMatchObject({ entry: true, role: 'solution' });
+    expect(leaf).toMatchObject({ role: 'source', executionChecker: 'tsc' });
+    const contexts = profile.contexts.filter(
+      (context) => context.provider === 'typescript',
+    );
+    expect(contexts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          project: leaf!.id,
+          providerRun,
+          role: 'pending',
+        }),
+        expect.objectContaining({
+          project: leaf!.id,
+          providerRun,
+          role: 'locked',
+        }),
+      ]),
+    );
+    expect(contexts.some((context) => context.project === solution!.id)).toBe(
+      false,
+    );
+    for (const context of contexts) {
+      if (context.role !== 'pending' && context.role !== 'locked') continue;
+      const passes = profile.work.filter(
+        (work) =>
+          work.op === 'native-program-create' && work.scope[1] === context.id,
+      );
+      expect(passes.length).toBeGreaterThan(0);
+      expect(passes.map(({ pass }) => pass)).toEqual(
+        passes.map((_, index) => index + 1),
+      );
+      expect(passes.every(({ end }) => end === 'computed')).toBe(true);
+    }
+    expect(profile.work).toContainEqual(
+      expect.objectContaining({
+        op: 'native-baseline-context',
+        scope: ['project', solution!.id],
+        end: 'not-run',
+      }),
+    );
+  });
+
   it('retains uncovered declarations without claiming their uncovered implementation relation is complete', async () => {
     const { adapter } = await setup({
       'tsconfig.json': config(['main.ts'], {

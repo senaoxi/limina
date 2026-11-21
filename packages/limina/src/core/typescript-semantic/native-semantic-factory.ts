@@ -22,6 +22,7 @@ export function createNativeSemanticContext(
         cache,
       ),
       metrics,
+      profileRole: 'type-evidence' as const,
     };
     cache?.recordProgram();
     return {

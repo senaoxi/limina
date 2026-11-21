@@ -1,10 +1,12 @@
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
+import { currentProfile } from '../../application/analysis/observability';
 import type {
   NativeEvidenceFailure,
   NativeEvidenceSnapshot,
 } from '../../domain/analysis/native-evidence';
 import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import { observeWork, profileContextScope } from '../analysis-profile';
 import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
@@ -33,7 +35,11 @@ export function collectNativeSourceEvidence(
     ) => void;
   },
 ): NativeEvidenceSnapshot {
-  const universe = discoverNativeSourceUniverse(input);
+  const universe = observeWork(
+    currentProfile(),
+    'native-source-discovery',
+    () => discoverNativeSourceUniverse(input),
+  );
   const snapshots: NativeEvidenceSnapshot[] = [];
   const failures: NativeEvidenceFailure[] = [...universe.failures];
   const boundary = createWorkspaceSourceBoundary(
@@ -79,10 +85,51 @@ function sourceContext(
   >,
   project: TypeScriptSemanticProject,
 ): TypeScriptSemanticDependencyContext {
-  return (
-    input.analysisCache?.restoreContext(project) ??
-    createNativeDependencyContext(project, input.analysisCache, input.metrics)
-  );
+  const observer = currentProfile();
+  if (observer === undefined)
+    return (
+      input.analysisCache?.restoreContext(project) ??
+      createNativeDependencyContext(project, input.analysisCache, input.metrics)
+    );
+  const projectId = observer.project(project.configPath, {
+    seenVia: 'native-baseline',
+  });
+  const work = observer.start('native-baseline-context', [
+    'project',
+    projectId,
+  ]);
+  return observer.inWork(work, () => {
+    try {
+      const restored = input.analysisCache?.restoreContext(project);
+      const context =
+        restored ??
+        createNativeDependencyContext(
+          project,
+          input.analysisCache,
+          input.metrics,
+        );
+      if (restored !== undefined)
+        profileContextScope(observer, {
+          instance: restored,
+          configPath: project.configPath,
+          checker: 'tsc',
+          provider: 'typescript',
+          role: 'pending-restored',
+        });
+      observer.finish(
+        work,
+        restored === undefined
+          ? context.nativeEvidence?.run === 'completed'
+            ? 'computed'
+            : 'failed'
+          : 'restored',
+      );
+      return context;
+    } catch (error) {
+      observer.finish(work, 'failed');
+      throw error;
+    }
+  });
 }
 
 function mergeSourceEvidence(

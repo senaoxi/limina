@@ -8,12 +8,21 @@ import { cloneCompilerOptions } from '#utils/compiler-options';
 import path from 'node:path';
 import type ts from 'typescript';
 import {
+  currentProfile,
+  type ProfileScope,
+} from '../../application/analysis/observability';
+import {
   createVueOverlaySystem,
   parseVueConfigWithToolchain,
 } from '../../checker/vue-semantic-identity';
 import { createUnsupportedVueToolchainCompatibilityError } from '../../checker/vue-semantic-toolchain';
 import { observeVueExecutionSystem } from '../analysis-cache/vue-execution-inputs';
 import type { VueInputTrace } from '../analysis-cache/vue-inputs';
+import {
+  observeWork,
+  priorProfileContextScope,
+  profileContextScope,
+} from '../analysis-profile';
 import { declarationLoadingCeiling } from '../declaration-governance/loading';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
@@ -327,18 +336,47 @@ export class VueSemanticContext {
   }
 
   #createProgram(): ts.Program {
+    const observer = currentProfile();
+    const scope = this.profileScope(observer);
+    let pass = 0;
     do {
       this.#boundedHost.begin();
-      const program = createMeasuredProgram({
+      const request = {
         languageService: this.languageService,
         observer: this.#onProgramCreated,
-      });
+      };
+      const program =
+        observer === undefined
+          ? createMeasuredProgram(request)
+          : observeWork(
+              observer,
+              'vue-program-create',
+              () => createMeasuredProgram(request),
+              scope,
+              ++pass,
+              'computed',
+            );
       if (!this.#boundedHost.needsRebuild()) return program;
       this.languageService.dispose();
       this.languageService = this.tsModule.createLanguageService(
         this.#boundedHost.host,
       );
     } while (true);
+  }
+
+  profileScope(
+    observer: ReturnType<typeof currentProfile>,
+  ): ProfileScope | undefined {
+    if (observer === undefined) return undefined;
+    return profileContextScope(observer, {
+      instance: this,
+      configPath:
+        this.identity.declarationLoading?.sourceConfig ??
+        this.identity.configPath,
+      checker: 'vue-tsc',
+      provider: 'vue',
+      role: this.identity.declarationLoading?.purpose ?? 'source',
+    });
   }
 
   get program(): ts.Program {
@@ -381,15 +419,23 @@ export class VueSemanticContext {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
-    this.#program = undefined;
-    this.compilerRequests.dispose();
-    this.#semanticSourceFiles.clear();
-    this.#texts.clear();
-    disposeLanguage({
-      language: this.language,
-      languageService: this.languageService,
-      scriptRegistry: this.#scriptRegistry,
-      snapshots: this.#snapshots,
-    });
+    const observer = currentProfile();
+    observeWork(
+      observer,
+      'vue-context-dispose',
+      () => {
+        this.#program = undefined;
+        this.compilerRequests.dispose();
+        this.#semanticSourceFiles.clear();
+        this.#texts.clear();
+        disposeLanguage({
+          language: this.language,
+          languageService: this.languageService,
+          scriptRegistry: this.#scriptRegistry,
+          snapshots: this.#snapshots,
+        });
+      },
+      priorProfileContextScope(observer, this),
+    );
   }
 }

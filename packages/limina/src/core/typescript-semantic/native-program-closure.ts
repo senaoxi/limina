@@ -1,5 +1,10 @@
 import type ts from 'typescript';
+import {
+  type AnalysisObserver,
+  currentProfile,
+} from '../../application/analysis/observability';
 import type { NativeEvidenceFailure } from '../../domain/analysis/native-evidence';
+import { observeWork, profileContextScope } from '../analysis-profile';
 import { measureBoundedProgram } from './metrics';
 import type { NativeProgramObservationOptions } from './native-observation-adapter';
 import { initializeNativeCompiler } from './native-observation-failure';
@@ -29,6 +34,13 @@ export function createBoundedProgramClosure(
   failures: NativeEvidenceFailure[];
 } {
   const { project, context } = options;
+  const observer = currentProfile();
+  observer?.runtime({ typescript: compiler.version });
+  const scope =
+    observer === undefined
+      ? undefined
+      : nativeProgramProfileScope(observer, options);
+  let pass = 0;
   const configReads: string[] = [];
   const failures: NativeEvidenceFailure[] = [];
   const loads = new NativeProgramLoads({
@@ -56,18 +68,44 @@ export function createBoundedProgramClosure(
       contextId: context.id,
       failures,
     });
+    const create = () =>
+      initializeNativeCompiler(() =>
+        compiler.createProgram({
+          rootNames: [...project.fileNames],
+          options: project.options,
+          projectReferences: project.projectReferences,
+          host,
+        }),
+      );
+    const passNumber = observer === undefined ? undefined : ++pass;
     const rawProgram = measureBoundedProgram(
-      () =>
-        initializeNativeCompiler(() =>
-          compiler.createProgram({
-            rootNames: [...project.fileNames],
-            options: project.options,
-            projectReferences: project.projectReferences,
-            host,
-          }),
-        ),
+      observer === undefined
+        ? create
+        : () =>
+            observeWork(
+              observer,
+              'native-program-create',
+              create,
+              scope,
+              passNumber,
+              'computed',
+            ),
       options.metrics,
     );
+    if (observer !== undefined && scope !== undefined) {
+      observer.metric(
+        'program-roots',
+        scope,
+        'items',
+        project.fileNames.length,
+      );
+      observer.metric(
+        'program-source-files',
+        scope,
+        'items',
+        rawProgram.getSourceFiles().length,
+      );
+    }
     program = nativeObservedProgram(
       rawProgram,
       compiler,
@@ -97,6 +135,29 @@ export function createBoundedProgramClosure(
     ),
   );
   return { program, modules, requests, loads, configReads, failures };
+}
+
+function nativeProgramProfileScope(
+  observer: AnalysisObserver,
+  { project, context, profileRole }: NativeProgramObservationOptions,
+) {
+  const declaration = project.declarationContextValidation;
+  return profileContextScope(observer, {
+    instance: context,
+    configPath:
+      declaration?.sourceConfig ??
+      project.sourceConfigPath ??
+      project.configPath,
+    checker: project.analysisBinding?.checker.replace(/:output$/u, '') ?? 'tsc',
+    provider: 'typescript',
+    role:
+      declaration === undefined
+        ? (profileRole ??
+          (project.analysisBinding?.checker.endsWith(':output')
+            ? 'output-projection'
+            : (project.analysisBinding?.phase ?? 'dependency')))
+        : 'declaration-candidate',
+  });
 }
 
 function registerInventoryLoads(

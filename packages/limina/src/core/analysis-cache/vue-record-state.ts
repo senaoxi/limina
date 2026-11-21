@@ -111,23 +111,34 @@ export class VueRecordState {
   }
 }
 
-export function isCurrentVueRecord(
+export function vueRecordRejection(
   cache: NativeAnalysisCache,
   identity: VueProjectSemanticIdentity,
   record: VueContextRecord,
-): boolean {
-  const valid = [
-    record.complete,
-    !cache.inputs.domainDirty,
-    cache.inputs.configCurrent(
-      identity.configClosure.map(({ filePath }) => filePath),
-    ),
-    analysisHash(record.identity) === analysisHash(vueDataIdentity(identity)),
-    record.dependencies.every((input) => cache.inputs.valid(input)),
-  ];
-  return (
-    valid.every(Boolean) && isCurrentVueEnvironment(cache, identity, record)
-  );
+): string | undefined {
+  const checks = [
+    ['vue-context-incomplete', record.complete],
+    ['manifest-domain-changed', !cache.inputs.domainDirty],
+    [
+      'vue-config-closure-changed',
+      cache.inputs.configCurrent(
+        identity.configClosure.map(({ filePath }) => filePath),
+      ),
+    ],
+    [
+      'vue-context-identity-changed',
+      analysisHash(record.identity) === analysisHash(vueDataIdentity(identity)),
+    ],
+    [
+      'vue-context-input-stale',
+      record.dependencies.every((input) => cache.inputs.valid(input)),
+    ],
+  ] as const;
+  const rejection = checks.find(([, valid]) => !valid)?.[0];
+  if (rejection !== undefined) return rejection;
+  return isCurrentVueEnvironment(cache, identity, record)
+    ? undefined
+    : 'vue-environment-unqualified';
 }
 function isCurrentVueEnvironment(
   cache: NativeAnalysisCache,

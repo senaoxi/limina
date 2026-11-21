@@ -1,11 +1,14 @@
+import type { ResolvedLiminaConfig } from '#config/runner';
 import type { cac } from 'cac';
 import path from 'pathe';
+import { currentProfile } from '../../application/analysis/observability';
 import {
   isRunGraphCheck,
   isRunGraphPrepare,
   runGraphExport,
 } from '../../commands/graph';
 import { stringifyDependencyGraph } from '../../dependency-graph/runner';
+import { runObservedTask } from '../../execution/task-observers';
 import { LiminaPreflightManager } from '../../preflight';
 import type { LiminaCheckIssue } from '../../source-check/snapshot';
 import { loadCliConfig, loadStandaloneContext } from '../command-runtime';
@@ -42,8 +45,10 @@ function getValidationDescriptor(action: GraphValidationAction) {
   };
 }
 
-async function runGraphExportAction(flags: GraphFlags): Promise<void> {
-  const config = await loadCliConfig(flags, 'graph');
+async function exportGraph(
+  config: ResolvedLiminaConfig,
+  flags: GraphFlags,
+): Promise<void> {
   const graph = await runGraphExport(config, {
     outputPath: flags.output
       ? path.resolve(process.cwd(), flags.output)
@@ -52,6 +57,39 @@ async function runGraphExportAction(flags: GraphFlags): Promise<void> {
   });
   if (flags.output === undefined) {
     process.stdout.write(stringifyDependencyGraph(graph));
+  }
+}
+
+async function runGraphExportAction(flags: GraphFlags): Promise<void> {
+  const config = await loadCliConfig(flags, 'graph');
+  const observer = currentProfile();
+  if (observer === undefined) {
+    await exportGraph(config, flags);
+    return;
+  }
+  observer.setPolicy(config.cache === false ? 'disabled' : 'read-only');
+  const taskId = 'standalone-task';
+  const startedAt = performance.now();
+  let isPassed = false;
+  try {
+    await runObservedTask({
+      observer,
+      operation: 'execution.standalone-action',
+      taskId,
+      execute: () => exportGraph(config, flags),
+      isPassed: () => true,
+    });
+    isPassed = true;
+  } finally {
+    try {
+      observer.task(taskId, {
+        name: 'graph:export',
+        runnerUs: Math.round((performance.now() - startedAt) * 1000),
+        state: isPassed ? 'passed' : 'failed',
+      });
+    } catch {
+      // Profiling does not own the export result.
+    }
   }
 }
 
@@ -66,6 +104,13 @@ async function isExecuteGraphValidation(options: {
   const { commandContext, config } = await loadStandaloneContext(
     options.flags,
     'graph',
+  );
+  currentProfile()?.setPolicy(
+    config.cache === false
+      ? 'disabled'
+      : options.action === 'prepare'
+        ? 'read-write'
+        : 'read-only',
   );
   const preflight = new LiminaPreflightManager({
     config,

@@ -1,6 +1,8 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { currentProfile } from '../../../application/analysis/observability';
+import { observeAsyncWork, observeWork } from '../../analysis-profile';
 import type { WorkspacePackage } from '../actions';
 import type { ExtendedPackageScope, WorkspaceRegionBoundary } from '../regions';
 import { collectPackageIsland } from './descriptors/island';
@@ -117,12 +119,17 @@ export async function collectWorkspaceInputSnapshot(options: {
     config: options.config,
     packages,
   });
-  const islands = await collectWorkspaceIslands({
-    config: options.config,
-    identities: packageIdentities,
-    packages,
-    rules,
-  });
+  const islands = await observeAsyncWork(
+    currentProfile(),
+    'workspace-island-discovery',
+    () =>
+      collectWorkspaceIslands({
+        config: options.config,
+        identities: packageIdentities,
+        packages,
+        rules,
+      }),
+  );
   const activatedPackageRoots = packages.map((workspacePackage) =>
     normalizeAbsolutePath(workspacePackage.directory),
   );
@@ -162,13 +169,18 @@ export async function collectValidatedWorkspaceContextFromSnapshot(options: {
   const packageBoundaries = islands.boundaries.filter(
     (boundary) => boundary.kind === 'package-scope',
   );
-  const stable = resolveStableDescriptors({
-    config: options.config,
-    explicitOutputs: declarations.explicitOutputs,
-    packageBoundaries,
-    packageOutputs: declarations.packageOutputs,
-    universe,
-  });
+  const stable = observeWork(
+    currentProfile(),
+    'workspace-region-projection',
+    () =>
+      resolveStableDescriptors({
+        config: options.config,
+        explicitOutputs: declarations.explicitOutputs,
+        packageBoundaries,
+        packageOutputs: declarations.packageOutputs,
+        universe,
+      }),
+  );
   validatePackageScopeExclusions({
     config: options.config,
     rules,
