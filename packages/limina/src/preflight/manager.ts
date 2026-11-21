@@ -12,6 +12,7 @@ import type {
   AnalysisMetricsRecorder,
   AnalysisRun,
 } from '../application/analysis/analysis-run';
+import type { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import type { FrameworkInferenceAmbiguity } from '../core/build-graph/core-collection-run';
 import {
   assertProducerBuildReceipt,
@@ -298,6 +299,14 @@ export class LiminaPreflightManager {
     this.#assertActive();
     this.#signal.throwIfAborted();
     this.#configuration.assertStable();
+  }
+  recordManagedOutput(
+    token: string,
+    path: string,
+    observation: EpochInputs,
+  ): void {
+    if (token === this.run.snapshotToken)
+      this.#analysisCache?.recordManagedOutput(path, observation);
   }
   async publishAnalysisCache(): Promise<void> {
     this.#signal.throwIfAborted();

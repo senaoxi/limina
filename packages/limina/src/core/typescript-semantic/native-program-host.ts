@@ -232,8 +232,10 @@ function referenceConfig(input: HostInputs, configPath: string) {
 
 export function createNativeProgramHost(input: HostInputs): ts.CompilerHost {
   const base = input.compiler.createCompilerHost(input.project.options);
-  applyNativeVirtualInputs(base, input.project.virtualFiles);
+  // Only physical fallbacks belong to the filesystem epoch. Staged answers
+  // are bound to the candidate plan and may materialize during this command.
   observeNativeHostInputs(base);
+  applyNativeVirtualInputs(base, input.project.virtualFiles);
   const host: ts.CompilerHost = {
     ...base,
     getSourceFile: (...arguments_) =>

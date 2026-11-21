@@ -43,11 +43,12 @@ export function nativeContextInputs(
   const sourceVersion = nativeFingerprint(
     project.fileNames.map((file) => [
       file,
-      readAnalysisInput(
-        file,
-        () => project.virtualFiles?.get(file) ?? ts.sys.readFile(file),
-        'typescript-content',
-      ),
+      project.virtualFiles?.get(file) ??
+        readAnalysisInput(
+          file,
+          () => ts.sys.readFile(file),
+          'typescript-content',
+        ),
     ]),
   );
   const authority = nativeAuthority(project);

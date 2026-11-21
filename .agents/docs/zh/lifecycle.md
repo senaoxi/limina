@@ -155,6 +155,8 @@ Discovery glob 回执比较返回路径 membership 的排序副本，不修改 r
 
 持久化发布前，默认 provider 集合释放可重建的依赖 collection memo。Compiler 事实、Coverage、输入观察与执行凭据继续保留；后续查询可从这些事实重建 collection。这避免在编码快照时同时保留 collection 副本。缓存编码仅共享私有拥有的不可变证据和规范记录表引用；调用方的可变数据仍须复制与校验。
 
+暂存文件或目录由候选计划提供。Native Host 只将回退到磁盘的读取登记为物理输入。若 Checker 随后写出了本世代此前观察过的输出，发布时会复核其他输入和写后的输出凭据；只有这些凭据均稳定时才放弃旧快照发布并返回已完成的命令结果。后续世代不能使用旧写入凭据。
+
 单次 receipt 编码在不同记录间复用每个私有已发布不可变 Native 值的规范视图。视图仍是普通编码数据，不取得已发布证据标记，因此嵌套 receipt 仍按正常流程解码。可变值与调用方自行冻结的值不使用该 memo。跨作用域重新映射时，各目标表也复用引用元组，而非按出现次数逐个分配。这些改动避免展开重复证明与引用，不新增持久化字段，也不改变校验、顺序、作用域本地／共享索引或新鲜度。[存储回归](../../../packages/limina/src/__tests__/analysis-cache-shards.spec.ts)在受限堆内存的子进程中验证重复私有证明、嵌套 receipt、不同 expected version 及跨作用域往返。
 
 [带标签数据校验](../../../packages/limina/src/core/analysis-cache/data-codec.ts)遍历与解码相同的语法，在完整模型校验时不构造随即丢弃的图副本。元组长度、标量类型、有限数字、嵌套条目和 object／map 重复键检查均保留。后续恢复通过私有不可变节点共享解码自己的图，重复引用无需重复构造。外部可变对象不会取得可复用的资格标记。[Codec 测试](../../../packages/limina/src/__tests__/analysis-data-codec.spec.ts)在两个入口比较合法嵌套值与畸形编码；该优化不跳过 schema 或语义资格校验。

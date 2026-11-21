@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -73,6 +73,38 @@ afterEach(async () => {
 });
 
 describe('project references public CLI integration', () => {
+  it('completes the first cached check when the checker emits an observed declaration', async () => {
+    const fixture = fixtureState.current!;
+    await writeFile(
+      fixture.configPath,
+      `export default ${JSON.stringify({
+        scope: {
+          source: { include: ['packages/**/*.ts'] },
+          checkers: { tsc: { include: ['tsconfig.json'] } },
+        },
+        source: { knip: false },
+      })};`,
+    );
+    await writeFile(
+      fixture.path('repo/packages/app/test/types.d.ts'),
+      'export interface LocalType { value: number }',
+    );
+    await writeFile(
+      fixture.path('repo/packages/app/test/index.test.ts'),
+      [
+        '/// <reference path="./types.d.ts" />',
+        "export { libraryValue } from '../src/index.js';",
+      ].join('\n'),
+    );
+    expectLiminaSuccess(await runFixtureLimina(fixture, ['check']));
+    const provider = fixture.path(
+      'repo/.limina/dts/checkers/tsc/packages/app/tsconfig.lib.json/index.d.ts',
+    );
+    expect(await readFile(provider, 'utf8')).toContain(
+      'export declare const libraryValue: "library";',
+    );
+  });
+
   it('expands nested solutions and builds both declaration leaves', async () => {
     const preparedFixture = fixtureState.current!;
     const rootSolutionPath = preparedFixture.path(

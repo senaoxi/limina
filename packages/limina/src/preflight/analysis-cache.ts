@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
 import { effectiveConfigVersion } from '../config/analysis-version';
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
+import type { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { analysisCacheIdentity } from './analysis-cache-identity';
@@ -16,6 +17,7 @@ export class AnalysisCacheController {
   readonly #configuration: ConfigObservation;
   readonly #metrics: AnalysisMetricsRecorder | undefined;
   #analyzed = false;
+  readonly #managedOutputs = new Map<string, EpochInputs>();
   readonly #canPublish: boolean;
   readonly #force: boolean;
   readonly #configVersion: string | undefined;
@@ -152,10 +154,28 @@ export class AnalysisCacheController {
       recordCacheMetric(metrics, `config-modules-${kind}`, value);
   }
 
+  async #validateManagedDrift(error: unknown): Promise<void> {
+    if (
+      !(error instanceof AnalysisInputDriftError) ||
+      !this.#managedOutputs.has(error.inputPath)
+    )
+      throw error;
+    // Discard this publication only. All other original reads must still
+    // agree, and every authorized output must match its post-run receipt.
+    const outputs = new Set(this.#managedOutputs.keys());
+    await this.cache.epoch.assertStable(outputs);
+    this.cache.inputs.assertStable(outputs);
+    this.assertConfigurationStable();
+    this.cache.installationGate?.assertStable();
+    for (const receipt of this.#managedOutputs.values())
+      await receipt.assertStable();
+  }
+
   refresh(reason?: 'producer-handoff'): void {
     this.assertConfigurationStable();
     this.#completeMetrics();
     this.cache = this.#refreshedCache(reason);
+    this.#managedOutputs.clear();
     this.#analyzed = false;
   }
 
@@ -179,23 +199,30 @@ export class AnalysisCacheController {
     }
   }
 
+  recordManagedOutput(path: string, observation: EpochInputs): void {
+    this.#managedOutputs.set(path, observation);
+  }
+
   /**
   Called after execution, outside retry; completed commands are never replayed.
   */
   async publish(): Promise<void> {
     this.assertConfigurationStable();
     if (!this.#analyzed) return;
-    if (!this.#canPublish) {
-      await this.cache.epoch.assertStable();
-      this.cache.installationGate?.assertStable();
-      this.cache.inputs.assertStable();
-      this.#reportMetrics();
-      return;
+    try {
+      if (this.#canPublish) {
+        await this.#store.publish(this.cache, async () => {
+          this.assertConfigurationStable();
+          await this.cache.epoch.assertStable();
+        });
+      } else {
+        await this.cache.epoch.assertStable();
+        this.cache.installationGate?.assertStable();
+        this.cache.inputs.assertStable();
+      }
+    } catch (error) {
+      await this.#validateManagedDrift(error);
     }
-    await this.#store.publish(this.cache, async () => {
-      this.assertConfigurationStable();
-      await this.cache.epoch.assertStable();
-    });
     this.#reportMetrics();
   }
 }

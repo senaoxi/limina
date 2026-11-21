@@ -213,7 +213,9 @@ export class ExecutionInputCoordinator {
     const roots = protectedInputPaths(this.#original);
     for (const file of outputs.difference(roots)) {
       this.#writes.add(file);
-      this.#outputObservations.set(file, observeManagedOutput(file));
+      const observation = observeManagedOutput(file);
+      this.#outputObservations.set(file, observation);
+      this.#preflight.recordManagedOutput(this.#snapshot, file, observation);
     }
     if (outputs.size === 0) return;
     this.#writeBatch += 1;

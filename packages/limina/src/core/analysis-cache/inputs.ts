@@ -417,13 +417,13 @@ export class AnalysisInputs {
     });
   }
 
-  assertStable(): void {
+  assertStable(managedOutputs?: ReadonlySet<string>): void {
     if (this.#drift !== undefined)
       throw new AnalysisInputDriftError(this.#drift);
     this.#assertConsumedVersions();
     new PathBindingReplay().run(() => {
       for (const input of Object.values(this.records))
-        this.#assertStoredInput(input);
+        if (!managedOutputs?.has(input.path)) this.#assertStoredInput(input);
     });
   }
 
