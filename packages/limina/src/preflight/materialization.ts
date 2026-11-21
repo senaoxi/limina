@@ -142,6 +142,26 @@ async function materializePreflightGraph(options: {
   slot: MaterializationSlot;
 }): Promise<MaterializationReceipt> {
   let graph = await options.getGraph();
+  // The prior root manifest is the recovery locator for retiring namespaces.
+  // Finish these before replacing it; active namespaces stay discoverable in
+  // the new manifest if one of their subsequent transactions is interrupted.
+  const retired = new Map<string, string>();
+  const initialAuxiliaries = graph.auxiliaryArtifacts ?? [];
+  for (const auxiliary of initialAuxiliaries) {
+    if (!auxiliary.retiring) continue;
+    await materializeGeneratedArtifactPlan(
+      auxiliary.namespace,
+      auxiliary.plan,
+      {
+        metrics: options.metrics,
+        replan: auxiliary.replan,
+      },
+    );
+    retired.set(
+      auxiliary.namespace.canonicalRootDir,
+      auxiliary.plan.desiredRevision,
+    );
+  }
   const materialized = await materializeGeneratedArtifactPlan(
     options.getNamespace(),
     graph.artifactPlan,
@@ -150,6 +170,17 @@ async function materializePreflightGraph(options: {
       replan: async () => {
         options.refreshProviders();
         graph = await options.getGraph();
+        const nextAuxiliaries = graph.auxiliaryArtifacts ?? [];
+        for (const auxiliary of nextAuxiliaries) {
+          if (
+            auxiliary.retiring &&
+            retired.get(auxiliary.namespace.canonicalRootDir) !==
+              auxiliary.plan.desiredRevision
+          )
+            throw new Error(
+              'Retiring artifact namespaces changed during root replan. Retry with a fresh graph.',
+            );
+        }
         return { namespace: options.getNamespace(), plan: graph.artifactPlan };
       },
     },
@@ -160,12 +191,14 @@ async function materializePreflightGraph(options: {
     );
   }
   const auxiliaryArtifacts = graph.auxiliaryArtifacts ?? [];
-  for (const auxiliary of auxiliaryArtifacts)
+  for (const auxiliary of auxiliaryArtifacts) {
+    if (auxiliary.retiring) continue;
     await materializeGeneratedArtifactPlan(
       auxiliary.namespace,
       auxiliary.plan,
-      { metrics: options.metrics },
+      { metrics: options.metrics, replan: auxiliary.replan },
     );
+  }
   return { changed: graph.changed, generation: options.slot.generation, graph };
 }
 

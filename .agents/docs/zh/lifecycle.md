@@ -241,6 +241,8 @@ Pending 受控补充发现仅属于当前 collection。[分析缓存](../../../p
 
 内部产物所有权清单与完整 manifest 分离。生产者准备保留其他阶段拥有的产物，不发布完整图 manifest。源目录下的检查配置使用各自认证的 namespace 和 plan，执行时与根 plan 一起持有读租约。完整图发布记录检查执行路径和声明绑定。生产者交接按冻结的权威和所有权字段值计算指纹，字段插入顺序不影响身份。有序根集、生成配置内容及声明的关系仍参与比较。运行时 producer receipt 与 namespace capability 不进入持久化图。受支持的 Native/Vue 缓存恢复与 Svelte 完整图冷回退保持分离。
 
+Svelte 子项目遇到未完成标记时，在该命名空间的写租约内重新读取自己的 ledger 和 revision，再用当前图选定的配置恢复。发生冲突时须以新图重试。已退出 scope 的子项目先完成清理，根 manifest 随后才移除定位信息；新的活动子项目则由已发布的根 manifest 定位。仅有部分写入和事务标记时也可恢复。
+
 [最终引用验证](../../../packages/limina/src/core/build-graph/reference-validation.ts)在 declaration、solution/wrapper、checker entry 与 output 引用全部写入后读取 staged tsconfig JSON。验证完成前，candidate admission 保持 unavailable。所有实际生成引用均参与，包括 implicitRefs；自引用和循环分量在创建 artifact plan 前被拒绝。Framework scheduling 本身不是 tsconfig reference；已准入的 Svelte 检查投影保留经独立证明的有效引用。同一验证器在缓存准入和 artifact 重新绑定前读取恢复后的 JSON，不信任已存储的 admitted 标志。Graph Check 共享循环算法并保留 `LIMINA_GRAPH_REFERENCE_CYCLE`；prepare、check 和 build 在此结构边界停止，不删除必要边。既有物化事务和旧产物保留独立的所有权合同。
 
 提前产生的循环 issue 保留按确定顺序排列的第一个 generated config 作为 `filePath`；仅当全部循环成员属于同一个 checker 时填写 `checkerName`。暂存与恢复验证都从图映射获取 checker 身份，不依赖生成路径的拼写；跨 checker 的循环不归属于某一个 checker。[Generated-graph 回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)、[恢复引用回归](../../../packages/limina/src/__tests__/reference-validation.spec.ts)和 [detector fixture](../../../packages/limina/fixtures/detectors/graph/reference-cycle-mutual/case.mts)保护结构化诊断归属，同时保留物化前拒绝。

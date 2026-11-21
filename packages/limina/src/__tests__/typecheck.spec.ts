@@ -24,6 +24,8 @@ import {
   runCheckerTypecheck as runCheckerTypecheckCommand,
   type RunCheckerTypecheckOptions,
 } from '../commands/typecheck';
+import { materializationMarkerRelativePath } from '../core/build-graph/materialization-state';
+import * as materializer from '../core/build-graph/materializer';
 import { TypecheckLogger } from '../logger';
 import { LiminaPreflightManager } from '../preflight';
 import type {
@@ -3521,6 +3523,63 @@ describe('runBuild', () => {
 });
 
 describe('runCheckerTypecheck', () => {
+  it('recovers an interrupted scoped Svelte check configuration in fresh preflight', async () => {
+    const fixture = await createFixture({
+      'svelte/src/App.svelte': '<p>ok</p>',
+      'svelte/tsconfig.json': tsconfig({
+        compilerOptions: { noLib: true, types: [] },
+        include: ['src/**/*.svelte'],
+      }),
+    });
+    const config = createLiminaConfig(fixture.rootDir);
+    const initial = new LiminaPreflightManager({ config });
+    const retry = new LiminaPreflightManager({ config });
+    const check = (preflight: LiminaPreflightManager) =>
+      runCheckerTypecheck({
+        config,
+        cwd: fixture.rootDir,
+        preflight,
+        runner: passingRunner(),
+      });
+    const scopedRoot = fixture.path('svelte/.limina');
+    const marker = fixture.path(
+      'svelte/.limina',
+      materializationMarkerRelativePath,
+    );
+    const materialize = materializer.materializeGeneratedArtifactPlan;
+    const writer = vi
+      .spyOn(materializer, 'materializeGeneratedArtifactPlan')
+      .mockImplementation((namespace, plan, options) =>
+        materialize(
+          namespace,
+          plan,
+          namespace.rootDir === scopedRoot
+            ? {
+                ...options,
+                removeMarker: async () => {
+                  throw new Error('interrupted finalization');
+                },
+              }
+            : options,
+        ),
+      );
+    try {
+      await expect(check(initial)).rejects.toThrow('interrupted finalization');
+      writer.mockRestore();
+      expect(existsSync(marker)).toBe(true);
+      expect((await check(retry)).passed).toBe(true);
+      expect(existsSync(marker)).toBe(false);
+      expect(
+        existsSync(fixture.path('svelte/.limina/check/tsconfig.check.json')),
+      ).toBe(true);
+    } finally {
+      writer.mockRestore();
+      initial.dispose();
+      retry.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   it.each([0, 1])(
     'runs framework-owned checker entries with exit status %s and original diagnostic identity',
     async (status) => {

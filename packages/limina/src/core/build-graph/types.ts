@@ -105,6 +105,11 @@ interface TsconfigGraphArtifacts {
   auxiliaryArtifacts?: {
     namespace: LiminaArtifactNamespace;
     plan: ArtifactPlan;
+    retiring: boolean;
+    replan: () => Promise<{
+      namespace: LiminaArtifactNamespace;
+      plan: ArtifactPlan;
+    }>;
   }[];
   dependencyAnalysis?: DependencyAnalysisResult;
   sourceConfigCoverage?: SourceConfigCoverageIndex;

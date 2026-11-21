@@ -13,6 +13,7 @@ import type { GeneratedTsconfigGraphManifest } from './manifest-types';
 import { generatedGraphManifestVersion } from './manifest-version';
 import {
   materializationLedgerRelativePath,
+  materializationMarkerRelativePath,
   readMaterializationStateSnapshot,
 } from './materialization-state';
 import type { GeneratedGraphPreparationState } from './prepare-state';
@@ -74,23 +75,10 @@ export async function planScopedCheckArtifacts(
         const directory = path.dirname(source);
         if (
           byRoot.has(directory) ||
-          path.join(directory, '.limina') === root.rootDir
+          path.join(directory, '.limina') === root.rootDir ||
+          !(await hasScopedState(directory))
         )
           continue;
-        try {
-          await readFile(
-            path.join(directory, '.limina', materializationLedgerRelativePath),
-            'utf8',
-          );
-        } catch (error) {
-          if (
-            error instanceof Error &&
-            'code' in error &&
-            error.code === 'ENOENT'
-          )
-            continue;
-          throw error;
-        }
         byRoot.set(directory, []);
       }
     }
@@ -111,67 +99,103 @@ export async function planScopedCheckArtifacts(
         change.status === 'delete' || !selected.has(change.artifact.path),
     );
     for (const file of files) state.writeContext.expectedFiles.delete(file);
-    const local: GeneratedGraphWriteContext = {
-      rootDir: directory,
-      files: state.writeContext.files,
-      changes,
-      changed: false,
-      expectedFiles: selected,
-    };
-    const base = await readMaterializationStateSnapshot(namespace);
-    const previous = base.ownedPaths.map((file) =>
-      normalizeAbsolutePath(path.join(namespace.rootDir, file)),
-    );
-    const ledger = normalizeAbsolutePath(
-      path.join(namespace.rootDir, materializationLedgerRelativePath),
-    );
-    local.expectedFiles.add(ledger);
-    for (const file of previous) {
-      if (
-        local.expectedFiles.has(file) ||
-        file.startsWith(`${namespace.rootDir}/check/`)
-      )
-        continue;
-      try {
-        await writeGeneratedContent({
-          context: local,
-          filePath: file,
-          content: await readFile(file, 'utf8'),
-        });
-      } catch (error) {
-        if (
-          !(
-            error instanceof Error &&
-            'code' in error &&
-            error.code === 'ENOENT'
-          )
-        )
-          throw error;
-      }
-    }
-    await removeStaleGeneratedFiles({
-      context: local,
-      previousOwnedPaths: previous,
-    });
-    await writeGeneratedJson({
-      context: local,
-      filePath: ledger,
-      value: {
-        version: generatedGraphManifestVersion,
-        generatedBy: 'limina',
-        ownedArtifacts: [...local.expectedFiles]
-          .map((file) => path.relative(namespace.rootDir, file))
-          .sort(compareCodeUnits),
-      },
-    });
+    const makePlan = (generatedFiles: Map<string, string>) =>
+      scopedPlan(namespace, {
+        rootDir: directory,
+        files: generatedFiles,
+        changes: [...changes],
+        changed: false,
+        expectedFiles: new Set(selected),
+      });
+    const plan = await makePlan(state.writeContext.files);
     result.push({
       namespace,
-      plan: createRevisionedArtifactPlan(namespace, local.changes, {
-        baseOwnedPaths: previous,
-        baseRevision: base.revision,
-        ownedPaths: [...local.expectedFiles],
-      }),
+      plan,
+      retiring: selected.size === 0,
+      replan: async () => {
+        const current = await makePlan(new Map());
+        if (
+          current.desiredRevision !== plan.desiredRevision ||
+          (current.baseRevision !== plan.baseRevision &&
+            current.baseRevision !== plan.desiredRevision)
+        )
+          throw new Error(
+            'Scoped artifact revision changed outside the prepared graph. Retry with a fresh graph.',
+          );
+        return { namespace, plan: current };
+      },
     });
   }
   return result;
+}
+
+async function hasScopedState(directory: string): Promise<boolean> {
+  for (const file of [
+    materializationLedgerRelativePath,
+    materializationMarkerRelativePath,
+  ]) {
+    try {
+      await readFile(path.join(directory, '.limina', file));
+      return true;
+    } catch (error) {
+      if (
+        !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      )
+        throw error;
+    }
+  }
+  return false;
+}
+
+async function scopedPlan(
+  namespace: LiminaArtifactNamespace,
+  local: GeneratedGraphWriteContext,
+) {
+  const base = await readMaterializationStateSnapshot(namespace);
+  const previous = base.ownedPaths.map((file) =>
+    normalizeAbsolutePath(path.join(namespace.rootDir, file)),
+  );
+  const ledger = normalizeAbsolutePath(
+    path.join(namespace.rootDir, materializationLedgerRelativePath),
+  );
+  local.expectedFiles.add(ledger);
+  for (const file of previous) {
+    if (
+      local.expectedFiles.has(file) ||
+      file.startsWith(`${namespace.rootDir}/check/`)
+    )
+      continue;
+    try {
+      await writeGeneratedContent({
+        context: local,
+        filePath: file,
+        content: await readFile(file, 'utf8'),
+      });
+    } catch (error) {
+      if (
+        !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      )
+        throw error;
+    }
+  }
+  await removeStaleGeneratedFiles({
+    context: local,
+    previousOwnedPaths: previous,
+  });
+  await writeGeneratedJson({
+    context: local,
+    filePath: ledger,
+    value: {
+      version: generatedGraphManifestVersion,
+      generatedBy: 'limina',
+      ownedArtifacts: [...local.expectedFiles]
+        .map((file) => path.relative(namespace.rootDir, file))
+        .sort(compareCodeUnits),
+    },
+  });
+  return createRevisionedArtifactPlan(namespace, local.changes, {
+    baseOwnedPaths: previous,
+    baseRevision: base.revision,
+    ownedPaths: [...local.expectedFiles],
+  });
 }
