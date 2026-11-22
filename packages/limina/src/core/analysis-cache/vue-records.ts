@@ -87,7 +87,7 @@ export class VueAnalysisRecords {
     this.#eligibility.set(identity, isSupported);
     if (!isSupported) {
       recordCacheMiss('vue-context', 'vue-unsupported-inputs', {
-        file: identity.configPath,
+        file: sourceConfig(identity),
         bypassed: true,
       });
       return this.#reject('vue-unsupported-inputs');
@@ -149,7 +149,11 @@ export class VueAnalysisRecords {
     onMiss?: (decision: string) => void,
   ): VueContextRecord | undefined {
     if (this.cache.inputs.domainDirty)
-      return this.#miss('manifest-domain-changed', identity.configPath, onMiss);
+      return this.#miss(
+        'manifest-domain-changed',
+        sourceConfig(identity),
+        onMiss,
+      );
     const id = this.#memo.contextId(identity);
     const record = this.#qualified.has(id)
       ? this.records[id]
@@ -182,12 +186,12 @@ export class VueAnalysisRecords {
     if (record === undefined)
       return this.#miss(
         'vue-context-record-absent',
-        identity.configPath,
+        sourceConfig(identity),
         onMiss,
       );
     const rejection = vueRecordRejection(this.cache, identity, record);
     if (rejection !== undefined)
-      return this.#miss(rejection, identity.configPath, onMiss);
+      return this.#miss(rejection, sourceConfig(identity), onMiss);
     this.cache.inputs.consume(record.dependencies);
     this.cache.inputs.consumeNative();
     this.cache.increment('restoredVueContexts');
@@ -196,7 +200,7 @@ export class VueAnalysisRecords {
       this.records[id] === record
         ? 'invocation-memory'
         : this.cache.previousOrigin,
-      identity.configPath,
+      sourceConfig(identity),
     );
     this.records[id] = record;
     this.#qualified.add(id);
@@ -230,7 +234,7 @@ export class VueAnalysisRecords {
     if (identity === undefined)
       return this.#miss(
         'vue-context-identity-unavailable',
-        record.project.configPath,
+        recordSourceConfig(record),
         onMiss,
       );
     const valid = [parsed.diagnostics.length === 0, this.supports(identity)];
@@ -238,7 +242,7 @@ export class VueAnalysisRecords {
       ? this.#bindIdentity(identity, id, generation, replay, onMiss)
       : this.#miss(
           'vue-context-identity-unqualified',
-          identity.configPath,
+          sourceConfig(identity),
           onMiss,
         );
   }
@@ -255,7 +259,7 @@ export class VueAnalysisRecords {
     if (isIdentityChanged)
       return this.#miss(
         'vue-context-identity-changed',
-        identity.configPath,
+        sourceConfig(identity),
         onMiss,
       );
     if (restored === undefined) return undefined;
@@ -284,7 +288,7 @@ export class VueAnalysisRecords {
           ? 'vue-query-record-absent'
           : 'vue-query-payload-invalid',
         {
-          file: query.identity.configPath,
+          file: sourceConfig(query.identity),
           absent: record === undefined || undefined,
         },
       );
@@ -294,7 +298,7 @@ export class VueAnalysisRecords {
         this.cache.previous?.vueContexts[id]?.queries[key] === record
           ? this.cache.previousOrigin
           : 'invocation-memory';
-      recordCacheHit('vue-query', origin, query.identity.configPath);
+      recordCacheHit('vue-query', origin, sourceConfig(query.identity));
     }
     return restored;
   }

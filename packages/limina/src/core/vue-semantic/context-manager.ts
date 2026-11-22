@@ -12,6 +12,7 @@ import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import { observeWork } from '../analysis-profile';
 import type { TypeEvidenceMetricsRecorder } from '../type-evidence/cache';
 import { VueSemanticContext } from './context-handle';
+import { vueProfileConfigPath } from './output-identity';
 
 const processWideVueContextSlot: {
   context: VueSemanticContext | undefined;
@@ -114,9 +115,7 @@ export class VueSemanticContextManager {
     }
     disposeProcessWideContext();
     const observer = currentProfile();
-    const project = observer?.project(
-      identity.declarationLoading?.sourceConfig ?? identity.configPath,
-    );
+    const project = observer?.project(vueProfileConfigPath(identity));
     const context = observeWork(
       observer,
       'vue-context-create',

@@ -96,3 +96,13 @@ export function vueProjectConfigFiles(
         ...Object.entries(identity.outputProjection.configs),
       ]);
 }
+
+export function vueProfileConfigPath(
+  identity: VueProjectSemanticIdentity,
+): string {
+  return (
+    identity.declarationLoading?.sourceConfig ??
+    identity.outputProjection?.sourceConfigPath ??
+    identity.configPath
+  );
+}

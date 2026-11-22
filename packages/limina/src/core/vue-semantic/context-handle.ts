@@ -36,7 +36,7 @@ import {
   type ProgramCreationObserver,
 } from './context-lazy-state';
 import { resolveModuleNameLiteralMap } from './context-resolution';
-import { vueProjectConfigFiles } from './output-identity';
+import { vueProfileConfigPath, vueProjectConfigFiles } from './output-identity';
 interface SnapshotEntry {
   snapshot: ts.IScriptSnapshot;
   text: string;
@@ -370,12 +370,13 @@ export class VueSemanticContext {
     if (observer === undefined) return undefined;
     return profileContextScope(observer, {
       instance: this,
-      configPath:
-        this.identity.declarationLoading?.sourceConfig ??
-        this.identity.configPath,
+      configPath: vueProfileConfigPath(this.identity),
       checker: 'vue-tsc',
       provider: 'vue',
-      role: this.identity.declarationLoading?.purpose ?? 'source',
+      role:
+        this.identity.outputProjection === undefined
+          ? (this.identity.declarationLoading?.purpose ?? 'source')
+          : 'output-projection',
     });
   }
 

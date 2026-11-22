@@ -1,24 +1,34 @@
 import {
+  mkdir,
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   rm,
   stat,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { createFixturePathResolver } from '../../src/__tests__/helpers/path';
 import { createSemanticRepairFixture } from '../../src/__tests__/helpers/semantic-repair';
-import { runLimina } from '../helpers/run-limina';
+import { runLimina, type RunLiminaOptions } from '../helpers/run-limina';
 
 const milestone = z.object({
   gate: z.enum(['core', 'preflight']),
   atUs: z.number().nonnegative(),
 });
 const projectRecord = z.object({ id: z.string(), path: z.string() });
+const contextRecord = z.object({
+  project: z.string(),
+  provider: z.string(),
+  role: z.string(),
+});
 const graphRecord = z.object({
   id: z.string(),
   purpose: z.string(),
@@ -35,6 +45,7 @@ const decisionRecord = z.object({
   stage: z.string(),
   outcome: z.string(),
   origin: z.string().optional(),
+  subject: z.string().optional(),
 });
 const projectRow = z.object({
   project: z.string(),
@@ -54,6 +65,7 @@ const profileSchema = z.object({
     commandInvocationUs: z.number().positive(),
   }),
   projects: z.array(projectRecord),
+  contexts: z.array(contextRecord),
   graphs: z.array(graphRecord),
   decisions: z.array(decisionRecord),
   summary: z.object({
@@ -67,7 +79,7 @@ const profileSchema = z.object({
 
 const probeSecret = 'LIMINA_PROFILE_INTEGRATION_SECRET_93D303';
 
-async function fixture() {
+async function fixture(overrides: Record<string, string> = {}) {
   const f = await createSemanticRepairFixture({
     'package.json':
       '{"name":"observation-fixture","private":true,"type":"module","packageManager":"npm@11.6.1"}',
@@ -89,6 +101,7 @@ async function fixture() {
       include: ['src/**/*.ts'],
     }),
     'src/main.ts': 'export const LIMINA_PROFILE_PRIVATE_SOURCE_TEXT = 1;',
+    ...overrides,
   });
   const outputRoot = await mkdtemp(
     path.join(tmpdir(), 'limina-observation-output-'),
@@ -111,11 +124,13 @@ async function run(
   f: Fixture,
   commandArguments: string[],
   profileEnvironment = '0',
+  entry?: RunLiminaOptions['entry'],
 ) {
   const result = await runLimina({
     fixtureName: 'analysis-observation',
     cwd: f.root,
     args: commandArguments,
+    entry,
     env: {
       LIMINA_PROFILE: profileEnvironment,
       LIMINA_PROFILE_BUILD_INPUT_HASH: undefined,
@@ -245,6 +260,85 @@ it('records separate prepared and receipt milestones for cold and warm graph pre
         outcome: 'adopted',
         origin: 'prior-disk',
       }),
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('attributes Vue output projection work and cache adoption to the source project', async () => {
+  const f = await fixture({
+    'limina.config.mjs':
+      'export default {scope:{checkers:{"vue-tsc":{include:["tsconfig.json"]}}}};',
+    'tsconfig.json': JSON.stringify({
+      compilerOptions: {
+        module: 'NodeNext',
+        target: 'ES2022',
+        noLib: true,
+        types: [],
+      },
+      include: ['src/**/*.ts'],
+      liminaOptions: {
+        outputs: { target: 'ES2020', rootDir: 'src', outDir: 'output' },
+      },
+    }),
+    'src/main.ts': 'export {value} from "./value.js";',
+    'src/value.ts': 'export const value = 1;',
+  });
+  try {
+    const require = createRequire(import.meta.url);
+    await mkdir(f.path('node_modules'));
+    for (const name of ['typescript', 'vue', 'vue-tsc']) {
+      const installed = path.dirname(require.resolve(`${name}/package.json`));
+      await symlink(
+        await realpath(installed),
+        f.path('node_modules', name),
+        'junction',
+      );
+    }
+    const entry = {
+      executable: process.execPath,
+      args: [fileURLToPath(new URL('../../bin/limina.js', import.meta.url))],
+    };
+    const prepare = async (mode: 'cold' | 'warm') => {
+      const destination = f.output(mode);
+      const result = await run(
+        f,
+        ['graph', 'prepare', '--profile-output', destination],
+        '0',
+        entry,
+      );
+      expect(result.code, result.stdout + result.stderr).toBe(0);
+      const profile = await onlyProfile(f, destination);
+      expect(profile.summary.mode).toBe(mode);
+      expect(profile.projects.map((project) => project.path)).toEqual([
+        'tsconfig.json',
+      ]);
+      return profile;
+    };
+
+    const cold = await prepare('cold');
+    expect(cold.contexts).toEqual(
+      expect.arrayContaining([
+        {
+          project: cold.projects[0]!.id,
+          provider: 'vue',
+          role: 'output-projection',
+        },
+        { project: cold.projects[0]!.id, provider: 'vue', role: 'graph' },
+      ]),
+    );
+
+    const warm = await prepare('warm');
+    const adopted = warm.decisions.filter(
+      (decision) =>
+        decision.layer === 'vue-context' &&
+        decision.outcome === 'adopted' &&
+        decision.origin === 'prior-disk',
+    );
+    expect(adopted.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(adopted.map((decision) => decision.subject))).toEqual(
+      new Set(['tsconfig.json']),
     );
   } finally {
     await f.cleanup();
