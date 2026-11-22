@@ -8,12 +8,13 @@ import { createLiminaCli } from './cli/factory';
 import { isPrintCheckIssueFilterHelpIfRequested } from './cli/filter-help';
 import { isForwardMigrationIfRequested } from './cli/migration-forward';
 import {
-  assertCliProfileOptions,
+  assertCliProfileArgv,
   beginCliProfiling,
   captureProfiledParseFailure,
   type CliProfiling,
   executeProfiledCommand,
   finishCliProfiling,
+  getCliProfileOptionsError,
 } from './cli/profiling';
 import { clearCliScreen, CliLogger, formatErrorMessage } from './logger';
 
@@ -47,6 +48,7 @@ async function executeProductCli(
   profiling: CliProfiling | undefined,
 ): Promise<void> {
   clearCliScreen();
+  assertCliProfileArgv(argv);
 
   const cli = createLiminaCli();
   cli.showHelpOnExit = parseCheckIssueFilterHelpKind(argv) === null;
@@ -60,16 +62,24 @@ async function executeProductCli(
   try {
     cli.parse(argv, { run: false });
   } catch (error) {
-    if (profiling !== undefined) captureProfiledParseFailure(profiling, argv);
+    if (profiling !== undefined) captureProfiledParseFailure(profiling, cli);
     throw error;
   }
-  if (profiling === undefined)
-    return executeMatchedProductCli(cli, argv, isDisplayedCommandHelp);
+  const profileOptionsError = getCliProfileOptionsError(cli);
+  const execute = () =>
+    executeMatchedProductCli(
+      cli,
+      argv,
+      isDisplayedCommandHelp,
+      profileOptionsError,
+    );
+  if (profiling === undefined || profileOptionsError !== undefined)
+    return execute();
   return executeProfiledCommand({
     cli,
     isHelp: isDisplayedCommandHelp || cli.options.help === true,
     profiling,
-    execute: () => executeMatchedProductCli(cli, argv, isDisplayedCommandHelp),
+    execute,
   });
 }
 
@@ -77,6 +87,7 @@ async function executeMatchedProductCli(
   cli: ReturnType<typeof createLiminaCli>,
   argv: string[],
   isDisplayedCommandHelp: boolean,
+  profileOptionsError: Error | undefined,
 ): Promise<void> {
   assertCheckCommandArguments(cli);
   assertIssueInventoryLimitArgv(argv);
@@ -86,7 +97,7 @@ async function executeMatchedProductCli(
   )
     return;
   assertMatchedCommand(cli);
-  assertCliProfileOptions(cli);
+  if (profileOptionsError !== undefined) throw profileOptionsError;
   await cli.runMatchedCommand();
 }
 

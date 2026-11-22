@@ -11,7 +11,7 @@ import {
   createLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
 } from '../domain/artifacts/namespace';
-import { getPrimaryCliCommandIndex, readArgvOptionValue } from './argv';
+import { readArgvOptionValue } from './argv';
 import type { createLiminaCli } from './factory';
 
 type LiminaCli = ReturnType<typeof createLiminaCli>;
@@ -112,22 +112,35 @@ function getProfileCommand(cli: LiminaCli): string | undefined {
     : getCommandLabel(cli.matchedCommand?.name, cli.args[0]);
 }
 
-export function assertCliProfileOptions(cli: LiminaCli): void {
+export function assertCliProfileArgv(argv: readonly string[]): void {
+  for (let index = 2; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--') return;
+    // CAC treats other inline boolean values as positional arguments.
+    if (
+      argument !== '--profile=true' &&
+      argument !== '--profile=false' &&
+      argument?.startsWith('--profile=')
+    )
+      throw new Error('--profile does not take a value.');
+  }
+}
+
+export function getCliProfileOptionsError(cli: LiminaCli): Error | undefined {
   const profile: unknown = cli.options?.profile;
   if (profile !== undefined && typeof profile !== 'boolean')
-    throw new Error('--profile does not take a value.');
+    return new Error('--profile does not take a value.');
   if (
     cli.options?.profileOutput !== undefined &&
     readOutputDirectoryFlag(cli) === undefined
   )
-    throw new Error('--profile-output requires a directory.');
-  if (
-    (profile === true || cli.options?.profileOutput !== undefined) &&
+    return new Error('--profile-output requires a directory.');
+  return (profile === true || cli.options?.profileOutput !== undefined) &&
     getProfileCommand(cli) === undefined
-  )
-    throw new Error(
-      'Profiling is available for check, graph check, graph prepare, graph export and source check.',
-    );
+    ? new Error(
+        'Profiling is available for check, graph check, graph prepare, graph export and source check.',
+      )
+    : undefined;
 }
 
 function sampleRss(observer: AnalysisObserver): () => void {
@@ -207,22 +220,17 @@ function createCliProfileState(options: {
 
 export function captureProfiledParseFailure(
   profiling: CliProfiling,
-  argv: readonly string[],
+  cli: LiminaCli,
 ): void {
-  const options = argumentsBeforeForwarding(argv);
-  const index = getPrimaryCliCommandIndex(options);
-  if (index === undefined) return;
-  const command = options[index];
-  if (command === 'check' && options.includes('--issues')) return;
-  const label = getCommandLabel(command, options[index + 1]);
-  const directory = readArgvOptionValue(options, '--profile-output');
-  if (label === undefined || directory === undefined || directory.trim() === '')
-    return;
+  if (getCliProfileOptionsError(cli) !== undefined) return;
+  const command = getProfileCommand(cli);
+  const directory = readOutputDirectoryFlag(cli);
+  if (command === undefined || directory === undefined) return;
   profiling.active = createCliProfileState({
-    command: label,
+    command,
     directory,
     profiling,
-    stderr: options.includes('--verbose') ? 'verbose' : 'summary',
+    stderr: cli.options.verbose === true ? 'verbose' : 'summary',
   });
 }
 

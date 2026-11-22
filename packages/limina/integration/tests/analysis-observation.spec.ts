@@ -242,6 +242,80 @@ it('gives graph export a Core milestone and preserves stdout and a warm cache', 
   }
 });
 
+it.each([
+  {
+    scenario: 'an inline switch value that names a configured pipeline',
+    args: ['check', '--profile=probe'],
+    explicitOutput: true,
+    diagnostic: '--profile does not take a value.',
+  },
+  {
+    scenario: 'a repeated profiling switch',
+    args: ['check', '--profile', '--profile'],
+    explicitOutput: true,
+    diagnostic: '--profile does not take a value.',
+  },
+  {
+    scenario: 'an empty output directory',
+    args: ['check', '--profile-output', ''],
+    explicitOutput: false,
+    diagnostic: '--profile-output requires a directory.',
+  },
+  {
+    scenario: 'a missing output directory',
+    args: ['graph', 'prepare', '--profile-output'],
+    explicitOutput: false,
+    diagnostic: '--profile-output requires a directory.',
+  },
+  {
+    scenario: 'a malformed profiling switch on the command help error path',
+    args: ['check', '--help', '--unknown', '--profile', '--profile'],
+    explicitOutput: true,
+    diagnostic: 'Unknown option `--unknown`',
+  },
+])('rejects $scenario without starting profiling', async (testCase) => {
+  const f = await fixture();
+  try {
+    const output = f.output('profiles');
+    const commandArguments = testCase.explicitOutput
+      ? [...testCase.args, '--profile-output', output]
+      : testCase.args;
+    const result = await run(f, commandArguments);
+    expect(result.code, result.stdout + result.stderr).toBe(1);
+    expect(result.stderr).toContain(testCase.diagnostic);
+    expect(result.stderr).not.toContain('Limina Analysis Profile');
+    expect(result.stderr).not.toContain('could not write the analysis profile');
+    await expect(stat(output)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(f.path('.limina'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('captures a command help error with a valid explicit profiling destination', async () => {
+  const f = await fixture();
+  try {
+    const output = f.output('profiles');
+    const result = await run(f, [
+      'check',
+      '--help',
+      '--unknown',
+      '--profile-output',
+      output,
+    ]);
+    expect(result.code, result.stdout + result.stderr).toBe(1);
+    expect(result.stderr).toContain('Unknown option `--unknown`');
+    expect((await onlyProfile(f, output)).invocation.result).toBe('failed');
+    await expect(stat(f.path('.limina'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  } finally {
+    await f.cleanup();
+  }
+});
+
 it('preserves an early config failure even if the profile destination fails', async () => {
   const f = await fixture();
   try {
