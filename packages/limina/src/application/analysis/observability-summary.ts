@@ -412,9 +412,18 @@ function graphRows(
     ),
     works,
   );
+  const artifactOwner = workOwners(
+    new Set(graphs.flatMap(({ applied }) => (applied ? [applied.work] : []))),
+    works,
+  );
   const reference = new Map<string, WorkRecord[]>();
   const projection = new Map<string, WorkRecord[]>();
+  const appliedArtifacts = new Map<string, WorkRecord[]>();
   for (const work of works.values()) {
+    if (work.op === 'graph.apply.artifacts') {
+      incrementGroup(appliedArtifacts, artifactOwner(work.id), work);
+      continue;
+    }
     if (work.op === 'reference-analysis')
       incrementGroup(reference, owner(work.id), work);
     else if (work.op === 'graph-projection')
@@ -450,8 +459,6 @@ function graphRows(
       at >= graph.requestAtUs
         ? at - graph.requestAtUs
         : null;
-    const applied = result.applied && works.get(result.applied.work);
-    const appliedTime = applied && timeOf(applied);
     return {
       graph: graph.id,
       ...(graph.purpose !== undefined && { purpose: graph.purpose }),
@@ -464,13 +471,10 @@ function graphRows(
       requestDeliveryUs: latency(delivery),
       referenceAnalysisWorkUnionUs: operationUnion(reference, result.producer),
       graphProjectionWorkUnionUs: operationUnion(projection, result.producer),
-      artifactsApplyElapsedUs:
-        appliedTime &&
-        result.applied &&
-        result.applied.atUs >= appliedTime[0] &&
-        result.applied.atUs <= appliedTime[1]
-          ? result.applied.atUs - appliedTime[0]
-          : null,
+      artifactsApplyElapsedUs: operationUnion(
+        appliedArtifacts,
+        result.applied?.work,
+      ),
       receiptAtUs: result.receipt?.atUs ?? null,
     };
   });
@@ -706,20 +710,25 @@ export function summarizeProfile(input: SummaryInput): Summary {
   );
   const graphs = graphRows(input.graphs, workById, input.dropped);
   const complete = graphs.filter((graph) => graph.purpose === 'complete');
-  const requestWorkIds = new Set(
-    input.graphs.flatMap((graph) => (graph.request ? [graph.request] : [])),
+  const preflightRequests = new Set(
+    input.graphs.flatMap(({ request, requestGate }) =>
+      requestGate === 'preflight' && request ? [request] : [],
+    ),
   );
-  const enclosingRequest = workOwners(requestWorkIds, workById);
-  const graphById = new Map(input.graphs.map((graph) => [graph.id, graph]));
-  const prepared = complete
-    .filter((row) => {
-      const graph = graphById.get(row.graph)!;
-      // A nested Core gate may finish before its requesting preflight accepts the result.
-      const workId = graph.request ?? graph.producer;
-      const parent = workId && workById.get(workId)?.parent;
-      return !parent || !enclosingRequest(parent);
+  const enclosingPreflight = workOwners(preflightRequests, workById);
+  const prepared = input.graphs
+    .flatMap(({ prepared, producer, purpose }) => {
+      if (purpose !== 'complete' || prepared === undefined) return [];
+      // Readiness belongs to the work that prepared the result. Subsequent
+      // requests, including a materialization that fails, cannot move it.
+      const isIndependentCore =
+        producer !== undefined &&
+        workById.has(producer) &&
+        !enclosingPreflight(producer);
+      return prepared.filter(
+        ({ gate }) => gate === 'preflight' || isIndependentCore,
+      );
     })
-    .flatMap((graph) => (graph.prepared ? [graph.prepared] : []))
     .sort((a, b) => a.atUs - b.atUs);
   const receipts = complete
     .flatMap((graph) => (graph.receiptAtUs === null ? [] : [graph.receiptAtUs]))

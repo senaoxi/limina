@@ -367,6 +367,7 @@ describe('LiminaPreflightManager', () => {
       const profile = new AnalysisObserver('graph prepare', performance.now());
       const receipts = await runWithProfile(profile, async () => {
         const prepared = manager.ensureGeneratedGraph();
+        expect(manager.ensureGeneratedGraph()).toBe(prepared);
         const requests = [
           manager.ensureGeneratedArtifactsMaterialized(),
           manager.ensureGeneratedArtifactsMaterialized(),
@@ -436,6 +437,11 @@ describe('LiminaPreflightManager', () => {
         (row) => row.requestGate === 'receipt' && row.result === completion?.id,
       );
       expect(requests).toHaveLength(4);
+      for (const request of requests) {
+        expect(request.deliveredAtUs).toBeGreaterThanOrEqual(
+          completion?.receipt?.atUs ?? Infinity,
+        );
+      }
       const relations = snapshot.links
         .filter(
           ({ from, to }) =>
@@ -487,7 +493,10 @@ describe('LiminaPreflightManager', () => {
       ).toHaveLength(3);
       expect(
         snapshot.graphs.some(
-          (row) => row.result !== undefined || row.source === 'shared',
+          (row) =>
+            row.result !== undefined ||
+            row.source === 'shared' ||
+            row.deliveredAtUs !== undefined,
         ),
       ).toBe(false);
       expect(snapshot.work.some((work) => work.end === 'shared')).toBe(false);
@@ -568,11 +577,10 @@ describe('LiminaPreflightManager', () => {
       );
       expect(await readFile(file, 'utf8')).toBe('{}\n');
       const snapshot = profile.snapshot();
-      expect(
-        snapshot.graphs.some((row) =>
-          row.prepared?.some(({ gate }) => gate === 'preflight'),
-        ),
-      ).toBe(true);
+      expect(snapshot.summary.firstCompleteGraphPrepared).toMatchObject({
+        gate: 'preflight',
+        atUs: expect.any(Number),
+      });
       expect(
         snapshot.graphs.some(
           (row) => row.applied !== undefined || row.receipt !== undefined,
@@ -604,13 +612,17 @@ describe('LiminaPreflightManager', () => {
         ) {
           const receipt = await materialize.call(this, purpose);
           expect(manager.getMaterializedGraph()).toBe(initial.graph);
-          const applied = profile
-            .snapshot()
-            .graphs.find(
-              (row) => row.id === profile.identity(receipt.graph, 'graph'),
-            );
+          const { graphs } = profile.snapshot();
+          const id = profile.identity(receipt.graph, 'graph');
+          const applied = graphs.find((row) => row.id === id);
           expect(applied?.applied).toBeDefined();
           expect(applied?.receipt).toBeUndefined();
+          const delivery = graphs.find(
+            (row) => row.requestGate === 'applied' && row.result === id,
+          );
+          expect(delivery?.deliveredAtUs).toBeGreaterThanOrEqual(
+            applied?.applied?.atUs ?? Infinity,
+          );
           return receipt;
         });
         const refreshed = await manager.refreshAfterManagedOutputs();
@@ -732,6 +744,17 @@ describe('LiminaPreflightManager', () => {
         from: replacementProducer,
         to: originalProducer,
       });
+      const committed = snapshot.graphs.find(({ id }) => id === replacement);
+      const ready = committed?.prepared?.find(
+        ({ gate }) => gate === 'preflight',
+      );
+      const applyElapsed = snapshot.summary.graphRows.find(
+        ({ graph }) => graph === replacement,
+      )?.artifactsApplyElapsedUs;
+      expect(applyElapsed).toBeGreaterThanOrEqual(0);
+      expect(applyElapsed).toBeLessThanOrEqual(
+        (committed?.applied?.atUs ?? 0) - (ready?.atUs ?? Infinity),
+      );
     } finally {
       manager.dispose();
       competingProviders.dispose?.();

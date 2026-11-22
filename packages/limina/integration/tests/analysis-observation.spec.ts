@@ -20,9 +20,15 @@ const milestone = z.object({
 });
 const projectRecord = z.object({ id: z.string(), path: z.string() });
 const graphRecord = z.object({
+  id: z.string(),
   purpose: z.string(),
   source: z.string().optional(),
   prepared: z.array(milestone).optional(),
+  result: z.string().optional(),
+  requestAtUs: z.number().nonnegative().optional(),
+  deliveredAtUs: z.number().nonnegative().optional(),
+  requestGate: z.enum(['core', 'preflight', 'applied', 'receipt']).optional(),
+  applied: z.object({ atUs: z.number().nonnegative() }).optional(),
 });
 const decisionRecord = z.object({
   layer: z.string(),
@@ -34,6 +40,11 @@ const projectRow = z.object({
   project: z.string(),
   state: z.string(),
   workUnionUs: z.number().nonnegative().nullable(),
+});
+const graphRow = z.object({
+  graph: z.string(),
+  requestDeliveryUs: z.number().nonnegative().nullable(),
+  artifactsApplyElapsedUs: z.number().nonnegative().nullable(),
 });
 const profileSchema = z.object({
   schemaVersion: z.literal(2),
@@ -48,6 +59,7 @@ const profileSchema = z.object({
   summary: z.object({
     mode: z.string(),
     projectRows: z.array(projectRow),
+    graphRows: z.array(graphRow),
     firstCompleteGraphPrepared: milestone.nullable(),
     firstCompleteReceiptCommittedUs: z.number().nonnegative().nullable(),
   }),
@@ -174,6 +186,26 @@ it('records separate prepared and receipt milestones for cold and warm graph pre
       expect(receipt).toBeLessThanOrEqual(
         profile.invocation.commandInvocationUs,
       );
+      const applied = profile.graphs.find(
+        (graph) => graph.applied !== undefined,
+      );
+      const applyElapsed = profile.summary.graphRows.find(
+        (row) => row.graph === applied?.id,
+      )?.artifactsApplyElapsedUs;
+      expect(applyElapsed).toBeGreaterThanOrEqual(0);
+      expect(applyElapsed).toBeLessThanOrEqual(
+        (applied?.applied?.atUs ?? 0) - prepared!.atUs,
+      );
+      const request = profile.graphs.find(
+        (graph) =>
+          graph.result === applied?.id && graph.requestGate === 'receipt',
+      );
+      expect(request?.deliveredAtUs).toBeGreaterThanOrEqual(receipt!);
+      expect(
+        profile.summary.graphRows.find((row) => row.graph === request?.id),
+      ).toMatchObject({
+        requestDeliveryUs: request!.deliveredAtUs! - request!.requestAtUs!,
+      });
       expect(profile.summary.projectRows).toEqual([
         expect.objectContaining({
           project: profile.projects[0]!.id,
@@ -208,6 +240,35 @@ it('records separate prepared and receipt milestones for cold and warm graph pre
         origin: 'prior-disk',
       }),
     );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('keeps the Preflight milestone when graph check later reads the prepared Core result', async () => {
+  const f = await fixture();
+  try {
+    const output = f.output('graph-check-profile');
+    const result = await run(f, ['graph', 'check', '--profile-output', output]);
+    expect(result.code, result.stdout + result.stderr).toBe(0);
+    const profile = await onlyProfile(f, output);
+    const coreRequest = profile.graphs.find(
+      (graph) => graph.requestGate === 'core',
+    );
+    const canonical = profile.graphs.find(
+      (graph) => graph.id === coreRequest?.result,
+    );
+    const preflight = canonical?.prepared?.find(
+      (mark) => mark.gate === 'preflight',
+    );
+    expect(coreRequest?.requestAtUs).toBeGreaterThanOrEqual(
+      preflight?.atUs ?? Infinity,
+    );
+    expect(coreRequest).toMatchObject({
+      source: 'shared',
+      deliveredAtUs: expect.any(Number),
+    });
+    expect(profile.summary.firstCompleteGraphPrepared).toEqual(preflight);
   } finally {
     await f.cleanup();
   }

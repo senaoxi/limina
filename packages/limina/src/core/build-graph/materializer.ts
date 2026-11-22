@@ -1,3 +1,4 @@
+import { currentProfile } from '../../application/analysis/observability';
 import {
   type ArtifactSafetyMetricsRecorder,
   assertLiminaArtifactNamespace,
@@ -14,6 +15,7 @@ import {
   acquireCrossProcessWriteLease,
   type CrossProcessLeaseOptions,
 } from '../../utils/mutation/cross-process-lease';
+import { observeAsyncWork } from '../analysis-profile';
 import {
   deleteNonTargetOwnedPaths,
   getTargetArtifacts,
@@ -183,70 +185,79 @@ async function materializeUnderWriteLease(options: {
     plan: options.plan,
     replan: options.materialization.replan,
   });
-  assertLiminaArtifactNamespace(selected.namespace);
-  assertArtifactPlan(selected.plan);
-  assertMatchingGeneration(selected.namespace, selected.plan);
-  const current = selected.plan.revisionValidated
-    ? await readMaterializationStateSnapshot(selected.namespace)
-    : {
-        ownedPaths: [...selected.plan.baseOwnedPaths],
-        revision: selected.plan.baseRevision,
-      };
-  const orderedChanges = orderArtifactChanges(selected.plan);
-  await validateArtifactPlanSafety({
-    materialization: options.materialization,
-    namespace: selected.namespace,
-    orderedChanges,
-    plan: selected.plan,
-  });
-  const marker = createMaterializationMarker({
-    baseRevision: selected.plan.baseRevision,
-    currentOwnedPaths: current.ownedPaths,
-    desiredRevision: selected.plan.desiredRevision,
-    oldMarker,
-    owner: options.leaseOwner,
-    planBaseOwnedPaths: selected.plan.baseOwnedPaths,
-    planDeletePaths: selected.plan.changes.flatMap((change) =>
-      change.status === 'delete'
-        ? [toArtifactNamespaceRelativePath(selected.namespace, change.path)]
-        : [],
-    ),
-    targetOwnedPaths: selected.plan.ownedPaths,
-  });
-  await writeMaterializationMarker({
-    marker,
-    namespace: selected.namespace,
-  });
-  const targetArtifacts = getTargetArtifacts(selected.namespace, selected.plan);
-  await writeTargetArtifacts({
-    force: selected.recovered,
-    manifestOnly: false,
-    materialization: options.materialization,
-    namespace: selected.namespace,
-    plan: selected.plan,
-  });
-  await deleteNonTargetOwnedPaths({
-    materialization: options.materialization,
-    namespace: selected.namespace,
-    ownedPathUniverse: marker.ownedPathUniverse,
-    targetOwnedPaths: new Set(marker.targetOwnedPaths),
-  });
-  await writeTargetArtifacts({
-    force: selected.recovered,
-    manifestOnly: true,
-    materialization: options.materialization,
-    namespace: selected.namespace,
-    plan: selected.plan,
-  });
-  await verifyDesiredTree({
-    namespace: selected.namespace,
-    plan: selected.plan,
-    targetArtifacts,
-  });
-  await (options.materialization.removeMarker ?? removeMaterializationMarker)(
-    selected.namespace,
+  return observeAsyncWork(
+    currentProfile(),
+    'graph.apply.artifacts',
+    async () => {
+      assertLiminaArtifactNamespace(selected.namespace);
+      assertArtifactPlan(selected.plan);
+      assertMatchingGeneration(selected.namespace, selected.plan);
+      const current = selected.plan.revisionValidated
+        ? await readMaterializationStateSnapshot(selected.namespace)
+        : {
+            ownedPaths: [...selected.plan.baseOwnedPaths],
+            revision: selected.plan.baseRevision,
+          };
+      const orderedChanges = orderArtifactChanges(selected.plan);
+      await validateArtifactPlanSafety({
+        materialization: options.materialization,
+        namespace: selected.namespace,
+        orderedChanges,
+        plan: selected.plan,
+      });
+      const marker = createMaterializationMarker({
+        baseRevision: selected.plan.baseRevision,
+        currentOwnedPaths: current.ownedPaths,
+        desiredRevision: selected.plan.desiredRevision,
+        oldMarker,
+        owner: options.leaseOwner,
+        planBaseOwnedPaths: selected.plan.baseOwnedPaths,
+        planDeletePaths: selected.plan.changes.flatMap((change) =>
+          change.status === 'delete'
+            ? [toArtifactNamespaceRelativePath(selected.namespace, change.path)]
+            : [],
+        ),
+        targetOwnedPaths: selected.plan.ownedPaths,
+      });
+      await writeMaterializationMarker({
+        marker,
+        namespace: selected.namespace,
+      });
+      const targetArtifacts = getTargetArtifacts(
+        selected.namespace,
+        selected.plan,
+      );
+      await writeTargetArtifacts({
+        force: selected.recovered,
+        manifestOnly: false,
+        materialization: options.materialization,
+        namespace: selected.namespace,
+        plan: selected.plan,
+      });
+      await deleteNonTargetOwnedPaths({
+        materialization: options.materialization,
+        namespace: selected.namespace,
+        ownedPathUniverse: marker.ownedPathUniverse,
+        targetOwnedPaths: new Set(marker.targetOwnedPaths),
+      });
+      await writeTargetArtifacts({
+        force: selected.recovered,
+        manifestOnly: true,
+        materialization: options.materialization,
+        namespace: selected.namespace,
+        plan: selected.plan,
+      });
+      await verifyDesiredTree({
+        namespace: selected.namespace,
+        plan: selected.plan,
+        targetArtifacts,
+      });
+      await (
+        options.materialization.removeMarker ?? removeMaterializationMarker
+      )(selected.namespace);
+      return { namespace: selected.namespace, plan: selected.plan };
+    },
   );
-  return { namespace: selected.namespace, plan: selected.plan };
 }
 
 export async function materializeGeneratedArtifactPlan(

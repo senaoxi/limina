@@ -258,8 +258,10 @@ export function observeMaterializationRequest(
   (async () => {
     try {
       const { graph } = await promise;
+      const deliveredAtUs = profile.now();
       profile.graph(id, {
         result: profile.identity(graph, 'graph'),
+        deliveredAtUs,
         ...(sharedProducer !== undefined && { source: 'shared' }),
       });
       if (!isShared) profile.finish(work);

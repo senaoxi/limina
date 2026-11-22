@@ -228,9 +228,25 @@ describe('analysis observability evidence', () => {
         {
           id: 'apply',
           scope: ['graph', 'g'],
-          op: 'materialize',
+          op: 'graph.materialize',
           end: 'performed',
-          time: [35, 41],
+          time: [12, 41],
+        },
+        {
+          id: 'retire',
+          parent: 'apply',
+          scope: ['graph', 'g'],
+          op: 'graph.apply.artifacts',
+          end: 'performed',
+          time: [35, 37],
+        },
+        {
+          id: 'apply-selected',
+          parent: 'apply',
+          scope: ['graph', 'g'],
+          op: 'graph.apply.artifacts',
+          end: 'performed',
+          time: [39, 40],
         },
       ],
       graphs: [
@@ -269,7 +285,7 @@ describe('analysis observability evidence', () => {
       atUs: 30,
     });
     expect(summary.firstCompleteReceiptCommittedUs).toBe(42);
-    expect(summary.graphRows[0]?.artifactsApplyElapsedUs).toBe(5);
+    expect(summary.graphRows[0]?.artifactsApplyElapsedUs).toBe(3);
     expect(summary.graphRows[1]).toMatchObject({
       graphPrepareElapsedUs: 20,
       requestDeliveryUs: 21,

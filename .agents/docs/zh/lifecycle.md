@@ -38,7 +38,9 @@ Proof 声明验证必须经由[声明验证入口](../../../packages/limina/src/
 
 Profile 的 CLI 阶段覆盖配置、setup、执行／报告、缓存发布、issue 快照发布与 disposal。模块加载、Profile 写入、summary 输出和进程退出超出内部 Trace，外部进程计时仍是端到端基准。[运行时身份](../../../packages/limina/src/profiling/identity.ts)区分精确源码入口的 source/bin/manifest 清单与已安装二进制的完整包清单。两者均保留 canonical containment 和预期身份检查；源码身份不为 workspace 配置或依赖内容建立指纹。[Profiling 回归](../../../packages/limina/src/__tests__/profiling.spec.ts)保护入口、符号链接和内容检查。
 
-[调用观测器](../../../packages/limina/src/application/analysis/observability.ts)独立于旧版 check profile，记录第 2 版报告。在主进程内，观测到的时间点和区间使用单调时钟，以微秒表示。[摘要](../../../packages/limina/src/application/analysis/observability-summary.ts)区分建图请求交付、Core 和 Preflight 就绪、工件应用，以及完整凭据提交。复用生产者结果时，记录会引用该生产者的工作。项目工作取区间并集，重叠区间只计一次。缺少必要证据时，摘要会将相应值标记为不可用。缓存的查找、准入、采用与发布分别记录不同的状态转换。读取了磁盘文件或检查未报错，都不足以证明已采用此前的磁盘结果。
+[调用观测器](../../../packages/limina/src/application/analysis/observability.ts)独立于旧版 check profile，记录第 2 版报告。在主进程内，观测到的时间点和区间使用单调时钟，以微秒表示。[摘要](../../../packages/limina/src/application/analysis/observability-summary.ts)区分建图请求交付、Core 和 Preflight 就绪、工件应用，以及完整凭据提交。每次成功请求都有自己的交付时间，共享生产者的调用也各自计时。首次就绪取决于生产者通过的准备阶段。工件应用计时覆盖准备或重新规划完成后实际应用选定计划的区间。后续物化失败时，报告仍保留已就绪的时间点，完整凭据可以缺失。
+
+项目工作取区间并集，重叠区间只计一次。缺少必要证据时，摘要会将相应值标记为不可用。缓存的查找、准入、采用与发布分别记录不同的状态转换。读取了磁盘文件或检查未报错，都不足以证明已采用此前的磁盘结果。
 
 [序列化边界](../../../packages/limina/src/profiling/report-schema.ts)先筛选并验证字段，再写入报告。报告保留项目相对路径，外部路径使用观测器分配的调用内标识符。第 2 版省略用户命令、环境变量值和绝对运行时路径。[工件写入器](../../../packages/limina/src/profiling/report-storage.ts)使用调用 UUID，发布完整报告并避免替换其他调用的工件。默认写入专用的工件目录，并清理可识别的七天前默认第 2 版文件。显式指定的位置可以是专用报告目录或治理输入根目录以外的路径，其文件由使用者负责保留。程序在运行结果确定后生成报告，诊断报告写入失败不会令检查失败。`LIMINA_PROFILE=1` 对应的现有 check 工件仍保留为独立的兼容格式。
 

@@ -128,13 +128,18 @@ export function observeGraphRequest<T extends object>(
   (async () => {
     try {
       const graph = await promise;
+      const deliveredAtUs = profile.now();
       actual.state = 'succeeded';
       const preparation = graphPreparationWork(profile, graph);
       if (preparation !== undefined && producer === undefined)
         profile.link('uses-result', request, preparation);
       profile.graph(id, {
         result: profile.identity(graph, 'graph'),
-        ...(producer !== undefined && { source: 'shared' }),
+        deliveredAtUs,
+        ...(pending !== undefined &&
+          (producer !== undefined || preparation !== undefined) && {
+            source: 'shared',
+          }),
         ...(preparation !== undefined &&
           producer === undefined && { producer: preparation }),
       });
