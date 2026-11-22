@@ -42,7 +42,7 @@ function createProfile({ base, cwd }: { base: string; cwd: string }) {
   const project = observer.project(source, { executionChecker: 'tsgo' });
   observer.project(path.join(base, 'fixture-private-location', 'other.json'));
   const create = observer.start('native-program-create', ['project', project]);
-  observer.finish(create);
+  observer.finish(create, 'computed');
   observer.decision(
     'native-context',
     {
@@ -52,6 +52,16 @@ function createProfile({ base, cwd }: { base: string; cwd: string }) {
     },
     observer.path(source),
     create,
+  );
+  observer.decision(
+    'native-context',
+    { stage: 'adoption', outcome: 'adopted', origin: 'prior-disk' },
+    observer.path(source),
+  );
+  observer.decision(
+    'resolved-config-live-parse',
+    { stage: 'adoption', outcome: 'adopted', origin: 'invocation-memory' },
+    observer.path(source),
   );
   observer.stop(true);
   return observer.snapshot();
@@ -102,7 +112,9 @@ test('writes a schema-backed allowlisted report and shows project, Program and c
       { path: 'a space/配置.json' },
       { path: expect.stringMatching(/^external-\d+$/u) },
     ],
-    decisions: [{ subject: 'a space/配置.json' }],
+    decisions: expect.arrayContaining([
+      expect.objectContaining({ subject: 'a space/配置.json' }),
+    ]),
     summary: {
       projectRows: [
         expect.objectContaining({
@@ -122,11 +134,11 @@ test('writes a schema-backed allowlisted report and shows project, Program and c
     },
   });
   expect(stderr).toHaveBeenCalledWith(
-    expect.stringContaining('a space/配置.json  tsgo'),
+    expect.stringContaining('a space/配置.json  tsgo  partial'),
     expect.any(Function),
   );
   expect(stderr).toHaveBeenCalledWith(
-    expect.stringContaining('1/1  input-changed'),
+    expect.stringContaining('1/1  input-changed, prior-disk\n'),
     expect.any(Function),
   );
   expect(stderr).toHaveBeenCalledWith(

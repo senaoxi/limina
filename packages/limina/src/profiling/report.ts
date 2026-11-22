@@ -1,4 +1,5 @@
 import type { AnalysisProfile } from '../application/analysis/observability';
+import { ownedContextCacheDecisions } from '../application/analysis/observability-summary';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { encodeAnalysisProfile } from './report-schema';
 import { writeAnalysisProfile } from './report-storage';
@@ -68,33 +69,46 @@ function causeCodes(
   return [...codes];
 }
 
+function projectCacheCauses(
+  profile: AnalysisProfile,
+  decisions: ReadonlyMap<string, Decision>,
+) {
+  const states = new Map(
+    profile.summary.projectRows.map((row) => [row.project, row.state]),
+  );
+  const causes = new Map<string, Set<string>>();
+  for (const { project, decision } of ownedContextCacheDecisions(profile)) {
+    const state = states.get(project);
+    if (state === undefined || ['skipped', 'covered-by-graph'].includes(state))
+      continue;
+    let reasons: string[];
+    if (decision.outcome === 'adopted') {
+      if (state !== 'partial' && state !== 'restored') continue;
+      reasons = [decision.origin];
+    } else {
+      if (
+        state === 'restored' ||
+        decision.stage === 'publication' ||
+        decision.causes === undefined
+      )
+        continue;
+      reasons = causeCodes(decision, decisions);
+      if (reasons.length === 0) reasons.push(decision.outcome);
+    }
+    const existing = causes.get(project);
+    if (existing === undefined) causes.set(project, new Set(reasons));
+    else for (const reason of reasons) existing.add(reason);
+  }
+  return causes;
+}
+
 function renderProjects(
   profile: AnalysisProfile,
   decisions: ReadonlyMap<string, Decision>,
 ): string[] {
-  const { coverage, projects, contexts, work, summary } = profile;
+  const { coverage, projects, summary } = profile;
   const byId = new Map(projects.map((project) => [project.id, project]));
-  const pathToId = new Map(projects.map(({ id, path }) => [path, id]));
-  const contextOwners = new Map(
-    contexts.map(({ id, project }) => [id, project]),
-  );
-  const workScopes = new Map(work.map(({ id, scope }) => [id, scope]));
-  const projectDecisions = new Map<string, Decision>();
-  for (const decision of decisions.values()) {
-    if (!decision.causes && decision.outcome !== 'adopted') continue;
-    const scope = workScopes.get(decision.work);
-    const scopedProject =
-      scope?.[0] === 'project'
-        ? scope[1]
-        : scope?.[0] === 'context'
-          ? contextOwners.get(scope[1])
-          : undefined;
-    const project =
-      decision.subject === undefined
-        ? scopedProject
-        : pathToId.get(decision.subject);
-    if (project !== undefined) projectDecisions.set(project, decision);
-  }
+  const causes = projectCacheCauses(profile, decisions);
 
   const lines = [`Project inventory ${coverage.projectInventory}`];
   if (summary.projectRows.length > 0) {
@@ -109,14 +123,15 @@ function renderProjects(
     );
     const programs =
       native === undefined ? UNKNOWN : `${native.attempts}/${native.created}`;
-    const decision = projectDecisions.get(row.project);
-    let cause = row.state === 'covered-by-graph' ? 'complete graph' : UNKNOWN;
-    if (decision !== undefined) {
-      cause =
-        decision.outcome === 'adopted'
-          ? decision.origin
-          : causeCodes(decision, decisions).join(', ') || decision.outcome;
-    }
+    const reasons = causes.get(row.project);
+    const cause =
+      reasons === undefined
+        ? row.state === 'covered-by-graph'
+          ? 'complete graph'
+          : UNKNOWN
+        : [...reasons]
+            .sort((left, right) => left.localeCompare(right))
+            .join(', ');
     lines.push(
       `  ${project?.path ?? row.project}  ${project?.executionChecker ?? UNKNOWN}  ${row.state}  ${duration(row.workUnionUs)}  ${programs}  ${cause}`,
     );

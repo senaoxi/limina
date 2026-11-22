@@ -213,6 +213,12 @@ it('records separate prepared and receipt milestones for cold and warm graph pre
           workUnionUs: expect.any(Number),
         }),
       ]);
+      const projectLine = result.stderr
+        .split('\n')
+        .find((line) => line.trimStart().startsWith('tsconfig.json  '));
+      expect(projectLine?.trimEnd().split('  ').at(-1)).toBe(
+        mode === 'cold' ? 'context-record-absent' : 'prior-disk',
+      );
       const index = await cacheIndex(f);
       const current = {
         bytes: await readFile(index),

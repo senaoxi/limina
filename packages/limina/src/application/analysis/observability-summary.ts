@@ -373,32 +373,39 @@ function partitionScope<T extends { scope: WorkRecord['scope'] }>(
   return { projects, contexts };
 }
 
-function adoptedScopes(
-  input: SummaryInput,
-  workById: Map<string, WorkRecord>,
-  owners: Map<string, string>,
-) {
-  const projects = new Set<string>();
-  const contexts = new Set<string>();
-  const byPath = new Map(input.projects.map((p) => [p.path, p.id]));
+function isSemanticContextLayer(layer: string): boolean {
+  return layer === 'native-context' || layer === 'vue-context';
+}
+
+export function* ownedContextCacheDecisions(
+  input: Pick<SummaryInput, 'projects' | 'contexts' | 'work' | 'decisions'>,
+  workById: ReadonlyMap<string, WorkRecord> = new Map(
+    input.work.map((work) => [work.id, work]),
+  ),
+  owners: ReadonlyMap<string, string> = new Map(
+    input.contexts.map(({ id, project }) => [id, project]),
+  ),
+): Generator<{
+  decision: DecisionRecord;
+  project: string;
+  context: string | undefined;
+}> {
+  const byPath = new Map(input.projects.map(({ path, id }) => [path, id]));
   for (const decision of input.decisions) {
-    if (
-      decision.outcome !== 'adopted' ||
-      !['native-context', 'vue-context'].includes(decision.layer)
-    )
-      continue;
+    if (!isSemanticContextLayer(decision.layer)) continue;
     const scope = workById.get(decision.work)?.scope;
-    const project = decision.subject && byPath.get(decision.subject);
-    if (project) projects.add(project);
-    if (scope?.[0] === 'project' && (!project || project === scope[1]))
-      projects.add(scope[1]);
-    if (scope?.[0] !== 'context') continue;
-    const owner = owners.get(scope[1]);
-    if (!owner || (project && owner !== project)) continue;
-    contexts.add(scope[1]);
-    projects.add(owner);
+    const context = scope?.[0] === 'context' ? scope[1] : undefined;
+    const scopeProject =
+      scope?.[0] === 'project' ? scope[1] : context && owners.get(context);
+    const project =
+      (decision.subject && byPath.get(decision.subject)) || scopeProject;
+    if (project !== undefined)
+      yield {
+        decision,
+        project,
+        context: scopeProject === project ? context : undefined,
+      };
   }
-  return { projects, contexts };
 }
 
 function graphRows(
@@ -664,7 +671,17 @@ export function summarizeProfile(input: SummaryInput): Summary {
   const links = summarizeLinks(input, workById, owners);
   const scopedWork = partitionScope(input.work, owners);
   const scopedMetrics = partitionScope(input.metrics, owners);
-  const adopted = adoptedScopes(input, workById, owners);
+  const adoptedProjects = new Set<string>();
+  const adoptedContexts = new Set<string>();
+  for (const { decision, project, context } of ownedContextCacheDecisions(
+    input,
+    workById,
+    owners,
+  )) {
+    if (decision.outcome !== 'adopted') continue;
+    adoptedProjects.add(project);
+    if (context !== undefined) adoptedContexts.add(context);
+  }
   const covered = new Set(
     input.graphs.flatMap((graph) =>
       graph.source === 'restored' && graph.prepared?.length
@@ -678,7 +695,7 @@ export function summarizeProfile(input: SummaryInput): Summary {
       ...rowValues(
         scopedWork.projects.get(id) ?? [],
         scopedMetrics.projects.get(id) ?? [],
-        adopted.projects.has(id),
+        adoptedProjects.has(id),
         covered.has(id),
         input.dropped,
         links.missingWaitProjects.has(id),
@@ -691,7 +708,7 @@ export function summarizeProfile(input: SummaryInput): Summary {
     ...rowValues(
       scopedWork.contexts.get(id) ?? [],
       scopedMetrics.contexts.get(id) ?? [],
-      adopted.contexts.has(id),
+      adoptedContexts.has(id),
       false,
       input.dropped,
       links.missingWaitContexts.has(id),
