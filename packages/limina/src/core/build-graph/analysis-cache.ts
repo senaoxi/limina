@@ -144,6 +144,7 @@ async function readGraph(
     options.cache.fallback(graphFallbackReason(options.config));
     recordCacheMiss('analysis-graph', graphFallbackReason(options.config), {
       bypassed: true,
+      basis: options.cache.snapshotDecision,
     });
     return undefined;
   }
@@ -166,7 +167,9 @@ async function readVersionedGraph(
     options.projectConfigCache,
   );
   if (ownershipInputs === undefined) {
-    recordCacheMiss('analysis-graph', 'ownership-inputs-replay-rejected');
+    recordCacheMiss('analysis-graph', 'ownership-inputs-replay-rejected', {
+      basis: options.cache.snapshotDecision,
+    });
     return undefined;
   }
   const record = await options.cache.restoreGraphRecord(
@@ -179,7 +182,9 @@ async function readVersionedGraph(
   if (data === undefined) {
     delete options.cache.graphs[key];
     options.cache.fallback('graph-dto-invalid');
-    recordCacheMiss('analysis-graph', 'graph-dto-or-binding-invalid');
+    recordCacheMiss('analysis-graph', 'graph-dto-or-binding-invalid', {
+      basis: options.cache.snapshotDecision,
+    });
     return undefined;
   }
   return { data, origin, snapshotDecision: options.cache.snapshotDecision };
@@ -254,14 +259,18 @@ export async function restoreGeneratedGraph(
       options.config.rootDir,
     )
   ) {
-    recordCacheMiss('analysis-graph', 'declaration-candidate-rejected');
+    recordCacheMiss('analysis-graph', 'declaration-candidate-rejected', {
+      basis: options.cache.snapshotDecision,
+    });
     return undefined;
   }
   const graph = await rebindArtifacts(data.graph, options);
   if (!hasBoundRestoredGraphExecutionInputs(graph, options.cache)) {
     delete options.cache.graphs[key];
     options.cache.fallback('graph-execution-inputs-incomplete');
-    recordCacheMiss('analysis-graph', 'execution-inputs-incomplete');
+    recordCacheMiss('analysis-graph', 'execution-inputs-incomplete', {
+      basis: options.cache.snapshotDecision,
+    });
     return undefined;
   }
   options.cache.increment('graphHits');
@@ -284,7 +293,7 @@ export async function restoreCachedDependencyAnalysis(
       cache === undefined
         ? 'cache-controller-unavailable'
         : 'managed-execution-view',
-      { bypassed: true },
+      { bypassed: true, basis: cache?.snapshotDecision },
     );
     return undefined;
   }

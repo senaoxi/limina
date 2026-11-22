@@ -1,6 +1,7 @@
 import {
   chmod,
   mkdir,
+  readdir,
   readFile,
   realpath,
   rm,
@@ -12,6 +13,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { expect, it } from 'vitest';
 import { createSemanticRepairFixture } from '../../src/__tests__/helpers/semantic-repair';
+import type { AnalysisProfile } from '../../src/application/analysis/observability';
 import type { GeneratedTsconfigGraphManifest } from '../../src/core/build-graph/manifest-types';
 import { readJson, resolveGeneratedPath } from '../helpers/assertions';
 import { runLimina } from '../helpers/run-limina';
@@ -154,7 +156,34 @@ it('builds independent producers before resolving all Svelte consumers and repai
       expect(result.code, result.stdout + result.stderr).toBe(0);
       return result.stdout + result.stderr;
     };
-    const cold = await check(['check']);
+    const cold = await check(['check', '--profile']);
+    const profiles = fixture.path('.limina', 'profiles');
+    const reports = await readdir(profiles);
+    expect(reports).toHaveLength(1);
+    const profile = await readJson<AnalysisProfile>(
+      path.join(profiles, reports[0]!),
+    );
+    expect(
+      profile.summary.graphModes.map(({ purpose, mode }) => ({
+        purpose,
+        mode,
+      })),
+    ).toEqual([
+      { purpose: 'producer-build', mode: 'cold' },
+      { purpose: 'complete', mode: 'cold' },
+    ]);
+    const bypasses = profile.decisions.filter(
+      ({ layer, outcome }) =>
+        layer === 'analysis-graph' && outcome === 'bypassed',
+    );
+    for (const code of ['producer-build-plan', 'managed-execution-view'])
+      expect(bypasses).toContainEqual(
+        expect.objectContaining({
+          causes: [{ code }],
+          basis: [expect.any(String)],
+        }),
+      );
+
     const preparation = cold.indexOf(
       '[pass] materialize producer reference graph',
     );

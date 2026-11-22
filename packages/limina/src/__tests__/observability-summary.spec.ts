@@ -383,6 +383,101 @@ describe('analysis observability evidence', () => {
     ).toBe('cold');
     expect(summarizeProfile(empty).mode).toBe('not-applicable');
   });
+
+  it('classifies managed graph bypass from the exact context it consumes', () => {
+    const disk = {
+      id: 'disk',
+      work: 'command',
+      layer: 'analysis-snapshot',
+      stage: 'adoption',
+      outcome: 'adopted',
+      origin: 'prior-disk',
+    } as const;
+    const skip = {
+      id: 'skip',
+      work: 'g-producer',
+      layer: 'analysis-graph',
+      stage: 'admission',
+      outcome: 'bypassed',
+      causes: [{ code: 'producer-build-plan' }],
+      basis: ['disk'],
+    } as const;
+    const prior = {
+      ...disk,
+      id: 'earlier-context',
+      work: 'routing',
+      layer: 'native-context',
+      subject: 'tsconfig.json',
+      basis: ['disk'],
+    };
+    const reuse = {
+      ...prior,
+      id: 'context-use',
+      work: 'g-producer',
+      origin: 'invocation-memory',
+      basis: undefined,
+    } as const;
+    const input = {
+      ...empty,
+      graphs: [{ ...graph('g', 'computed'), purpose: 'producer-build' }],
+      work: [
+        {
+          id: 'command',
+          op: 'command',
+          scope: ['invocation'],
+          end: 'performed',
+          time: [0, 35],
+        },
+        {
+          id: 'routing',
+          parent: 'command',
+          op: 'checker-ownership-discovery',
+          scope: ['invocation'],
+          end: 'performed',
+          time: [1, 4],
+        },
+        { ...producer('g', 'computed'), parent: 'command' },
+      ],
+      decisions: [disk, skip, prior],
+    } satisfies Parameters<typeof summarizeProfile>[0];
+    expect(
+      summarizeProfile({ ...input, decisions: [...input.decisions, reuse] })
+        .graphModes,
+    ).toMatchObject([{ mode: 'unavailable', basis: ['skip', 'g-producer'] }]);
+
+    const scoped = summarizeProfile({
+      ...input,
+      decisions: [...input.decisions, { ...reuse, basis: [prior.id] }],
+    });
+    expect(scoped.mode).toBe('incremental');
+    expect(scoped.graphModes).toMatchObject([
+      { mode: 'incremental', basis: ['skip', 'g-producer', 'context-use'] },
+    ]);
+
+    const absent = {
+      id: 'empty',
+      work: 'command',
+      layer: 'analysis-snapshot',
+      stage: 'lookup',
+      outcome: 'absent',
+      causes: [{ code: 'no-index' }],
+    } as const;
+    expect(
+      summarizeProfile({
+        ...input,
+        decisions: [disk, prior, absent, { ...skip, basis: [absent.id] }],
+      }).mode,
+    ).toBe('cold');
+    for (const cachePolicy of ['forced', 'disabled'])
+      expect(
+        summarizeProfile({
+          ...input,
+          cachePolicy,
+          decisions: [{ ...skip, basis: undefined }],
+        }).mode,
+      ).toBe('cold');
+  });
+
   it('only exposes an outer complete graph once its requested gate succeeds', () => {
     const core = graph('g', 'computed');
     core.prepared = [{ gate: 'core', atUs: 30 }];

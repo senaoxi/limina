@@ -14,6 +14,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  AnalysisObserver,
+  runWithProfile,
+} from '../application/analysis/observability';
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { AnalysisInputs } from '../core/analysis-cache/inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
@@ -186,6 +190,61 @@ function expectCold(
 }
 
 describe('persistent native analysis facts', () => {
+  it('links a Native context memory hit to its disk adoption only within the same profile', () => {
+    const { file, write } = fixture();
+    write('a.ts', 'export const a = 1;');
+    const input = project(file('tsconfig.json'), [file('a.ts')]);
+    const snapshot = parseAnalysisSnapshot(
+      diskSnapshot(analyze(input).cache),
+      'fixture',
+    )!;
+    const fromSnapshot = () =>
+      new NativeAnalysisCache('fixture', snapshot, {
+        configVersion: 'fixture-config',
+        previousOrigin: 'prior-disk',
+      });
+    const cache = fromSnapshot();
+    const bounded = withCoverage(input);
+    const first = new AnalysisObserver('limina check', performance.now());
+    runWithProfile(first, () => {
+      const restored = cache.restoreContext(bounded);
+      expect(restored).toBeDefined();
+      expect(cache.restoreContext(bounded)).toBe(restored);
+    });
+    first.stop(true);
+    const native = first
+      .snapshot()
+      .decisions.filter(({ layer }) => layer === 'native-context');
+    const disk = native.find(
+      (fact) => fact.outcome === 'adopted' && fact.origin === 'prior-disk',
+    );
+    expect(disk).toBeDefined();
+    expect(native.findLast(({ stage }) => stage === 'lookup')?.basis).toEqual([
+      disk!.id,
+    ]);
+
+    const second = new AnalysisObserver('limina check', performance.now());
+    runWithProfile(second, () => {
+      expect(fromSnapshot().restoreContext(bounded)).toBeDefined();
+      expect(cache.restoreContext(bounded)).toBeDefined();
+    });
+    second.stop(true);
+    const next = second
+      .snapshot()
+      .decisions.filter(({ layer }) => layer === 'native-context');
+    const otherDisk = next.find(
+      (fact) => fact.outcome === 'adopted' && fact.origin === 'prior-disk',
+    );
+    expect(otherDisk?.id).toBe(disk!.id);
+    expect(next.findLast(({ stage }) => stage === 'adoption')).toMatchObject({
+      outcome: 'adopted',
+      origin: 'invocation-memory',
+    });
+    const nextLookup = next.findLast(({ stage }) => stage === 'lookup');
+    expect(nextLookup).toBeDefined();
+    expect(nextLookup?.basis).toBeUndefined();
+  });
+
   it('reassembles runtime observations through missing, present and missing while native facts hit', () => {
     const { file, write } = fixture();
     write('a.ts', "import './theme.css'; export {};");

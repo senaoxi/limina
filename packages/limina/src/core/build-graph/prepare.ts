@@ -221,13 +221,14 @@ async function restorePreparedGraph(
   config: ResolvedLiminaInputs,
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<GeneratedTsconfigGraphResult | undefined> {
+  const cache = options.projectDependencyCaches?.analysisCache;
   if (options.producerBuildReceipt !== undefined) {
     recordCacheMiss('analysis-graph', 'managed-execution-view', {
       bypassed: true,
+      basis: cache?.snapshotDecision,
     });
     return undefined;
   }
-  const cache = options.projectDependencyCaches?.analysisCache;
   if (cache === undefined) {
     recordCacheMiss('analysis-graph', 'cache-controller-unavailable', {
       bypassed: true,
@@ -400,6 +401,11 @@ export function prepareProducerBuildPlan(
   options: PrepareGeneratedTsconfigGraphOptions,
 ): Promise<ProducerBuildPlan> {
   return observeCorePreparation(async () => {
+    const cache = options.projectDependencyCaches?.analysisCache;
+    recordCacheMiss('analysis-graph', 'producer-build-plan', {
+      bypassed: true,
+      basis: cache?.snapshotDecision,
+    });
     const inputs = new EpochInputs();
     const graph = await inputs.collect(() =>
       prepareGraph(config, options, false, 'producer-build'),

@@ -532,12 +532,55 @@ function decisionChain(
   return found.values().toArray();
 }
 
+function isSnapshotDecision({ layer }: DecisionRecord): boolean {
+  return layer === 'analysis-snapshot' || layer === 'analysis-snapshot-facts';
+}
+
+function isRejectedBaseline(decision: DecisionRecord): boolean {
+  return ['absent', 'corrupt', 'rejected'].includes(decision.outcome);
+}
+
+function classifyManagedBypass(
+  bypass: DecisionRecord,
+  work: WorkRecord,
+  local: readonly DecisionRecord[],
+  byId: Map<string, DecisionRecord>,
+  isForcedCold: boolean,
+): { mode: Mode; basis: string[] } {
+  const basis = [bypass.id, work.id];
+  if (isForcedCold) return { mode: 'cold', basis };
+  const consumed = local.find(
+    (decision) =>
+      decision.outcome === 'adopted' &&
+      isSemanticContextLayer(decision.layer) &&
+      decisionChain([decision], byId).some(
+        (upstream) =>
+          upstream.outcome === 'adopted' &&
+          isSemanticContextLayer(upstream.layer) &&
+          (upstream.origin === 'prior-disk' || upstream.origin === 'mixed'),
+      ),
+  );
+  if (consumed) return { mode: 'incremental', basis: [...basis, consumed.id] };
+
+  // A managed graph can reuse work done in this invocation after a cold start.
+  // An adopted snapshot alone cannot prove that its semantic facts were used.
+  const snapshots = decisionChain([bypass], byId).filter(isSnapshotDecision);
+  const cold = snapshots.find(isRejectedBaseline);
+  const hasPossiblePrior = snapshots.some(
+    (d) => d.outcome === 'adopted' && d.origin !== 'invocation-memory',
+  );
+  return cold !== undefined && !hasPossiblePrior
+    ? { mode: 'cold', basis: [...basis, cold.id] }
+    : { mode: 'unavailable', basis };
+}
+
 function classifyGraph(
   graph: Graph,
   work: WorkRecord | undefined,
   local: readonly DecisionRecord[],
   snapshots: readonly DecisionRecord[],
   policy: string,
+  byId: Map<string, DecisionRecord>,
 ) {
   const basis: string[] = [];
   const result = (mode: Mode) => ({ mode, basis });
@@ -565,22 +608,37 @@ function classifyGraph(
     }
   }
   if (graph.source !== 'computed') return result('unavailable');
+  const isForcedCold = ['forced', 'force', 'disabled'].includes(policy);
+  const managedBypass = local.find(
+    (d) =>
+      d.layer === 'analysis-graph' &&
+      d.outcome === 'bypassed' &&
+      d.causes.some(
+        ({ code }) =>
+          code === 'producer-build-plan' || code === 'managed-execution-view',
+      ),
+  );
+  if (managedBypass)
+    return classifyManagedBypass(
+      managedBypass,
+      work,
+      local,
+      byId,
+      isForcedCold,
+    );
+
   const prior = snapshots.find(
     (d) => d.outcome === 'adopted' && d.origin === 'prior-disk',
   );
   const rejected = local.find(
-    (d) =>
-      d.layer === 'analysis-graph' &&
-      ['absent', 'corrupt', 'rejected'].includes(d.outcome),
+    (d) => d.layer === 'analysis-graph' && isRejectedBaseline(d),
   );
   if (prior && rejected) {
     basis.push(prior.id, rejected.id, work.id);
     return result('incremental');
   }
-  const cold = snapshots.find((d) =>
-    ['absent', 'corrupt', 'rejected'].includes(d.outcome),
-  );
-  if (cold || ['forced', 'force', 'disabled'].includes(policy)) {
+  const cold = snapshots.find(isRejectedBaseline);
+  if (cold || isForcedCold) {
     if (cold) basis.push(cold.id);
     basis.push(work.id);
     return result('cold');
@@ -599,22 +657,21 @@ function deriveMode(input: SummaryInput, workById: Map<string, WorkRecord>) {
   const byId = new Map(input.decisions.map((d) => [d.id, d]));
   const facts = new Map<string, DecisionRecord[]>();
   for (const decision of input.decisions)
-    if (decision.layer === 'analysis-graph')
+    if (
+      decision.layer === 'analysis-graph' ||
+      (decision.outcome === 'adopted' && isSemanticContextLayer(decision.layer))
+    )
       incrementGroup(facts, owner(decision.work), decision);
-  const globalSnapshots = input.decisions.filter(
-    (d) =>
-      d.layer === 'analysis-snapshot' || d.layer === 'analysis-snapshot-facts',
-  );
+  const globalSnapshots = input.decisions.filter(isSnapshotDecision);
   const isUnambiguousBaseline =
     globalSnapshots.filter((d) => d.stage === 'adoption').length <= 1;
   const graphModes = completed.map((graph) => {
     const local = facts.get(graph.producer ?? '') ?? [];
-    const chain = decisionChain(local, byId);
-    const snapshots = chain.filter(
-      (d) =>
-        d.layer === 'analysis-snapshot' ||
-        d.layer === 'analysis-snapshot-facts',
+    const chain = decisionChain(
+      local.filter((d) => d.layer === 'analysis-graph'),
+      byId,
     );
+    const snapshots = chain.filter(isSnapshotDecision);
     const { mode, basis } = classifyGraph(
       graph,
       workById.get(graph.producer ?? ''),
@@ -623,6 +680,7 @@ function deriveMode(input: SummaryInput, workById: Map<string, WorkRecord>) {
         ? snapshots
         : globalSnapshots,
       input.cachePolicy,
+      byId,
     );
     return {
       graph: graph.id,

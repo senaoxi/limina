@@ -24,7 +24,12 @@ import {
   type TypeEnvironmentRecord,
 } from './installation-environment';
 import type { NativeAnalysisCache } from './native-cache';
-import { recordCacheHit, recordCacheMiss } from './profile-decisions';
+import {
+  type CacheDecisionReference,
+  keepCacheDecision,
+  recordCacheHit,
+  recordCacheMiss,
+} from './profile-decisions';
 import { hasResolutionReceipt } from './resolution-queries';
 import { restoredDependencyContext } from './restored-context';
 import type { SemanticState } from './semantic-state';
@@ -155,7 +160,11 @@ export class NativeContextRecords {
   readonly #environments = new Map<string, TypeEnvironmentRecord>();
   readonly #restored = new Map<
     string,
-    { id: string; context: TypeScriptSemanticDependencyContext }
+    {
+      id: string;
+      context: TypeScriptSemanticDependencyContext;
+      adoption?: CacheDecisionReference;
+    }
   >();
   constructor(cache: NativeAnalysisCache) {
     this.#cache = cache;
@@ -194,13 +203,6 @@ export class NativeContextRecords {
       )
     )
       return miss('context-inventory-binding-invalid');
-    recordCacheHit(
-      'native-context',
-      this.#cache.contexts[id] === candidate.record
-        ? 'invocation-memory'
-        : this.#cache.previousOrigin,
-      project.sourceConfigPath ?? project.configPath,
-    );
     return this.#adopt(project, identity, candidate);
   }
   #adopt(
@@ -209,10 +211,11 @@ export class NativeContextRecords {
     candidate: Candidate,
   ): TypeScriptSemanticDependencyContext {
     const cache = this.#cache;
+    const id = nativeContextId(project);
+    const isInMemory = cache.contexts[id] === candidate.record;
     for (const [key, item] of candidate.importers) cache.importers[key] = item;
     for (const [key, query] of candidate.queries)
       cache.restoreQuery(key, query);
-    const id = nativeContextId(project);
     cache.projects[id] = candidate.state;
     cache.contexts[id] = candidate.record;
     adoptSyntax(cache, candidate.record);
@@ -226,7 +229,14 @@ export class NativeContextRecords {
       cache.importers,
       cache,
     );
-    this.#restored.set(identity, { id, context });
+    const adoption = keepCacheDecision(
+      recordCacheHit(
+        'native-context',
+        isInMemory ? 'invocation-memory' : cache.previousOrigin,
+        project.sourceConfigPath ?? project.configPath,
+      ),
+    );
+    this.#restored.set(identity, { id, context, adoption });
     return context;
   }
   evict(id: string): void {
@@ -314,7 +324,12 @@ export class NativeContextRecords {
     const identity = createTypeScriptSemanticContextIdentity(project);
     const memoized = this.#restored.get(identity);
     if (memoized !== undefined) {
-      recordCacheHit('native-context', 'invocation-memory', file);
+      recordCacheHit(
+        'native-context',
+        'invocation-memory',
+        file,
+        memoized.adoption,
+      );
       return memoized.context;
     }
     return this.#restoreNew(project, identity, replay, miss);

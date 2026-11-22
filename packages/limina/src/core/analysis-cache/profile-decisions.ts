@@ -7,6 +7,30 @@ export type CacheOrigin =
   | 'mixed'
   | 'unknown';
 
+export interface CacheDecisionReference {
+  readonly invocationId: string;
+  readonly decision: string;
+}
+
+export function keepCacheDecision(
+  decision: string | undefined,
+): CacheDecisionReference | undefined {
+  if (decision === undefined) return undefined;
+  const invocationId = currentProfile()?.invocationId;
+  return invocationId === undefined ? undefined : { invocationId, decision };
+}
+
+export function activeCacheDecision(
+  reference: CacheDecisionReference | undefined,
+  invocationId?: string,
+): string | undefined {
+  if (reference === undefined) return undefined;
+  return reference.invocationId ===
+    (invocationId ?? currentProfile()?.invocationId)
+    ? reference.decision
+    : undefined;
+}
+
 export function cacheCause(
   decision: string | undefined,
   code: string,
@@ -18,13 +42,19 @@ export function recordCacheHit(
   layer: string,
   origin: CacheOrigin,
   file?: string,
+  basis?: CacheDecisionReference,
 ): string | undefined {
   const profile = currentProfile();
   if (profile === undefined) return undefined;
   const subject = file === undefined ? undefined : profile.path(file);
+  const pending = activeCacheDecision(basis, profile.invocationId);
   const lookup = profile.decision(
     layer,
-    { stage: 'lookup', outcome: 'found' },
+    {
+      stage: 'lookup',
+      outcome: 'found',
+      basis: pending === undefined ? undefined : [pending],
+    },
     subject,
   );
   const admission = profile.decision(

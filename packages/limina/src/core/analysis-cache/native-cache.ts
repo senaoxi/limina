@@ -36,7 +36,10 @@ import { subscribeInstallationDomains } from './installation-environment';
 import type { InstallationLockGate } from './installation-gate';
 import { AnalysisInvalidation } from './invalidation';
 import {
+  activeCacheDecision,
+  type CacheDecisionReference,
   type CacheOrigin,
+  keepCacheDecision,
   recordCacheHit,
   recordCacheMiss,
 } from './profile-decisions';
@@ -65,6 +68,7 @@ export class NativeAnalysisCache {
   readonly #contexts: NativeContextRecords;
   readonly #graphs: CachedGraphRecords;
   #resolving = 0;
+  #snapshotDecision?: CacheDecisionReference;
   readonly #executableContexts = new Set<string>();
   #hasUnsupportedContext = false;
   readonly #captures = new Map<
@@ -94,7 +98,7 @@ export class NativeAnalysisCache {
   readonly configModules: ConfigModuleSnapshot;
   readonly previous: AnalysisSnapshot | undefined;
   readonly previousOrigin: CacheOrigin;
-  snapshotDecision?: string;
+
   constructor(
     identity: string,
     previous?: AnalysisSnapshot,
@@ -159,6 +163,7 @@ export class NativeAnalysisCache {
     this.#graphs = new CachedGraphRecords(this);
     this.vue = new VueAnalysisRecords(this);
   }
+
   #recordProject(id: string, record: ProjectRecord): void {
     this.projects[id] = retainData(this.previous?.projects[id], record);
   }
@@ -203,6 +208,14 @@ export class NativeAnalysisCache {
       this.#rebuiltSyntax.set(owner, fresh);
     }
     return fresh;
+  }
+
+  get snapshotDecision(): string | undefined {
+    return activeCacheDecision(this.#snapshotDecision);
+  }
+
+  set snapshotDecision(decision: string | undefined) {
+    this.#snapshotDecision = keepCacheDecision(decision);
   }
 
   observeProjectLock(configPath: string): void {
