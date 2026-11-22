@@ -59,36 +59,42 @@ test('overlapping invocations keep identical project paths and provider objects 
   expect(b.summary.projectRows[0]?.state).toBe('failed');
 });
 
-test('query sampling preserves measured counts and a later authoritative publication', () => {
-  const profile = new AnalysisObserver('limina check', performance.now());
-  for (let index = 0; index < 3000; index++)
-    profile.decision('native-resolution', {
-      stage: 'lookup',
-      outcome: 'found',
+test.each([
+  'native-resolution',
+  'native-source-syntax',
+  'resolved-config',
+  'resolved-config-live-parse',
+])(
+  '%s query sampling preserves counts and a later authoritative publication',
+  (layer) => {
+    const profile = new AnalysisObserver('limina check', performance.now());
+    for (let index = 0; index < 3000; index++)
+      profile.decision(layer, {
+        stage: 'lookup',
+        outcome: 'found',
+      });
+    profile.decision('analysis-snapshot', {
+      stage: 'publication',
+      outcome: 'published',
     });
-  profile.decision('analysis-snapshot', {
-    stage: 'publication',
-    outcome: 'published',
-  });
-  profile.stop(true);
-  const { metrics, decisions, coverage } = profile.snapshot();
-  expect(metrics).toContainEqual({
-    key: 'cache.native-resolution.lookup.found',
-    scope: ['invocation'],
-    kind: 'counter',
-    unit: 'calls',
-    value: 3000,
-  });
-  const retained = decisions.filter(
-    (decision) => decision.stage === 'lookup',
-  ).length;
-  expect(retained).toBeLessThan(3000);
-  expect(coverage.detailsOmitted + retained).toBe(3000);
-  expect(decisions.at(-1)).toMatchObject({
-    stage: 'publication',
-    outcome: 'published',
-  });
-});
+    profile.stop(true);
+    const { metrics, decisions, coverage } = profile.snapshot();
+    expect(metrics).toContainEqual({
+      key: `cache.${layer}.lookup.found`,
+      scope: ['invocation'],
+      kind: 'counter',
+      unit: 'calls',
+      value: 3000,
+    });
+    const retained = decisions.filter((decision) => decision.layer === layer);
+    expect(retained.length).toBeLessThan(3000);
+    expect(coverage.detailsOmitted + retained.length).toBe(3000);
+    expect(decisions.at(-1)).toMatchObject({
+      stage: 'publication',
+      outcome: 'published',
+    });
+  },
+);
 
 test('retains only resolvable work references at the detail limit', () => {
   const profile = new AnalysisObserver('limina check', performance.now());

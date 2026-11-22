@@ -103,6 +103,9 @@ const queryDetailBudget = 2048;
 const queryLayers = new Set([
   'native-resolution',
   'native-syntax',
+  'native-source-syntax',
+  'resolved-config',
+  'resolved-config-live-parse',
   'importer-facts',
   'vue-resolution',
   'vue-query',
