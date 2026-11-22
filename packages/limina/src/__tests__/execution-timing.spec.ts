@@ -120,6 +120,7 @@ describe('execution timing', () => {
     'excludes delayed %s observers from runner timestamps',
     async (eventType) => {
       const secondStarted = Promise.withResolvers<void>();
+      const observerEntered = Promise.withResolvers<void>();
       const tasks = [
         task('a', 0, {
           run: async () => {
@@ -130,15 +131,23 @@ describe('execution timing', () => {
         task('b', 1, {
           run: async () => {
             secondStarted.resolve();
-            await delay(10);
+            await observerEntered.promise;
             return { status: 'passed', issues: [] };
           },
         }),
       ];
       const { context, recorder, trace } = scheduler(tasks, {
         project: async (entry, event) => {
-          if (entry.id === tasks[0]!.id && event.type === eventType)
-            await delay(45);
+          if (entry.id !== tasks[0]!.id || event.type !== eventType) return;
+          observerEntered.resolve();
+          if (eventType === 'pass') {
+            // Start the delay after B's real runner boundary, regardless of timer scheduling.
+            await context.running.get(tasks[1]!.id)!.settlement;
+            const second = trace.snapshot().tasks[1]!;
+            expect(second.runnerCompletedMs).toBeDefined();
+            expect(second.settlementStartedMs).toBeUndefined();
+          }
+          await delay(45);
         },
       });
       await runScheduler(context);
