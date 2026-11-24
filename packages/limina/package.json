@@ -53,6 +53,7 @@
     "dev": "rolldown --config rolldown.config.ts --watch",
     "test:unit": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "bench": "vitest bench --run --config vitest.bench.config.ts",
     "clean": "del-cli dist .tsbuild .smoke coverage"
   },
   "dependencies": {
@@ -61,6 +62,7 @@
     "oxc-resolver": "catalog:prod"
   },
   "devDependencies": {
+    "@codspeed/vitest-plugin": "catalog:test",
     "@limina/gates": "workspace:*",
     "ini": "catalog:dev",
     "@types/ini": "catalog:dev",
