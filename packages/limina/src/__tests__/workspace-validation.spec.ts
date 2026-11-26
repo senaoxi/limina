@@ -16,8 +16,8 @@ import {
   collectValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
+import { createTestMetricsRecorder } from './helpers/metrics';
 import {
   createFixturePathResolver,
   toPortablePath,
@@ -242,7 +242,7 @@ describe('validated workspace context', () => {
           workspacePackage(fixture.path('packages/app'), '@fixture/app'),
         ],
       });
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const pathIndex = new WorkspaceRegionPathIndex(context, metrics);
       const packageFile = fixture.path('packages/app/src/index.ts');
       const outsideFile = path.join(fixture.rootDir, '..', 'outside.ts');

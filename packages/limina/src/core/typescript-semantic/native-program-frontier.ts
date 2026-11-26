@@ -49,6 +49,10 @@ export class NativeProgramFrontier {
     this.#roots = new Set(roots.map(fileKey));
   }
 
+  isProjectRoot(file: string): boolean {
+    return this.#roots.has(this.fileKey(file));
+  }
+
   inspect(fileName: string): NativeSourceAttempt {
     const path = normalizeAbsolutePath(fileName);
     const prior = this.#observations.get(path);
@@ -60,7 +64,7 @@ export class NativeProgramFrontier {
       coverage,
       decision: decideNativeFrontier({
         consumerConfigId: this.validation?.sourceConfig ?? this.configId,
-        root: this.#roots.has(this.fileKey(file.lexicalPath)),
+        root: this.isProjectRoot(file.lexicalPath),
         kind: isDeclarationFile(file.lexicalPath)
           ? 'declaration'
           : 'implementation',

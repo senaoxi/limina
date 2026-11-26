@@ -1,10 +1,11 @@
 import { uniqueCodeUnitSortedStrings } from '#utils/collections';
+import { isRelativeSpecifier } from '#utils/module-specifier';
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 export function isRelativeTypeName(value: unknown): value is string {
   return (
     typeof value === 'string' &&
-    (value.startsWith('./') || value.startsWith('../'))
+    isRelativeSpecifier(value.replaceAll('\\', '/'))
   );
 }
 

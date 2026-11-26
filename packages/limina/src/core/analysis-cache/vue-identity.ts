@@ -1,12 +1,13 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import { isPlainRecord } from '#utils/values';
 import { readFileSync } from 'node:fs';
+import { isVueCacheTuple } from '../../checker/vue-semantic-compatibility';
 import { vueCompilerPathPolicy } from '../../checker/vue-semantic-identity';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { type DataNode, encodeData } from './data-codec';
 import { analysisHash } from './identity';
 
-export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v16-resolution-members';
+export const VUE_ANALYSIS_ADAPTER = 'vue-3.2.4-v17-context-facts';
 
 function hasPlugins(plugins: unknown): boolean {
   return plugins !== undefined && hasPluginEntries(plugins);
@@ -40,10 +41,7 @@ export function isVueAnalysisSupported(
   if (!isPlainRecord(identity.vueOptions)) return false;
   return [
     identity.toolchain.adapter.kind !== 'unsupported',
-    versions.typeScript === '6.0.3',
-    versions.vueTsc === '3.2.4',
-    versions.languageCore === '3.2.4',
-    versions.volarTypeScript === '2.4.27',
+    isVueCacheTuple(versions),
     identity.virtualFiles.size === 0,
     hasNoRuntimePlugins(identity.vueOptions),
     !hasConfiguredPlugins(identity),
@@ -72,7 +70,10 @@ function vueSemanticInputs(identity: VueProjectSemanticIdentity) {
         ? undefined
         : nativeFingerprint(identity.declarationLoading),
     configPath: identity.configPath,
-    outputProjection: identity.outputProjection,
+    outputProjection:
+      identity.outputProjection === undefined
+        ? undefined
+        : nativeFingerprint(identity.outputProjection),
     projectRootDir: identity.projectRootDir,
     configClosure: identity.configClosure.map(({ filePath }) => filePath),
     options,

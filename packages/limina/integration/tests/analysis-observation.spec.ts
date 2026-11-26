@@ -7,6 +7,7 @@ import {
   rm,
   stat,
   symlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -15,7 +16,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { z } from 'zod';
-import { createFixturePathResolver } from '../../src/__tests__/helpers/path';
+import {
+  createFixturePathResolver,
+  toPortableRelativePath,
+} from '../../src/__tests__/helpers/path';
 import { createSemanticRepairFixture } from '../../src/__tests__/helpers/semantic-repair';
 import { runLimina, type RunLiminaOptions } from '../helpers/run-limina';
 
@@ -25,6 +29,7 @@ const milestone = z.object({
 });
 const projectRecord = z.object({ id: z.string(), path: z.string() });
 const contextRecord = z.object({
+  id: z.string(),
   project: z.string(),
   provider: z.string(),
   role: z.string(),
@@ -52,10 +57,24 @@ const projectRow = z.object({
   state: z.string(),
   workUnionUs: z.number().nonnegative().nullable(),
 });
+const contextRow = z.object({
+  context: z.string(),
+  state: z.string(),
+  workUnionUs: z.number().nonnegative().nullable(),
+});
 const graphRow = z.object({
   graph: z.string(),
   requestDeliveryUs: z.number().nonnegative().nullable(),
   artifactsApplyElapsedUs: z.number().nonnegative().nullable(),
+});
+const workRecord = z.object({
+  op: z.string(),
+  scope: z.array(z.string()),
+  end: z.string(),
+  reason: z.string().optional(),
+  time: z
+    .tuple([z.number().nonnegative(), z.number().nonnegative()])
+    .optional(),
 });
 const profileSchema = z.object({
   schemaVersion: z.literal(2),
@@ -68,9 +87,11 @@ const profileSchema = z.object({
   contexts: z.array(contextRecord),
   graphs: z.array(graphRecord),
   decisions: z.array(decisionRecord),
+  work: z.array(workRecord),
   summary: z.object({
     mode: z.string(),
     projectRows: z.array(projectRow),
+    contextRows: z.array(contextRow),
     graphRows: z.array(graphRow),
     firstCompleteGraphPrepared: milestone.nullable(),
     firstCompleteReceiptCommittedUs: z.number().nonnegative().nullable(),
@@ -120,6 +141,24 @@ async function fixture(overrides: Record<string, string> = {}) {
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
+const sourceEntry = {
+  executable: process.execPath,
+  args: [fileURLToPath(new URL('../../bin/limina.js', import.meta.url))],
+};
+
+async function linkVueToolchain(f: Fixture) {
+  const require = createRequire(import.meta.url);
+  await mkdir(f.path('node_modules'));
+  for (const name of ['typescript', 'vue', 'vue-tsc']) {
+    const installed = path.dirname(require.resolve(`${name}/package.json`));
+    await symlink(
+      await realpath(installed),
+      f.path('node_modules', name),
+      'junction',
+    );
+  }
+}
+
 async function run(
   f: Fixture,
   commandArguments: string[],
@@ -133,7 +172,6 @@ async function run(
     entry,
     env: {
       LIMINA_PROFILE: profileEnvironment,
-      LIMINA_PROFILE_BUILD_INPUT_HASH: undefined,
       LIMINA_PROFILE_EXPECTED_EXECUTABLE_REALPATH: undefined,
       LIMINA_PROFILE_EXPECTED_PACKAGE_REALPATH: undefined,
       LIMINA_PROFILE_EXPECTED_RUNTIME_TREE_HASH: undefined,
@@ -159,6 +197,30 @@ async function onlyProfile(f: Fixture, output: string) {
   return profile;
 }
 
+type Profile = Awaited<ReturnType<typeof onlyProfile>>;
+
+function sourceConfigProjection(profile: Profile, sourceConfig: string) {
+  return profile.decisions.filter(
+    (decision) =>
+      decision.layer === 'resolved-config-projection' &&
+      decision.stage === 'adoption' &&
+      decision.outcome === 'adopted' &&
+      decision.origin === 'prior-disk' &&
+      decision.subject === sourceConfig,
+  );
+}
+
+function liveSourceConfigParses(profile: Profile, sourceConfig: string) {
+  const project = profile.projects.find(({ path }) => path === sourceConfig);
+  expect(project).toBeDefined();
+  return profile.work.filter(
+    (work) =>
+      work.op === 'source-config.live-parse' &&
+      work.scope[0] === 'project' &&
+      work.scope[1] === project?.id,
+  );
+}
+
 async function cacheIndex(f: Fixture) {
   const directory = f.path('.limina', 'cache');
   const index = (await readdir(directory, { recursive: true })).find((entry) =>
@@ -181,6 +243,12 @@ it('records separate prepared and receipt milestones for cold and warm graph pre
         output,
       ]);
       expect(result.code, result.stdout + result.stderr).toBe(0);
+      expect(result.stderr).toContain(`Analysis cache: ${mode}`);
+      expect(result.stderr).toMatch(
+        /^ {2}\[info\] Complete graph prepared at (?:<1ms|\d+ms|\d+\.\d{2}s) /mu,
+      );
+      expect(result.stderr).toContain('timed profile.* spans only');
+      expect(result.stderr).toContain('final report generation and output');
       const profile = await onlyProfile(f, output);
       expect(profile.invocation.result).toBe('passed');
       expect(profile.summary.mode).toBe(mode);
@@ -190,7 +258,7 @@ it('records separate prepared and receipt milestones for cold and warm graph pre
       expect(profile.graphs).toContainEqual(
         expect.objectContaining({
           purpose: 'complete',
-          source: mode === 'cold' ? 'computed' : 'restored',
+          source: 'computed',
         }),
       );
       const prepared = profile.summary.firstCompleteGraphPrepared;
@@ -228,11 +296,49 @@ it('records separate prepared and receipt milestones for cold and warm graph pre
           workUnionUs: expect.any(Number),
         }),
       ]);
-      const projectLine = result.stderr
-        .split('\n')
-        .find((line) => line.trimStart().startsWith('tsconfig.json  '));
-      expect(projectLine?.trimEnd().split('  ').at(-1)).toBe(
-        mode === 'cold' ? 'context-record-absent' : 'prior-disk',
+      const contexts = profile.contexts.filter(
+        ({ provider, role }) =>
+          provider === 'typescript' && ['pending', 'locked'].includes(role),
+      );
+      expect(contexts.map(({ role }) => role)).toEqual(['locked']);
+      const liveSourceParses = profile.work.filter(
+        (work) =>
+          work.op === 'source-config.live-parse' &&
+          work.scope[0] === 'project' &&
+          work.scope[1] === profile.projects[0]!.id,
+      );
+      expect(liveSourceParses).toHaveLength(mode === 'cold' ? 1 : 0);
+      for (const context of contexts) {
+        expect(context.project).toBe(profile.projects[0]!.id);
+        expect(
+          profile.summary.contextRows.find(
+            ({ context: id }) => id === context.id,
+          ),
+        ).toMatchObject({
+          state: mode === 'cold' ? 'rebuilt' : 'restored',
+          workUnionUs: expect.any(Number),
+        });
+        expect(profile.work).toContainEqual(
+          expect.objectContaining({
+            scope: ['context', context.id],
+            op:
+              mode === 'cold'
+                ? 'native-program-create'
+                : 'native-context-restore',
+            end: mode === 'cold' ? 'computed' : 'restored',
+            time: [expect.any(Number), expect.any(Number)],
+          }),
+        );
+      }
+      const lines = result.stderr.split(/\r?\n/u);
+      const projectLine = lines.findIndex((line) =>
+        line.startsWith('  [info] tsconfig.json · '),
+      );
+      expect(projectLine).toBeGreaterThanOrEqual(0);
+      expect(lines[projectLine + 1]?.split(' · ').at(-1)).toBe(
+        mode === 'cold'
+          ? 'Cache cause context-record-absent'
+          : 'Cache cause prior-disk',
       );
       const index = await cacheIndex(f);
       const current = {
@@ -255,12 +361,51 @@ it('records separate prepared and receipt milestones for cold and warm graph pre
       (await onlyProfile(f, f.output('profiles-warm'))).decisions,
     ).toContainEqual(
       expect.objectContaining({
-        layer: 'analysis-graph',
+        layer: 'native-context',
         stage: 'adoption',
         outcome: 'adopted',
         origin: 'prior-disk',
+        subject: 'tsconfig.json',
       }),
     );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it('reports a cold cache and the cause of a failed graph preparation in the default check', async () => {
+  const f = await fixture({
+    'limina.config.mjs':
+      'export default { scope: { checkers: { "vue-tsc": { include: ["tsconfig.json"] } } } };',
+    'src/Example.vue':
+      '<script setup lang="ts">import "./main.js";</script><template><div /></template>',
+  });
+  try {
+    const output = f.output('failed-preparation');
+    const result = await run(f, ['check', '--profile-output', output]);
+    expect(result.code, result.stdout + result.stderr).toBe(1);
+    const reportStart = result.stderr.indexOf('Limina Analysis Profile');
+    expect(reportStart).toBeGreaterThanOrEqual(0);
+    const report = result.stderr.slice(reportStart);
+    expect(report).toContain('Analysis cache: cold');
+    expect(report).toMatch(
+      /^ {2}\[fail\] Graph preparation \(core\) failed after (?:<1ms|\d+ms|\d+\.\d{2}s)$/mu,
+    );
+    expect(report).toContain('Missing external checker');
+    expect(report).toContain('vue-tsc');
+    const profile = await onlyProfile(f, output);
+    expect(profile.summary.firstCompleteGraphPrepared).toBeNull();
+    expect(profile.summary.firstCompleteReceiptCommittedUs).toBeNull();
+    expect(profile.work).toContainEqual(
+      expect.objectContaining({
+        op: 'graph.materialize',
+        end: 'failed',
+        reason: 'materialization-failed',
+      }),
+    );
+    expect(
+      profile.work.some((work) => work.op === 'graph.apply.artifacts'),
+    ).toBe(false);
   } finally {
     await f.cleanup();
   }
@@ -286,27 +431,14 @@ it('attributes Vue output projection work and cache adoption to the source proje
     'src/value.ts': 'export const value = 1;',
   });
   try {
-    const require = createRequire(import.meta.url);
-    await mkdir(f.path('node_modules'));
-    for (const name of ['typescript', 'vue', 'vue-tsc']) {
-      const installed = path.dirname(require.resolve(`${name}/package.json`));
-      await symlink(
-        await realpath(installed),
-        f.path('node_modules', name),
-        'junction',
-      );
-    }
-    const entry = {
-      executable: process.execPath,
-      args: [fileURLToPath(new URL('../../bin/limina.js', import.meta.url))],
-    };
+    await linkVueToolchain(f);
     const prepare = async (mode: 'cold' | 'warm') => {
       const destination = f.output(mode);
       const result = await run(
         f,
         ['graph', 'prepare', '--profile-output', destination],
         '0',
-        entry,
+        sourceEntry,
       );
       expect(result.code, result.stdout + result.stderr).toBe(0);
       const profile = await onlyProfile(f, destination);
@@ -318,18 +450,31 @@ it('attributes Vue output projection work and cache adoption to the source proje
     };
 
     const cold = await prepare('cold');
-    expect(cold.contexts).toEqual(
-      expect.arrayContaining([
-        {
+    const warm = await prepare('warm');
+    expect(liveSourceConfigParses(cold, 'tsconfig.json')).toHaveLength(1);
+    expect(liveSourceConfigParses(warm, 'tsconfig.json')).toHaveLength(0);
+    expect(sourceConfigProjection(warm, 'tsconfig.json')).toHaveLength(1);
+    const restoredContexts = warm.contexts.filter(({ id }) =>
+      warm.summary.contextRows.some(
+        ({ context, state }) => context === id && state === 'restored',
+      ),
+    );
+    for (const role of ['graph', 'output-projection']) {
+      expect(cold.contexts).toContainEqual(
+        expect.objectContaining({
           project: cold.projects[0]!.id,
           provider: 'vue',
-          role: 'output-projection',
-        },
-        { project: cold.projects[0]!.id, provider: 'vue', role: 'graph' },
-      ]),
-    );
-
-    const warm = await prepare('warm');
+          role,
+        }),
+      );
+      expect(restoredContexts).toContainEqual(
+        expect.objectContaining({
+          project: warm.projects[0]!.id,
+          provider: 'vue',
+          role,
+        }),
+      );
+    }
     const adopted = warm.decisions.filter(
       (decision) =>
         decision.layer === 'vue-context' &&
@@ -344,6 +489,112 @@ it('attributes Vue output projection work and cache adoption to the source proje
     await f.cleanup();
   }
 });
+
+const vueBaseConfig = (extension: string) =>
+  JSON.stringify({ vueCompilerOptions: { extensions: ['.vue', extension] } });
+const vueBaseConfigWithByte = (byte: number) =>
+  Buffer.concat([
+    Buffer.from(`${vueBaseConfig('.widget')}\n// `),
+    Buffer.from([byte]),
+  ]);
+
+it.each([
+  {
+    change: 'an inherited extension edit',
+    before: Buffer.from(vueBaseConfig('.widget')),
+    after: Buffer.from(vueBaseConfig('.hidden')),
+    expectedRoots: ['src/main.ts'],
+  },
+  {
+    change: 'an inherited raw-byte edit with equivalent decoded text',
+    before: vueBaseConfigWithByte(0x80),
+    after: vueBaseConfigWithByte(0x81),
+    expectedRoots: ['src/Comp.widget', 'src/main.ts'],
+  },
+])(
+  'rejects a warm Vue Source Config parse after $change with equal size and mtime',
+  async (scenario) => {
+    const source = 'tsconfig.json';
+    const f = await fixture({
+      'limina.config.mjs':
+        'export default {scope:{source:{include:["src/**/*"]},checkers:{"vue-tsc":{include:["tsconfig.json"]}}},pipelines:{probe:["graph:prepare"]}};',
+      [source]: JSON.stringify({
+        extends: './base.json',
+        compilerOptions: { noLib: true, types: [], module: 'NodeNext' },
+        include: ['src/**/*'],
+      }),
+      'src/Comp.widget': '<template>custom extension</template>',
+    });
+    const sourceToDts = z.record(z.string(), z.string());
+    const vueChecker = z.object({ sourceToDts });
+    const manifest = z.object({
+      checkers: z.object({ 'vue-tsc': vueChecker }),
+    });
+    const generated = z.object({ files: z.array(z.string()) });
+    try {
+      await linkVueToolchain(f);
+      const parentConfig = f.path('base.json');
+      await writeFile(parentConfig, scenario.before);
+      await utimes(parentConfig, 1000, 1000);
+      const initial = await stat(parentConfig);
+      const prepare = async (stage: string, extra: string[] = []) => {
+        const output = f.output(stage);
+        const result = await run(
+          f,
+          ['check', 'probe', ...extra, '--profile-output', output],
+          '0',
+          sourceEntry,
+        );
+        expect(result.code, result.stdout + result.stderr).toBe(0);
+        const profile = await onlyProfile(f, output);
+        const graphText = await readFile(
+          f.path('.limina', 'manifest.json'),
+          'utf8',
+        );
+        const graph = manifest.parse(JSON.parse(graphText));
+        const declaration = f.path(
+          graph.checkers['vue-tsc'].sourceToDts[source]!,
+        );
+        const declarationText = await readFile(declaration, 'utf8');
+        const roots = generated
+          .parse(JSON.parse(declarationText))
+          .files.map((file) =>
+            toPortableRelativePath(
+              f.root,
+              path.resolve(path.dirname(declaration), file),
+            ),
+          );
+        return { profile, graphText, declarationText, roots };
+      };
+
+      const cold = await prepare('cold');
+      expect(liveSourceConfigParses(cold.profile, source)).toHaveLength(1);
+      expect(cold.roots).toEqual(['src/Comp.widget', 'src/main.ts']);
+      const warm = await prepare('warm');
+      expect(sourceConfigProjection(warm.profile, source)).toHaveLength(1);
+      expect(liveSourceConfigParses(warm.profile, source)).toHaveLength(0);
+      expect(warm.declarationText).toBe(cold.declarationText);
+
+      await writeFile(parentConfig, scenario.after);
+      await utimes(parentConfig, 1000, 1000);
+      const current = await stat(parentConfig);
+      expect(current.size).toBe(initial.size);
+      expect(current.mtimeMs).toBe(initial.mtimeMs);
+      const changed = await prepare('changed');
+      expect(sourceConfigProjection(changed.profile, source)).toHaveLength(0);
+      expect(liveSourceConfigParses(changed.profile, source)).toHaveLength(1);
+      expect(changed.roots).toEqual(scenario.expectedRoots);
+
+      const forced = await prepare('forced', ['--force']);
+      expect(sourceConfigProjection(forced.profile, source)).toHaveLength(0);
+      expect(liveSourceConfigParses(forced.profile, source)).toHaveLength(1);
+      expect(forced.graphText).toBe(changed.graphText);
+      expect(forced.declarationText).toBe(changed.declarationText);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
 
 it('keeps the Preflight milestone when graph check later reads the prepared Core result', async () => {
   const f = await fixture();
@@ -468,6 +719,9 @@ it('captures a command help error with a valid explicit profiling destination', 
     ]);
     expect(result.code, result.stdout + result.stderr).toBe(1);
     expect(result.stderr).toContain('Unknown option `--unknown`');
+    expect(result.stderr).toMatch(
+      /^ {2}\[fail\] Command failed after (?:<1ms|\d+ms|\d+\.\d{2}s)\r?\n {4}\[info\] Reason: Unknown option/mu,
+    );
     expect((await onlyProfile(f, output)).invocation.result).toBe('failed');
     await expect(stat(f.path('.limina'))).rejects.toMatchObject({
       code: 'ENOENT',
@@ -518,19 +772,15 @@ it('preserves an early config failure even if the profile destination fails', as
   }
 });
 
-it('retains the quiet legacy check profile alongside the versioned invocation report', async () => {
+it('writes one performance report when enabled by the environment', async () => {
   const f = await fixture();
   try {
     const result = await run(f, ['check', 'probe'], '1');
     expect(result.code, result.stdout + result.stderr).toBe(0);
     expect(result.stderr).not.toContain('Limina Analysis Profile');
-    const legacy: unknown = JSON.parse(
-      await readFile(f.path('.limina', 'check', 'last-profile.json'), 'utf8'),
-    );
-    expect(legacy).toMatchObject({
-      schemaVersion: 1,
-      metrics: expect.any(Array),
-    });
+    await expect(
+      stat(f.path('.limina', 'check', 'last-profile.json')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
     const profile = await onlyProfile(f, f.path('.limina', 'profiles'));
     expect(profile.invocation.result).toBe('passed');
   } finally {

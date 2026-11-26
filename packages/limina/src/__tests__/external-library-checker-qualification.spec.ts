@@ -703,14 +703,18 @@ describe('external-library semantic authority and Checker execution', () => {
           expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
         );
         expect(restored.events).toContainEqual(
-          expect.objectContaining({ kind: 'graphHits', count: 1 }),
+          expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
         );
+        expect(
+          restored.events.find((event) => event.kind === 'restoredContexts')
+            ?.count,
+        ).toBeGreaterThan(0);
         // Change only a fixture-owned tool identity; do not mutate the shared installation.
         await replaceFixtureNativePackage(fixture);
         const changed = fixture.run();
         expect(
           changed.events
-            .filter((event) => event.kind === 'graphHits')
+            .filter((event) => event.kind === 'restoredContexts')
             .reduce((sum, event) => sum + (event.count ?? 0), 0),
         ).toBe(0);
         expect(changed.events).toContainEqual(
@@ -745,8 +749,12 @@ describe('external-library semantic authority and Checker execution', () => {
       );
       const restored = fixture.run();
       expect(restored.events).toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+        expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
       );
+      expect(
+        restored.events.find((event) => event.kind === 'restoredContexts')
+          ?.count,
+      ).toBeGreaterThan(0);
       for (const result of [cold, restored]) {
         expect(result.launches).toBe(1);
         expect(result.outcome.status).toBe(0);

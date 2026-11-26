@@ -1,4 +1,5 @@
 import { isPlainRecord } from '#utils/values';
+import { expandPackageImportTargets } from '../core/packages/import-targets';
 import type {
   DistributionPackageJson,
   PackageImportTargetMatch,
@@ -7,28 +8,6 @@ import type {
 interface WildcardImportMatch {
   key: string;
   wildcardIndex: number;
-  wildcardValue: string;
-}
-
-function getConditionalTargets(value: unknown): unknown[] | null {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  return isPlainRecord(value) ? Object.values(value) : null;
-}
-
-function collectConditionalTargets(value: unknown, targets: unknown[]): void {
-  const nestedTargets = getConditionalTargets(value);
-
-  if (nestedTargets === null) {
-    targets.push(value);
-    return;
-  }
-
-  for (const target of nestedTargets) {
-    collectConditionalTargets(target, targets);
-  }
 }
 
 function getSingleWildcardIndex(candidate: string): number | null {
@@ -55,23 +34,10 @@ function createWildcardImportMatch(
   specifier: string,
 ): WildcardImportMatch | null {
   const wildcardIndex = getSingleWildcardIndex(candidate);
-  if (
-    wildcardIndex === null ||
+  return wildcardIndex === null ||
     !isMatchesWildcardPattern(candidate, specifier, wildcardIndex)
-  ) {
-    return null;
-  }
-
-  const prefixLength = wildcardIndex;
-  const suffixLength = candidate.length - wildcardIndex - 1;
-  return {
-    key: candidate,
-    wildcardIndex,
-    wildcardValue: specifier.slice(
-      prefixLength,
-      specifier.length - suffixLength,
-    ),
-  };
+    ? null
+    : { key: candidate, wildcardIndex };
 }
 
 function compareWildcardMatches(
@@ -99,19 +65,10 @@ function findWildcardImportMatch(
 function findImportMatch(
   importsField: Record<string, unknown>,
   specifier: string,
-): { key: string; wildcardValue: string | null } | null {
+): { key: string } | null {
   return Object.hasOwn(importsField, specifier)
-    ? { key: specifier, wildcardValue: null }
+    ? { key: specifier }
     : findWildcardImportMatch(importsField, specifier);
-}
-
-function replaceWildcardTarget(
-  target: unknown,
-  wildcardValue: string | null,
-): unknown {
-  return typeof target === 'string' && wildcardValue !== null
-    ? target.replaceAll('*', () => wildcardValue)
-    : target;
 }
 
 export function findPackageImportTargets(
@@ -123,17 +80,14 @@ export function findPackageImportTargets(
   }
 
   const match = findImportMatch(importsField, specifier);
-  if (match === null) {
-    return null;
-  }
-
-  const targets: unknown[] = [];
-  collectConditionalTargets(importsField[match.key], targets);
-
-  return {
-    key: match.key,
-    targets: targets.map((target) =>
-      replaceWildcardTarget(target, match.wildcardValue),
-    ),
-  };
+  return match === null
+    ? null
+    : {
+        key: match.key,
+        targets: expandPackageImportTargets(
+          importsField[match.key],
+          match.key,
+          specifier,
+        ),
+      };
 }

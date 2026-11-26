@@ -58,6 +58,7 @@ export async function loadConfig(
       }),
     {
       initialInputs: [
+        ...loaderIdentity.runtimeFiles,
         governanceRoot.manifestPath,
         path.join(governanceRoot.rootDir, 'pnpm-workspace.yaml'),
       ],

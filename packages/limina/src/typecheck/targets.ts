@@ -268,18 +268,18 @@ function observeCheckerProcess(
         result.error !== undefined &&
         (result.error.name === 'AbortError' ||
           result.error === options.signal?.reason);
-      observer.finish(
-        work,
-        isCancelled
-          ? 'cancelled'
-          : result.status === 0
-            ? 'performed'
-            : 'failed',
-        isCancelled ? 'checker-cancelled' : 'checker-exit',
-      );
+      if (isCancelled) observer.finish(work, 'cancelled', 'checker-cancelled');
+      else if (result.status === 0) observer.finish(work);
+      else if (result.error === undefined)
+        observer.fail(
+          work,
+          `Checker exited with status ${result.status}.`,
+          'checker-exit',
+        );
+      else observer.fail(work, result.error, 'checker-process-error');
       return result;
     } catch (error) {
-      observer.finish(work, 'failed', 'checker-process-error');
+      observer.fail(work, error, 'checker-process-error');
       throw error;
     }
   });

@@ -1,3 +1,4 @@
+import { syncFileHandle } from '#utils/sync-file-handle';
 import { open, rename } from 'node:fs/promises';
 import {
   preflightMutationBoundary,
@@ -54,7 +55,7 @@ async function writeContent(
       await session.handle.chmod(options.mode);
     }
 
-    await session.handle.sync();
+    await syncFileHandle(session.handle);
   } catch (error) {
     recordFailure(session, error);
   }

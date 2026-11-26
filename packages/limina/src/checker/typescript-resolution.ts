@@ -19,32 +19,23 @@ function recordResolutionRequest(options: CheckerModuleResolveOptions): void {
   });
 }
 
-function hasNativeCacheHit(options: CheckerModuleResolveOptions): boolean {
+function recordCacheState(
+  options: CheckerModuleResolveOptions,
+  tsModule: typeof ts,
+): void {
   const cache = options.moduleResolutionCache;
-  return (
-    cache !== undefined &&
-    (options.tsModule ?? ts).resolveModuleNameFromCache(
+  if (cache === undefined || options.metrics === undefined) return;
+  const isHit =
+    tsModule.resolveModuleNameFromCache(
       options.specifier,
       options.containingFile,
       cache,
-    ) !== undefined
-  );
-}
-
-function getCacheMetricName(
-  options: CheckerModuleResolveOptions,
-):
-  | 'typescript-module-resolution-cache-hit'
-  | 'typescript-module-resolution-cache-miss' {
-  return hasNativeCacheHit(options)
-    ? 'typescript-module-resolution-cache-hit'
-    : 'typescript-module-resolution-cache-miss';
-}
-
-function recordCacheState(options: CheckerModuleResolveOptions): void {
-  options.metrics?.record({
+    ) !== undefined;
+  options.metrics.record({
     kind: 'module-resolution',
-    name: getCacheMetricName(options),
+    name: isHit
+      ? 'typescript-module-resolution-cache-hit'
+      : 'typescript-module-resolution-cache-miss',
     provider: 'typescript',
   });
 }
@@ -53,6 +44,8 @@ function resolveNativeModule(
   options: CheckerModuleResolveOptions,
 ): ResolvedCheckerModuleName | null {
   const tsModule = options.tsModule ?? ts;
+  recordCacheState(options, tsModule);
+  recordResolutionRequest(options);
   const resolved = tsModule.resolveModuleName(
     options.specifier,
     options.containingFile,
@@ -158,8 +151,6 @@ function preferNativeResolution(options: {
 export function resolveTypeScriptModuleNameDetailed(
   options: CheckerModuleResolveOptions,
 ): ResolvedCheckerModuleName | null {
-  recordResolutionRequest(options);
-  recordCacheState(options);
   return preferNativeResolution({
     checkerResolution: resolveCheckerSourceModuleName(options),
     nativeResolution: resolveNativeModule(options),

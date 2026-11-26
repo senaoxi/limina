@@ -42,6 +42,7 @@ import { registerPreflightGenerationAdvancer } from './generation';
 import {
   capturePendingMaterializationWait,
   ensurePreflightGraphMaterialized,
+  type MaterializationAccessObserver,
   materializeProducerDeclarationMirrors,
   observeMaterializationRequest,
   recordActiveMaterializationReceipt,
@@ -243,9 +244,12 @@ export class LiminaPreflightManager {
       this.#svelteRouteExcluded &&
       (graph.governedSources.get('svelte-check')?.size ?? 0) > 0
     ) {
+      const error = new Error(
+        'Svelte route inputs changed; rerun the command.',
+      );
       if (work !== undefined)
-        profile?.finish(work, 'failed', 'svelte-route-changed');
-      throw new Error('Svelte route inputs changed; rerun the command.');
+        profile?.fail(work, error, 'svelte-route-changed');
+      throw error;
     }
     if (profile !== undefined && work !== undefined) {
       if (isCurrent()) {
@@ -490,6 +494,9 @@ export class LiminaPreflightManager {
         this.#consumerPreparation = undefined;
     }
   }
+  hasProducerReceipt(): boolean {
+    return this.#producerReceipt !== undefined;
+  }
   assertProducerReceiptCurrent(): void {
     if (this.#producerReceipt !== undefined)
       assertProducerBuildReceipt(this.#producerReceipt);
@@ -503,15 +510,17 @@ export class LiminaPreflightManager {
   }
   ensureExecutionArtifactsMaterialized(
     purpose: PreparedTsconfigGraph['purpose'],
+    onAccess?: MaterializationAccessObserver,
   ): Promise<MaterializationReceipt> {
     if (purpose === 'complete')
-      return this.ensureGeneratedArtifactsMaterialized();
+      return this.ensureGeneratedArtifactsMaterialized(onAccess);
     const currentNamespace = () => this.artifactNamespace;
     const currentRun = () => this.run;
     const slot = this.#cache.producerMaterializationSlot;
     return ensurePreflightGraphMaterialized({
       getCurrentSlot: () => this.#cache.producerMaterializationSlot,
       getPendingGraph: () => this.#cache.producerBuildPlan,
+      onAccess,
       refreshProviders: () => {
         this.#replaceProviderGeneration({ reason: 'materialization-replan' });
         this.#cache.producerMaterializationSlot = slot;
@@ -535,14 +544,15 @@ export class LiminaPreflightManager {
       this.providers.workspace.getValidatedContext();
     return this.#cache.validatedWorkspaceContext;
   }
-  async ensureGeneratedArtifactsMaterialized(): Promise<
-    MaterializationReceipt<GeneratedTsconfigGraphResult>
-  > {
+  async ensureGeneratedArtifactsMaterialized(
+    onAccess?: MaterializationAccessObserver,
+  ): Promise<MaterializationReceipt<GeneratedTsconfigGraphResult>> {
     const slot = this.#cache.materializationSlot;
     const pending = ensurePreflightGraphMaterialized({
       getCurrentSlot: () => this.#cache.materializationSlot,
       getActiveView: () => (this.#privateExecutionView ? undefined : this.run),
       getPendingGraph: () => this.#cache.generatedGraph,
+      onAccess,
       willObserveJoin: true,
       purpose: 'complete',
       refreshProviders: () =>

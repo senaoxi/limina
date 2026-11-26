@@ -14,6 +14,8 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
+import { getBuildGraphWorkspace } from '../core/build-graph/workspace-input';
 import { createWorkspaceLookupIndex } from '../core/workspace/lookup';
 import { WorkspacePackageScopeLookup } from '../core/workspace/lookup/package-scope';
 import { WorkspaceLookupRegion } from '../core/workspace/lookup/region';
@@ -65,6 +67,30 @@ async function createFixture() {
     writeManifest,
   };
 }
+
+it('binds checker launches to the current manifest topology even for an empty path selection', async () => {
+  const f = await createFixture();
+  try {
+    await f.writeManifest('.', { name: 'root', private: true });
+    await mkdir(f.path('src'), { recursive: true });
+    const config = withFixtureGovernanceRoot({
+      configPath: f.path('limina.config.mjs'),
+      rootDir: f.rootDir,
+      scope: { regions: { extendNestedPackageScopes: true } },
+    });
+    const inputs = new EpochInputs();
+    await inputs.run(() => getBuildGraphWorkspace({ config }));
+    const selected = inputs.select(new Set());
+    await writeFile(f.path('src/note.txt'), 'unrelated');
+    await selected.assertStable();
+    await f.writeManifest('src', { type: 'module' });
+    await expect(selected.assertStable()).rejects.toThrow(
+      'Analysis input changed',
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
 
 async function createLookups(options: {
   directory: string;

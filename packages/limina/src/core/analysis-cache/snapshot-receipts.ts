@@ -263,19 +263,21 @@ function receiptList(
   const ids = value.receiptBlocks;
   if (!Array.isArray(ids))
     throw new Error('Invalid analysis receipt references.');
-  return ids.flatMap((id) =>
-    (receipt(id, lists) as number[]).map((index) => receipt(index, table)),
-  );
+  const result: unknown[] = [];
+  for (const id of ids) {
+    for (const index of receipt(id, lists)) result.push(receipt(index, table));
+  }
+  return result;
 }
-function receipt(id: unknown, table: readonly unknown[]): unknown {
-  const valid = [
-    typeof id === 'number',
-    Number.isSafeInteger(id),
-    Number(id) >= 0,
-    Number(id) < table.length,
-  ];
-  if (!valid.every(Boolean)) throw new Error('Missing analysis receipt.');
-  return table[id as number];
+function receipt<T>(id: unknown, table: readonly T[]): T {
+  if (
+    typeof id !== 'number' ||
+    !Number.isSafeInteger(id) ||
+    id < 0 ||
+    id >= table.length
+  )
+    throw new Error('Missing analysis receipt.');
+  return table[id]!;
 }
 function decodeField(
   key: string,

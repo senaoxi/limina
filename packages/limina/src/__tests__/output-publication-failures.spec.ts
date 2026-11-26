@@ -7,7 +7,31 @@ import {
 } from '../typecheck/output-declarations';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
-const fault = vi.hoisted(() => ({ kind: '', target: '', directory: '' }));
+const fault = vi.hoisted(() => ({
+  kind: '',
+  target: '',
+  directory: '',
+  syncDescriptor: -1,
+}));
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    fsync: (...[descriptor, done]: Parameters<typeof actual.fsync>) => {
+      if (descriptor !== fault.syncDescriptor) {
+        actual.fsync(descriptor, done);
+        return;
+      }
+      fault.syncDescriptor = -1;
+      if (fault.kind === 'replacement') {
+        actual.renameSync(fault.target, `${fault.target}.original`);
+        actual.writeFileSync(fault.target, 'user replacement');
+      }
+      done(new Error(`injected ${fault.kind} failure`));
+    },
+  };
+});
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
@@ -36,13 +60,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
           break;
         }
-        case 'sync': {
-          handle.sync = async () => {
-            throw new Error('injected sync failure');
-          };
-
-          break;
-        }
         case 'readback': {
           handle.read = async () => {
             throw new Error('injected readback failure');
@@ -50,13 +67,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
           break;
         }
+        case 'sync':
         case 'replacement': {
-          handle.sync = async () => {
-            await actual.rename(fault.target, `${fault.target}.original`);
-            await actual.writeFile(fault.target, 'user replacement');
-            throw new Error('injected replacement');
-          };
-
+          fault.syncDescriptor = handle.fd;
           break;
         }
         // No default

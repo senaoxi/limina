@@ -33,7 +33,6 @@ import {
   projectSupplementalPrerequisite,
 } from '../core/build-graph/compilation-prerequisite';
 import { readFrameworkInferenceAmbiguities } from '../core/build-graph/core-collection-run';
-import { hasValidRestoredDeclarationContexts } from '../core/build-graph/declaration-context-candidate';
 import * as generatedConfigs from '../core/build-graph/generated-configs';
 import type { DependencyAnalysisResult } from '../core/build-graph/types';
 import type { SupplementalResolutionRequest } from '../core/import-analysis/supplemental-resolution';
@@ -323,6 +322,101 @@ async function readGeneratedReferences(options: {
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
+  it('requires one package scope for a named source leaf before it acquires its first root', async () => {
+    const fixture = await createFixture({
+      'packages/a/package.json': json({ name: 'a' }),
+      'packages/b/package.json': json({ name: 'b' }),
+      'packages/a/tsconfig.json': json({
+        files: [],
+        references: [{ path: './link/tsconfig.leaf.json' }],
+      }),
+      'packages/b/configs/base.json': '{}',
+      'packages/b/configs/tsconfig.leaf.json': json({
+        extends: './base.json',
+        files: [],
+        include: [],
+      }),
+    });
+    try {
+      await symlink(
+        fixture.path('packages/b/configs'),
+        fixture.path('packages/a/link'),
+        'junction',
+      );
+      await expect(
+        prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          scope: {
+            checkers: { tsc: { include: ['packages/a/tsconfig.json'] } },
+          },
+        }),
+      ).rejects.toThrow(
+        'compiler path config package.json: packages/a/package.json',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each([
+    { target: 'src', root: 'index.ts', accepted: false },
+    { target: '.', root: 'src/index.ts', accepted: true },
+  ])(
+    'checks the compiler package scope of a root reached through a link to $target',
+    async ({ target, root, accepted }) => {
+      const fixture = await createFixture({
+        'packages/a/package.json': json({
+          name: 'a',
+          type: 'commonjs',
+          imports: { '#choose': './a.d.ts' },
+        }),
+        'packages/a/a.d.ts': 'export declare const value: number;',
+        'packages/b/package.json': json({
+          name: 'b',
+          type: 'module',
+          imports: { '#choose': './b.d.ts' },
+        }),
+        'packages/b/b.d.ts': 'export declare const value: string;',
+        'packages/b/src/index.ts': 'export { value } from "#choose";',
+        'packages/b/tsconfig.json': json({
+          compilerOptions: {
+            module: 'NodeNext',
+            target: 'ES2022',
+            types: [],
+            noLib: true,
+          },
+          files: [`../a/link/${root}`],
+        }),
+      });
+      try {
+        await symlink(
+          fixture.path('packages/b', target),
+          fixture.path('packages/a/link'),
+          'junction',
+        );
+        const graph = prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          scope: {
+            checkers: { tsc: { include: ['packages/b/tsconfig.json'] } },
+          },
+        });
+        if (accepted) {
+          expect(
+            (await graph).ownershipPlan.typeConfigs.has(
+              fixture.path('packages/b/tsconfig.json'),
+            ),
+          ).toBe(true);
+        } else {
+          await expect(graph).rejects.toThrow(
+            'compiler path file package.json: packages/a/package.json',
+          );
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('does not probe unused Vue tools for an explicit Native solution terminal', async () => {
     const fixture = await createFixture({
       'packages/solution/tsconfig.json': json({
@@ -359,7 +453,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('does not infer Astro from a preset whose effective contributions are all overridden', async () => {
+  it('infers Astro from a directly selected preset even when its compiler options are overridden', async () => {
     const presetPath = path.join(
       resolveInstalledPackageRoot({
         installedName: 'astro',
@@ -396,26 +490,31 @@ describe('prepareGeneratedTsconfigGraph', () => {
           fixture.path('packages/app/tsconfig.json'),
         ),
       ).toMatchObject({
-        finalOwner: 'tsc',
-        frozenSemanticAuthority: { family: 'typescript' },
+        finalOwner: 'astro',
+        frozenSemanticAuthority: { family: 'astro', source: 'config' },
       });
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it.each([false, true])(
-    'matches Vue parser extension precedence through multiple extends: leaf override=%s',
-    async (leafOverride) => {
+  it.each([
+    { selection: 'inherited only', owner: 'tsc', extension: undefined },
+    { selection: 'explicit checker', owner: 'vue-tsc', extension: '.md' },
+    { selection: 'leaf override', owner: 'vue-tsc', extension: '.html' },
+  ] as const)(
+    'applies Vue extension precedence after authority selection: $selection',
+    async ({ selection, owner, extension }) => {
       const fixture = await createFixture({
         'base-a.json': json({ vueCompilerOptions: { extensions: ['.md'] } }),
         'base-b.json': json({ vueCompilerOptions: { extensions: ['.html'] } }),
         'packages/app/src/App.md':
           '<template>Excluded inherited extension</template>',
         'packages/app/src/App.html': '<template>Current extension</template>',
+        'packages/app/src/index.ts': 'export const value = 1;',
         'packages/app/tsconfig.json': json({
           extends: ['../../base-a.json', '../../base-b.json'],
-          ...(leafOverride && {
+          ...(selection === 'leaf override' && {
             vueCompilerOptions: { extensions: ['.html'] },
           }),
           compilerOptions: { ...managedOutputCompilerOptions(), noLib: true },
@@ -424,19 +523,28 @@ describe('prepareGeneratedTsconfigGraph', () => {
       try {
         const graph = await prepareGeneratedTsconfigGraph({
           ...fixture.config,
-          scope: { ...fixture.config.scope, checkers: {} },
+          scope: {
+            ...fixture.config.scope,
+            checkers:
+              selection === 'explicit checker'
+                ? { 'vue-tsc': { include: ['packages/app/tsconfig.json'] } }
+                : {},
+          },
         });
-        const files = graph.governedSources
-          .get('vue-tsc')!
-          .values()
-          .flatMap((unit) => unit.ownedFileNames)
-          .toArray();
-        expect(files).toContain(
-          fixture.path(`packages/app/src/App${leafOverride ? '.html' : '.md'}`),
-        );
-        expect(files).not.toContain(
-          fixture.path(`packages/app/src/App${leafOverride ? '.md' : '.html'}`),
-        );
+        const config = fixture.path('packages/app/tsconfig.json');
+        expect(graph.ownershipPlan.typeConfigs.get(config)).toMatchObject({
+          finalOwner: owner,
+          frozenSemanticAuthority: {
+            family: owner === 'tsc' ? 'typescript' : 'vue',
+          },
+        });
+        const unit = graph.governedSources.get(owner)?.get(config);
+        expect(unit?.ownedFileNames).toEqual([
+          ...(extension
+            ? [fixture.path(`packages/app/src/App${extension}`)]
+            : []),
+          fixture.path('packages/app/src/index.ts'),
+        ]);
       } finally {
         await fixture.cleanup();
       }
@@ -762,11 +870,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
             finalOwner: 'tsc',
             frozenSemanticAuthority: { family: 'typescript' },
           });
-          expect(
-            caches.nativeSourceEvidence?.contexts.map(
-              (context) => context.inputs.config,
-            ),
-          ).toContain(fixture.path('packages/app/tsconfig.lib.json'));
+          const leaf = fixture.path('packages/app/tsconfig.lib.json');
+          const contexts = Array.from(caches.nativeObservations?.values() ?? [])
+            .flatMap((snapshot) => snapshot.contexts)
+            .filter((context) => context.inputs.config === leaf);
+          expect(contexts.map((context) => context.authority)).toContainEqual(
+            expect.objectContaining({ phase: 'locked', family: 'typescript' }),
+          );
           expect(readFrameworkInferenceAmbiguities(caches)).toEqual([]);
         } else
           await expect(result).rejects.toThrow(
@@ -2278,7 +2388,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           '---\nimport value from "./value";\nvoid value;\n---\n',
         'packages/app/src/value.ts': `export default 1;
 `,
-        'tsconfig.json': json({
+        'packages/app/tsconfig.json': json({
           compilerOptions: {
             module: 'ESNext',
             moduleResolution: 'bundler',
@@ -2286,7 +2396,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
             target: 'ES2023',
             types: [],
           },
-          include: ['packages/app/src/**/*', 'packages/app/src/**/*.astro'],
+          include: ['src/**/*', 'src/**/*.astro'],
         }),
       },
       { astroToolchain: false },
@@ -2304,7 +2414,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       expect(result.checkers).toMatchObject([
         {
-          include: ['tsconfig.json'],
+          include: ['packages/app/tsconfig.json'],
           name: 'astro',
         },
       ]);
@@ -4106,7 +4216,7 @@ export default component;
     },
   );
 
-  it('routes Astro files from an inherited effective include', async () => {
+  it('retains inherited Astro-file coverage under Native ownership', async () => {
     const fixture = await createFixture({
       'packages/app/base.json': json({
         compilerOptions: {
@@ -4133,21 +4243,41 @@ export default component;
           checkers: { auto: {} },
         },
       });
-      const sourceConfigPath = normalizeAbsolutePath(
-        path.join(fixture.rootDir, 'packages/app/tsconfig.json'),
-      );
+      const sourceConfigPath = fixture.path('packages/app/tsconfig.json');
+      const component = fixture.path('packages/app/src/App.astro');
 
       expect(
-        result.governedSources.get('astro')?.get(sourceConfigPath),
+        result.ownershipPlan.typeConfigs.get(sourceConfigPath),
       ).toMatchObject({
-        frameworkCapabilities: [{ family: 'astro', sourceConfigPath }],
+        finalOwner: 'tsc',
+        frozenSemanticAuthority: { family: 'typescript', kind: 'locked' },
+      });
+      expect(
+        result.governedSources.get('astro')?.has(sourceConfigPath) ?? false,
+      ).toBe(false);
+      expect(
+        result.governedSources.get('tsc')?.get(sourceConfigPath)
+          ?.ownedFileNames ?? [],
+      ).not.toContain(component);
+      expect(
+        result.sourceConfigCoverage?.configurations.find(
+          ({ configId }) => configId === sourceConfigPath,
+        ),
+      ).toMatchObject({
+        state: 'enumerated',
+        members: expect.arrayContaining([
+          {
+            lexicalPath: component,
+            physical: expect.objectContaining({ state: 'verified' }),
+          },
+        ]),
       });
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('treats inherited Astro config identity as owner evidence', async () => {
+  it('uses Native ownership when Astro hints exist only in an inherited config', async () => {
     const fixture = await createFixture({
       'packages/app/base.json': json({
         compilerOptions: {
@@ -4178,7 +4308,7 @@ export default component;
       expect(result.checkers).toMatchObject([
         {
           include: ['packages/app/tsconfig.json'],
-          name: 'astro',
+          name: 'tsc',
         },
       ]);
     } finally {
@@ -4186,7 +4316,7 @@ export default component;
     }
   });
 
-  it('fails closed before classifying a missing generated extends', async () => {
+  it('reports a missing generated extends during resolved config discovery', async () => {
     const fixture = await createFixture({
       'packages/app/tsconfig.json': json({
         extends: './.astro/tsconfigs/strict.json',
@@ -4208,14 +4338,10 @@ export default component;
       }
 
       expect(thrown).toBeInstanceOf(LiminaStructuredError);
-      expect(String(thrown)).toContain(
-        'Unavailable auto checker extends config',
-      );
       expect(String(thrown)).toContain('.astro/tsconfigs/strict.json');
       expect((thrown as LiminaStructuredError).issues).toMatchObject([
         {
           code: 'LIMINA_GRAPH_PREPARE_FAILED',
-          title: 'Unavailable auto checker extends config',
         },
       ]);
     } finally {
@@ -4803,6 +4929,20 @@ export default component;
         governance: { state: 'unavailable', diagnostics: [] },
         buildAdmission: { state: 'unavailable' },
       });
+      const nativeCompanion = analysis.nativeEvidence?.find(({ snapshot }) =>
+        snapshot.contexts.some(
+          (context) =>
+            context.inputs.config ===
+              fixture.path('packages/app/tsconfig.json') &&
+            context.authority.phase === 'locked',
+        ),
+      );
+      expect(nativeCompanion?.snapshot.completeness).toContainEqual(
+        expect.objectContaining({
+          entryId: fixture.path('packages/app/src/target.ts'),
+          state: 'observed',
+        }),
+      );
       expect(
         analysis.nativeEvidence
           ?.flatMap((entry) => entry.snapshot.failures)
@@ -5099,11 +5239,22 @@ export default component;
             request.specifier.endsWith('/model'),
           ),
         ).toBe(false);
-        expect(
-          caches.nativeSourceContexts?.get(
-            fixture.path('packages/a/tsconfig.json'),
-          )?.nativeInventory?.members,
-        ).not.toContain(fixture.path('packages/c/src/Button.vue'));
+        const inventory = caches.typeScriptSemanticFactsCache
+          .values()
+          .find((context) =>
+            context.nativeEvidence?.contexts.some(
+              (entry) =>
+                entry.authority.phase === 'locked' &&
+                entry.inputs.config ===
+                  fixture.path('packages/a/tsconfig.json'),
+            ),
+          )?.nativeInventory;
+        expect(inventory?.members).toContain(
+          fixture.path('packages/a/src/index.ts'),
+        );
+        expect(inventory!.members).not.toContain(
+          fixture.path('packages/c/src/Button.vue'),
+        );
         const locked = result.dependencyAnalysis!.supplementalAssessments![0]!;
         expect(locked.context.id).toBe(
           pending?.supplementalAssessment?.context.id,
@@ -10439,9 +10590,6 @@ describe('ambient references and compiler membership', () => {
           },
           files: [
             `src/index.${name === 'c' ? 'mts' : name === 'b' ? extension : 'ts'}`,
-            ...(name === 'b' && variant === 'nested'
-              ? ['src/inner/helper.ts']
-              : []),
           ],
           ...(variant === 'output' && {
             liminaOptions: {
@@ -10458,6 +10606,10 @@ describe('ambient references and compiler membership', () => {
           type: 'commonjs',
         });
         files['packages/b/src/inner/helper.ts'] = 'export const value = 1;';
+        files['packages/b/src/inner/tsconfig.json'] = json({
+          compilerOptions: { module, target: 'ES2020', types: [] },
+          files: ['helper.ts'],
+        });
       }
       const fixture = await createFixture(files);
       try {
@@ -10492,26 +10644,25 @@ describe('ambient references and compiler membership', () => {
           ),
         ).toBe(ts.ModuleKind.ESNext);
         if (variant === 'nested') {
-          const nested = toPortablePath(
-            path.join(path.dirname(bOutput), 'inner/package.json'),
-          );
-          expect(JSON.parse(await readFile(nested, 'utf8')).type).toBe(
-            'commonjs',
-          );
-          const changed = new Map(graph.generatedFiles);
-          changed.delete(nested);
+          const nestedConfig = graph.sourceToDts
+            .get('tsc')!
+            .get(fixture.path('packages/b/src/inner/tsconfig.json'))!;
+          const nestedProject = parseProject(fixture.config, nestedConfig);
+          const output = ts
+            .getOutputFileNames(
+              { ...nestedProject, errors: [] },
+              fixture.path('packages/b/src/inner/helper.ts'),
+              !ts.sys.useCaseSensitiveFileNames,
+            )
+            .find((file) => file.endsWith('.d.ts'))!;
           expect(
-            hasValidRestoredDeclarationContexts({
-              ...graph,
-              generatedFiles: changed,
-            }),
-          ).toBe(false);
-          await writeText(
-            fixture.path('packages/b/src/inner/package.json'),
-            json({ type: 'module' }),
-          );
-          await prepareGeneratedTsconfigGraph(fixture.config);
-          expect(existsSync(nested)).toBe(false);
+            ts.getImpliedNodeFormatForFile(
+              output,
+              undefined,
+              ts.sys,
+              nestedProject.options,
+            ),
+          ).toBe(ts.ModuleKind.CommonJS);
         }
       } finally {
         await fixture.cleanup();
@@ -10706,7 +10857,6 @@ describe('ambient references and compiler membership', () => {
     'unresolved-exports',
     'unresolved-multiple',
     'unresolved-inactive',
-    'restored-unresolved',
     'transitive-unresolved',
     'default-same-target',
     'import-same-target',
@@ -10731,8 +10881,7 @@ describe('ambient references and compiler membership', () => {
       switch (variant) {
         case 'unresolved':
         case 'unresolved-exports':
-        case 'transitive-unresolved':
-        case 'restored-unresolved': {
+        case 'transitive-unresolved': {
           delete imports.types;
           break;
         }
@@ -10832,11 +10981,7 @@ describe('ambient references and compiler membership', () => {
         const graph = await prepareGeneratedTsconfigGraph(fixture.config);
         const isMissing =
           variant.startsWith('unresolved') ||
-          [
-            'ordinary-unresolved',
-            'restored-unresolved',
-            'transitive-unresolved',
-          ].includes(variant);
+          ['ordinary-unresolved', 'transitive-unresolved'].includes(variant);
         expect(
           graph.dependencyEdges.map((edge) => [
             edge.fromConfigPath,
@@ -10856,15 +11001,6 @@ describe('ambient references and compiler membership', () => {
                 ],
               ],
         );
-        if (variant === 'restored-unresolved') {
-          expect(
-            hasValidRestoredDeclarationContexts(
-              graph,
-              undefined,
-              fixture.rootDir,
-            ),
-          ).toBe(true);
-        }
         const generated = graph.sourceToDts
           .get('tsgo')!
           .get(fixture.path('tsconfig.a.json'))!;
@@ -10901,7 +11037,6 @@ describe('ambient references and compiler membership', () => {
             'unresolved-exports',
             'unresolved-multiple',
             'unresolved-inactive',
-            'restored-unresolved',
             'transitive-unresolved',
           ].includes(variant)
         )
@@ -11761,9 +11896,10 @@ function declarationPolicyFiles(
 }
 
 function sharedDeclarationPolicyFiles(): Record<string, string> {
+  const files = declarationPolicyFiles();
+  delete files['packages/b/package.json'];
   return {
-    ...declarationPolicyFiles(),
-    'packages/b2/package.json': json({ name: '@example/b2', private: true }),
+    ...files,
     'packages/b2/tsconfig.json': json({
       compilerOptions: { types: [] },
       files: ['../b/b.d.ts'],
@@ -11816,9 +11952,18 @@ describe('declaration configuration governance', () => {
           },
         }),
       );
-      await expect(
-        prepareGeneratedTsconfigGraph(fixture.config),
-      ).rejects.toThrow('invalid or conflicting declarationContexts choice');
+      const fallback = await prepareGeneratedTsconfigGraph(fixture.config);
+      expect(fallback.dependencyAnalysis?.declarationContexts).toEqual(
+        graph.dependencyAnalysis?.declarationContexts?.map((decision) =>
+          expect.objectContaining({
+            kind: decision.kind,
+            selection: decision.selection,
+          }),
+        ),
+      );
+      expect(fallback.dependencyAnalysis?.diagnostics).toContainEqual(
+        expect.stringContaining('invalid declarationContexts choice'),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -11858,7 +12003,8 @@ describe('declaration configuration governance', () => {
         const a = graph.dependencyAnalysis?.declarationContexts?.find(
           (decision) =>
             decision.consumerConfig ===
-            fixture.path('packages/a/tsconfig.json'),
+              fixture.path('packages/a/tsconfig.json') &&
+            decision.file.lexicalPath === fixture.path('packages/b/b.d.ts'),
         );
         expect(a?.selection).toEqual({
           state: 'selected',
@@ -11967,6 +12113,97 @@ describe('declaration configuration governance', () => {
     }
   });
 
+  it.each(['shared', 'direct', 'uncovered-shadow'])(
+    'uses the chosen shared root environment and preserves an independent consumer request (%s)',
+    async (input) => {
+      const hasDirectRequest = input === 'direct';
+      const shared = 'shared/env.d.ts';
+      const unit = (name: string, target: string) =>
+        json({
+          compilerOptions: {
+            ...managedOutputCompilerOptions(),
+            paths: { logical: [`./${target}/index.ts`] },
+          },
+          files: [`${name}/index.ts`, shared],
+          ...(name === 'a' && {
+            liminaOptions: {
+              declarationContexts: [
+                { file: './shared/env.d.ts', config: './tsconfig.b.json' },
+              ],
+            },
+          }),
+        });
+      const fixture = await createFixture({
+        'tsconfig.json': json({
+          files: [],
+          references: ['a', 'b', 'c', 'd'].map((name) => ({
+            path: `./tsconfig.${name}.json`,
+          })),
+        }),
+        'tsconfig.a.json': unit(
+          'a',
+          input === 'uncovered-shadow' ? 'unowned' : 'c',
+        ),
+        'tsconfig.b.json': unit('b', 'd'),
+        'tsconfig.c.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          files: ['c/index.ts'],
+        }),
+        'tsconfig.d.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          files: ['d/index.ts'],
+        }),
+        [shared]:
+          'import type { Value } from "logical"; declare global { type Shared = Value }',
+        'a/index.ts': hasDirectRequest
+          ? 'export type { Value } from "logical";'
+          : 'export type Use = Shared;',
+        'b/index.ts': 'export type Use = Shared;',
+        'c/index.ts': 'export type Value = "c";',
+        'unowned/index.ts': 'export type Value = 12;',
+        'd/index.ts': 'export type Value = "d";',
+      });
+      fixture.config.scope!.checkers = { tsc: { include: ['tsconfig.json'] } };
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(graph.dependencyAnalysis?.complete).toBe(true);
+        const config = (name: string) => fixture.path(`tsconfig.${name}.json`);
+        expect(
+          graph.dependencyEdges.map((edge) => [
+            edge.fromConfigPath,
+            edge.toConfigPath,
+          ]),
+        ).toEqual(
+          [
+            ['a', 'b'],
+            ...(hasDirectRequest ? [['a', 'c']] : []),
+            ['b', 'd'],
+          ].map(([from, to]) => [config(from!), config(to!)]),
+        );
+        const receipt =
+          graph.dependencyAnalysis!.declarationValidation!.receipts.find(
+            (item) => item.sourceConfig === config('a'),
+          )!;
+        expect(receipt.mappings).toContainEqual(
+          expect.objectContaining({
+            file: fixture.path(shared),
+            sourceConfig: config('b'),
+            loaded: true,
+          }),
+        );
+        expect(receipt.requests).toContainEqual(
+          expect.objectContaining({
+            file: fixture.path(shared),
+            specifier: 'logical',
+            target: fixture.path('d/index.ts'),
+          }),
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('requires an explicit choice for shared declarations', async () => {
     const files = sharedDeclarationPolicyFiles();
     const fixture = await createFixture(files);
@@ -11994,7 +12231,7 @@ describe('declaration configuration governance', () => {
     ['consumer', 'a', 'b2'],
     ['owner', 'b2', 'b'],
   ])(
-    'rejects competing final declaration mappings through the %s',
+    'checks the actual reference mapping after an implicit reference on the %s',
     async (_label, source, target) => {
       const files = sharedDeclarationPolicyFiles();
       const a = JSON.parse(files['packages/a/tsconfig.json']!);
@@ -12022,9 +12259,16 @@ describe('declaration configuration governance', () => {
           ],
         };
         await writeText(fixture.path(key), json(competing));
-        await expect(
-          prepareGeneratedTsconfigGraph(fixture.config),
-        ).rejects.toThrow('Declaration context mismatch');
+        const candidate = prepareGeneratedTsconfigGraph(fixture.config);
+        if (source === 'a') {
+          await expect(candidate).rejects.toThrow(
+            'Declaration context mismatch',
+          );
+        } else {
+          expect(
+            (await candidate).dependencyAnalysis?.declarationValidation?.state,
+          ).toBe('admitted');
+        }
       } finally {
         await fixture.cleanup();
       }
@@ -12217,6 +12461,7 @@ describe('declaration consumption responsibilities', () => {
     'preserves %s checking policy across local and external selection while retaining mapping protection',
     async (option) => {
       const files = declarationPolicyFiles();
+      delete files['packages/a/package.json'];
       const a = JSON.parse(files['packages/a/tsconfig.json']!);
       a.compilerOptions[option] = true;
       a.files.push('local.d.ts');
@@ -12264,10 +12509,6 @@ describe('declaration consumption responsibilities', () => {
               basis: 'unique-coverage',
             },
           }),
-        );
-        await writeText(
-          fixture.path('packages/a2/package.json'),
-          json({ name: '@example/a2', private: true }),
         );
         await writeText(
           fixture.path('packages/a2/tsconfig.json'),
@@ -12448,7 +12689,16 @@ describe('declaration consumption responsibilities', () => {
       const a = JSON.parse(files['packages/a/tsconfig.json']!);
       a.compilerOptions.noResolve = true;
       a.compilerOptions.noUncheckedSideEffectImports = false;
-      if (source === 'root') a.files.push('../b/b.d.ts');
+      if (source === 'root') {
+        delete files['packages/a/package.json'];
+        delete files['packages/b/package.json'];
+        a.files.push('../b/b.d.ts');
+        a.liminaOptions = {
+          declarationContexts: [
+            { file: '../b/b.d.ts', config: './tsconfig.json' },
+          ],
+        };
+      }
       if (source.startsWith('types')) a.compilerOptions.types = ['../b/b'];
       files['packages/a/tsconfig.json'] = json(a);
       files['packages/a/a.ts'] = 'import "../b/b"; export const value = 1;';
@@ -12463,9 +12713,7 @@ describe('declaration consumption responsibilities', () => {
       const fixture = await createFixture(files);
       try {
         const graph = await prepareGeneratedTsconfigGraph(fixture.config);
-        expect(graph.dependencyEdges).toHaveLength(
-          source.startsWith('types') ? 1 : 0,
-        );
+        expect(graph.dependencyEdges).toHaveLength(source === 'none' ? 0 : 1);
         const decisions = graph.dependencyAnalysis!.declarationContexts ?? [];
         const consumer = decisions.filter(
           (decision) =>
@@ -12473,9 +12721,20 @@ describe('declaration consumption responsibilities', () => {
             fixture.path('packages/a/tsconfig.json'),
         );
         if (source === 'none') expect(consumer).toEqual([]);
-        else expect(consumer).toHaveLength(1);
-        if (source === 'root')
-          expect(consumer[0]!.selection.state).toBe('local');
+        else if (source === 'root') {
+          expect(consumer).toContainEqual(
+            expect.objectContaining({
+              kind: 'root-input',
+              selection: {
+                state: 'local',
+                config: fixture.path('packages/a/tsconfig.json'),
+              },
+            }),
+          );
+          expect(
+            consumer.every((decision) => decision.selection.state === 'local'),
+          ).toBe(true);
+        } else expect(consumer).toHaveLength(1);
         if (source.startsWith('types')) {
           const snapshot = graph.dependencyAnalysis!.nativeEvidence!.find(
             ({ snapshot }) =>
@@ -12611,8 +12870,69 @@ describe('declaration candidate evidence failures', () => {
   );
 });
 
-it('retains competing-reference protection for a local declaration root with skipLibCheck', async () => {
+it('preserves a declaration path reference before and after its provider emits', async () => {
   const files = declarationPolicyFiles();
+  const compilerOptions = { composite: true, lib: ['es5'], types: [] };
+  files['packages/a/tsconfig.json'] = json({
+    compilerOptions,
+    files: ['a.ts', 'env.d.ts'],
+  });
+  files['packages/b/tsconfig.json'] = json({
+    compilerOptions,
+    files: ['provider.ts'],
+  });
+  files['packages/a/a.ts'] = 'export const value: ProviderValue = 1;';
+  files['packages/a/env.d.ts'] = '/// <reference path="../b/provider.ts" />';
+  files['packages/b/provider.ts'] =
+    'declare global { type ProviderValue = 1 } export {};';
+  const fixture = await createFixture(files);
+  const source = fixture.path('packages/b/provider.ts');
+  try {
+    for (const isBuilt of [false, true]) {
+      const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+      const receipt =
+        graph.dependencyAnalysis!.declarationValidation!.receipts.find(
+          (item) =>
+            item.sourceConfig === fixture.path('packages/a/tsconfig.json'),
+        )!;
+      const provider = graph.sourceToDts
+        .get('tsc')!
+        .get(fixture.path('packages/b/tsconfig.json'))!;
+      const mapping = receipt.referenceMappings.find(
+        (item) => item.file === source,
+      )!;
+      expect(mapping).toMatchObject({
+        referenceConfig: provider,
+        qualified: true,
+      });
+      expect(mapping.declarationOutput).toEqual(expect.any(String));
+      expect(receipt.requests).toContainEqual(
+        expect.objectContaining({
+          file: fixture.path('packages/a/env.d.ts'),
+          channel: 'path-directive',
+          referencedPathInput: source,
+          redirects: [provider],
+          resolutionState: isBuilt ? 'resolved' : 'unresolved',
+          target: isBuilt ? mapping.declarationOutput : null,
+        }),
+      );
+      if (!isBuilt)
+        await execFileAsync(process.execPath, [
+          requireFromTest.resolve('typescript/bin/tsc'),
+          '-b',
+          graph.checkerEntries.get('tsc')!,
+          '--force',
+        ]);
+    }
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+it('keeps shared root authority undecided despite implicitRefs and skipLibCheck', async () => {
+  const files = declarationPolicyFiles();
+  delete files['packages/a/package.json'];
+  delete files['packages/b/package.json'];
   const a = JSON.parse(files['packages/a/tsconfig.json']!);
   a.files.push('local.d.ts');
   a.compilerOptions.skipLibCheck = true;
@@ -12631,7 +12951,7 @@ it('retains competing-reference protection for a local declaration root with ski
   const fixture = await createFixture(files);
   try {
     await expect(prepareGeneratedTsconfigGraph(fixture.config)).rejects.toThrow(
-      'Declaration context mismatch',
+      'Choose a declaration context',
     );
   } finally {
     await fixture.cleanup();
@@ -13138,12 +13458,6 @@ describe('checker-neutral declaration governance', () => {
         );
         await writeText(a, json(aConfig));
         const preparation = prepareGeneratedTsconfigGraph(fixture.config);
-        if (differs) {
-          await expect(preparation).rejects.toThrow(
-            'Declaration request context differs from its selected owner',
-          );
-          return;
-        }
         const graph = await preparation;
         expect(graph.dependencyAnalysis!.declarationValidation!.state).toBe(
           'admitted',
@@ -13163,7 +13477,9 @@ describe('checker-neutral declaration governance', () => {
           expect.objectContaining({
             file: fixture.path('packages/shared/api.d.ts'),
             specifier: 'dep',
-            target: fixture.path('packages/values/left.d.ts'),
+            target: fixture.path(
+              `packages/values/${differs ? 'right' : 'left'}.d.ts`,
+            ),
           }),
         );
         await execFileAsync(
@@ -13192,7 +13508,7 @@ describe('checker-neutral declaration governance', () => {
     'selected',
     'conflicting',
   ] as const)(
-    'keeps independent shared declaration inputs scoped to their own context (%s)',
+    'requires a shared root context and validates the actual Vue mapping (%s)',
     async (variant) => {
       const compilerOptions = {
         composite: true,
@@ -13240,6 +13556,12 @@ describe('checker-neutral declaration governance', () => {
       };
       try {
         const preparation = prepareGeneratedTsconfigGraph(fixture.config);
+        if (!isSelected) {
+          await expect(preparation).rejects.toThrow(
+            'Choose a declaration context',
+          );
+          return;
+        }
         if (variant === 'conflicting') {
           await expect(preparation).rejects.toThrow(
             'Declaration context mismatch',

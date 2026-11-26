@@ -1,17 +1,53 @@
+import type ts from 'typescript';
 import type {
+  NativeFileIdentity,
   SourceConfigCoverageIndex,
   SourceConfigEnumeration,
 } from '../../domain/analysis/native-coverage';
 import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
+import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import {
   nativeFingerprint,
   observeNativeFileIdentity,
 } from '../typescript-semantic/native-file-identity';
+import { isNodeModulesPath } from '../workspace/lookup/shared';
+
+const declarationPositions = new WeakMap<
+  SourceConfigCoverageIndex,
+  Map<string, number[]>
+>();
+
+export function managedDeclarationRoots(
+  coverage: SourceConfigCoverageIndex,
+  entry: Extract<SourceConfigEnumeration, { state: 'enumerated' }>,
+): readonly NativeFileIdentity[] {
+  const positions = declarationPositions.get(coverage)?.get(entry.configId);
+  return positions === undefined
+    ? entry.members.filter((file) => isManagedDeclarationRoot(file.lexicalPath))
+    : positions.map((position) => entry.members[position]!);
+}
+
+export function isManagedDeclarationRoot(file: string): boolean {
+  return isDeclarationFile(file) && !isNodeModulesPath(file);
+}
 
 interface ConfigVisit {
   role: 'pending' | 'source' | 'solution';
   files: readonly string[];
   basis?: unknown;
+}
+
+export function sourceConfigBasis(input: {
+  configClosure: readonly { filePath: string }[];
+  options: ts.CompilerOptions;
+  references: readonly ts.ProjectReference[];
+}): unknown {
+  return [
+    input.configClosure.map(({ filePath }) => filePath),
+    effectiveCompilerOptions(input.options),
+    input.references,
+  ];
 }
 
 /**
@@ -48,7 +84,9 @@ export class SourceConfigDiscovery {
   }
 
   close(): void {
-    this.#closed = true;
+    this.#closed = this.#visits
+      .values()
+      .every(({ role }) => role !== 'pending');
   }
 
   snapshot(): SourceConfigCoverageIndex {
@@ -56,9 +94,12 @@ export class SourceConfigDiscovery {
       ([, visit]) => visit.role !== 'solution',
     );
     const scope = nativeFingerprint(this.#entries);
-    const observed = sources.map(([configId, visit]) =>
-      enumeration(configId, visit, 'discovery'),
-    );
+    const positions = new Map<string, number[]>();
+    const observed = sources.map(([configId, visit]) => {
+      const declarations: number[] = [];
+      positions.set(configId, declarations);
+      return enumeration(configId, visit, 'discovery', declarations);
+    });
     const version = nativeFingerprint([
       this.#version,
       this.#entries,
@@ -68,7 +109,7 @@ export class SourceConfigDiscovery {
     const configurations = observed.map((config) =>
       rebindEnumeration(config, version),
     );
-    return freezeNativeData({
+    const index = freezeNativeData<SourceConfigCoverageIndex>({
       universe: {
         id: scope,
         revision: nativeFingerprint([version, configurations]),
@@ -84,6 +125,8 @@ export class SourceConfigDiscovery {
       inputVersion: version,
       configurations,
     });
+    declarationPositions.set(index, positions);
+    return index;
   }
 }
 
@@ -109,6 +152,7 @@ function enumeration(
   configId: string,
   visit: ConfigVisit,
   version: string,
+  declarations: number[],
 ): SourceConfigEnumeration {
   if (visit.role === 'pending')
     return {
@@ -122,9 +166,10 @@ function enumeration(
       ]),
       impact: { kind: 'unbounded' },
     };
-  const members = visit.files.map((file) =>
-    observeNativeFileIdentity(file, version),
-  );
+  const members = visit.files.map((file, position) => {
+    if (isManagedDeclarationRoot(file)) declarations.push(position);
+    return observeNativeFileIdentity(file, version);
+  });
   return {
     configId,
     inputVersion: version,

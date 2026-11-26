@@ -27,6 +27,7 @@ import type {
 } from './types';
 
 interface CollectedWorkspaceIslands {
+  descriptorStamps: Map<string, string | undefined>;
   boundaries: WorkspaceRegionBoundary[];
   extendedPackageScopes: ExtendedPackageScope[];
   universe: WorkspaceDescriptorCandidate[];
@@ -58,6 +59,9 @@ async function collectWorkspaceIslands(options: {
       ...islands.flatMap((island) => island.boundaries),
     ],
     extendedPackageScopes: islands.flatMap((island) => island.extendedScopes),
+    descriptorStamps: new Map(
+      islands.flatMap((island) => [...island.descriptorStamps]),
+    ),
     universe: islands.flatMap((island) => island.descriptors),
   };
 }
@@ -206,6 +210,7 @@ export async function collectValidatedWorkspaceContextFromSnapshot(options: {
     }),
     configRootDir: normalizeAbsolutePath(options.config.rootDir),
     descriptorCandidates: stable.candidates,
+    descriptorStamps: islands.descriptorStamps,
     extendedPackageScopes: filterStableScopes({
       scopes: islands.extendedPackageScopes,
       stablePaths,

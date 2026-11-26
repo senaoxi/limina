@@ -15,6 +15,7 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   graphImportTargetUnmapped: 'LIMINA_GRAPH_IMPORT_TARGET_UNMAPPED',
   graphMaterializeFailed: 'LIMINA_GRAPH_MATERIALIZE_FAILED',
   graphPrepareFailed: 'LIMINA_GRAPH_PREPARE_FAILED',
+  graphSourcePackageScopeMismatch: 'LIMINA_GRAPH_SOURCE_PACKAGE_SCOPE_MISMATCH',
   graphReferenceCycle: 'LIMINA_GRAPH_REFERENCE_CYCLE',
   graphReferenceExtra: 'LIMINA_GRAPH_REFERENCE_EXTRA',
   graphReferenceMissing: 'LIMINA_GRAPH_REFERENCE_MISSING',
@@ -49,12 +50,6 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   releasePackedManifest: 'LIMINA_RELEASE_PACKED_MANIFEST',
   releaseRegistry: 'LIMINA_RELEASE_REGISTRY',
   releaseTarballHygiene: 'LIMINA_RELEASE_TARBALL_HYGIENE',
-  sourceAmbientDeclarationConfigInvalid:
-    'LIMINA_SOURCE_AMBIENT_DECLARATION_CONFIG_INVALID',
-  sourceAmbientDeclarationReferenceUnauthorized:
-    'LIMINA_SOURCE_AMBIENT_DECLARATION_REFERENCE_UNAUTHORIZED',
-  sourceAmbientDeclarationSharedUnauthorized:
-    'LIMINA_SOURCE_AMBIENT_DECLARATION_SHARED_UNAUTHORIZED',
   sourceCheckFailed: 'LIMINA_SOURCE_CHECK_FAILED',
   sourceCrossGovernanceBoundary: 'LIMINA_SOURCE_CROSS_GOVERNANCE_BOUNDARY',
   sourceImportAuthorityInvalid: 'LIMINA_SOURCE_IMPORT_AUTHORITY_INVALID',

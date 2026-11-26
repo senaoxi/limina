@@ -107,6 +107,7 @@ async function isExecuteStandaloneCommand(options: {
   const observer = currentProfile();
   const taskId = 'standalone-task';
   const register = registerSession(options.state);
+  let runnerCompletedAt: number | undefined;
   try {
     options.state.commandPassed = await (observer === undefined
       ? options.execute(register)
@@ -114,7 +115,13 @@ async function isExecuteStandaloneCommand(options: {
           observer,
           operation: 'execution.standalone-action',
           taskId,
-          execute: () => options.execute(register),
+          execute: async () => {
+            try {
+              return await options.execute(register);
+            } finally {
+              runnerCompletedAt = performance.now();
+            }
+          },
           isPassed: Boolean,
         }));
     options.state.commandSettled = true;
@@ -130,9 +137,10 @@ async function isExecuteStandaloneCommand(options: {
         observer.task(taskId, {
           name: session?.task,
           runnerUs:
-            profileTaskStartedAt === undefined
+            profileTaskStartedAt === undefined ||
+            runnerCompletedAt === undefined
               ? undefined
-              : Math.round((performance.now() - profileTaskStartedAt) * 1000),
+              : Math.round((runnerCompletedAt - profileTaskStartedAt) * 1000),
           state: isPassed ? 'passed' : 'failed',
         });
       } catch {

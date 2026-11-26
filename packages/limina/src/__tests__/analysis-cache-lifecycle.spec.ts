@@ -642,7 +642,7 @@ export default {};`,
   ).rejects.toThrow('Run the command again');
 });
 
-it.each(['incompatible', 'corrupt', 'forced'] as const)(
+it.each(['previous-schema', 'incompatible', 'corrupt', 'forced'] as const)(
   'keeps a physical CAS baseline for %s snapshots',
   async (baseline) => {
     const f = fixture();
@@ -658,7 +658,15 @@ it.each(['incompatible', 'corrupt', 'forced'] as const)(
       new NativeAnalysisCache('old-tools', undefined, 'fixture-config'),
     );
     if (baseline === 'corrupt') writeFileSync(seed.path, '{broken');
-    const staleIdentity = baseline === 'forced' ? 'old-tools' : 'new-tools';
+    else if (baseline === 'previous-schema') {
+      const obsolete = JSON.parse(readFileSync(seed.path, 'utf8'));
+      obsolete.header.schema = 15;
+      obsolete.header.implementation = 'config-ownership-v33';
+      obsolete.storage.version = 3;
+      writeFileSync(seed.path, JSON.stringify(obsolete));
+    }
+    const staleIdentity =
+      baseline === 'incompatible' ? 'new-tools' : 'old-tools';
     const stale = new AnalysisCacheStore({
       ...options,
       identity: staleIdentity,
@@ -698,6 +706,7 @@ it.each(['incompatible', 'corrupt', 'forced'] as const)(
             {
               code: {
                 forced: 'force-skip-restore',
+                'previous-schema': 'incompatible-header',
                 incompatible: 'identity-mismatch',
                 corrupt: 'invalid-index-json',
               }[baseline],

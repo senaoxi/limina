@@ -12,7 +12,6 @@ import {
   isPlainConfigRecord,
 } from './shared';
 import { validateSourceImportAuthorityConfig } from './source-authority';
-import { validateSourceDeclarationsConfig } from './source-declarations';
 import { validateSourceKnipConfig } from './source-knip';
 
 const liminaConfigKeys = new Set([
@@ -26,7 +25,11 @@ const liminaConfigKeys = new Set([
   'concurrency',
   'cache',
 ]);
-const sourceConfigKeys = new Set(['declarations', 'importAuthority', 'knip']);
+const sourceConfigKeys = new Set([
+  'forbidCrossPackageRelativeImports',
+  'importAuthority',
+  'knip',
+]);
 const cacheConfigKeys = new Set<PropertyKey>(['dependencies']);
 
 const cacheOptionsShapeSchema = z.looseObject({
@@ -99,10 +102,18 @@ function validateSourceFields(
     addConfigIssue(
       context,
       ['source'],
-      'source config must declare knip, declarations, or importAuthority.',
+      'source config must declare knip, forbidCrossPackageRelativeImports, or importAuthority.',
     );
   validateSourceImportAuthorityConfig(value.importAuthority, context);
-  validateSourceDeclarationsConfig(value.declarations, context);
+  if (
+    value.forbidCrossPackageRelativeImports !== undefined &&
+    typeof value.forbidCrossPackageRelativeImports !== 'boolean'
+  )
+    addConfigIssue(
+      context,
+      ['source', 'forbidCrossPackageRelativeImports'],
+      'expected a boolean.',
+    );
   validateSourceKnipConfig(value.knip, context);
 }
 

@@ -19,6 +19,10 @@ export class WorkspaceLookupRegion {
     return this.#pathIndex.classifyPath(normalizeAbsolutePath(filePath));
   }
 
+  packageScopeForFile(file: string): string | undefined {
+    return this.#pathIndex.packageScopeForFile(file);
+  }
+
   hasActivatedPackage(filePath: string): boolean {
     return Boolean(this.classifyPath(filePath).package);
   }

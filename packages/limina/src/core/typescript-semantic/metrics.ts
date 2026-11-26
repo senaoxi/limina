@@ -1,5 +1,10 @@
 import type ts from 'typescript';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
+import {
+  currentProfile,
+  type ProfileScope,
+} from '../../application/analysis/observability';
+import { observeWork, priorProfileContextScope } from '../analysis-profile';
 
 export function measureBoundedProgram(
   create: () => ts.Program,
@@ -22,15 +27,38 @@ export class TypeCheckerObservation {
   #observed = false;
 
   readonly #metrics: AnalysisMetricsRecorder | undefined;
+  readonly #instance: object;
+  readonly #configPath: string;
 
-  constructor(metrics?: AnalysisMetricsRecorder) {
-    this.#metrics = metrics;
+  constructor(options: {
+    metrics?: AnalysisMetricsRecorder;
+    instance: object;
+    configPath: string;
+  }) {
+    this.#metrics = options.metrics;
+    this.#instance = options.instance;
+    this.#configPath = options.configPath;
   }
 
   #first(program: ts.Program): ts.TypeChecker {
     const start = performance.now();
+    const observer = currentProfile();
+    const scope: ProfileScope | undefined =
+      observer === undefined
+        ? undefined
+        : (priorProfileContextScope(observer, this.#instance) ?? [
+            'project',
+            observer.project(this.#configPath),
+          ]);
     try {
-      return program.getTypeChecker();
+      return observeWork(
+        observer,
+        'native-first-typechecker',
+        () => program.getTypeChecker(),
+        scope,
+        undefined,
+        'computed',
+      );
     } finally {
       this.#metrics?.record({
         name: 'bounded-first-typechecker',

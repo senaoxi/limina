@@ -18,17 +18,14 @@ import {
   runPipelineWithResult,
 } from '../pipeline/runner';
 import { LiminaPreflightManager } from '../preflight';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import {
-  createCheckProfileSession,
-  type ProfileRuntimeExpectations,
   qualifyProfileRuntime,
   readProfileRuntimeExpectations,
-} from '../profiling/session';
+} from '../profiling/runtime-expectations';
 import { loadCliConfig } from './command-runtime';
 import { createCliFlow, runCheckWithCliFlowCleanup } from './flow';
 import { createSourceIssueReportOptions, parsePackageNames } from './parse';
-import { observeCliPhase, publishFrozenLegacyProfile } from './profiling';
+import { observeCliPhase } from './profiling';
 import type { CheckFlags } from './types';
 
 interface CheckRunState {
@@ -40,8 +37,6 @@ interface CheckRunState {
 type CheckPlanOptions = Parameters<typeof createDefaultExecutionPlan>[1];
 type CheckPlan = ReturnType<typeof createDefaultExecutionPlan>;
 type CheckFlow = ReturnType<typeof createCliFlow>;
-type ProfileMetrics = ReturnType<typeof createProfilingMetricsRecorder>;
-type ProfileSession = Awaited<ReturnType<typeof createCheckProfileSession>>;
 
 interface CheckExecutionContext {
   command: string;
@@ -52,7 +47,6 @@ interface CheckExecutionContext {
   plan: CheckPlan;
   planOptions: CheckPlanOptions;
   preflight: LiminaPreflightManager;
-  profileSession?: ProfileSession;
 }
 
 function getConfigLoaderField(flags: CheckFlags): { configLoader?: string } {
@@ -144,42 +138,15 @@ function createCommandLabel(pipeline: string | undefined): string {
   return pipeline === undefined ? 'limina check' : `limina check ${pipeline}`;
 }
 
-async function createProfileSessionIfEnabled(options: {
-  command: string;
-  expectations: ProfileRuntimeExpectations | undefined;
-  metrics: ProfileMetrics | undefined;
-  preflight: LiminaPreflightManager;
-}): Promise<ProfileSession | undefined> {
-  const { expectations } = options;
-  if (expectations === undefined) return undefined;
-  const requiresIdentity =
-    expectations.executablePath !== undefined ||
-    expectations.packagePath !== undefined ||
-    expectations.runtimeTreeHash !== undefined ||
-    (options.metrics !== undefined &&
-      expectations.buildInputHash !== undefined);
-  if (!requiresIdentity && options.metrics === undefined) return undefined;
-  let runtime: Awaited<ReturnType<typeof qualifyProfileRuntime>>;
-  try {
-    runtime = await observeCliPhase('profile.runtime-identity', () =>
-      qualifyProfileRuntime(expectations),
-    );
-  } catch (error) {
-    if (requiresIdentity) throw error;
-    return undefined;
-  }
-  currentProfile()?.runtime({
-    entry: runtime.entryKind,
-    treeHash: runtime.treeHash,
-  });
-  if (options.metrics === undefined) return undefined;
-  return createCheckProfileSession({
-    artifactNamespace: options.preflight.artifactNamespace,
-    buildInputHash: expectations.buildInputHash,
-    command: options.command,
-    metrics: options.metrics,
-    runtime,
-  });
+async function observeExpectedProfileRuntime(): Promise<void> {
+  const profile = currentProfile();
+  if (profile === undefined) return;
+  const expectations = readProfileRuntimeExpectations();
+  if (expectations === undefined) return;
+  const runtime = await observeCliPhase('profile.runtime-identity', () =>
+    qualifyProfileRuntime(expectations),
+  );
+  profile.runtime({ entry: runtime.entryKind, treeHash: runtime.treeHash });
 }
 
 function createPlan(options: {
@@ -241,58 +208,11 @@ async function isExecuteCheckFlow(
   return state.executionResult.passed;
 }
 
-function freezeProfile(options: {
-  session: ProfileSession;
-  state: CheckRunState;
-  trace?: ExecutionTrace;
-}): () => Promise<void> {
-  return options.session.freeze({
-    passed: options.state.passed,
-    run: getRecordedRun(options.state),
-    trace: options.trace?.snapshot(),
-  });
-}
-
-async function finishLegacyProfile(
+function finalizeCheckRun(
   context: CheckExecutionContext,
   state: CheckRunState,
-): Promise<void> {
-  if (context.profileSession === undefined) return;
-  const observer = currentProfile();
-  let work: string | undefined;
-  try {
-    work = observer?.start('profile.legacy-snapshot');
-  } catch {
-    // The legacy result does not depend on its timing annotation.
-  }
-  try {
-    const write = freezeProfile({
-      session: context.profileSession,
-      state,
-      trace: context.trace,
-    });
-    await publishFrozenLegacyProfile(write);
-  } catch {
-    // A compatibility artifact must not replace the settled command result.
-  } finally {
-    if (work !== undefined)
-      try {
-        observer?.finish(work);
-      } catch {
-        // The legacy result does not depend on its timing annotation.
-      }
-  }
-}
-
-async function finalizeCheckRun(
-  context: CheckExecutionContext,
-  state: CheckRunState,
-): Promise<void> {
-  const startedAt = context.trace?.now();
+): void {
   context.preflight.dispose();
-  if (startedAt !== undefined)
-    context.trace?.phase('preflight-disposal', startedAt);
-  await finishLegacyProfile(context, state);
   const observer = currentProfile();
   if (observer !== undefined && context.trace !== undefined) {
     try {
@@ -310,20 +230,11 @@ async function finalizeCheckRun(
 
 async function createExecutionContext(options: {
   flags: CheckFlags;
-  legacyProfile: boolean;
-  expectations?: ProfileRuntimeExpectations;
   pipeline: string | undefined;
   trace?: ExecutionTrace;
 }): Promise<CheckExecutionContext> {
-  const configStart = options.trace?.now();
   const config = await loadCliConfig(options.flags, 'check');
-  if (configStart !== undefined)
-    options.trace?.phase('config-load', configStart);
-  const setupStart = options.trace?.now();
   const command = createCommandLabel(options.pipeline);
-  const metrics = options.legacyProfile
-    ? createProfilingMetricsRecorder()
-    : undefined;
   currentProfile()?.setPolicy(
     config.cache === false
       ? 'disabled'
@@ -333,7 +244,6 @@ async function createExecutionContext(options: {
   );
   const preflight = new LiminaPreflightManager({
     config,
-    metrics,
     analysisCache: true,
     forceAnalysisCache: options.flags.force === true,
   });
@@ -359,14 +269,7 @@ async function createExecutionContext(options: {
       planOptions,
     });
     const flow = createCliFlow({ check: true });
-    const profileSession = await createProfileSessionIfEnabled({
-      command,
-      expectations: options.expectations,
-      metrics,
-      preflight,
-    });
-    if (setupStart !== undefined)
-      options.trace?.phase('preflight-and-profile-setup', setupStart);
+    await observeExpectedProfileRuntime();
     return {
       command,
       trace: options.trace,
@@ -376,7 +279,6 @@ async function createExecutionContext(options: {
       plan,
       planOptions,
       preflight,
-      profileSession,
     };
   } catch (error) {
     preflight.dispose();
@@ -388,22 +290,9 @@ export async function runConfiguredCheck(options: {
   flags: CheckFlags;
   pipeline: string | undefined;
 }): Promise<void> {
-  const isLegacyProfile = process.env.LIMINA_PROFILE === '1';
-  const hasInvocationProfile = currentProfile() !== undefined;
-  const isProfiling = isLegacyProfile || hasInvocationProfile;
-  const trace = isProfiling
-    ? new ExecutionTrace(hasInvocationProfile)
-    : undefined;
-  const expectations = isProfiling
-    ? readProfileRuntimeExpectations()
-    : undefined;
-  const context = await createExecutionContext({
-    ...options,
-    expectations,
-    legacyProfile: isLegacyProfile,
-    trace,
-  });
-  const executionStart = trace?.now();
+  const trace =
+    currentProfile() === undefined ? undefined : new ExecutionTrace();
+  const context = await createExecutionContext({ ...options, trace });
   const state: CheckRunState = { passed: false };
   try {
     try {
@@ -411,9 +300,7 @@ export async function runConfiguredCheck(options: {
         isExecuteCheckFlow(context, state),
       );
     } finally {
-      if (executionStart !== undefined)
-        trace?.phase('check-execution-and-reporting', executionStart);
-      await finalizeCheckRun(context, state);
+      finalizeCheckRun(context, state);
     }
   } catch (error) {
     const warnings = formatFrameworkInferenceWarnings(

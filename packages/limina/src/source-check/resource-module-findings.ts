@@ -8,6 +8,7 @@ import {
 import type { PackageOwner } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import type { ImportRuntimeResolutionEvidence } from '../core/import-analysis/evidence';
 import type { SourceResourceTypeEvidenceKind } from './finding-facts';
 import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
@@ -20,6 +21,7 @@ interface ResourceModuleOptions {
   importRecord: ImportRecord;
   resolutionMode: string;
   resourceResolver: ResourceResolver;
+  runtimeEvidence?: ImportRuntimeResolutionEvidence;
   owner: PackageOwner;
   project: ProjectInfo;
   typeEvidence: AnalysisProviderSet['typeEvidence'];
@@ -28,12 +30,14 @@ interface ResourceModuleOptions {
 const NON_PHYSICAL_RUNTIME_KINDS = new Set(['asserted-virtual', 'unsupported']);
 
 function isResourceImport(options: ResourceModuleOptions): boolean {
-  const runtimeEvidence = options.typeEvidence.classifyImportRuntime({
-    checkerName: options.checkerName,
-    importRecord: options.importRecord,
-    project: options.project,
-    resolutionMode: 'checker-only',
-  });
+  const runtimeEvidence =
+    options.runtimeEvidence ??
+    options.typeEvidence.classifyImportRuntime({
+      checkerName: options.checkerName,
+      importRecord: options.importRecord,
+      project: options.project,
+      resolutionMode: 'checker-only',
+    });
   return (
     runtimeEvidence.classification === 'resource' &&
     !NON_PHYSICAL_RUNTIME_KINDS.has(runtimeEvidence.runtime.kind)

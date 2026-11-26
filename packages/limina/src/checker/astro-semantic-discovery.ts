@@ -207,7 +207,7 @@ function resolveLeafManifest(
 export function resolveAstroSemanticToolchainPaths(
   packageRootDirectory: string,
   manifest?: PackageManifest,
-): AstroSemanticToolchainPaths {
+): AstroSemanticToolchainPaths & { kitTypeScript: string } {
   const leafManifest = resolveLeafManifest(packageRootDirectory, manifest);
   const astro = resolveOwnedPackageManifest({
     ownerManifestPath: leafManifest,
@@ -264,12 +264,18 @@ export function resolveAstroSemanticToolchainPaths(
     ownerScope: path.dirname(volarKit),
     packageName: '@volar/typescript',
   });
+  const kitTypeScript = resolveOwnedPackageManifest({
+    ownerManifestPath: volarKit,
+    ownerScope: path.dirname(volarKit),
+    packageName: 'typescript',
+  });
   return {
     astro,
     check,
     compiler,
     languageCore,
     languageServer,
+    kitTypeScript,
     leafTypeScript,
     typeScript,
     volarKit,
@@ -279,14 +285,15 @@ export function resolveAstroSemanticToolchainPaths(
 }
 
 export function readAstroSemanticVersionTuple(
-  paths: AstroSemanticToolchainPaths,
-): AstroSemanticVersionTuple {
+  paths: AstroSemanticToolchainPaths & { kitTypeScript: string },
+): AstroSemanticVersionTuple & { kitTypeScript: string } {
   return {
     astro: readVersion(paths.astro),
     check: readVersion(paths.check),
     compiler: readVersion(paths.compiler),
     languageCore: readVersion(paths.languageCore),
     languageServer: readVersion(paths.languageServer),
+    kitTypeScript: readVersion(paths.kitTypeScript),
     leafTypeScript: readVersion(paths.leafTypeScript),
     typeScript: readVersion(paths.typeScript),
     volarKit: readVersion(paths.volarKit),

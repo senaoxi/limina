@@ -2,7 +2,7 @@ import type ts from 'typescript';
 import type { CompilationObligationProof } from '../dependency-semantics';
 import {
   evaluateModuleImpact,
-  independentModuleAbsence,
+  independentModuleInputAbsence,
 } from '../typescript-semantic/native-module-impact';
 import {
   nativeCompilerApi,
@@ -66,17 +66,11 @@ function requestImpact(
     context.tsModule,
     context.compilerRequests.optionsBySource,
   );
-  const observation = {
-    source: request.sourceFile,
-    literal: request.literal,
+  const independent = independentModuleInputAbsence({
     role: request.role,
-    mode: request.mode,
-    raw: request.raw,
-    requestId: '',
-  };
-  const independent = independentModuleAbsence({
-    program,
-    observation,
+    options: program.getCompilerOptionsForFile(request.sourceFile),
+    target: request.raw?.resolvedModule?.resolvedFileName,
+    roots: program.getRootFileNames(),
     fileKey: context.fileKey,
   });
   if (independent !== undefined) return independent;

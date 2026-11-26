@@ -9,9 +9,13 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { z } from 'zod';
-import { currentProfile } from '../../application/analysis/observability';
-import { createVueOverlaySystem } from '../../checker/vue-semantic-identity';
+import {
+  type AnalysisObserver,
+  currentProfile,
+  type ProfileScope,
+} from '../../application/analysis/observability';
 import { resolveVueSemanticToolchain } from '../../checker/vue-semantic-toolchain';
+import { PathBindingReplay } from '../analysis-cache/directory-fingerprint';
 import { vueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
 import { observeWork, profileContextScope } from '../analysis-profile';
 import {
@@ -23,10 +27,12 @@ import {
 import { declarationRequestSchema } from '../declaration-governance/schema';
 import { compilerPathPolicy } from '../typescript-semantic/compiler-path-key';
 import {
+  hasSameNativeFileBinding,
   nativeFingerprint,
   observeNativeFileIdentity,
 } from '../typescript-semantic/native-file-identity';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
+import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import {
   pluginResolutionsSchema,
   retainVuePluginResolutions,
@@ -62,6 +68,62 @@ const observationSchema = z.object({
   mappings: z.array(mappingSchema),
   requests: z.array(declarationRequestSchema),
 });
+const programWorkSchema = z
+  .object({
+    attempts: z.number().int().nonnegative(),
+    created: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    elapsedUs: z.number().int().nonnegative(),
+  })
+  .refine(({ attempts, created, failed }) => attempts === created + failed);
+
+function recordCandidateProgramWork(
+  observer: AnalysisObserver,
+  scope: ProfileScope,
+  stderr: string,
+): void {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(stderr);
+  } catch {
+    decoded = undefined;
+  }
+  const work = programWorkSchema.safeParse(decoded);
+  if (!work.success) {
+    observer.metric(
+      'vue-declaration-candidate-program-observation-unavailable',
+      scope,
+      'calls',
+      1,
+    );
+    return;
+  }
+  const { attempts, created, failed, elapsedUs } = work.data;
+  observer.metric(
+    'vue-declaration-candidate-program-attempts',
+    scope,
+    'calls',
+    attempts,
+  );
+  observer.metric(
+    'vue-declaration-candidate-program-created',
+    scope,
+    'calls',
+    created,
+  );
+  observer.metric(
+    'vue-declaration-candidate-program-failed',
+    scope,
+    'calls',
+    failed,
+  );
+  observer.metric(
+    'vue-declaration-candidate-program-elapsed',
+    scope,
+    'us',
+    elapsedUs,
+  );
+}
 
 export function observeVueDeclarationCandidate(
   input: DeclarationCandidateInput,
@@ -77,6 +139,9 @@ export function observeVueDeclarationCandidate(
     input.executionIdentity === undefined
       ? []
       : configuredPluginRequests(input.executionIdentity);
+  const referenceInputs = input.referenceInputs ?? [];
+  const isMappingOnly =
+    input.declarations.length === 0 && referenceInputs.length > 0;
   const executionEntry = createRequire(toolchain.paths.vueTsc).resolve(
     'vue-tsc/bin/vue-tsc.js',
   );
@@ -100,6 +165,7 @@ export function observeVueDeclarationCandidate(
         cwd: path.dirname(input.sourceConfig),
         input: JSON.stringify({
           vueTsc: toolchain.paths.vueTsc,
+          profile: observer !== undefined,
           pluginRequests: plugins,
           expectPlugin:
             isPlainRecord(input.executionIdentity?.vueOptions) &&
@@ -110,14 +176,22 @@ export function observeVueDeclarationCandidate(
           buildInfoFile: input.parsed.options.tsBuildInfoFile,
           files: [...input.files],
           declarations: input.declarations,
-          referenceInputs: input.referenceInputs ?? [],
+          referenceInputs,
           configs: input.configs,
-          coverage: input.coverage,
+          // The mapping-only Program reads configurations. The parent still
+          // rechecks member bindings at the observation handoff.
+          coverage: isMappingOnly ? undefined : input.coverage,
         }),
         encoding: 'utf8',
         timeout: 120_000,
         maxBuffer: 32 * 1024 * 1024,
       });
+      if (observer !== undefined)
+        recordCandidateProgramWork(
+          observer,
+          scope ?? observer.currentScope,
+          result.stderr,
+        );
       input.metrics?.record({
         name: 'bounded-program-create',
         count: 1,
@@ -162,14 +236,9 @@ export function observeVueDeclarationCandidate(
         `Vue candidate input changed during observation: ${file}`,
       );
   }
-  const system = createVueOverlaySystem({
-    tsModule: toolchain.tsModule,
-    virtualFiles: input.files,
-  });
-  const host = observedResolutionHost(
-    toolchain.tsModule,
-    input.generatedConfig,
-    system,
+  const host = withVirtualResolutionFiles(
+    observedResolutionHost(toolchain.tsModule, input.generatedConfig),
+    input.files,
   );
   for (const check of parsed.data.checks) {
     const readLookup = () => {
@@ -202,23 +271,7 @@ export function observeVueDeclarationCandidate(
         `Vue candidate lookup changed: ${check.file}`,
       );
   }
-  for (const config of input.coverage.configurations) {
-    if (config.state !== 'enumerated') continue;
-    for (const member of config.members) {
-      if (member.physical.state !== 'verified') continue;
-      const current = observeNativeFileIdentity(
-        member.lexicalPath,
-        input.coverage.inputVersion,
-      );
-      if (
-        nativeFingerprint(current.physical) !==
-        nativeFingerprint(member.physical)
-      )
-        throw new DeclarationObservationUnavailable(
-          `Vue candidate binding changed: ${member.lexicalPath}`,
-        );
-    }
-  }
+  assertCurrentMemberBindings(input.coverage);
   const fileKey = compilerPathPolicy(toolchain.tsModule, {
     getCurrentDirectory: () => path.dirname(input.sourceConfig),
     getCanonicalFileName: toolchain.tsModule.createCompilerHost(
@@ -244,6 +297,31 @@ export function observeVueDeclarationCandidate(
     },
     requests,
   };
+}
+
+function assertCurrentMemberBindings(
+  coverage: DeclarationCandidateInput['coverage'],
+): void {
+  new PathBindingReplay({ reuseLeafBindings: true }).run(() => {
+    for (const config of coverage.configurations) {
+      if (config.state !== 'enumerated') continue;
+      for (const member of config.members) {
+        if (member.physical.state !== 'verified') continue;
+        const current = observeNativeFileIdentity(
+          member.lexicalPath,
+          coverage.inputVersion,
+        );
+        if (
+          member.physical.inputVersion !== coverage.inputVersion ||
+          current.physical.state !== 'verified' ||
+          !hasSameNativeFileBinding(member, current)
+        )
+          throw new DeclarationObservationUnavailable(
+            `Vue candidate binding changed: ${member.lexicalPath}`,
+          );
+      }
+    }
+  });
 }
 
 function configPlugins(

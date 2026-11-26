@@ -8,6 +8,8 @@ import {
   type ProducerBuildReceipt,
 } from '../../core/build-graph/producer-receipt';
 import type { PreparedTsconfigGraph } from '../../core/build-graph/types';
+import { measureGraphMaterialization } from '../../execution/graph-materialization-progress';
+import { measureTaskProgress } from '../../execution/progress';
 import { TypecheckLogger } from '../../logger';
 import { resolvePreflight } from '../../preflight';
 import { shouldLogCheckReport } from '../runner-shared';
@@ -102,18 +104,47 @@ function reportSelectedTargetCount(
   });
 }
 
+async function checkBuildPeers(
+  context: CheckerBuildContext,
+  checkers: readonly ResolvedCheckerConfig[],
+): Promise<RunCheckerBuildResult | null> {
+  const problems = await measureTaskProgress(
+    context.options.progress,
+    'validate checker build dependencies',
+    () =>
+      getCheckerBuildPeerProblems({
+        checkers,
+        projectRootDir: context.projectRootDir,
+        request: context.options,
+      }),
+    (problems) => problems.length === 0,
+  );
+  return createCheckerBuildPeerFailure({
+    flowDepth: context.flowDepth,
+    problems,
+    projectRootDir: context.projectRootDir,
+    request: context.options,
+  });
+}
+
 async function runSelectedCheckerBuild(
   context: CheckerBuildContext,
 ): Promise<RunCheckerBuildResult> {
   const configPath = getExplicitConfigPath(context);
-  const selection = selectManagedCheckerBuildTargets({
-    allCheckers: context.allCheckers,
-    checker: context.options.checker,
-    configPath,
-    cwd: context.cwd,
-    generatedGraph: context.generatedGraph,
-    projectRootDir: context.projectRootDir,
-  });
+  const selection = await measureTaskProgress(
+    context.options.progress,
+    'select checker build targets',
+    () =>
+      selectManagedCheckerBuildTargets({
+        allCheckers: context.allCheckers,
+        checker: context.options.checker,
+        configPath,
+        cwd: context.cwd,
+        generatedGraph: context.generatedGraph,
+        projectRootDir: context.projectRootDir,
+      }),
+    (selection) => selection.kind === 'selected',
+  );
   if (selection.kind === 'problem') {
     return createCheckerBuildSelectionFailure({
       problem: selection.problem,
@@ -121,16 +152,10 @@ async function runSelectedCheckerBuild(
       report: context.options.report,
     });
   }
-  const peerFailure = createCheckerBuildPeerFailure({
-    flowDepth: context.flowDepth,
-    problems: getCheckerBuildPeerProblems({
-      checkers: selection.selected.map(({ checker }) => checker),
-      projectRootDir: context.projectRootDir,
-      request: context.options,
-    }),
-    projectRootDir: context.projectRootDir,
-    request: context.options,
-  });
+  const peerFailure = await checkBuildPeers(
+    context,
+    selection.selected.map(({ checker }) => checker),
+  );
   if (peerFailure !== null) return peerFailure;
   const targets = createManagedCheckerBuildTargets({
     commandOverride: context.options.tscCommand,
@@ -167,23 +192,19 @@ async function runSelectedCheckerBuild(
 async function runGeneratedCheckerBuild(
   context: CheckerBuildContext,
 ): Promise<RunCheckerBuildResult> {
-  const peerFailure = createCheckerBuildPeerFailure({
-    flowDepth: context.flowDepth,
-    problems: getCheckerBuildPeerProblems({
-      checkers: context.buildCheckers,
-      projectRootDir: context.projectRootDir,
-      request: context.options,
-    }),
-    projectRootDir: context.projectRootDir,
-    request: context.options,
-  });
+  const peerFailure = await checkBuildPeers(context, context.buildCheckers);
   if (peerFailure !== null) return peerFailure;
-  const targets = createGeneratedCheckerBuildTargets({
-    checkers: context.buildCheckers,
-    commandOverride: context.options.tscCommand,
-    generatedGraph: context.generatedGraph,
-    projectRootDir: context.projectRootDir,
-  });
+  const targets = await measureTaskProgress(
+    context.options.progress,
+    'select checker build targets',
+    () =>
+      createGeneratedCheckerBuildTargets({
+        checkers: context.buildCheckers,
+        commandOverride: context.options.tscCommand,
+        generatedGraph: context.generatedGraph,
+        projectRootDir: context.projectRootDir,
+      }),
+  );
   const rootConfigPaths = targets.map((target) => target.configPath);
   logGeneratedBuildStart({
     context,
@@ -214,37 +235,21 @@ async function runGeneratedCheckerBuild(
   return createResult({ context, execution, rootConfigPaths });
 }
 
-async function materializeBuildGraph(
-  preflight: ReturnType<typeof resolvePreflight>,
-  purpose: PreparedTsconfigGraph['purpose'],
-  progress: RunCheckerBuildOptions['progress'],
-): Promise<PreparedTsconfigGraph> {
-  const item = progress?.startItem(
-    purpose === 'complete'
-      ? 'materialize complete reference graph'
-      : 'materialize producer reference graph',
-  );
-  try {
-    const { graph } =
-      await preflight.ensureExecutionArtifactsMaterialized(purpose);
-    item?.pass();
-    return graph;
-  } catch (error) {
-    item?.fail();
-    throw error;
-  }
-}
-
 async function createCheckerBuildContext(
   options: RunCheckerBuildOptions,
   purpose: PreparedTsconfigGraph['purpose'] = 'complete',
 ): Promise<CheckerBuildContext> {
   const preflight = resolvePreflight(options.config, options);
-  const generatedGraph = await materializeBuildGraph(
-    preflight,
-    options.watch ? 'complete' : purpose,
-    options.progress,
-  );
+  const executionPurpose = options.watch ? 'complete' : purpose;
+  const { graph: generatedGraph } = await measureGraphMaterialization({
+    progress: options.progress,
+    purpose: executionPurpose,
+    materialize: (onAccess) =>
+      preflight.ensureExecutionArtifactsMaterialized(
+        executionPurpose,
+        onAccess,
+      ),
+  });
   const workspaceContext = await preflight.ensureWorkspaceValidated();
   const allCheckers = generatedGraph.checkers;
   return {
@@ -268,8 +273,12 @@ export async function runCheckerBuildImpl(
 ): Promise<RunCheckerBuildResult> {
   if (options.watch) return runBuild(options);
   const preflight = resolvePreflight(options.config, options);
-  if (!(await preflight.hasSvelteCheckProjects()))
-    return runBuild({ ...options, preflight });
+  const hasSvelteCheckProjects = await measureTaskProgress(
+    options.progress,
+    'resolve Svelte producer scope',
+    () => preflight.hasSvelteCheckProjects(),
+  );
+  if (!hasSvelteCheckProjects) return runBuild({ ...options, preflight });
   if (options.configPath !== undefined)
     return runSelectedCheckerBuild(
       await createCheckerBuildContext(
@@ -278,11 +287,16 @@ export async function runCheckerBuildImpl(
       ),
     );
   const built = await ensureBuilt({ ...options, preflight });
+  const { receipt } = built;
   if (
-    built.receipt !== undefined &&
-    (built.receipt.plan.governedSources.get('svelte-check')?.size ?? 0) > 0
+    receipt !== undefined &&
+    (receipt.plan.governedSources.get('svelte-check')?.size ?? 0) > 0
   )
-    await preflight.prepareConsumerPhase(built.receipt);
+    await measureTaskProgress(
+      options.progress,
+      'ensure Svelte consumer inputs',
+      () => preflight.prepareConsumerPhase(receipt),
+    );
   return built.reused
     ? {
         ...built.result,
@@ -307,9 +321,13 @@ interface BuiltProducers {
   result: RunCheckerBuildResult;
   receipt?: ProducerBuildReceipt;
 }
+interface ProducerBuildAttempt {
+  promise: Promise<BuiltProducers>;
+  settled: boolean;
+}
 const builds = new WeakMap<
   ReturnType<typeof resolvePreflight>,
-  Promise<BuiltProducers>
+  ProducerBuildAttempt
 >();
 const buildCommands = new WeakMap<
   ReturnType<typeof resolvePreflight>,
@@ -334,43 +352,72 @@ export async function ensureBuilt(
   }
   const existing = builds.get(preflight);
   if (existing !== undefined) {
-    const built = await existing;
-    if (built.receipt !== undefined) assertProducerBuildReceipt(built.receipt);
-    return { ...built, reused: true };
+    return measureTaskProgress(
+      options.progress,
+      existing.settled
+        ? 'validate reused Svelte producer receipt'
+        : 'wait for Svelte producer build',
+      async () => {
+        const built = await existing.promise;
+        if (built.receipt !== undefined)
+          assertProducerBuildReceipt(built.receipt);
+        return { ...built, reused: true };
+      },
+      (built) => built.result.passed,
+    );
   }
   const generation = preflight.run.generation;
+  const assertBuildGeneration = () => {
+    if (generation !== preflight.run.generation)
+      throw new Error(
+        'Producer build generation changed before receipt publication.',
+      );
+  };
   const pending = (async () => {
     const context = await createCheckerBuildContext(
       { ...options, preflight },
       'producer-build',
     );
-    if (context.generatedGraph.purpose !== 'producer-build')
+    const { generatedGraph: plan } = context;
+    if (plan.purpose !== 'producer-build')
       throw new Error('Expected a producer build plan.');
-    const baseline = captureProducerBuildInputs(context.generatedGraph);
+    const baseline = await measureTaskProgress(
+      options.progress,
+      'capture Svelte producer inputs',
+      () => captureProducerBuildInputs(plan),
+    );
     const result = await runGeneratedCheckerBuild(context);
-    if (generation !== preflight.run.generation)
-      throw new Error(
-        'Producer build generation changed before receipt publication.',
-      );
-    if (!result.passed) return { result, reused: false };
+    if (!result.passed) {
+      assertBuildGeneration();
+      return { result, reused: false };
+    }
     return {
       result,
       reused: false,
-      receipt: issueProducerBuildReceipt(
-        context.generatedGraph,
-        baseline,
-        context.projectRootDir,
+      receipt: await measureTaskProgress(
+        options.progress,
+        'publish Svelte producer receipt',
+        () => {
+          assertBuildGeneration();
+          return issueProducerBuildReceipt(
+            plan,
+            baseline,
+            context.projectRootDir,
+          );
+        },
       ),
     };
   })();
-  builds.set(preflight, pending);
+  const attempt: ProducerBuildAttempt = { promise: pending, settled: false };
+  builds.set(preflight, attempt);
   try {
     const built = await pending;
-    if (!built.result.passed && builds.get(preflight) === pending)
+    attempt.settled = true;
+    if (!built.result.passed && builds.get(preflight) === attempt)
       builds.delete(preflight);
     return built;
   } catch (error) {
-    if (builds.get(preflight) === pending) builds.delete(preflight);
+    if (builds.get(preflight) === attempt) builds.delete(preflight);
     throw error;
   }
 }

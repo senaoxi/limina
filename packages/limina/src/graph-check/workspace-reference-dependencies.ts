@@ -9,10 +9,18 @@ import {
   isNamedWorkspacePackage,
   type WorkspacePackage,
 } from '#core/workspace/actions';
+import {
+  isBarePackageSpecifier,
+  isPackageImportSpecifier,
+} from '#utils/module-specifier';
 import { toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
+import { readImplicitReferences } from '../core/build-graph/generated/config-readers';
+import type { ReferencePackageRequest } from '../core/build-graph/types';
+import { findPackageImportMatch } from '../core/packages/authority';
+import { expandPackageImportTargets } from '../core/packages/import-targets';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import { getProjectCheckerName } from './finding-utilities';
 import type {
@@ -20,6 +28,7 @@ import type {
   GraphWorkspaceDependencyUndeclaredFinding,
   GraphWorkspacePackageNameMissingFinding,
 } from './findings';
+import type { ReferenceExpectation } from './reference-types';
 
 interface WorkspaceReferenceContext {
   checks: CheckCounter;
@@ -102,7 +111,7 @@ function getTargetPackage(
   const referencedProject = context.projectsByPath.get(referencePath);
   return referencedProject === undefined
     ? null
-    : context.workspaceLookup.findPackageForFile(
+    : context.workspaceLookup.findGovernedPackageScopeInfo(
         referencedProject.resolverConfigPath,
       );
 }
@@ -169,7 +178,7 @@ function addUndeclaredDependencyFinding(options: {
     `  referencing package: ${sourcePackage.name}`,
     `  referenced package: ${options.targetPackage.name}`,
     `  package manifest: ${toRelativePath(options.context.config.rootDir, packageManifestPath)}`,
-    `  reason: a cross-package project reference is a source dependency edge, so ${sourcePackage.name} must declare ${options.targetPackage.name} in dependencies, devDependencies, peerDependencies, or optionalDependencies.`,
+    `  reason: this reference has a package-name request or an explicit implicitRefs entry, so ${sourcePackage.name} must declare ${options.targetPackage.name} in dependencies, devDependencies, peerDependencies, or optionalDependencies.`,
     `  fix: declare "${options.targetPackage.name}" in the referencing package manifest. If this package intentionally consumes built artifacts, remove the project reference; ${formatArtifactDependencyPolicy(options.targetPackage)}`,
   ];
 
@@ -204,7 +213,7 @@ function addUndeclaredDependencyFinding(options: {
     presentation: {
       detailLines,
       fix: `Declare "${options.targetPackage.name}" in the referencing package manifest. If this package intentionally consumes built artifacts, remove the project reference.`,
-      reason: `A cross-package project reference is a source dependency edge, so ${sourcePackage.name} must declare ${options.targetPackage.name}.`,
+      reason: `This reference has a package-name request or an explicit implicitRefs entry, so ${sourcePackage.name} must declare ${options.targetPackage.name}.`,
       title:
         'Project reference crosses workspace packages without a declared dependency',
     },
@@ -257,7 +266,7 @@ function createWorkspaceReferenceContext(options: {
     return null;
   }
 
-  const sourcePackage = options.workspaceLookup.findPackageForFile(
+  const sourcePackage = options.workspaceLookup.findGovernedPackageScopeInfo(
     options.project.resolverConfigPath,
   );
   if (!sourcePackage) {
@@ -273,7 +282,41 @@ function createWorkspaceReferenceContext(options: {
   };
 }
 
+function requiresPackageName(
+  workspace: WorkspaceLookupIndex,
+  file: string,
+  specifier: string,
+): boolean {
+  if (isBarePackageSpecifier(specifier)) return true;
+  if (!isPackageImportSpecifier(specifier)) return false;
+  const manifest = workspace.findGovernedPackageScopeInfo(file)?.manifest;
+  const match = findPackageImportMatch(manifest?.imports, specifier);
+  return match
+    ? expandPackageImportTargets(match.value, match.key, specifier).some(
+        (target) =>
+          typeof target === 'string' && isBarePackageSpecifier(target),
+      )
+    : false;
+}
+
+export function referencePackageTargets(
+  requests: readonly ReferencePackageRequest[],
+  workspace: WorkspaceLookupIndex,
+): Map<string, Set<string>> {
+  const targets = new Map<string, Set<string>>();
+  for (const request of requests) {
+    if (!requiresPackageName(workspace, request.file, request.specifier))
+      continue;
+    const providers = targets.get(request.consumerProject) ?? new Set<string>();
+    providers.add(request.providerProject);
+    targets.set(request.consumerProject, providers);
+  }
+  return targets;
+}
+
 export function addWorkspaceReferenceDependencyProblems(options: {
+  expected?: ReadonlyMap<string, ReferenceExpectation>;
+  packageTargets?: ReadonlySet<string>;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   findings: GraphFinding[];
@@ -286,7 +329,29 @@ export function addWorkspaceReferenceDependencyProblems(options: {
   if (!context) {
     return;
   }
+  const explicit = new Set(
+    readImplicitReferences(
+      options.config,
+      options.project.resolverConfigPath,
+    ).implicitRefs.map((reference) => reference.targetConfigPath),
+  );
   for (const referencePath of options.project.references) {
-    checkWorkspaceReference(context, referencePath);
+    const source =
+      options.projectsByPath.get(referencePath)?.resolverConfigPath;
+    const imports = options.expected?.get(referencePath)?.importRecords ?? [];
+    if (
+      (source !== undefined && explicit.has(source)) ||
+      options.packageTargets?.has(referencePath) ||
+      imports.some(
+        (request) =>
+          request.kind !== 'triple-slash-path' &&
+          requiresPackageName(
+            options.workspaceLookup,
+            request.filePath,
+            request.specifier,
+          ),
+      )
+    )
+      checkWorkspaceReference(context, referencePath);
   }
 }

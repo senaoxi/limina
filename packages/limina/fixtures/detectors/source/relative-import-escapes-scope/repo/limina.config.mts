@@ -6,9 +6,7 @@ export default {
       },
     },
   },
-  source: {
-    knip: false,
-  },
+  source: { forbidCrossPackageRelativeImports: true, knip: false },
   pipelines: {
     detector: ['source:check'],
   },

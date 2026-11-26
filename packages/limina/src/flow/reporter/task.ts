@@ -170,22 +170,23 @@ type FinishedTaskStatus = 'fail' | 'pass' | 'skip';
 function getElapsedTime(options: {
   finishOptions: LiminaFlowMessageOptions | undefined;
   startTime: number;
-}): number {
-  return options.finishOptions?.elapsedTimeMs === undefined
+}): number | undefined {
+  const elapsedTimeMs = options.finishOptions?.elapsedTimeMs;
+  return elapsedTimeMs === undefined
     ? performance.now() - options.startTime
-    : options.finishOptions.elapsedTimeMs;
+    : (elapsedTimeMs ?? undefined);
 }
 
-function createTaskFinishOptions<T extends LiminaFlowMessageOptions>(options: {
+function createTaskFinishOptions(options: {
   depth: number;
-  finishOptions: T | undefined;
+  finishOptions: LiminaFlowMessageOptions | undefined;
   startTime: number;
-}): T & Required<Pick<LiminaFlowMessageOptions, 'depth' | 'elapsedTimeMs'>> {
+}): LiminaFlowMessageOptions {
   return {
     ...options.finishOptions,
     depth: options.depth,
     elapsedTimeMs: getElapsedTime(options),
-  } as T & Required<Pick<LiminaFlowMessageOptions, 'depth' | 'elapsedTimeMs'>>;
+  };
 }
 
 function finishTrackedTask(options: {
@@ -370,11 +371,11 @@ function finishSkip(options: {
   reporterState: FlowReporterState;
   taskState: FlowTaskState;
 }): void {
-  const taskOptions = createTaskFinishOptions({
+  const taskOptions = {
+    ...options.finishOptions,
     depth: options.taskState.depth,
-    finishOptions: options.finishOptions,
-    startTime: options.taskState.startTime,
-  });
+    elapsedTimeMs: undefined,
+  };
   emitCompletedTask({
     message: resolveTaskMessage(options.message, options.taskState.message),
     persistInteractive: options.reporterState.trackedTaskCount === 0,

@@ -3,17 +3,14 @@ import type { formatImportRecordLocation } from '#core/import-graph/context';
 import { formatImportRecordLocation as importLocation } from '#core/import-graph/context';
 import { uniqueCodeUnitSortedStrings } from '#utils/collections';
 import { currentProfile } from '../../application/analysis/observability';
-import {
-  collectFrameworkExecutionInputs,
-  hasFrameworkExecutionInputs,
-} from '../analysis-cache/framework-execution-inputs';
+import { collectFrameworkExecutionInputs } from '../analysis-cache/framework-execution-inputs';
 import { observeWork } from '../analysis-profile';
-import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
-  collectProjectDependencies,
-  createSourceProjectSemanticContext,
-  type ProjectDependency,
-} from '../project-dependencies/runner';
+  readReferenceGraphFacts,
+  type ReferenceDependency,
+  type ReferenceGraphFacts,
+} from '../project-dependencies/reference-facts';
+import { createSourceProjectSemanticContext } from '../project-dependencies/runner';
 import { observeSvelteNativeComponentRequests } from '../svelte-semantic/generated-script';
 import { createSvelteModuleTarget } from '../svelte-semantic/module-resolution';
 import { resolveSvelteSemanticToolchain } from '../svelte-semantic/toolchain';
@@ -31,7 +28,10 @@ import {
 } from './framework-import-problems';
 import { nativeFrameworkTarget } from './native-framework-target';
 import type { ReferenceImportContext } from './reference-import-types';
-import { processDeclarationProviderImport } from './reference-imports';
+import {
+  processDeclarationProviderImport,
+  referenceDeclarationScope,
+} from './reference-imports';
 import type {
   GeneratedBuildModule,
   GovernedSourceUnit,
@@ -50,7 +50,7 @@ interface FrameworkImportOptions {
   context: ReferenceImportContext;
   fileName: string;
   importRecord: FrameworkImportRecord;
-  projectDependency: ProjectDependency;
+  projectDependency: ReferenceDependency;
   project: SourceProject;
   source: GovernedSourceUnit;
 }
@@ -195,7 +195,7 @@ interface FrameworkSourceOptions {
 
 function processFrameworkDependencies(options: {
   base: FrameworkSourceOptions;
-  dependencies: ReturnType<typeof collectProjectDependencies>['dependencies'];
+  dependencies: ReferenceGraphFacts['dependencies'];
   frameworkFiles: ReadonlySet<string>;
   project: SourceProject;
 }): void {
@@ -208,7 +208,7 @@ function processFrameworkDependency(options: {
   base: FrameworkSourceOptions;
   frameworkFiles: ReadonlySet<string>;
   project: SourceProject;
-  projectDependency: ProjectDependency;
+  projectDependency: ReferenceDependency;
 }): void {
   if (
     options.base.context.svelteConsumerView !== undefined &&
@@ -252,7 +252,7 @@ function processFrameworkDependency(options: {
 function processFrameworkObservations(options: {
   context: ReferenceImportContext;
   frameworkFiles: ReadonlySet<string>;
-  observations: ReturnType<typeof collectProjectDependencies>['observations'];
+  observations: ReferenceGraphFacts['observations'];
   source: GovernedSourceUnit;
 }): void {
   for (const observation of options.observations) {
@@ -263,9 +263,7 @@ function processFrameworkObservations(options: {
 function processFrameworkObservation(options: {
   context: ReferenceImportContext;
   frameworkFiles: ReadonlySet<string>;
-  observation: ReturnType<
-    typeof collectProjectDependencies
-  >['observations'][number];
+  observation: ReferenceGraphFacts['observations'][number];
   source: GovernedSourceUnit;
 }): void {
   if (
@@ -290,10 +288,7 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
   const frameworkFiles = new Set(
     getFrameworkSourceFileNames(options.source, project),
   );
-  const collectInputs = options.context.replayFrameworkExecutionInputs
-    ? replayFrameworkInputs
-    : collectFrameworkExecutionInputs;
-  const collection = collectInputs(
+  const collection = collectFrameworkExecutionInputs(
     {
       source: options.source,
       project,
@@ -339,7 +334,7 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
             );
         }
       }
-      return collectProjectDependencies({
+      return readReferenceGraphFacts({
         compilationObligationScope: 'generated-declaration-project-v1',
         caches: options.context.projectDependencyCaches,
         context: createSourceProjectSemanticContext({
@@ -352,9 +347,16 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
       });
     },
   );
+  const scope = referenceDeclarationScope(options.context, project, collection);
+  const isActiveSource = (entry: { importRecord: { filePath: string } }) =>
+    scope.isActiveSource(entry.importRecord.filePath);
   if (options.source.primaryCheckerName === 'svelte-check') {
     for (const dependency of collection.dependencies) {
-      if (dependency.targetKind !== 'declaration') continue;
+      if (
+        dependency.targetKind !== 'declaration' ||
+        !isActiveSource(dependency)
+      )
+        continue;
       const bindings = options.context.svelteConsumerView?.bindings;
       const binding =
         bindings?.get(dependency.resolvedFilePath) ??
@@ -380,34 +382,21 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
   }
   processFrameworkDependencies({
     base: options,
-    dependencies:
-      options.context.svelteConsumerView === undefined
-        ? effectiveReferenceInputs(collection)
-        : collection.dependencies,
+    dependencies: (options.context.svelteConsumerView === undefined
+      ? collection.referenceInputs
+      : collection.dependencies
+    ).filter(isActiveSource),
     frameworkFiles,
     project,
   });
   processFrameworkObservations({
     context: options.context,
     frameworkFiles,
-    observations: collection.observations,
+    observations: collection.observations.filter(
+      (item) => item.kind !== 'missing' || isActiveSource(item),
+    ),
     source: options.source,
   });
-}
-
-function replayFrameworkInputs(
-  { source }: { source: GovernedSourceUnit },
-  collect: () => ReturnType<typeof collectProjectDependencies>,
-): ReturnType<typeof collectProjectDependencies> {
-  if (
-    source.frameworkCapabilities.length > 0 &&
-    !hasFrameworkExecutionInputs(source)
-  )
-    throw new Error('Framework execution inputs are unbound.');
-  const result = collect();
-  if (result.failures.length > 0)
-    throw new Error('Framework dependency reconstruction is incomplete.');
-  return result;
 }
 
 export function processFrameworkSourceReferences(options: {

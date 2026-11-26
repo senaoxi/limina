@@ -62,9 +62,10 @@ export interface RunProofCheckImplOptions {
   report?: CheckIssueReportOptions;
 }
 
-export const PROOF_CHECK_ITEM_NAMES = [
+export const PROOF_PROGRESS_ITEM_NAMES = [
   'project routes and configs',
   'checker coverage targets',
+  'expected source files',
   'proof allowlist',
   'source coverage',
 ] as const;

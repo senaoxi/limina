@@ -99,11 +99,12 @@ function checkExecutionView(
   unit: GovernedSourceUnit,
   graph: GeneratedTsconfigGraphResult,
 ): Partial<ProjectInfo> {
-  const semantic = unit.svelteSemanticProject;
-  if (semantic === undefined || unit.checkConfigPath === undefined) return {};
+  const execution = unit.executionConfig;
+  if (execution === undefined) return {};
   return {
-    options: semantic.options,
-    executionConfigPath: unit.checkConfigPath,
+    options: execution.options,
+    executionConfigPath: execution.configPath,
+    resolverProjectReferences: execution.references,
     virtualFiles: graph.generatedFiles,
     // Project identity and Source Coverage remain original; references point at
     // the executable configurations used by this same final semantic view.

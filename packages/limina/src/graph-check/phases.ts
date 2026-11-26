@@ -11,7 +11,10 @@ import type { GraphConfigInvalidFinding, GraphFinding } from './findings';
 import { addReferenceCompletenessProblems } from './reference-completeness';
 import { addGeneratedReferenceCycleProblems } from './reference-cycles';
 import type { GraphCheckState } from './run-state';
-import { addWorkspaceReferenceDependencyProblems } from './workspace-reference-dependencies';
+import {
+  addWorkspaceReferenceDependencyProblems,
+  referencePackageTargets,
+} from './workspace-reference-dependencies';
 
 function addGraphRouteDiagnostic(
   state: GraphCheckState,
@@ -131,15 +134,6 @@ function validateProjectReferences(
     rules: state.graphRules,
     workspaceLookup: state.workspaceLookup,
   });
-  addWorkspaceReferenceDependencyProblems({
-    checks: state.checks,
-    config: state.config,
-    findings: state.findings,
-    project,
-    projectCheckerNamesByPath: state.projectCheckerNamesByPath,
-    projectsByPath: state.projectsByPath,
-    workspaceLookup: state.workspaceLookup,
-  });
 }
 
 export function runProjectReferencePhase(state: GraphCheckState): void {
@@ -186,6 +180,22 @@ export function runReferenceCompletenessPhase(state: GraphCheckState): void {
     ),
   });
 
+  const packageTargets = referencePackageTargets(
+    state.generatedGraph.dependencyAnalysis?.packageRequests ?? [],
+    state.workspaceLookup,
+  );
+  for (const project of state.projects)
+    addWorkspaceReferenceDependencyProblems({
+      checks: state.checks,
+      config: state.config,
+      findings: state.findings,
+      expected: expectedReferencesByProjectPath.get(project.configPath),
+      packageTargets: packageTargets.get(project.configPath),
+      project,
+      projectCheckerNamesByPath: state.projectCheckerNamesByPath,
+      projectsByPath: state.projectsByPath,
+      workspaceLookup: state.workspaceLookup,
+    });
   addReferenceCompletenessProblems({
     checks: state.checks,
     config: state.config,

@@ -1,8 +1,8 @@
-import type { CheckerProjectConfigCache } from '#checkers';
-import { createAstroSemanticProject, isBuildCapablePreset } from '#checkers';
+import { isBuildCapablePreset } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
-import { createSvelteSemanticProject } from '../svelte-semantic/project';
+import { getAstroSourceProject } from '../astro-semantic/project';
+import { createSvelteSourceProject } from '../svelte-semantic/project';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { getFrameworkFilePackageRoot } from './framework-file-root';
 import { getGeneratedLeafSolutionBuildConfigPath } from './generated/paths';
@@ -135,52 +135,46 @@ function createFrameworkCapabilities(options: {
 function createGovernedAstroSemanticProject(options: {
   capability: FrameworkCapabilityDescriptor | undefined;
   frozen: FrozenSemanticProject;
-  project: SourceProject;
-  projectConfigCache: CheckerProjectConfigCache | undefined;
 }): GovernedSourceUnit['astroSemanticProject'] {
-  if (options.capability === undefined) return undefined;
-  const analysisGeneration =
-    options.projectConfigCache === undefined
-      ? 0
-      : options.projectConfigCache.generation;
-  return createAstroSemanticProject({
-    analysisGeneration,
-    configPath: options.project.configPath,
-    packageRootDir: options.capability.packageRootDir,
-    projectFingerprint: options.project.configPath,
-    readSnapshot: () => ({
-      checkerExtensions: options.frozen.project.context.extensions,
-      compilerOptions: options.frozen.project.options,
-      configClosure: options.frozen.project.configClosure,
-      fileNames: options.frozen.project.fileNames,
-      projectReferences: options.frozen.project.references,
-    }),
-  });
-}
-
-function getSemanticGeneration(
-  cache: CheckerProjectConfigCache | undefined,
-): number {
-  return cache?.generation ?? 0;
+  return options.capability === undefined
+    ? undefined
+    : getAstroSourceProject(
+        options.frozen.project,
+        options.capability.packageRootDir,
+      );
 }
 
 function createGovernedSvelteSemanticProject(options: {
   capability: FrameworkCapabilityDescriptor | undefined;
-  ownedFileNames: string[];
+  frozen: FrozenSemanticProject;
   project: SourceProject;
-  projectConfigCache: CheckerProjectConfigCache | undefined;
 }): GovernedSourceUnit['svelteSemanticProject'] {
   if (options.project.semanticAuthority.family !== 'svelte') return undefined;
   if (options.capability === undefined) return undefined;
-  return createSvelteSemanticProject({
-    configClosure: options.project.configClosure,
-    configPath: options.project.configPath,
-    extensions: options.project.context.extensions,
+  return createSvelteSourceProject({
+    source: options.frozen.project,
     fileNames: options.project.fileNames,
-    generation: getSemanticGeneration(options.projectConfigCache),
-    options: options.project.options,
     packageRootDir: options.capability.packageRootDir,
   });
+}
+
+type GovernedConfigInputs = Pick<SourceProject, 'configClosure' | 'options'>;
+const configInputs = new WeakMap<GovernedSourceUnit, GovernedConfigInputs>();
+
+export function governedSourceConfig(
+  unit: GovernedSourceUnit,
+): GovernedConfigInputs {
+  const inputs = configInputs.get(unit);
+  if (inputs === undefined)
+    throw new Error(`Missing resolved Source Config for ${unit.configPath}`);
+  return inputs;
+}
+
+export function publishGovernedSourceConfig(
+  source: GovernedSourceUnit,
+  published: GovernedSourceUnit,
+): void {
+  configInputs.set(published, governedSourceConfig(source));
 }
 
 export function createGovernedSourceUnit(options: {
@@ -188,7 +182,6 @@ export function createGovernedSourceUnit(options: {
   config: ResolvedLiminaInputs;
   frozen: FrozenSemanticProject;
   project: SourceProject;
-  projectConfigCache?: CheckerProjectConfigCache;
 }): GovernedSourceUnit {
   const ownedFileNames = uniqueSortedStrings(options.project.ownedFileNames);
   const frameworkCapabilities = createFrameworkCapabilities({
@@ -205,20 +198,17 @@ export function createGovernedSourceUnit(options: {
   const astroSemanticProject = createGovernedAstroSemanticProject({
     capability: astroCapability,
     frozen: options.frozen,
-    project: options.project,
-    projectConfigCache: options.projectConfigCache,
   });
   const svelteCapability = frameworkCapabilities.find(
     (capability) => capability.family === 'svelte',
   );
   const svelteSemanticProject = createGovernedSvelteSemanticProject({
     capability: svelteCapability,
-    ownedFileNames,
+    frozen: options.frozen,
     project: options.project,
-    projectConfigCache: options.projectConfigCache,
   });
 
-  return {
+  const unit: GovernedSourceUnit = {
     astroSemanticProject,
     buildProjection: createBuildProjection({
       config: options.config,
@@ -242,4 +232,7 @@ export function createGovernedSourceUnit(options: {
     semanticAuthority: { ...options.project.semanticAuthority },
     svelteSemanticProject,
   };
+  const { configClosure, options: compilerOptions } = options.frozen.project;
+  configInputs.set(unit, { configClosure, options: compilerOptions });
+  return unit;
 }

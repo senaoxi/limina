@@ -9,9 +9,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, expect, it, vi } from 'vitest';
+import { loadConfig } from '../config/loader';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import { collectConfigTypeInputs } from '../core/build-graph/config-type-inputs';
+import { LiminaPreflightManager } from '../preflight';
 import { roundTripAnalysisSnapshot } from './helpers/analysis-snapshot';
 import { createFixturePathResolver } from './helpers/path';
 
@@ -151,4 +153,71 @@ it('observes wildcard type enumeration independently of unchanged selected entri
     },
   ]);
   expect(f.resolve).toHaveBeenCalledTimes(2);
+});
+
+it('publishes a sibling config type input on the first run and rejects its move behind a stopped boundary', async () => {
+  const f = fixture();
+  f.write(
+    'tsconfig.json',
+    JSON.stringify({
+      files: [],
+      references: [{ path: './packages/a' }, { path: './packages/b' }],
+    }),
+  );
+  f.write('package.json', JSON.stringify({ name: 'root', private: true }));
+  f.write('pnpm-workspace.yaml', 'packages:\n  - packages/*\n');
+  f.write(
+    'limina.config.mjs',
+    'export default {scope:{checkers:{tsc:{include:["packages/*/tsconfig.json"]}}}};',
+  );
+  for (const name of ['a', 'b'])
+    f.write(`packages/${name}/package.json`, JSON.stringify({ name }));
+  const compilerOptions = { module: 'NodeNext', noLib: true, types: [] };
+  const setTypeInput = (name: string, typeRoots?: string[]) =>
+    f.write(
+      'packages/a/tsconfig.json',
+      JSON.stringify({
+        compilerOptions: { ...compilerOptions, types: [name], typeRoots },
+        files: ['entry.ts'],
+      }),
+    );
+  setTypeInput('../b/env.d.ts');
+  f.write('packages/a/entry.ts', 'export type T = Shared;');
+  f.write('packages/b/env.d.ts', 'interface Shared { value: string }');
+  f.write(
+    'packages/b/tsconfig.json',
+    JSON.stringify({ compilerOptions, files: ['env.d.ts'] }),
+  );
+  const prepare = async () => {
+    const config = await loadConfig({
+      configPath: f.file('limina.config.mjs'),
+    });
+    const manager = new LiminaPreflightManager({ config, analysisCache: true });
+    try {
+      const { graph } = await manager.ensureGeneratedArtifactsMaterialized();
+      await manager.publishAnalysisCache();
+      return graph.manifest.dependencyEdges;
+    } finally {
+      manager.dispose();
+    }
+  };
+  const cold = await prepare();
+  expect(cold).toEqual([
+    expect.objectContaining({
+      file: 'packages/a/tsconfig.json',
+      fromConfig: 'packages/a/tsconfig.json',
+      importedSpecifier: '../b/env.d.ts',
+      toConfig: 'packages/b/tsconfig.json',
+    }),
+  ]);
+  expect(await prepare()).toEqual(cold);
+  f.write('packages/a/empty-types/.keep', '');
+  setTypeInput('../b/env.d.ts', ['./empty-types']);
+  expect(await prepare()).toEqual([]);
+  f.write('packages/b/cut/package.json', '{"name":"stopped"}');
+  f.write('packages/b/cut/env.d.ts', 'interface Shared { value: number }');
+  setTypeInput('../b/cut/env.d.ts');
+  await expect(prepare()).rejects.toThrow(
+    /outside activated workspace package regions/u,
+  );
 });

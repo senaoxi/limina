@@ -5,7 +5,11 @@ import { collectStronglyConnectedComponents } from '#utils/strongly-connected-co
 import path from 'pathe';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import type { GeneratedGraphPreparationState } from './prepare-state';
-import type { GeneratedTsconfigGraphResult, GovernedSourceUnit } from './types';
+import type {
+  GeneratedTsconfigGraphResult,
+  GovernedSourceUnit,
+  SourceProject,
+} from './types';
 
 export const pendingReferenceValidation =
   'Final generated project references have not been validated.';
@@ -252,17 +256,29 @@ function requiredTargets(
   return required;
 }
 
-export function validateStagedReferences(
-  state: GeneratedGraphPreparationState,
-): void {
+type StagedReferenceGraph = Pick<
+  GeneratedGraphPreparationState,
+  | 'checkerEntries'
+  | 'checkerOwnershipPlan'
+  | 'configToOutputBuildByChecker'
+  | 'dependencyAnalysis'
+  | 'governedSourcesByChecker'
+  | 'sourceToBuildByChecker'
+> & {
+  projectsByChecker: ReadonlyMap<
+    string,
+    readonly Pick<SourceProject, 'configPath' | 'dtsConfigPath'>[]
+  >;
+  writeContext: Pick<GeneratedGraphPreparationState['writeContext'], 'files'>;
+};
+
+export function validateStagedReferences(state: StagedReferenceGraph): void {
   state.dependencyAnalysis.referenceValidation = captureValidation(() =>
     validateStagedGraph(state),
   );
 }
 
-function validateStagedGraph(
-  state: GeneratedGraphPreparationState,
-): ReferenceValidation {
+function validateStagedGraph(state: StagedReferenceGraph): ReferenceValidation {
   const sources = new Map<string, ReferenceProject>();
   for (const units of state.governedSourcesByChecker.values())
     for (const unit of units)
@@ -305,57 +321,5 @@ function validateStagedGraph(
       state.governedSourcesByChecker.values(),
     ),
     state.checkerEntries,
-  );
-}
-
-type RestoredGraph = Pick<
-  GeneratedTsconfigGraphResult,
-  | 'dependencyAnalysis'
-  | 'generatedFiles'
-  | 'sourceToDts'
-  | 'sourceToBuild'
-  | 'configToOutputBuild'
-  | 'checkerEntries'
-  | 'ownershipPlan'
-  | 'governedSources'
->;
-
-export function validateRestoredReferences(graph: RestoredGraph): void {
-  if (graph.dependencyAnalysis === undefined) return;
-  graph.dependencyAnalysis.referenceValidation = captureValidation(() =>
-    validateRestoredGraph(graph),
-  );
-}
-
-function validateRestoredGraph(graph: RestoredGraph): ReferenceValidation {
-  const sources = new Map<string, ReferenceProject>();
-  for (const [checkerName, entries] of graph.sourceToDts)
-    for (const [source, generated] of entries)
-      addIdentity(sources, generated, {
-        kind: 'declaration',
-        checkerName,
-        sourceConfig: source,
-      });
-  addBuildConfigs(sources, graph.sourceToBuild, graph.checkerEntries, 'build');
-  addBuildConfigs(
-    sources,
-    graph.configToOutputBuild,
-    graph.checkerEntries,
-    'output',
-  );
-  for (const [checker, entry] of graph.checkerEntries)
-    addIdentity(sources, entry, {
-      kind: 'root',
-      checkerName: checker,
-      sourceConfig: `${checker} entry`,
-    });
-  return validateReferences(
-    graph.generatedFiles,
-    sources,
-    requiredTargets(
-      graph.ownershipPlan,
-      graph.governedSources.values().map((units) => units.values()),
-    ),
-    graph.checkerEntries,
   );
 }

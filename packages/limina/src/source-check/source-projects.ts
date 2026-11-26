@@ -15,7 +15,6 @@ import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
 import { createUnitByProjectPath } from '../core/project-dependencies/project-alignment';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
-import type { AmbientDeclarationIndex } from './ambient-declarations';
 import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import { addProjectOwnerProblems } from './project-owner-findings';
@@ -232,7 +231,6 @@ function addProjectLabelFinding(options: {
 }
 
 interface ProjectOwnershipOptions {
-  ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   findings: SourceFinding[];
@@ -255,7 +253,6 @@ function addCompanionProjectOwnership(
   const typecheckConfigPath = options.project.resolverConfigPath;
   if (!existsSync(typecheckConfigPath)) return;
   addProjectOwnerProblems({
-    ambientDeclarations: options.ambientDeclarations,
     checks: options.checks,
     config: options.config,
     configPath: typecheckConfigPath,
@@ -270,11 +267,10 @@ function addProjectOwnership(options: ProjectOwnershipOptions): void {
   addProjectLabelFinding(options);
   const isDtsProject = isDtsProjectConfig(options.project.configPath);
   addProjectOwnerProblems({
-    ambientDeclarations: options.ambientDeclarations,
     checks: options.checks,
     config: options.config,
     configPath: options.project.configPath,
-    fileNames: options.project.fileNames,
+    fileNames: options.project.ownedFileNames,
     findings: options.findings,
     role: getProjectOwnershipRole(isDtsProject),
     workspaceLookup: options.workspaceLookup,
@@ -283,7 +279,6 @@ function addProjectOwnership(options: ProjectOwnershipOptions): void {
 }
 
 export function addSourceProjectOwnerProblems(options: {
-  ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   findings: SourceFinding[];

@@ -81,7 +81,11 @@ function hasMatchingAuthority(
   >['receipts'][number],
   target: TypecheckTarget,
 ): boolean {
-  if (receipt.authority.adapter === 'typescript-declaration-candidate-v1')
+  if (
+    receipt.authority.adapter === 'typescript-declaration-candidate-v1' ||
+    (receipt.authority.adapter === 'typescript-local-root-membership-v1' &&
+      ts.version === '6.0.3')
+  )
     return (
       receipt.checker === target.checkerName &&
       receipt.compilerVersion === ts.version &&

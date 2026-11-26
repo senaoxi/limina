@@ -14,10 +14,6 @@ import type {
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
-import {
-  type AmbientDeclarationIndexResult,
-  createAmbientDeclarationIndex,
-} from './ambient-declarations';
 import type { SourceFinding } from './findings';
 import { findWorkspaceRootPackage } from './import-authorization-resolution';
 import {
@@ -33,7 +29,6 @@ import { createSourceProjectEntries } from './source-projects';
 import type { SourceProjectEntry } from './source-types';
 
 export interface SourceCheckState {
-  readonly ambientDeclarations: AmbientDeclarationIndexResult;
   readonly checks: CheckCounter;
   readonly checkItems: ReturnType<typeof createCheckItemAccumulator>;
   readonly config: ResolvedLiminaConfig;
@@ -56,15 +51,6 @@ export interface SourceCheckState {
   readonly workspaceDependencyDeclarations: WorkspaceDependencyDeclaration[];
   readonly workspaceLookup: WorkspaceLookupIndex;
   readonly workspacePathIndex: WorkspaceRegionPathIndex;
-}
-
-async function loadAmbientDeclarations(options: {
-  config: ResolvedLiminaConfig;
-  generatedGraph: GeneratedTsconfigGraphResult;
-  workspaceContext: ValidatedWorkspaceContext;
-  workspacePathIndex: WorkspaceRegionPathIndex;
-}): Promise<AmbientDeclarationIndexResult> {
-  return createAmbientDeclarationIndex(options);
 }
 
 export async function createSourceCheckState(
@@ -101,16 +87,7 @@ export async function createSourceCheckState(
   const packageOwners = await preflight.ensurePackageOwners();
   const workspaceDependencyDeclarations =
     await preflight.ensureWorkspaceDependencyDeclarations();
-  const ambientDeclarations = await loadAmbientDeclarations({
-    config,
-    generatedGraph,
-    workspaceContext,
-    workspacePathIndex,
-  });
-
-  sourceIssues.push(...ambientDeclarations.issues);
   return {
-    ambientDeclarations,
     checks,
     checkItems,
     config,

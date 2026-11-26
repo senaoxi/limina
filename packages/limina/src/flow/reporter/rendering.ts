@@ -72,7 +72,7 @@ function createFlowHistoryEntry(options: {
 }): FlowRenderFlowLine {
   return {
     depth: options.depth,
-    elapsedTimeMs: options.input.options.elapsedTimeMs,
+    elapsedTimeMs: options.input.options.elapsedTimeMs ?? undefined,
     kind: 'flow-line',
     message: options.input.rawMessage,
     status: options.input.status,
@@ -230,7 +230,7 @@ export function replaceInteractiveHistoryLine(options: {
   replaceHistoryEntry({
     entry: {
       depth: options.taskOptions.depth ?? 0,
-      elapsedTimeMs: options.taskOptions.elapsedTimeMs,
+      elapsedTimeMs: options.taskOptions.elapsedTimeMs ?? undefined,
       kind: 'flow-line',
       message: options.message,
       status: options.status,

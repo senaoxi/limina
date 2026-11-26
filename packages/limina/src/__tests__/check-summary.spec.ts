@@ -766,7 +766,7 @@ describe('check run summary reporting', () => {
 
   it('uncaps verbose task, rule, package, and blocker summaries', () => {
     const issueCodes = [
-      LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid,
+      LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid,
       LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary,
       LIMINA_CHECK_ISSUE_CODES.sourceImportAuthorityInvalid,
       LIMINA_CHECK_ISSUE_CODES.sourceKnipConfigInvalid,

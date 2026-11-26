@@ -1,6 +1,7 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
+import type { NativeResolution } from '../../domain/analysis/native-evidence';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
@@ -24,6 +25,51 @@ export function observeNativeDeclarationCandidate(
 ): DeclarationCandidateObservation {
   if (input.declarations.length === 0 && input.referenceInputs?.length)
     return observeNativeImplementationCandidate(input);
+  // With no project references the TS 6.0.3 reference map is empty. Every
+  // requested mapping is a verified parsed root and its locked inventory has
+  // no internal request. The same compiler can establish this from metadata.
+  if (
+    input.emptyLocalRootInventory &&
+    ts.version === '6.0.3' &&
+    !input.requiresDelegationProof &&
+    !input.referenceInputs?.length &&
+    !input.parsed.projectReferences?.length &&
+    input.declarations.every(
+      (file) =>
+        /\.d\.[cm]?ts$/iu.test(file) &&
+        input.parsed.fileNames.some(
+          (root) => compilerFileKey(root) === compilerFileKey(file),
+        ),
+    )
+  ) {
+    input.metrics?.record({
+      name: 'declaration-candidate',
+      kind: 'compiler-membership',
+      count: 1,
+    });
+    return {
+      authority: nativeCandidateAuthority(
+        input.checker,
+        'typescript-local-root-membership-v1',
+      ),
+      contextId: nativeFingerprint([
+        input.emptyLocalRootInventory,
+        input.generatedConfig,
+        input.declarations,
+      ]),
+      compilerVersion: ts.version,
+      sources: input.declarations.map((file) => ({
+        file,
+      })),
+      mappings: input.declarations.map((file) => ({
+        file,
+        referenceConfig: null,
+        declarationOutput: null,
+        qualified: true,
+      })),
+      requests: [],
+    };
+  }
   const context = createNativeSemanticContext(
     {
       configPath: input.generatedConfig,
@@ -65,15 +111,10 @@ export function observeNativeDeclarationCandidate(
       ]),
     );
     return {
-      authority: {
-        checker: input.checker,
-        adapter: 'typescript-declaration-candidate-v1',
-        toolchain: nativeFingerprint([
-          requireFromLimina.resolve('typescript'),
-          ts.version,
-        ]),
-        executionEntry: requireFromLimina.resolve('typescript/bin/tsc'),
-      },
+      authority: nativeCandidateAuthority(
+        input.checker,
+        'typescript-declaration-candidate-v1',
+      ),
       contextId: snapshot.contexts[0]!.id,
       compilerVersion: ts.version,
       sources: context.program.getSourceFiles().map((source) => ({
@@ -141,6 +182,7 @@ export function observeNativeDeclarationCandidate(
               mode: request.resolutionMode,
               target: resolution.target?.lexicalPath ?? null,
               resolutionState: resolution.state,
+              ...referencedPathInput(context.program, resolution),
               redirects: resolution.rawRedirectEvidenceIds,
               environment: effectiveCompilerOptions(environment),
               externalLibrary: resolution.externalLibrary,
@@ -153,4 +195,55 @@ export function observeNativeDeclarationCandidate(
   } finally {
     context.dispose();
   }
+}
+
+/** Qualify this occurrence against the generated Program's own redirect.
+ * Preserve the raw lookup in the receipt for output and execution checks. */
+function referencedPathInput(
+  program: ts.Program,
+  resolution: NativeResolution,
+) {
+  const selection = resolution.pathSelection;
+  const source = selection?.logicalTarget;
+  if (
+    !source ||
+    isDeclarationFile(source) ||
+    resolution.rawRedirectEvidenceIds.length !== 1
+  )
+    return {};
+  const mapping = observeNativeReferenceMapping(program, source, ts);
+  if (
+    !mapping.qualified ||
+    !mapping.declarationOutput ||
+    mapping.referenceConfig !== resolution.rawRedirectEvidenceIds[0]
+  )
+    return {};
+  const output = compilerFileKey(mapping.declarationOutput);
+  const candidate = selection.candidates.find(
+    (entry) =>
+      compilerFileKey(entry.lexicalPath) === compilerFileKey(source) &&
+      compilerFileKey(entry.physicalPath) === output,
+  );
+  if (!candidate) return {};
+  const isQualified = candidate.present
+    ? selection.state === 'selected' &&
+      resolution.state === 'resolved' &&
+      resolution.target !== null &&
+      compilerFileKey(resolution.target.lexicalPath) === output
+    : selection.state === 'missing' &&
+      resolution.state === 'unresolved' &&
+      resolution.target === null;
+  return isQualified ? { referencedPathInput: source } : {};
+}
+
+function nativeCandidateAuthority(checker: string, adapter: string) {
+  return {
+    checker,
+    adapter,
+    toolchain: nativeFingerprint([
+      requireFromLimina.resolve('typescript'),
+      ts.version,
+    ]),
+    executionEntry: requireFromLimina.resolve('typescript/bin/tsc'),
+  };
 }

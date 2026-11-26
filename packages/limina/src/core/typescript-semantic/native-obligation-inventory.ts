@@ -1,6 +1,7 @@
 import type ts from 'typescript';
 import type { NativeEvidenceContext } from '../../domain/analysis/native-context';
 import type { NativeCompilationObligation } from '../../domain/analysis/native-obligation';
+import { capturePathPremises } from './native-context-inventory';
 import { unqualifiedNativeLoads } from './native-load-qualification';
 import { createNativePathObligation } from './native-path-obligations';
 import type { NativePathReceipt } from './native-path-selection';
@@ -51,8 +52,13 @@ function pathObligation(
   return createNativePathObligation({
     ...input,
     ...occurrence,
-    source,
-    sourceLoadGap: sourceLoadGap(unqualified, source),
+    ...capturePathPremises(
+      occurrence.requestId,
+      source,
+      input.program,
+      unqualified,
+    ),
+    options: input.program.getCompilerOptions(),
   });
 }
 function pathSource(

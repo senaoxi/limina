@@ -30,7 +30,21 @@ function isSameObservation(
   before: Observation | undefined,
   after: Observation,
 ): boolean {
-  return before === undefined || isSameVersion(before, after);
+  return (
+    before === undefined ||
+    (before.binding === after.binding &&
+      (hasSameConfigStamp(before.input, after.input) ||
+        before.version === after.version))
+  );
+}
+function hasSameConfigStamp(left: AnalysisRead, right: AnalysisRead): boolean {
+  return (
+    left.descriptor?.kind === 'config-text' &&
+    right.descriptor?.kind === 'config-text' &&
+    left.path === right.path &&
+    left.configStamp !== undefined &&
+    left.configStamp === right.configStamp
+  );
 }
 function isSameVersion(
   before: { version: string; binding: string },
@@ -54,9 +68,17 @@ function observation(input: AnalysisRead): Observation {
   return deriveAnalysisRead(input, captureObservation);
 }
 function captureObservation(input: AnalysisRead): Observation {
+  const binding = input.virtual
+    ? 'virtual'
+    : analysisHash(pathBinding(input.path));
+  if (input.descriptor?.kind !== 'config-text')
+    return { version: analysisHash(observedValue(input)), binding, input };
+  let version: string | undefined;
   return {
-    version: analysisHash(observedValue(input)),
-    binding: analysisHash(pathBinding(input.path)),
+    get version() {
+      return (version ??= analysisHash(input.value));
+    },
+    binding,
     input,
   };
 }
@@ -65,12 +87,38 @@ async function readObservation(input: AnalysisRead): Promise<Observation> {
   return observation({ ...input, value: await input.read() });
 }
 
+export function prepareTypeScriptContentObservation(path: string): {
+  value: string | undefined;
+  observe(): void;
+} {
+  const read = () => ts.sys.readFile(path);
+  const value = read();
+  const input: AnalysisRead = {
+    path,
+    key: JSON.stringify(['typescript-content', path]),
+    descriptor: { kind: 'typescript-content', path },
+    value,
+    read,
+  };
+  const version = analysisHash(value);
+  return {
+    value,
+    observe() {
+      const binding = analysisHash(pathBinding(path));
+      observeAnalysisRead(input, {
+        derive: captureObservation,
+        value: { input, version, binding },
+      });
+    },
+  };
+}
+
 function requireStable(
   prior: Observation,
   current: Observation,
   outputs?: ReadonlySet<string>,
 ): void {
-  if (isSameVersion(prior, current)) return;
+  if (isSameObservation(prior, current)) return;
   if (
     outputs === undefined ||
     !isManagedChange(prior.input, current.input.value, outputs)
@@ -81,16 +129,19 @@ function requireStable(
 function readConfigObservation(
   record: ReplayRecord,
   read: () => unknown,
-  hasCurrentMtimeProof = false,
+  options?: { hasCurrentMtimeProof?: boolean; requireContents?: boolean },
 ): Observation {
   const { key, path, descriptor } = record;
   const before = configFileStamp(path);
   if (
-    hasCurrentMtimeProof ||
-    (before !== undefined && before === record.configStamp)
+    options?.requireContents !== true &&
+    (options?.hasCurrentMtimeProof === true ||
+      (before !== undefined && before === record.configStamp))
   ) {
     return {
-      version: record.version,
+      get version() {
+        return record.version;
+      },
       binding: analysisHash(pathBinding(path)),
       input: {
         path,
@@ -125,6 +176,11 @@ export class EpochInputReplay {
   readonly #reads = new Map<string, Promise<Observation>>();
   readonly #observed = new Map<string, Observation>();
   readonly #bindings = new PathBindingReplay({ reuseLeafBindings: true });
+  readonly #strictConfigContents: boolean;
+
+  constructor(options?: { strictConfigContents?: boolean }) {
+    this.#strictConfigContents = options?.strictConfigContents ?? false;
+  }
 
   async #read(input: AnalysisRead): Promise<Observation> {
     const key = JSON.stringify([input.key, input.path, input.descriptor]);
@@ -184,7 +240,10 @@ export class EpochInputReplay {
     const key = JSON.stringify([input.key, input.path, input.descriptor]);
     const previous = this.#observed.get(key);
     if (previous !== undefined) {
-      if (previous.version !== analysisHash(observedValue(input)))
+      if (
+        !hasSameConfigStamp(previous.input, input) &&
+        previous.version !== analysisHash(observedValue(input))
+      )
         throw new AnalysisInputDriftError(input.path);
       return previous;
     }
@@ -195,12 +254,20 @@ export class EpochInputReplay {
 
   read(
     input: AnalysisRead,
-    version: string,
+    receipt: { readonly version: string },
     currentConfigs?: ReadonlySet<string>,
   ): Promise<Observation> {
     const { descriptor, key: inputKey, path, configStamp } = input;
     if (descriptor?.kind === 'config-text') {
-      const record = { key: inputKey, path, descriptor, version, configStamp };
+      const record = {
+        key: inputKey,
+        path,
+        descriptor,
+        configStamp,
+        get version() {
+          return receipt.version;
+        },
+      };
       return Promise.resolve(this.readSynchronous(record, currentConfigs)!);
     }
     const key = JSON.stringify([input.key, input.path, input.descriptor]);
@@ -221,10 +288,16 @@ export class EpochInputReplay {
     const key = JSON.stringify([record.key, record.path, descriptor]);
     const previous = this.#observed.get(key);
     if (previous !== undefined) return previous;
-    const read = () => replaySynchronousDiscoveryRead(descriptor);
+    const read = () =>
+      this.#strictConfigContents && descriptor.kind === 'file'
+        ? ts.sys.fileExists(descriptor.path)
+        : replaySynchronousDiscoveryRead(descriptor);
     const current = this.#bindings.run(() =>
       descriptor.kind === 'config-text' && descriptor.path === record.path
-        ? readConfigObservation(record, read, currentConfigs?.has(record.path))
+        ? readConfigObservation(record, read, {
+            hasCurrentMtimeProof: currentConfigs?.has(record.path),
+            requireContents: this.#strictConfigContents,
+          })
         : observation({ ...record, value: read(), read }),
     );
     this.#observed.set(key, current);
@@ -280,14 +353,20 @@ export class EpochInputs {
     for (const value of this.#reads.values())
       observeAnalysisRead(value.input, { derive: captureObservation, value });
   }
+  configText(path: string): string | undefined {
+    const value = this.#reads.get(JSON.stringify(['config-text', path]))?.input
+      .value;
+    return typeof value === 'string' ? value : undefined;
+  }
   select(paths: ReadonlySet<string>): EpochInputs {
-    const selected = new EpochInputs();
+    const selected = new EpochInputs(this.#physicalInputs);
     for (const [key, value] of this.#reads)
-      if (paths.has(value.input.path)) selected.#reads.set(key, value);
+      if (value.input.workspaceTopology || paths.has(value.input.path))
+        selected.#reads.set(key, value);
     return selected;
   }
   selectRecords(records: readonly DiscoveryRecord[]): EpochInputs | undefined {
-    const selected = new EpochInputs();
+    const selected = new EpochInputs(this.#physicalInputs);
     for (const record of records) {
       const value = this.#reads.get(record.key);
       if (
@@ -310,14 +389,14 @@ export class EpochInputs {
     }
   }
   *governedSourceInputs(): Iterable<{ path: string; version: string }> {
-    for (const { input, version } of this.#reads.values()) {
-      const { descriptor, key, path } = input;
+    for (const observation of this.#reads.values()) {
+      const { descriptor, key, path } = observation.input;
       if (
         descriptor?.kind === 'source-digest' &&
         descriptor.path === path &&
         key === JSON.stringify([descriptor.kind, path])
       )
-        yield { path, version };
+        yield { path, version: observation.version };
     }
   }
   get paths(): ReadonlySet<string> {
@@ -340,8 +419,7 @@ export class EpochInputs {
       const qualified = prior.sourceReceipt
         ? replay.source(prior.input, this.#physicalInputs)
         : undefined;
-      const current =
-        qualified ?? (await replay.read(prior.input, prior.version));
+      const current = qualified ?? (await replay.read(prior.input, prior));
       requireStable(prior, current, outputs);
     }
   }
@@ -393,7 +471,7 @@ export class EpochInputs {
         replay.source(record, this.#physicalInputs) ??
         (await replay.read(
           { ...record, value: undefined, read },
-          record.version,
+          record,
           currentConfigs,
         ));
       if (!isSameVersion(record, next)) return false;

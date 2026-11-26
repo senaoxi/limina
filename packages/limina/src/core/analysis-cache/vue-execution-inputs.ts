@@ -70,6 +70,17 @@ export function retainVueExecutionInputs(
   scopes.set(reused, vueExecutionInputs(source));
 }
 
+export function appendVueExecutionInputs(
+  source: VueProjectSemanticIdentity,
+  reused: VueProjectSemanticIdentity,
+): void {
+  const observed = scopes.get(source);
+  if (observed === undefined) return;
+  const existing = scopes.get(reused);
+  if (existing === undefined) scopes.set(reused, observed);
+  else if (existing !== observed) existing.append(observed);
+}
+
 export function retainVueExecutionInputScope(
   identity: VueProjectSemanticIdentity,
   inputs: EpochInputs,

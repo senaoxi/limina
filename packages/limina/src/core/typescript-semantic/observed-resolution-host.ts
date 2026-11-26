@@ -3,6 +3,7 @@ import {
   readAnalysisInput,
   typeScriptDirectoryDescriptor,
 } from '#utils/analysis-input';
+import { readSourceConfigText } from '#utils/source-config-text';
 import path from 'node:path';
 import type ts from 'typescript';
 
@@ -72,5 +73,18 @@ export function observedCompilerSystem(
         readAnalysisInput(file, () => system.getFileSize!(file), 'file-size'),
     }),
     useCaseSensitiveFileNames: system.useCaseSensitiveFileNames,
+  };
+}
+
+export function observedConfigSystem(
+  compiler: typeof ts,
+  configPath: string,
+): ts.System {
+  return {
+    ...observedCompilerSystem(compiler, configPath),
+    readFile: (file, encoding) =>
+      readSourceConfigText(file, undefined, (name) =>
+        compiler.sys.readFile(name, encoding),
+      ),
   };
 }

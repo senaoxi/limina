@@ -1,3 +1,4 @@
+import { hasVueOccurrenceResolution } from '../analysis-cache/vue-graph-facts';
 import { createFrameworkSemanticFailure } from '../framework-semantic/contracts';
 import { resolveSvelteSemanticImport } from '../svelte-semantic/resolution';
 import { resolveAstroSemanticPair } from './astro-pair-resolution';
@@ -81,11 +82,7 @@ function resolveVuePair(options: {
       request: options.request,
     });
   }
-  if (
-    ['environment-pragma', 'jsx-import-source'].includes(
-      options.importRecord.kind,
-    )
-  ) {
+  if (!hasVueOccurrenceResolution(options.importRecord)) {
     return resolveTypeScriptPair(options);
   }
   options.dependencies.requests.recordRequest('typescript');
@@ -239,7 +236,22 @@ function createEvidence(options: {
   importRecord: ImportRecord;
   request: NormalizedModuleResolutionRequest;
 }): CanonicalImportResolutionEvidence {
-  const pair = resolveCheckerPair(options);
+  return lockedCheckerEvidence(
+    resolveCheckerPair(options),
+    options.request,
+    options.importRecord,
+  );
+}
+
+export function lockedCheckerEvidence(
+  pair: ModuleResolutionPair,
+  request: {
+    compilerOptions: NormalizedModuleResolutionRequest['compilerOptions'];
+    containingFile: string;
+    context: { extensions: readonly string[] };
+  },
+  record: ImportRecord,
+): CanonicalImportResolutionEvidence {
   return {
     eligibility: {
       kind: 'not-applicable',
@@ -247,11 +259,11 @@ function createEvidence(options: {
     },
     oxcResolvedFilePath: null,
     runtimeEvidence: classifyImportRuntimeEvidence({
-      compilerOptions: options.request.compilerOptions,
-      containingFile: options.request.containingFile,
-      extensions: options.request.context.extensions,
+      compilerOptions: request.compilerOptions,
+      containingFile: request.containingFile,
+      extensions: request.context.extensions,
       oxcResolvedFilePath: null,
-      specifier: options.importRecord.specifier,
+      specifier: record.specifier,
       typeScriptResolution: pair.typescript,
     }),
     semanticEvidence: pair.semanticEvidence,

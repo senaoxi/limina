@@ -25,6 +25,7 @@ export function moduleProjectionInputs(
 ): Map<string, ModuleProjectionInput[]> {
   const inputs = new Map<string, ModuleProjectionInput[]>();
   const evidence = analysis.nativeEvidence ?? [];
+  const inactive = new Set(analysis.inactiveDeclarationRequests);
   for (const { snapshot } of evidence) {
     for (const context of snapshot.contexts) {
       if (
@@ -37,6 +38,7 @@ export function moduleProjectionInputs(
       const jsonInputs = jsonMembershipInputs(snapshot, context.id);
       for (const request of snapshot.requests) {
         if (
+          inactive.has(request.id) ||
           request.consumerContextId !== context.id ||
           !['module', 'path-directive'].includes(request.channel) ||
           request.sourceFile === null

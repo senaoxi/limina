@@ -1,13 +1,11 @@
+import { compareCodeUnits } from '#utils/collections';
 import { readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { StoredGraphData } from '../core/build-graph/analysis-cache-schema';
-import { hasBoundCandidate } from '../core/build-graph/cached-candidate-binding';
-import {
-  decodeGraphProjection,
-  encodeGraphProjection,
-} from './helpers/analysis-snapshot';
-import { toPortableRelativePath } from './helpers/path';
+import { decodeData } from '../core/analysis-cache/data-codec';
+import { decodeVueQuery } from '../core/analysis-cache/vue-schema';
+import { graphMeaning } from './helpers/native-meaning';
+import { toPortablePath, toPortableRelativePath } from './helpers/path';
 import {
   cacheMetric,
   createVueCacheFixture,
@@ -15,10 +13,6 @@ import {
 } from './helpers/vue-analysis-cache';
 
 const fixtures: ReturnType<typeof createVueCacheFixture>[] = [];
-const snapshotCodec = {
-  decodeData: decodeGraphProjection,
-  encodeData: encodeGraphProjection,
-};
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup();
 });
@@ -31,12 +25,52 @@ function expectRestored(run: VueCacheRun) {
   expect(run.passed).toBe(true);
   expect(run.vuePrograms).toBe(0);
   expect(cacheMetric(run, 'semanticPrograms')).toBe(0);
-  expect(cacheMetric(run, 'graphBuilds')).toBe(0);
-  expect(cacheMetric(run, 'graphHits')).toBeGreaterThan(0);
+  expect(cacheMetric(run, 'restoredVueContexts')).toBeGreaterThan(0);
+  expect(cacheMetric(run, 'graphBuilds')).toBeGreaterThan(0);
 }
 function expectCold(run: VueCacheRun) {
   expect(run.vuePrograms).toBeGreaterThan(0);
   expect(cacheMetric(run, 'graphBuilds')).toBeGreaterThan(0);
+}
+
+function generatedReferences(
+  f: ReturnType<typeof fixture>,
+  run: VueCacheRun,
+  source = 'vue/tsconfig.json',
+): string[] {
+  const checker = run.graph.manifest.checkers['vue-tsc']!;
+  const output = f.path(checker.sourceToDts[source]!);
+  const config = JSON.parse(readFileSync(output, 'utf8')) as {
+    references?: { path: string }[];
+  };
+  return (config.references ?? [])
+    .map((reference) =>
+      toPortablePath(path.resolve(path.dirname(output), reference.path)),
+    )
+    .sort(compareCodeUnits);
+}
+
+function expectedProvider(
+  f: ReturnType<typeof fixture>,
+  run: VueCacheRun,
+  provider = 'vue/provider/tsconfig.json',
+): string {
+  return f.path(run.graph.manifest.checkers['vue-tsc']!.sourceToDts[provider]!);
+}
+
+function vueModuleObservations(f: ReturnType<typeof fixture>) {
+  const snapshot = f.snapshot();
+  return Object.values(snapshot.vueContexts).flatMap((context) =>
+    Object.values(context.moduleResolutions).map(
+      ({ result, dependencies }) => ({
+        ...(decodeData(result) as {
+          resolvedModule?: { resolvedFileName: string };
+          failedLookupLocations?: string[];
+        }),
+        inputs: dependencies.map(({ inputId }) => snapshot.inputs[inputId]),
+      }),
+    ),
+  );
 }
 
 function crossProjectFixture(options: { noLib?: boolean } = {}) {
@@ -144,21 +178,12 @@ describe('persistent Vue and mixed graph analysis', () => {
         ],
       }),
     );
-    const references = (provider: string) => {
-      const data = snapshotCodec.decodeData(
-        Object.values(f.snapshot().graphs)[0]!.data,
-      ) as StoredGraphData;
-      const consumer = data.governedSources
-        .get('vue-tsc')!
-        .get(f.path('vue/tsconfig.json'))!;
-      const target = data.sourceToDts.get('vue-tsc')!.get(f.path(provider));
-      expect(target).toBeDefined();
-      expect(consumer.declarationReferences).toEqual(new Set([target]));
-    };
-
     setOwner('first');
-    expectCold(f.run());
-    references(first);
+    const cold = f.run();
+    expectCold(cold);
+    expect(generatedReferences(f, cold)).toEqual([
+      expectedProvider(f, cold, first),
+    ]);
     setOwner('second');
     const changed = f.run();
     expectCold(changed);
@@ -166,7 +191,9 @@ describe('persistent Vue and mixed graph analysis', () => {
     expect(
       cacheMetric(changed, 'restoredVueModuleResolutions'),
     ).toBeGreaterThan(0);
-    references(second);
+    expect(generatedReferences(f, changed)).toEqual([
+      expectedProvider(f, changed, second),
+    ]);
     expect(changed.graph).toEqual(f.run({ force: true }).graph);
   });
 
@@ -213,23 +240,21 @@ describe('persistent Vue and mixed graph analysis', () => {
     f.write('providers/helper/index.ts', 'export const helper = 1;');
     const cold = f.run();
     expectCold(cold);
-    const references = () => {
-      const data = snapshotCodec.decodeData(
-        Object.values(f.snapshot().graphs)[0]!.data,
-      ) as StoredGraphData;
-      return data.governedSources
-        .get('vue-tsc')!
-        .get(f.path('vue/tsconfig.json'))!.declarationReferences;
-    };
-    expect(references().size).toBe(2);
-    expectRestored(f.run());
-    expect(references().size).toBe(2);
+    const targets = [
+      expectedProvider(f, cold, 'providers/helper/tsconfig.json'),
+      expectedProvider(f, cold, 'providers/jsx/tsconfig.json'),
+    ].sort(compareCodeUnits);
+    expect(generatedReferences(f, cold)).toEqual(targets);
+    const warm = f.run();
+    expectRestored(warm);
+    expect(generatedReferences(f, warm)).toEqual(targets);
     f.write(
       'vue/App.vue',
       '<script lang="tsx">export const view = <div id="changed" />;</script>',
     );
-    expectCold(f.run());
-    expect(references().size).toBe(2);
+    const changed = f.run();
+    expectCold(changed);
+    expect(generatedReferences(f, changed)).toEqual(targets);
     expectRestored(f.run());
   });
 
@@ -270,15 +295,15 @@ describe('persistent Vue and mixed graph analysis', () => {
           files: ['a.ts'],
         }),
       );
-      expectCold(f.run());
-      const data = snapshotCodec.decodeData(
-        Object.values(f.snapshot().graphs)[0]!.data,
-      ) as StoredGraphData;
-      expect(
-        data.governedSources.get('vue-tsc')!.get(f.path('vue/tsconfig.json'))!
-          .declarationReferences.size,
-      ).toBe(isJavaScriptAllowed ? 1 : 0);
-      expectRestored(f.run());
+      const rebuilt = f.run();
+      expectCold(rebuilt);
+      const references = isJavaScriptAllowed
+        ? [expectedProvider(f, rebuilt)]
+        : [];
+      expect(generatedReferences(f, rebuilt)).toEqual(references);
+      const warm = f.run();
+      expectRestored(warm);
+      expect(generatedReferences(f, warm)).toEqual(references);
     }
   });
 
@@ -319,32 +344,29 @@ describe('persistent Vue and mixed graph analysis', () => {
         'vue/provider/Anchor.vue',
         '<script setup lang="ts">const value = 1;</script>',
       );
-      const dependencies = () =>
-        Object.values(f.snapshot().contributions)
-          .flat()
-          .filter(
-            (c) =>
-              c.fromConfigPath === f.path('vue/tsconfig.json') &&
-              c.toConfigPath === f.path('vue/provider/tsconfig.json'),
-          );
+      const dependencies = (run: VueCacheRun) =>
+        generatedReferences(f, run).filter(
+          (target) => target === expectedProvider(f, run),
+        );
       const addTarget = () =>
         f.write(
           'vue/provider/Button.vue',
           '<script setup lang="ts">const label = "hello";</script>',
         );
       if (change === 'disappears') addTarget();
-      expect(f.run().passed).toBe(true);
-      expect(dependencies()).toHaveLength(change === 'appears' ? 0 : 1);
+      const cold = f.run();
+      expect(cold.passed).toBe(true);
+      expect(dependencies(cold)).toHaveLength(change === 'appears' ? 0 : 1);
       if (change === 'appears') addTarget();
       else rmSync(f.path('vue/provider/Button.vue'));
       const changed = f.run();
       expect(changed.passed).toBe(true);
-      expect(cacheMetric(changed, 'graphHits')).toBe(0);
-      expect(dependencies()).toHaveLength(change === 'appears' ? 1 : 0);
+      expectCold(changed);
+      expect(dependencies(changed)).toHaveLength(change === 'appears' ? 1 : 0);
     },
   );
 
-  it('invalidates producer facts and graphs from the previous analysis adapter', () => {
+  it('invalidates producer facts from the previous analysis adapter', () => {
     const f = crossProjectFixture();
     expectCold(f.run());
     const snapshot = f.snapshot();
@@ -353,7 +375,7 @@ describe('persistent Vue and mixed graph analysis', () => {
     const rebuilt = f.run();
     expectCold(rebuilt);
     expect(cacheMetric(rebuilt, 'semanticPrograms')).toBeGreaterThan(0);
-    expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
+    expect(cacheMetric(rebuilt, 'restoredVueContexts')).toBe(0);
     expectRestored(f.run());
   });
 
@@ -385,23 +407,16 @@ describe('persistent Vue and mixed graph analysis', () => {
     const cold = f.run();
     expect(cold.passed).toBe(true);
     const warm = f.run();
-    expect(warm.passed).toBe(true);
-    expect(warm.vuePrograms).toBe(0);
-    expect(cacheMetric(warm, 'graphHits')).toBeGreaterThan(0);
+    expectRestored(warm);
     expect(
       warm.events.some(
         (event) => event.name === 'declaration-candidate' && event.count > 0,
       ),
     ).toBe(true);
-    const graph = snapshotCodec.decodeData(
-      Object.values(f.snapshot().graphs)[0]!.data,
-    ) as StoredGraphData;
-    expect(
-      graph.dependencyAnalysis.declarationValidation?.receipts.every(
-        (receipt) =>
-          receipt.authority.adapter === 'vue-cli-declaration-candidate-v1',
-      ),
-    ).toBe(true);
+    expect(warm.declarationAdapters.length).toBeGreaterThan(0);
+    expect(new Set(warm.declarationAdapters)).toEqual(
+      new Set(['vue-cli-declaration-candidate-v1']),
+    );
     f.write('vue/provider/api.d.ts', 'export declare const shared: number;');
     const changed = f.run();
     expectCold(changed);
@@ -411,32 +426,23 @@ describe('persistent Vue and mixed graph analysis', () => {
     const f = crossProjectFixture({ noLib: true });
     const cold = f.run();
     expectCold(cold);
-    const stored = () =>
-      snapshotCodec.decodeData(
-        Object.values(f.snapshot().graphs)[0]!.data,
-      ) as StoredGraphData;
-    const references = () =>
-      stored().governedSources.get('vue-tsc')!.get(f.path('vue/tsconfig.json'))!
-        .declarationReferences;
-    const provider = stored()
-      .sourceToDts.get('vue-tsc')!
-      .get(f.path('vue/provider/tsconfig.json'))!;
-    expect(references()).toEqual(new Set([provider]));
+    const expected = [expectedProvider(f, cold)];
+    expect(generatedReferences(f, cold)).toEqual(expected);
     expect(cacheMetric(cold, 'collectionReplayHits')).toBeGreaterThan(0);
     const warm = f.run();
     expectRestored(warm);
     expect(warm.graph).toEqual(cold.graph);
+    expect(generatedReferences(f, warm)).toEqual(expected);
     f.write('vue/src/Widget.vue', '<template>local</template>');
-    expectCold(f.run());
-    expect(references()).toEqual(new Set());
-    expectRestored(f.run());
+    const changed = f.run();
+    expectCold(changed);
+    expect(generatedReferences(f, changed)).toEqual([]);
+    const restored = f.run();
+    expectRestored(restored);
+    expect(generatedReferences(f, restored)).toEqual([]);
   }, 90_000);
 
-  it.each([
-    'workspace changes',
-    'cached governed roots disagree',
-    'cached generated roots disagree',
-  ] as const)(
+  it.each(['workspace changes', 'materialized roots disagree'] as const)(
     'rechecks roots selected before Vue build ownership when %s',
     (change) => {
       const f = fixture();
@@ -498,33 +504,20 @@ describe('persistent Vue and mixed graph analysis', () => {
       if (change === 'workspace changes') {
         f.write('native/src/extra.ts', 'export const extra = 1;');
       } else {
-        const snapshot = f.snapshot();
-        const record = Object.values(snapshot.graphs)[0]!;
-        const data = snapshotCodec.decodeData(record.data) as StoredGraphData;
-        const widget = 'native/src/Widget.vue';
-        if (change === 'cached governed roots disagree') {
-          const unit = data.governedSources
-            .get('vue-tsc')!
-            .get(f.path('native/tsconfig.json'))!;
-          unit.ownedFileNames.unshift(f.path(widget));
-          unit.declarationFileNames.unshift(f.path(widget));
-        } else {
-          const generated = JSON.parse(data.generatedFiles.get(declaration)!);
-          data.generatedFiles = new Map(data.generatedFiles).set(
-            declaration,
-            JSON.stringify({
-              ...generated,
-              files: [widget, 'native/src/index.ts'].map(toDeclarationRelative),
-            }),
-          );
-        }
-        record.data = snapshotCodec.encodeData(data);
-        f.writeSnapshot(snapshot);
+        const generated = JSON.parse(readFileSync(declaration, 'utf8'));
+        writeFileSync(
+          declaration,
+          JSON.stringify({
+            ...generated,
+            files: ['native/src/Widget.vue', 'native/src/index.ts'].map(
+              toDeclarationRelative,
+            ),
+          }),
+        );
       }
 
       const rebuilt = f.run();
       expect(rebuilt.passed).toBe(true);
-      expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
       expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
       expectRoots(
         change === 'workspace changes'
@@ -535,91 +528,53 @@ describe('persistent Vue and mixed graph analysis', () => {
   );
 
   it.each([false, true])(
-    'rejects erased Vue references without trusting cached admission (erase roots=%s)',
+    'recomputes erased generated Vue references (erase roots=%s)',
     (eraseRoots) => {
       const f = crossProjectFixture();
       const cold = f.run();
       expectCold(cold);
-      // Unchanged restoration is covered above; retain the independent recovery
-      // control after corruption without a fourth compiler-process startup.
-      const snapshot = f.snapshot();
-      const record = Object.values(snapshot.graphs)[0]!;
-      const data = snapshotCodec.decodeData(record.data) as StoredGraphData;
-      const sourcePath = f.path('vue/tsconfig.json');
-      const source = data.governedSources.get('vue-tsc')!.get(sourcePath)!;
-      expect(source.declarationReferences.size).toBe(1);
-      source.declarationReferences.clear();
-      if (eraseRoots) source.declarationFileNames = [];
-      const declaration = data.sourceToDts.get('vue-tsc')!.get(sourcePath)!;
-      const generated = JSON.parse(data.generatedFiles.get(declaration)!);
-      data.generatedFiles = new Map(data.generatedFiles).set(
-        declaration,
-        JSON.stringify({ ...generated, references: [] }),
+      const expected = [expectedProvider(f, cold)];
+      expect(generatedReferences(f, cold)).toEqual(expected);
+      const declaration = f.path(
+        cold.graph.manifest.checkers['vue-tsc']!.sourceToDts[
+          'vue/tsconfig.json'
+        ]!,
       );
-      data.dependencyAnalysis.candidate = {
-        ...data.dependencyAnalysis.candidate!,
-        references: data.dependencyAnalysis.candidate!.references.filter(
-          (reference) => reference.from !== sourcePath,
-        ),
-      };
-      expect(hasBoundCandidate(data)).toBe(true);
-      record.data = snapshotCodec.encodeData(data);
-      f.writeSnapshot(snapshot);
+      const original = readFileSync(declaration, 'utf8');
+      const config = JSON.parse(original);
+      config.references = [];
+      if (eraseRoots) config.files = [];
+      writeFileSync(declaration, JSON.stringify(config));
+
       const rebuilt = f.run();
-      expect(rebuilt.passed).toBe(true);
-      expect(rebuilt.vuePrograms).toBe(0);
-      expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
-      expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
+      expectRestored(rebuilt);
       expect(rebuilt.graph).toEqual(cold.graph);
-      expectRestored(f.run());
+      expect(readFileSync(declaration, 'utf8')).toBe(original);
+      expect(generatedReferences(f, rebuilt)).toEqual(expected);
     },
   );
 
-  it.each(['graph-hit', 'graph-fallback'] as const)(
-    'replays restored declaration inputs before Vue execution after %s',
-    (mode) => {
-      const f = fixture();
-      f.write('vue/dist/input.d.ts', 'export declare const value:number;');
-      f.write(
-        'vue/src/index.ts',
-        'import {value} from "../dist/input.js"; export const result:number=value;',
-      );
-      expectCold(f.run());
-      if (mode === 'graph-fallback') {
-        const snapshot = f.snapshot();
-        const record = Object.values(snapshot.graphs)[0]!;
-        const data = snapshotCodec.decodeData(record.data) as StoredGraphData;
-        const [entry, content] = [...data.generatedFiles].find(([file]) =>
-          file.endsWith('/checkers/vue-tsc/tsconfig.build.json'),
-        )!;
-        data.generatedFiles = new Map(data.generatedFiles).set(
-          entry,
-          JSON.stringify({ ...JSON.parse(content), references: [] }),
-        );
-        record.data = snapshotCodec.encodeData(data);
-        f.writeSnapshot(snapshot);
-      }
-      const warm = f.run({
-        executionDrift: {
-          path: f.path('vue/dist/input.d.ts'),
-          content: 'export declare const value:string;',
-        },
-      });
-      if (mode === 'graph-hit') expectRestored(warm);
-      else {
-        expect(warm.passed).toBe(true);
-        expect(warm.vuePrograms).toBe(0);
-        expect(cacheMetric(warm, 'restoredVueContexts')).toBeGreaterThan(0);
-        expect(cacheMetric(warm, 'graphHits')).toBe(0);
-        expect(cacheMetric(warm, 'graphBuilds')).toBeGreaterThan(0);
-      }
-      expect(warm.execution).toEqual({
-        before: 0,
-        after: 'admission-rejected',
-        starts: 1,
-      });
-    },
-  );
+  it('binds restored declaration inputs before Vue execution', () => {
+    const f = fixture();
+    f.write('vue/dist/input.d.ts', 'export declare const value:number;');
+    f.write(
+      'vue/src/index.ts',
+      'import {value} from "../dist/input.js"; export const result:number=value;',
+    );
+    expectCold(f.run());
+    const warm = f.run({
+      executionDrift: {
+        path: f.path('vue/dist/input.d.ts'),
+        content: 'export declare const value:string;',
+      },
+    });
+    expectRestored(warm);
+    expect(warm.execution).toEqual({
+      before: 0,
+      after: 'admission-rejected',
+      starts: 1,
+    });
+  });
 
   it('rejects changed source bytes during restored Vue execution with equal mtime and compiler text', () => {
     const f = fixture();
@@ -646,31 +601,30 @@ describe('persistent Vue and mixed graph analysis', () => {
     });
   });
 
-  it('restores before analysis Programs, rebinds current runtime identities and materializes missing artifacts', () => {
+  it('rebinds restored Vue runtime identities and materializes missing artifacts', () => {
     const f = fixture();
     const cold = f.run();
     expectCold(cold);
-    const stored = snapshotCodec.decodeData(
-      Object.values(f.snapshot().graphs)[0]!.data,
-    ) as StoredGraphData;
-    expect(stored.dependencyAnalysis.diagnostics).toEqual(
+    expect(cold.diagnostics).toEqual(
       expect.arrayContaining([expect.stringContaining('./theme.css')]),
     );
-    expect(stored.dependencyAnalysis.outcome?.governance).toEqual({
-      scope: 'generated-graph',
-      state: 'compliant',
-      diagnostics: [],
-    });
+    expect(cold.passed).toBe(true);
     const before = readFileSync(f.snapshotFile(), 'utf8');
     const warm = f.run();
     expectRestored(warm);
     expect(warm.graph).toEqual(cold.graph);
     expect(readFileSync(f.snapshotFile(), 'utf8')).toBe(before);
-    rmSync(f.path('.limina/generated'), { recursive: true, force: true });
+    const config = f.path(cold.graph.manifest.checkers['vue-tsc']!.entry);
+    const original = readFileSync(config);
+    rmSync(f.path('.limina/tsconfig'), { recursive: true });
+
     const refreshed = f.run({ refresh: true });
     expect(refreshed.passed).toBe(true);
-    expect(refreshed.graph).toEqual(cold.graph);
-    expect(cacheMetric(refreshed, 'graphHits')).toBeGreaterThan(0);
+    expect(graphMeaning(refreshed.graph)).toEqual(graphMeaning(cold.graph));
+    expect(refreshed.vuePrograms).toBe(0);
+    expect(cacheMetric(refreshed, 'restoredVueContexts')).toBeGreaterThan(0);
+    expect(cacheMetric(refreshed, 'graphBuilds')).toBe(2);
+    expect(readFileSync(config)).toEqual(original);
     expect(refreshed.identities.length).toBeGreaterThan(0);
     expect(
       refreshed.identities.every(
@@ -695,12 +649,12 @@ describe('persistent Vue and mixed graph analysis', () => {
     const { f } = outputTargetFixture();
     expectCold(f.run());
     const projected = Object.values(f.snapshot().vueContexts).filter(
-      (context) => context.project.outputProjection !== undefined,
+      (context) => context.project.sourceConfigPath !== undefined,
     );
     expect(projected).toHaveLength(1);
     rmSync(f.path('.limina/tsconfig'), { recursive: true, force: true });
     expectRestored(f.run());
-    expect(projected[0]!.project.outputProjection!.sourceConfigPath).toBe(
+    expect(projected[0]!.project.sourceConfigPath).toBe(
       f.path('vue/tsconfig.json'),
     );
   });
@@ -714,77 +668,127 @@ describe('persistent Vue and mixed graph analysis', () => {
     expectRestored(f.run());
   });
 
-  it.each([
-    'source-context',
-    'old-membership-proof',
-    'generated-options',
-  ] as const)('rejects an invalid output receipt: %s', (corruption) => {
-    const f = fixture();
+  it.each(['source-context', 'missing-query', 'generated-options'] as const)(
+    'rebuilds the current Vue output config after %s corruption',
+    (corruption) => {
+      const { f } = outputTargetFixture();
+      const cold = f.run();
+      expectCold(cold);
+      expect(cold.outputConfigs).toHaveLength(1);
+      const [file] = cold.outputConfigs;
+      const content = readFileSync(file!, 'utf8');
+      expect(JSON.parse(content).compilerOptions.target.toLowerCase()).toBe(
+        'es2020',
+      );
+      if (corruption === 'generated-options') {
+        const config = JSON.parse(content);
+        config.compilerOptions.target = 'ES2023';
+        writeFileSync(file!, JSON.stringify(config));
+      } else {
+        const snapshot = f.snapshot();
+        const source = Object.values(snapshot.vueContexts).find(
+          (context) =>
+            context.project.configPath === f.path('vue/tsconfig.json'),
+        );
+        const output = Object.values(snapshot.vueContexts).find(
+          (context) => context.project.sourceConfigPath !== undefined,
+        );
+        expect(source).toBeDefined();
+        expect(output).toBeDefined();
+        if (corruption === 'source-context')
+          output!.identity = source!.identity;
+        else {
+          const query = output!.queryIds.find(
+            (id) => output!.queries[id]?.kind === 'request-inventory',
+          );
+          expect(query).toBeDefined();
+          delete output!.queries[query!];
+        }
+        f.writeSnapshot(snapshot);
+      }
+      const repaired = f.run();
+      if (corruption === 'generated-options') expectRestored(repaired);
+      else expectCold(repaired);
+      expect(repaired.passed).toBe(true);
+      expect(readFileSync(file!, 'utf8')).toBe(content);
+      expectRestored(f.run());
+    },
+  );
+
+  it('keeps the selected Vue module when a lower-priority declaration sibling appears', () => {
+    const f = fixture({ noLib: true });
+    const selected = f.path('vue/src/value.ts');
+    const sibling = f.path('vue/src/value.d.ts');
+    const selection = () =>
+      new Set(
+        vueModuleObservations(f)
+          .map(({ resolvedModule }) => resolvedModule?.resolvedFileName)
+          .filter((file) => file === selected || file === sibling),
+      );
+    const cold = f.run();
+    expectCold(cold);
+    expect(selection()).toEqual(new Set([selected]));
+
+    f.write('vue/src/value.d.ts', 'export declare const value: 2;');
+    const changed = f.run();
+    expectRestored(changed);
+    expect(selection()).toEqual(new Set([selected]));
+    expect(graphMeaning(changed.graph)).toEqual(graphMeaning(cold.graph));
+  });
+
+  it('selects a newly present Vue module after probing it as a missing preferred candidate', () => {
+    const f = crossProjectFixture({ noLib: true });
     const config = JSON.parse(
       readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
     );
-    config.liminaOptions = {
-      outputs: { target: 'ES2020', rootDir: 'src', outDir: 'build' },
+    config.compilerOptions.paths = {
+      'fixture-value': ['./preferred/value.d.ts', './provider/index.ts'],
     };
     f.write('vue/tsconfig.json', JSON.stringify(config));
-    expectCold(f.run());
-    const snapshot = f.snapshot();
-    const [sourceId] = Object.entries(snapshot.vueContexts).find(
-      ([, context]) =>
-        context.project.configPath === f.path('vue/tsconfig.json'),
-    )!;
-    const graph = Object.values(snapshot.graphs)[0]!;
-    const { decodeData, encodeData } = snapshotCodec;
-    const data = decodeData(graph.data) as {
-      outputProjections: {
-        generatedConfig: string;
-        vueContextId?: string;
-        version: number;
-      }[];
-      generatedFiles: Map<string, string>;
-    };
-    const receipt = data.outputProjections[0]!;
-    if (corruption === 'source-context') receipt.vueContextId = sourceId;
-    else if (corruption === 'old-membership-proof') receipt.version = 2;
-    else {
-      const config = JSON.parse(
-        data.generatedFiles.get(receipt.generatedConfig)!,
-      );
-      config.compilerOptions.customConditions = ['alternate'];
-      data.generatedFiles.set(receipt.generatedConfig, JSON.stringify(config));
-    }
-    graph.data = encodeData(data);
-    f.writeSnapshot(snapshot);
-    const rebuilt = f.run();
-    expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
-    expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
-    expect(rebuilt.passed).toBe(true);
-    expectRestored(f.run());
+    f.write('vue/preferred/.keep', '');
+    f.write(
+      'vue/src/Widget.vue',
+      '<script setup lang="ts">import { shared } from "fixture-value";</script><template>{{shared}}</template>',
+    );
+    const preferred = f.path('vue/preferred/value.d.ts');
+    const fallback = f.path('vue/provider/index.ts');
+    const seed = f.run();
+    expectCold(seed);
+    expect(generatedReferences(f, seed)).toEqual([expectedProvider(f, seed)]);
+    const initialResolution = vueModuleObservations(f).find(
+      ({ resolvedModule }) => resolvedModule?.resolvedFileName === fallback,
+    );
+    expect(initialResolution?.failedLookupLocations).toContain(preferred);
+    expect(initialResolution?.inputs).toContainEqual(
+      expect.objectContaining({ path: preferred, kind: 'file' }),
+    );
+
+    f.write('vue/preferred/value.d.ts', 'export declare const shared: 2;');
+    utimesSync(preferred, 1000, 1000);
+    const changed = f.run();
+    expect(changed.passed).toBe(true);
+    expect(cacheMetric(changed, 'vueModuleResolutions')).toBeGreaterThan(0);
+    const targets = vueModuleObservations(f).map(
+      ({ resolvedModule }) => resolvedModule?.resolvedFileName,
+    );
+    expect(targets).toContain(preferred);
+    expect(targets).not.toContain(fallback);
+    expect(generatedReferences(f, changed)).toEqual([]);
+
+    const warm = f.run();
+    expectRestored(warm);
+    expect(generatedReferences(f, warm)).toEqual([]);
+    expect(graphMeaning(warm.graph)).toEqual(graphMeaning(changed.graph));
+    const forced = f.run({ force: true });
+    expectCold(forced);
+    expect(generatedReferences(f, forced)).toEqual([]);
+    expect(graphMeaning(forced.graph)).toEqual(graphMeaning(changed.graph));
   });
 
-  it.each([
-    'source',
-    'ambient',
-    'negative-candidate',
-    'config',
-    'lock',
-  ] as const)(
+  it.each(['source', 'ambient', 'config'] as const)(
     'invalidates changed %s inputs and warms the replacement',
     (input) => {
       const f = fixture();
-      if (input === 'lock') {
-        // The lock must cover an actual Vue type input, not merely coexist
-        // with a compiler installed in another physical installation domain.
-        f.write(
-          'node_modules/@types/fixture/index.d.ts',
-          'declare const installedFixture: number;',
-        );
-        const config = JSON.parse(
-          readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
-        );
-        config.compilerOptions.types = ['fixture'];
-        f.write('vue/tsconfig.json', JSON.stringify(config));
-      }
       expectCold(f.run());
       switch (input) {
         case 'source': {
@@ -801,10 +805,6 @@ describe('persistent Vue and mixed graph analysis', () => {
           );
           break;
         }
-        case 'negative-candidate': {
-          f.write('vue/src/value.d.ts', 'export declare const value: 2;');
-          break;
-        }
         case 'config': {
           const config = JSON.parse(
             readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
@@ -813,18 +813,10 @@ describe('persistent Vue and mixed graph analysis', () => {
           f.write('vue/tsconfig.json', JSON.stringify(config));
           break;
         }
-        case 'lock': {
-          f.write(
-            'package-lock.json',
-            '{"lockfileVersion":3,"packages":{"":{}},"revision":2}',
-          );
-          break;
-        }
       }
       const changed = f.run();
       expect(changed.passed).toBe(true);
-      expect(cacheMetric(changed, 'graphBuilds')).toBeGreaterThan(0);
-      expect(cacheMetric(changed, 'graphHits')).toBe(0);
+      expectCold(changed);
       const restored = f.run();
       expectRestored(restored);
       expect(restored.graph).toEqual(changed.graph);
@@ -834,8 +826,90 @@ describe('persistent Vue and mixed graph analysis', () => {
     },
   );
 
-  it.each(['context', 'query', 'graph-reference'] as const)(
-    'rejects incomplete %s coverage instead of restoring a partial graph',
+  it('restores Vue after a lockfile edit and reobserves an upgraded type package', () => {
+    const f = fixture();
+    f.write(
+      'node_modules/@types/fixture/package.json',
+      JSON.stringify({ name: '@types/fixture', version: '1.0.0' }),
+    );
+    f.write(
+      'node_modules/@types/fixture/index.d.ts',
+      'declare const installedFixture: number;',
+    );
+    const config = JSON.parse(
+      readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
+    );
+    config.compilerOptions.types = ['fixture'];
+    f.write('vue/tsconfig.json', JSON.stringify(config));
+    const seed = f.run();
+    expectCold(seed);
+    f.write(
+      'package-lock.json',
+      '{"lockfileVersion":3,"packages":{"":{}},"revision":2}',
+    );
+    const unchanged = f.run();
+    expectRestored(unchanged);
+    expect(unchanged.graph).toEqual(seed.graph);
+    f.write(
+      'node_modules/@types/fixture/package.json',
+      JSON.stringify({ name: '@types/fixture', version: '2.0.0' }),
+    );
+    const changed = f.run();
+    expect(changed.passed).toBe(true);
+    expectCold(changed);
+    expect(changed.graph).toEqual(seed.graph);
+  });
+
+  it('retains a reference through unmanaged declarations when a sparse Vue query goes live', () => {
+    const f = crossProjectFixture({ noLib: true });
+    f.write('vue/src/Widget.vue', '<template><div/></template>');
+    f.write(
+      'vue/src/index.ts',
+      "export { shared } from '../unmanaged/first.js';",
+    );
+    f.write(
+      'vue/unmanaged/first.d.ts',
+      "export { shared } from './second.js';",
+    );
+    f.write(
+      'vue/unmanaged/second.d.ts',
+      "export { shared } from '../provider/index.js';",
+    );
+    const cold = f.run();
+    const expected = [expectedProvider(f, cold)];
+    expect(generatedReferences(f, cold)).toEqual(expected);
+    const seed = f.snapshot();
+    for (const missing of ['type-environment-entries', 'resolution'] as const) {
+      const snapshot = structuredClone(seed);
+      const source = Object.values(snapshot.vueContexts).find(
+        (context) => context.project.configPath === f.path('vue/tsconfig.json'),
+      )!;
+      const key = source.queryIds.find((id) => {
+        const row = source.queries[id]!;
+        return (
+          row.kind === missing &&
+          (missing === 'type-environment-entries' ||
+            decodeVueQuery('resolution', row.data)?.sourceRecord.filePath ===
+              f.path('vue/unmanaged/first.d.ts'))
+        );
+      });
+      expect(key).toBeDefined();
+      delete source.queries[key!];
+      source.queryIds = source.queryIds.filter((id) => id !== key);
+      f.writeSnapshot(snapshot);
+      const repaired = f.run();
+      expect(repaired.passed).toBe(true);
+      expect(
+        cacheMetric(repaired, 'vueQueries') +
+          cacheMetric(repaired, 'vueModuleBackedQueries'),
+        missing,
+      ).toBeGreaterThan(0);
+      expect(generatedReferences(f, repaired)).toEqual(expected);
+    }
+  });
+
+  it.each(['context', 'query', 'module result'] as const)(
+    'rebuilds the graph when the stored %s is incomplete or invalid',
     (input) => {
       const f = fixture();
       f.run();
@@ -853,17 +927,22 @@ describe('persistent Vue and mixed graph analysis', () => {
           delete context.queries[context.queryIds[0]!];
           break;
         }
-        case 'graph-reference': {
-          for (const graph of Object.values(snapshot.graphs))
-            graph.vueContextIds = [];
+        case 'module result': {
+          const [module] = Object.values(context.moduleResolutions);
+          module!.result = [
+            'object',
+            [['failedLookupLocations', ['number', 1]]],
+          ];
           break;
         }
       }
       f.writeSnapshot(snapshot);
       const rebuilt = f.run();
-      expect(cacheMetric(rebuilt, 'graphBuilds')).toBeGreaterThan(0);
-      expect(cacheMetric(rebuilt, 'graphHits')).toBe(0);
-      expectRestored(f.run());
+      expectCold(rebuilt);
+      expect(rebuilt.passed).toBe(true);
+      const restored = f.run();
+      expectRestored(restored);
+      expect(restored.graph).toEqual(rebuilt.graph);
     },
   );
 
@@ -874,7 +953,7 @@ describe('persistent Vue and mixed graph analysis', () => {
     const before = readFileSync(f.snapshotFile(), 'utf8');
     const disabled = f.run({ cache: false });
     expect(disabled.vuePrograms).toBeGreaterThan(0);
-    expect(cacheMetric(disabled, 'graphHits')).toBe(0);
+    expect(cacheMetric(disabled, 'restoredVueContexts')).toBe(0);
     expect(readFileSync(f.snapshotFile(), 'utf8')).toBe(before);
     expectCold(f.run({ force: true }));
     expectRestored(f.run());
@@ -894,8 +973,8 @@ describe('persistent Vue and mixed graph analysis', () => {
     expectCold(f.run());
     const second = f.run();
     expectCold(second);
-    expect(cacheMetric(second, 'graphHits')).toBe(0);
-    expect(Object.keys(f.snapshot().graphs)).toHaveLength(0);
+    expect(cacheMetric(second, 'restoredVueContexts')).toBe(0);
+    expect(Object.keys(f.snapshot().vueContexts)).toHaveLength(0);
   });
 }, 60_000);
 
@@ -941,14 +1020,13 @@ it.each([
       }),
     );
     f.write(`vue/src/${scenario.file}`, scenario.source);
-    expectCold(f.run());
-    const stored = snapshotCodec.decodeData(
-      Object.values(f.snapshot().graphs)[0]!.data,
-    ) as StoredGraphData;
-    const unit = stored.governedSources
-      .get('vue-tsc')!
-      .get(f.path('vue/tsconfig.json'))!;
-    expect(unit.declarationReferences.size).toBe(scenario.references);
-    expectRestored(f.run());
+    const cold = f.run();
+    expectCold(cold);
+    const expected =
+      scenario.references === 1 ? [expectedProvider(f, cold)] : [];
+    expect(generatedReferences(f, cold)).toEqual(expected);
+    const warm = f.run();
+    expectRestored(warm);
+    expect(generatedReferences(f, warm)).toEqual(expected);
   },
 );

@@ -24,8 +24,8 @@ import { prepareVueSemanticDependencies } from '../core/vue-semantic/preparation
 import { resolveVueSemanticImport } from '../core/vue-semantic/resolution';
 import { runGraphExportImpl } from '../graph-check/runner';
 import { LiminaPreflightManager } from '../preflight/manager';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
+import { createTestMetricsRecorder } from './helpers/metrics';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -272,7 +272,7 @@ describe('Vue semantic architecture', () => {
           include: ['src/**/*'],
         }),
       });
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const manager = new VueSemanticContextManager(metrics);
       try {
         const identity = parseIdentity({ rootDir: fixture.rootDir });
@@ -725,7 +725,7 @@ describe('Vue semantic architecture', () => {
       'src/types.ts': 'export interface Thing { value: string }\n',
       'tsconfig.json': config(),
     });
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const manager = new VueSemanticContextManager(metrics);
 
     try {

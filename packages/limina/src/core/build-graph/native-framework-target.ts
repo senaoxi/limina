@@ -1,13 +1,13 @@
-import type { ProjectDependency } from '../project-dependencies/contracts';
+import type { ReferenceDependency } from '../project-dependencies/reference-facts';
 import { qualifiedNativeDependencyTarget } from '../typescript-semantic/native-fact-qualification';
 
 export function nativeFrameworkTarget(
   options: {
     source: { configPath: string };
-    projectDependency: ProjectDependency;
+    projectDependency: ReferenceDependency;
   },
   evidence: NonNullable<
-    NonNullable<ProjectDependency['nativeFact']>['nativeEvidence']
+    NonNullable<ReferenceDependency['nativeFact']>['nativeEvidence']
   >,
 ): {
   targetConfigPath: string;

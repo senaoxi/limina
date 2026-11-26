@@ -8,6 +8,7 @@ import type { BoundedResolutionQueries } from './bounded-resolution-queries';
 import { compilerPathPolicy } from './compiler-path-key';
 import type { TypeScriptSemanticProject } from './contracts';
 import { collectNativeObligations } from './native-obligation-inventory';
+import { NativeObservationError } from './native-observation-failure';
 import { assertNativeProgramCompiler } from './native-program-api';
 import { createBoundedProgramClosure } from './native-program-closure';
 import { NativeProgramFrontier } from './native-program-frontier';
@@ -23,6 +24,7 @@ export interface NativeProgramObservationOptions {
   project: TypeScriptSemanticProject;
   context: NativeEvidenceContext;
   coverage: SourceConfigCoverageIndex;
+  observationRootNames?: readonly string[];
   metrics?: AnalysisMetricsRecorder;
   queries?: BoundedResolutionQueries;
   profileRole?: 'type-evidence';
@@ -59,8 +61,23 @@ export class NativeObservationAdapter {
         compiler.createCompilerHost(project.options),
       ).key,
     );
+    const observationRootNames = [
+      ...(options.observationRootNames ?? project.fileNames),
+    ];
+    if (
+      options.observationRootNames !== undefined &&
+      observationRootNames.some((root) => !this.frontier.isProjectRoot(root))
+    )
+      throw new NativeObservationError(
+        'input-drift',
+        'Native observation roots must belong to the current project.',
+      );
     const { program, modules, requests, loads, configReads, failures } =
-      createBoundedProgramClosure(options, compiler, this.frontier);
+      createBoundedProgramClosure(
+        { ...options, observationRootNames },
+        compiler,
+        this.frontier,
+      );
     this.program = program;
     this.modules = modules;
     this.references = loads.references;
@@ -68,15 +85,18 @@ export class NativeObservationAdapter {
     const snapshot = createNativeProgramSnapshot({
       program,
       frontier: this.frontier,
-      coverage,
       requests,
       failures: [
         ...failures,
-        ...nativeRootFailures(options, this.program, this.frontier).filter(
-          (failure) =>
-            failures.every(
-              (prior) => prior.evidenceIds[0] !== failure.evidenceIds[0],
-            ),
+        ...nativeRootFailures({
+          contextId: context.id,
+          observationRootNames,
+          program,
+          frontier: this.frontier,
+        }).filter((failure) =>
+          failures.every(
+            (prior) => prior.evidenceIds[0] !== failure.evidenceIds[0],
+          ),
         ),
       ],
       obligations: collectNativeObligations({

@@ -22,7 +22,9 @@ import {
 } from './native-program-requests';
 import { assertNativeObservationInputs } from './native-program-validity';
 export function createBoundedProgramClosure(
-  options: NativeProgramObservationOptions,
+  options: NativeProgramObservationOptions & {
+    observationRootNames: readonly string[];
+  },
   compiler: typeof ts,
   frontier: NativeProgramFrontier,
 ): {
@@ -33,7 +35,7 @@ export function createBoundedProgramClosure(
   configReads: string[];
   failures: NativeEvidenceFailure[];
 } {
-  const { project, context } = options;
+  const { project, context, observationRootNames } = options;
   const observer = currentProfile();
   observer?.runtime({ typescript: compiler.version });
   const scope =
@@ -45,6 +47,7 @@ export function createBoundedProgramClosure(
   const failures: NativeEvidenceFailure[] = [];
   const loads = new NativeProgramLoads({
     project,
+    observationRootNames,
     compiler,
     frontier,
     failures: { contextId: context.id, failures },
@@ -71,7 +74,7 @@ export function createBoundedProgramClosure(
     const create = () =>
       initializeNativeCompiler(() =>
         compiler.createProgram({
-          rootNames: [...project.fileNames],
+          rootNames: [...observationRootNames],
           options: project.options,
           projectReferences: project.projectReferences,
           host,
@@ -97,7 +100,7 @@ export function createBoundedProgramClosure(
         'program-roots',
         scope,
         'items',
-        project.fileNames.length,
+        rawProgram.getRootFileNames().length,
       );
       observer.metric(
         'program-source-files',

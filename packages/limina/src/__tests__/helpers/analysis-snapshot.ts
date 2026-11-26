@@ -1,24 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { AnalysisSnapshot } from '../../core/analysis-cache/contracts';
-import { decodeData, encodeData } from '../../core/analysis-cache/data-codec';
 import { analysisHash } from '../../core/analysis-cache/identity';
 import { cloneAnalysisSnapshot } from '../../core/analysis-cache/snapshot-receipts';
 import {
+  ANALYSIS_STORAGE,
   type AnalysisBlockReference,
   type AnalysisSnapshotIndex,
   encodeAnalysisBlocks,
   readAnalysisBlocks,
 } from '../../core/analysis-cache/snapshot-shards';
-
-// Inspect or corrupt the persisted projection; its native fields are references,
-// not reconstituted proof. Native completeness tests mutate the context owner.
-export function decodeGraphProjection(data: unknown): unknown {
-  return (decodeData(data) as { projection: unknown }).projection;
-}
-export function encodeGraphProjection(projection: unknown) {
-  return encodeData({ format: 'native-context-views-v1', projection });
-}
 
 export function analysisBlockPath(
   file: string,
@@ -54,7 +45,7 @@ export function writeStoredAnalysisSnapshot(
   const index: AnalysisSnapshotIndex = {
     header: snapshot.header,
     configModules: snapshot.configModules,
-    storage: { version: 3, blocks },
+    storage: { version: ANALYSIS_STORAGE, blocks },
   };
   writeFileSync(file, JSON.stringify(index));
 }
@@ -69,7 +60,10 @@ export function roundTripAnalysisSnapshot(snapshot: AnalysisSnapshot): unknown {
   const index: AnalysisSnapshotIndex = {
     header: snapshot.header,
     configModules: snapshot.configModules,
-    storage: { version: 3, blocks: blocks.map((block) => block.reference) },
+    storage: {
+      version: ANALYSIS_STORAGE,
+      blocks: blocks.map((block) => block.reference),
+    },
   };
   const text = JSON.stringify(index);
   return readAnalysisBlocks(

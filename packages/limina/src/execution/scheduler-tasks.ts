@@ -1,5 +1,4 @@
 import type { RunningTaskEntry } from './executor-types';
-import { observeScheduler } from './scheduler-trace';
 import type { SchedulerContext } from './scheduler-types';
 import { assertActiveGeneration, createRunningEntry } from './task-execution';
 import { ignoreError, nowIso, projectRecorderAndFlow } from './task-observers';
@@ -61,7 +60,7 @@ async function abortRegisteredStart(options: {
   await options.entry.settlement;
   options.context.running.delete(options.entry.task.id);
   options.context.locks.release(options.entry.task.id);
-  options.context.options.checkRunRecorder?.trace?.released(
+  options.context.options.checkRunRecorder?.trace?.settled(
     options.entry.task.id,
     'infrastructure-start-failure',
   );
@@ -81,7 +80,6 @@ export async function startTask(options: {
     task: options.task,
   });
   options.context.running.set(options.task.id, entry);
-  observeScheduler(options.context);
   let isStateBecameRunning = false;
   try {
     const startedAtMonotonic = performance.now();
@@ -101,7 +99,6 @@ export async function startTask(options: {
       task: options.task,
     });
     entry.gate.resolve({ type: 'run' });
-    observeScheduler(options.context);
   } catch (error) {
     await abortRegisteredStart({
       context: options.context,
@@ -143,8 +140,7 @@ export async function finishSynthetic(options: {
   assertSkippedCause(options);
   options.context.pending.delete(options.task.id);
   options.context.outcomes.set(options.task.id, options.outcome);
-  observeScheduler(options.context);
-  options.context.options.checkRunRecorder?.trace?.released(
+  options.context.options.checkRunRecorder?.trace?.settled(
     options.task.id,
     options.outcome.status,
   );

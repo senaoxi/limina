@@ -1,5 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import { measureGraphMaterialization } from '../execution/graph-materialization-progress';
+import { measureTaskProgress } from '../execution/progress';
 import type {
   ExecutionTask,
   ExecutionTaskRunResult,
@@ -109,9 +111,19 @@ export function createMaterializationTask(options: {
       read: ['repository:snapshot', 'workspace:manifest'],
       write: ['workspace:generated-files'],
     },
-    run: async ({ preflight }) => {
-      preflight.assertProducerReceiptCurrent();
-      await preflight.ensureGeneratedArtifactsMaterialized();
+    run: async ({ preflight, progress }) => {
+      if (preflight.hasProducerReceipt())
+        await measureTaskProgress(
+          progress,
+          'validate Svelte producer receipt',
+          () => preflight.assertProducerReceiptCurrent(),
+        );
+      await measureGraphMaterialization({
+        materialize: (onAccess) =>
+          preflight.ensureGeneratedArtifactsMaterialized(onAccess),
+        progress,
+        purpose: 'complete',
+      });
       return { issues: [], status: 'passed' };
     },
   };

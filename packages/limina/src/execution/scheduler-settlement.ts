@@ -1,6 +1,5 @@
 import type { RunningTaskEntry } from './executor-types';
 import { finishSynthetic, projectLifecycle } from './scheduler-tasks';
-import { observeScheduler } from './scheduler-trace';
 import type { SchedulerContext } from './scheduler-types';
 import { nowIso } from './task-observers';
 import type {
@@ -109,7 +108,6 @@ async function processTaskSettlement(options: {
 }): Promise<void> {
   const task = options.entry.task;
   options.context.outcomes.set(task.id, options.outcome);
-  observeScheduler(options.context);
   markGenerationAdvance({ context: options.context, task });
   await projectLifecycle({
     context: options.context,
@@ -129,9 +127,6 @@ export async function settleEntry(options: {
   entry: RunningTaskEntry;
 }): Promise<void> {
   const settlement = await options.entry.settlement;
-  options.context.options.checkRunRecorder?.trace?.settlementStarted(
-    options.entry.task.id,
-  );
   try {
     if (settlement.type === 'infrastructure-start-failure') return;
     await processTaskSettlement({
@@ -142,8 +137,7 @@ export async function settleEntry(options: {
   } finally {
     options.context.running.delete(options.entry.task.id);
     options.context.locks.release(options.entry.task.id);
-    observeScheduler(options.context);
-    options.context.options.checkRunRecorder?.trace?.released(
+    options.context.options.checkRunRecorder?.trace?.settled(
       options.entry.task.id,
       settlement.type === 'task'
         ? settlement.outcome.status

@@ -1460,6 +1460,45 @@ describe('typed Release finding producers', () => {
 });
 
 describe('auditPublishedPackageBoundaries', () => {
+  it('resolves published relative requests from the importing artifact for ESM and CommonJS', async () => {
+    const package_ = await createOutputPackage({
+      'chunks/entry.mjs': [
+        "import '../internal.js';",
+        "export * from '../../outside.js';",
+        "await import('./%2e%2e/%2e%2e/private.js?raw');",
+      ].join('\n'),
+      'chunks/redirect/package.json': '{"main":"../../../escaped.cjs"}',
+      '../escaped.cjs': 'module.exports = 1;',
+      'chunks/entry.cjs': [
+        "require('../internal.js');",
+        "require('../../secret.cjs');",
+        "require('./redirect');",
+        "(function(require) { require('../../shadowed.cjs'); })(() => {});",
+      ].join('\n'),
+    });
+    try {
+      const issues = await auditPublishedPackageBoundaries({
+        outDir: package_.outDir,
+      });
+      expect(issues.map(({ specifier }) => specifier)).toEqual(
+        expect.arrayContaining([
+          '../../outside.js',
+          '../../secret.cjs',
+          './redirect',
+          './%2e%2e/%2e%2e/private.js?raw',
+        ]),
+      );
+      expect(issues).toHaveLength(4);
+      expect(
+        issues.every(({ message }) =>
+          message.includes('escapes the published package root'),
+        ),
+      ).toBe(true);
+    } finally {
+      await package_.cleanup();
+    }
+  });
+
   it('audits literal dynamic imports and reexports without treating template globs as packages', async () => {
     const package_ = await createOutputPackage({
       'index.js': [

@@ -23,6 +23,8 @@ interface SummaryInput {
   cachePolicy: string;
   inventoryComplete: boolean;
   dropped: number;
+  hasOmittedSemanticAdoption?: boolean;
+  isCommandOnly?: boolean;
 }
 
 type Graph = SummaryInput['graphs'][number];
@@ -33,6 +35,12 @@ type Mode =
   | 'mixed'
   | 'not-applicable'
   | 'unavailable';
+
+const auxiliaryContextRoles = new Set([
+  'declaration-candidate',
+  'implementation-reference',
+  'execution-inputs',
+]);
 
 function isValidInterval(interval: Interval): boolean {
   return (
@@ -298,6 +306,7 @@ function rowValues(
   dropped: number,
   hasMissingWait: boolean,
   recoveredAncestor: (id: string) => string | undefined,
+  auxiliaryContexts?: ReadonlySet<string>,
 ): ScopeSummary {
   const measured: Interval[] = [];
   let sharedWaitUs = 0;
@@ -316,7 +325,12 @@ function rowValues(
       failedAttempts++;
       hasTerminalFailure ||= recoveredAncestor(item.id) === undefined;
     }
-    isComputed ||= item.end === 'computed';
+    isComputed ||=
+      item.end === 'computed' &&
+      (auxiliaryContexts === undefined ||
+        (item.op !== 'framework-execution-input-program-create' &&
+          (item.scope[0] !== 'context' ||
+            !auxiliaryContexts.has(item.scope[1]))));
     isRestored ||= item.end === 'restored';
     isSkipped ||=
       item.end === 'not-run' &&
@@ -339,7 +353,9 @@ function rowValues(
             ? 'restored'
             : isCovered
               ? 'covered-by-graph'
-              : isSkipped && work.every((item) => item.end === 'not-run')
+              : isSkipped &&
+                  !isIncomplete &&
+                  work.every((item) => item.end === 'not-run')
                 ? 'skipped'
                 : 'unavailable';
   const isKnown = !isIncomplete && work.length > 0;
@@ -375,6 +391,18 @@ function partitionScope<T extends { scope: WorkRecord['scope'] }>(
 
 function isSemanticContextLayer(layer: string): boolean {
   return layer === 'native-context' || layer === 'vue-context';
+}
+
+export function isSemanticFactLayer(layer: string): boolean {
+  return (
+    isSemanticContextLayer(layer) ||
+    [
+      'importer-facts',
+      'native-resolution',
+      'vue-resolution',
+      'vue-query',
+    ].includes(layer)
+  );
 }
 
 export function* ownedContextCacheDecisions(
@@ -540,6 +568,59 @@ function isRejectedBaseline(decision: DecisionRecord): boolean {
   return ['absent', 'corrupt', 'rejected'].includes(decision.outcome);
 }
 
+function isPriorDiskUse(decision: DecisionRecord): boolean {
+  return (
+    decision.outcome === 'adopted' &&
+    isSemanticFactLayer(decision.layer) &&
+    (decision.origin === 'prior-disk' || decision.origin === 'mixed')
+  );
+}
+
+function isGraphSemanticProgram(
+  work: WorkRecord,
+  contexts: ReadonlyMap<string, ContextRecord>,
+): boolean {
+  if (
+    ![
+      'native-program-create',
+      'vue-program-create',
+      'astro-program-create',
+      'svelte-program-create',
+    ].includes(work.op) ||
+    work.end === 'not-run' ||
+    work.end === 'shared'
+  )
+    return false;
+  if (work.scope[0] !== 'context') return true;
+  const role = contexts.get(work.scope[1])?.role;
+  return role === undefined || !auxiliaryContextRoles.has(role);
+}
+
+function classifyFactUse(input: {
+  decisions: readonly DecisionRecord[];
+  byId: Map<string, DecisionRecord>;
+  program?: WorkRecord;
+}): { mode: 'warm' | 'incremental'; decision: DecisionRecord } | undefined {
+  const diskUses = input.decisions.filter(
+    (decision) =>
+      decision.outcome === 'adopted' &&
+      isSemanticFactLayer(decision.layer) &&
+      decisionChain([decision], input.byId).some(isPriorDiskUse),
+  );
+  const context = diskUses.find((decision) =>
+    isSemanticContextLayer(decision.layer),
+  );
+  const adopted = context ?? diskUses[0];
+  if (adopted === undefined) return undefined;
+  return {
+    decision: adopted,
+    mode:
+      context !== undefined && input.program === undefined
+        ? 'warm'
+        : 'incremental',
+  };
+}
+
 function classifyManagedBypass(
   bypass: DecisionRecord,
   work: WorkRecord,
@@ -581,6 +662,8 @@ function classifyGraph(
   snapshots: readonly DecisionRecord[],
   policy: string,
   byId: Map<string, DecisionRecord>,
+  hasOmittedSemanticAdoption: boolean,
+  program?: WorkRecord,
 ) {
   const basis: string[] = [];
   const result = (mode: Mode) => ({ mode, basis });
@@ -637,10 +720,37 @@ function classifyGraph(
     basis.push(prior.id, rejected.id, work.id);
     return result('incremental');
   }
+  const facts = isForcedCold
+    ? undefined
+    : classifyFactUse({ decisions: local, byId, program });
+  if (facts !== undefined) {
+    basis.push(work.id, facts.decision.id);
+    if (program !== undefined) basis.push(program.id);
+    return result(facts.mode);
+  }
   const cold = snapshots.find(isRejectedBaseline);
   if (cold || isForcedCold) {
     if (cold) basis.push(cold.id);
     basis.push(work.id);
+    return result('cold');
+  }
+  const rebuilt = local.find(
+    (decision) =>
+      isSemanticContextLayer(decision.layer) &&
+      decision.outcome === 'not-adopted',
+  );
+  if (
+    !hasOmittedSemanticAdoption &&
+    rebuilt !== undefined &&
+    program?.end === 'computed' &&
+    local.every(
+      (decision) =>
+        decision.outcome !== 'adopted' ||
+        (decision.origin !== 'unknown' &&
+          decision.origin !== 'invocation-memory'),
+    )
+  ) {
+    basis.push(rebuilt.id, work.id, program.id);
     return result('cold');
   }
   return result('unavailable');
@@ -655,33 +765,58 @@ function deriveMode(input: SummaryInput, workById: Map<string, WorkRecord>) {
   );
   const owner = workOwners(producerIds, workById);
   const byId = new Map(input.decisions.map((d) => [d.id, d]));
+  const contexts = new Map(
+    input.contexts.map((context) => [context.id, context]),
+  );
+  const programs = new Map<string, WorkRecord>();
+  for (const work of input.work) {
+    const producer = owner(work.id);
+    if (
+      producer !== undefined &&
+      !programs.has(producer) &&
+      isGraphSemanticProgram(work, contexts)
+    )
+      programs.set(producer, work);
+  }
   const facts = new Map<string, DecisionRecord[]>();
   for (const decision of input.decisions)
     if (
       decision.layer === 'analysis-graph' ||
-      (decision.outcome === 'adopted' && isSemanticContextLayer(decision.layer))
+      isSemanticContextLayer(decision.layer) ||
+      (decision.outcome === 'adopted' && isSemanticFactLayer(decision.layer))
     )
       incrementGroup(facts, owner(decision.work), decision);
   const globalSnapshots = input.decisions.filter(isSnapshotDecision);
-  const isUnambiguousBaseline =
-    globalSnapshots.filter((d) => d.stage === 'adoption').length <= 1;
+  const adoptions = globalSnapshots.filter((d) => d.stage === 'adoption');
+  const isUnambiguousBaseline = adoptions.length <= 1;
+  const coldInvocation = adoptions.every(
+    (d) => d.outcome !== 'adopted' || d.origin === 'invocation-memory',
+  )
+    ? globalSnapshots.find(isRejectedBaseline)
+    : undefined;
   const graphModes = completed.map((graph) => {
-    const local = facts.get(graph.producer ?? '') ?? [];
-    const chain = decisionChain(
-      local.filter((d) => d.layer === 'analysis-graph'),
-      byId,
-    );
-    const snapshots = chain.filter(isSnapshotDecision);
-    const { mode, basis } = classifyGraph(
-      graph,
-      workById.get(graph.producer ?? ''),
-      local,
-      !isUnambiguousBaseline || snapshots.length > 0
-        ? snapshots
-        : globalSnapshots,
-      input.cachePolicy,
-      byId,
-    );
+    const producer = graph.producer ?? '';
+    const local = facts.get(producer) ?? [];
+    const chain = decisionChain(local, byId);
+    const localSnapshots = chain.filter(isSnapshotDecision);
+    const snapshots =
+      isUnambiguousBaseline && localSnapshots.length === 0
+        ? globalSnapshots
+        : localSnapshots;
+    const { mode, basis } = input.dropped
+      ? { mode: 'unavailable' as const, basis: [] }
+      : classifyGraph(
+          graph,
+          workById.get(producer),
+          local,
+          coldInvocation === undefined
+            ? snapshots
+            : [...snapshots, coldInvocation],
+          input.cachePolicy,
+          byId,
+          input.hasOmittedSemanticAdoption ?? false,
+          programs.get(producer),
+        );
     return {
       graph: graph.id,
       ...(graph.providerRun !== undefined && {
@@ -707,7 +842,9 @@ function deriveMode(input: SummaryInput, workById: Map<string, WorkRecord>) {
       input.work.some(
         (work) =>
           work.end === 'computed' ||
-          (work.op === 'command' && work.end === 'failed'),
+          (work.op === 'command' &&
+            work.end === 'failed' &&
+            !input.isCommandOnly),
       )
         ? 'unavailable'
         : 'not-applicable';
@@ -725,6 +862,11 @@ export function summarizeProfile(input: SummaryInput): Summary {
   const workById = new Map(input.work.map((work) => [work.id, work]));
   const owners = new Map(
     input.contexts.map((context) => [context.id, context.project]),
+  );
+  const auxiliaryContexts = new Set(
+    input.contexts
+      .filter(({ role }) => auxiliaryContextRoles.has(role))
+      .map(({ id }) => id),
   );
   const links = summarizeLinks(input, workById, owners);
   const scopedWork = partitionScope(input.work, owners);
@@ -758,6 +900,7 @@ export function summarizeProfile(input: SummaryInput): Summary {
         input.dropped,
         links.missingWaitProjects.has(id),
         links.recoveredAncestor,
+        auxiliaryContexts,
       ),
     }))
     .sort((a, b) => (b.workUnionUs ?? -1) - (a.workUnionUs ?? -1));

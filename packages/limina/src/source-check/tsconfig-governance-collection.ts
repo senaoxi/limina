@@ -13,8 +13,8 @@ import { uniqueValues } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
+import { isDeclarationFile } from '../core/import-graph/declaration-classifier';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
-import type { AmbientDeclarationIndex } from './ambient-declarations';
 import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import type {
@@ -24,7 +24,6 @@ import type {
 import { isReferenceOnlySolutionConfig } from './tsconfig-ownership-resolution';
 
 interface CollectionOptions {
-  ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   configPaths: string[];
@@ -92,7 +91,9 @@ function getGovernedConfigOwner(options: {
     return null;
   }
 
-  const owner = options.workspaceLookup.findOwnerForFile(options.configPath);
+  const owner = options.workspaceLookup.findGovernedPackageScopeInfo(
+    options.configPath,
+  );
   if (!owner) {
     addMissingConfigOwnerFinding(options);
     return null;
@@ -131,7 +132,7 @@ function addConfigOwnerScopeFinding(options: {
 }): void {
   const title = 'Tsconfig source file set crosses source owner scope';
   const reason =
-    'every source-owner tsconfig*.json must govern only modules owned by the same workspace source owner.';
+    'every source-owner tsconfig*.json must govern only modules owned by the same nearest package.json scope.';
   const ownerPaths = getConfigOwnerPaths(options);
   const lines = [
     `${title}:`,
@@ -197,18 +198,8 @@ function collectProjectFile(options: {
   owner: PackageOwner;
 }): void {
   options.base.checks.add();
-  if (options.base.ambientDeclarations.has(options.fileName)) {
-    addUnitToFileMap({
-      configPath: options.configPath,
-      fileName: options.fileName,
-      map: options.collection.ambientConsumersByFile,
-      owner: options.owner,
-      unitKey: options.owner.packageJsonPath,
-    });
-    return;
-  }
 
-  const fileOwner = options.base.workspaceLookup.findOwnerForFile(
+  const fileOwner = options.base.workspaceLookup.findGovernedPackageScopeInfo(
     options.fileName,
   );
   if (hasDifferentSourceOwner({ fileOwner, owner: options.owner })) {
@@ -222,6 +213,7 @@ function collectProjectFile(options: {
     });
   }
 
+  if (isDeclarationFile(options.fileName)) return;
   addUnitToFileMap({
     configPath: options.configPath,
     fileName: options.fileName,
@@ -261,7 +253,7 @@ function collectConfig(options: {
       options.collection.context,
       undefined,
       options.base.projectConfigCache,
-    ).fileNames;
+    ).ownedFileNames;
   options.collection.projectFileSetsByConfigPath.set(
     options.configPath,
     new Set(fileNames),
@@ -281,7 +273,6 @@ export function collectTsconfigGovernance(
   options: CollectionOptions,
 ): TsconfigGovernanceCollection {
   const collection: TsconfigGovernanceCollection = {
-    ambientConsumersByFile: new Map(),
     context: getSourceGovernanceContext(options.config, options.generatedGraph),
     governanceUnitsByFile: new Map(),
     projectFileSetsByConfigPath: new Map(),

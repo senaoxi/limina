@@ -79,7 +79,7 @@ For example, suppose `packages/app` and `packages/contracts` are governed worksp
 
 ## Aggregator Config
 
-Limina treats a config as a TypeScript solution when the checker-resolved file set is empty and the config directly declares `references`. The resolved file set is computed with the active checker, so `extends`, framework extensions such as `.vue`, and other TypeScript project rules are included in this decision. `files: []` explicitly declares an empty file list, though other configurations can also satisfy this condition.
+Limina checks solution role when a default `tsconfig.json` directly declares `references` and has no nonempty `files` list. An empty root set establishes the role. This check uses TypeScript's config parser, with applicable framework extensions for a named checker selection. Inherited selectors and options can still affect the result. Use `files: []` to express an empty file list.
 
 ```jsonc
 {
@@ -88,7 +88,7 @@ Limina treats a config as a TypeScript solution when the checker-resolved file s
 }
 ```
 
-Only a solution at a path named exactly `tsconfig.json` is a Limina-managed aggregator. A default `tsconfig.json` that resolves any source file is an ordinary source leaf; if it also declares `references`, Limina reports the source-reference violation instead of treating it as an aggregator. A named config such as `tsconfig.solution.json` can still be a TypeScript solution according to the compiler, but it is not a supported Limina solution entry and must not be used as one.
+Use the filename `tsconfig.json` for a Limina-managed aggregator. A source config that directly declares `references` receives a source-reference diagnostic. This includes a default config with roots in the role check and a named config such as `tsconfig.solution.json`.
 
 When `limina graph prepare` runs, Limina starts from checker entries, follows valid `references` from the supported `tsconfig.json` solutions, and generates the build graph consumed by checkers.
 

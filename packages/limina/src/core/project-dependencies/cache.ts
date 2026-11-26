@@ -25,6 +25,8 @@ export function createProjectDependencyCaches(
   return {
     metrics,
     analysisCache,
+    referenceFacts: new Map(),
+    physicalSourceSyntax: new Map(),
     projectDependencyCache: new Map(),
     projectDependencyPreparationCache: new Map(),
     sourceEvidenceCache: new Map(),
@@ -37,11 +39,12 @@ export function createProjectDependencyCaches(
 export function releaseProjectDependencyMemos(
   caches: ProjectDependencyCaches,
 ): void {
+  caches.referenceFacts?.clear();
+  caches.physicalSourceSyntax.clear();
   caches.projectDependencyCache.clear();
   caches.projectDependencyPreparationCache.clear();
   caches.sourceEvidenceCache.clear();
   caches.typeScriptSemanticFactsCache.clear();
-  caches.nativeSourceContexts = undefined;
 }
 
 export function cloneProjectDependencyCollection(

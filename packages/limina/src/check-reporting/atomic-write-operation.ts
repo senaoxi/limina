@@ -1,5 +1,7 @@
+import { syncFileHandle } from '#utils/sync-file-handle';
 import { randomUUID } from 'node:crypto';
 import { open, rm } from 'node:fs/promises';
+import { performance } from 'node:perf_hooks';
 import path from 'pathe';
 import {
   assertArtifactPathOperationSafe,
@@ -18,6 +20,10 @@ export type AtomicFileHandle = Pick<
 export interface AtomicWriteOptions {
   appendNewline?: boolean;
   createTempPath?: (attempt: number) => string;
+  observePayloadWrite?: (result: {
+    bytes?: number;
+    durationMs: number;
+  }) => void;
   openTemp?: (path: string, flags: 'wx') => Promise<AtomicFileHandle>;
   removeTemp?: (path: string) => Promise<void>;
   rename?: (from: string, to: string) => Promise<void>;
@@ -184,17 +190,37 @@ function requireTemporaryPath(
   return state.tempPath;
 }
 
+async function writeObservedPayload(
+  handle: AtomicFileHandle,
+  payload: string,
+  observe: NonNullable<AtomicWriteOptions['observePayloadWrite']>,
+): Promise<void> {
+  const start = performance.now();
+  let didComplete = false;
+  try {
+    await handle.writeFile(payload, 'utf8');
+    didComplete = true;
+  } finally {
+    const durationMs = performance.now() - start;
+    observe({
+      bytes: didComplete ? Buffer.byteLength(payload) : undefined,
+      durationMs,
+    });
+  }
+}
+
 async function writeAndCloseTemporaryFile(
   context: AtomicWriteContext,
   state: AtomicWriteState,
 ): Promise<void> {
   const handle = requireHandle(context, state);
   const content = serializeValue(context);
-  await handle.writeFile(
-    context.options.appendNewline === false ? content : `${content}\n`,
-    'utf8',
-  );
-  await handle.sync();
+  const payload =
+    context.options.appendNewline === false ? content : `${content}\n`;
+  const observe = context.options.observePayloadWrite;
+  if (observe === undefined) await handle.writeFile(payload, 'utf8');
+  else await writeObservedPayload(handle, payload, observe);
+  await syncFileHandle(handle);
   await handle.close();
   state.handle = undefined;
 }

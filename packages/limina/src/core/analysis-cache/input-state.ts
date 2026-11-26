@@ -18,8 +18,14 @@ import {
   AnalysisInputDriftError,
   type InputKind,
 } from './contracts';
-import { directoryObservation, pathBinding } from './directory-fingerprint';
+import {
+  directoryObservation,
+  packageManifestState,
+  pathBinding,
+} from './directory-fingerprint';
 import { analysisHash } from './identity';
+import { typePackageInventory } from './package-inputs';
+import { physicalEntry } from './physical-entry';
 
 function isMissing(error: unknown): boolean {
   return ['ENOENT', 'ENOTDIR'].includes(
@@ -37,6 +43,10 @@ export function inputStat(filePath: string): Stats | undefined {
 }
 
 function readStructural(filePath: string, kind: InputKind): unknown {
+  if (kind === 'manifest') return packageManifestState(filePath);
+  if (kind === 'type-packages') return typePackageInventory(filePath);
+  if (kind === 'directory-identity')
+    return [pathBinding(filePath), physicalEntry(filePath)];
   if (kind === 'binding') return pathBinding(filePath);
   const stat = inputStat(filePath);
   return stat === undefined

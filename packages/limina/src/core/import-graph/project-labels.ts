@@ -50,13 +50,14 @@ function readProjectConfigObject(options: {
   configPath: string;
   virtualFiles: ReadonlyMap<string, string> | undefined;
 }): Record<string, unknown> {
-  const virtualContent = options.virtualFiles?.get(
+  const hasOverlay = options.virtualFiles?.has(
     normalizeAbsolutePath(options.configPath),
   );
-
-  return virtualContent === undefined
-    ? readJsonConfig(options.config, options.configPath)
-    : (JSON.parse(virtualContent) as Record<string, unknown>);
+  return readJsonConfig(
+    options.config,
+    options.configPath,
+    hasOverlay ? options.virtualFiles : undefined,
+  );
 }
 
 function parseGraphRuleLabel(options: {

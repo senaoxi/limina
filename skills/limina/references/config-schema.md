@@ -27,19 +27,19 @@ contract. Config modules execute code, so inspect unfamiliar modules before runs
 
 Every top-level field is optional:
 
-| Field             | Responsibility                                                 |
-| ----------------- | -------------------------------------------------------------- |
-| `scope.regions`   | Activated governance regions and explicit owner cuts           |
-| `scope.source`    | Source coverage include/exclude selectors                      |
-| `scope.checkers`  | Named checker scopes plus automatic discovery policy           |
-| `graph.rules`     | Labeled deny/allow rules for project relations and imports     |
-| `source`          | Import authority grants, ambient declarations, and Knip policy |
-| `proof.allowlist` | Reasoned exceptions for otherwise uncovered files              |
-| `package.entries` | Named publishable output roots and per-tool settings           |
-| `release`         | Release content comparison and package-manifest lint policy    |
-| `pipelines`       | Named ordered task/command sequences                           |
-| `concurrency`     | Task, checker, package, and release execution budgets          |
-| `cache`           | Persistent analysis cache policy and extra file inputs         |
+| Field             | Responsibility                                                   |
+| ----------------- | ---------------------------------------------------------------- |
+| `scope.regions`   | Activated governance regions and explicit owner cuts             |
+| `scope.source`    | Source coverage include/exclude selectors                        |
+| `scope.checkers`  | Named checker scopes plus automatic discovery policy             |
+| `graph.rules`     | Labeled deny/allow rules for project relations and imports       |
+| `source`          | Import authority grants, relative import policy, and Knip policy |
+| `proof.allowlist` | Reasoned exceptions for otherwise uncovered files                |
+| `package.entries` | Named publishable output roots and per-tool settings             |
+| `release`         | Release content comparison and package-manifest lint policy      |
+| `pipelines`       | Named ordered task/command sequences                             |
+| `concurrency`     | Task, checker, package, and release execution budgets            |
+| `cache`           | Persistent analysis cache policy and extra file inputs           |
 
 Do not generate the removed `config`, `regions`, `execution`, `checks`, or
 `configDependencies` top-level shapes. Move old `regions` to `scope.regions`,
@@ -111,8 +111,7 @@ may need one compatible declaration checker; contradictory fixed owners fail.
 - `source.importAuthority.allow` grants specific owners access to specified
   workspace-root dependencies, with reasons and optional file selectors. It is
   not a blanket permission to consume any root dependency.
-- `source.declarations.ambient` identifies justified ambient declarations; it
-  does not turn them into implementation modules.
+- `source.forbidCrossPackageRelativeImports: true` restricts ordinary relative imports to the nearest package manifest.
 - `source.knip` can be `false`, `true`, or a Limina policy object containing
   `root` and `workspaces`. Read the current source validator before adding
   `entry`, `ignoreDependencies`, or `ignoreFiles`; these entries require reasons.
@@ -165,8 +164,7 @@ observing resource pressure; concurrency is not an ordering contract.
 Omission or `cache: true` enables persistent analysis caching. `cache: false`
 prevents analysis restoration/publication and leaves existing snapshots in place.
 It does not disable checker `.tsbuildinfo`, in-memory caches, or issue records.
-If Limina cannot find a readable lockfile for an installation used by analysis,
-expect a cold run and the previous snapshot to stay in place, even with `--force`.
+Persistent analysis works without a lockfile. A change to a region’s package manifest or its physical binding expires the source configs bound to it. Adding or removing a boundary also expires configs in the affected containing scope. Other consumers replay the module and type queries whose observed files, manifests or missing candidates changed. Local type roots retain a directory fingerprint. Installed type roots track immediate type packages and their manifests and symlinks. Run `limina check --force` after editing installed files in place while preserving package metadata and bindings.
 
 For files read outside normal module loading, use exact file paths:
 

@@ -86,7 +86,7 @@ Suppose the public entry of `core` has both type and runtime branches:
 
 When the checker selects `dist/index.d.ts`, the unselected default source branch creates no reference, and the declaration path does not identify its producer.
 
-For TypeScript and Vue projects, a managed declaration can be covered by a source config. If complete coverage identifies exactly one config, Limina selects it automatically. If several configs cover the declaration, an external consumer needs to select one using `liminaOptions.declarationContexts`. Limina does not guess a unique config from incomplete information. A shared declaration can also be a local input of several projects.
+For TypeScript and Vue projects, a managed declaration can be covered by a source config. If complete coverage identifies exactly one config, Limina selects it automatically. If several active units cover the declaration, use `liminaOptions.declarationContexts` to select the config whose options govern its requests. This also applies to declaration roots with no incoming import. Every consumer retains its own source dependencies. Incomplete coverage leaves the declaration context unavailable.
 
 Context selection does not authorize overlapping source ownership. See the [declaration-context guidance](./monorepo-constraints.md#choose-a-declaration-configuration-context) for the ownership and ambient-sharing rules.
 

@@ -2,11 +2,13 @@ import type {
   AstroSemanticProject,
   CheckerProjectParseContext,
   ResolvedCheckerModuleName,
+  VueProjectSemanticIdentity,
   VueSourceProfile,
 } from '#checkers';
 import type { ResolverFactory } from 'oxc-resolver';
 import type ts from 'typescript';
 import type { CheckerRequestInventory } from '../../domain/analysis/declaration-governance';
+import type { VueGraphFactReader } from '../analysis-cache/vue-graph-facts';
 import type { AstroSemanticContextManager } from '../astro-semantic/context';
 import type {
   FrameworkSemanticDependencyPreparation,
@@ -85,6 +87,9 @@ export type StandaloneInternalImportArguments = [
 ];
 
 export interface ImportAnalysisContext {
+  restoreVueGraphFacts?: (
+    identity: VueProjectSemanticIdentity,
+  ) => VueGraphFactReader | undefined;
   collectCheckerRequestInventory?: (
     context: ImportResolveContextFields,
   ) => CheckerRequestInventory | undefined;

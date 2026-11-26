@@ -1,7 +1,14 @@
+import { getPackageRootSpecifier } from '#core/workspace/actions';
+import {
+  isBarePackageSpecifier,
+  isRelativeSpecifier,
+} from '#utils/module-specifier';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   findPackageImportMatch,
   type PackageImportMatch,
 } from '../core/packages/authority';
+import { expandPackageImportTargets } from '../core/packages/import-targets';
 import type {
   NearestPackageInfo,
   ResolvedPackageTarget,
@@ -69,11 +76,14 @@ function isResolvedInsidePackageScope(options: {
   resolvedFilePath: string;
   workspaceLookup: WorkspaceLookupIndex;
 }): boolean {
-  return (
+  const target =
+    options.workspaceLookup.findGovernedPackageScopeInfo(
+      options.resolvedFilePath,
+    ) ??
     options.workspaceLookup.findNearestPackageScopeInfo(
       options.resolvedFilePath,
-    )?.packageJsonPath === options.packageScope.packageJsonPath
-  );
+    );
+  return target?.packageJsonPath === options.packageScope.packageJsonPath;
 }
 
 function shouldTreatAsRelativeTarget(
@@ -88,21 +98,49 @@ function shouldTreatAsPackageTarget(
   return ['package', 'mixed'].includes(match.targetKind);
 }
 
-function hasEscapedRelativeTarget(context: ValidatedPackageImport): boolean {
-  if (!context.packageScope) {
-    return false;
-  }
-
-  const conditions = [
-    shouldTreatAsRelativeTarget(context.match),
-    !isResolvedInsidePackageScope({
-      packageScope: context.packageScope,
-      resolvedFilePath: context.resolvedFilePath,
+function escapedRelativeTarget(
+  context: ValidatedPackageImport,
+): string | undefined {
+  const scope = context.packageScope;
+  if (!scope) return undefined;
+  const isInside = (file: string) =>
+    isResolvedInsidePackageScope({
+      packageScope: scope,
+      resolvedFilePath: file,
       workspaceLookup: context.workspaceLookup,
-    }),
-  ];
-
-  return conditions.every(Boolean);
+    });
+  const targets = expandPackageImportTargets(
+    context.match.value,
+    context.match.key,
+    context.importRecord.specifier,
+  );
+  const names = new Set<string>();
+  for (const target of targets) {
+    if (typeof target !== 'string') continue;
+    if (isBarePackageSpecifier(target))
+      names.add(getPackageRootSpecifier(target));
+    if (!isRelativeSpecifier(target)) continue;
+    let file: string;
+    try {
+      file = fileURLToPath(
+        new URL(target, pathToFileURL(scope.packageJsonPath)),
+      );
+    } catch {
+      // The compiler cannot resolve an invalid file URL as a manifest-relative input.
+      continue;
+    }
+    if (!isInside(file)) return file;
+  }
+  if (isInside(context.resolvedFilePath)) return undefined;
+  if (shouldTreatAsRelativeTarget(context.match))
+    return context.resolvedFilePath;
+  if (context.match.targetKind === 'mixed') {
+    const actual = context.workspaceLookup.findNearestPackageScopeInfo(
+      context.resolvedFilePath,
+    )?.name;
+    if (!actual || !names.has(actual)) return context.resolvedFilePath;
+  }
+  return undefined;
 }
 
 function addRelativeScopeFinding(context: ValidatedPackageImport): void {
@@ -126,11 +164,12 @@ function rejectEscapedRelativeTarget(
     return null;
   }
 
-  if (!hasEscapedRelativeTarget(context)) {
+  const escaped = escapedRelativeTarget(context);
+  if (escaped === undefined) {
     return context;
   }
 
-  addRelativeScopeFinding(context);
+  addRelativeScopeFinding({ ...context, resolvedFilePath: escaped });
   return null;
 }
 

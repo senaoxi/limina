@@ -3,24 +3,17 @@ import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-r
 import { currentProfile } from '../application/analysis/observability';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
 import { cacheCause } from '../core/analysis-cache/profile-decisions';
-import { deferSnapshotGraphs } from '../core/analysis-cache/snapshot-graphs';
 import {
-  parseAnalysisSnapshot,
-  parseGraphRecords,
+  parseStoredAnalysisSnapshot,
   qualifyAnalysisSnapshotRoot,
 } from '../core/analysis-cache/snapshot-schema';
 import {
-  AnalysisBlockReader,
   type AnalysisBlockReference,
+  readAnalysisBlocks,
 } from '../core/analysis-cache/snapshot-shards';
-import { hasValidGraphRecords } from '../core/analysis-cache/snapshot-validation';
 import { compareConfigModules } from './config-module-comparison';
 import type { ConfigObservation } from './config-observation';
 interface DecodeOptions {
-  admit?: (header: AnalysisSnapshot['header'] | undefined) => {
-    admitted: boolean;
-    decision?: string;
-  };
   identity: string;
   configPath: string;
   configVersion?: string;
@@ -35,7 +28,12 @@ export class AnalysisSnapshotDecoder {
   constructor(options: DecodeOptions) {
     this.#options = options;
   }
-  #record(kind: string, start: number): void {
+  #startMeasurement(): number | undefined {
+    return this.#options.metrics === undefined ? undefined : performance.now();
+  }
+
+  #record(kind: string, start: number | undefined): void {
+    if (start === undefined) return;
     this.#options.metrics?.record({
       name: 'analysis-cache',
       kind,
@@ -44,7 +42,7 @@ export class AnalysisSnapshotDecoder {
   }
   #parse(bytes: Buffer | undefined, shouldRestore: boolean): unknown {
     if ([!shouldRestore, bytes === undefined].some(Boolean)) return undefined;
-    const start = performance.now();
+    const start = this.#startMeasurement();
     try {
       return JSON.parse(bytes!.toString('utf8'));
     } catch {
@@ -94,47 +92,17 @@ export class AnalysisSnapshotDecoder {
   }
   #restore(value: unknown): AnalysisSnapshot | undefined {
     if (this.#options.configVersion === undefined) return undefined;
-    const start = performance.now();
+    const start = this.#startMeasurement();
     try {
-      const blocks = new AnalysisBlockReader(value, this.#options.readBlock);
-      const snapshot = parseAnalysisSnapshot(
-        blocks.facts(),
+      return parseStoredAnalysisSnapshot(
+        readAnalysisBlocks(value, this.#options.readBlock),
         this.#options.identity,
         this.#options.configVersion,
       );
-      return snapshot === undefined
-        ? undefined
-        : deferSnapshotGraphs(snapshot, () => this.#graphs(blocks, snapshot));
     } catch {
       return undefined;
     } finally {
       this.#record('validation', start);
-    }
-  }
-  #graphs(
-    blocks: AnalysisBlockReader,
-    snapshot: AnalysisSnapshot,
-  ): AnalysisSnapshot['graphs'] {
-    const start = performance.now();
-    try {
-      const records = parseGraphRecords(blocks.graphs());
-      if (!hasValidGraphRecords(snapshot, records))
-        throw new Error('Unbound graph projection.');
-      return records;
-    } catch (error) {
-      const profile = currentProfile();
-      profile?.decision(
-        'analysis-graph',
-        {
-          stage: 'lookup',
-          outcome: 'corrupt',
-          causes: [{ code: 'graph-projection-invalid' }],
-        },
-        profile.path(this.#options.configPath),
-      );
-      throw error;
-    } finally {
-      this.#record('projection-validation', start);
     }
   }
   decode(
@@ -143,11 +111,10 @@ export class AnalysisSnapshotDecoder {
     options?: { physicalLookup?: string; skipCode?: string },
   ): AnalysisSnapshot | undefined {
     const value = this.#parse(bytes, shouldRestore);
-    const start = performance.now();
+    const start = this.#startMeasurement();
     const metadata = qualifyAnalysisSnapshotRoot(value, this.#options.identity);
     const root = metadata.kind === 'qualified' ? metadata.root : undefined;
-    const lock = this.#options.admit?.(root?.header) ?? { admitted: true };
-    const modules = this.#qualify(lock.admitted ? root : undefined);
+    const modules = this.#qualify(root);
     this.#record('config-modules-gate', start);
     const profile = currentProfile();
     if (!shouldRestore || bytes === undefined) {
@@ -173,15 +140,13 @@ export class AnalysisSnapshotDecoder {
     }
     const reason =
       metadata.kind === 'qualified'
-        ? lock.admitted
-          ? modules.matched
-            ? this.#options.configVersion === undefined
-              ? { code: 'configuration-version-unknown' }
-              : root?.header.configVersion === this.#options.configVersion
-                ? undefined
-                : { code: 'configuration-version-changed' }
-            : cacheCause(modules.decision, 'config-modules-unavailable')
-          : cacheCause(lock.decision, 'installation-rejected')
+        ? modules.matched
+          ? this.#options.configVersion === undefined
+            ? { code: 'configuration-version-unknown' }
+            : root?.header.configVersion === this.#options.configVersion
+              ? undefined
+              : { code: 'configuration-version-changed' }
+          : cacheCause(modules.decision, 'config-modules-unavailable')
         : { code: value === undefined ? 'invalid-index-json' : metadata.kind };
     if (reason !== undefined) {
       this.decision = profile?.decision(
@@ -199,11 +164,9 @@ export class AnalysisSnapshotDecoder {
       );
       return undefined;
     }
-    const basis = [
-      options?.physicalLookup,
-      lock.decision,
-      modules.decision,
-    ].filter((decision): decision is string => decision !== undefined);
+    const basis = [options?.physicalLookup, modules.decision].filter(
+      (decision): decision is string => decision !== undefined,
+    );
     this.decision = profile?.decision(
       'analysis-snapshot',
       { stage: 'admission', outcome: 'admitted', basis },

@@ -2,7 +2,7 @@
 
 [English](./startup-performance.md) | [简体中文](./zh/startup-performance.md)
 
-The measurements below describe the 2026-10-29/30 campaign. Current startup investigations use the first successful complete materialization receipt. The v2 profile reports this milestone separately from graph preparation, as defined in [task timing and execution trace](./lifecycle.md#task-timing-and-execution-trace). `graph:materialize.completedAt` can follow graph preparation inside another task. Compare new runtimes using a frozen workload and the same timing boundary, and keep the historical samples separate.
+The measurements below describe the 2026-10-29/30 campaign. Current startup investigations use the first successful complete materialization receipt. The performance report records this milestone separately from graph preparation, as defined in [task timing and execution trace](./lifecycle.md#task-timing-and-execution-trace). `graph:materialize.completedAt` can follow graph preparation inside another task. Compare new runtimes using a frozen workload and the same timing boundary, and keep the historical samples separate.
 
 The measured implementation improves startup on the repository workload, but neither target is met: cold 67.364 s versus 35 s, hot 30.356 s versus 15 s. This record covers one initial optimization and two additional evaluations. Complete acceptance is not green: the unchanged dependency tooling gate also fails, as detailed below. Do not treat this local acceptance record as a performance guarantee for other workspaces. [Lifecycle](./lifecycle.md) and [semantics](./semantics.md) retain ownership of reuse and authority contracts.
 

@@ -1,7 +1,6 @@
 import { resolveRootBlocker } from './execution-results';
 import { joinRunning, settleOneRunning } from './scheduler-settlement';
 import { finishSynthetic, startTask } from './scheduler-tasks';
-import { observeScheduler } from './scheduler-trace';
 import type { SchedulerContext } from './scheduler-types';
 import { assertActiveGeneration } from './task-execution';
 import { type ExecutionTask, getTaskDependencies } from './tasks';
@@ -185,12 +184,18 @@ function assertResolvedState(options: {
   }
 }
 
+function openNextGeneration(context: SchedulerContext): void {
+  context.controller.startNextGeneration();
+  context.options.checkRunRecorder?.trace?.generationStarted(
+    context.controller.generation,
+  );
+  context.pendingGenerationAdvance = false;
+}
+
 async function advanceGeneration(context: SchedulerContext): Promise<void> {
   await joinRunning(context);
   if (context.infrastructureError !== undefined) return;
-  context.controller.startNextGeneration();
-  context.pendingGenerationAdvance = false;
-  observeScheduler(context);
+  openNextGeneration(context);
 }
 
 async function runSchedulerIteration(context: SchedulerContext): Promise<void> {
@@ -230,11 +235,7 @@ async function finishInfrastructureFailure(
   context: SchedulerContext,
 ): Promise<void> {
   await joinRunning(context);
-  if (context.pendingGenerationAdvance) {
-    context.controller.startNextGeneration();
-    context.pendingGenerationAdvance = false;
-    observeScheduler(context);
-  }
+  if (context.pendingGenerationAdvance) openNextGeneration(context);
   throw context.infrastructureError;
 }
 
@@ -243,15 +244,12 @@ async function finishGenerationAdvance(
 ): Promise<void> {
   if (!context.pendingGenerationAdvance) return;
   await joinRunning(context);
-  context.controller.startNextGeneration();
-  context.pendingGenerationAdvance = false;
-  observeScheduler(context);
+  openNextGeneration(context);
 }
 
 export async function runScheduler(context: SchedulerContext): Promise<void> {
   const trace = context.options.checkRunRecorder?.trace;
-  trace?.beginScheduler(context.orderedTasks);
-  observeScheduler(context);
+  trace?.beginScheduler(context.orderedTasks, context.controller.generation);
   try {
     await runSchedulerLoop(context);
   } catch (error) {

@@ -16,6 +16,34 @@ import type {
   StartedTaskResult,
 } from './tasks';
 
+const MIN_UNREPORTED_WALL_TIME_MS = 100;
+
+function reportTimeOutsidePhases(options: {
+  completedAt: number;
+  flowNode: LiminaFlowTreeNode | undefined;
+  startedAt: number;
+}): void {
+  const { flowNode, startedAt, completedAt } = options;
+  if (flowNode === undefined) return;
+  try {
+    const elapsedTimeMs = flowNode.getElapsedOutsideChildren({
+      completedAt,
+      startedAt,
+    });
+    if (
+      elapsedTimeMs === undefined ||
+      elapsedTimeMs < MIN_UNREPORTED_WALL_TIME_MS
+    )
+      return;
+
+    flowNode
+      .child('outside reported phases')
+      .pass(undefined, { elapsedTimeMs });
+  } catch {
+    // The task has already completed even if this row cannot be written.
+  }
+}
+
 function createDeferred<T>(): {
   promise: Promise<T>;
   resolve(value: T): void;
@@ -78,44 +106,43 @@ export async function normalizeRunnerResult(options: {
     preflight: options.execution.preflight,
     progress: createTaskProgressReporter(options.flowNode),
   };
-  const startedAt = performance.now();
-  const wallStartedAt = performance.timeOrigin + startedAt;
   const trace = options.execution.checkRunRecorder?.trace;
-  trace?.runnerStarted(options.task.id, startedAt);
-  const finish = () => {
-    const completedAt = performance.now();
-    trace?.runnerCompleted(options.task.id, completedAt);
-    return {
-      durationMs: completedAt - startedAt,
-      timing: {
-        startedAt: new Date(wallStartedAt).toISOString(),
-        completedAt: new Date(
-          wallStartedAt + completedAt - startedAt,
-        ).toISOString(),
-      },
-    };
+  let runnerInterval: readonly [number, number] | undefined;
+  const execute = async () => {
+    const startedAt = performance.now();
+    trace?.runnerStarted(options.task.id, startedAt);
+    try {
+      return await options.task.run(context);
+    } finally {
+      const completedAt = performance.now();
+      trace?.runnerCompleted(options.task.id, completedAt);
+      runnerInterval = [startedAt, completedAt];
+    }
   };
-  let timing: ReturnType<typeof finish> | undefined;
   const observer = currentProfile();
   const profileId =
     observer === undefined ? undefined : trace?.profileTaskId(options.task.id);
+  let result: ExecutionTaskRunResult;
   try {
-    const result = await (observer === undefined || profileId === undefined
-      ? options.task.run(context)
+    result = await (observer === undefined || profileId === undefined
+      ? execute()
       : runObservedTask({
           observer,
           operation: 'execution.task-runner',
           taskId: profileId,
-          execute: () => options.task.run(context),
+          execute,
           isPassed: (value) =>
             value.status === 'disabled' || value.status === 'passed',
+          failureDetail: ({ issues }) => {
+            const [issue] = issues;
+            return (
+              issue?.detailLines?.join('\n') || issue?.reason || issue?.code
+            );
+          },
         }));
-    timing = finish();
     assertRunnerStatus(result, options.task);
-    return { ...result, ...timing };
   } catch (error) {
-    return {
-      ...(timing ?? finish()),
+    result = {
       issues: normalizeRunnerError({
         error,
         rootDir: options.execution.rootDir,
@@ -124,6 +151,22 @@ export async function normalizeRunnerResult(options: {
       status: 'failed',
     };
   }
+  if (runnerInterval === undefined) return { ...result, durationMs: 0 };
+  const [startedAt, completedAt] = runnerInterval;
+  if (result.status !== 'disabled')
+    reportTimeOutsidePhases({
+      completedAt,
+      flowNode: options.flowNode,
+      startedAt,
+    });
+  return {
+    ...result,
+    durationMs: completedAt - startedAt,
+    timing: {
+      startedAt: new Date(performance.timeOrigin + startedAt).toISOString(),
+      completedAt: new Date(performance.timeOrigin + completedAt).toISOString(),
+    },
+  };
 }
 
 async function settleDecision(options: {

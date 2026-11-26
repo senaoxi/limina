@@ -9,8 +9,8 @@ import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   type AnalysisMetricAggregate,
-  createProfilingMetricsRecorder,
-} from '../profiling/metrics';
+  createTestMetricsRecorder,
+} from './helpers/metrics';
 import { toPortablePath } from './helpers/path';
 
 async function writeText(
@@ -80,7 +80,7 @@ describe('generation-scoped module resolution index', () => {
   });
 
   it('caches successful and null TypeScript results and Oxc results by cell', () => {
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const context = createImportAnalysisContext({ metrics });
     const firstTypeScriptResult = context.resolveTypeScriptImport(
       './target',
@@ -139,7 +139,7 @@ describe('generation-scoped module resolution index', () => {
   });
 
   it('fills and reuses pair cells independently in every public call order', () => {
-    const pairFirstMetrics = createProfilingMetricsRecorder();
+    const pairFirstMetrics = createTestMetricsRecorder();
     const pairFirst = createImportAnalysisContext({
       metrics: pairFirstMetrics,
     });
@@ -180,7 +180,7 @@ describe('generation-scoped module resolution index', () => {
       2,
     );
 
-    const typeScriptFirstMetrics = createProfilingMetricsRecorder();
+    const typeScriptFirstMetrics = createTestMetricsRecorder();
     const typeScriptFirst = createImportAnalysisContext({
       metrics: typeScriptFirstMetrics,
     });
@@ -216,7 +216,7 @@ describe('generation-scoped module resolution index', () => {
       ),
     ).toBe(1);
 
-    const oxcFirstMetrics = createProfilingMetricsRecorder();
+    const oxcFirstMetrics = createTestMetricsRecorder();
     const oxcFirst = createImportAnalysisContext({ metrics: oxcFirstMetrics });
     oxcFirst.resolveOxcImport(
       './target',
@@ -260,7 +260,7 @@ describe('generation-scoped module resolution index', () => {
       }),
     );
 
-    const internalFirstMetrics = createProfilingMetricsRecorder();
+    const internalFirstMetrics = createTestMetricsRecorder();
     const internalFirst = createImportAnalysisContext({
       metrics: internalFirstMetrics,
     });
@@ -293,7 +293,7 @@ describe('generation-scoped module resolution index', () => {
       metricCount(internalFirstSnapshot, 'module-resolution-index-hit', 'oxc'),
     ).toBe(1);
 
-    const shortCircuitMetrics = createProfilingMetricsRecorder();
+    const shortCircuitMetrics = createTestMetricsRecorder();
     const shortCircuitFirst = createImportAnalysisContext({
       metrics: shortCircuitMetrics,
     });
@@ -339,7 +339,7 @@ describe('generation-scoped module resolution index', () => {
         types: './types.d.ts',
       }),
     );
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const context = createImportAnalysisContext({ metrics });
 
     const pair = context.resolveModulePair(
@@ -384,7 +384,7 @@ describe('generation-scoped module resolution index', () => {
       'other/index.ts',
       'export {};\n',
     );
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const context = createImportAnalysisContext({ metrics });
     const baseOptions: ts.CompilerOptions = {};
     const requests: {
@@ -442,7 +442,7 @@ describe('generation-scoped module resolution index', () => {
   });
 
   it('preserves internal-import short-circuit and fallback precedence', async () => {
-    const earlyMetrics = createProfilingMetricsRecorder();
+    const earlyMetrics = createTestMetricsRecorder();
     const earlyContext = createImportAnalysisContext({ metrics: earlyMetrics });
     const pathMappedOptions: ts.CompilerOptions = {
       baseUrl: rootDirectory,
@@ -485,7 +485,7 @@ describe('generation-scoped module resolution index', () => {
       'src/platform.native.ts',
       'export const platform = true;\n',
     );
-    const typeScriptOnlyMetrics = createProfilingMetricsRecorder();
+    const typeScriptOnlyMetrics = createTestMetricsRecorder();
     const typeScriptOnlyContext = createImportAnalysisContext({
       metrics: typeScriptOnlyMetrics,
     });
@@ -513,7 +513,7 @@ describe('generation-scoped module resolution index', () => {
       'node_modules/runtime-package/package.json',
       JSON.stringify({ main: './index.js', name: 'runtime-package' }),
     );
-    const oxcFallbackMetrics = createProfilingMetricsRecorder();
+    const oxcFallbackMetrics = createTestMetricsRecorder();
     const oxcFallbackContext = createImportAnalysisContext({
       metrics: oxcFallbackMetrics,
     });
@@ -542,7 +542,7 @@ describe('generation-scoped module resolution index', () => {
         types: './types.d.ts',
       }),
     );
-    const typeScriptFallbackMetrics = createProfilingMetricsRecorder();
+    const typeScriptFallbackMetrics = createTestMetricsRecorder();
     const typeScriptFallbackContext = createImportAnalysisContext({
       metrics: typeScriptFallbackMetrics,
     });

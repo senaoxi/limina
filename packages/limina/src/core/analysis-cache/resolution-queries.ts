@@ -1,5 +1,6 @@
 import { withoutAnalysisReads } from '#utils/analysis-input';
 import type ts from 'typescript';
+import { currentProfile } from '../../application/analysis/observability';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type {
   AnalysisCacheMetrics,
@@ -24,6 +25,7 @@ export interface ResolutionQuery<T> {
   receipts?: Set<string>;
   owners?(target: string): string[] | undefined;
   configPaths?: readonly string[];
+  formatManifests?: readonly string[];
   host: ts.ModuleResolutionHost;
   resolve(host: ts.ModuleResolutionHost): T;
 }
@@ -35,6 +37,8 @@ interface QueryOptions {
   origin?: CacheOrigin;
   previousReceipt(contextId: string, id: string): string | undefined;
 }
+
+type ResolutionRejection = string | { dependency: InputDependency };
 
 function plainResolution(raw: unknown): { value: unknown; complete: boolean } {
   let isComplete = true;
@@ -76,10 +80,9 @@ export class ResolutionQueries {
   }
 
   #rejection<T>(
-    record: ResolutionRecord | undefined,
+    record: ResolutionRecord,
     query: ResolutionQuery<T>,
-  ): string | { dependency: InputDependency } | undefined {
-    if (record === undefined) return 'resolution-record-absent';
+  ): ResolutionRejection | undefined {
     if (record.coverage !== 'complete') return 'resolution-coverage-unknown';
     if (query.owners !== undefined) {
       const current = resolutionOwners(record.result, query.owners);
@@ -109,8 +112,21 @@ export class ResolutionQueries {
     const trace = new QueryTrace(this.#options.inputs);
     const configPaths = query.configPaths ?? [];
     for (const path of configPaths) trace.add(path, 'config-mtime');
+    const formatManifests = query.formatManifests ?? [];
+    for (const path of formatManifests) trace.add(path, 'manifest');
     this.#options.metrics.resolverCalls += 1;
-    const resolve = () => query.resolve(trace.host(query.host));
+    const resolve = () => {
+      const host = trace.host(query.host);
+      const observer = currentProfile();
+      if (observer === undefined) return query.resolve(host);
+      const scope = observer.currentScope;
+      observer.metric('cache.native-resolution.resolve', scope, 'calls', 1);
+      return observer.sumElapsed(
+        'cache.native-resolution.resolve-elapsed-sum',
+        scope,
+        () => query.resolve(host),
+      );
+    };
     const raw =
       query.receipts === undefined ? resolve() : withoutAnalysisReads(resolve);
     trace.raw(raw);
@@ -129,29 +145,56 @@ export class ResolutionQueries {
     return raw;
   }
 
+  #priorRejection<T>(
+    old: ResolutionRecord,
+    query: ResolutionQuery<T>,
+    id: string,
+  ): ResolutionRejection | undefined {
+    const rejection = this.#rejection(old, query);
+    if (rejection !== undefined) return rejection;
+    return query.receipts &&
+      this.#options.previousReceipt(query.contextId, id) !==
+        nativeFingerprint(old)
+      ? 'resolution-context-receipt-mismatch'
+      : undefined;
+  }
+
   #previous<T>(query: ResolutionQuery<T>, id: string): T {
     const old = this.#options.previous[id];
-    if (this.#options.dirty.has(id) || this.#options.inputs.domainDirty) {
+    if (this.#options.dirty.has(id) || this.#options.inputs.toolchainChanged) {
       recordCacheMiss(
         'native-resolution',
         this.#options.dirty.has(id)
           ? 'resolution-invalidated'
-          : 'manifest-domain-changed',
+          : 'toolchain-input-changed',
         { file: query.file, bypassed: old === undefined || undefined },
       );
       return this.#resolve(query, id);
     }
-    const rejection = this.#rejection(old, query);
-    if (rejection !== undefined) {
-      this.#recordRejected(query.file, rejection);
+    if (old === undefined) {
+      this.#recordRejected(query.file, 'resolution-record-absent');
       return this.#resolve(query, id);
     }
-    if (
-      query.receipts &&
-      this.#options.previousReceipt(query.contextId, id) !==
-        nativeFingerprint(old!)
-    ) {
-      this.#recordRejected(query.file, 'resolution-context-receipt-mismatch');
+    const observer = currentProfile();
+    let rejection: ResolutionRejection | undefined;
+    if (observer === undefined) {
+      rejection = this.#priorRejection(old, query, id);
+    } else {
+      const scope = observer.currentScope;
+      observer.metric(
+        'cache.native-resolution.prior-admission.calls',
+        scope,
+        'calls',
+        1,
+      );
+      rejection = observer.sumElapsed(
+        'cache.native-resolution.prior-admission.elapsed-sum',
+        scope,
+        () => this.#priorRejection(old, query, id),
+      );
+    }
+    if (rejection !== undefined) {
+      this.#recordRejected(query.file, rejection);
       return this.#resolve(query, id);
     }
     this.#options.metrics.queryHits += 1;
@@ -160,13 +203,10 @@ export class ResolutionQueries {
       this.#options.origin ?? 'unknown',
       query.file,
     );
-    return this.#restore<T>(id, old!);
+    return this.#restore<T>(id, old);
   }
 
-  #recordRejected(
-    file: string,
-    rejection: string | { dependency: InputDependency },
-  ): void {
+  #recordRejected(file: string, rejection: ResolutionRejection): void {
     if (typeof rejection === 'string') {
       recordCacheMiss('native-resolution', rejection, {
         file,

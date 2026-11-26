@@ -1,28 +1,25 @@
-import type { CheckerProjectConfigCache } from '#checkers';
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { LiminaStructuredError } from '../../check-reporting/errors';
+import { AnalysisInputDriftError } from '../analysis-cache/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
-import { collectAutoScope, collectExplicitScope } from './auto-checker-scope';
-import type { AutoScopeProject } from './auto-checker-types';
+import { collectOwnershipScope } from './auto-checker-scope';
+import type { SourceConfigCandidate } from './auto-checker-types';
 import type {
   CheckerOwnershipPlan,
   SolutionOwnershipState,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import { createPendingSemanticAuthority } from './checker-semantic-authority';
-import type { SourceConfigDiscovery } from './source-config-discovery';
 import type { AutoScope } from './types';
 
 export function collectOwnershipScopes(options: {
   onInputError?: (configPath: string, error: Error) => void;
   onProblems?: (problems: string[]) => void;
-  sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   entryConfigPaths: readonly string[];
   explicitOwnerByEntryPath: ReadonlyMap<string, CheckerName>;
-  projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScope[] {
   const explicitOwnerByConfigPath = new Map(options.explicitOwnerByEntryPath);
   const scopes: AutoScope[] = [];
@@ -40,25 +37,19 @@ export function collectOwnershipScopes(options: {
     try {
       const explicitChecker =
         options.explicitOwnerByEntryPath.get(entryConfigPath);
-      const scope =
-        explicitChecker === undefined
-          ? collectAutoScope({
-              ...options,
-              explicitOwnerByConfigPath,
-              entryConfigPath,
-            })
-          : collectExplicitScope({
-              ...options,
-              checkerName: explicitChecker,
-              entryConfigPath,
-            });
-      if (scope === null) continue;
+      const scope = collectOwnershipScope({
+        ...options,
+        checkerName: explicitChecker,
+        explicitOwnerByConfigPath,
+        entryConfigPath,
+      });
       scopes.push(scope);
       if (explicitChecker !== undefined) {
         for (const path of scope.collection.projectConfigPaths)
           explicitOwnerByConfigPath.set(path, explicitChecker);
       }
     } catch (error) {
+      if (error instanceof AnalysisInputDriftError) throw error;
       if (
         options.onInputError !== undefined &&
         error instanceof Error &&
@@ -76,55 +67,16 @@ export function collectOwnershipScopes(options: {
   return scopes;
 }
 
-function isSameProjectShape(
-  left: AutoScopeProject,
-  right: AutoScopeProject,
-): boolean {
-  return (
-    left.fileNames.length === right.fileNames.length &&
-    left.fileNames.every(
-      (fileName, index) => right.fileNames[index] === fileName,
-    )
-  );
-}
-
-export function createProjectByConfigPath(
+export function createCandidateByConfigPath(
   scopes: readonly AutoScope[],
-): Map<string, AutoScopeProject> {
-  const projects = new Map<string, AutoScopeProject>();
-  const authoritativePaths = collectAuthoritativeConfigPaths(scopes);
+): Map<string, SourceConfigCandidate> {
+  const candidates = new Map<string, SourceConfigCandidate>();
   for (const scope of [...scopes].sort(compareScopeAuthority)) {
-    addScopeProjects({ authoritativePaths, projects, scope });
+    for (const candidate of scope.candidates)
+      if (!candidates.has(candidate.configPath))
+        candidates.set(candidate.configPath, candidate);
   }
-  return projects;
-}
-
-function addScopeProjects(options: {
-  authoritativePaths: ReadonlySet<string>;
-  projects: Map<string, AutoScopeProject>;
-  scope: AutoScope;
-}): void {
-  for (const project of options.scope.projects) {
-    const current = options.projects.get(project.configPath);
-    if (
-      shouldKeepAuthoritativeProject(
-        current,
-        project,
-        options.authoritativePaths,
-      )
-    )
-      continue;
-    assertConsistentProjectShape(current, project);
-    options.projects.set(project.configPath, project);
-  }
-}
-
-function shouldKeepAuthoritativeProject(
-  current: AutoScopeProject | undefined,
-  incoming: AutoScopeProject,
-  authoritativePaths: ReadonlySet<string>,
-): boolean {
-  return current !== undefined && authoritativePaths.has(incoming.configPath);
+  return candidates;
 }
 
 function compareScopeAuthority(left: AutoScope, right: AutoScope): number {
@@ -150,16 +102,6 @@ function collectAuthoritativeConfigPaths(
         ? []
         : collectScopeConfigPaths(scope),
     ),
-  );
-}
-
-function assertConsistentProjectShape(
-  current: AutoScopeProject | undefined,
-  incoming: AutoScopeProject,
-): void {
-  if (current === undefined || isSameProjectShape(current, incoming)) return;
-  throw new Error(
-    `Checker ownership discovery observed inconsistent effective files for ${incoming.configPath}.`,
   );
 }
 
@@ -225,7 +167,7 @@ function shouldSkipAutoSolution(
 interface LeafTraversal {
   directReferences: ReadonlyMap<string, string[]>;
   leaves: Set<string>;
-  projectByConfigPath: ReadonlyMap<string, AutoScopeProject>;
+  candidates: ReadonlyMap<string, SourceConfigCandidate>;
   visited: Set<string>;
   visiting: Set<string>;
 }
@@ -234,7 +176,7 @@ function isAddProjectLeaf(
   traversal: LeafTraversal,
   configPath: string,
 ): boolean {
-  if (!traversal.projectByConfigPath.has(configPath)) return false;
+  if (!traversal.candidates.has(configPath)) return false;
   traversal.leaves.add(configPath);
   return true;
 }
@@ -276,7 +218,7 @@ function getDirectReferences(
 
 function collectSolutionLeaves(options: {
   directReferences: ReadonlyMap<string, string[]>;
-  projectByConfigPath: ReadonlyMap<string, AutoScopeProject>;
+  candidates: ReadonlyMap<string, SourceConfigCandidate>;
   solutionPath: string;
 }): string[] {
   const traversal: LeafTraversal = {
@@ -301,10 +243,10 @@ function createTypeState(configPath: string): TypeConfigOwnershipState {
 
 export function createOwnershipPlan(options: {
   directReferences: ReadonlyMap<string, string[]>;
-  projectByConfigPath: ReadonlyMap<string, AutoScopeProject>;
+  candidates: ReadonlyMap<string, SourceConfigCandidate>;
 }): CheckerOwnershipPlan {
   const typeConfigs = new Map(
-    options.projectByConfigPath
+    options.candidates
       .keys()
       .map((configPath) => [configPath, createTypeState(configPath)]),
   );

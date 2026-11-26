@@ -1,8 +1,5 @@
 import { z } from 'zod';
-import {
-  declarationLoadingSchema,
-  declarationRequestSchema,
-} from '../declaration-governance/schema';
+import { declarationRequestSchema } from '../declaration-governance/schema';
 import { decodeData } from './data-codec';
 import {
   declarationEntrySchema,
@@ -16,6 +13,7 @@ import { occurrenceSchema } from './occurrence-schema';
 import { isDecodedRecord } from './record-table';
 import type { VueQueryKind, VueQueryResults } from './vue-contracts';
 import { VUE_ANALYSIS_ADAPTER } from './vue-identity';
+import { vueModuleResultSchema } from './vue-module-result';
 const redirectSchema = z.object({
   originalTarget: z.string(),
   declarationTarget: z.string(),
@@ -152,12 +150,18 @@ export function decodeVueQuery<K extends VueQueryKind>(
   kind: K,
   data: unknown,
 ): VueQueryResults[K] | undefined {
-  return structuredClone(qualifiedVueQuery(kind, data));
+  const value = qualifiedVueQuery(kind, data);
+  freezeQueryResult(value);
+  return value;
 }
 
-/**
-Validate private wire data once; callers continue receiving independent data.
-*/
+function freezeQueryResult(value: unknown): void {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value))
+    return;
+  for (const child of Object.values(value)) freezeQueryResult(child);
+  Object.freeze(value);
+}
+
 function qualifiedVueQuery<K extends VueQueryKind>(
   kind: K,
   data: unknown,
@@ -195,24 +199,17 @@ const querySchema = z.object({
   ]),
   data: z.unknown(),
 });
-const outputProjection = z.object({
-  sourceConfigPath: text,
-  configs: z.record(text, text),
-});
 const moduleResolutionSchema = z.object({
   members: texts,
   dependencies: z.array(dependencySchema),
-  result: z.json(),
+  result: vueModuleResultSchema,
   targetOwners: texts.nullable(),
 });
 export const vueContextSchema: z.ZodType<unknown> = z.object({
   adapter: z.literal(VUE_ANALYSIS_ADAPTER),
-  project: z.object({
-    declarationLoading: declarationLoadingSchema.optional(),
+  project: z.strictObject({
     configPath: text,
-    projectRootDir: text,
-    extensions: texts,
-    outputProjection: outputProjection.optional(),
+    sourceConfigPath: text.optional(),
   }),
   identity: z.json(),
   dependencies: z.array(dependencySchema),

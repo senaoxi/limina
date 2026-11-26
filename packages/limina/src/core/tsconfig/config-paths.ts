@@ -1,5 +1,6 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath, toPosixPath } from '#utils/path';
+import { readRawSourceConfig } from '#utils/source-config-text';
 import { isPlainRecord } from '#utils/values';
 import { existsSync, statSync } from 'node:fs';
 import path from 'pathe';
@@ -36,27 +37,12 @@ function createFormatHost(rootDirectory: string): ts.FormatDiagnosticsHost {
   };
 }
 
-function readVirtualOrDiskFile(
-  fileName: string,
-  virtualFiles: ReadonlyMap<string, string> | undefined,
-): string | undefined {
-  if (virtualFiles === undefined) {
-    return ts.sys.readFile(fileName);
-  }
-  const virtualContent = virtualFiles.get(normalizeAbsolutePath(fileName));
-  return virtualContent === undefined
-    ? ts.sys.readFile(fileName)
-    : virtualContent;
-}
-
 export function readJsonConfigFile(
   rootDirectory: string,
   configPath: string,
   virtualFiles?: ReadonlyMap<string, string>,
 ): JsonObject {
-  const result = ts.readConfigFile(configPath, (fileName) =>
-    readVirtualOrDiskFile(fileName, virtualFiles),
-  );
+  const result = readRawSourceConfig(configPath, virtualFiles);
   if (result.error !== undefined) {
     throw new TsconfigInputError(
       ts.formatDiagnostic(result.error, createFormatHost(rootDirectory)),

@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { createTestMetricsRecorder } from './helpers/metrics';
 import {
   createFixturePathResolver,
   toPortablePath,
@@ -76,7 +76,7 @@ async function assertCheckerModuleResolution(options: {
   });
 
   try {
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const resolved = resolveModuleNameWithCheckersDetailed({
       compilerOptions: {
         moduleResolution: ts.ModuleResolutionKind.Node10,

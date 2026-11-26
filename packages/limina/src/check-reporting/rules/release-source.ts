@@ -39,23 +39,6 @@ export const releaseSourceIssueRules: readonly LiminaCheckIssueRuleDefinition[] 
       task: 'release:check',
     }),
     defineIssueRule({
-      code: C.sourceAmbientDeclarationConfigInvalid,
-      description: 'Shared ambient declaration configuration is invalid.',
-      task: 'source:check',
-    }),
-    defineIssueRule({
-      code: C.sourceAmbientDeclarationReferenceUnauthorized,
-      description:
-        'A triple-slash path reference targets an ambient declaration without authorization.',
-      task: 'source:check',
-    }),
-    defineIssueRule({
-      code: C.sourceAmbientDeclarationSharedUnauthorized,
-      description:
-        'An ambient declaration is consumed by multiple source owners without authorization.',
-      task: 'source:check',
-    }),
-    defineIssueRule({
       code: C.sourceCheckFailed,
       description:
         'Source check failed before a more specific rule was recorded.',

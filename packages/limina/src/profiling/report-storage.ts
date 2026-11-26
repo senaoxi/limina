@@ -1,3 +1,4 @@
+import { syncFileHandle } from '#utils/sync-file-handle';
 import { randomUUID } from 'node:crypto';
 import {
   link,
@@ -58,7 +59,7 @@ async function publishNewProfile(
   try {
     try {
       await handle.writeFile(content, 'utf8');
-      await handle.sync();
+      await syncFileHandle(handle);
     } finally {
       await handle.close();
     }

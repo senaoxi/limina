@@ -5,7 +5,10 @@ import type { ProjectReferenceRedirect } from '../dependency-semantics';
 import type { TypeScriptSemanticProject } from './contracts';
 import { nativeFingerprint } from './native-file-identity';
 import type { NativeHostFailures } from './native-host-failures';
-import { nativeLibraryFileName } from './native-library-api';
+import {
+  nativeLibraryFileName,
+  nativeLibraryFileNames,
+} from './native-library-api';
 import {
   nativeFailure,
   nativeObservationFailureKind,
@@ -38,19 +41,48 @@ export class NativeProgramLoads {
 
   constructor(input: {
     project: TypeScriptSemanticProject;
+    observationRootNames: readonly string[];
     compiler: typeof ts;
     frontier: NativeProgramFrontier;
     failures: NativeHostFailures;
   }) {
-    const { project, compiler, frontier, failures } = input;
+    const { project, observationRootNames, compiler, frontier, failures } =
+      input;
     this.project = project;
     this.compiler = compiler;
     this.frontier = frontier;
     this.failures = failures;
-    for (const root of project.fileNames)
+    for (const root of observationRootNames)
       this.#grants.set(frontier.fileKey(root), root);
-    if (hasDefaultLibrary(project))
+    if (observationRootNames.length === 0 || project.options.noLib) return;
+    const libraries = project.options.lib;
+    if (libraries === undefined) {
       this.grant(compiler.getDefaultLibFilePath(project.options));
+    } else if (
+      Array.isArray(libraries) &&
+      libraries.length > 0 &&
+      this.usesBuiltInLibraries()
+    ) {
+      // TS 6 loads these configured names without a resolver callback. All
+      // grants still pass the frontier and the Program records actual targets.
+      const builtIn = new Set(nativeLibraryFileNames(compiler));
+      const directory = this.defaultLibraryDirectory();
+      for (const file of libraries)
+        if (builtIn.has(file)) this.grant(path.join(directory, file));
+    }
+  }
+
+  private usesBuiltInLibraries(): boolean {
+    return (
+      /^6\.0\./.test(this.compiler.version) &&
+      this.project.options.libReplacement !== true
+    );
+  }
+
+  private defaultLibraryDirectory(): string {
+    return path.dirname(
+      this.compiler.getDefaultLibFilePath(this.project.options),
+    );
   }
 
   private redirect(file: string): ProjectReferenceRedirect | undefined | null {
@@ -162,20 +194,11 @@ export class NativeProgramLoads {
     // TS 6 skips resolveLibrary when libReplacement is disabled. These
     // compiler-inventoried directives use the compiler's fixed default-lib
     // location; grant them before loading instead of rebuilding once per layer.
-    if (
-      /^6\.0\./.test(this.compiler.version) &&
-      this.project.options.libReplacement !== true &&
-      !this.project.options.noLib
-    ) {
+    if (!this.project.options.noLib && this.usesBuiltInLibraries()) {
       for (const reference of source.libReferenceDirectives) {
         const name = nativeLibraryFileName(this.compiler, reference);
         if (name === undefined) continue;
-        const target = path.join(
-          path.dirname(
-            this.compiler.getDefaultLibFilePath(this.project.options),
-          ),
-          name,
-        );
+        const target = path.join(this.defaultLibraryDirectory(), name);
         requests.record({
           source,
           position: reference.pos,
@@ -217,13 +240,6 @@ export class NativeProgramLoads {
   }
 }
 
-function hasDefaultLibrary(project: TypeScriptSemanticProject): boolean {
-  return [
-    project.fileNames.length > 0,
-    !project.options.noLib,
-    !project.options.lib,
-  ].every(Boolean);
-}
 function hasProjectReferences(project: TypeScriptSemanticProject): boolean {
   return (project.projectReferences?.length ?? 0) > 0;
 }

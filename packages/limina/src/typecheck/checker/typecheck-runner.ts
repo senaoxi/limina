@@ -2,8 +2,8 @@ import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { resolveCheckerTypecheckConcurrency } from '../../execution/config';
-import type { TaskProgressItem } from '../../execution/progress';
-import type { LiminaFlowTask } from '../../flow';
+import { measureGraphMaterialization } from '../../execution/graph-materialization-progress';
+import { measureTaskProgress } from '../../execution/progress';
 import { TypecheckLogger } from '../../logger';
 import { resolvePreflight } from '../../preflight';
 import { ExecutionAdmission } from '../admission/execution-admission';
@@ -14,9 +14,7 @@ import {
 import { runComponentTargets } from '../build/component-execution';
 import { createBuildDependencyPlan } from '../build/dependency-plan';
 import {
-  completeCheckerTargetTask,
-  createPlannedCheckerTargetTasks,
-  getCheckerTargetFlowLabel,
+  createCheckerTargetFlow,
   resolveTypecheckRunner,
   shouldLogCheckReport,
 } from '../runner-shared';
@@ -41,8 +39,6 @@ import {
   createNoTypecheckCheckerResult,
   createTypecheckExecutionResult,
 } from './typecheck-reporting';
-
-type CheckerFlowTask = LiminaFlowTask | TaskProgressItem;
 
 type TypecheckCheckers = ReturnType<typeof getExecutionCheckers>;
 
@@ -117,58 +113,6 @@ function logTypecheckStart(options: {
   );
 }
 
-function startProgressTask(options: {
-  target: TypecheckTarget;
-  tasks: ReadonlyMap<CheckerTargetId, CheckerFlowTask>;
-}): void {
-  const task = options.tasks.get(options.target.id);
-  if (task !== undefined) (task as TaskProgressItem).start();
-}
-
-function startFlowTask(options: {
-  context: CheckerTypecheckContext;
-  target: TypecheckTarget;
-  tasks: Map<CheckerTargetId, CheckerFlowTask>;
-}): void {
-  const flow = options.context.options.flow;
-  if (flow === undefined) return;
-  options.tasks.set(
-    options.target.id,
-    flow.start(
-      getCheckerTargetFlowLabel({
-        prefix: 'checker typecheck',
-        projectRootDir: options.context.projectRootDir,
-        target: options.target,
-      }),
-      {
-        collapseOnSuccess: false,
-        depth: options.context.flowDepth + 1,
-      },
-    ),
-  );
-}
-
-function startTargetTask(options: {
-  context: CheckerTypecheckContext;
-  target: TypecheckTarget;
-  tasks: Map<CheckerTargetId, CheckerFlowTask>;
-}): void {
-  if (options.context.options.progress !== undefined) {
-    startProgressTask(options);
-    return;
-  }
-  startFlowTask(options);
-}
-
-function completeTargetTask(options: {
-  result: TypecheckTargetResult;
-  target: TypecheckTarget;
-  tasks: ReadonlyMap<CheckerTargetId, CheckerFlowTask>;
-}): void {
-  const task = options.tasks.get(options.target.id);
-  if (task !== undefined) completeCheckerTargetTask(task, options.result);
-}
-
 function normalizeTargetError(
   target: TypecheckTarget,
   error: unknown,
@@ -187,14 +131,14 @@ async function executeTypecheckTargets(options: {
   context: CheckerTypecheckContext;
   targets: readonly TypecheckTarget[];
 }): Promise<BuildTargetCompletion[]> {
-  const tasks: Map<CheckerTargetId, CheckerFlowTask> = new Map(
-    createPlannedCheckerTargetTasks({
-      prefix: 'checker typecheck',
-      progress: options.context.options.progress,
-      projectRootDir: options.context.projectRootDir,
-      targets: options.targets,
-    }),
-  );
+  const taskFlow = createCheckerTargetFlow({
+    flow: options.context.options.flow,
+    flowDepth: options.context.flowDepth,
+    prefix: 'checker typecheck',
+    progress: options.context.options.progress,
+    projectRootDir: options.context.projectRootDir,
+    targets: options.targets,
+  });
   const runner = resolveTypecheckRunner(options.context.options);
   const plan = createBuildDependencyPlan(
     [...options.targets],
@@ -211,13 +155,14 @@ async function executeTypecheckTargets(options: {
       let result: BuildTargetCompletion | undefined;
       try {
         try {
-          startTargetTask({ context: options.context, target, tasks });
+          taskFlow.start(target);
         } catch (error) {
           result = rejectedBeforeLaunch(target, error);
         }
         result ??= await executeAuthorizedTypecheck(
           {
             admission: options.admission,
+            progress: taskFlow.progress(target),
             signal: options.context.options.signal,
           },
           target,
@@ -227,9 +172,7 @@ async function executeTypecheckTargets(options: {
         result = normalizeTargetError(target, error);
       }
       completions.set(target.id, result);
-      if (typeof result.status === 'number')
-        completeTargetTask({ result, target, tasks });
-      else tasks.get(target.id)?.fail();
+      taskFlow.complete(target, result);
     },
   });
   return options.targets.map((target) => completions.get(target.id)!);
@@ -256,15 +199,26 @@ async function runConfiguredTypecheck(
   options: RunCheckerTypecheckOptions,
   preflight: ReturnType<typeof resolvePreflight>,
 ): Promise<RunCheckerTypecheckResult> {
-  const receipt = await preflight.ensureGeneratedArtifactsMaterialized();
-  const context = createContext(options, receipt.graph);
-  const targets = createTypecheckTargets({
-    context,
-    generatedGraph: receipt.graph,
+  const receipt = await measureGraphMaterialization({
+    progress: options.progress,
+    purpose: 'complete',
+    materialize: (onAccess) =>
+      preflight.ensureGeneratedArtifactsMaterialized(onAccess),
   });
+  const { context, targets } = await measureTaskProgress(
+    options.progress,
+    'discover typecheck targets',
+    () => {
+      const context = createContext(options, receipt.graph);
+      const targets = createTypecheckTargets({
+        context,
+        generatedGraph: receipt.graph,
+      });
+      return { context, targets };
+    },
+  );
   if (targets.length === 0)
     return createNoTypecheckCheckerResult({
-      flowDepth: context.flowDepth,
       projectRootDir: context.projectRootDir,
       request: context.options,
     });
@@ -280,14 +234,20 @@ async function runMaterializedTypecheck(
   targets: TypecheckTarget[],
   admission: ExecutionAdmission,
 ): Promise<RunCheckerTypecheckResult> {
-  const peerFailure = collectTypecheckPeerFailure({
-    checkerPackageResolver: context.options.checkerPackageResolver,
-    checkers: context.checkers,
-    flowDepth: context.flowDepth,
-    projectRootDir: context.projectRootDir,
-    request: context.options,
-    targets,
-  });
+  const peerFailure = await measureTaskProgress(
+    context.options.progress,
+    'validate checker typecheck dependencies',
+    () =>
+      collectTypecheckPeerFailure({
+        checkerPackageResolver: context.options.checkerPackageResolver,
+        checkers: context.checkers,
+        flowDepth: context.flowDepth,
+        projectRootDir: context.projectRootDir,
+        request: context.options,
+        targets,
+      }),
+    (failure) => failure === undefined,
+  );
   if (peerFailure !== undefined) return peerFailure;
   logTypecheckStart({ context, targets });
   const completions = await executeTypecheckTargets({
@@ -308,32 +268,53 @@ export async function runCheckerTypecheckImpl(
   options: RunCheckerTypecheckOptions,
 ): Promise<RunCheckerTypecheckResult> {
   const preflight = resolvePreflight(options.config, options);
-  await preflight.ensureWorkspaceValidated();
-  if (!(await preflight.hasSvelteCheckProjects()))
+  const hasSvelteCheckProjects = await measureTaskProgress(
+    options.progress,
+    'resolve framework checker scope',
+    async () => {
+      await preflight.ensureWorkspaceValidated();
+      return preflight.hasSvelteCheckProjects();
+    },
+  );
+  if (!hasSvelteCheckProjects)
     return runConfiguredTypecheck(options, preflight);
   const producers = await ensureBuilt({ ...options, preflight });
   if (!producers.result.passed) {
-    const plan = await preflight.ensureProducerBuildPlan();
-    const targets = [
-      ...(plan.governedSources.get('svelte-check')?.values() ?? []),
-    ].map((unit) =>
-      createFrameworkCheckerTarget({
-        descriptor: {
-          family: 'svelte',
-          packageRootDir: unit.packageRootDir,
-          sourceConfigPath: unit.configPath,
-        },
-        workspaceRootDir: options.config.rootDir,
-      }),
+    const targets = await measureTaskProgress(
+      options.progress,
+      'discover typecheck targets',
+      async () => {
+        const plan = await preflight.ensureProducerBuildPlan();
+        return Array.from(
+          plan.governedSources.get('svelte-check')?.values() ?? [],
+          (unit) =>
+            createFrameworkCheckerTarget({
+              descriptor: {
+                family: 'svelte',
+                packageRootDir: unit.packageRootDir,
+                sourceConfigPath: unit.configPath,
+              },
+              workspaceRootDir: options.config.rootDir,
+            }),
+        );
+      },
     );
     const blockedBy = producers.result.failedTargets.flatMap((target) =>
       target.id === undefined ? [] : [target.id],
     );
-    const blocked = targets.map((target) => ({
-      id: target.id,
-      status: 'blocked' as const,
-      blockedBy,
-    }));
+    const taskFlow = createCheckerTargetFlow({
+      flow: options.flow,
+      flowDepth: options.flowDepth ?? 0,
+      prefix: 'checker typecheck',
+      progress: options.progress,
+      projectRootDir: options.config.rootDir,
+      targets,
+    });
+    const blocked = targets.map((target) => {
+      const outcome = { id: target.id, status: 'blocked' as const, blockedBy };
+      taskFlow.complete(target, outcome);
+      return outcome;
+    });
     return {
       ...producers.result,
       disabled: false,
@@ -348,7 +329,12 @@ export async function runCheckerTypecheckImpl(
       targetOutcomes: [...(producers.result.targetOutcomes ?? []), ...blocked],
     };
   }
-  await preflight.prepareConsumerPhase(producers.receipt!);
+  const { receipt } = producers;
+  await measureTaskProgress(
+    options.progress,
+    'ensure Svelte consumer inputs',
+    () => preflight.prepareConsumerPhase(receipt!),
+  );
   const result = await runConfiguredTypecheck(options, preflight);
   if (producers.reused)
     return { ...result, reusedTargetResults: producers.result.targetResults };

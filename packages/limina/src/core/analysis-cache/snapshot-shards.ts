@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { AnalysisSnapshot } from './contracts';
 import { packAnalysisRecord, unpackAnalysisRecord } from './record-payload';
-import { packRecordTable, unpackRecordTable } from './record-table';
+import { unpackRecordTable } from './record-table';
 import { packSharedRecordTables } from './shared-record-table';
 import {
   decodeAnalysisRecords,
@@ -14,24 +14,25 @@ import {
 type Records = Omit<AnalysisSnapshot, 'header' | 'configModules'>;
 type Group = keyof Records;
 const groups = Object.keys(emptyRecords()) as Group[];
+export const ANALYSIS_STORAGE = 5;
 export interface AnalysisBlockReference {
   scope: string | null;
-  kind: 'facts' | 'graph' | 'pool';
+  kind: 'facts' | 'pool';
   digest: string;
   bytes: number;
 }
 interface AnalysisBlockStorage {
-  version: 3;
+  version: typeof ANALYSIS_STORAGE;
   blocks: AnalysisBlockReference[];
 }
 const reference: z.ZodType<AnalysisBlockReference> = z.strictObject({
   scope: z.string().nullable(),
-  kind: z.enum(['facts', 'graph', 'pool']),
+  kind: z.enum(['facts', 'pool']),
   digest: z.string().regex(/^[a-f0-9]{64}$/),
   bytes: z.number().int().positive(),
 });
 const storage: z.ZodType<AnalysisBlockStorage> = z.strictObject({
-  version: z.literal(3),
+  version: z.literal(ANALYSIS_STORAGE),
   blocks: z.array(reference).min(1),
 });
 export interface AnalysisSnapshotIndex {
@@ -45,17 +46,14 @@ export function analysisBlockDigest(bytes: string | Buffer): string {
 }
 function emptyRecords(): Records {
   return {
-    authorities: {},
-    resolvedConfigs: {},
     inputs: {},
     files: {},
     queries: {},
     importers: {},
     projects: {},
-    contributions: {},
     contexts: {},
     vueContexts: {},
-    graphs: {},
+    sourceConfigs: {},
   };
 }
 function contextScope(snapshot: AnalysisSnapshot, id: string): string | null {
@@ -66,15 +64,12 @@ function scopeReaders(
 ): Record<Group, (id: string) => string | null> {
   const shared = () => null;
   return {
-    authorities: (configPath) => configPath,
-    resolvedConfigs: (id) => snapshot.resolvedConfigs[id]!.configPath,
     inputs: shared,
     files: shared,
-    contributions: shared,
-    graphs: (id) => `graph:${id}`,
     contexts: (id) => contextScope(snapshot, id),
     projects: (id) => contextScope(snapshot, id),
     vueContexts: (id) => snapshot.vueContexts[id]!.project.configPath,
+    sourceConfigs: (id) => id,
     queries: (id) => contextScope(snapshot, snapshot.queries[id]!.contextId),
     importers: (id) =>
       contextScope(snapshot, snapshot.importers[id]!.contextId),
@@ -111,24 +106,13 @@ export function* encodeAnalysisBlocks(
   snapshot: AnalysisSnapshot,
 ): Generator<{ reference: AnalysisBlockReference; text: string }> {
   const entries = [...partition(snapshot)];
-  const facts = entries.filter(
-    ([, records]) => Object.keys(records.graphs).length === 0,
-  );
   const packed = packSharedRecordTables(
-    facts.values().map(([, records]) => encodeAnalysisRecords(records)),
+    entries.values().map(([, records]) => encodeAnalysisRecords(records)),
   );
-  const graphs = entries
-    .filter(([, records]) => Object.keys(records.graphs).length > 0)
-    .map(([scope, records]) => ({
-      scope,
-      table: packRecordTable(encodeAnalysisRecords(records)),
-    }));
   // Capture every scope before yielding control to asynchronous block storage.
   yield encodeBlock('pool:context-facts-v1', 'pool', packed.shared);
-  for (const [index, [scope]] of facts.entries())
+  for (const [index, [scope]] of entries.entries())
     yield encodeBlock(scope, 'facts', packed.tables[index]);
-  for (const { scope, table } of graphs)
-    yield encodeBlock(scope, 'graph', table);
 }
 
 function encodeBlock(
@@ -170,6 +154,8 @@ function addRecord(
   });
 }
 function mergeRecords(target: Records, source: Record<string, unknown>): void {
+  if (Object.keys(source).length !== groups.length)
+    throw new Error('Unexpected analysis record groups.');
   for (const group of groups) {
     const entries = Object.entries(requireRecord(source[group]));
     for (const [id, value] of entries) addRecord(target[group], id, value);
@@ -197,83 +183,31 @@ function readBlock(
   const table = requireRecord(
     unpackRecordTable(readPayload(block, bytes), shared),
   );
-  const records = decodeAnalysisRecords(table);
-  for (const group of groups)
-    if (
-      (group === 'graphs') !== (block.kind === 'graph') &&
-      Object.keys(requireRecord(records[group])).length > 0
-    )
-      throw new Error('Analysis block contains facts outside its category.');
-  return records;
+  return decodeAnalysisRecords(table);
 }
 function addScope(scopes: Set<string | null>, scope: string | null): void {
   if (scopes.has(scope)) throw new Error('Duplicate analysis scope.');
   scopes.add(scope);
 }
-function requireSharedScope(scopes: Set<string | null>): void {
-  if (!scopes.has(null)) throw new Error('Missing shared analysis block.');
-}
 export function readAnalysisBlocks(
   value: unknown,
   read: (reference: AnalysisBlockReference) => Buffer,
 ): unknown {
-  const blocks = new AnalysisBlockReader(value, read);
-  return { ...blocks.facts(), graphs: blocks.graphs() };
-}
-
-/**
-Separate unloaded projection bytes from a generation's qualified facts.
-*/
-export class AnalysisBlockReader {
-  readonly #root: Record<string, unknown>;
-  readonly #index: AnalysisBlockStorage;
-  readonly #read: (reference: AnalysisBlockReference) => Buffer;
-  #shared: readonly unknown[] | undefined;
-  constructor(
-    value: unknown,
-    read: (reference: AnalysisBlockReference) => Buffer,
-  ) {
-    this.#root = requireRecord(value);
-    this.#index = storage.parse(this.#root.storage);
-    this.#read = read;
-    const scopes = new Set<string | null>();
-    for (const block of this.#index.blocks) addScope(scopes, block.scope);
-    requireSharedScope(scopes);
-    if (
-      this.#index.blocks.every(
-        (block) => !(block.scope === null && block.kind === 'facts'),
-      )
-    )
-      throw new Error('Missing analysis input ledger.');
-    if (
-      this.#index.blocks.filter((block) => block.kind === 'pool').length !== 1
-    )
-      throw new Error('Missing or duplicate shared record pool.');
-  }
-  #pool(): readonly unknown[] {
-    if (this.#shared !== undefined) return this.#shared;
-    const block = this.#index.blocks.find((item) => item.kind === 'pool')!;
-    const pool = unpackRecordTable(readPayload(block, this.#read(block)));
-    if (!Array.isArray(pool)) throw new Error('Invalid shared record pool.');
-    this.#shared = pool;
-    return pool;
-  }
-  #records(kind: 'facts' | 'graph'): Records {
-    const records = emptyRecords();
-    const shared = kind === 'facts' ? this.#pool() : [];
-    for (const block of this.#index.blocks)
-      if (block.kind === kind)
-        mergeRecords(records, readBlock(block, this.#read(block), shared));
-    return records;
-  }
-  facts(): Record<string, unknown> {
-    return {
-      header: this.#root.header,
-      configModules: this.#root.configModules,
-      ...this.#records('facts'),
-    };
-  }
-  graphs(): Records['graphs'] {
-    return this.#records('graph').graphs;
-  }
+  const root = requireRecord(value);
+  const { blocks } = storage.parse(root.storage);
+  const scopes = new Set<string | null>();
+  for (const block of blocks) addScope(scopes, block.scope);
+  const pools = blocks.filter((block) => block.kind === 'pool');
+  if (pools.length !== 1)
+    throw new Error('Missing or duplicate shared record pool.');
+  const facts = blocks.filter((block) => block.kind === 'facts');
+  if (facts.every((block) => block.scope !== null))
+    throw new Error('Missing analysis input ledger.');
+  const [pool] = pools;
+  const shared = unpackRecordTable(readPayload(pool, read(pool)));
+  if (!Array.isArray(shared)) throw new Error('Invalid shared record pool.');
+  const records = emptyRecords();
+  for (const block of facts)
+    mergeRecords(records, readBlock(block, read(block), shared));
+  return { header: root.header, configModules: root.configModules, ...records };
 }

@@ -28,9 +28,8 @@ export class AnalysisInputs {
   readonly #observations = new Map<string, unknown>();
   readonly #dependencies = new Map<string, InputDependency>();
   readonly #consumed = new Map<string, string>();
-  readonly #installationLocks = new Set<string>();
   readonly records: Record<string, AnalysisInput> = {};
-  domainDirty = false;
+  toolchainChanged = false;
   needsCheckpoint = false;
   readonly configInputs: Set<string> = new Set<string>();
   readonly previous: Record<string, AnalysisInput>;
@@ -102,8 +101,8 @@ export class AnalysisInputs {
     throw new AnalysisInputDriftError(path);
   }
 
-  #assertDomainUnused(path: string): void {
-    if (this.#nativeConsumed && !this.domainDirty) this.#rejectDrift(path);
+  #assertToolchainUnused(path: string): void {
+    if (this.#nativeConsumed && !this.toolchainChanged) this.#rejectDrift(path);
   }
 
   #assertConsumed(path: string, id: string, version: string): void {
@@ -204,11 +203,7 @@ export class AnalysisInputs {
   }
 
   #checkBytes(previous: AnalysisInput | undefined, input: AnalysisInput): void {
-    if (
-      hasChangedBytes(previous, input) &&
-      !this.#installationLocks.has(input.path)
-    )
-      this.invalidateDomain(input.path);
+    if (hasChangedBytes(previous, input)) this.invalidateToolchain(input.path);
   }
 
   #dependency(inputId: string, expectedVersion: string): InputDependency {
@@ -281,11 +276,6 @@ export class AnalysisInputs {
           dependency.expectedVersion
       );
     });
-  }
-
-  subscribeInstallationLocks(locks: readonly string[]): void {
-    for (const lock of locks)
-      this.#installationLocks.add(normalizeAbsolutePath(lock));
   }
 
   observe(filePath: string, kind: InputKind): InputDependency {
@@ -377,9 +367,9 @@ export class AnalysisInputs {
     this.#nativeConsumed = true;
   }
 
-  invalidateDomain(path: string): void {
-    this.#assertDomainUnused(path);
-    this.domainDirty = true;
+  invalidateToolchain(path: string): void {
+    this.#assertToolchainUnused(path);
+    this.toolchainChanged = true;
   }
 
   consume(dependencies: readonly InputDependency[]): void {
@@ -387,7 +377,7 @@ export class AnalysisInputs {
   }
 
   observeConfig(
-    closure: readonly { filePath: string; contentHash: string }[],
+    closure: readonly { filePath: string }[],
     virtualFiles?: ReadonlyMap<string, string>,
   ): void {
     const physical = closure.filter(

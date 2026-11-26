@@ -1,6 +1,11 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, it, vi } from 'vitest';
+import {
+  AnalysisObserver,
+  runWithProfile,
+} from '../application/analysis/observability';
 import { createCheckRunRecorder } from '../check-reporting/run-recorder';
+import { measureTaskProgress } from '../execution/progress';
 import { ResourceLockSet } from '../execution/resources';
 import { runScheduler } from '../execution/scheduler-loop';
 import type { SchedulerContext } from '../execution/scheduler-types';
@@ -11,6 +16,7 @@ import {
   type TaskLifecycleEvent,
 } from '../execution/tasks';
 import { ExecutionTrace } from '../execution/trace';
+import { createLiminaCheckFlowReporter } from '../flow';
 import type { LiminaPreflightManager } from '../preflight';
 
 function task(
@@ -85,37 +91,59 @@ function scheduler(
   return { context, recorder, trace };
 }
 
-function assertIntervals(trace: ExecutionTrace) {
-  const snapshot = trace.snapshot();
-  const chain = snapshot.criticalChain!;
-  expect(chain.segments[0]?.startMs).toBe(snapshot.scheduler.startMs);
-  expect(chain.segments.at(-1)?.endMs).toBe(snapshot.scheduler.endMs);
-  let duration = 0;
-  for (const [index, segment] of chain.segments.entries()) {
-    expect(segment.endMs).toBeGreaterThanOrEqual(segment.startMs);
-    if (index > 0)
-      expect(segment.startMs).toBe(chain.segments[index - 1]!.endMs);
-    duration += segment.endMs - segment.startMs;
-  }
-  expect(duration).toBeCloseTo(chain.schedulerDurationMs, 8);
-  const occupied = chain.segments
-    .filter((segment) => segment.type === 'task-occupancy')
-    .reduce((sum, segment) => sum + segment.endMs - segment.startMs, 0);
-  expect(occupied).toBeCloseTo(chain.occupiedDurationMs, 8);
-  expect(chain.occupiedDurationMs + chain.unattributedGapMs).toBeCloseTo(
-    chain.schedulerDurationMs,
-    8,
-  );
-  for (const entry of snapshot.tasks) {
-    for (const [index, pending] of entry.pending.entries()) {
-      expect(pending.endMs).toBeGreaterThanOrEqual(pending.startMs);
-      if (index > 0)
-        expect(pending.startMs).toBe(entry.pending[index - 1]!.endMs);
-    }
-  }
+function reportedTasks(trace: ExecutionTrace, tasks: ExecutionTask[]) {
+  const observer = new AnalysisObserver('limina check', performance.now());
+  trace.reportProfileTasks(observer, tasks);
+  return observer.snapshot().tasks;
 }
 
 describe('execution timing', () => {
+  it('reports wall time outside the union of overlapping Flow phases', async () => {
+    const output: string[] = [];
+    const flow = createLiminaCheckFlowReporter({
+      env: { CI: 'true' },
+      output: {
+        write: (line) => {
+          output.push(line);
+        },
+      },
+    });
+    const entry = task('timed phases', 0, {
+      run: async ({ progress }) => {
+        if (progress === undefined) throw new Error('Missing Flow progress.');
+        vi.advanceTimersByTime(10);
+        const first = progress.startItem('first');
+        vi.advanceTimersByTime(25);
+        const second = progress.startItem('second');
+        vi.advanceTimersByTime(45);
+        first.pass();
+        vi.advanceTimersByTime(50);
+        second.pass();
+        vi.advanceTimersByTime(100);
+        const last = measureTaskProgress(progress, 'synchronous phase', () => {
+          vi.advanceTimersByTime(2);
+        });
+        vi.advanceTimersByTime(88);
+        await last;
+        return { status: 'passed', issues: [] };
+      },
+    });
+    const { context, recorder } = scheduler([entry]);
+    context.flowNodes.set(entry.id, flow.tree(entry.label));
+    vi.useFakeTimers({ toFake: ['performance'] });
+    try {
+      await runScheduler(context);
+      expect(output.join('')).toContain('[pass] synchronous phase (2ms)');
+      expect(output.join('')).toContain(
+        '[pass] outside reported phases (198ms)',
+      );
+      expect(recorder.getRunSummary().tasks[0]?.durationMs).toBe(320);
+    } finally {
+      vi.useRealTimers();
+      await flow.close();
+    }
+  });
+
   it.each(['start', 'pass'] as const)(
     'excludes delayed %s observers from runner timestamps',
     async (eventType) => {
@@ -136,18 +164,17 @@ describe('execution timing', () => {
           },
         }),
       ];
+      let observerFinishedAt = 0;
       const { context, recorder, trace } = scheduler(tasks, {
         project: async (entry, event) => {
           if (entry.id !== tasks[0]!.id || event.type !== eventType) return;
           observerEntered.resolve();
           if (eventType === 'pass') {
-            // Start the delay after B's real runner boundary, regardless of timer scheduling.
+            // Wait for the other runner to finish before delaying settlement.
             await context.running.get(tasks[1]!.id)!.settlement;
-            const second = trace.snapshot().tasks[1]!;
-            expect(second.runnerCompletedMs).toBeDefined();
-            expect(second.settlementStartedMs).toBeUndefined();
           }
           await delay(45);
+          observerFinishedAt = performance.timeOrigin + performance.now();
         },
       });
       await runScheduler(context);
@@ -162,17 +189,23 @@ describe('execution timing', () => {
           ),
         ).toBeLessThan(2);
       }
-      const snapshots = trace.snapshot().tasks;
+      const profiled = reportedTasks(trace, tasks);
+      for (const [index, entry] of summary.tasks.entries()) {
+        expect(profiled[index]!.runnerUs).toBe(
+          Math.round(entry.durationMs! * 1000),
+        );
+        expect(profiled[index]!.queueWaitUs).toBeGreaterThanOrEqual(0);
+      }
       if (eventType === 'start') {
-        expect(
-          snapshots[0]!.runnerStartedMs! - snapshots[0]!.dispatchedMs!,
-        ).toBeGreaterThanOrEqual(35);
+        expect(profiled[0]!.dispatchToRunnerUs).toBeGreaterThanOrEqual(35_000);
+        expect(Date.parse(summary.tasks[0]!.startedAt!)).toBeGreaterThanOrEqual(
+          Math.floor(observerFinishedAt),
+        );
       } else {
         expect(
-          snapshots[1]!.settlementStartedMs! - snapshots[1]!.runnerCompletedMs!,
-        ).toBeGreaterThanOrEqual(25);
+          observerFinishedAt - Date.parse(summary.tasks[1]!.completedAt!),
+        ).toBeGreaterThanOrEqual(35);
       }
-      assertIntervals(trace);
     },
   );
 
@@ -210,152 +243,95 @@ describe('execution timing', () => {
     },
   );
 
-  it('separates overlapping execution, dependency, capacity and resource waits', async () => {
-    const allStarted = Promise.withResolvers<void>();
+  it('measures ready queue time after predecessors and the active generation', async () => {
     const tasks = [
-      task('writer', 0, {
-        resources: { write: ['graph'] },
+      task('predecessor', 0, {
         run: async () => {
-          await allStarted.promise;
-          await delay(15);
-          return { status: 'passed', issues: [] };
-        },
-      }),
-      task('other', 1, {
-        run: async () => {
-          allStarted.resolve();
           await delay(35);
           return { status: 'passed', issues: [] };
         },
       }),
-      task('reader', 2, { resources: { read: ['graph'] } }),
-      task('dependent', 3, { after: [taskId('other')] }),
+      task('dependent', 1, { requiresSuccessOf: [taskId('predecessor')] }),
+      task('queued', 2, { invalidatesPreflight: true }),
+      task('next-generation', 3, { generation: 1 }),
     ];
-    const { context, trace } = scheduler(tasks);
+    const { context, trace } = scheduler(tasks, { concurrency: 1 });
     await runScheduler(context);
-    const snapshot = trace.snapshot();
-    expect(
-      snapshot.tasks[2]!.pending.some((entry) => entry.reason === 'capacity'),
-    ).toBe(true);
-    expect(
-      snapshot.tasks[3]!.pending.some((entry) => entry.reason === 'dependency'),
-    ).toBe(true);
-    expect(snapshot.tasks[0]!.runnerCompletedMs!).toBeGreaterThan(
-      snapshot.tasks[1]!.runnerStartedMs!,
-    );
-    const occupiedSum = snapshot.tasks.reduce(
-      (sum, entry) => sum + entry.releasedMs! - entry.dispatchedMs!,
-      0,
-    );
-    expect(occupiedSum).toBeGreaterThan(
-      snapshot.criticalChain!.schedulerDurationMs,
-    );
-    assertIntervals(trace);
-    const resourceRun = scheduler([
-      task('writer', 0, {
-        resources: { write: ['graph'] },
+    const [, dependent, queued, nextGeneration] = reportedTasks(trace, tasks);
+    for (const entry of [dependent!, nextGeneration!]) {
+      expect(entry.readyQueueUs).toBeGreaterThanOrEqual(0);
+      expect(entry.queueWaitUs! - entry.readyQueueUs!).toBeGreaterThan(25_000);
+    }
+    expect(queued!.readyQueueUs).toBeGreaterThan(25_000);
+    expect(queued!.readyQueueUs).toBe(queued!.queueWaitUs);
+  });
+
+  it('times the runner body before profiling closes its work record', async () => {
+    const clock = new Int32Array(new SharedArrayBuffer(4));
+    let bodyUs = 0;
+    const tasks = [
+      task('body', 0, {
         run: async () => {
-          await delay(10);
+          const start = performance.now();
+          await delay(5);
+          bodyUs = Math.round((performance.now() - start) * 1000);
           return { status: 'passed', issues: [] };
         },
       }),
-      task('reader', 1, { resources: { read: ['graph'] } }),
-    ]);
-    await runScheduler(resourceRun.context);
-    expect(
-      resourceRun.trace
-        .snapshot()
-        .tasks[1]!.pending.some(
-          (entry) =>
-            entry.reason === 'resource' &&
-            entry.blockers.includes(taskId('writer')),
-        ),
-    ).toBe(true);
-    assertIntervals(resourceRun.trace);
+    ];
+    const { context, trace } = scheduler(tasks);
+    const observer = new AnalysisObserver('limina check', performance.now());
+    const finish = observer.finish.bind(observer);
+    vi.spyOn(observer, 'finish').mockImplementation((...finishArguments) => {
+      Atomics.wait(clock, 0, 0, 45);
+      finish(...finishArguments);
+    });
+    await runWithProfile(observer, () => runScheduler(context));
+    trace.reportProfileTasks(observer, tasks);
+    const profile = observer.snapshot();
+    const runner = profile.tasks[0]!.runnerUs!;
+    const span = profile.work.find(({ op }) => op === 'execution.task-runner');
+    expect(Math.abs(runner - bodyUs)).toBeLessThan(30_000);
+    expect(span).toMatchObject({ end: 'performed' });
+    if (span?.end !== 'performed') throw new Error('Missing runner span.');
+    expect(span.time[1] - span.time[0] - runner).toBeGreaterThan(35_000);
   });
 
   it('keeps blocked and start-aborted tasks without invented runner intervals', async () => {
-    const blocked = scheduler([
+    const blockedTasks = [
       task('failure', 0, {
         run: async () => {
           throw new Error('runner failed');
         },
       }),
       task('blocked', 1, { requiresSuccessOf: [taskId('failure')] }),
-    ]);
+    ];
+    const blocked = scheduler(blockedTasks);
     await runScheduler(blocked.context);
-    expect(blocked.trace.snapshot().tasks[0]?.outcome).toBe('failed');
-    expect(blocked.trace.snapshot().tasks[1]?.outcome).toBe('blocked');
-    expect(blocked.trace.snapshot().tasks[1]?.runnerStartedMs).toBeUndefined();
+    const profiles = reportedTasks(blocked.trace, blockedTasks);
+    expect(profiles[0]?.state).toBe('failed');
+    expect(profiles[1]?.state).toBe('blocked');
+    expect(profiles[1]?.runnerUs).toBeUndefined();
+    expect(profiles[1]?.readyQueueUs).toBeUndefined();
+    expect(profiles[1]?.dispatchToRunnerUs).toBeUndefined();
     expect(
       blocked.recorder.getRunSummary().tasks[1]?.durationMs,
     ).toBeUndefined();
     const failure = new Error('start observer failed');
-    const aborted = scheduler([task('aborted', 0)], {
+    const abortedTasks = [task('aborted', 0)];
+    const aborted = scheduler(abortedTasks, {
       project: async (_, event) => {
         if (event.type === 'start') throw failure;
       },
     });
     await expect(runScheduler(aborted.context)).rejects.toBe(failure);
-    expect(aborted.trace.snapshot().tasks[0]?.outcome).toBe(
-      'infrastructure-start-failure',
-    );
-    expect(aborted.trace.snapshot().tasks[0]?.runnerStartedMs).toBeUndefined();
+    const [profile] = reportedTasks(aborted.trace, abortedTasks);
+    expect(profile?.state).toBe('infrastructure-start-failure');
+    expect(profile?.runnerUs).toBeUndefined();
+    expect(profile?.dispatchToRunnerUs).toBeUndefined();
     expect(
       aborted.recorder.getRunSummary().tasks[0]?.durationMs,
     ).toBeUndefined();
     expect(aborted.context.running.size).toBe(0);
-    assertIntervals(aborted.trace);
-  });
-
-  it('selects greatest accumulated occupancy instead of the latest predecessor release', async () => {
-    const root = task('long', 0);
-    const late = task('late', 1);
-    const join = task('join', 2, { after: [root.id, late.id] });
-    const trace = new ExecutionTrace();
-    trace.beginScheduler([root, late, join]);
-    await delay(10);
-    trace.dispatched(root.id);
-    await delay(30);
-    trace.released(root.id, 'passed');
-    await delay(10);
-    trace.dispatched(late.id);
-    trace.released(late.id, 'passed');
-    trace.dispatched(join.id);
-    await delay(5);
-    trace.released(join.id, 'passed');
-    trace.endScheduler();
-    const chain = trace.snapshot().criticalChain!;
-    expect(
-      chain.segments
-        .filter((segment) => segment.type === 'task-occupancy')
-        .map((segment) => segment.taskId),
-    ).toEqual([root.id, join.id]);
-    expect(chain.unattributedGapMs).toBeGreaterThanOrEqual(15);
-    expect(chain.occupiedDurationMs).toBeLessThan(chain.schedulerDurationMs);
-    assertIntervals(trace);
-  });
-
-  it('records generation waits until the command and its joined peers settle', async () => {
-    const tasks = [
-      task('command', 0, { invalidatesPreflight: true }),
-      task('peer', 1, {
-        run: async () => {
-          await delay(15);
-          return { status: 'passed', issues: [] };
-        },
-      }),
-      task('next', 2, { generation: 1 }),
-    ];
-    const { context, trace } = scheduler(tasks);
-    await runScheduler(context);
-    const snapshots = trace.snapshot().tasks;
-    expect(snapshots[2]!.dispatchedMs!).toBeGreaterThanOrEqual(
-      snapshots[1]!.releasedMs!,
-    );
-    expect(
-      snapshots[2]!.pending.some((entry) => entry.reason === 'generation'),
-    ).toBe(true);
-    assertIntervals(trace);
   });
 });

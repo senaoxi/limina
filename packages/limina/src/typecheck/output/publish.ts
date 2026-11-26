@@ -1,4 +1,5 @@
 import { preflightMutationBoundary } from '#utils/mutation-boundary';
+import { syncFileHandle } from '#utils/sync-file-handle';
 import { open, unlink } from 'node:fs/promises';
 import {
   fileIdentityKey,
@@ -63,7 +64,7 @@ async function writePublishedFile(options: {
   transactionToken: string;
 }): Promise<OwnedDeclarationFile> {
   await options.handle.writeFile(options.prepared.sourceState.content);
-  await options.handle.sync();
+  await syncFileHandle(options.handle);
   const ownedFile = createOwnedFile({
     prepared: options.prepared,
     state: await readHandleState(options.handle),

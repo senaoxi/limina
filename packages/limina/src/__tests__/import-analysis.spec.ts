@@ -13,8 +13,9 @@ import { collectRequireImportsFromSourceFile } from '../core/import-analysis/req
 import {
   collectTypeScriptImports,
   collectTypeScriptSourceFileImports,
+  collectTypeScriptSourceTextImports,
 } from '../core/import-analysis/typescript-imports';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { createTestMetricsRecorder } from './helpers/metrics';
 import { toPortablePath } from './helpers/path';
 
 async function createTemporaryDirectory(): Promise<string> {
@@ -38,6 +39,50 @@ async function writeText(
 }
 
 describe('import analysis', () => {
+  it.each([
+    {
+      filePath: 'data.json',
+      scriptKind: ts.ScriptKind.Unknown,
+      hasDirective: false,
+    },
+    { filePath: 'data.json', scriptKind: ts.ScriptKind.TS, hasDirective: true },
+    {
+      filePath: 'data.ts',
+      scriptKind: ts.ScriptKind.JSON,
+      hasDirective: false,
+    },
+  ])(
+    'uses script kind $scriptKind for comment imports in $filePath',
+    ({ filePath, scriptKind, hasDirective }) => {
+      const sourceText = '/// <reference path="./shape.d.ts" />\n{}\n';
+      const sourceFile = ts.createSourceFile(
+        filePath,
+        sourceText,
+        ts.ScriptTarget.Latest,
+        true,
+        scriptKind,
+      );
+      const expected = hasDirective
+        ? [{ kind: 'triple-slash-path', specifier: './shape.d.ts' }]
+        : [];
+      const summaries = (
+        records: ReturnType<typeof collectTypeScriptSourceTextImports>,
+      ) => records.map(({ kind, specifier }) => ({ kind, specifier }));
+      expect(
+        summaries(
+          collectTypeScriptSourceTextImports({
+            filePath,
+            sourceText,
+            scriptKind,
+          }),
+        ),
+      ).toEqual(expected);
+      expect(
+        summaries(collectTypeScriptSourceFileImports({ filePath, sourceFile })),
+      ).toEqual(expected);
+    },
+  );
+
   it('reads standalone UTF-16 sources using compiler positions and module names', async () => {
     const root = await createTemporaryDirectory();
     try {
@@ -1128,7 +1173,7 @@ describe('import analysis', () => {
         "import { first } from './first';\nvoid first;\n",
       );
 
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const context = createImportAnalysisContext({ metrics });
 
       expect(
@@ -1192,7 +1237,7 @@ describe('import analysis', () => {
         configPath,
         extensions: ['.ts'],
       };
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const context = createImportAnalysisContext({ metrics });
 
       expect(

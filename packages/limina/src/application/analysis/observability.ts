@@ -5,7 +5,11 @@ import {
   ProfileInventory,
   type ProviderRecord,
 } from './observability-inventory';
-import { intervalUnionUs, summarizeProfile } from './observability-summary';
+import {
+  intervalUnionUs,
+  isSemanticFactLayer,
+  summarizeProfile,
+} from './observability-summary';
 import type {
   CacheFact,
   ContextRecord,
@@ -51,6 +55,8 @@ type LinkKind = 'uses-result' | 'waits-for' | 'retry-of' | 'supersedes';
 interface TaskFields {
   name?: string;
   queueWaitUs?: number;
+  readyQueueUs?: number;
+  dispatchToRunnerUs?: number;
   state?: string;
   runnerUs?: number;
 }
@@ -66,7 +72,7 @@ interface RuntimeFields {
 }
 export interface AnalysisProfile {
   schemaVersion: 2;
-  metricRevision: 2;
+  metricRevision: 3;
   invocation: {
     id: string;
     command: string;
@@ -81,6 +87,7 @@ export interface AnalysisProfile {
   runtime: RuntimeFields & { node: string; platform: string; arch: string };
   coverage: {
     projectInventory: 'complete' | 'partial' | 'not-started';
+    workDetail: 'complete' | 'partial';
     decisionDetail: 'partial';
     clockDomains: string[];
     detailsOmitted: number;
@@ -106,6 +113,8 @@ const queryLayers = new Set([
   'native-source-syntax',
   'resolved-config',
   'resolved-config-live-parse',
+  'resolved-config-projection',
+  'source-config-authority',
   'importer-facts',
   'vue-resolution',
   'vue-query',
@@ -114,6 +123,7 @@ const invocationScope: ProfileScope = ['invocation'];
 
 export class AnalysisObserver extends ProfileInventory {
   readonly #works = new Map<string, WorkRecord>();
+  readonly #failureDetails = new Map<string, unknown>();
   readonly #graphs = new Map<string, GraphFields & { id: string }>();
   readonly #tasks = new Map<string, TaskFields & { id: string }>();
   readonly #decisions: DecisionRecord[] = [];
@@ -127,8 +137,10 @@ export class AnalysisObserver extends ProfileInventory {
   readonly #origin: number;
   #policy = 'not-requested';
   #dropped = 0;
+  #hasDroppedWork = false;
   #queryDetailCount = 0;
   #omittedQueries = 0;
+  #hasOmittedSemanticAdoption = false;
   readonly #omitted = new Map<string, number>();
   readonly #decisionIds = new Set<string>();
   #end?: number;
@@ -159,6 +171,11 @@ export class AnalysisObserver extends ProfileInventory {
     this.#dropped++;
     this.#omitted.set(category, (this.#omitted.get(category) ?? 0) + 1);
   }
+  #retainWork(op: string): boolean {
+    if (this.#retain(this.#works.size, op)) return true;
+    this.#hasDroppedWork = true;
+    return false;
+  }
   #isMissingWork(work: string | undefined): boolean {
     return (
       this.#works.size === detailBudget &&
@@ -175,6 +192,9 @@ export class AnalysisObserver extends ProfileInventory {
   }
   get currentScope(): ProfileScope {
     return this.#works.get(this.currentWork)?.scope ?? invocationScope;
+  }
+  get currentOperation(): string | undefined {
+    return this.#works.get(this.currentWork)?.op;
   }
   inWork<T>(id: string, operation: () => T): T {
     return this.#works.has(id)
@@ -206,7 +226,7 @@ export class AnalysisObserver extends ProfileInventory {
     pass?: number,
   ): string {
     const id = this.id('work');
-    if (this.#retain(this.#works.size, op))
+    if (this.#retainWork(op))
       this.#works.set(id, {
         id,
         op,
@@ -222,14 +242,24 @@ export class AnalysisObserver extends ProfileInventory {
     id: string,
     end: Terminal = 'performed',
     reason: string = 'operation-failed',
+    scope?: ProfileScope,
   ): void {
     const work = this.#works.get(id);
     if (work?.end !== 'open') return;
     const { startUs, ...rest } = work;
+    if (scope !== undefined) rest.scope = scope;
     const time: [number, number] = [startUs, this.now()];
     if (isUnsuccessful(end))
       this.#works.set(id, { ...rest, end, reason, time });
     else this.#works.set(id, { ...rest, end, time });
+  }
+  fail(id: string, detail: unknown, reason?: string): void {
+    if (this.#works.get(id)?.end !== 'open') return;
+    this.finish(id, 'failed', reason);
+    if (detail !== undefined) this.#failureDetails.set(id, detail);
+  }
+  failureDetail(id: string): unknown {
+    return this.#failureDetails.get(id);
   }
   finishSharedWait(
     id: string,
@@ -253,7 +283,7 @@ export class AnalysisObserver extends ProfileInventory {
     this.link('waits-for', id, producer);
   }
   notRun(op: string, scope: ProfileScope, reason: string): void {
-    if (!this.#retain(this.#works.size, op)) return;
+    if (!this.#retainWork(op)) return;
     const id = this.id('work');
     this.#works.set(id, {
       id,
@@ -270,7 +300,7 @@ export class AnalysisObserver extends ProfileInventory {
     producer: string,
     startUs?: number,
   ): void {
-    if (!this.#retain(this.#works.size, op)) return;
+    if (!this.#retainWork(op)) return;
     const id = this.id('work');
     const base = {
       id,
@@ -311,13 +341,13 @@ export class AnalysisObserver extends ProfileInventory {
     const id = this.id('decision');
     const isQuery = queryLayers.has(layer);
     if (isQuery) {
-      this.metric(
-        `cache.${layer}.${fact.stage}.${fact.outcome}`,
-        this.currentScope,
-        'calls',
-        1,
-      );
+      const metric = `cache.${layer}.${fact.stage}.${fact.outcome}`;
+      this.metric(metric, this.currentScope, 'calls', 1);
+      if (layer === 'native-resolution' && fact.outcome === 'adopted')
+        this.metric(`${metric}.${fact.origin}`, this.currentScope, 'calls', 1);
       if (this.#queryDetailCount >= queryDetailBudget) {
+        this.#hasOmittedSemanticAdoption ||=
+          fact.outcome === 'adopted' && isSemanticFactLayer(layer);
         this.#omittedQueries++;
         this.#omitted.set(layer, (this.#omitted.get(layer) ?? 0) + 1);
         return id;
@@ -383,13 +413,18 @@ export class AnalysisObserver extends ProfileInventory {
     const total = (this.#metrics.get(id)?.value ?? 0) + value;
     this.#metrics.set(id, { key, scope, unit, kind: 'counter', value: total });
   }
-  stop(isPassed: boolean): void {
+  sumElapsed<T>(key: string, scope: ProfileScope, action: () => T): T {
+    const start = this.now();
+    try {
+      return action();
+    } finally {
+      this.metric(key, scope, 'us', this.now() - start);
+    }
+  }
+  stop(isPassed: boolean, error?: unknown): void {
     if (this.#end !== undefined) return;
-    this.finish(
-      this.#rootWork,
-      isPassed ? 'performed' : 'failed',
-      'command-failed',
-    );
+    if (isPassed) this.finish(this.#rootWork);
+    else this.fail(this.#rootWork, error, 'command-failed');
     const command = this.#works.get(this.#rootWork);
     this.#end =
       command && 'time' in command && command.time
@@ -404,6 +439,7 @@ export class AnalysisObserver extends ProfileInventory {
     const contexts = this.contexts.values().toArray();
     const metrics = this.#metrics.values().toArray();
     const decisions = [...this.#decisions];
+    const tasks = this.#tasks.values().toArray();
     const summary = summarizeProfile({
       work,
       links: this.#links,
@@ -415,6 +451,9 @@ export class AnalysisObserver extends ProfileInventory {
       cachePolicy: this.#policy,
       inventoryComplete: this.hasCompleteInventory,
       dropped: this.#dropped,
+      hasOmittedSemanticAdoption: this.#hasOmittedSemanticAdoption,
+      isCommandOnly:
+        tasks.length > 0 && tasks.every((task) => task.name === 'command'),
     });
     const end = this.#end ?? this.now();
     const observerIntervals = work.flatMap((w) =>
@@ -424,7 +463,7 @@ export class AnalysisObserver extends ProfileInventory {
     );
     return {
       schemaVersion: 2 as const,
-      metricRevision: 2 as const,
+      metricRevision: 3 as const,
       invocation: {
         id: this.invocationId,
         command: this.#command,
@@ -451,6 +490,7 @@ export class AnalysisObserver extends ProfileInventory {
           : projects.length > 0
             ? 'partial'
             : 'not-started',
+        workDetail: this.#hasDroppedWork ? 'partial' : 'complete',
         decisionDetail: 'partial',
         clockDomains: ['main'],
         detailsOmitted: this.#dropped + this.#omittedQueries,
@@ -460,7 +500,7 @@ export class AnalysisObserver extends ProfileInventory {
       providerRuns: this.providers.values().toArray(),
       contexts,
       graphs,
-      tasks: this.#tasks.values().toArray(),
+      tasks,
       work,
       links: [...this.#links],
       decisions,

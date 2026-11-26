@@ -4,7 +4,6 @@ import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
-import type { AmbientDeclarationIndex } from './ambient-declarations';
 import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 
@@ -14,7 +13,6 @@ interface OwnerCollection {
 }
 
 interface ProjectOwnerOptions {
-  ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   configPath: string;
@@ -25,16 +23,13 @@ interface ProjectOwnerOptions {
 }
 
 function collectFileOwner(options: {
-  ambientDeclarations: AmbientDeclarationIndex;
   collection: OwnerCollection;
   fileName: string;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
-  if (options.ambientDeclarations.has(options.fileName)) {
-    return;
-  }
-
-  const owner = options.workspaceLookup.findOwnerForFile(options.fileName);
+  const owner = options.workspaceLookup.findGovernedPackageScopeInfo(
+    options.fileName,
+  );
   if (!owner) {
     options.collection.missingOwnerFiles.push(options.fileName);
     return;
@@ -52,7 +47,6 @@ function collectProjectOwners(options: ProjectOwnerOptions): OwnerCollection {
   for (const fileName of options.fileNames) {
     options.checks.add();
     collectFileOwner({
-      ambientDeclarations: options.ambientDeclarations,
       collection,
       fileName,
       workspaceLookup: options.workspaceLookup,

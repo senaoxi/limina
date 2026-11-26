@@ -2,17 +2,16 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import { isBuildGraphConfigPath } from '#core/tsconfig/actions';
 import path from 'pathe';
 import { createUnitByProjectPath } from '../core/project-dependencies/project-alignment';
+import { measureTaskProgress } from '../execution/progress';
 import {
   addAllowlistCoverage,
   addAllowlistFindings,
+  type AllowlistEntry,
   collectConfiguredAllowlistEntries,
 } from './allowlist';
 import { addBuildGraphConfigFindings } from './build-graph-config-findings';
 import { collectProjectContextsByPath } from './checker-context';
-import {
-  collectCheckerCoverageTargets,
-  createProofCheckerRouteFinding,
-} from './checker-targets';
+import { collectCheckerCoverageTargets } from './checker-targets';
 import { cloneCoverageByFile, type CoverageSource } from './coverage';
 import { collectCoverage } from './coverage-collection';
 import { addDtsConfigFindings } from './declaration-config-findings';
@@ -50,32 +49,6 @@ function collectSolutionConfigPaths(
       .flatMap((sourceToBuild) => [...sourceToBuild])
       .filter(([, module]) => module.kind === 'solution')
       .map(([configPath]) => configPath),
-  );
-}
-
-async function addRouteFindings(state: ProofRunState): Promise<void> {
-  const [graphCollection, entryCollection] = await Promise.all([
-    state.preflight.ensureGraphProjectRoutes(),
-    state.preflight.ensureCheckerEntryProjectRoutes(),
-  ]);
-
-  state.findings.push(
-    ...graphCollection.diagnostics.map((diagnostic) =>
-      createProofCheckerRouteFinding({
-        checkerName: diagnostic.checkerName,
-        diagnostic,
-        projection: 'graph',
-        workspaceLookup: state.workspaceLookup,
-      }),
-    ),
-    ...entryCollection.diagnostics.map((diagnostic) =>
-      createProofCheckerRouteFinding({
-        checkerName: diagnostic.checkerName,
-        diagnostic,
-        projection: 'checker-entry',
-        workspaceLookup: state.workspaceLookup,
-      }),
-    ),
   );
 }
 
@@ -156,7 +129,6 @@ function addProjectConfigFindings(state: ProofRunState): void {
 }
 
 async function isRunProjectConfigPhase(state: ProofRunState): Promise<boolean> {
-  await addRouteFindings(state);
   state.checkItems.start('project routes and configs');
   addProjectConfigFindings(state);
   state.checks.add(
@@ -167,13 +139,13 @@ async function isRunProjectConfigPhase(state: ProofRunState): Promise<boolean> {
 }
 
 async function isRunCheckerTargetPhase(state: ProofRunState): Promise<boolean> {
+  state.checkItems.start('checker coverage targets');
   const collection = collectCheckerCoverageTargets(
     state.config,
     state.generatedGraph,
     state.workspaceLookup,
   );
 
-  state.checkItems.start('checker coverage targets');
   state.findings.push(...collection.findings);
   state.checkerTargets = collection.targets;
   state.checks.add(collection.targets.length);
@@ -182,6 +154,7 @@ async function isRunCheckerTargetPhase(state: ProofRunState): Promise<boolean> {
 }
 
 function addCoverageFindings(options: {
+  allowlistEntries: AllowlistEntry[];
   baseCoverageByFile: Map<string, CoverageSource[]>;
   coverageByFile: Map<string, CoverageSource[]>;
   outsideCoverage: Map<string, CoverageSource[]>;
@@ -213,8 +186,7 @@ function addCoverageFindings(options: {
     workspaceLookup: options.state.workspaceLookup,
   });
   addAllowlistFindings({
-    allowlistEntries: collectConfiguredAllowlistEntries(options.state.config)
-      .entries,
+    allowlistEntries: options.allowlistEntries,
     baseCoverageByFile: options.baseCoverageByFile,
     config: options.state.config,
     findings: options.state.findings,
@@ -229,10 +201,13 @@ function addCoverageFindings(options: {
 }
 
 async function isRunCoveragePhase(state: ProofRunState): Promise<boolean> {
-  const sourceFiles = await state.preflight.ensureExpectedSourceFiles();
-  const allowlist = collectConfiguredAllowlistEntries(state.config);
+  const sourceFiles = await state.checkItems.observe(
+    'expected source files',
+    () => state.preflight.ensureExpectedSourceFiles(),
+  );
 
   state.checkItems.start('proof allowlist');
+  const allowlist = collectConfiguredAllowlistEntries(state.config);
   state.findings.push(...allowlist.findings);
   state.checks.add(allowlist.entries.length);
   state.checkItems.record('proof allowlist');
@@ -259,6 +234,7 @@ async function isRunCoveragePhase(state: ProofRunState): Promise<boolean> {
     baseCoverageByFile,
     coverageByFile,
     outsideCoverage,
+    allowlistEntries: allowlist.entries,
     sourceFiles,
     state,
   });
@@ -285,10 +261,14 @@ const proofPhases: ProofPhase[] = [
 ];
 
 async function isExecuteProofPhases(state: ProofRunState): Promise<boolean> {
-  for (const phase of proofPhases) {
-    if (!(await phase(state))) {
-      return false;
+  try {
+    for (const phase of proofPhases) {
+      if (!(await phase(state))) {
+        return false;
+      }
     }
+  } catch (error) {
+    return state.checkItems.failActive(error);
   }
 
   return true;
@@ -298,5 +278,11 @@ export async function isRunProofCheckImpl(
   config: ResolvedLiminaConfig,
   options: RunProofCheckImplOptions = {},
 ): Promise<boolean> {
-  return isExecuteProofPhases(await createProofRunState(config, options));
+  const state = await measureTaskProgress(
+    options.progress,
+    'prepare proof inputs',
+    () => createProofRunState(config, options),
+    (prepared) => prepared.findings.length === 0,
+  );
+  return isExecuteProofPhases(state);
 }

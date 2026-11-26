@@ -3,6 +3,7 @@ import type { DeclarationContextDecision } from '../../domain/analysis/declarati
 import type { DeclarationCompilationEvidence } from '../../domain/analysis/declaration-governance';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import type { ReferenceImportContext } from './reference-import-types';
+import { recordReferencePackageRequest } from './reference-package-request';
 import type { GeneratedDependencyEdge, SourceProject } from './types';
 
 /**
@@ -39,9 +40,22 @@ function addPolicyReference(
   },
 ): void {
   const { context, project, provider, decision } = options;
-  const request = options.evidence?.requestOrigins.find((item) =>
-    decision.requestIds.includes(item.id),
-  );
+  const requests =
+    options.evidence?.requestOrigins.filter((item) =>
+      decision.requestIds.includes(item.id),
+    ) ?? [];
+  for (const origin of requests)
+    recordReferencePackageRequest(
+      context.analysis,
+      {
+        consumerProject: project.dtsConfigPath,
+        providerProject: provider.dtsConfigPath,
+        file: origin.file,
+        specifier: origin.specifier,
+      },
+      origin.binding?.channel,
+    );
+  const request = requests[0];
   const source = request?.file ?? project.configPath;
   const edge: GeneratedDependencyEdge = {
     kind: 'declaration-provider',
@@ -59,20 +73,4 @@ function addPolicyReference(
     nativeFingerprint(['declaration-context', edge]),
     edge,
   );
-  context.projectDependencyCaches.analysisCache?.contributions.record({
-    occurrence: {
-      filePath: source,
-      policy: 'declaration-context',
-      requestIds: [...decision.requestIds],
-    },
-    fromChecker: edge.fromChecker,
-    toChecker: edge.toChecker,
-    fromConfigPath: edge.fromConfigPath,
-    toConfigPath: edge.toConfigPath,
-    kind: edge.kind,
-    basis: {
-      kind: 'declaration-context',
-      evidence: nativeFingerprint(decision),
-    },
-  });
 }

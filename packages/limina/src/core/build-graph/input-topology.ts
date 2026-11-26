@@ -149,7 +149,6 @@ function readEntry(context: InputReadContext, entry: string) {
   collectCheckerSourceConfigModules({
     activatedRegions,
     checkerName: 'tsc',
-    checkerPreset: 'tsc',
     collection,
     config,
     problems,

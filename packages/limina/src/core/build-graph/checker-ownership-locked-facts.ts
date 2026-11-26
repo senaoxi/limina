@@ -3,12 +3,13 @@ import { toRelativePath } from '#utils/path';
 import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
-import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
-  collectProjectDependencies,
+  readReferenceGraphFacts,
+  type ReferenceDependency,
+} from '../project-dependencies/reference-facts';
+import {
   createAutoProjectSemanticContext,
   type createProjectDependencyCaches,
-  type ProjectDependency,
   type ProjectDependencyFailure,
 } from '../project-dependencies/runner';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
@@ -19,6 +20,7 @@ import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
+import { coreCollectionRun } from './core-collection-run';
 import { collectDeclarationContextDecisions } from './declaration-context-decisions';
 import { assessMissingNativeImports } from './locked-supplemental-assessment';
 
@@ -43,7 +45,7 @@ function formatProjectDependencyFailure(options: {
 
 function createLockedDependencyFact(
   project: AutoScopeProject,
-  dependency: ProjectDependency,
+  dependency: ReferenceDependency,
 ): CheckerDependencyFact {
   const nativeEvidence = dependency.nativeFact?.nativeEvidence;
   if (dependency.referenceRequirement !== null) {
@@ -88,7 +90,7 @@ export function collectLockedProjectFacts(options: {
   declarationContexts: DeclarationContextDecision[];
 } {
   const facts: CheckerDependencyFact[] = [];
-  const collection = collectProjectDependencies({
+  const collection = readReferenceGraphFacts({
     compilationObligationScope: 'generated-declaration-project-v1',
     caches: options.caches,
     context: createAutoProjectSemanticContext({
@@ -98,54 +100,66 @@ export function collectLockedProjectFacts(options: {
     }),
     importAnalysis: options.importAnalysis,
   });
-  const failures = collection.failures.map((failure) => {
-    const detail = formatProjectDependencyFailure({
-      config: options.config,
-      failure,
-    });
-    retainDependencyFailure(options.caches, failure, detail);
-    return detail;
+  const nativeFailures = collection.nativeEvidence?.failures ?? [];
+  const run = coreCollectionRun(options.caches);
+  for (const failure of nativeFailures) run.failureIds.add(failure.id);
+  const declaration = collectDeclarationContextDecisions({
+    policy: options.caches.declarationContextPolicy,
+    project: options.project,
+    evidence: collection.declarationEvidence,
+    unsupportedDependencies: collection.dependencies,
+    allowUnqualifiedLocal: !['typescript', 'vue'].includes(
+      options.state.semanticAuthority.family,
+    ),
+    coverageIndex: options.caches.sourceConfigCoverage,
+    isWorkspaceFile:
+      options.workspaceSourceBoundary.governance?.isWorkspaceFile,
   });
-  const dependencies = lockedDependencies(
-    collection,
-    options.project.fileNames,
-  );
-  for (const dependency of dependencies) {
+  const failures = collection.failures
+    .filter(
+      (failure) =>
+        !failure.importRecord ||
+        declaration.isActiveSource(failure.importRecord.filePath),
+    )
+    .map((failure) => {
+      const detail = formatProjectDependencyFailure({
+        config: options.config,
+        failure,
+      });
+      retainDependencyFailure(options.caches, failure, detail);
+      return detail;
+    });
+  for (const dependency of collection.ownershipInputs) {
     if (
+      !declaration.isActiveSource(dependency.importRecord.filePath) ||
       !shouldInferDeclarationReferenceFromImportRecord(dependency.importRecord)
     ) {
       continue;
     }
     facts.push(createLockedDependencyFact(options.project, dependency));
   }
-  const declaration = collectDeclarationContextDecisions({
-    config: options.config,
-    project: options.project,
-    evidence: collection.declarationEvidence,
-    coverageIndex: options.caches.sourceConfigCoverage,
-    isWorkspaceFile:
-      options.workspaceSourceBoundary.governance?.isWorkspaceFile,
-  });
   const supplementalProblems =
     options.state.semanticAuthority.source === 'baseline' &&
     collection.nativeEvidence
       ? assessMissingNativeImports({
           ...options,
           facts,
-          records: collection.declarationClosure?.records ?? [],
+          records: collection.unresolvedNativeRecords.filter(({ record }) =>
+            declaration.isActiveSource(record.filePath),
+          ),
           snapshot: collection.nativeEvidence,
         })
       : [];
   return {
     facts,
     problems: [...declaration.problems, ...supplementalProblems],
-    failures,
+    failures: [...nativeFailures.map((failure) => failure.detail), ...failures],
     declarationContexts: declaration.decisions,
   };
 }
 
 function getSupportedEvidenceKind(
-  dependency: ProjectDependency,
+  dependency: ReferenceDependency,
 ): CheckerDependencyFact['typeEvidenceKind'] {
   const evidence = dependency.typeEvidence;
   if (evidence === undefined) return 'unobserved';
@@ -154,18 +168,4 @@ function getSupportedEvidenceKind(
       'Unsupported evidence cannot become a locked dependency fact.',
     );
   return evidence.kind;
-}
-
-function lockedDependencies(
-  collection: ReturnType<typeof collectProjectDependencies>,
-  roots: readonly string[],
-) {
-  const rootFiles = new Set(roots);
-  return collection.nativeEvidence === undefined
-    ? effectiveReferenceInputs(collection)
-    : collection.dependencies.filter(
-        (dependency) =>
-          rootFiles.has(dependency.importRecord.filePath) ||
-          dependency.referenceRequirement !== null,
-      );
 }

@@ -8,10 +8,7 @@ export interface GovernanceUnit {
 
 export type GovernanceUnitsByFile = Map<string, Map<string, GovernanceUnit>>;
 
-export type AmbientConsumersByFile = Map<string, Map<string, GovernanceUnit>>;
-
 export interface TsconfigGovernanceCollection {
-  ambientConsumersByFile: AmbientConsumersByFile;
   context: CheckerProjectParseContext;
   governanceUnitsByFile: GovernanceUnitsByFile;
   projectFileSetsByConfigPath: Map<string, Set<string>>;

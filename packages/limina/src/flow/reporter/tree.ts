@@ -1,8 +1,13 @@
-import { type FlowTreeNodeStatus, toTreeFlowStatus } from '../render-model';
+import {
+  type FlowTreeNodeStatus,
+  formatMessageWithElapsed,
+  toTreeFlowStatus,
+} from '../render-model';
 import {
   appendFlowTreeChild,
   createFlowTreeNode,
   type FlowTreeNodeInternal,
+  getElapsedOutsideChildNodes,
   skipPlannedTreeDescendants,
 } from '../tree-state';
 import { emitFlow, formatReporterFailure, renderTreeChange } from './rendering';
@@ -71,6 +76,7 @@ function updateStartedNode(options: {
   applyTreeDepth({ depth: options.treeOptions?.depth, node: options.node });
   options.node.status = 'running';
   options.node.startedAt = performance.now();
+  options.node.completedAt = undefined;
   options.node.elapsedTimeMs = undefined;
 }
 
@@ -112,31 +118,31 @@ function getFinishedTreeMessage(
   });
 }
 
-function getExplicitElapsedTime(
-  input: FlowTreeFinishInput,
-): number | undefined {
-  return input.options === undefined ? undefined : input.options.elapsedTimeMs;
-}
-
 function getFinishedElapsedTime(
   input: FlowTreeFinishInput,
+  completedAt: number,
 ): number | undefined {
-  const explicit = getExplicitElapsedTime(input);
-  if (explicit !== undefined) return explicit;
+  if (input.status === 'skipped' || input.status === 'blocked') {
+    return undefined;
+  }
+  const explicit = input.options?.elapsedTimeMs;
+  if (explicit !== undefined) return explicit ?? undefined;
   return input.node.startedAt === undefined
     ? undefined
-    : performance.now() - input.node.startedAt;
+    : completedAt - input.node.startedAt;
 }
 
 function updateFinishedNode(
   state: FlowReporterState,
   input: FlowTreeFinishInput,
 ): void {
+  const completedAt = performance.now();
   skipPlannedTreeDescendants(input.node);
   input.node.message = getFinishedTreeMessage(state, input);
   applyTreeDepth({ depth: input.options?.depth, node: input.node });
   input.node.status = input.status;
-  input.node.elapsedTimeMs = getFinishedElapsedTime(input);
+  input.node.completedAt = completedAt;
+  input.node.elapsedTimeMs = getFinishedElapsedTime(input, completedAt);
 }
 
 function finishTreeNode(
@@ -149,12 +155,12 @@ function finishTreeNode(
     return;
   }
   emitFlow(state, {
-    options: {
-      ...input.options,
-      depth: input.node.depth,
-      elapsedTimeMs: input.node.elapsedTimeMs,
-    },
-    rawMessage: input.node.message,
+    options: { depth: input.node.depth },
+    rawMessage: formatMessageWithElapsed(
+      input.node.message,
+      input.node.elapsedTimeMs,
+      input.node.children.length > 0 ? 'total' : undefined,
+    ),
     status: toTreeFlowStatus(input.status),
   });
 }
@@ -180,6 +186,8 @@ function createTreeNodeHandle(
         (child) => createTreeNodeHandle(state, child),
       ),
     fail: (message, options) => finish('failed', message, options),
+    getElapsedOutsideChildren: (runner) =>
+      getElapsedOutsideChildNodes(node, runner),
     pass: (message, options) => finish('passed', message, options),
     skip: (message, options) => finish('skipped', message, options),
     start: (message, options) =>

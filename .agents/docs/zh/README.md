@@ -35,7 +35,7 @@
 | 改变 CI、安全、报告或外部 workflow 集成                    | [基础设施](./infrastructure.md)                            |
 | 核对本地迁移范围与远程／发布／部署门禁                     | [迁移](./migration.md)                                     |
 
-持久化 importer/context 有效性、Program 创建前恢复及 provider 支持边界由[语义记录](./semantics.md#持久化-importer-有效性)维护；全局 lockfile 准入、generation 时间基准、源配置语义权威恢复、本地 typeRoots 指纹、单次调用冻结、namespace 级配置版本、epoch、定向重建与快照发布由[生命周期](./lifecycle.md#原生持久化分析缓存)维护。
+持久化 importer/context 有效性、Program 创建前恢复及 provider 支持边界由[语义记录](./semantics.md#持久化-importer-有效性)维护；包作用域失效、generation 时间基准、当前源配置发现及 Checker 选择、本地 typeRoots 指纹、单次调用冻结、namespace 级配置版本、epoch、定向重建与快照发布由[生命周期](./lifecycle.md#原生持久化分析缓存)维护。
 
 ## 双语发布与维护
 

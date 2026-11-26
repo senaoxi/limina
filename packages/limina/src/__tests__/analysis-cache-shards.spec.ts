@@ -1,3 +1,4 @@
+import { readAnalysisInput } from '#utils/analysis-input';
 import { compareCodeUnits } from '#utils/collections';
 import { spawnSync } from 'node:child_process';
 import {
@@ -13,6 +14,10 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
+import {
+  AnalysisObserver,
+  runWithProfile,
+} from '../application/analysis/observability';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import {
@@ -26,22 +31,18 @@ import {
 import { emptySnapshot } from '../core/analysis-cache/snapshot-records';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import {
+  ANALYSIS_STORAGE,
   analysisBlockDigest,
-  AnalysisBlockReader,
   type AnalysisSnapshotIndex,
   encodeAnalysisBlocks,
   readAnalysisBlocks,
 } from '../core/analysis-cache/snapshot-shards';
-import { inspectFrameworkIntent } from '../core/build-graph/framework-intent';
-import { nativeFingerprint } from '../core/typescript-semantic/native-file-identity';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
 import {
   analysisBlockPath,
   readStoredAnalysisSnapshot,
-  roundTripAnalysisSnapshot,
 } from './helpers/analysis-snapshot';
-import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const roots: string[] = [];
@@ -160,45 +161,51 @@ function runWithBoundedHeap(script: string, megabytes: number): unknown {
   return JSON.parse(result.stdout);
 }
 
-it('keeps unavailable projection blocks outside the context-fact read closure', () => {
+it('rejects incompatible storage and graph blocks before opening the generation', () => {
   const f = fixture();
   const snapshot = records(f.file);
-  snapshot.graphs.fixture = {
-    workspaceVersion: 'fixture',
-    queryIds: [],
-    contextIds: ['source'],
-    vueContextIds: [],
-    dependencies: [],
-    discovery: [],
-    data: ['null'],
-  };
   const encoded = [...encodeAnalysisBlocks(snapshot)];
   const contents = new Map(
     encoded.map((item) => [item.reference.digest, Buffer.from(item.text)]),
   );
+  const blocks = encoded.map((item) => item.reference);
   const index = {
     header: snapshot.header,
     configModules: snapshot.configModules,
-    storage: { version: 3, blocks: encoded.map((item) => item.reference) },
+    storage: { version: ANALYSIS_STORAGE, blocks },
   };
-  const control = new AnalysisBlockReader(
-    index,
-    (block) => contents.get(block.digest)!,
+  const current = parseAnalysisSnapshot(
+    readAnalysisBlocks(index, (block) => contents.get(block.digest)!),
+    'fixture',
   );
-  expect(control.graphs()).toEqual(snapshot.graphs);
-  const projection = encoded.find((item) => item.reference.kind === 'graph')!;
-  contents.delete(projection.reference.digest);
-  const reads: string[] = [];
-  const reader = new AnalysisBlockReader(index, (block) => {
-    reads.push(block.kind);
-    const bytes = contents.get(block.digest);
-    if (bytes === undefined) throw new Error('projection unavailable');
-    return bytes;
-  });
-  const facts = parseAnalysisSnapshot(reader.facts(), 'fixture');
-  expect(facts?.contexts).toEqual(snapshot.contexts);
-  expect(reads).not.toContain('graph');
-  expect(() => reader.graphs()).toThrow('projection unavailable');
+  expect(current?.contexts).toEqual(snapshot.contexts);
+  for (const key of [
+    'graphs',
+    'contributions',
+    'authorities',
+    'resolvedConfigs',
+  ])
+    expect(current).not.toHaveProperty(key);
+  const legacy = {
+    ...index,
+    storage: {
+      ...index.storage,
+      blocks: [...blocks, { ...blocks[0], kind: 'graph', scope: 'legacy' }],
+    },
+  };
+  for (const obsolete of [
+    legacy,
+    { ...index, storage: { ...index.storage, version: 4 } },
+  ]) {
+    let reads = 0;
+    expect(() =>
+      readAnalysisBlocks(obsolete, (block) => {
+        reads += 1;
+        return contents.get(block.digest)!;
+      }),
+    ).toThrow();
+    expect(reads).toBe(0);
+  }
 });
 
 it.each([
@@ -206,8 +213,10 @@ it.each([
   'receipt-block',
   'receipt-input',
   'expected-version',
+  'obsolete-group',
   'record-reference',
   'shared-reference',
+  'duplicate-key',
 ] as const)(
   'rejects %s corruption inside a correctly hashed scope envelope',
   (fault) => {
@@ -224,30 +233,51 @@ it.each([
     );
     const shared = unpackRecordTable(sharedPayload) as readonly unknown[];
     if (fault === 'length') block.payload.byteLength += 1;
-    else if (fault === 'record-reference' || fault === 'shared-reference') {
-      const table = unpackAnalysisRecord(block.payload) as { root: number[] };
-      table.root = [
-        fault === 'record-reference'
-          ? Number.MAX_SAFE_INTEGER
-          : Number.MIN_SAFE_INTEGER,
-      ];
+    else if (
+      ['duplicate-key', 'record-reference', 'shared-reference'].includes(fault)
+    ) {
+      const table = unpackAnalysisRecord(block.payload) as {
+        entries: unknown[];
+        root: number;
+      };
+      if (fault === 'duplicate-key')
+        table.entries.push(['object', '__proto__', false, '__proto__', null]);
+      else
+        table.root =
+          fault === 'record-reference'
+            ? Number.MAX_SAFE_INTEGER
+            : Number.MIN_SAFE_INTEGER;
       block.payload = packAnalysisRecord(table, 'json', 'brotli');
     } else {
       const payload = structuredClone(
         unpackRecordTable(unpackAnalysisRecord(block.payload), shared),
       ) as {
+        graphs?: Record<string, unknown>;
         queries: Record<string, { dependencies: unknown }>;
         receiptEncoding: {
           dependencies: { inputId: unknown; expectedVersion: string }[];
         };
       };
-      if (fault === 'receipt-block')
-        payload.queries['source-0']!.dependencies = {
-          receiptBlocks: [Number.MAX_SAFE_INTEGER],
-        };
-      else if (fault === 'receipt-input')
-        payload.receiptEncoding.dependencies[0]!.inputId = 1;
-      else payload.receiptEncoding.dependencies[0]!.expectedVersion = 'stale';
+      switch (fault) {
+        case 'receipt-block': {
+          payload.queries['source-0']!.dependencies = {
+            receiptBlocks: [Number.MAX_SAFE_INTEGER],
+          };
+          break;
+        }
+        case 'receipt-input': {
+          payload.receiptEncoding.dependencies[0]!.inputId = 1;
+          break;
+        }
+        case 'obsolete-group': {
+          payload.graphs = { legacy: {} };
+          break;
+        }
+        case 'expected-version': {
+          payload.receiptEncoding.dependencies[0]!.expectedVersion = 'stale';
+          break;
+        }
+      }
       block.payload = packAnalysisRecord(
         packRecordTable(payload),
         'json',
@@ -266,7 +296,7 @@ it.each([
           header: snapshot.header,
           configModules: snapshot.configModules,
           storage: {
-            version: 3,
+            version: ANALYSIS_STORAGE,
             blocks: encoded.map((item) => item.reference),
           },
         },
@@ -334,10 +364,9 @@ function records(file: (...segments: string[]) => string): AnalysisSnapshot {
         analysisBinding: { phase: 'locked', checker: 'tsc' },
       },
       environment: {
-        policy: 'lockfile-and-local-roots-v1',
+        policy: 'physical-type-roots-v1',
         effectiveTypeRoots: [],
         typeRootsHash: 'empty',
-        domains: [],
         dependencies: [],
         evidence: 'observed',
       },
@@ -364,57 +393,6 @@ function records(file: (...segments: string[]) => string): AnalysisSnapshot {
   }
   return snapshot;
 }
-it('rejects incomplete ownership intent proof while parsing both projects live', () => {
-  const f = fixture();
-  const a = f.file('a.json');
-  const b = f.file('b.json');
-  const base = f.file('base.json');
-  writeFileSync(a, '{"extends":"./base.json","files":["src.ts"]}');
-  writeFileSync(b, '{"vueCompilerOptions":{},"files":["src.ts"]}');
-  writeFileSync(base, '{"vueCompilerOptions":{}}');
-  writeFileSync(f.file('src.ts'), '');
-  const config = withFixtureGovernanceRoot({
-    rootDir: f.file(),
-    configPath: f.file('limina.config.mts'),
-    scope: {},
-  });
-  const inspect = (cache: NativeAnalysisCache, configPath: string) =>
-    cache.resolvedConfigs.run(() =>
-      inspectFrameworkIntent({ config, configObject: {}, configPath }),
-    );
-  const cold = f.cache();
-  cold.inputs.observeConfig(
-    [a, b, base].map((filePath) => ({ filePath, contentHash: '' })),
-  );
-  const expected = [a, b].map((configPath) => inspect(cold, configPath));
-  expect(expected.map(({ intentHints }) => intentHints[0]?.configPath)).toEqual(
-    [base, b],
-  );
-  const snapshot = cold.snapshot();
-  snapshot.header.baselineTime = Date.now() + 1000;
-  const record = Object.values(snapshot.resolvedConfigs).find(
-    ({ configPath }) => configPath === a,
-  )!;
-  record.discovery = record.discovery.filter((read) => read.path !== base);
-  record.fingerprint = nativeFingerprint([
-    record.configPath,
-    record.context,
-    record.discovery,
-    record.payload,
-  ]);
-  const decoded = parseAnalysisSnapshot(
-    roundTripAnalysisSnapshot(snapshot),
-    'fixture',
-  );
-  expect(decoded).toBeDefined();
-  const warm = new NativeAnalysisCache('fixture', decoded, 'fixture-config');
-  expect([a, b].map((configPath) => inspect(warm, configPath))).toEqual(
-    expected,
-  );
-  expect(warm.metrics.resolvedConfigParses).toBe(2);
-  expect(warm.metrics.resolvedConfigHits).toBe(1);
-});
-
 it('keeps scope payloads independent and losslessly shares long receipt sequences', () => {
   const f = fixture();
   const snapshot = records(f.file);
@@ -429,7 +407,10 @@ it('keeps scope payloads independent and losslessly shares long receipt sequence
   const index = {
     header: snapshot.header,
     configModules: snapshot.configModules,
-    storage: { version: 3, blocks: encoded.map((block) => block.reference) },
+    storage: {
+      version: ANALYSIS_STORAGE,
+      blocks: encoded.map((block) => block.reference),
+    },
   };
   const contents = new Map(
     encoded.map((block) => [block.reference.digest, Buffer.from(block.text)]),
@@ -515,34 +496,59 @@ it('publishes the index last and preserves shared block bytes on a forced refres
   const bytes = readFileSync(target);
   const mtime = statSync(target).mtimeMs;
   const forced = new AnalysisCacheStore(f.options);
-  expect(forced.read({ restore: false })).toBeUndefined();
-  await forced.publish(f.cache());
+  const observer = new AnalysisObserver('forced-cache', performance.now());
+  await runWithProfile(observer, async () => {
+    expect(forced.read({ restore: false })).toBeUndefined();
+    await forced.publish(f.cache());
+  });
   expect(readFileSync(store.path)).not.toEqual(before);
   expect(readFileSync(target)).toEqual(bytes);
   expect(statSync(target).mtimeMs).toBe(mtime);
+  const metrics = new Map(
+    observer.snapshot().metrics.map(({ key, value }) => [key, value]),
+  );
+  const blockSizes = index.storage.blocks.map(
+    (block) => statSync(analysisBlockPath(store.path, block)).size,
+  );
+  expect(metrics.get('snapshot.read-bytes.bytes')).toBe(before.length);
+  expect(metrics.get('snapshot.check-baseline.calls')).toBe(2);
+  expect(metrics.get('snapshot.check-baseline.bytes')).toBe(2 * before.length);
+  expect(metrics.get('snapshot.check-block.calls')).toBe(blockSizes.length);
+  expect(metrics.get('snapshot.check-block.bytes')).toBe(
+    blockSizes.reduce((total, size) => total + size, 0),
+  );
+  expect(metrics.has('snapshot.read-block.calls')).toBe(false);
+  expect(metrics.has('snapshot.write-block.calls')).toBe(false);
+  expect(metrics.get('snapshot.write-index.calls')).toBe(1);
+  expect(metrics.get('snapshot.write-index.bytes')).toBe(
+    statSync(store.path).size,
+  );
+  expect(metrics.get('snapshot.write.calls')).toBe(1);
   const stable = readFileSync(store.path);
   const failing = new AnalysisCacheStore(f.options);
   failing.read({ restore: false });
   const cache = f.cache();
   mkdirSync(f.file('input'));
   writeFileSync(f.file('input', 'file'), 'before');
-  const input = cache.inputs.observe(f.file('input', 'file'), 'content');
-  cache.graphs.fixture = {
-    workspaceVersion: 'fixture',
-    queryIds: [],
-    contextIds: [],
-    vueContextIds: [],
-    dependencies: [input],
-    discovery: [],
-    data: ['null'],
-  };
+  const file = f.file('input', 'file');
+  const discovery = f.file('workspace.json');
+  writeFileSync(discovery, '{"projects":["input"]}');
+  cache.epoch.run(() => {
+    readAnalysisInput(
+      file,
+      () => cache.inputs.sourceDigest(file),
+      'source-digest',
+    );
+    readAnalysisInput(discovery, () => readFileSync(discovery, 'utf8'));
+  });
   const originalBlocks = readdirSync(path.dirname(target)).length;
   await expect(
     failing.publish(cache, () => {
       if (readdirSync(path.dirname(target)).length > originalBlocks)
-        throw new Error('publication interrupted');
+        writeFileSync(discovery, '{"projects":["input", "new"]}');
+      return cache.epoch.assertStable();
     }),
-  ).rejects.toThrow('publication interrupted');
+  ).rejects.toThrow(`Analysis input changed during analysis: ${discovery}`);
   expect(readFileSync(store.path)).toEqual(stable);
   expect(
     parseAnalysisSnapshot(readStoredAnalysisSnapshot(store.path), 'fixture'),

@@ -9,15 +9,21 @@ import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import {
+  AnalysisObserver,
+  runWithProfile,
+} from '../application/analysis/observability';
+import {
   TYPE_EVIDENCE_METRIC_NAMES,
   TypeEvidenceCore,
   type TypeEvidenceCoreOptions,
 } from '../core/type-evidence';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
+import { withAnalysisProfileMetrics } from '../preflight/profile-metrics';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import {
   type AnalysisMetricAggregate,
-  createProfilingMetricsRecorder,
-} from '../profiling/metrics';
+  createTestMetricsRecorder,
+} from './helpers/metrics';
 import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { toPortablePath } from './helpers/path';
 
@@ -106,8 +112,19 @@ describe('module resolution profiling instrumentation', () => {
         'src/target.ts',
         'export const target = true;\n',
       );
-      const metrics = createProfilingMetricsRecorder();
-      const context = createImportAnalysisContext({ metrics });
+      const metrics = createTestMetricsRecorder();
+      const observer = new AnalysisObserver('resolver', performance.now());
+      const context = runWithProfile(observer, () =>
+        createImportAnalysisContext({
+          metrics: withAnalysisProfileMetrics({
+            config: withFixtureGovernanceRoot({
+              configPath,
+              rootDir: rootDirectory,
+            }),
+            metrics,
+          }).metrics,
+        }),
+      );
       const compilerOptions: ts.CompilerOptions = {};
       const resolverContext = {
         checkerPresets: ['tsc', 'tsgo'],
@@ -170,6 +187,21 @@ describe('module resolution profiling instrumentation', () => {
       expect(metricCount(snapshot, 'internal-import-resolution')).toBe(2);
       expect(metricCount(snapshot, 'import-resolution-cache-miss')).toBe(1);
       expect(metricCount(snapshot, 'import-resolution-cache-hit')).toBe(1);
+      const counters = Object.fromEntries(
+        observer.snapshot().metrics.map(({ key, value }) => [key, value]),
+      );
+      expect(counters).toMatchObject({
+        'module-resolution-request.typescript.calls': 1,
+        'module-resolution-request.oxc.calls': 2,
+        'module-resolution-request.internal-import.calls': 2,
+        'module-resolution-index-miss.typescript.calls': 1,
+        'module-resolution-index-hit.oxc.calls': 1,
+        'module-resolution-index-hit.internal-import.calls': 1,
+        'typescript-resolution.calls': 1,
+        'typescript-resolution.directory-cache-miss.calls': 1,
+        'oxc-resolution.calls': 1,
+        'oxc-resolver-factory-create.calls': 1,
+      });
     } finally {
       await rm(rootDirectory, { force: true, recursive: true });
     }
@@ -192,12 +224,17 @@ describe('module resolution profiling instrumentation', () => {
         'src/index.ts',
         "import './target';\n",
       );
+      const sibling = await writeText(
+        rootDirectory,
+        'src/sibling.ts',
+        "import './target';\n",
+      );
       await writeText(
         rootDirectory,
         'src/target.ts',
         'export const target = true;\n',
       );
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const context = createImportAnalysisContext({ metrics });
       const compilerOptions: ts.CompilerOptions = {
         moduleResolution: ts.ModuleResolutionKind.Node10,
@@ -217,22 +254,29 @@ describe('module resolution profiling instrumentation', () => {
       );
       const second = context.resolveTypeScriptImport(
         './target',
+        sibling,
+        compilerOptions,
+        resolverContext,
+      );
+      const repeated = context.resolveTypeScriptImport(
+        './target',
         containingFile,
         compilerOptions,
         resolverContext,
       );
 
       expect(second).toEqual(first);
+      expect(repeated).toEqual(first);
       const snapshot = metrics.snapshot();
-      expect(metricCount(snapshot, 'typescript-resolution')).toBe(1);
+      expect(metricCount(snapshot, 'typescript-resolution')).toBe(2);
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
       ).toBe(1);
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
-      ).toBe(0);
-      expect(metricCount(snapshot, 'module-resolution-request')).toBe(2);
-      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(1);
+      ).toBe(1);
+      expect(metricCount(snapshot, 'module-resolution-request')).toBe(3);
+      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(2);
       expect(metricCount(snapshot, 'module-resolution-index-hit')).toBe(1);
     } finally {
       await rm(rootDirectory, { force: true, recursive: true });
@@ -266,7 +310,7 @@ describe('module resolution profiling instrumentation', () => {
         'src/target.ts',
         'export const target = true;\n',
       );
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const context = createImportAnalysisContext({ metrics });
       const baseOptions: ts.CompilerOptions = {
         moduleResolution: ts.ModuleResolutionKind.Node10,
@@ -339,7 +383,7 @@ describe('module resolution profiling instrumentation', () => {
         'src/target.ts',
         'export const target = true;\n',
       );
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const compilerOptions: ts.CompilerOptions = {};
       const resolverContext = {
         checkerPresets: [],
@@ -379,7 +423,7 @@ describe('module resolution profiling instrumentation', () => {
 
 describe('type evidence profiling instrumentation', () => {
   it('registers every type-evidence metric even when all counts are zero', () => {
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const typeEvidenceMetricNames = new Set<string>(TYPE_EVIDENCE_METRIC_NAMES);
     const core = new TypeEvidenceCore({
       generation: 0,
@@ -431,7 +475,7 @@ describe('type evidence profiling instrumentation', () => {
         'src/target.ts',
         'export const value = true;\n',
       );
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const imports = createImportAnalysisContext({
         projectRootDir: rootDirectory,
       }).collectImportsFromFile(indexPath, rootDirectory);
@@ -592,7 +636,7 @@ describe('type evidence profiling instrumentation', () => {
         'src/style.d.css.ts',
         'declare const styles: string;\nexport default styles;\n',
       );
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const importAnalysis = createImportAnalysisContext({
         metrics,
         projectRootDir: rootDirectory,
@@ -654,7 +698,7 @@ describe('type evidence profiling instrumentation', () => {
         "declare module '*.css';\n",
       );
       await writeText(rootDirectory, 'src/style.css', '.root {}\n');
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const importAnalysis = createImportAnalysisContext({
         metrics,
         projectRootDir: rootDirectory,
@@ -711,7 +755,7 @@ describe('type evidence profiling instrumentation', () => {
     const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const importAnalysis = createImportAnalysisContext({
         metrics,
         projectRootDir: rootDirectory,

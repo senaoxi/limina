@@ -345,7 +345,7 @@ it('preserves native canonical spelling and missing-path results in a shared rep
   expect(await new EpochInputs().validate(inputs.snapshot()!)).toBe(true);
 });
 
-it('retains framework-only source bytes across graph restore and rejects undecodable byte changes', async () => {
+it('reuses published framework source versions and detects undecodable bytes during the current analysis', async () => {
   const f = fixture();
   const file = f.file('Widget.svelte');
   const tool = f.file('transform.cjs');
@@ -356,15 +356,17 @@ it('retains framework-only source bytes across graph restore and rejects undecod
   writeFileSync(tool, 'module.exports = {};');
   const initial = statSync(file);
   const cold = new NativeAnalysisCache('fixture', undefined, 'config');
-  cold.epoch.run(() => {
-    readAnalysisInput(
-      file,
-      () => cold.inputs.sourceDigest(file),
-      'source-digest',
-    );
-    readAnalysisFileDigest(tool);
-  });
-  cold.captureGraphRecord('graph', { workspaceVersion: 'root', value: {} });
+  const observe = (cache: NativeAnalysisCache) =>
+    cache.epoch.run(() => {
+      const version = readAnalysisInput(
+        file,
+        () => cache.inputs.sourceDigest(file),
+        'source-digest',
+      );
+      readAnalysisFileDigest(tool);
+      return version;
+    });
+  const previousVersion = observe(cold);
   const snapshot = cold.snapshot();
   snapshot.header.baselineTime = initial.mtimeMs + 1;
   const read = vi.spyOn(fs, 'readFileSync');
@@ -372,10 +374,8 @@ it('retains framework-only source bytes across graph restore and rejects undecod
   syncBuiltinESMExports();
   try {
     const warm = new NativeAnalysisCache('fixture', snapshot, 'config');
-    const candidate = warm.graphCandidate('graph', 'root')!;
-    expect(await warm.restoreGraphRecord('graph', candidate)).toBeDefined();
-    const scope = warm.epoch.selectRecords(candidate.discovery)!;
-    await scope.assertStable();
+    expect(observe(warm)).toBe(previousVersion);
+    await warm.epoch.assertStable();
     expect(warm.metrics.contentHashes).toBe(0);
     expect(read.mock.calls.some(([name]) => name === file)).toBe(false);
     expect(open.mock.calls.some(([name]) => name === file)).toBe(
@@ -385,11 +385,11 @@ it('retains framework-only source bytes across graph restore and rejects undecod
 
     writeFileSync(file, after);
     utimesSync(file, initial.atime, initial.mtime);
-    await expect(scope.assertStable()).rejects.toThrow(/changed|drift/u);
+    await expect(warm.epoch.assertStable()).rejects.toThrow(/changed|drift/u);
     utimesSync(file, initial.atime, new Date(initial.mtimeMs + 2000));
     const changed = new NativeAnalysisCache('fixture', snapshot, 'config');
+    expect(observe(changed)).not.toBe(previousVersion);
     expect(changed.metrics.contentHashes).toBe(1);
-    expect(changed.graphCandidate('graph', 'root')).toBeUndefined();
   } finally {
     read.mockRestore();
     open.mockRestore();
@@ -397,7 +397,7 @@ it('retains framework-only source bytes across graph restore and rejects undecod
   }
 });
 
-it('retains only consumed framework sources when a managed view publishes no ordinary graph', () => {
+it('retires framework source inputs the current analysis no longer consumes', () => {
   const f = fixture();
   const active = f.file('active.svelte');
   const retired = f.file('retired.svelte');
@@ -416,12 +416,10 @@ it('retains only consumed framework sources when a managed view publishes no ord
   const snapshot = cold.snapshot();
   snapshot.header.baselineTime =
     Math.max(statSync(active).mtimeMs, statSync(retired).mtimeMs) + 1;
-  expect(snapshot.graphs).toEqual({});
   const warm = new NativeAnalysisCache('fixture', snapshot, 'config');
   consume(warm, active);
   expect(warm.metrics.contentHashes).toBe(0);
-  // An opaque live observation can prevent graph publication without retiring
-  // the separately validated, consumed component.
+  // Nonserializable invocation observations still protect publication.
   warm.epoch.run(() =>
     observeAnalysisRead({
       path: active,

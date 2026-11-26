@@ -154,6 +154,7 @@ function isProcessOrdinaryPackageScope(options: {
 }
 
 export async function isAddPackageDescriptor(options: {
+  workspaceBoundary: boolean;
   context: IslandWalkContext;
   directory: string;
   isOwnerRoot: boolean;
@@ -170,7 +171,7 @@ export async function isAddPackageDescriptor(options: {
       rootDir: options.directory,
     }),
   );
-  if (options.isOwnerRoot) return false;
+  if (options.isOwnerRoot || options.workspaceBoundary) return false;
   return isProcessNestedPackageScope({
     context: options.context,
     directory: options.directory,

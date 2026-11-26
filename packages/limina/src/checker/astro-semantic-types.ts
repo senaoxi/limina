@@ -7,6 +7,7 @@ export interface AstroSemanticVersionTuple {
   compiler: string;
   languageCore: string;
   languageServer: string;
+  kitTypeScript?: string;
   leafTypeScript: string;
   typeScript: string;
   volarKit: string;
@@ -29,6 +30,7 @@ export interface AstroSemanticToolchainPaths {
   compiler: string;
   languageCore: string;
   languageServer: string;
+  kitTypeScript?: string;
   leafTypeScript: string;
   typeScript: string;
   volarKit: string;
@@ -184,6 +186,8 @@ export interface AstroSemanticToolchain {
 }
 
 export interface LoadedAstroSemanticToolchain extends AstroSemanticToolchain {
+  paths: AstroSemanticToolchainPaths & { kitTypeScript: string };
+  versions: AstroSemanticVersionTuple & { kitTypeScript: string };
   runtimeModules: { specifier: string; file: string }[];
 }
 
@@ -197,8 +201,8 @@ export interface AstroSemanticSeed {
 }
 
 export interface AstroConfigClosureEntry {
-  contentHash: string;
-  filePath: string;
+  readonly contentHash: string;
+  readonly filePath: string;
 }
 
 export interface AstroSemanticProjectSnapshot {
@@ -219,7 +223,9 @@ export interface AstroSemanticProjectSnapshotInput
 
 export interface AstroSemanticProject {
   seed: AstroSemanticSeed;
-  readSnapshot(): AstroSemanticProjectSnapshotInput;
+  readSnapshot(
+    toolchain: AstroSemanticToolchain,
+  ): AstroSemanticProjectSnapshotInput;
 }
 
 export interface AstroMaterializedProject {

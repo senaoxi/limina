@@ -17,7 +17,11 @@ function assertConfigClosureEntryCompatible(
   existing: CheckerConfigClosureEntry | undefined,
   entry: CheckerConfigClosureEntry,
 ): void {
-  if (existing === undefined || existing.contentHash === entry.contentHash)
+  if (
+    existing === undefined ||
+    existing === entry ||
+    existing.contentHash === entry.contentHash
+  )
     return;
   throw new Error(
     `Checker parsers observed conflicting config content for ${entry.filePath}.`,
@@ -32,7 +36,7 @@ function mergeConfigClosure(
   for (const entry of configClosure) {
     const existing = entries.get(entry.filePath);
     assertConfigClosureEntryCompatible(existing, entry);
-    entries.set(entry.filePath, { ...entry });
+    entries.set(entry.filePath, entry);
   }
   return entries
     .values()
@@ -95,6 +99,7 @@ function mergeParsedProjectConfigs(options: {
   return {
     configClosure: mergeConfigClosure(options.parsedConfigs),
     configuredVueExtensions: firstConfig.configuredVueExtensions,
+    rootSelectors: firstConfig.rootSelectors,
     extensions: normalizeExtensions([
       ...options.extensions,
       ...options.parsedConfigs.flatMap((config) => config.extensions),
@@ -111,6 +116,7 @@ function mergeParsedProjectConfigs(options: {
 }
 
 function parseWithPreset(options: {
+  bindVueSourceConfig?: CheckerProjectParseContext['bindVueSourceConfig'];
   allowNoInputDiagnostics?: boolean;
   configPath: string;
   extensions: string[];
@@ -125,6 +131,7 @@ function parseWithPreset(options: {
     throw new Error(`Checker preset "${options.preset}" is not supported.`);
   }
   return adapter.parseProjectConfig({
+    bindVueSourceConfig: options.bindVueSourceConfig,
     allowNoInputDiagnostics: options.allowNoInputDiagnostics,
     configPath: options.configPath,
     extensions: options.extensions,
@@ -146,6 +153,7 @@ function parseContextConfigs(options: {
 }): ParsedCheckerProjectConfig[] {
   return options.checkerPresets.map((preset) =>
     parseWithPreset({
+      bindVueSourceConfig: options.context.bindVueSourceConfig,
       allowNoInputDiagnostics: options.allowNoInputDiagnostics,
       configPath: options.configPath,
       extensions: options.context.extensions,
@@ -212,9 +220,12 @@ function resolveCachedProjectConfig(options: {
   generation: number;
   virtualFiles?: ReadonlyMap<string, string>;
 }): ParsedCheckerProjectConfig {
-  return options.cached === undefined
-    ? resolveCacheMiss(options)
-    : options.cached;
+  if (options.cached === undefined) return resolveCacheMiss(options);
+  if (options.cached.vueSemanticIdentity !== undefined)
+    options.context.bindVueSourceConfig?.(
+      options.cached.vueSemanticIdentity.toolchain,
+    );
+  return options.cached;
 }
 
 function resolveParsedProjectConfig(options: {

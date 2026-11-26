@@ -346,7 +346,10 @@ export class AstroSemanticContextManager {
       observer,
       'astro-context-create',
       () => {
-        const materializedProject = materializeAstroSemanticProject(project);
+        const materializedProject = materializeAstroSemanticProject(
+          project,
+          toolchain,
+        );
         this.#disposeActive();
         return new AstroSemanticContext({
           project: materializedProject,

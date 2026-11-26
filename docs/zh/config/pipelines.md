@@ -119,7 +119,7 @@ Configure the pipeline in the Limina config under `pipelines.lint`.
 }
 ```
 
-例如，某次改动让源码出现跨包相对导入：
+例如，项目已启用 `source.forbidCrossPackageRelativeImports`，某次改动让源码出现了跨包相对导入：
 
 ```ts
 // packages/app/src/main.ts

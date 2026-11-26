@@ -2119,13 +2119,17 @@ describe('runBuild', () => {
   });
 
   it('does not copy rootDir-external or node_modules declaration inputs', async () => {
-    const calls: TypecheckTarget[] = [];
     const warnSpy = vi
       .spyOn(TypecheckLogger, 'warn')
       .mockImplementation(() => {});
     const fixture = await createFixture({
-      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/src/index.ts':
+        'export const value: typeof dependencyValue = 1;\n',
       'packages/pkg/types/client.d.ts': 'declare const clientValue: 1;\n',
+      'packages/pkg/node_modules/pkg/package.json': JSON.stringify({
+        name: 'pkg',
+        types: './client.d.ts',
+      }),
       'packages/pkg/node_modules/pkg/client.d.ts':
         'declare const dependencyValue: 1;\n',
       'packages/pkg/tsconfig.json': tsconfig({
@@ -2137,11 +2141,7 @@ describe('runBuild', () => {
         ],
       }),
       'packages/pkg/tsconfig.lib.json': tsconfig({
-        files: [
-          'src/index.ts',
-          'types/client.d.ts',
-          'node_modules/pkg/client.d.ts',
-        ],
+        files: ['src/index.ts', 'types/client.d.ts'],
         liminaOptions: {
           outputs: {
             outDir: './dist',
@@ -2153,7 +2153,7 @@ describe('runBuild', () => {
           moduleResolution: 'bundler',
           strict: true,
           target: 'ES2023',
-          types: [],
+          types: ['pkg'],
         },
       }),
     });
@@ -2173,7 +2173,7 @@ describe('runBuild', () => {
         }),
         configPath: 'packages/pkg/tsconfig.lib.json',
         cwd: fixture.rootDir,
-        runner: passingRunner(calls),
+        runner: passingRunner(),
       });
 
       expect(result.passed).toBe(true);

@@ -1,17 +1,16 @@
 {
-  "scope": "Qualified adoption on reopen and cooperative publication (I09–I11). Internal epoch returns belong to EpochValidation.",
+  "scope": "Qualified adoption of semantic facts and parsed source config projections on reopen, and cooperative publication (I09–I11). Internal epoch returns belong to EpochValidation.",
   "sourceMapping": {
+    "packages/limina/src/core/analysis-cache/physical-entry.ts": "physicalEntry",
+    "packages/limina/src/core/analysis-cache/package-scopes.ts": "invalidatedPackageConfigs",
+    "packages/limina/src/core/analysis-cache/resolution-queries.ts": "class ResolutionQueries",
     "packages/limina/src/preflight/analysis-cache.ts": "#refreshedCache",
     "packages/limina/src/preflight/analysis-cache-store.ts": "physicalRevision",
-    "packages/limina/src/core/build-graph/cached-graph-binding.ts": "bindCachedGraph",
-    "packages/limina/src/core/build-graph/cached-ownership-replay.ts": "hasCurrentOwnership",
-    "packages/limina/src/core/build-graph/analysis-cache.ts": "generated-graph-declaration-governance",
-    "packages/limina/src/core/build-graph/cached-reference-reconstruction.ts": "hasBoundCachedReferences",
     "verification/formal/evidence/managed-cache/replay.mjs": "runImplementationReplay('managed-cache')",
     "verification/formal/run-implementation.mjs": "spawnSync",
     "packages/limina/integration/formal/managed-cache.mjs": "writeStoredAnalysisSnapshot",
     "packages/limina/src/__tests__/analysis-cache-shards.spec.ts": "publishes the index last",
-    "packages/limina/src/__tests__/full-analysis-cache.spec.ts": "consistent-reference-removal",
+    "packages/limina/src/__tests__/full-analysis-cache.spec.ts": "recollects %s from the real store",
     ".agents/docs/lifecycle.md": "Execution",
     ".agents/docs/invariants.md": "I09",
     "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/limina.config.mts": "deny:",
@@ -19,15 +18,32 @@
     "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/tsconfig.json": "references",
     "packages/limina/src/preflight/analysis-cache-decode.ts": "AnalysisSnapshotDecoder",
     "packages/limina/src/preflight/analysis-cache-tools.ts": "AnalysisToolObservation",
-    "pnpm-workspace.yaml": "typescript:"
+    "pnpm-workspace.yaml": "typescript:",
+    "packages/limina/src/core/analysis-cache/context-records.ts": "#restoreNew",
+    "packages/limina/src/core/analysis-cache/context-environment.ts": "currentContextReads",
+    "packages/limina/src/core/analysis-cache/data-codec.ts": "decodeData",
+    "packages/limina/src/core/analysis-cache/source-config-projection.ts": "SourceConfigProjectionCache",
+    "packages/limina/src/core/analysis-cache/invocation-config-reads.ts": "this.#projections?.restore",
+    "packages/limina/src/core/build-graph/framework-source-authority.ts": "bindVueSourceConfig",
+    "packages/limina/src/core/analysis-cache/vue-toolchain-inputs.ts": "observeVueTools",
+    "packages/limina/src/checker/project-base.ts": "canReuseConfigProjection",
+    "packages/limina/src/checker/resolved-config.ts": "restoreResolvedConfig",
+    "packages/limina/src/checker/vue-semantic-compatibility.ts": "isVueCacheTuple",
+    "packages/limina/src/checker/vue-semantic-identity.ts": "parseVueSourceConfig",
+    "packages/limina/src/core/build-graph/locked-semantic-project.ts": "freezeSemanticProject",
+    "packages/limina/src/__tests__/source-config-projection.spec.ts": "a fresh compiler AST",
+    "packages/limina/src/__tests__/vue-analysis-cache.spec.ts": "keeps the selected Vue module when a lower-priority declaration sibling appears",
+    "packages/limina/integration/tests/analysis-observation.spec.ts": "attributes Vue output projection work and cache adoption to the source project",
+    "packages/limina/src/core/analysis-cache/bounded-context-validity.ts": "hasValidBoundedContext",
+    "packages/limina/src/core/build-graph/prepare.ts": "prepareGraph"
   },
   "stateVariables": {
     "writer,lease": "Per-controller read baseline, observed input, phase, retry and cooperative writer lease.",
     "input,disk,blocks": "Input content version, physical index identity and staged payloads.",
-    "reader,adopted": "One reopened reader; snapshot of qualification at adoption.",
+    "reader,adopted": "One reopened reader; independent semantic fact and parsed-config adoption, with the qualifications observed on reopen.",
     "lastCommit": "Baseline, live bytes, input and block existence at commit."
   },
-  "initialState": "Arbitrary previous envelope in valid storage with independently valid/invalid content, owner evidence and reference binding.",
+  "initialState": "Arbitrary previous envelope in valid storage with independently valid or invalid content, semantic context, request inventory and parsed-config qualification.",
   "actions": {
     "Open": "packages/limina/src/preflight/analysis-cache-store.ts::physicalRevision(bytes)",
     "Acquire": "packages/limina/src/preflight/analysis-cache-store.ts::#publishChanged",
@@ -37,15 +53,17 @@
     "Finish": "packages/limina/src/preflight/analysis-cache-store.ts::async publish",
     "Retry": "packages/limina/src/preflight/analysis-cache.ts::operations.refresh()",
     "Drift": "packages/limina/src/preflight/analysis-cache.ts::AnalysisInputDriftError",
-    "Reopen": "packages/limina/src/core/build-graph/cached-graph-binding.ts::bindCachedGraph"
+    "ReplayConfig": "packages/limina/src/core/analysis-cache/source-config-projection.ts::#restoreRecord",
+    "Reopen": "packages/limina/src/core/analysis-cache/context-records.ts::#restoreNew"
   },
-  "assumptions": "Physical digests abstracted to unique revisions (no ABA); immutable blocks, cooperating writers only. Owner and reference evidence are independent predicates; no OS atomicity or decoder proof.",
+  "assumptions": "Physical digests are unique revisions, blocks are immutable, and writers cooperate. Context qualification, request inventory completeness and parsed-config replay are separate predicates. The config predicate includes the current parse request identity, semantic authority, package scope and the parser's observed inputs. For eligible Vue sources, the request includes the current Vue options, their config reads and the extension inputs to the TypeScript parser. Qualification also compares the raw-byte digests of config files read by Vue metadata resolution or the TypeScript parse. The oracle supplies filesystem, decoder and compiler facts, including live Vue metadata and current toolchain observations. The model checks each adoption against its own observation. A fresh parse may independently re-establish compatibility with semantic facts. A Vue directory enumeration can change while TypeScript still selects the same roots. Later generation and publication checks own use after an observation.",
   "safety": {
-    "CurrentAdoption": "Restored graph qualifies against the reader observation.",
+    "CurrentAdoption": "Restored semantic facts qualify against the reader observation.",
+    "CurrentConfigAdoption": "A restored parsed-config projection qualifies independently against the current selection, parser and observed inputs.",
     "PhysicalCAS": "Old baseline cannot replace a competitor index.",
     "CurrentCommit": "Commit at matching input with write permission.",
     "IndexLast": "All indexed blocks exist at commit.",
-    "NoPublishedHit": "Reachability control for warm use of a newly published graph."
+    "NoPublishedHit": "Reachability control for warm use of newly published facts."
   },
   "liveness": "None: no caller or external-process completion guarantee.",
   "fairness": "None; terminal stuttering represents quiescence only.",
@@ -78,6 +96,10 @@
       "breaks": ["CurrentAdoption"],
       "stable": true
     },
+    "mutation-trust-config.cfg": {
+      "breaks": ["CurrentConfigAdoption"],
+      "stable": true
+    },
     "readonly.cfg": {
       "breaks": [],
       "stable": false
@@ -93,14 +115,14 @@
   },
   "bounds": {
     "maxStates": 100000,
-    "dimensions": "1–2 writers, 2 input versions, 8 seed envelopes, 1 reader, 1 retry per writer.",
+    "dimensions": "1–2 writers, 2 input versions, 16 seed envelopes, 1 reader, 1 retry per writer.",
     "pruning": "None: no state/action constraints, symmetry or view filtering."
   },
   "counterexamples": "Mutants discard one independent qualification. Physical faults outside cooperative lease and process crashes are not covered.",
-  "empiricalVerification": "Run evidence/managed-cache/replay.mjs and analysis-cache-{lifecycle,shards}, full-analysis-cache.",
+  "empiricalVerification": "Run evidence/managed-cache/replay.mjs, analysis-cache-{lifecycle,shards}, full-analysis-cache, and source-config-projection for current parser observation and fallback behavior. Run the Vue cases in analysis-observation.spec.ts for fresh-process source parse adoption, separate Vue output observation, and fallback when equal-size, equal-mtime inputs change. Run vue-analysis-cache.spec.ts for independent semantic context qualification after a lower-priority sibling appears, and for newly present preferred candidates that change resolution.",
   "driftReview": {
-    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
-    "sourceHash": "5e9105fda4ec3758a5cdd01e5b35bc856a163eaf281bae1549944f0ed2416876",
-    "modelHash": "52c897881003dd6acf31f87241e6f6c2c681499311c4a77c76ab417fa361a5a9"
+    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
+    "sourceHash": "698ee21dc3061a8db9325524ba5be66c94907bf4df591ea635f5f4976625121a",
+    "modelHash": "3e22618c6beb2ea19306f7739aa183174e11cc8eadaf5deb1abfb00272696cc3"
   }
 }

@@ -10,7 +10,10 @@ import type {
   LiminaDependencyFailureKind,
   LiminaDependencyOwnership,
 } from '../dependency-contract';
-import type { VueProjectSemanticIdentity } from './vue-semantic-types';
+import type {
+  VueProjectSemanticIdentity,
+  VueSemanticToolchain,
+} from './vue-semantic-types';
 
 export interface CheckerCommandTarget {
   args: string[];
@@ -27,7 +30,12 @@ export interface CheckerCommandTargetOptions {
   watch?: boolean;
 }
 
+export type BindVueSourceConfig = (
+  toolchain: VueSemanticToolchain,
+) => string | undefined;
+
 export interface CheckerProjectConfigParseOptions {
+  bindVueSourceConfig?: BindVueSourceConfig;
   allowNoInputDiagnostics?: boolean;
   configPath: string;
   extensions?: string[];
@@ -38,11 +46,14 @@ export interface CheckerProjectConfigParseOptions {
 }
 
 export interface CheckerConfigClosureEntry {
-  contentHash: string;
-  filePath: string;
+  readonly contentHash: string;
+  readonly filePath: string;
 }
 
+export type ConfigRootSelector = Parameters<typeof ts.sys.readDirectory>;
+
 export interface ParsedCheckerProjectConfig {
+  rootSelectors?: readonly ConfigRootSelector[];
   configuredVueExtensions?: string[];
   configClosure: CheckerConfigClosureEntry[];
   extensions: string[];
@@ -53,6 +64,7 @@ export interface ParsedCheckerProjectConfig {
 }
 
 export interface CheckerProjectParseContext {
+  bindVueSourceConfig?: BindVueSourceConfig;
   checkerPresets: CheckerPreset[];
   extensions: string[];
   vueSemanticIdentity?: VueProjectSemanticIdentity;

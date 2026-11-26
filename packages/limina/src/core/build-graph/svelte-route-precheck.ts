@@ -1,14 +1,17 @@
-import { CheckerProjectConfigCache } from '#checkers';
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
+import path from 'pathe';
+import ts from 'typescript';
+import { createProjectParseHost } from '../../checker/project-base';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import type { SourceConfigCandidate } from './auto-checker-types';
 import { applyConfigEvidence } from './checker-ownership-config-evidence';
 import { resolveOwnershipEntries } from './checker-ownership-entries';
 import { applyExplicitRequirements } from './checker-ownership-evidence';
 import {
   collectOwnershipScopes,
+  createCandidateByConfigPath,
   createDirectSolutionReferences,
   createOwnershipPlan,
-  createProjectByConfigPath,
 } from './checker-ownership-graph';
 import type { AutoScope, ResolvedCheckerEntrySelection } from './types';
 
@@ -35,6 +38,31 @@ function hasSvelteSeed(scope: AutoScope): boolean {
   );
 }
 
+function hasMissingRelativeExtends(
+  candidates: Iterable<SourceConfigCandidate>,
+  virtualFiles: ResolvedLiminaInputs['virtualFiles'],
+): boolean {
+  const { fileExists } = createProjectParseHost(virtualFiles);
+  for (const { configObject, configPath } of candidates) {
+    const value = configObject.extends;
+    const specifiers = Array.isArray(value) ? value : [value];
+    for (const specifier of specifiers) {
+      if (
+        typeof specifier !== 'string' ||
+        !ts.isExternalModuleNameRelative(specifier)
+      )
+        continue;
+      const base = path.resolve(path.dirname(configPath), specifier);
+      if (
+        !fileExists(base) &&
+        (base.endsWith('.json') || !fileExists(`${base}.json`))
+      )
+        return true;
+    }
+  }
+  return false;
+}
+
 /**
 Only excludes Svelte routing; it grants no graph or execution authority.
 Dependency propagation cannot create a first Svelte owner without a local seed.
@@ -43,7 +71,6 @@ Any incomplete or conflicting discovery stays with the full ownership resolver.
 export async function canExcludeSvelteProjects(options: {
   config: ResolvedLiminaInputs;
   activatedRegions: WorkspaceRegionPathIndex;
-  generation: number;
   workspaceSourceConfigPaths: readonly string[];
 }): Promise<boolean> {
   try {
@@ -56,13 +83,8 @@ export async function canExcludeSvelteProjects(options: {
     const explicitOwnerByEntryPath = collectExplicitOwners(namedSelections);
     if (explicitOwnerByEntryPath === undefined) return false;
     const problems: string[] = [];
-    // Route discovery must not cache file membership for authoritative analysis.
-    const projectConfigCache = new CheckerProjectConfigCache(
-      options.generation,
-    );
     const scopes = collectOwnershipScopes({
       ...options,
-      projectConfigCache,
       entryConfigPaths: activeEntryPaths,
       explicitOwnerByEntryPath,
       onProblems: (items) => {
@@ -70,10 +92,17 @@ export async function canExcludeSvelteProjects(options: {
       },
     });
     if (problems.length > 0 || scopes.some(hasSvelteSeed)) return false;
-    const projectByConfigPath = createProjectByConfigPath(scopes);
+    const candidates = createCandidateByConfigPath(scopes);
+    if (
+      hasMissingRelativeExtends(
+        candidates.values(),
+        options.config.virtualFiles,
+      )
+    )
+      return false;
     const plan = createOwnershipPlan({
       directReferences: createDirectSolutionReferences(scopes),
-      projectByConfigPath,
+      candidates,
     });
     for (const { checker, selection } of namedSelections) {
       const entryOwners = new Map(

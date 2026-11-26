@@ -225,7 +225,8 @@ function promoteModule(
   file: Omit<ConfigModuleFile, 'contentHash'>,
   role: ConfigModuleFile['role'],
 ): void {
-  if (role === 'module') file.role = role;
+  if (role === 'module' || (role === 'dependency' && file.role === 'anchor'))
+    file.role = role;
 }
 function nullableFormat(format: string | null | undefined): string | null {
   return format ?? null;

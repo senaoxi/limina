@@ -62,6 +62,7 @@ it.each([false, true])(
         options: parsed.options,
         references: new Set(),
         resolverConfigPath: fixture.path('tsconfig.json'),
+        resolverProjectReferences: [],
       };
       const record = core
         .getTypeScriptSemanticContext({ checkerName: 'tsc', project })
@@ -147,6 +148,7 @@ it.each([
         options: parsed.options,
         references: new Set(),
         resolverConfigPath: fixture.path('tsconfig.json'),
+        resolverProjectReferences: [],
       };
       const record = core
         .getTypeScriptSemanticContext({ checkerName: 'tsc', project })

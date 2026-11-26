@@ -3,7 +3,7 @@ import { NativeObservationError } from './native-observation-failure';
 
 interface LibraryApi {
   getLibFileNameFromLibReference?(
-    reference: ts.FileReference,
+    reference: Pick<ts.FileReference, 'fileName'>,
   ): string | undefined;
   libMap: ReadonlyMap<string, string>;
   toFileNameLowerCase(name: string): string;
@@ -21,7 +21,7 @@ export function nativeLibraryFileNames(compiler: typeof ts): string[] {
 
 export function nativeLibraryFileName(
   compiler: typeof ts,
-  reference: ts.FileReference,
+  reference: Pick<ts.FileReference, 'fileName'>,
 ): string | undefined {
   const api = compiler as unknown as LibraryApi;
   if (/^5\.[4-7]\./.test(compiler.version))
@@ -34,7 +34,10 @@ export function nativeLibraryFileName(
   return api.getLibFileNameFromLibReference(reference);
 }
 
-function legacyLibraryFileName(api: LibraryApi, reference: ts.FileReference) {
+function legacyLibraryFileName(
+  api: LibraryApi,
+  reference: Pick<ts.FileReference, 'fileName'>,
+) {
   if (
     !(api.libMap instanceof Map) ||
     typeof api.toFileNameLowerCase !== 'function'

@@ -1,20 +1,17 @@
-import type { CheckerName } from '#config/runner';
 import type { AnalysisReadDescriptor } from '#utils/analysis-input';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
-import type { TypeConfigOwnershipState } from '../build-graph/checker-ownership-types';
+import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-types';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import type { DeclarationEntry } from '../typescript-semantic/declaration-closure';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
 import type { FileDependencyFacts } from '../typescript-semantic/file-dependency-facts';
 import type { NativeContextInventory } from '../typescript-semantic/native-context-inventory';
-import type { DataNode } from './data-codec';
-import type { TypeEnvironmentRecord } from './installation-environment';
+import type { TypeEnvironmentRecord } from './type-environment';
 import type { VueContextRecord } from './vue-contracts';
 
-// Compiler occurrence/load receipts qualify restored projections.
-export const ANALYSIS_ADAPTER = 'config-ownership-v33';
-export const ANALYSIS_SCHEMA = 15;
+export const ANALYSIS_ADAPTER = 'analysis-facts-v1';
+export const ANALYSIS_SCHEMA = 18;
 
 export interface InputDependency {
   inputId: string;
@@ -31,6 +28,9 @@ export type InputKind =
   | 'entries'
   | 'realpath'
   | 'binding'
+  | 'manifest'
+  | 'type-packages'
+  | 'directory-identity'
   | 'tree'
   | 'bytes';
 
@@ -40,7 +40,6 @@ export interface AnalysisInput {
   version: string;
   contentStamp?: string;
   textVersions?: { utf8: string; typescript?: string };
-  installedTargets?: string[];
 }
 
 export interface ResolutionRecord {
@@ -71,19 +70,6 @@ export interface ProjectRecord {
   members: string[];
   environment: string[];
   references: unknown;
-}
-
-export interface ReferenceContribution {
-  occurrence:
-    | ImportRecord
-    | { filePath: string; policy: 'declaration-context'; requestIds: string[] };
-  basis?: { kind: 'declaration-context'; evidence: string };
-  sourceVersion: string;
-  fromChecker: string;
-  toChecker: string;
-  fromConfigPath: string;
-  toConfigPath: string;
-  kind: string;
 }
 
 export interface NativeContextRecord {
@@ -133,31 +119,21 @@ export interface DiscoveryRecord {
   configStamp?: string;
 }
 
-export interface ResolvedConfigRecord {
-  configPath: string;
-  context: string;
-  discovery: DiscoveryRecord[];
-  payload: string;
-  fingerprint: string;
+export interface SourceConfigAuthority
+  extends Omit<LockedSemanticAuthority, 'kind'> {
+  provider: string;
+  toolchain: string;
 }
 
-export interface AuthorityRecord {
-  policy: number;
-  projection: string;
-  closure: string[];
-  seed: TypeConfigOwnershipState;
-  ambiguousCheckers: CheckerName[];
-  fingerprint: string;
+export interface SourceConfigProjectionRecord {
+  data: string;
+  reads: DiscoveryRecord[];
+  integrity: string;
 }
 
-export interface GraphRecord {
-  workspaceVersion: string;
-  queryIds: string[];
-  contextIds: string[];
-  vueContextIds: string[];
-  dependencies: InputDependency[];
-  discovery: DiscoveryRecord[];
-  data: DataNode;
+export interface SourceConfigRecord {
+  authority: SourceConfigAuthority;
+  projections: Record<string, SourceConfigProjectionRecord>;
 }
 
 export interface ConfigModuleFile {
@@ -207,16 +183,16 @@ export interface ConfigModuleSnapshot {
   otherUnknownReasons: string[];
 }
 
-export interface InstallationReceipt {
-  root: string;
-  configPath: string;
-  kind: 'project' | 'environment' | 'location';
-  installationRoot: string;
-  binding?: string;
-  manager: string;
-  lockRoot: string;
-  resolutionRoot: string;
-  locks: [path: string, hash: string, binding: string][];
+export interface PackageScopeSnapshot {
+  manifests: Record<
+    string,
+    {
+      directory: string;
+      role: 'active' | 'extended' | 'boundary';
+      version: string;
+    }
+  >;
+  configs: Record<string, { scope: string; role: 'source' | 'solution' }>;
 }
 
 export interface AnalysisSnapshot {
@@ -227,20 +203,17 @@ export interface AnalysisSnapshot {
     configVersion: string | null;
     revision: string;
     baselineTime?: number;
-    installations?: InstallationReceipt[];
+    packageScopes: PackageScopeSnapshot;
   };
   configModules: ConfigModuleSnapshot;
-  authorities: Record<string, AuthorityRecord>;
-  resolvedConfigs: Record<string, ResolvedConfigRecord>;
   inputs: Record<string, AnalysisInput>;
   queries: Record<string, ResolutionRecord>;
   importers: Record<string, ImporterRecord>;
   files: Record<string, FileDependencyFacts>;
   projects: Record<string, ProjectRecord>;
-  contributions: Record<string, ReferenceContribution[]>;
   contexts: Record<string, NativeContextRecord>;
   vueContexts: Record<string, VueContextRecord>;
-  graphs: Record<string, GraphRecord>;
+  sourceConfigs: Record<string, SourceConfigRecord>;
 }
 
 export interface AnalysisCacheMetrics extends Record<string, number> {

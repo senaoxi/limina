@@ -15,7 +15,7 @@ import type {
 } from './contracts';
 import { createPreparedDependencyEvidence } from './evidence';
 import { createProjectDependencyFailure } from './failure';
-import { isTypeScriptSemanticSource } from './source-evidence';
+import { isNativeProjectDependencyTarget } from './source-evidence';
 
 export { collectProjectDependencyRecord } from './direct-dependency-record';
 
@@ -29,13 +29,6 @@ function getTargetKind(
   resolvedFilePath: string,
 ): ProjectDependency['targetKind'] {
   return isDeclarationFile(resolvedFilePath) ? 'declaration' : 'source';
-}
-
-function isNativeProjectDependencyTarget(resolvedFilePath: string): boolean {
-  return (
-    isDeclarationFile(resolvedFilePath) ||
-    isTypeScriptSemanticSource(resolvedFilePath)
-  );
 }
 
 function isFrameworkProjectTarget(options: {

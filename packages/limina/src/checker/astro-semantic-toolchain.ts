@@ -25,7 +25,7 @@ export {
   resolveAstroSemanticAdapter,
 } from './astro-semantic-compatibility';
 
-const ASTRO_SEMANTIC_SHAPE_IDENTITY = 'astro-7-check-0.9-shape-v1';
+const ASTRO_SEMANTIC_SHAPE_IDENTITY = 'astro-7-check-0.9-shape-v2';
 
 function createUnsupportedToolchainError(options: {
   ownerIdentity: string;
@@ -73,7 +73,7 @@ export function resolveAstroSemanticToolchain(
   packageRootDirectory: string,
   manifest?: PackageManifest,
 ): LoadedAstroSemanticToolchain {
-  let versions: AstroSemanticVersionTuple | undefined;
+  let versions: LoadedAstroSemanticToolchain['versions'] | undefined;
   try {
     const normalizedRoot = normalizeAbsolutePath(packageRootDirectory);
     const paths = resolveAstroSemanticToolchainPaths(normalizedRoot, manifest);

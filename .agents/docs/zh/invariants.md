@@ -23,12 +23,12 @@
 
 ## I02 — semantic authority 不随 final checker owner 改写
 
-- **Statement / Applies when**：具名 Checker 约束及有效配置中的归属意图决定语义权威。语义权威与引用推导所用的源输入一同冻结。后续执行染色、回退与最终选择都必须保留两者。
+- **Statement / Applies when**：具名 Checker 约束及源码配置的直接声明决定语义权威。分析先冻结权威，再为引用推导准备锁定的源输入。后续执行染色、回退与最终选择都必须保留两者。
 - **Problem**：为共享 declaration build 选用 Vue checker，可能错误地把原生 TS import 改为 Vue module semantics。
 - **Root cause**：解释源码与安排构建使用不同 authority，二者都曾容易被称为 owner。
 - **Enforcement / Why it works**：[归属类型](../../../packages/limina/src/core/build-graph/checker-ownership-types.ts)分别保存语义权威与执行归属。[求解流程](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts)在使用依赖事实前应用显式或从配置推导的选择。[语义权威](../../../packages/limina/src/core/build-graph/checker-semantic-authority.ts)在染色后核对冻结值。
 - **Concrete example**：`generated-graph.spec.ts` 中 TS app 导入 Vue project 的 theme TS 后可由 `vue-tsc` 构建，同时 semantic/frozen authority 保持 TypeScript。
-- **Protected property**：语义稳定，发现顺序不能在多个隐式框架中选出胜者。
+- **Protected property**：语义不随发现顺序变化。成功准备的源码配置使用锁定的源输入。委派的 TypeScript 配套上下文保留对应框架权威和独立用途。
 - **Evidence / Strength / Confidence**：[generated graph tests](../../../packages/limina/src/__tests__/generated-graph.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：freeze 是快照与校验机制，不是全对象 deep freeze；named solution 的 explicit ownership constraints 在 discovery 阶段已经存在。
 
@@ -38,7 +38,7 @@
 
 ## I03 — Importer roots、支撑准入与解析相互独立
 
-- **Statement / Applies when**：Native roots、编译器请求、物理加载、Coverage 与治理 owner 是独立事实。非 root 实现记录 Coverage 后停止；本地声明 roots 具有当前源配置成员资格时展开；外部受管声明在创建 SourceFile 前停止，仅独立候选验证可授予后续加载资格。
+- **Statement / Applies when**：完整项目根集决定成员身份和编译义务。选入 Program 的观察入口、编译器请求、物理加载、Coverage 与治理 owner 各自形成事实。非 root 实现记录 Coverage 后停止；本地声明 roots 具有当前源配置成员资格时展开；外部受管声明在创建 SourceFile 前停止，仅独立候选验证可授予后续加载资格。
 - **Problem**：手工补扫、目录豁免或抹掉真实 types/lib 会制造闭包；把 frontier stop 当失败会丢掉独立入口。
 - **Root cause**：解析、成员归属、加载和义务具有不同证明要求。
 - **Enforcement / Why it works**：[编译器 inventory](../../../packages/limina/src/core/typescript-semantic/native-program-inventory.ts)保留真实请求；[物理 frontier](../../../packages/limina/src/core/typescript-semantic/native-program-frontier.ts)在 SourceFile 创建之前执行 Coverage 决策；无完整 Program 生产回退。
@@ -105,7 +105,7 @@
 
 ## I07 — 声明 component 使用 exact checker identity
 
-最终序列化的 Project References 还必须无环，此要求独立于 Checker task 分组。[引用验证](../../../packages/limina/src/core/build-graph/reference-validation.ts)在冷生成或恢复后的物化前检查 declaration、implicit、solution、entry 与 output 关系。单个 Checker Target 不能掩盖 source-config 环；纯 scheduling SCC 保留既有执行语义。[序列化图测试](../../../packages/limina/src/__tests__/reference-validation.spec.ts)和[生产建图测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)保护该边界。
+最终序列化的 Project References 还必须无环，此要求独立于 Checker task 分组。[引用验证](../../../packages/limina/src/core/build-graph/reference-validation.ts)在每次建图物化前检查 declaration、implicit、solution、entry 与 output 关系。单个 Checker Target 不能掩盖 source-config 环；纯 scheduling SCC 保留既有执行语义。[序列化图测试](../../../packages/limina/src/__tests__/reference-validation.spec.ts)和[生产建图测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)保护该边界。
 
 - **Statement / Applies when**：成功的 declaration-provider 两端 exact checker identity 相同，`cacheReuse` 为 reusable；参与执行的 SCC 不能含内部 declaration relation，纯 framework scheduling SCC 可以执行。
 - **Problem**：不同 checker 的中间声明缓存不可仅因语义 family 相近而视作一个构建；禁止所有环又会错杀纯 framework 顺序分组。
@@ -127,7 +127,7 @@
 - **Evidence / Strength / Confidence**：[proof tests](../../../packages/limina/src/__tests__/proof.spec.ts)、[generated graph tests](../../../packages/limina/src/__tests__/generated-graph.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：配置 include/exclude/allowlist 决定证明范围；source、graph、proof 通过不证明每个外部工具、package output 或 release 检查均通过。
 
-**Source Config Coverage**：全集在解析成功之前由激活规则确定。只有当前 Compiler Path Key 相等才能关联目标与配置的实际输入；物理证据只验证该关联，不能扩大它。同键绑定冲突阻断 local/root 快捷路径；异键物理别名不能制造共享输入 ambiguity。完整 uncovered 声明保留 consumer 分析，不完整证据不能产生成功委托。[Coverage 测试](../../../packages/limina/src/__tests__/native-evidence-contract.spec.ts)、[Checker 观测](../../../packages/limina/src/__tests__/native-program-observation.spec.ts)及[图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)分别保护这些责任，包括不同 key、同 inode 的两个请求。
+**Source Config Coverage**：全集在解析成功之前由激活规则确定。已证明的 solution 从源码全集移出。角色或成员枚举不可用的访问继续保留，并限制完整性证明。只有当前 Compiler Path Key 相等才能关联目标与配置的实际输入；物理证据只验证该关联，不能扩大它。同键绑定冲突阻断 local/root 快捷路径；异键物理别名不能制造共享输入 ambiguity。完整 uncovered 声明保留 consumer 分析，不完整证据不能产生成功委托。[Coverage 测试](../../../packages/limina/src/__tests__/native-evidence-contract.spec.ts)、[Checker 观测](../../../packages/limina/src/__tests__/native-program-observation.spec.ts)及[图回归](../../../packages/limina/src/__tests__/generated-graph.spec.ts)分别保护这些责任，包括不同 key、同 inode 的两个请求。
 
 ## I09 — 事实重用与异步结果受 provider 生命周期约束
 
@@ -140,7 +140,7 @@
 - **Evidence / Strength / Confidence**：[preflight tests](../../../packages/limina/src/__tests__/preflight.spec.ts)、[context tests](../../../packages/limina/src/__tests__/typescript-semantic-context.spec.ts)；**Partially executable / Confirmed**。
 - **Boundaries**：外部复用 caches 必须尊重 lifecycle；key 没有普遍 file-content digest；manager ensure-after-dispose 没有统一 guard；Vue active slot 的共享模式另见生命周期页。
 
-**持久化分析有效性**：native importer 复用绑定事实版本、query coverage 和共享环境证据。完整 clean DTO 还在创建 Program 前校验当前 roots／admission、importer scope／mode 输入、lock 信任、本地 typeRoots 、namespace 级有效 `configVersion` 门及完整的逐文件 `configModules` 门；独立 CLI 进程之间，已知配置模块、原始解析边、绑定和已观测 loader 输出摘要必须匹配，mtime 相等信任旧 hash，mtime 不同按单文件 hash fallback。实际模块和显式声明文件共用同一证据门。未执行的动态导入不使配置失去资格；真实 incomplete 证据总触发冷分析，包括原因移除后的首次 complete 调用。严格调用内漂移仍终止执行，不重放命令。Preflight 访问策略可以关闭持久化恢复及发布，但不能关闭调用内有效性保护；调用者的读写／只读权限和 force 均不能覆盖公开配置的禁用策略。冷／dirty 分析建立当前有资格的支撑闭包；失效 Native context 创建新的物理 Bounded Program，完整有效 DTO 恢复无需 Program。恢复数据不授予运行时 ownership 或写权限。仅分析 epoch 的重试不能重放已完成命令。见[持久化缓存生命周期](./lifecycle.md#原生持久化分析缓存)及其回归证据。
+**持久化分析有效性**：native importer 复用绑定事实版本、query coverage 和共享环境证据。完整 clean DTO 还在创建 Program 前校验当前 roots／admission、importer scope／mode 输入、lock 信任、本地 typeRoots 、namespace 级有效 `configVersion` 门及完整的逐文件 `configModules` 门；独立 CLI 进程之间，已知配置模块、原始解析边、绑定和已观测 loader 输出摘要必须匹配，mtime 相等信任旧 hash，mtime 不同按单文件 hash fallback。实际模块和显式声明文件共用同一证据门。未执行的动态导入不使配置失去资格；真实 incomplete 证据总触发冷分析，包括原因移除后的首次 complete 调用。严格调用内漂移仍终止执行，不重放命令。Preflight 访问策略可以关闭持久化恢复及发布，但不能关闭调用内有效性保护；调用者的读写／只读权限和 force 均不能覆盖公开配置的禁用策略。冷／dirty 分析建立当前有资格的支撑闭包；失效的 Native context 创建新的物理 Bounded Program。其他事实仍有效且取得资格时可缩小观察入口，完整有效的 context 可直接恢复。每次准备依据本轮输入事实、Checker 选择和经过校验的暂存引用建立图及产物权限。仅分析 epoch 的重试不能重放已完成命令。见[持久化缓存生命周期](./lifecycle.md#原生持久化分析缓存)及其回归证据。
 
 **恢复与执行重放守卫**：[Vue 完整图测试](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)保留合法跨项目引用并拒绝一致伪造；[输入重放测试](../../../packages/limina/src/__tests__/execution-input-replay.spec.ts)只允许未变只读阶段内复用观察及同轮祖先绑定，保留真实副作用边界的新一轮内容／绑定漂移检查与每个作用域独立的输出例外。边界由[执行准入生命周期](./lifecycle.md#受管-checker-的执行准入)定义。
 
@@ -194,7 +194,7 @@
 | Invariant | 主要 executable enforcement                                             | 反例机会 / reviewer 观察                                                        | 代表性回归 guard                                                                                                                   |
 | --------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | I01       | validated context、canonical Governance Trie、workspace/facade guards   | cut、重入、external package 与 canonical identity                               | 增强现有重入 guard：package/owner facade 与 path index 一致                                                                        |
-| I02       | authority state / freeze assertions / coloring tests                    | TS semantic + Vue final owner、依赖顺序与冲突                                   | missing native source 不锁框架；合格 component candidate 可以锁定                                                                  |
+| I02       | authority state / freeze assertions / coloring tests                    | TS semantic + Vue final owner、依赖顺序与冲突                                   | 直接声明的框架意图锁定检查器。继承设置和源码成员关系不参与选择。                                                                   |
 | I03       | effective roots / inclusion ledger / native compiler differential tests | relative types、external closure、source excluded 但可 resolution               | built/unbuilt reference 的 provider identity 与原 source admission                                                                 |
 | I04       | occurrence identity / locked dispatch / prepared consistency assertions | import/require condition、mapping ambiguity、kind mismatch、query/fragment      | 完整 specifier 到达 checker；query 与 fragment 不被拆分，也不经 Oxc 救回                                                           |
 | I05       | 结构依赖事实与独立显式 proof 测试                                       | Ambient 实现、redirect、augmentation、完整 query source                         | 显式 Program/Symbol proof、结构 redirect、ambient 实现候选、完整 miss                                                              |
@@ -217,4 +217,4 @@
 
 ### Source Checker 入口覆盖
 
-每个受治理 source 有唯一执行 owner；组织 solution 可有多个 Checker 投影。最终 root 必须覆盖由完整 source ownership 和构建能力独立推导的全部目标，且不得跨 Checker 引用。冷生成和热恢复共同执行 reference-validation 与 generated-reference-binding；缺失文件、覆盖或归属证据不能获得准入。generated-graph 与 reference-validation 回归分别覆盖实际生成和损坏序列化边界。
+每个受治理 source 有唯一执行 owner；组织 solution 可有多个 Checker 投影。最终 root 必须覆盖由完整 source ownership 和构建能力独立推导的全部目标，且不得跨 Checker 引用。每次准备都对本轮暂存图执行 reference-validation 与 generated-reference-binding；缺失文件、覆盖或归属证据不能获得准入。generated-graph 与 reference-validation 回归分别覆盖实际生成和损坏序列化边界。

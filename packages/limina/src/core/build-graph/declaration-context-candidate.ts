@@ -4,7 +4,6 @@ import {
   validateDeclarationContexts,
 } from './declaration-context-validation';
 import type { GeneratedGraphPreparationState } from './prepare-state';
-import type { GeneratedTsconfigGraphResult } from './types';
 
 export function validateStagedDeclarationContexts(
   state: GeneratedGraphPreparationState,
@@ -40,74 +39,5 @@ export function validateStagedDeclarationContexts(
     coverage: state.sourceConfigCoverage,
     targets,
     metrics,
-    phase: 'generation',
   });
-}
-
-/**
-Restored facts do not authorize execution of a previous candidate mapping.
-*/
-export function hasValidRestoredDeclarationContexts(
-  graph: Pick<
-    GeneratedTsconfigGraphResult,
-    | 'dependencyAnalysis'
-    | 'dependencyEdges'
-    | 'sourceToDts'
-    | 'configToOutputBuild'
-    | 'generatedFiles'
-    | 'sourceConfigCoverage'
-    | 'governedSources'
-  >,
-  metrics?: AnalysisMetricsRecorder,
-  executionRoot?: string,
-): boolean {
-  const analysis = graph.dependencyAnalysis;
-  if (analysis === undefined) return false;
-  const targets: DeclarationValidationTarget[] = [];
-  for (const [checker, sources] of graph.sourceToDts)
-    for (const [sourceConfig, generatedConfig] of sources)
-      targets.push({
-        checker,
-        sourceConfig,
-        generatedConfig,
-        executionRoot,
-        ...restoredAuthority(graph, checker, sourceConfig),
-      });
-  for (const [checker, sources] of graph.configToOutputBuild)
-    for (const [sourceConfig, module] of sources)
-      if (module.kind === 'project')
-        targets.push({
-          checker,
-          sourceConfig,
-          generatedConfig: module.path,
-          executionRoot,
-          ...restoredAuthority(graph, checker, sourceConfig),
-        });
-  validateDeclarationContexts({
-    analysis,
-    dependencyEdges: graph.dependencyEdges,
-    files: graph.generatedFiles,
-    coverage: graph.sourceConfigCoverage,
-    targets,
-    metrics,
-    phase: 'restore',
-  });
-  return (
-    analysis.declarationValidation === undefined ||
-    analysis.declarationValidation.state === 'admitted'
-  );
-}
-
-function restoredAuthority(
-  graph: Pick<GeneratedTsconfigGraphResult, 'governedSources'>,
-  checker: string,
-  source: string,
-) {
-  const context = graph.governedSources.get(checker)?.get(source)?.context;
-  return {
-    ...(context?.vueSemanticIdentity !== undefined && {
-      executionRoot: context.vueSemanticIdentity.projectRootDir,
-    }),
-    preset: checker,
-  };
 }

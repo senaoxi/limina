@@ -1,10 +1,10 @@
 import {
   observeAnalysisRead,
   readAnalysisInput,
-  readTypeScriptConfigInput,
   typeScriptDirectoryDescriptor,
 } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
+import { readSourceConfigText } from '#utils/source-config-text';
 import type ts from 'typescript';
 
 function createParseConfigHost(
@@ -36,10 +36,7 @@ function createParseConfigHost(
       return value;
     },
     readFile: (fileName) =>
-      virtualFiles?.get(normalizeAbsolutePath(fileName)) ??
-      readTypeScriptConfigInput(fileName, () =>
-        tsModule.sys.readFile(fileName),
-      ),
+      readSourceConfigText(fileName, virtualFiles, tsModule.sys.readFile),
     useCaseSensitiveFileNames: tsModule.sys.useCaseSensitiveFileNames,
   };
 }

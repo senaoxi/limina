@@ -110,7 +110,7 @@ export class LiminaFlowReporter {
   skip(message: string, options: LiminaFlowMessageOptions = {}): void {
     emitFlow(this.#state, {
       meta: { persistInteractive: true },
-      options,
+      options: { ...options, elapsedTimeMs: undefined },
       rawMessage: message,
       status: 'skip',
     });

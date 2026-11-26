@@ -1,23 +1,15 @@
-import {
-  type AstroSemanticProject,
-  createAstroSemanticProject,
-} from '#checkers';
+import type { AstroSemanticProject } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
-import path from 'pathe';
-import ts from 'typescript';
-import {
-  parseTypeScriptCommandLine,
-  TypeScriptConfigInputError,
-} from '../../checker/project-base';
+import type ts from 'typescript';
+import { getAstroSourceProject } from '../astro-semantic/project';
 import type { AutoScopeProject } from '../build-graph/auto-checker-types';
 import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-types';
 import type { GovernedSourceUnit, SourceProject } from '../build-graph/types';
 import type { ProjectInfo } from '../import-graph/project-types';
-import { createSvelteSemanticProject } from '../svelte-semantic/project';
+import { createSvelteSourceProject } from '../svelte-semantic/project';
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import { getEffectiveImporterRoots } from '../typescript-semantic/effective-roots';
-import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-references';
 import type { ProjectSemanticContext } from './contracts';
 
 interface SemanticContextProject {
@@ -94,33 +86,6 @@ function getSourceSvelteProject(
   return source?.svelteSemanticProject;
 }
 
-function getRawProjectReferences(
-  configPath: string,
-  virtualFiles?: ReadonlyMap<string, string>,
-): readonly ts.ProjectReference[] {
-  // Consumers only need the resolved references for this Source Config.
-  // Generated overlays and configs with diagnostics keep the compiler's
-  // tolerant partial-result behavior.
-  if (!virtualFiles?.size) {
-    try {
-      const { parsed } = parseTypeScriptCommandLine({
-        parseOptions: {
-          configPath,
-          projectRootDir: path.dirname(configPath),
-          allowNoInputDiagnostics: true,
-        },
-      });
-      return parsed.projectReferences ?? [];
-    } catch (error) {
-      if (!(error instanceof TypeScriptConfigInputError)) throw error;
-    }
-  }
-  return (
-    parseTypeScriptProjectConfig({ configPath, tsModule: ts, virtualFiles })
-      ?.projectReferences ?? []
-  );
-}
-
 export function createAutoProjectSemanticContext(options: {
   authority: LockedSemanticAuthority;
   project: AutoScopeProject;
@@ -134,19 +99,10 @@ export function createAutoProjectSemanticContext(options: {
       analysisGeneration: options.project.analysisGeneration,
       astroSemanticProject:
         options.authority.family === 'astro'
-          ? createAstroSemanticProject({
-              analysisGeneration: options.project.analysisGeneration,
-              configPath: options.project.configPath,
-              packageRootDir: options.project.packageRootDir,
-              projectFingerprint: options.project.configPath,
-              readSnapshot: () => ({
-                checkerExtensions: options.project.context.extensions,
-                compilerOptions: options.project.options,
-                configClosure: options.project.configClosure,
-                fileNames: options.project.fileNames,
-                projectReferences: options.project.references,
-              }),
-            })
+          ? getAstroSourceProject(
+              options.project,
+              options.project.packageRootDir,
+            )
           : undefined,
       configPath: options.project.configPath,
       extensions: options.project.context.extensions,
@@ -158,13 +114,8 @@ export function createAutoProjectSemanticContext(options: {
       resolverConfigPath: options.project.configPath,
       svelteSemanticProject:
         options.authority.family === 'svelte'
-          ? createSvelteSemanticProject({
-              configClosure: options.project.configClosure,
-              configPath: options.project.configPath,
-              extensions: options.project.context.extensions,
-              fileNames: options.project.fileNames,
-              generation: options.project.analysisGeneration,
-              options: options.project.options,
+          ? createSvelteSourceProject({
+              source: options.project,
               packageRootDir: options.project.packageRootDir,
             })
           : undefined,
@@ -180,28 +131,26 @@ export function createSourceProjectSemanticContext(options: {
   source?: GovernedSourceUnit;
   workspaceSourceBoundary: WorkspaceSourceBoundary;
 }): ProjectSemanticContext {
+  const execution = options.project.executionConfig;
   return createContext({
     authority: options.authority,
     project: {
-      virtualFiles: options.project.virtualFiles,
+      virtualFiles: execution?.virtualFiles ?? options.project.virtualFiles,
       analysisGeneration: getSourceAnalysisGeneration(options.project),
       analysisChecker: options.project.context.checkerPresets.join(':'),
       astroSemanticProject: getSourceAstroProject(options.source),
       configPath: options.project.configPath,
       extensions: options.project.context.extensions,
       fileNames: options.project.fileNames,
-      options: options.project.options,
+      options: execution?.options ?? options.project.options,
       packageRootByFileName: packageRootsForFiles(
         options.project.ownedFileNames,
         options.project.packageRootDir,
       ),
       packageRootDir: options.project.packageRootDir,
-      references: getRawProjectReferences(
-        options.project.executionConfigPath ?? options.project.configPath,
-        options.project.virtualFiles,
-      ),
-      resolverConfigPath:
-        options.project.executionConfigPath ?? options.project.configPath,
+      references:
+        execution?.references ?? options.project.sourceConfigReferences,
+      resolverConfigPath: execution?.configPath ?? options.project.configPath,
       svelteSemanticProject: getSourceSvelteProject(options.source),
       vueSemanticIdentity: options.project.context.vueSemanticIdentity,
       workspaceSourceBoundary: options.workspaceSourceBoundary,
@@ -231,11 +180,7 @@ export function createParsedProjectSemanticContext(options: {
         options.packageRootDir,
       ),
       packageRootDir: options.packageRootDir,
-      references: getRawProjectReferences(
-        options.project.executionConfigPath ??
-          options.project.resolverConfigPath,
-        options.project.virtualFiles,
-      ),
+      references: options.project.resolverProjectReferences,
       resolverConfigPath:
         options.project.executionConfigPath ??
         options.project.resolverConfigPath,

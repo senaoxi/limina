@@ -8,6 +8,9 @@ export function nowIso(): string {
 }
 
 export function formatFlowTaskName(task: ExecutionTask): string {
+  if (task.issueTask === 'graph:materialize') {
+    return 'ensure complete reference graph';
+  }
   return task.kind === 'command'
     ? `command: ${task.label}`
     : task.label.replaceAll(':', ' ');
@@ -38,14 +41,22 @@ function projectFlowFail(options: FlowProjectionOptions): void {
   if (options.event.type !== 'fail') return;
   if (options.flowNode !== undefined) {
     options.flowNode.fail(undefined, {
-      elapsedTimeMs: options.event.durationMs,
+      elapsedTimeMs:
+        options.event.executionStarted === false
+          ? null
+          : options.event.durationMs,
     });
   }
 }
 
 function projectFlowDisable(options: FlowProjectionOptions): void {
   if (options.event.type !== 'disable') return;
-  options.flowNode?.skip(`${formatFlowTaskName(options.task)} (disabled)`);
+  const { task } = options;
+  const detail =
+    task.kind === 'task' && task.label === 'checker:typecheck'
+      ? 'disabled: no framework targets'
+      : 'disabled';
+  options.flowNode?.skip(`${formatFlowTaskName(task)} (${detail})`);
 }
 
 function projectFlowBlock(options: FlowProjectionOptions): void {
@@ -125,6 +136,7 @@ export async function runObservedTask<T>(options: {
   taskId: string;
   execute: () => Promise<T>;
   isPassed: (value: T) => boolean;
+  failureDetail?: (value: T) => unknown;
 }): Promise<T> {
   const { observer, execute } = options;
   let work: string;
@@ -135,24 +147,39 @@ export async function runObservedTask<T>(options: {
   }
   let hasEnteredRunner = false;
   let outcome: 'performed' | 'failed' | 'cancelled' = 'failed';
+  let observedResult: T | undefined;
+  let runnerError: unknown;
   try {
     const result = await observer.inWork(work, () => {
       hasEnteredRunner = true;
       return execute();
     });
     outcome = options.isPassed(result) ? 'performed' : 'failed';
+    observedResult = result;
     return result;
   } catch (error) {
-    if (hasEnteredRunner) throw error;
+    if (hasEnteredRunner) {
+      runnerError = error;
+      throw error;
+    }
     outcome = 'cancelled';
     return execute();
   } finally {
     try {
-      observer.finish(
-        work,
-        outcome,
-        outcome === 'cancelled' ? 'profile-scope-unavailable' : undefined,
-      );
+      if (outcome === 'failed') {
+        const detail =
+          runnerError ??
+          (observedResult === undefined
+            ? undefined
+            : options.failureDetail?.(observedResult));
+        observer.fail(work, detail);
+      } else {
+        observer.finish(
+          work,
+          outcome,
+          outcome === 'cancelled' ? 'profile-scope-unavailable' : undefined,
+        );
+      }
     } catch {
       // Profiling does not own the task outcome.
     }

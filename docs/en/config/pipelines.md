@@ -119,7 +119,7 @@ Built-in tasks can also be written explicitly:
 }
 ```
 
-Suppose a change introduces a cross-package relative import:
+Suppose the project enables `source.forbidCrossPackageRelativeImports` and a change introduces a cross-package relative import:
 
 ```ts
 // packages/app/src/main.ts

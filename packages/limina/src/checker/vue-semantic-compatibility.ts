@@ -147,3 +147,12 @@ export function isSupportedVueSemanticVersionTuple(
 ): boolean {
   return resolveVueSemanticAdapter(tuple).kind === 'supported';
 }
+
+export function isVueCacheTuple(tuple: VueSemanticVersionTuple): boolean {
+  return (
+    tuple.typeScript === '6.0.3' &&
+    tuple.vueTsc === '3.2.4' &&
+    tuple.languageCore === '3.2.4' &&
+    tuple.volarTypeScript === '2.4.27'
+  );
+}

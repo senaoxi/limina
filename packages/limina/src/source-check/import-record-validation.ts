@@ -11,7 +11,6 @@ import {
 } from '#utils/module-specifier';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
-import type { AmbientDeclarationIndex } from './ambient-declarations';
 import {
   addBarePackageImportProblems,
   shouldSkipBarePackageAuthorization,
@@ -26,7 +25,6 @@ import { addRelativeImportProblems } from './relative-import-validation';
 import type { CompiledImportAuthorityAllowRule } from './source-types';
 
 interface ImportRecordOptions {
-  ambientDeclarations: AmbientDeclarationIndex;
   config: ResolvedLiminaConfig;
   filePath: string;
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
@@ -96,12 +94,14 @@ function isAddRelativeProblemIfNeeded(options: {
   base: ImportRecordOptions;
   resolvedFilePath: string | null;
 }): boolean {
-  if (!isRelativeSpecifier(options.base.importRecord.specifier)) {
+  if (
+    options.base.importRecord.kind !== 'triple-slash-path' &&
+    !isRelativeSpecifier(options.base.importRecord.specifier)
+  ) {
     return false;
   }
 
   addRelativeImportProblems({
-    ambientDeclarations: options.base.ambientDeclarations,
     config: options.base.config,
     filePath: options.base.filePath,
     importRecord: options.base.importRecord,

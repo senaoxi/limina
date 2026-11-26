@@ -51,6 +51,7 @@ describe('analysis-local file owner identity', () => {
         packageRootDir: f.root,
         options: {},
         references: new Set(),
+        sourceConfigReferences: [],
         semanticAuthority: {
           kind: 'locked',
           family: 'vue',

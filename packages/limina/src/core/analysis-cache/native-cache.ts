@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
+import { nativeHostContract } from '../typescript-semantic/compiler-path-key';
 import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
@@ -11,30 +12,31 @@ import {
   type FileDependencyFacts,
 } from '../typescript-semantic/file-dependency-facts';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
+import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { emptyMetrics } from './cache-metrics';
 import { NativeContextRecords } from './context-records';
 import type {
   AnalysisCacheMetrics,
   AnalysisSnapshot,
   ConfigModuleSnapshot,
-  GraphRecord,
   ImporterRecord,
   InputDependency,
   NativeContextRecord,
   ProjectRecord,
   ResolutionRecord,
+  SourceConfigAuthority,
 } from './contracts';
 import { AnalysisInputDriftError } from './contracts';
-import { ReferenceContributions } from './contributions';
 import { type EpochInputReplay, EpochInputs } from './epoch-inputs';
-import { CachedGraphRecords } from './graph-records';
 import { analysisHash, nativeContextId } from './identity';
 import { type FactRequest, ImporterFacts } from './importer-facts';
 import { AnalysisInputs } from './inputs';
-import { installationObservers } from './installation-domain';
-import { subscribeInstallationDomains } from './installation-environment';
-import type { InstallationLockGate } from './installation-gate';
 import { AnalysisInvalidation } from './invalidation';
+import { InvocationConfigReads } from './invocation-config-reads';
+import {
+  capturePackageScopes,
+  invalidatedPackageConfigs,
+} from './package-scopes';
 import {
   activeCacheDecision,
   type CacheDecisionReference,
@@ -44,7 +46,6 @@ import {
   recordCacheMiss,
 } from './profile-decisions';
 import { ResolutionQueries, type ResolutionQuery } from './resolution-queries';
-import { ResolvedConfigRecords } from './resolved-config-records';
 import { SemanticState } from './semantic-state';
 import { measuredSnapshot } from './snapshot-measurement';
 import {
@@ -55,6 +56,7 @@ import {
   isUnchangedCache,
   retainData,
 } from './snapshot-records';
+import { SourceConfigProjectionCache } from './source-config-projection';
 import { VueAnalysisRecords } from './vue-records';
 import { observePreviousVueBytes } from './vue-toolchain-inputs';
 export class NativeAnalysisCache {
@@ -66,33 +68,33 @@ export class NativeAnalysisCache {
   readonly #resolutions: ResolutionQueries;
   readonly #facts: ImporterFacts;
   readonly #contexts: NativeContextRecords;
-  readonly #graphs: CachedGraphRecords;
   #resolving = 0;
   #snapshotDecision?: CacheDecisionReference;
   readonly #executableContexts = new Set<string>();
-  #hasUnsupportedContext = false;
+  readonly #incompleteCollections = new Set<string>();
   readonly #captures = new Map<
     string,
     { program: ts.Program; capture(): void }
   >();
   readonly #states = new Map<string, SemanticState>();
-  requiresSupplementalReassessment = false;
   readonly epoch: EpochInputs;
   readonly metrics: AnalysisCacheMetrics = emptyMetrics();
+  readonly configReads: InvocationConfigReads;
+  readonly sourceConfigProjections: SourceConfigProjectionCache;
   readonly inputs: AnalysisInputs;
-  readonly installationGate: InstallationLockGate | undefined;
+  packageScopes: AnalysisSnapshot['header']['packageScopes'] = {
+    manifests: {},
+    configs: {},
+  };
   readonly invalidation: AnalysisInvalidation;
   readonly queries: Record<string, ResolutionRecord>;
   readonly retainedQueryIds: ReadonlySet<string>;
   readonly importers: Record<string, ImporterRecord>;
   readonly files: AnalysisSnapshot['files'] = {};
   readonly projects: AnalysisSnapshot['projects'] = {};
-  readonly contributions: ReferenceContributions;
   readonly contexts: Record<string, NativeContextRecord> = {};
-  readonly graphs: Record<string, GraphRecord> = {};
   readonly vue: VueAnalysisRecords;
-  readonly authorities: AnalysisSnapshot['authorities'] = {};
-  readonly resolvedConfigs: ResolvedConfigRecords;
+  readonly configClosures: Map<string, readonly string[]> = new Map();
   readonly identity: string;
   readonly configVersion: string | undefined;
   readonly configModules: ConfigModuleSnapshot;
@@ -110,6 +112,16 @@ export class NativeAnalysisCache {
     this.configModules = config.configModules;
     this.previous = config.previous;
     this.previousOrigin = config.previousOrigin ?? 'unknown';
+    this.sourceConfigProjections = new SourceConfigProjectionCache({
+      previous: this.previous,
+      previousOrigin: this.previousOrigin,
+      packageScopes: () => this.packageScopes,
+      invalidate: (file) => this.invalidateSourceConfig(file),
+    });
+    this.configReads = new InvocationConfigReads(
+      this.metrics,
+      this.sourceConfigProjections,
+    );
     const state = this.previous ?? emptySnapshot(identity, this.configVersion);
     const baselineTime = this.previous?.header.baselineTime;
     this.inputs = new AnalysisInputs(
@@ -121,23 +133,7 @@ export class NativeAnalysisCache {
       config.liveConfigTimes,
     );
     this.epoch = new EpochInputs(this.inputs);
-    this.resolvedConfigs = new ResolvedConfigRecords(
-      state.resolvedConfigs,
-      this.metrics,
-      (paths) => this.inputs.configCurrent(paths),
-      this.previousOrigin,
-    );
-    this.installationGate = config.installationGate;
-    if (this.installationGate !== undefined) {
-      this.installationGate.seed(this.inputs, this.previous !== undefined);
-      installationObservers.set(this.inputs, this.installationGate);
-    }
-    subscribeInstallationDomains(state, this.inputs);
     observePreviousVueBytes(state, this.inputs);
-    this.contributions = new ReferenceContributions(
-      this.inputs,
-      state.contributions,
-    );
     this.inputs.validatePrevious();
     this.invalidation = new AnalysisInvalidation(this.previous, this.inputs);
     this.#resolutions = new ResolutionQueries({
@@ -160,7 +156,6 @@ export class NativeAnalysisCache {
     this.retainedQueryIds = this.#resolutions.retained;
     this.importers = this.#facts.records;
     this.#contexts = new NativeContextRecords(this);
-    this.#graphs = new CachedGraphRecords(this);
     this.vue = new VueAnalysisRecords(this);
   }
 
@@ -169,27 +164,6 @@ export class NativeAnalysisCache {
   }
   #physicalProject(project: TypeScriptSemanticProject): boolean {
     return (project.virtualFiles?.size ?? 0) === 0;
-  }
-
-  #priorSyntax(
-    project: TypeScriptSemanticProject,
-    file: string,
-  ): FileDependencyFacts | undefined {
-    const id = nativeContextId(project);
-    if (this.invalidation.contextDirty.has(id)) return undefined;
-    const facts = this.previous?.files[file];
-    if (facts === undefined) return undefined;
-    let witnesses = this.#syntaxWitnesses.get(id);
-    if (witnesses === undefined) {
-      witnesses = new Map(
-        this.previous?.contexts[id]?.native?.inventory.syntax.map((witness) => [
-          witness.file,
-          witness.fingerprint,
-        ]),
-      );
-      this.#syntaxWitnesses.set(id, witnesses);
-    }
-    return witnesses.get(file) === nativeFingerprint(facts) ? facts : undefined;
   }
 
   #syntaxMemo(
@@ -218,9 +192,51 @@ export class NativeAnalysisCache {
     this.#snapshotDecision = keepCacheDecision(decision);
   }
 
-  observeProjectLock(configPath: string): void {
-    this.installationGate?.project(configPath);
+  observePackageScopes(
+    regions: WorkspaceRegionPathIndex,
+    sources: Iterable<string>,
+    solutions: Iterable<string>,
+  ): void {
+    const current = capturePackageScopes(
+      this.inputs,
+      regions,
+      sources,
+      solutions,
+    );
+    const previous = this.previous?.header.packageScopes;
+    if (previous !== undefined)
+      for (const config of invalidatedPackageConfigs(previous, current)) {
+        this.sourceConfigProjections.revoke(config);
+        this.invalidateSourceConfig(config);
+      }
+    this.packageScopes = current;
   }
+
+  recordSourceConfigAuthority(
+    input: SourceConfigAuthority & { configPath: string },
+  ): void {
+    const { configPath, ...authority } = input;
+    const isReusable = this.sourceConfigProjections.recordAuthority(
+      configPath,
+      authority,
+    );
+    if (!isReusable && this.previous !== undefined)
+      this.invalidateSourceConfig(configPath);
+  }
+
+  recordBundledSourceConfigAuthority(
+    input: Pick<SourceConfigAuthority, 'source'> & {
+      configPath: string;
+      family: 'typescript';
+    },
+  ): void {
+    this.recordSourceConfigAuthority({
+      ...input,
+      provider: 'native-typescript',
+      toolchain: nativeHostContract(),
+    });
+  }
+
   invalidateSourceConfig(configPath: string): void {
     if (this.#invalidatedSources.has(configPath)) return;
     this.#invalidatedSources.add(configPath);
@@ -263,17 +279,27 @@ export class NativeAnalysisCache {
       delete this.projects[id];
       delete this.contexts[id];
     }
-    for (const [key, graph] of Object.entries(this.graphs))
-      if (
-        graph.contextIds.some((id) => owners.has(id)) ||
-        graph.queryIds.some((id) => stale.has(id))
-      )
-        delete this.graphs[key];
-    for (const [id, contributions] of Object.entries(
-      this.contributions.records,
-    ))
-      if (contributions.some((value) => value.fromConfigPath === configPath))
-        delete this.contributions.records[id];
+  }
+
+  previousFileSyntax(
+    project: TypeScriptSemanticProject,
+    file: string,
+  ): FileDependencyFacts | undefined {
+    const id = nativeContextId(project);
+    if (this.invalidation.contextDirty.has(id)) return undefined;
+    const facts = this.previous?.files[file];
+    if (facts === undefined) return undefined;
+    let witnesses = this.#syntaxWitnesses.get(id);
+    if (witnesses === undefined) {
+      witnesses = new Map(
+        this.previous?.contexts[id]?.native?.inventory.syntax.map((witness) => [
+          witness.file,
+          witness.fingerprint,
+        ]),
+      );
+      this.#syntaxWitnesses.set(id, witnesses);
+    }
+    return witnesses.get(file) === nativeFingerprint(facts) ? facts : undefined;
   }
 
   readFileSyntax(
@@ -294,7 +320,7 @@ export class NativeAnalysisCache {
       project !== undefined &&
       memo === this.#fileSyntax
     )
-      facts = this.#priorSyntax(project, file);
+      facts = this.previousFileSyntax(project, file);
     if (
       facts?.sourceVersion !== version ||
       facts.physicalVersion !== physicalVersion ||
@@ -394,19 +420,25 @@ export class NativeAnalysisCache {
       project.declarationContextValidation === undefined,
       project.analysisBinding !== undefined,
     ].every(Boolean);
-    if (!isSupported) {
-      this.#hasUnsupportedContext = true;
-      this.fallback('unsupported-native-context');
-    }
+    if (!isSupported) this.fallback('unsupported-native-context');
     return isSupported;
-  }
-
-  hasCompleteGraphContextCoverage(): boolean {
-    return !this.#hasUnsupportedContext && this.#executableContexts.size === 0;
   }
 
   increment(metric: string): void {
     this.metrics[metric] = (this.metrics[metric] ?? 0) + 1;
+  }
+
+  noteNativeCollection(
+    project: TypeScriptSemanticProject,
+    isComplete: boolean,
+  ): void {
+    const id = nativeContextId(project);
+    if (isComplete) this.#incompleteCollections.delete(id);
+    else this.#incompleteCollections.add(id);
+  }
+
+  get hasIncompleteNativeCollection(): boolean {
+    return this.#incompleteCollections.size > 0;
   }
   fallback(reason: string): void {
     this.metrics.fallbacks += 1;
@@ -436,6 +468,11 @@ export class NativeAnalysisCache {
   }
   recordProgram(): void {
     this.metrics.semanticPrograms += 1;
+  }
+  observationPlan(
+    project: TypeScriptSemanticProject,
+  ): ReturnType<NativeContextRecords['plan']> {
+    return this.#contexts.plan(project);
   }
   beginContext(project: TypeScriptSemanticProject): void {
     this.#contexts.begin(project);
@@ -467,7 +504,7 @@ export class NativeAnalysisCache {
   ): TypeScriptSemanticDependencyContext | undefined {
     return this.#contexts.restore(
       project,
-      replay ?? this.resolvedConfigs.replay(),
+      replay ?? this.configReads.replay(),
       onMiss,
     );
   }
@@ -522,28 +559,6 @@ export class NativeAnalysisCache {
     );
   }
 
-  graphCandidate(
-    key: string,
-    workspaceVersion: string,
-  ): GraphRecord | undefined {
-    return this.#graphs.candidate(key, workspaceVersion);
-  }
-  restoreGraphRecord(
-    key: string,
-    candidate: GraphRecord,
-    generation = 0,
-  ): Promise<GraphRecord | undefined> {
-    return this.#graphs.restore(key, candidate, generation);
-  }
-  captureGraphRecord(
-    key: string,
-    options: {
-      workspaceVersion: string;
-      value: unknown;
-    },
-  ): void {
-    this.#graphs.capture(key, options);
-  }
   snapshotRecords(): Omit<AnalysisSnapshot, 'header'> {
     this.vue.capture();
     return currentSnapshotRecords(this);

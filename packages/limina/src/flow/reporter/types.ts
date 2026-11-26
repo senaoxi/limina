@@ -6,7 +6,7 @@ import type {
   FlowWritableChunk,
 } from '../render-model';
 import type { FlowWriteStream, TerminalFrameTracker } from '../terminal-frame';
-import type { FlowTreeNodeInternal } from '../tree-state';
+import type { FlowTimeInterval, FlowTreeNodeInternal } from '../tree-state';
 
 export interface ClackLogAdapter {
   error: (message: string) => void;
@@ -40,7 +40,7 @@ export interface LiminaFlowReporterOptions {
 export interface LiminaFlowMessageOptions {
   collapseOnSuccess?: boolean;
   depth?: number;
-  elapsedTimeMs?: number;
+  elapsedTimeMs?: number | null;
   persistInteractive?: boolean;
 }
 
@@ -69,6 +69,7 @@ export interface LiminaFlowTreeNode {
     options?: LiminaFlowMessageOptions,
   ) => LiminaFlowTreeNode[];
   fail: (message?: string, options?: LiminaFlowFailureOptions) => void;
+  getElapsedOutsideChildren: (runner: FlowTimeInterval) => number | undefined;
   pass: (message?: string, options?: LiminaFlowMessageOptions) => void;
   skip: (message?: string, options?: LiminaFlowMessageOptions) => void;
   start: (message?: string, options?: LiminaFlowMessageOptions) => void;

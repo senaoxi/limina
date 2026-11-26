@@ -55,18 +55,20 @@ function getOrCreateResolver(options: {
     extensions: options.extensions,
   });
   const cached = options.caches.resolverCache.get(identity.id);
+  if (cached !== undefined) {
+    recordResolverAccess({ cached: true, metrics: options.metrics });
+    return cached;
+  }
+  const resolverOptions = createResolverOptions({
+    compilerOptions: options.compilerOptions,
+    configPath: options.configPath,
+    extensions: options.extensions,
+  });
   recordResolverAccess({
-    cached: cached !== undefined,
+    cached: false,
     metrics: options.metrics,
   });
-  if (cached !== undefined) return cached;
-  const resolver = new ResolverFactory(
-    createResolverOptions({
-      compilerOptions: options.compilerOptions,
-      configPath: options.configPath,
-      extensions: options.extensions,
-    }),
-  );
+  const resolver = new ResolverFactory(resolverOptions);
   options.caches.resolverCache.set(identity.id, resolver);
   return resolver;
 }

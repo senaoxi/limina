@@ -3,8 +3,11 @@ import { createVueProjectSemanticIdentity } from '../checker/vue-semantic-identi
 import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import type { VueQueryResults } from '../core/analysis-cache/vue-contracts';
+import { vueResolutionRequest } from '../core/analysis-cache/vue-graph-facts';
 import * as vueIdentity from '../core/analysis-cache/vue-identity';
 import * as vueSchema from '../core/analysis-cache/vue-schema';
+import type { ImportRecord } from '../core/import-analysis/records';
+import { VueSemanticContextManager } from '../core/vue-semantic/context-manager';
 import { createVueCacheFixture } from './helpers/vue-analysis-cache';
 
 const fixtures: ReturnType<typeof createVueCacheFixture>[] = [];
@@ -51,10 +54,91 @@ describe('Vue query reuse within an analysis invocation', () => {
     expect(decode).toHaveBeenCalledTimes(1);
     expect(identity).not.toHaveBeenCalled();
     expect(f.cache.metrics.vueQueryHits).toBe(2);
-    f.cache.inputs.invalidateDomain(f.identity.configPath);
+    f.cache.inputs.invalidateToolchain(f.identity.configPath);
     expect(f.cache.vue.query(query)).toEqual(evidence);
     expect(collect).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    'source config invalidation',
+    'live query capture',
+    'manager disposal',
+  ] as const)(
+    'isolates support records and revokes retained Vue graph handles after %s',
+    (reason) => {
+      const f = fixture();
+      const file = f.path('vue/src/index.ts');
+      const record: ImportRecord = {
+        domain: 'typescript',
+        filePath: file,
+        kind: 'static',
+        line: 1,
+        locator: { occurrence: 0, sourceStart: 22, sourceEnd: 34 },
+        specifier: './value.js',
+      };
+      f.cache.vue.query({
+        kind: 'support-inputs',
+        request: [],
+        identity: f.identity,
+        collect: () => [{ filePath: file, records: [record] }],
+      });
+      f.cache.vue.query({
+        kind: 'compiler-source',
+        request: [file],
+        identity: f.identity,
+        collect: () => [record],
+      });
+      f.cache.vue.query({
+        kind: 'resolution',
+        request: vueResolutionRequest(record),
+        identity: f.identity,
+        collect: () => ({
+          framework: 'vue',
+          provenance: 'compiler-request',
+          resolutionMode: 'import',
+          semanticSpecifier: record.specifier,
+          sourceRecord: record,
+          target: null,
+        }),
+      });
+      const next = new NativeAnalysisCache('fixture', f.cache.snapshot(), {
+        configVersion: 'fixture-config',
+        liveConfigTimes: f.cache.inputs.configTimes(),
+      });
+      const manager = new VueSemanticContextManager(undefined, next);
+      const graph = manager.graphFacts(f.identity)!;
+      const support = graph.support()!;
+      expect(graph.source(file)).toEqual([record]);
+      expect(graph.occurrence(record)?.resolution.sourceRecord).toEqual(record);
+      expect(support.has(file)).toBe(true);
+      const first = support.get(file)!;
+      expect(first).toEqual([record]);
+      first[0]!.specifier = './changed.js';
+      expect(support.get(file)).toEqual([record]);
+      if (reason === 'manager disposal') {
+        const second = new VueSemanticContextManager(undefined, next);
+        const active = second.graphFacts(f.identity)!.support()!;
+        manager.dispose();
+        expect(active.get(file)).toEqual([record]);
+        second.dispose();
+      } else if (reason === 'live query capture') {
+        next.vue.query({
+          kind: 'evidence',
+          request: './new-query',
+          identity: f.identity,
+          collect: () => ({ kind: 'missing' }),
+        });
+      } else {
+        next.invalidateSourceConfig(f.identity.configPath);
+      }
+      expect(graph.source(file)).toBeUndefined();
+      expect(graph.occurrence(record)).toBeUndefined();
+      expect(graph.support()).toBeUndefined();
+      expect(support.has(file)).toBe(false);
+      expect(support.get(file)).toBeUndefined();
+      manager.dispose();
+    },
+  );
 
   it('keeps distinct physical identities separate even with the same query request', () => {
     const f = fixture();

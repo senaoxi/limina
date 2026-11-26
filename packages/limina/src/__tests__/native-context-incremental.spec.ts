@@ -1,5 +1,5 @@
 import { compareCodeUnits } from '#utils/collections';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -8,6 +8,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -19,14 +20,21 @@ import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { bindResolutionExecutionInputs } from '../core/analysis-cache/resolution-execution-inputs';
 import { occurrenceKey } from '../core/analysis-cache/semantic-state';
-import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
+import {
+  parseAnalysisSnapshot,
+  parseStoredAnalysisSnapshot,
+} from '../core/analysis-cache/snapshot-schema';
 import { validatedSnapshot } from '../core/analysis-cache/snapshot-validation';
 import {
   createTypeScriptDependencyContext,
   createWorkspaceSourceBoundary,
 } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
+import { composeNativeContext } from '../core/typescript-semantic/native-context-composition';
+import { nativeContextInputs } from '../core/typescript-semantic/native-context-inputs';
+import { NativeDependencyContext } from '../core/typescript-semantic/native-dependency-context';
 import { nativeFingerprint } from '../core/typescript-semantic/native-file-identity';
+import { NativeObservationAdapter } from '../core/typescript-semantic/native-observation-adapter';
 import { freezeNativeData } from '../domain/analysis/native-evidence-freeze';
 import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
 import { roundTripAnalysisSnapshot } from './helpers/analysis-snapshot';
@@ -89,6 +97,68 @@ it.each(['member-version', 'target-identity'] as const)(
     expect(cache.metrics.restoredContexts ?? 0).toBe(0);
   },
 );
+
+it.each(['query', 'project', 'importer'] as const)(
+  'revalidates a stored Native context when its %s binding changes',
+  (change) => {
+    const f = fixture();
+    f.write('a.ts', 'import "./dep";');
+    f.write('dep.ts', 'export {};');
+    const project = f.project(['a.ts', 'dep.ts']);
+    const first = collect(project);
+    const snapshot = parseStoredAnalysisSnapshot(
+      serializedSnapshot(first.cache),
+      'test',
+      'config',
+    )!;
+    const [id, record] = Object.entries(snapshot.contexts)[0]!;
+    const control = new NativeAnalysisCache('test', snapshot, 'config');
+    const restored = control.restoreContext(project)!;
+    const [occurrence] = restored.getImportRecords(f.file('a.ts'));
+    expect(
+      restored.getDependencyFact(occurrence).resolution.target,
+    ).toMatchObject({
+      resolvedFileName: f.file('dep.ts'),
+    });
+    expect(control.metrics.semanticPrograms).toBe(0);
+
+    const altered = new NativeAnalysisCache(
+      'test',
+      change === 'importer'
+        ? missingStoredImporter(snapshot, record.sources[f.file('a.ts')]!)
+        : snapshot,
+      'config',
+    );
+    if (change === 'query') {
+      const key = record.queryIds[0]!;
+      altered.queries[key] = {
+        ...snapshot.queries[key],
+        contextId: 'another-context',
+      };
+    } else if (change === 'project') {
+      const state = snapshot.projects[id];
+      altered.projects[id] = {
+        ...state,
+        members: state.members.filter((file) => file !== f.file('dep.ts')),
+      };
+    }
+    expect(altered.restoreContext(project)).toBeUndefined();
+    expect(altered.metrics.restoredContexts ?? 0).toBe(0);
+  },
+);
+
+function missingStoredImporter(
+  snapshot: ReturnType<NativeAnalysisCache['snapshot']>,
+  key: string,
+) {
+  const importers = { ...snapshot.importers };
+  delete importers[key];
+  return {
+    ...snapshot,
+    header: { ...snapshot.header, revision: randomUUID() },
+    importers,
+  };
+}
 
 function fixture() {
   const temporary = mkdtempSync(path.join(tmpdir(), 'limina-programless-'));
@@ -180,6 +250,103 @@ function collect(
 }
 
 describe('bounded compiler context replacement and incremental inputs', () => {
+  function observe(
+    project: TypeScriptSemanticProject,
+    observationRootNames?: readonly string[],
+  ) {
+    const options = { ...nativeContextInputs(project), observationRootNames };
+    const adapter = new NativeObservationAdapter(options);
+    return { adapter, context: new NativeDependencyContext(options, adapter) };
+  }
+
+  it.each(['augmentation', 'import'] as const)(
+    'replaces a zero-request source and preserves support only with a real %s inclusion',
+    (role) => {
+      const f = fixture();
+      f.write('dirty.ts', 'import "./env.js"; export {};');
+      f.write(
+        'clean.ts',
+        role === 'augmentation'
+          ? 'export {}; declare module "./env.js" {}'
+          : 'import "./env.js"; export {};',
+      );
+      writeFileSync(
+        f.file('env.d.ts'),
+        'export type { Value } from "./producer.js";',
+      );
+      f.write('producer.ts', 'export interface Value {}');
+      const project = f.project(['dirty.ts', 'clean.ts']);
+      const before = observe(project).context;
+      expect(before.hasSourceFile(f.file('env.d.ts'))).toBe(true);
+      const priorClean = before.getImportRecords(f.file('clean.ts'))[0]!;
+      expect(before.getDependencyFact(priorClean).admission).toBe('admitted');
+
+      f.write('dirty.ts', 'export const edited = 1;');
+      const shard = observe(project, [f.file('dirty.ts')]);
+      const assembled = composeNativeContext({
+        adapter: shard.adapter,
+        observed: shard.context,
+        previous: before,
+        reusableFiles: new Set([f.file('clean.ts'), f.file('env.d.ts')]),
+      })?.context;
+      const cold = observe(project).context;
+      expect(assembled?.getImportRecords(f.file('dirty.ts'))).toEqual([]);
+      expect(assembled?.hasSourceFile(f.file('env.d.ts'))).toBe(
+        role === 'import',
+      );
+      expect(assembled?.getImportRecords(f.file('env.d.ts'))).toEqual(
+        cold.getImportRecords(f.file('env.d.ts')),
+      );
+      const currentClean = assembled?.getDependencyFact(priorClean);
+      expect(currentClean?.admission).toBe(
+        cold.getDependencyFact(priorClean).admission,
+      );
+      expect(currentClean?.nativeEvidence?.origin.context.id).toBe(
+        shard.context.identity,
+      );
+    },
+  );
+
+  it('keeps a clean root local when the dirty Program loads it through a package alias', () => {
+    const f = fixture();
+    f.write('package.json', '{"type":"module"}');
+    f.write('dirty.ts', 'import "helper"; export {};');
+    f.write(
+      'helper/package.json',
+      '{"name":"helper","type":"module","exports":"./index.ts"}',
+    );
+    f.write('helper/index.ts', 'export { value } from "../producer.js";');
+    f.write('producer.ts', 'export const value = 1;');
+    mkdirSync(f.file('node_modules'));
+    symlinkSync(f.file('helper'), f.file('node_modules/helper'), 'junction');
+    const project = f.project(['dirty.ts', 'helper/index.ts'], {
+      module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    });
+    const before = observe(project).context;
+    f.write('dirty.ts', 'import "helper"; export const edited = 1;');
+    const shard = observe(project, [f.file('dirty.ts')]);
+    const record = shard.context.getImportRecords(
+      f.file('helper/index.ts'),
+    )[0]!;
+    expect(
+      shard.context.getDependencyFact(record).referenceRequirement,
+    ).toBeNull();
+    const assembled = composeNativeContext({
+      adapter: shard.adapter,
+      observed: shard.context,
+      previous: before,
+      reusableFiles: new Set([f.file('helper/index.ts')]),
+    });
+    expect(assembled?.restoredFiles.has(f.file('helper/index.ts'))).toBe(true);
+    expect(
+      assembled?.context.getDependencyFact(record).referenceRequirement,
+    ).toEqual({
+      kind: 'compiler-membership',
+      targetFileName: f.file('producer.ts'),
+    });
+  });
+
   it('reuses the unchanged peer callback and rebuilds the edited import in the current Program', () => {
     const f = fixture();
     f.write('a.ts', 'import "./one";');
@@ -232,7 +399,7 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     );
   });
 
-  it.each(['affecting mtime', 'failed candidate'] as const)(
+  it.each(['affecting mtime', 'failed candidate', 'new type package'] as const)(
     'protects cold and restored launch receipts from a changed %s',
     async (change) => {
       const f = fixture();
@@ -249,11 +416,18 @@ describe('bounded compiler context replacement and incremental inputs', () => {
         const scope = new EpochInputs();
         const record = Object.values(cache.contexts)[0]!;
         expect(record.queryIds.length).toBeGreaterThan(0);
-        bindResolutionExecutionInputs(scope, cache, record.queryIds);
+        bindResolutionExecutionInputs(
+          scope,
+          cache,
+          record.queryIds,
+          record.environment.dependencies,
+        );
         return scope;
       });
       for (const scope of scopes) await scope.assertStable();
       if (change === 'failed candidate') f.write('missing.ts', 'export {};');
+      else if (change === 'new type package')
+        f.write('node_modules/@types/additional/index.d.ts', 'export {};');
       else {
         const manifest = f.file('node_modules/pkg/package.json');
         const future = new Date(statSync(manifest).mtimeMs + 3000);
@@ -389,7 +563,7 @@ describe('bounded compiler context replacement and incremental inputs', () => {
       packageQuery.dependencies.some(
         (input) =>
           first.cache.inputs.records[input.inputId].path === manifest &&
-          first.cache.inputs.records[input.inputId].kind === 'affecting-mtime',
+          first.cache.inputs.records[input.inputId].kind === 'manifest',
       ),
     ).toBe(true);
     expect(
@@ -513,26 +687,14 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     expect(next.metrics.syntaxFactBuilds).toBe(1);
   });
 
-  it('rebuilds only subscribers of an independently changed installation lock', () => {
+  it('rebuilds only subscribers of a changed type package manifest', () => {
     const fixtures = [fixture(), fixture()];
+    const manifest = 'node_modules/@types/probe/package.json';
+    const archiveTime = new Date('2020-01-01T00:00:00Z');
     const projects = fixtures.map((f) => {
-      f.write(
-        'package.json',
-        JSON.stringify({
-          name: 'isolated-domain',
-          private: true,
-          packageManager: 'npm@11.6.1',
-        }),
-      );
-      f.write(
-        'package-lock.json',
-        JSON.stringify({
-          name: 'isolated-domain',
-          lockfileVersion: 3,
-          packages: { '': {} },
-        }),
-      );
       f.write('a.ts', 'export const value = 1;');
+      f.write(manifest, '{"name":"@types/probe","version":"1.0.0"}');
+      utimesSync(f.file(manifest), archiveTime, archiveTime);
       f.write(
         'node_modules/@types/probe/index.d.ts',
         'declare const probe: number;',
@@ -548,11 +710,15 @@ describe('bounded compiler context replacement and incremental inputs', () => {
           ? undefined
           : parseAnalysisSnapshot(
               roundTripAnalysisSnapshot(previous.snapshot()),
-              'domains',
+              'type-packages',
               'config',
             );
       if (previous !== undefined) expect(snapshot).toBeDefined();
-      const cache = new NativeAnalysisCache('domains', snapshot, 'config');
+      const cache = new NativeAnalysisCache(
+        'type-packages',
+        snapshot,
+        'config',
+      );
       for (const project of projects) {
         const context =
           cache.restoreContext(project) ??
@@ -570,20 +736,13 @@ describe('bounded compiler context replacement and incremental inputs', () => {
     expect(first.metrics.semanticPrograms).toBe(2);
     expect(
       Object.values(first.contexts).every(
-        (record) => record.environment.evidence === 'lockfile-trusted',
+        (record) => record.environment.evidence === 'observed',
       ),
     ).toBe(true);
     const warm = run(first);
     expect(warm.metrics.semanticPrograms).toBe(0);
-    fixtures[0]!.write(
-      'package-lock.json',
-      JSON.stringify({
-        name: 'isolated-domain',
-        lockfileVersion: 3,
-        packages: { '': {} },
-        changed: true,
-      }),
-    );
+    fixtures[0]!.write(manifest, '{"name":"@types/probe","version":"2.0.0"}');
+    utimesSync(fixtures[0]!.file(manifest), archiveTime, archiveTime);
     const changed = run(warm);
     expect(changed.metrics.semanticPrograms).toBe(1);
     expect(changed.metrics.restoredContexts).toBe(1);

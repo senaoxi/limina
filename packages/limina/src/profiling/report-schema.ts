@@ -252,6 +252,7 @@ const runtime = z.object({
 });
 const coverage = z.object({
   projectInventory: z.enum(['complete', 'partial', 'not-started']),
+  workDetail: z.enum(['complete', 'partial']).optional(),
   decisionDetail: z.literal('partial'),
   clockDomains: z.array(z.literal('main')),
   detailsOmitted: nonnegativeInteger,
@@ -285,6 +286,8 @@ const task = z.object({
   name: optionalLabel,
   state: optionalLabel,
   queueWaitUs: optionalInteger,
+  readyQueueUs: optionalInteger,
+  dispatchToRunnerUs: optionalInteger,
   runnerUs: optionalInteger,
 });
 const link = z.object({
@@ -294,7 +297,7 @@ const link = z.object({
 });
 const analysisProfileSchema = z.object({
   schemaVersion: z.literal(2),
-  metricRevision: z.literal(2),
+  metricRevision: z.literal([2, 3]),
   invocation,
   runtime,
   coverage,
@@ -316,7 +319,6 @@ export function analysisProfileJsonSchema(): object {
 }
 
 export function encodeAnalysisProfile(profile: AnalysisProfile): string {
-  // The schema projects allowlisted fields before writing. Legacy run/trace
-  // payloads and unknown producer properties never pass through this boundary.
+  // The schema projects the public fields before writing.
   return `${JSON.stringify(analysisProfileSchema.parse(profile))}\n`;
 }

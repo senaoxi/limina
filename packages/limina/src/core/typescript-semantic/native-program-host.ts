@@ -190,7 +190,7 @@ function attachLibraryResolver(
     const raw = resolveCallback(
       input,
       host,
-      { channel: 'library', file: from, name, effective },
+      { channel: 'library', file: from, name, effective, libraryFileName },
       (observed) =>
         nativeCompilerApi(input.compiler).resolveLibrary(
           name,

@@ -25,6 +25,7 @@ export interface ProjectInfo {
   options: ts.CompilerOptions;
   references: Set<string>;
   resolverConfigPath: string;
+  resolverProjectReferences: readonly ts.ProjectReference[];
   semanticAuthority?: LockedSemanticAuthority;
   svelteSemanticProject?: SvelteSemanticProject;
   vueSemanticIdentity?: VueProjectSemanticIdentity;

@@ -5,19 +5,18 @@ import {
 } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
+import { currentProfile } from '../../application/analysis/observability';
+import { observeWork, profileContextScope } from '../analysis-profile';
 import type {
   GovernedSourceUnit,
   PreparedTsconfigGraph,
   SourceProject,
 } from '../build-graph/types';
 import type { ImportAnalysisContext } from '../import-analysis/types';
-import type { ProjectDependencyCollection } from '../project-dependencies/contracts';
-import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
-import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
+import type { ReferenceGraphFacts } from '../project-dependencies/reference-facts';
 import { observeNativeHostInputs } from '../typescript-semantic/native-host-inputs';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
-import type { DiscoveryRecord } from './contracts';
 import { EpochInputs } from './epoch-inputs';
 import {
   collectFrameworkConfigInputs,
@@ -28,15 +27,8 @@ import {
   observeFrameworkTools,
   readFrameworkTools,
 } from './framework-tools';
-import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
 
-export interface FrameworkExecutionReceipt {
-  observations: DiscoveryRecord[];
-  toolchain: string;
-}
-const receipts = new WeakMap<GovernedSourceUnit, FrameworkExecutionReceipt>();
-const rebound = new WeakSet<GovernedSourceUnit>();
 interface QualifiedTools {
   tools: FrameworkTools;
   inputs?: EpochInputs;
@@ -69,16 +61,17 @@ function resolveRecord(
   input: FrameworkInput,
   record: { specifier: string; filePath: string },
 ): void {
+  const execution = input.project.executionConfig;
   ts.resolveModuleName(
     record.specifier,
     record.filePath,
-    input.project.options,
+    execution?.options ?? input.project.options,
     withVirtualResolutionFiles(
       observedResolutionHost(
         ts,
-        input.project.executionConfigPath ?? input.project.configPath,
+        execution?.configPath ?? input.project.configPath,
       ),
-      input.project.virtualFiles,
+      execution?.virtualFiles ?? input.project.virtualFiles,
     ),
   );
 }
@@ -91,11 +84,13 @@ function collectFrameworkImports(
   file: string,
   ownedFiles: ReadonlySet<string>,
 ): string[] {
-  if (!input.project.virtualFiles?.has(file)) readContent(file);
+  const execution = input.project.executionConfig;
+  const virtualFiles = execution?.virtualFiles ?? input.project.virtualFiles;
+  if (!virtualFiles?.has(file)) readContent(file);
   if (!isFrameworkComponent(file)) return [];
   if (
     input.cache !== undefined &&
-    !input.project.virtualFiles?.has(file) &&
+    !virtualFiles?.has(file) &&
     ts.sys.fileExists(file)
   ) {
     const { inputs } = input.cache;
@@ -109,8 +104,7 @@ function collectFrameworkImports(
     context: {
       ...source.context,
       configPath: source.configPath,
-      resolverConfigPath:
-        input.project.executionConfigPath ?? source.configPath,
+      resolverConfigPath: execution?.configPath ?? source.configPath,
       semanticFamily: source.semanticAuthority.family,
       svelteSemanticProject: source.svelteSemanticProject,
       astroSemanticProject: source.astroSemanticProject,
@@ -140,7 +134,7 @@ function collectFrameworkClosure(
 }
 function collectConsumption(
   input: FrameworkInput,
-  result: ProjectDependencyCollection,
+  result: Pick<ReferenceGraphFacts, 'dependencies' | 'observations'>,
 ): void {
   const roots = new Set([
     ...input.project.fileNames,
@@ -149,29 +143,41 @@ function collectConsumption(
   for (const entry of [...result.dependencies, ...result.observations])
     if ('importRecord' in entry) resolveRecord(input, entry.importRecord);
   collectFrameworkClosure(input, roots);
-  const physicalHost = ts.createCompilerHost(input.project.options, true);
+  const execution = input.project.executionConfig;
+  const options = execution?.options ?? input.project.options;
+  const virtualFiles = execution?.virtualFiles ?? input.project.virtualFiles;
+  const physicalHost = ts.createCompilerHost(options, true);
   observeNativeHostInputs(physicalHost);
-  const host = withVirtualResolutionFiles(
-    physicalHost,
-    input.project.virtualFiles,
-  );
+  const host = withVirtualResolutionFiles(physicalHost, virtualFiles);
   const original = host.getSourceFile.bind(host);
   host.getSourceFile = (...arguments_) => {
-    const virtual = input.project.virtualFiles?.get(
-      normalizeAbsolutePath(arguments_[0]),
-    );
+    const virtual = virtualFiles?.get(normalizeAbsolutePath(arguments_[0]));
     return virtual === undefined
       ? original(...arguments_)
       : ts.createSourceFile(arguments_[0], virtual, arguments_[1], true);
   };
+  const observer = currentProfile();
+  const scope = profileContextScope(observer, {
+    instance: input.source,
+    configPath: input.source.configPath,
+    checker: input.source.primaryCheckerName,
+    provider: 'typescript',
+    role: 'execution-inputs',
+  });
   // Input-only Program: no Native facts, project references or execution targets are produced.
-  ts.createProgram({
+  const request = {
     rootNames: [...roots].filter(
       (file) => !/\.(?:svelte|astro|vue)$/u.test(file),
     ),
-    options: input.project.options,
+    options,
     host,
-  });
+  };
+  observeWork(
+    observer,
+    'framework-execution-input-program-create',
+    () => ts.createProgram(request),
+    scope,
+  );
 }
 function frameworkCapability(source: GovernedSourceUnit) {
   const [capability] = source.frameworkCapabilities;
@@ -183,75 +189,6 @@ function frameworkCapability(source: GovernedSourceUnit) {
     capability?.family === source.semanticAuthority.family
     ? capability
     : undefined;
-}
-
-const missingContentVersion = analysisHash(undefined);
-
-function receiptIdentity(
-  source: GovernedSourceUnit,
-  tools: FrameworkTools,
-  observations: readonly DiscoveryRecord[],
-): string | undefined {
-  const keys = new Set(
-    observations
-      .filter(
-        ({ key, path, descriptor }) =>
-          'path' in descriptor &&
-          descriptor.path === path &&
-          key === JSON.stringify([descriptor.kind, path]),
-      )
-      .map(({ key }) => key),
-  );
-  if (
-    tools.files.some(
-      (file) => !keys.has(JSON.stringify(['file-digest', file])),
-    ) ||
-    tools.lookups.some((file) => !keys.has(JSON.stringify(['file', file])))
-  )
-    return undefined;
-  const roots = new Set(
-    observations
-      .filter(
-        (entry) =>
-          entry.descriptor.kind === 'typescript-content' &&
-          entry.version !== missingContentVersion,
-      )
-      .map((entry) => entry.path),
-  );
-  if (
-    source.ownedFileNames.some(
-      (file) =>
-        !roots.has(file) ||
-        (isFrameworkComponent(file) &&
-          !keys.has(JSON.stringify(['source-digest', file]))),
-    )
-  )
-    return undefined;
-  const astro = source.astroSemanticProject?.readSnapshot();
-  const svelte = source.svelteSemanticProject;
-  const project = astro ?? svelte;
-  if (project === undefined) return undefined;
-  return nativeFingerprint([
-    source.configPath,
-    source.primaryCheckerName,
-    source.semanticAuthority,
-    source.frameworkCapabilities,
-    source.ownedFileNames,
-    source.packageRootDir,
-    source.astroSemanticProject?.seed.projectFingerprint,
-    astro?.checkerExtensions ?? svelte?.extensions,
-    svelte?.adapterVersion,
-    svelte?.packageIdentity,
-    project.fileNames,
-    project.configClosure,
-    effectiveCompilerOptions(astro?.compilerOptions ?? svelte!.options),
-    astro?.projectReferences ?? svelte?.references,
-    svelte?.svelteOptions,
-    svelte?.resolverConfigPath,
-    svelte?.virtualFiles && [...svelte.virtualFiles],
-    tools.identity,
-    observations,
-  ]);
 }
 
 function currentTools(
@@ -292,48 +229,13 @@ function collectToolInputs(input: FrameworkInput): QualifiedTools | undefined {
   }
 }
 
-export function captureFrameworkExecutionReceipt(
-  source: GovernedSourceUnit,
-): FrameworkExecutionReceipt | undefined {
-  return scopes.get(source) instanceof EpochInputs
-    ? receipts.get(source)
-    : undefined;
-}
-
-export function hasBoundFrameworkExecutionReceipt(
-  source: GovernedSourceUnit,
-  epoch: EpochInputs,
-  receipt: FrameworkExecutionReceipt,
-): boolean {
-  const tools = currentTools(source, epoch)?.tools;
-  if (
-    !tools ||
-    receiptIdentity(source, tools, receipt.observations) !== receipt.toolchain
-  )
-    return false;
-  const qualified = epoch.selectRecords(receipt.observations);
-  if (qualified === undefined) return false;
-  scopes.set(source, qualified);
-  receipts.set(source, receipt);
-  rebound.add(source);
-  return true;
-}
-
-export function hasFrameworkExecutionInputs(
-  source: GovernedSourceUnit,
-): boolean {
-  return rebound.has(source);
-}
-
 /**
 Source consumption has a transitive scope independent of the bounded compilation-obligation graph.
 */
 export function collectFrameworkExecutionInputs<
-  T extends ProjectDependencyCollection,
+  T extends Pick<ReferenceGraphFacts, 'dependencies' | 'observations'>,
 >(input: FrameworkInput, collect: () => T): T {
   if (input.source.frameworkCapabilities.length === 0) return collect();
-  receipts.delete(input.source);
-  rebound.delete(input.source);
   const inputs = new EpochInputs();
   const tools = collectToolInputs(input);
   let failure: Error | undefined;
@@ -349,18 +251,6 @@ export function collectFrameworkExecutionInputs<
     return result;
   });
   scopes.set(input.source, failure ?? inputs);
-  if (failure === undefined && tools?.tools.isCurrent()) {
-    const observations = inputs.snapshot();
-    if (observations !== undefined) {
-      const toolchain = receiptIdentity(
-        input.source,
-        tools.tools,
-        observations,
-      );
-      if (toolchain !== undefined)
-        receipts.set(input.source, { observations, toolchain });
-    }
-  }
   return collection;
 }
 export function frameworkExecutionInputs(
@@ -381,9 +271,6 @@ export function retainFrameworkExecutionInputs(
 ): void {
   const observations = scopes.get(source);
   if (observations !== undefined) scopes.set(published, observations);
-  const receipt = receipts.get(source);
-  if (receipt !== undefined) receipts.set(published, receipt);
-  if (rebound.has(source)) rebound.add(published);
 }
 
 export async function completeFrameworkExecutionInputs(

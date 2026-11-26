@@ -39,6 +39,10 @@ export class WorkspaceLookupIndex {
     return this.#state.packageScopeLookup.findNearestPackageScopeInfo(filePath);
   }
 
+  findGovernedPackageScopeInfo(file: string): NearestPackageInfo | null {
+    return this.#state.packageScopeLookup.findGovernedPackageScopeInfo(file);
+  }
+
   isInsideActivatedRegion(filePath: string): boolean {
     return this.#state.region.isInsideActivatedRegion(filePath);
   }

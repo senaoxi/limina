@@ -70,6 +70,9 @@ export function cloneValidatedWorkspaceContext(
   return {
     ...cloneWorkspaceRegionTopology(context),
     configRootDir: context.configRootDir,
+    ...(context.descriptorStamps && {
+      descriptorStamps: new Map(context.descriptorStamps),
+    }),
     descriptorCandidates: context.descriptorCandidates.map((candidate) => ({
       ...candidate,
     })),

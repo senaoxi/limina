@@ -1,10 +1,7 @@
-import type {
-  ResolvedCheckerModuleName,
-  VueProjectSemanticIdentity,
-} from '#checkers';
+import type { VueProjectSemanticIdentity } from '#checkers';
 import type ts from 'typescript';
-import { occurrenceKey } from '../analysis-cache/semantic-state';
 import type { VueQueryResults } from '../analysis-cache/vue-contracts';
+import { vueObservationRequest } from '../analysis-cache/vue-graph-facts';
 import type { ImportAnalysisContext } from '../import-analysis/types';
 import {
   collectFrameworkEnvironmentEntries,
@@ -55,11 +52,7 @@ function observeDependency(
   const restored = manager.query({
     identity,
     kind: 'dependency-observation',
-    request: [
-      request.importRecord.filePath,
-      occurrenceKey(request.importRecord),
-      targetIdentity(target),
-    ],
+    request: vueObservationRequest(request.importRecord, target),
     collect: () => {
       observed = observeVueGraphDependency({
         context: manager.acquire(identity),
@@ -71,15 +64,6 @@ function observeDependency(
   });
   return restored ?? observed!;
 }
-function targetIdentity(target: ResolvedCheckerModuleName | null) {
-  return target === null
-    ? null
-    : [
-        target.resolvedFileName,
-        target.resolvedBy,
-        target.isExternalLibraryImport,
-      ];
-}
 function unsupported(checker: string | undefined): VueDependencyObservation {
   return {
     coverage: 'unsupported',
@@ -90,6 +74,7 @@ export function createVueDependencyObserver(
   manager: VueSemanticContextManager,
 ): Pick<
   ImportAnalysisContext,
+  | 'restoreVueGraphFacts'
   | 'collectCheckerRequestInventory'
   | 'collectCheckerSourceRecords'
   | 'collectCheckerSupportInputs'
@@ -97,6 +82,7 @@ export function createVueDependencyObserver(
   | 'collectCheckerTypeEnvironmentEntries'
 > {
   return {
+    restoreVueGraphFacts: (identity) => manager.graphFacts(identity),
     collectCheckerRequestInventory: (request) => {
       const identity = request.vueSemanticIdentity;
       return identity === undefined || request.semanticFamily !== 'vue'

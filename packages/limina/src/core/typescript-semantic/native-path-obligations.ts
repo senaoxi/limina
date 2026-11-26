@@ -14,15 +14,14 @@ import {
   targetConfig,
 } from './native-obligation-projection';
 import type { NativePathReceipt } from './native-path-selection';
-import type { NativeObservedProgram } from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
 import type { NativeReferenceObservation } from './reference-redirect';
 
 interface PathObligationInput extends ObligationSite {
-  source?: ts.SourceFile;
+  sourceIsExternal?: boolean;
   sourceLoadGap?: string;
   receipt: NativePathReceipt;
-  program: NativeObservedProgram;
+  options: ts.CompilerOptions;
   frontier: NativeProgramFrontier;
   compiler: typeof ts;
   references: ReadonlyMap<string, NativeReferenceObservation>;
@@ -82,12 +81,7 @@ function rootOrImplementationImpact(
   input: PathObligationInput,
   target: string,
 ): NativeModuleImpact {
-  const targetKey = input.frontier.fileKey(target);
-  if (
-    input.program
-      .getRootFileNames()
-      .some((root) => input.frontier.fileKey(root) === targetKey)
-  )
+  if (input.frontier.isProjectRoot(target))
     return {
       state: 'absent',
       rule: 'consumer-root-has-no-cross-unit-obligation',
@@ -102,7 +96,7 @@ function implementationImpact(
   const qualification = pathTargetEligibility(input, target);
   if (qualification.state !== 'present') return qualification;
   const isScoped = [
-    input.program.getCompilerOptions().composite === true,
+    input.options.composite === true,
     input.context.inputs.compilationScope ===
       'generated-declaration-project-v1',
   ].some(Boolean);
@@ -139,20 +133,13 @@ function sourceImpact(
 ): NativeModuleImpact {
   if (input.sourceLoadGap !== undefined)
     return { state: 'unknown', reason: input.sourceLoadGap };
-  return hasExternalSource(input)
+  return input.sourceIsExternal === true
     ? {
         state: 'absent',
         rule: 'compiler-external-library-path-input-is-not-emitted-by-consumer',
       }
     : implementationImpact(input, target);
 }
-function hasExternalSource(input: PathObligationInput): boolean {
-  return (
-    input.source !== undefined &&
-    input.program.isSourceFileFromExternalLibrary(input.source)
-  );
-}
-
 function pathReference(
   input: PathObligationInput,
 ): NativeReferenceObservation | undefined {
@@ -167,7 +154,7 @@ function pathTargetEligibility(
   const qualification = nativeTargetEligibility({
     target,
     compiler: input.compiler,
-    emitOptions: input.program.getCompilerOptions(),
+    emitOptions: input.options,
   });
   return qualification.state === 'absent'
     ? redirectedPathEmission(input, qualification)

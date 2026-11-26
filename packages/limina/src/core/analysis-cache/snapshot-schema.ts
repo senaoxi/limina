@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { authorityRecordSchema } from './authority-record-schema';
+import { isPublishedNativeData } from '../../domain/analysis/native-evidence-freeze';
 import { configModuleSnapshotSchema } from './config-module-schema';
 import {
   ANALYSIS_ADAPTER,
@@ -129,6 +129,9 @@ const inputsRecord = z.object({
     'entries',
     'realpath',
     'binding',
+    'manifest',
+    'type-packages',
+    'directory-identity',
     'tree',
     'bytes',
   ]),
@@ -137,7 +140,6 @@ const inputsRecord = z.object({
   textVersions: z
     .object({ utf8: text, typescript: text.optional() })
     .optional(),
-  installedTargets: z.array(text).optional(),
 });
 const queriesRecord = z.object({
   contextId: text,
@@ -166,49 +168,18 @@ const projectsRecord = z.object({
   environment: texts,
   references: z.json(),
 });
-const policyOccurrence = z.object({
-  filePath: text,
-  policy: z.literal('declaration-context'),
-  requestIds: texts,
+const scopeManifest = z.object({
+  directory: text,
+  role: z.enum(['active', 'extended', 'boundary']),
+  version: text,
 });
-const contributionsRecord = z.object({
-  occurrence: z.union([occurrenceSchema, policyOccurrence]),
-  basis: z
-    .object({ kind: z.literal('declaration-context'), evidence: text })
-    .optional(),
-  sourceVersion: text,
-  fromChecker: text,
-  toChecker: text,
-  fromConfigPath: text,
-  toConfigPath: text,
-  kind: text,
+const configScope = z.object({
+  scope: text,
+  role: z.enum(['source', 'solution']),
 });
-const graphRecord = z.object({
-  workspaceVersion: text,
-  queryIds: texts,
-  contextIds: texts,
-  vueContextIds: texts,
-  dependencies: z.array(dependency),
-  // The data codec validates this closed grammar without expanding shared nodes.
-  data: z.unknown(),
-  discovery: z.array(discoveryRecordSchema),
-});
-
-export function parseGraphRecords(value: unknown): AnalysisSnapshot['graphs'] {
-  return z.record(text, graphRecord).parse(value) as AnalysisSnapshot['graphs'];
-}
-const lockDigest = z.string().regex(/^[a-f0-9]{64}$/);
-const lockReceipt = z.tuple([text, lockDigest, text]);
-const installationReceipt = z.object({
-  root: text,
-  configPath: text,
-  kind: z.enum(['project', 'environment', 'location']),
-  installationRoot: text,
-  binding: text.optional(),
-  manager: text,
-  lockRoot: text,
-  resolutionRoot: text,
-  locks: z.array(lockReceipt).nonempty(),
+const packageScopes = z.object({
+  manifests: z.record(text, scopeManifest),
+  configs: z.record(text, configScope),
 });
 const header = z.object({
   schema: z.literal(ANALYSIS_SCHEMA),
@@ -217,7 +188,7 @@ const header = z.object({
   configVersion: text,
   revision: z.uuid(),
   baselineTime: z.number().nonnegative().optional(),
-  installations: z.array(installationReceipt).optional(),
+  packageScopes,
 });
 const requestTemplate = z.object({
   occurrence: occurrenceSchema,
@@ -240,28 +211,67 @@ const fileFacts = z.object({
   requests: z.array(requestTemplate),
   libraries: texts,
 });
-const resolvedConfig = z.object({
-  configPath: text,
-  context: text,
-  discovery: z.array(discoveryRecordSchema).nonempty(),
-  payload: text,
-  fingerprint: text,
+const sourceAuthority = z.strictObject({
+  family: z.enum(['astro', 'svelte', 'typescript', 'vue']),
+  source: z.enum(['explicit', 'config', 'baseline']),
+  provider: text,
+  toolchain: text,
 });
-const snapshot = z.object({
+const configProjection = z.strictObject({
+  data: text,
+  reads: z.array(discoveryRecordSchema).min(1),
+  integrity: text,
+});
+const sourceConfig = z.strictObject({
+  authority: sourceAuthority,
+  projections: z.record(text, configProjection),
+});
+const snapshot = z.strictObject({
   header,
   configModules: configModuleSnapshotSchema,
-  authorities: z.record(text, authorityRecordSchema),
-  resolvedConfigs: z.record(text, resolvedConfig),
   inputs: z.record(text, inputsRecord),
   queries: z.record(text, queriesRecord),
   importers: z.record(text, importersRecord),
   files: z.record(text, fileFacts),
   projects: z.record(text, projectsRecord),
-  contributions: z.record(text, z.array(contributionsRecord)),
-  graphs: z.record(text, graphRecord),
   contexts: z.record(text, nativeContextSchema),
   vueContexts: z.record(text, vueContextSchema),
+  sourceConfigs: z.record(text, sourceConfig),
 });
+
+const storedBindings = new WeakSet<AnalysisSnapshot>();
+
+export function hasStoredNativeBindings(snapshot: AnalysisSnapshot): boolean {
+  return storedBindings.has(snapshot);
+}
+
+export function parseStoredAnalysisSnapshot(
+  value: unknown,
+  identity: string,
+  configVersion: string,
+): AnalysisSnapshot | undefined {
+  const parsed = parseAnalysisSnapshot(value, identity, configVersion);
+  if (parsed === undefined) return undefined;
+  freezeStoredBinding(parsed.contexts);
+  freezeStoredBinding(parsed.projects);
+  freezeStoredBinding(parsed.importers);
+  freezeStoredBinding(parsed.queries);
+  Object.freeze(parsed.header);
+  Object.freeze(parsed);
+  storedBindings.add(parsed);
+  return parsed;
+}
+
+function freezeStoredBinding(value: unknown): void {
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    isPublishedNativeData(value)
+  )
+    return;
+  for (const child of Object.values(value)) freezeStoredBinding(child);
+  Object.freeze(value);
+}
 
 export function parseAnalysisSnapshot(
   value: unknown,

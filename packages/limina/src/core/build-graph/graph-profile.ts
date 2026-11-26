@@ -5,7 +5,6 @@ import {
 import type { PreparedTsconfigGraph } from './types';
 
 type GraphPurpose = 'complete' | 'producer-build' | 'dependency-analysis';
-type GraphSource = 'computed' | 'restored';
 
 interface SharedGraphWork {
   readonly work: string;
@@ -59,28 +58,13 @@ export function recordGraphPreparation(
   graph: PreparedTsconfigGraph,
   gate: 'core' | 'preflight',
   work: string,
-  source?: GraphSource,
 ): void {
   const result = profile.identity(graph, 'graph');
   const providerRun = profile.currentProviderRun();
-  const projects =
-    source === 'restored'
-      ? [
-          ...new Set(
-            graph.governedSources
-              .values()
-              .flatMap((units) =>
-                units.keys().map((config) => profile.project(config)),
-              ),
-          ),
-        ]
-      : undefined;
   profile.graph(result, {
     purpose: graph.purpose,
     ...(providerRun !== undefined && { providerRun }),
-    ...(gate === 'core' && { producer: work }),
-    ...(source !== undefined && { source }),
-    ...(projects !== undefined && { projects }),
+    ...(gate === 'core' && { producer: work, source: 'computed' }),
     result,
     plan: profile.identity(graph.artifactPlan, 'plan'),
     prepared: [{ gate, atUs: profile.now() }],
@@ -144,9 +128,9 @@ export function observeGraphRequest<T extends object>(
           producer === undefined && { producer: preparation }),
       });
       if (pending === undefined) profile.finish(request);
-    } catch {
+    } catch (error) {
       actual.state = 'failed';
-      if (pending === undefined) profile.finish(request, 'failed');
+      if (pending === undefined) profile.fail(request, error);
     }
   })();
   return promise;

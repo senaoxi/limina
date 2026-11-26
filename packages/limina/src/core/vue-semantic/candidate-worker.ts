@@ -9,6 +9,25 @@ const { createRequire } = require('node:module');
 const crypto = require('node:crypto');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const fromVue = createRequire(input.vueTsc);
+const programWork = input.profile === true
+  ? { attempts: 0, created: 0, failed: 0, elapsedUs: 0 }
+  : undefined;
+const outputProgramWork = programWork && process.stderr.write.bind(process.stderr);
+function createCandidateProgram(create, args) {
+  if (!programWork) return create(...args);
+  programWork.attempts++;
+  const start = performance.now();
+  try {
+    const program = create(...args);
+    programWork.created++;
+    return program;
+  } catch (error) {
+    programWork.failed++;
+    throw error;
+  } finally {
+    programWork.elapsedUs += Math.round((performance.now() - start) * 1000);
+  }
+}
 const normalize = file => path.resolve(file).replaceAll('\\', '/');
 const buildInfoFile = input.buildInfoFile && normalize(input.buildInfoFile);
 const files = new Map(input.files.map(([file, text]) => [normalize(file), text]));
@@ -118,19 +137,10 @@ const output = process.stdout.write.bind(process.stdout);
 process.stdout.write = text => { log += String(text); return true; };
 process.stderr.write = process.stdout.write;
 process.exit = code => { throw new Error('vue-tsc exited before observation: ' + code + ': ' + log); };
-const proxy = fromVue('@volar/typescript/lib/node/proxyCreateProgram');
-const original = proxy.proxyCreateProgram;
-if (typeof original !== 'function') throw new Error('Unsupported Volar Program proxy.');
-proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args) => {
-  const options = args[0];
-  if (!options || !options.host || !Array.isArray(options.rootNames)) throw new Error('Unsupported vue-tsc Program creation.');
-  const host = options.host;
-  const key = file => ts.toPath(file, host.getCurrentDirectory(), host.getCanonicalFileName);
-  const roots = new Set(options.rootNames.map(key));
+const isDeclaration = file => /\.d\.[cm]?ts$/i.test(file);
+function createSourceAdmission(key, rootNames, coverage) {
+  const roots = new Set(rootNames.map(key));
   const declarations = new Set(input.declarations.map(key));
-  const configs = new Set(input.configs.map(key));
-  const isDeclaration = file => /\.d\.[cm]?ts$/i.test(file);
-  const coverage = input.coverage;
   const currentIdentity = member => {
     if (member.physical.state !== 'verified' || member.physical.inputVersion !== coverage.inputVersion) return false;
     try {
@@ -149,7 +159,7 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
     names.push(member);
     memberKeys.set(key(member.lexicalPath), names);
   }
-  const canLoadDeclaration = file => {
+  return file => {
     if (!isDeclaration(file)) return roots.has(key(file));
     const matched = memberKeys.get(key(file)) ?? [];
     let physical;
@@ -160,6 +170,19 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
     if (!complete) return false;
     return matched.length === 0 || declarations.has(key(file));
   };
+}
+const proxy = fromVue('@volar/typescript/lib/node/proxyCreateProgram');
+const original = proxy.proxyCreateProgram;
+if (typeof original !== 'function') throw new Error('Unsupported Volar Program proxy.');
+proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args) => {
+  const options = args[0];
+  if (!options || !options.host || !Array.isArray(options.rootNames)) throw new Error('Unsupported vue-tsc Program creation.');
+  const host = options.host;
+  const key = file => ts.toPath(file, host.getCurrentDirectory(), host.getCanonicalFileName);
+  const configs = new Set(input.configs.map(key));
+  const canLoadSource = input.coverage === undefined
+    ? undefined
+    : createSourceAdmission(key, options.rootNames, input.coverage);
   const callbacks = new Map();
   const effective = new Map();
   // runTsc exposes private compiler bindings through an eval-backed Proxy.
@@ -216,13 +239,12 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
     // JSON configuration reads construct the real Reference Map. They are
     // metadata, not source-loading grants. Libraries remain a separate purpose.
     const name = normalize(file);
-    const mappingOnly = input.declarations.length === 0 && input.referenceInputs?.length;
-    if (configs.has(key(name)) || (!mappingOnly && canLoadDeclaration(name)))
+    if (configs.has(key(name)) || canLoadSource?.(name))
       return getSource.call(host, file, ...rest);
     return undefined;
   };
   host.writeFile = failWrite;
-  const program = createProgram(...args);
+  const program = createCandidateProgram(createProgram, args);
   const sources = program.getSourceFiles();
   const requests = [];
   const readReference = file => {
@@ -327,5 +349,6 @@ proxy.proxyCreateProgram = (ts, createProgram, plugins) => original(ts, (...args
 process.argv = [process.execPath, fromVue.resolve('vue-tsc/bin/vue-tsc.js'), '-p', input.generatedConfig, '--pretty', 'false'];
 try { fromVue(process.argv[1]); }
 catch (error) { if (error !== stop) { output(JSON.stringify({ error: String(error?.stack ?? error), log })); process.exitCode = 1; } }
+outputProgramWork?.(JSON.stringify(programWork));
 if (observation) output(JSON.stringify(observation));
 `;

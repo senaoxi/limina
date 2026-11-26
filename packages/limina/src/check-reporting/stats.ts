@@ -1,6 +1,7 @@
-import type {
-  TaskProgressItem,
-  TaskProgressReporter,
+import {
+  startTaskProgressTiming,
+  type TaskProgressItem,
+  type TaskProgressReporter,
 } from '../execution/progress';
 import type { LiminaCheckRunCheckItemSummary } from './snapshot';
 
@@ -33,7 +34,9 @@ export function createCheckCounter(): CheckCounter {
 }
 
 export interface CheckItemAccumulator {
+  failActive(error: unknown): never;
   getItems(): LiminaCheckRunCheckItemSummary[];
+  observe<T>(name: string, operation: () => Promise<T>): Promise<T>;
   record(name: string): void;
   skip(name: string, message?: string): void;
   start(name: string): void;
@@ -45,7 +48,6 @@ export interface CheckItemAccumulatorOptions {
 }
 
 interface ActiveCheckItem {
-  name: string;
   progressItem?: TaskProgressItem;
 }
 
@@ -168,7 +170,6 @@ function captureCurrentCounts(state: CheckItemAccumulatorState): void {
 
 function startItem(state: CheckItemAccumulatorState, name: string): void {
   state.activeItem = {
-    name,
     progressItem: startProgressItem(state, name),
   };
   captureCurrentCounts(state);
@@ -191,27 +192,48 @@ function ensureActiveItem(
 
 function finishProgressItem(
   activeItem: ActiveCheckItem,
-  item: LiminaCheckRunCheckItemSummary,
+  outcome: 'pass' | 'fail',
+  elapsedTimeMs: number | undefined,
 ): void {
-  const progressItem = activeItem.progressItem;
-
-  if (progressItem === undefined) {
-    return;
-  }
-
-  const details = { elapsedTimeMs: item.durationMs };
-
-  if (item.status === 'passed') {
-    progressItem.pass(undefined, details);
-    return;
-  }
-
-  progressItem.fail(undefined, details);
+  activeItem.progressItem?.[outcome](undefined, { elapsedTimeMs });
 }
 
 function finishItem(state: CheckItemAccumulatorState): void {
   state.activeItem = undefined;
   captureCurrentCounts(state);
+}
+
+function failActiveItem(
+  state: CheckItemAccumulatorState,
+  error: unknown,
+): never {
+  try {
+    const activeItem = state.activeItem;
+    if (activeItem !== undefined) {
+      const elapsedTimeMs = performance.now() - state.previousRecordTime;
+      finishItem(state);
+      finishProgressItem(activeItem, 'fail', elapsedTimeMs);
+    }
+  } catch {
+    // Preserve the check failure if the progress reporter also fails.
+  }
+  throw error;
+}
+
+async function observeItem<T>(
+  state: CheckItemAccumulatorState,
+  name: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const finish = startTaskProgressTiming(state.plannedProgressItems.get(name));
+  try {
+    const result = await operation();
+    finish?.('pass');
+    return result;
+  } catch (error) {
+    finish?.('fail');
+    throw error;
+  }
 }
 
 function recordItem(state: CheckItemAccumulatorState, name: string): void {
@@ -227,8 +249,12 @@ function recordItem(state: CheckItemAccumulatorState, name: string): void {
   });
 
   state.items.push(item);
-  finishProgressItem(activeItem, item);
   finishItem(state);
+  finishProgressItem(
+    activeItem,
+    item.status === 'passed' ? 'pass' : 'fail',
+    item.durationMs,
+  );
 }
 
 function skipItem(
@@ -236,15 +262,22 @@ function skipItem(
   name: string,
   message: string | undefined,
 ): void {
-  const activeItem = ensureActiveItem(state, name);
+  const activeItem = state.activeItem;
+  const progressItem =
+    activeItem?.progressItem ??
+    state.plannedProgressItems.get(name) ??
+    state.progress?.planItem(name);
   const item = createSkippedCheckItemStats({
-    durationMs: performance.now() - state.previousRecordTime,
+    durationMs:
+      activeItem === undefined
+        ? undefined
+        : performance.now() - state.previousRecordTime,
     name,
   });
 
   state.items.push(item);
-  activeItem.progressItem?.skip(message, { elapsedTimeMs: item.durationMs });
   finishItem(state);
+  progressItem?.skip(message);
 }
 
 function cloneItems(
@@ -271,7 +304,9 @@ export function createCheckItemAccumulator(
   };
 
   return {
+    failActive: (error) => failActiveItem(state, error),
     getItems: () => cloneItems(state.items),
+    observe: (name, operation) => observeItem(state, name, operation),
     record: (name) => recordItem(state, name),
     skip: (name, message) => skipItem(state, name, message),
     start: (name) => startItem(state, name),

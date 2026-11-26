@@ -1,5 +1,6 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import { AnalysisInputDriftError } from './contracts';
+import { isDecodedRecord } from './record-table';
 import type {
   VueQueryKind,
   VueQueryRecord,
@@ -37,21 +38,11 @@ export class VueAnalysisMemo {
   ): VueQueryResults[K] | undefined {
     const result = decodeVueQuery(kind, record.data);
     if (result !== undefined) {
-      freezeData(record.data);
+      if (!isDecodedRecord(record.data)) freezeData(record.data);
       Object.freeze(record);
       this.#queries.set(record, result);
     }
     return result;
-  }
-
-  #result<K extends VueQueryKind>(
-    kind: K,
-    record: VueQueryRecord,
-  ): VueQueryResults[K] | undefined {
-    const result = this.#queries.get(record) ?? this.#decode(kind, record);
-    // Callers previously received a fresh decode. Keep that isolation even
-    // when the validated result is shared inside this cache instance.
-    return structuredClone(result) as VueQueryResults[K] | undefined;
   }
 
   contextId(identity: VueProjectSemanticIdentity): string {
@@ -78,7 +69,21 @@ export class VueAnalysisMemo {
     kind: K,
     record: VueQueryRecord | undefined,
   ): VueQueryResults[K] | undefined {
-    return record?.kind === kind ? this.#result(kind, record) : undefined;
+    return structuredClone(this.read(kind, record));
+  }
+
+  /**
+  Returns a recursively frozen query result owned by the decoder.
+  */
+  read<K extends VueQueryKind>(
+    kind: K,
+    record: VueQueryRecord | undefined,
+  ): VueQueryResults[K] | undefined {
+    return record?.kind === kind
+      ? ((this.#queries.get(record) ?? this.#decode(kind, record)) as
+          | VueQueryResults[K]
+          | undefined)
+      : undefined;
   }
 }
 

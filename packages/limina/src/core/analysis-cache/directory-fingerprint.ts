@@ -15,6 +15,7 @@ import {
 import path from 'pathe';
 import { AnalysisInputDriftError } from './contracts';
 import { analysisHash } from './identity';
+import { physicalEntry } from './physical-entry';
 
 type LinkBindings = [string, string][];
 interface BindingRound {
@@ -135,15 +136,21 @@ export function pathBinding(file: string): unknown {
   }
   return value;
 }
+export function packageManifestState(file: string): unknown {
+  return [pathBinding(file), physicalEntry(file)];
+}
 class LocalInventory {
   readonly entries: unknown[] = [];
-  readonly installedTargets = new Set<string>();
   #link(file: string, relative: string, ancestors: Set<string>): void {
     this.entries.push([relative, 'binding', pathBinding(file)]);
     const target = normalizeAbsolutePath(realpathSync.native(file));
     if (target.split('/').includes('node_modules')) {
-      this.installedTargets.add(target);
-      this.entries.push([relative, 'installation-target', target]);
+      this.entries.push([
+        relative,
+        'installed-package',
+        target,
+        packageManifestState(path.join(target, 'package.json')),
+      ]);
       return;
     }
     this.visit(target, `${relative}/@target`, ancestors);
@@ -175,7 +182,6 @@ class LocalInventory {
 }
 function inventory(root: string): {
   version: string;
-  installedTargets: string[];
 } {
   const scan = new LocalInventory();
   scan.visit(root, '', new Set());
@@ -185,12 +191,10 @@ function inventory(root: string): {
       pathBinding(root),
       scan.entries,
     ]),
-    installedTargets: [...scan.installedTargets].sort(compareCodeUnits),
   };
 }
 export function directoryObservation(root: string): {
   version: string;
-  installedTargets: string[];
 } {
   const first = inventory(root);
   if (inventory(root).version !== first.version)

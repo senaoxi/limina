@@ -1,31 +1,9 @@
 import type ts from 'typescript';
-import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type {
   NativeCompletenessPartition,
   NativeEvidenceFailure,
 } from '../../domain/analysis/native-evidence';
 import type { NativeProgramFrontier } from './native-program-frontier';
-
-export function nativeCoverageFailures(
-  index: SourceConfigCoverageIndex,
-): NativeEvidenceFailure[] {
-  return index.configurations.flatMap((config) =>
-    config.state === 'failed'
-      ? [
-          {
-            id: config.failureId,
-            kind: 'config-parse' as const,
-            detail: `Source config enumeration failed: ${config.configId}`,
-            evidenceIds: [config.configId],
-            affected: {
-              kind: 'universe' as const,
-              universeId: index.universe.id,
-            },
-          },
-        ]
-      : [],
-  );
-}
 
 export function nativeEntryPartitions(input: {
   contextId: string;

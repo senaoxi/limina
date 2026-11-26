@@ -2,7 +2,7 @@
 
 当 Limina 检查或构建项目时，需要知道每份 TypeScript 配置由哪个检查器处理。`scope.checkers` 用来选择项目的 `tsconfig.json` 入口，并在需要时指定检查器。
 
-Limina 会在已激活的[治理区域](./regions.md)中自动寻找入口。如果项目的有效 TypeScript 配置已经表达了框架归属，可以省略 `scope.checkers`。需要明确指定检查器、修改默认 TypeScript 构建检查器或排除自动发现的入口时，再填写这个字段。
+Limina 会在已激活的[治理区域](./regions.md)中自动寻找入口。如果各份源码配置直接声明了对应框架，可以省略 `scope.checkers`。需要明确指定检查器、修改默认 TypeScript 构建检查器或排除自动发现的入口时，再填写这个字段。
 
 Limina 支持以下固定名称：
 
@@ -18,7 +18,7 @@ Limina 支持以下固定名称：
 
 ## 自动发现 {#automatic-discovery}
 
-即使配置了具名检查器，Limina 也会继续自动发现入口。对于没有显式选择的入口，Limina 按下文的有效配置规则判断归属。普通 TypeScript 项目默认由 `tsc` 执行，声明构建关系或 `auto.useTsgo` 可以决定采用其他构建检查器。
+即使配置了具名检查器，Limina 也会继续自动发现入口。对于没有显式选择的源码配置，Limina 根据下文列出的直接声明判断归属。普通 TypeScript 项目默认由 `tsc` 执行，声明构建关系或 `auto.useTsgo` 可以决定采用其他构建检查器。
 
 | 项目中的情况             | 通常使用的检查器 |
 | ------------------------ | ---------------- |
@@ -70,7 +70,7 @@ export default defineConfig({
 
 ### 框架推导
 
-具名检查器决定所选配置的源码分析语义。没有显式选择时，Limina 收集下表中生效的配置项，并按检查器名称去重。
+具名检查器决定所选配置的源码分析语义。没有显式选择时，Limina 读取终端源码配置自身的 JSONC 字段，并按命中的检查器名称去重。
 
 | 配置命中的不同框架检查器数量 | 源码分析语义 | 执行检查器                                       |
 | ---------------------------- | ------------ | ------------------------------------------------ |
@@ -80,19 +80,19 @@ export default defineConfig({
 
 多个 Vue 设置只算一个 `vue-tsc` 选择，Vue 和 Astro 的设置则算两个。当执行检查器待定时，声明构建关系可能要求项目与另一个项目共用 `vue-tsc`。没有这类要求时，`auto.useTsgo` 决定使用 `tsc` 还是 `tsgo`。
 
-下列设置在有效源配置中表达对应框架的归属。
+在源码配置中直接声明下列设置，即可表达对应框架的归属。
 
-| 检查器         | 有效配置触发                                                                                                                                                                                                                                                      |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `astro`        | 生效的 `extends` 为 `astro/tsconfigs/base`、`astro/tsconfigs/strict` 或 `astro/tsconfigs/strictest`，可带 `.json`；`compilerOptions.types` 精确包含 `astro/client` 或 `astro/env`；插件名称精确为 `@astrojs/ts-plugin`；`files` 或 `include` 项以 `.astro` 结尾。 |
-| `vue-tsc`      | 生效的 `vueCompilerOptions` 对象，包括 `{}`；`files` 或 `include` 项以 `.vue` 结尾。                                                                                                                                                                              |
-| `svelte-check` | 生效的 `extends` 末尾路径段为 `.svelte-kit/tsconfig` 或 `.svelte-kit/tsconfig.json`；`files` 或 `include` 项以 `.svelte` 结尾。                                                                                                                                   |
+| 检查器         | 直接触发条件                                                                                                                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `astro`        | `extends` 项为 `astro/tsconfigs/base`、`astro/tsconfigs/strict` 或 `astro/tsconfigs/strictest`，可带 `.json`；`compilerOptions.types` 项精确为 `astro/client` 或 `astro/env`；`compilerOptions.plugins` 项名称精确为 `@astrojs/ts-plugin`；或 `files`、`include` 项以 `.astro` 结尾。 |
+| `vue-tsc`      | `vueCompilerOptions` 对象，包括 `{}`；或 `files`、`include` 项以 `.vue` 结尾。                                                                                                                                                                                                        |
+| `svelte-check` | `extends` 项末尾路径段为 `.svelte-kit/tsconfig` 或 `.svelte-kit/tsconfig.json`；或 `files`、`include` 项以 `.svelte` 结尾。                                                                                                                                                           |
 
 如果项目过去依靠组件文件或导入选择框架，可以指定具名检查器，也可以在源配置中添加对应选择器。例如，保留 `src/**/*`，再加上 `src/**/*.vue`，即可表达 Vue 归属并保留项目的其他输入。请安装[框架所需工具](#框架前置条件)；如需检查组件覆盖率，还应配置[期望覆盖的源码范围](../getting-started.md#使用-vue-astro-或-svelte)。
 
-生效的 Astro preset 可以让纯 TypeScript 项目使用 `astro`。即使尚无匹配文件，`**/*.vue` 也能选定 `vue-tsc`。选择器必须以完整框架后缀结尾。如果只有 `**/*` 或 `**/*.{ts,vue}`，新增 Vue 文件、导入 Vue 组件或安装 Vue 均不会改变源码分析语义。
+直接声明 Astro preset 可以让纯 TypeScript 项目使用 `astro`。即使尚无匹配文件，`**/*.vue` 也能选定 `vue-tsc`。选择器必须以完整框架后缀结尾。在 `**/*` 或 `**/*.{ts,vue}` 范围内新增组件、导入组件或安装框架包，均不会改变检查器选择。
 
-继承的 `types`、plugins、`files` 和 `include` 使用 TypeScript 的有效值。Astro 或 Svelte preset 必须处于实际解析的继承闭包，并仍对有效编译选项、`files`、`include` 或 `exclude` 有贡献；贡献全部被覆盖时，preset 本身不再触发。Vue 特有设置遵循已安装 Vue 工具链的继承顺序。`@vue/language-core` 3.2.4 的多个基配置优先级可能不同于 TypeScript 的 `compilerOptions` 优先级；基配置存在分歧时，应在叶配置明确设置所需 Vue 扩展字段。
+每份源码配置独立选定检查器。共享基配置或 solution 中的框架设置不会为叶配置选择检查器。如果叶配置曾依赖继承的触发项，请在叶配置中直接声明触发项，或配置具名检查器。选定之后，工具链仍按自身规则处理继承、有效选项和实际根文件。
 
 即使 Native TypeScript 没有找到 roots，Vue 自定义扩展输入也保留正常发现机会；发现这些输入不会将其加入 Native roots。
 
@@ -110,7 +110,7 @@ export default defineConfig({
 });
 ```
 
-具名选择及其聚合配置终端约束优先。如果要移除某个隐式选择，请修改触发它的有效配置项。自动推导没有独立的全局开关。
+具名选择及其聚合配置终端约束优先。如果要移除某个隐式选择，请修改触发它的直接声明。自动推导没有独立的全局开关。
 
 `LIMINA_GRAPH_FRAMEWORK_INFERENCE_AMBIGUOUS` Warning 会定位 Source Config，列出排序后的检查器名称，说明保留 TypeScript 语义，以及 Local Owner 在构建染色前保持 Pending。每个受影响配置在最终报告中产生一条 Warning；其他独立问题导致工作流失败时也会保留。`limina check` 在最终 Warnings 区列出这些诊断；独立命令结束后将其写到 stderr，保留 stdout 上机器可读的 Graph JSON。Warning 本身不改变 Admission、治理结果或命令退出状态。
 

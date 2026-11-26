@@ -14,7 +14,7 @@ import {
   type WorkspaceIndexMetricsRecorder,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { createTestMetricsRecorder } from './helpers/metrics';
 import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -156,7 +156,7 @@ describe('WorkspaceLookupIndex', () => {
         relativeDirectory: 'packages/app',
         rootDir: fixture.rootDir,
       });
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const index = createWorkspaceLookupIndex({
         importers: [appImporter],
         metrics,

@@ -5,15 +5,30 @@ import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { effectiveCompilerOptions } from './compiler-options';
 import type { TypeScriptSemanticProject } from './contracts';
 import type { NativeProgramFrontier } from './native-program-frontier';
-export interface CallbackRequest {
-  channel: 'module' | 'type' | 'library';
+export type CallbackRequest = {
   name: string;
   file: string;
   effective: ts.CompilerOptions;
-  mode?: ts.ResolutionMode;
-  redirect?: ts.ResolvedProjectReference;
-  source?: ts.SourceFile;
-}
+} & (
+  | {
+      channel: 'module' | 'type';
+      mode?: ts.ResolutionMode;
+      redirect?: ts.ResolvedProjectReference;
+      source?: ts.SourceFile;
+    }
+  | {
+      channel: 'library';
+      libraryFileName: string;
+      mode?: never;
+      redirect?: never;
+      source?: never;
+    }
+);
+
+type BoundedQueryOrigin =
+  | { kind: 'source'; version: string }
+  | { kind: 'library'; libraryFileName: string }
+  | { kind: 'compiler' };
 
 export class BoundedResolutionQueries {
   readonly #cache: NativeAnalysisCache;
@@ -30,10 +45,9 @@ export class BoundedResolutionQueries {
     this.#cache = cache;
     this.#contextId = nativeContextId(project);
     const owner = project.sourceConfigPath ?? project.configPath;
-    this.#ownerClosure = cache.authorities[owner]?.closure ?? [owner];
+    this.#ownerClosure = cache.configClosures.get(owner) ?? [owner];
   }
-  #sourceVersion(source: ts.SourceFile | undefined): string | null {
-    if (source === undefined) return null;
+  #sourceVersion(source: ts.SourceFile): string {
     let version = this.#sources.get(source);
     if (version === undefined) {
       const inputs = this.#cache.inputs;
@@ -54,6 +68,13 @@ export class BoundedResolutionQueries {
       this.#options.set(options, id);
     }
     return id;
+  }
+  #origin(request: CallbackRequest): BoundedQueryOrigin {
+    if (request.channel === 'library')
+      return { kind: 'library', libraryFileName: request.libraryFileName };
+    return request.source === undefined
+      ? { kind: 'compiler' }
+      : { kind: 'source', version: this.#sourceVersion(request.source) };
   }
   #configPaths(request: CallbackRequest): string[] {
     const byRedirect =
@@ -90,17 +111,25 @@ export class BoundedResolutionQueries {
     const identity = [
       request.channel,
       request.name,
-      request.mode ?? null,
-      this.#optionsId(request.effective),
-      redirected ? this.#optionsId(redirected) : null,
-      request.redirect?.sourceFile.fileName ?? null,
-      this.#sourceVersion(request.source),
-      configPaths,
+      {
+        mode: request.mode ?? null,
+        effectiveOptions: this.#optionsId(request.effective),
+        redirectedOptions: redirected ? this.#optionsId(redirected) : null,
+        redirectedConfig: request.redirect?.sourceFile.fileName ?? null,
+        origin: this.#origin(request),
+        configPaths,
+      },
     ];
     return this.#cache.query({
       contextId: this.#contextId,
       file: normalizeAbsolutePath(request.file),
       identity,
+      // TypeScript can determine the importer's implied format before it calls the resolver.
+      formatManifests: (
+        request.source as
+          | (ts.SourceFile & { packageJsonLocations?: readonly string[] })
+          | undefined
+      )?.packageJsonLocations,
       host,
       resolve,
       receipts: this.ids,

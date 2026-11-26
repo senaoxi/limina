@@ -4,10 +4,16 @@ import { effectiveCompilerOptions } from '../typescript-semantic/compiler-option
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import { ANALYSIS_ADAPTER } from './contracts';
 
+const trueVersion = hashJson('true');
+const falseVersion = hashJson('false');
+
 export function analysisHash(value: unknown): string {
-  return createHash('sha256')
-    .update(JSON.stringify(value) ?? 'undefined')
-    .digest('hex');
+  if (typeof value === 'boolean') return value ? trueVersion : falseVersion;
+  return hashJson(JSON.stringify(value) ?? 'undefined');
+}
+
+function hashJson(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
 }
 
 // Roots and the workspace boundary are compared as project state and per-target

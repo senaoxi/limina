@@ -41,6 +41,11 @@ export type AnalysisReadDescriptor =
     };
 
 export interface AnalysisRead {
+  /**
+  This topology observation applies to every checker launch using the graph.
+  */
+  workspaceTopology?: boolean;
+  virtual?: true;
   descriptor?: AnalysisReadDescriptor;
   configStamp?: string;
   path: string;

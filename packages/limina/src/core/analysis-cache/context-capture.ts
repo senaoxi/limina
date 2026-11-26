@@ -8,10 +8,10 @@ import type {
   NativeContextRecord,
 } from './contracts';
 import { analysisHash } from './identity';
-import { observeTypeEnvironment } from './installation-environment';
 import type { NativeAnalysisCache } from './native-cache';
 import type { SemanticState } from './semantic-state';
 import { occurrenceKey } from './semantic-state';
+import { observeTypeEnvironment } from './type-environment';
 
 interface CaptureOptions {
   typeEntries: DeclarationEntry[];
@@ -58,9 +58,7 @@ export function createContextRecord(
   options: CaptureOptions,
 ): NativeContextRecord {
   const { project, state, cache } = options;
-  const environment = observeTypeEnvironment(project, cache.inputs, {
-    members: state.projectRecord.members,
-  });
+  const environment = observeTypeEnvironment(project, cache.inputs);
   const importers = Object.values(cache.importers).filter(
     (importer) => importer.contextId === state.contextId,
   );

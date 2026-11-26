@@ -12,7 +12,7 @@ import { types } from 'node:util';
 import ts from 'typescript';
 import { resolveSvelteSemanticToolchain } from '../svelte-semantic/toolchain';
 import { analysisHash } from './identity';
-import { packageLocation } from './installation-locations';
+import { packageLocation } from './package-inputs';
 
 interface ToolSelection {
   packages: [string, string][];
@@ -47,6 +47,7 @@ function astroTools(root: string): ToolSelection {
       [paths.languageServer, paths.volarKit],
       [paths.languageServer, paths.vscodeUri],
       [paths.volarKit, paths.volarTypeScript],
+      [paths.volarKit, paths.kitTypeScript],
     ],
     entries: runtimeModules.map((entry) => entry.file),
     // The synchronous Astro compiler opens this WASM itself, outside require().

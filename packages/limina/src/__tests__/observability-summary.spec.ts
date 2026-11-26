@@ -478,6 +478,211 @@ describe('analysis observability evidence', () => {
       ).toBe('cold');
   });
 
+  it('classifies current graph preparation from semantic context reuse and Program work', () => {
+    const candidate = {
+      id: 'candidate-program',
+      parent: 'g-producer',
+      op: 'native-program-create',
+      scope: ['context', 'candidate'],
+      end: 'computed',
+      time: [1, 2],
+    } as const;
+    const input: Parameters<typeof summarizeProfile>[0] = {
+      ...empty,
+      graphs: [graph('g', 'computed')],
+      work: [producer('g', 'computed'), candidate],
+      projects: [{ id: 'a', path: 'tsconfig.json' }],
+      contexts: [
+        {
+          id: 'candidate',
+          project: 'a',
+          providerRun: 'initial',
+          checker: 'tsc',
+          provider: 'typescript',
+          role: 'declaration-candidate',
+        },
+      ],
+      decisions: [
+        {
+          id: 'disk',
+          work: 'command',
+          layer: 'analysis-snapshot',
+          stage: 'adoption',
+          outcome: 'adopted',
+          origin: 'prior-disk',
+        },
+        {
+          id: 'context',
+          work: 'g-producer',
+          layer: 'native-context',
+          stage: 'adoption',
+          outcome: 'adopted',
+          origin: 'prior-disk',
+          subject: 'tsconfig.json',
+        },
+      ],
+    };
+    const warm = summarizeProfile(input);
+    expect(warm.mode).toBe('warm');
+    expect(warm.projectRows[0]).toMatchObject({
+      state: 'restored',
+      programs: [{ op: 'native-program-create', attempts: 1, created: 1 }],
+    });
+    expect(warm.contextRows[0]?.state).toBe('rebuilt');
+    expect(
+      summarizeProfile({
+        ...input,
+        work: [
+          producer('g', 'computed'),
+          { ...candidate, end: 'failed', reason: 'compiler-failed' },
+        ],
+      }).projectRows[0]?.state,
+    ).toBe('failed');
+    expect(
+      summarizeProfile({
+        ...input,
+        work: [
+          producer('g', 'computed'),
+          { ...candidate, scope: ['project', 'a'] },
+        ],
+      }).mode,
+    ).toBe('incremental');
+    expect(
+      summarizeProfile({ ...input, decisions: [input.decisions[0]!] }).mode,
+    ).toBe('unavailable');
+  });
+
+  it('classifies a complete context rebuild after prior snapshot admission', () => {
+    const input: Parameters<typeof summarizeProfile>[0] = {
+      ...empty,
+      graphs: [graph('g', 'computed')],
+      work: [
+        producer('g', 'computed'),
+        {
+          id: 'current-program',
+          parent: 'g-producer',
+          op: 'native-program-create',
+          scope: ['project', 'a'],
+          end: 'computed',
+          time: [1, 2],
+        },
+      ],
+      decisions: [
+        {
+          id: 'snapshot',
+          work: 'command',
+          layer: 'analysis-snapshot',
+          stage: 'adoption',
+          outcome: 'adopted',
+          origin: 'prior-disk',
+        },
+        {
+          id: 'rebuild',
+          work: 'current-program',
+          layer: 'native-context',
+          stage: 'adoption',
+          outcome: 'not-adopted',
+          causes: [{ code: 'context-dirty' }],
+        },
+      ],
+    };
+    expect(summarizeProfile(input)).toMatchObject({
+      mode: 'cold',
+      graphModes: [
+        { mode: 'cold', basis: ['rebuild', 'g-producer', 'current-program'] },
+      ],
+    });
+    expect(
+      summarizeProfile({ ...input, hasOmittedSemanticAdoption: true }).mode,
+    ).toBe('unavailable');
+    expect(summarizeProfile({ ...input, dropped: 1 }).graphModes[0]?.mode).toBe(
+      'unavailable',
+    );
+    const reused = {
+      id: 'resolution',
+      work: 'current-program',
+      layer: 'native-resolution',
+      stage: 'adoption',
+      outcome: 'adopted',
+    } as const;
+    const earlierDisk = {
+      ...reused,
+      id: 'earlier-resolution',
+      work: 'command',
+      origin: 'prior-disk',
+    } as const;
+    for (const origin of ['unknown', 'invocation-memory'] as const) {
+      expect(
+        summarizeProfile({
+          ...input,
+          decisions: [...input.decisions, earlierDisk, { ...reused, origin }],
+        }).mode,
+      ).toBe('unavailable');
+    }
+    expect(
+      summarizeProfile({
+        ...input,
+        decisions: [...input.decisions, { ...reused, origin: 'prior-disk' }],
+      }).mode,
+    ).toBe('incremental');
+  });
+
+  it('keeps a cold invocation cold across a provider handoff from memory', () => {
+    const refreshed = {
+      id: 'handoff',
+      work: 'command',
+      layer: 'analysis-snapshot',
+      stage: 'adoption',
+      outcome: 'adopted',
+      origin: 'invocation-memory',
+      basis: ['initial-rejection'],
+    } as const;
+    const input: Parameters<typeof summarizeProfile>[0] = {
+      ...empty,
+      graphs: [graph('g', 'computed'), graph('h', 'computed')],
+      work: [producer('g', 'computed'), producer('h', 'computed')],
+      decisions: [
+        {
+          id: 'missing',
+          work: 'command',
+          layer: 'analysis-snapshot',
+          stage: 'lookup',
+          outcome: 'absent',
+          causes: [{ code: 'no-physical-baseline' }],
+        },
+        {
+          id: 'initial-rejection',
+          work: 'command',
+          layer: 'analysis-snapshot',
+          stage: 'adoption',
+          outcome: 'not-adopted',
+          causes: [{ decision: 'missing' }],
+        },
+        {
+          id: 'context-use',
+          work: 'h-producer',
+          layer: 'native-context',
+          stage: 'adoption',
+          outcome: 'adopted',
+          origin: 'invocation-memory',
+        },
+      ],
+    };
+    expect(
+      summarizeProfile({ ...input, decisions: [...input.decisions, refreshed] })
+        .graphModes,
+    ).toMatchObject([
+      { mode: 'cold', basis: ['missing', 'g-producer'] },
+      { mode: 'cold', basis: ['missing', 'h-producer'] },
+    ]);
+    expect(
+      summarizeProfile({
+        ...input,
+        decisions: [...input.decisions, { ...refreshed, origin: 'prior-disk' }],
+      }).mode,
+    ).toBe('unavailable');
+  });
+
   it('only exposes an outer complete graph once its requested gate succeeds', () => {
     const core = graph('g', 'computed');
     core.prepared = [{ gate: 'core', atUs: 30 }];

@@ -133,13 +133,7 @@ async function runExecutionPlanWithController(
     try {
       const context = createSchedulerContext(plan, options, controller);
       await runScheduler(context);
-      const cacheStart = options.checkRunRecorder?.trace?.now();
       await options.preflight.publishAnalysisCache();
-      if (cacheStart !== undefined)
-        options.checkRunRecorder?.trace?.phase(
-          'analysis-cache-publication',
-          cacheStart,
-        );
       const completedOutcome = createCompletedRunOutcome(
         context.orderedTasks,
         context.outcomes,
@@ -170,7 +164,6 @@ async function runExecutionPlanWithController(
       throw error;
     }
   })();
-  const snapshotStart = options.checkRunRecorder?.trace?.now();
   await writeSnapshotsPreservingFailure({
     attempt,
     completedState: execution.completedOutcome.state,
@@ -181,11 +174,6 @@ async function runExecutionPlanWithController(
     sourceTask: execution.source.sourceTask,
     tasks: execution.context.orderedTasks,
   });
-  if (snapshotStart !== undefined)
-    options.checkRunRecorder?.trace?.phase(
-      'issue-snapshot-publication',
-      snapshotStart,
-    );
   return createExecutionResult({
     issues: execution.issues,
     orderedTasks: execution.context.orderedTasks,

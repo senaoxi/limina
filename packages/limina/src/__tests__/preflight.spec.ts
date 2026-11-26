@@ -31,9 +31,12 @@ import {
   type ArtifactChange,
   createArtifactPlan,
 } from '../domain/artifacts/plan';
+import { measureGraphMaterialization } from '../execution/graph-materialization-progress';
+import { createTaskProgressReporter } from '../execution/progress';
+import { createLiminaCheckFlowReporter } from '../flow';
 import { LiminaPreflightManager } from '../preflight';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
+import { createTestMetricsRecorder } from './helpers/metrics';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
@@ -362,17 +365,30 @@ describe('LiminaPreflightManager', () => {
         namespace,
       }),
     });
+    const output: string[] = [];
+    const flow = createLiminaCheckFlowReporter({
+      env: { CI: 'true' },
+      output: {
+        write: (line) => {
+          output.push(line);
+        },
+      },
+    });
+    const progress = createTaskProgressReporter(flow.tree('graph prepare'));
+    const materialize = () =>
+      measureGraphMaterialization({
+        materialize: (onAccess) =>
+          manager.ensureGeneratedArtifactsMaterialized(onAccess),
+        progress,
+        purpose: 'complete',
+      });
 
     try {
       const profile = new AnalysisObserver('graph prepare', performance.now());
       const receipts = await runWithProfile(profile, async () => {
         const prepared = manager.ensureGeneratedGraph();
         expect(manager.ensureGeneratedGraph()).toBe(prepared);
-        const requests = [
-          manager.ensureGeneratedArtifactsMaterialized(),
-          manager.ensureGeneratedArtifactsMaterialized(),
-          manager.ensureGeneratedArtifactsMaterialized(),
-        ];
+        const requests = [materialize(), materialize(), materialize()];
         const waiting = profile
           .snapshot()
           .work.filter(
@@ -387,16 +403,26 @@ describe('LiminaPreflightManager', () => {
           'graph.wait.materialization',
           'graph.wait.materialization',
         ]);
-        return [
-          ...joined,
-          await manager.ensureGeneratedArtifactsMaterialized(),
-        ];
+        return [...joined, await materialize()];
       });
       expect(receipts[0]).toBe(receipts[1]);
       expect(receipts[1]).toBe(receipts[2]);
       expect(receipts[2]).toBe(receipts[3]);
       expect(receipts[0]?.generation).toBe(0);
       expect(await readFile(generatedPath, 'utf8')).toBe('{}\n');
+      expect(
+        output.filter((line) =>
+          line.includes('[start] materialize complete reference graph'),
+        ),
+      ).toHaveLength(1);
+      expect(
+        output.filter((line) =>
+          line.includes('[pass] wait for complete reference graph ('),
+        ),
+      ).toHaveLength(2);
+      expect(output.join('')).toMatch(
+        /^\s*\[pass\] reuse complete reference graph$/mu,
+      );
       const snapshot = profile.snapshot();
       const completion = snapshot.graphs.find(
         (row) => row.receipt !== undefined,
@@ -1171,7 +1197,7 @@ describe('LiminaPreflightManager', () => {
       checkers,
       generatedFiles: new Map<string, string>(),
     } as GeneratedTsconfigGraphResult;
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const customProviders = createFakeCore({
       config: fixture.config,
       namespace,

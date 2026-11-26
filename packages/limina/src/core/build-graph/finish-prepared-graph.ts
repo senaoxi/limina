@@ -2,7 +2,6 @@ import { isSourceKnipEnabled, type ResolvedLiminaInputs } from '#config/runner';
 import { completeFrameworkExecutionInputs } from '../analysis-cache/framework-execution-inputs';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
-import { captureGeneratedGraph } from './analysis-cache';
 import { finishAnalysisOutcome } from './analysis-outcome';
 import { assertGeneratedGraphAdmission } from './candidate-build-plan';
 import { coreCollectionRun } from './core-collection-run';
@@ -16,7 +15,6 @@ import { assertProducerBuildReceipt } from './producer-receipt';
 import { validateStagedReferences } from './reference-validation';
 import type {
   DependencyAnalysisResult,
-  GeneratedTsconfigGraphResult,
   PreparedTsconfigGraph,
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
@@ -81,17 +79,6 @@ export async function finishPreparedGraph(input: {
   }
   if (result.purpose === 'complete')
     await completeFrameworkExecutionInputs(result, config);
-  if (
-    result.purpose === 'complete' &&
-    result.producerBuildReceipt === undefined
-  )
-    capturePreparedGraph({
-      config,
-      options,
-      workspaceContext,
-      result,
-      analysis: state.dependencyAnalysis,
-    });
   return result;
 }
 function prepareGeneratedKnip(options: {
@@ -112,24 +99,6 @@ function prepareGeneratedKnip(options: {
     workspacePackages: options.workspaceContext.packages,
     workspaceContext: options.workspaceContext,
   });
-}
-
-function capturePreparedGraph(input: {
-  config: ResolvedLiminaInputs;
-  options: PrepareGeneratedTsconfigGraphOptions;
-  workspaceContext: ValidatedWorkspaceContext;
-  result: GeneratedTsconfigGraphResult;
-  analysis: DependencyAnalysisResult;
-}): void {
-  const cache = input.options.projectDependencyCaches?.analysisCache;
-  if (cache !== undefined)
-    captureGeneratedGraph({
-      cache,
-      config: input.config,
-      workspace: input.workspaceContext,
-      result: input.result,
-      analysis: input.analysis,
-    });
 }
 
 function assertReferenceBinding(

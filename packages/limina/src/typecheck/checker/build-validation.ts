@@ -36,18 +36,11 @@ export function createCheckerBuildSelectionFailure(options: {
   };
 }
 
-function isFailProgressItem(request: RunCheckerBuildOptions): boolean {
-  const progress = request.progress;
-  if (progress === undefined) return false;
-  progress.startItem('checker dependency preflight').fail();
-  return true;
-}
-
 function reportPeerDependencyProgress(options: {
   flowDepth: number;
   request: RunCheckerBuildOptions;
 }): void {
-  if (isFailProgressItem(options.request)) return;
+  if (options.request.progress !== undefined) return;
   const flow = options.request.flow;
   if (flow === undefined) return;
   flow.fail('checker dependency preflight failed', {

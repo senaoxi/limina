@@ -175,6 +175,12 @@ it('runs default governance after a compiler error on the complete graph', async
   const compiler = result.stdout.indexOf('[start] tsc -b');
   expect(preparation, result.stdout).toBeGreaterThanOrEqual(0);
   expect(compiler, result.stdout).toBeGreaterThan(preparation);
+  expect(result.stdout).toMatch(
+    /^\s*\[pass\] reuse complete reference graph$/mu,
+  );
+  expect(result.stdout).toMatch(
+    /^\s*\[skip\] checker typecheck \(disabled: no framework targets\)$/mu,
+  );
   const snapshot = await inventory(f);
   const states = Object.fromEntries(
     snapshot.run!.tasks.map((task) => [task.issueTask, task.state]),

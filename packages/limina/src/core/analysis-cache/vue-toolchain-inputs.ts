@@ -40,7 +40,7 @@ function observeLoadedModule(
 }
 
 export function observeVueTools(
-  identity: VueProjectSemanticIdentity,
+  identity: Pick<VueProjectSemanticIdentity, 'toolchain'>,
   trace: QueryTrace,
 ): void {
   const resolver = createRequire(identity.toolchain.paths.vueTsc);

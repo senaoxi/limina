@@ -9,6 +9,7 @@ import type { CompiledExclusionRule } from '../exclusions';
 import type { WorkspaceDescriptorCandidate } from '../types';
 
 export interface PackageIslandCollection {
+  descriptorStamps: Map<string, string | undefined>;
   boundaries: PackageScopeRegionBoundary[];
   descriptors: WorkspaceDescriptorCandidate[];
   extendedScopes: ExtendedPackageScope[];

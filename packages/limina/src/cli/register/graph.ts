@@ -69,14 +69,21 @@ async function runGraphExportAction(flags: GraphFlags): Promise<void> {
   }
   observer.setPolicy(config.cache === false ? 'disabled' : 'read-only');
   const taskId = 'standalone-task';
-  const startedAt = performance.now();
+  let runnerUs: number | undefined;
   let isPassed = false;
   try {
     await runObservedTask({
       observer,
       operation: 'execution.standalone-action',
       taskId,
-      execute: () => exportGraph(config, flags),
+      execute: async () => {
+        const startedAt = performance.now();
+        try {
+          await exportGraph(config, flags);
+        } finally {
+          runnerUs = Math.round((performance.now() - startedAt) * 1000);
+        }
+      },
       isPassed: () => true,
     });
     isPassed = true;
@@ -84,7 +91,7 @@ async function runGraphExportAction(flags: GraphFlags): Promise<void> {
     try {
       observer.task(taskId, {
         name: 'graph:export',
-        runnerUs: Math.round((performance.now() - startedAt) * 1000),
+        runnerUs,
         state: isPassed ? 'passed' : 'failed',
       });
     } catch {

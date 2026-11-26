@@ -1,14 +1,19 @@
+import type { TaskProgressReporter } from '../../execution/progress';
 import type { ExecutionAdmission } from '../admission/execution-admission';
 import type { ProducerPreparation } from '../admission/execution-prerequisites';
 import { ManagedCheckerMutationCoordinator } from '../managed/coordinator';
-import { resolveTypecheckRunner } from '../runner-shared';
+import {
+  resolveTypecheckRunner,
+  runCheckerTargetProcess,
+  startCheckerTargetAdmission,
+} from '../runner-shared';
 import type { BuildTargetCompletion, TypecheckTarget } from '../target-types';
-import { runTargetWithMeasuredDuration } from '../targets';
 import type { executeCheckerBuildTargets } from './build-execution';
 
 export async function executeAuthorizedBuild(
   options: Parameters<typeof executeCheckerBuildTargets>[0] & {
     preparation?: ProducerPreparation;
+    progress?: TaskProgressReporter;
   },
   admission: ExecutionAdmission,
   target: TypecheckTarget,
@@ -23,6 +28,7 @@ export async function executeAuthorizedBuild(
       workspaceContext: await options.preflight.ensureWorkspaceValidated(),
     });
   let isLaunchedProcess = false;
+  let finishAdmission = startCheckerTargetAdmission(options.progress);
   try {
     let initial: Awaited<ReturnType<typeof prepare>>;
     return await admission.withManagedWrites(
@@ -57,10 +63,14 @@ export async function executeAuthorizedBuild(
             isLaunchedProcess = true;
             recordWrites();
             if (options.watch === true) releaseAtLaunch();
-            return runTargetWithMeasuredDuration(
-              resolveTypecheckRunner(options.runnerOptions),
+            const admissionTiming = finishAdmission;
+            finishAdmission = undefined;
+            return runCheckerTargetProcess({
+              finishAdmission: admissionTiming,
+              progress: options.progress,
+              runner: resolveTypecheckRunner(options.runnerOptions),
               target,
-            );
+            });
           },
         );
         return launched.state === 'refused'
@@ -82,6 +92,8 @@ export async function executeAuthorizedBuild(
         },
       ],
     };
+  } finally {
+    finishAdmission?.('fail');
   }
 }
 

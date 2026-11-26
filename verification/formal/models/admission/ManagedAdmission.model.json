@@ -9,11 +9,13 @@
     "packages/limina/src/graph-check/reference-governance.ts": "adjudicateReferences",
     "packages/limina/src/core/build-graph/implicit-references.ts": "addImplicitProjectReferences",
     "packages/limina/src/core/build-graph/prepare.ts": "prepareProducerBuildPlan",
+    "packages/limina/src/core/build-graph/producer-receipt.ts": "assertProducerBuildReceipt",
     "verification/formal/evidence/managed-cache/replay.mjs": "runImplementationReplay('managed-cache')",
     "verification/formal/run-implementation.mjs": "spawnSync",
-    "packages/limina/integration/formal/managed-cache.mjs": "executeCheckerBuildTargets",
+    "packages/limina/integration/formal/managed-cache.mjs": "wrong-materialized-closure",
     "packages/limina/src/__tests__/execution-admission.spec.ts": "governs transitive",
     "packages/limina/src/__tests__/execution-input-handoff.spec.ts": "blocks a missing-input",
+    "packages/limina/src/__tests__/producer-receipt.spec.ts": "config closure drift",
     ".agents/docs/lifecycle.md": "Execution",
     ".agents/docs/invariants.md": "I09",
     "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/limina.config.mts": "deny:",
@@ -35,7 +37,7 @@
     "Finish": "packages/limina/src/typecheck/checker/managed-execution.ts::return launched.state",
     "Refresh": "packages/limina/src/typecheck/admission/input-coordinator.ts::#handoff"
   },
-  "assumptions": "Two-edge chain, applying the middle source label denies its provider edge. The independent target has no such label. Output-copy is a separate stage in the output workflow, not part of every build.",
+  "assumptions": "Two-edge chain, applying the middle source label denies its provider edge. The independent target has no such label. Output-copy is a distinct output stage. The model trusts view identity. Concrete Svelte producer inputs and closure bindings are observed by the producer receipt regression.",
   "safety": {
     "DeniedHasNoEffect": "No effect of a forbidden target at the event view.",
     "ScopedEffect": "Issued identity and stage match the actual effect.",
@@ -99,11 +101,11 @@
     "dimensions": "2 targets, 1 intermediate, 1 provider, 1–2 view changes, one callback at a time.",
     "pruning": "None: no state/action constraints, symmetry or view filtering."
   },
-  "counterexamples": "Mutants model integration errors. Cover profiles intentionally negate observable legal states.",
+  "counterexamples": "Mutants model stale admission or wrong effects. The implementation replay checks that a missing on-disk reference is repaired before admission. Cover profiles intentionally negate observable legal states.",
   "empiricalVerification": "Run evidence/managed-cache/replay.mjs; execution-admission, execution-input-handoff and checker/admission-denied-reference.",
   "driftReview": {
-    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
-    "sourceHash": "46a4b0e34a0d503e925adef2f5ddf6560b80a69bb7bd7a042b2ee00b50eb1f5e",
+    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
+    "sourceHash": "3cb0a0cc2478e806621defec942eddb20b1e404644ad39da72f99ceb44bd3e03",
     "modelHash": "4b51a4294bf89b36441ba5e704f1705d209a878aeb50b5c008569ca785615b3a"
   }
 }

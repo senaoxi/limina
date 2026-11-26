@@ -6,6 +6,8 @@ import {
   normalizeAbsolutePath,
   toRelativePath,
 } from '#utils/path';
+import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import { getSvelteSourceConfigReader } from '../svelte-semantic/project';
 import { getEffectiveImporterRoots } from '../typescript-semantic/effective-roots';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { readGraphRules, readOutputOptions } from './generated/config-readers';
@@ -15,6 +17,8 @@ import {
   getGeneratedSolutionBuildConfigPath,
 } from './generated/paths';
 import type { FrozenSemanticProject } from './locked-semantic-project';
+import { sourcePackageScopeProblems } from './source-package-scope';
+import { sourceTypeInputs } from './type-input-projection';
 import type {
   CheckerSourceConfigCollection,
   SolutionProject,
@@ -54,7 +58,7 @@ export function createSourceProject(options: {
 
   return {
     checkerName: options.checkerName,
-    configClosure: parsed.configClosure.map((entry) => ({ ...entry })),
+    configClosure: [...parsed.configClosure],
     configPath: sourceConfigPath,
     context: {
       ...parsed.context,
@@ -86,6 +90,11 @@ export function createSourceProject(options: {
     options: parsed.options,
     virtualFiles: options.config.virtualFiles,
     references: new Set(),
+    sourceConfigReferences: parsed.references,
+    readSvelteSourceConfig:
+      options.frozen.authority.family === 'svelte'
+        ? getSvelteSourceConfigReader(parsed)
+        : undefined,
     semanticAuthority: { ...options.frozen.authority },
   };
 }
@@ -103,54 +112,21 @@ export function isLocalPathOutsideActivatedRegions(options: {
   );
 }
 
-function getOutOfRegionOwnedFiles(options: {
+function getOutOfRegionTypeInputs(options: {
   activatedRegions: WorkspaceRegionPathIndex;
-  project: SourceProject;
-}): string[] {
-  return options.project.ownedFileNames.filter((fileName) => {
-    return (
-      isInsideNodeModules(fileName) ||
-      !options.activatedRegions.isInsideActivatedRegion(fileName)
-    );
-  });
-}
-
-function addOwnedRegionProblem(options: {
-  config: ResolvedLiminaInputs;
-  files: string[];
-  problems: string[];
-  project: SourceProject;
-}): void {
-  if (options.files.length === 0) {
-    return;
-  }
-  options.problems.push(
-    [
-      'Source project owns files outside activated workspace package regions:',
-      `  checker: ${options.project.checkerName}`,
-      `  config: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
-      ...options.files.map(
-        (fileName) => `  - ${toRelativePath(options.config.rootDir, fileName)}`,
-      ),
-      '  reason: generated graph source ownership is bounded by current-run workspace packages.',
-    ].join('\n'),
-  );
-}
-
-function getOutOfRegionLocalFiles(options: {
-  activatedRegions: WorkspaceRegionPathIndex;
+  cache?: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
   project: SourceProject;
 }): string[] {
-  const ownedFileNames = new Set(options.project.ownedFileNames);
-  return options.project.fileNames.filter((fileName) => {
-    if (ownedFileNames.has(fileName)) {
-      return false;
-    }
-    return isLocalPathOutsideActivatedRegions({
-      ...options,
-      filePath: fileName,
-    });
+  return sourceTypeInputs(options.project, options.cache).flatMap((entry) => {
+    if (entry.target === null) return [];
+    const isOutside =
+      options.activatedRegions.findBoundaryForPath(entry.target) !== null ||
+      isLocalPathOutsideActivatedRegions({
+        ...options,
+        filePath: entry.target,
+      });
+    return isOutside ? [entry.target] : [];
   });
 }
 
@@ -178,22 +154,28 @@ function addLocalRegionProblem(options: {
 
 function addProjectRegionProblems(options: {
   activatedRegions: WorkspaceRegionPathIndex;
+  cache?: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
   problems: string[];
   project: SourceProject;
 }): void {
-  addOwnedRegionProblem({
-    ...options,
-    files: getOutOfRegionOwnedFiles(options),
-  });
+  options.problems.push(
+    ...sourcePackageScopeProblems(
+      options.config,
+      options.activatedRegions,
+      options.project.configPath,
+      options.project.ownedFileNames,
+    ),
+  );
   addLocalRegionProblem({
     ...options,
-    files: getOutOfRegionLocalFiles(options),
+    files: getOutOfRegionTypeInputs(options),
   });
 }
 
 export function addActivatedRegionSourceProjectProblems(options: {
   activatedRegions: WorkspaceRegionPathIndex;
+  cache?: NativeAnalysisCache;
   config: ResolvedLiminaInputs;
   problems: string[];
   projects: readonly SourceProject[];

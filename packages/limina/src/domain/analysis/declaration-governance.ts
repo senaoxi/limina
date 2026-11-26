@@ -44,6 +44,10 @@ export interface DeclarationCompilationEvidence {
     readonly id: string;
     readonly file: string;
     readonly specifier: string;
+    readonly binding?: Pick<
+      DeclarationRequestReceipt,
+      'channel' | 'position' | 'mode' | 'target' | 'resolutionState'
+    >;
   }[];
   readonly declarations: readonly DeclarationObservation[];
   readonly completeness: 'complete' | 'incomplete';

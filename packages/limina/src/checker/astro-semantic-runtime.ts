@@ -8,8 +8,6 @@ import type {
   AstroFrameworkPluginRuntime,
   AstroLanguageCoreRuntime,
   AstroLanguageServerCoreRuntime,
-  AstroSemanticToolchainPaths,
-  AstroSemanticVersionTuple,
   AstroVolarTypeScriptRuntime,
   AstroVscodeUriRuntime,
   LoadedAstroSemanticToolchain,
@@ -45,6 +43,7 @@ function assertTypeScriptRuntime(value: unknown): typeof ts {
       'createModuleResolutionCache',
       'createSourceFile',
       'getModeForUsageLocation',
+      'parseJsonSourceFileConfigFileContent',
       'readJsonConfigFile',
     ],
     value,
@@ -121,8 +120,8 @@ function requireFromOwner(
 }
 
 export function loadAstroSemanticRuntime(options: {
-  paths: AstroSemanticToolchainPaths;
-  versions: AstroSemanticVersionTuple;
+  paths: LoadedAstroSemanticToolchain['paths'];
+  versions: LoadedAstroSemanticToolchain['versions'];
 }): LoadedAstroSemanticToolchain {
   const runtimeModules: LoadedAstroSemanticToolchain['runtimeModules'] = [];
   const requireFromLanguageServer = requireFromOwner(
@@ -132,6 +131,9 @@ export function loadAstroSemanticRuntime(options: {
   const requireFromVolarKit = requireFromOwner(
     options.paths.volarKit,
     runtimeModules,
+  );
+  assertTypeScriptRuntime(
+    requireFromOwner(options.paths.check, runtimeModules)('typescript'),
   );
   const coreDirectory = path.join(
     path.dirname(options.paths.languageServer),
@@ -197,9 +199,7 @@ export function loadAstroSemanticRuntime(options: {
     sveltePlugin: {
       getLanguagePlugin: () => sveltePlugin,
     } satisfies AstroFrameworkPluginRuntime,
-    tsModule: assertTypeScriptRuntime(
-      requireFromOwner(options.paths.check, runtimeModules)('typescript'),
-    ),
+    tsModule: assertTypeScriptRuntime(requireFromVolarKit('typescript')),
     versions: options.versions,
     volarTypeScript: assertRuntime<AstroVolarTypeScriptRuntime>({
       label: '@volar/typescript',

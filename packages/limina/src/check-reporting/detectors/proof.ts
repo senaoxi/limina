@@ -20,7 +20,7 @@ export const PROOF_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
   [LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid]: {
     kind: 'fixture',
     producers: [
-      'packages/limina/src/proof/runner.ts#createProofCheckerRouteFinding',
+      'packages/limina/src/proof/run-state.ts#createProofCheckerRouteFinding',
       'packages/limina/src/proof/runner.ts#collectCheckerCoverageTargets',
       'packages/limina/src/proof/runner.ts#addDtsConfigFindings',
       'packages/limina/src/proof/runner.ts#addBuildGraphConfigFindings',

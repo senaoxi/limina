@@ -34,7 +34,7 @@ Expose complexity when customization becomes necessary. Omission should preserve
 
 ## Framework inference policy
 
-Automatic ownership uses the documented triggers in the effective source config. A single distinct checker selects that framework. With zero or multiple choices, Limina freezes Native TypeScript semantics and leaves the local execution owner pending. Multiple choices produce a nonblocking warning. Adding components or changing imports can change coverage and build relations without changing ownership.
+Automatic ownership uses the documented triggers directly declared in each terminal source config. A single distinct checker selects that framework. With zero or multiple choices, Limina freezes Native TypeScript semantics and leaves the local execution owner pending. Multiple choices produce a nonblocking warning. Shared bases still supply inherited compiler inputs. A leaf's checker choice remains explicit in the leaf or in a named checker selection.
 
 There is no new inference switch. Named checker selections, including terminal solution constraints, express an explicit choice; users can also remove features that trigger an unwanted inference. This keeps common framework projects automatic without adding a second configuration policy. Inference does not require separate parser membership approval, candidate grades or a qualification cache. Neither the warning nor explicit selection supplies missing compilation capability. The [semantic record](./semantics.md#from-ownership-candidates-to-a-locked-context) owns collection, freeze and failure semantics; the [checker reference](../../docs/en/config/checkers.md#framework-inference) owns the supported public triggers and examples.
 

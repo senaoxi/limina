@@ -127,7 +127,7 @@ export class AnalysisProviderSet {
         const cache = options.dependencies.analysisCache;
         return cache === undefined
           ? operation()
-          : cache.resolvedConfigs.run(() => cache.epoch.run(operation));
+          : cache.configReads.run(() => cache.epoch.run(operation));
       },
     });
     this.vueSemanticContexts = new VueSemanticContextManager(

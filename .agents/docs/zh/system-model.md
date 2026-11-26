@@ -36,7 +36,7 @@ Source config 是唯一执行归属单位。嵌套 solution 的 DFS 收集所有
 | 维度                | 来源                                                                                                                                             | 拒绝的跨维度推导                                                  |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | Workspace authority | [validated create](../../../packages/limina/src/core/workspace/validated/create.ts)：raw discovery → exclusions/overlap/islands/output authority | “manager adapter 找到包”不能证明它在本次治理范围                  |
-| Semantic authority  | 具名检查器约束，或有效源配置中文档规定的归属规则                                                                                                 | 构建染色保留依赖分析所用的源码语义                                |
+| Semantic authority  | 具名检查器约束，或源码配置中直接声明的归属设置                                                                                                   | 构建染色保留依赖分析所用的源码语义                                |
 | Execution ownership | explicit leaf closure、equality coloring、fallback、finalization                                                                                 | 构建身份不证明 runtime import 被 package 授权                     |
 | Source ownership    | 实际 root membership、validated package/source rules                                                                                             | 目录最接近、exports 名称、Oxc 找到文件都不能替代实际 owner        |
 | Artifact authority  | namespace/authenticated plan/revision 与 managed-output attribution                                                                              | 输出反向归属不重新创造源码 reference；有输出路径不等于允许写      |
@@ -143,14 +143,14 @@ Svelte 混合构建使用独立的 `ProducerBuildPlan`，不能以部分准入�
 | Load / validate       | config export + root → normalized config/validated plan                                                                   | schema/config 失败可发生在 attempt 发布之前，不能承诺每个 CLI 失败都有新 inventory                                                         |
 | Workspace validation  | raw package/config候选 → ValidatedWorkspaceContext                                                                        | overlap、重复物理 package、无效 scope/output authority 阻断后续投影；rawPackages 留作原始证据                                              |
 | Ownership discovery   | default entries、raw references、named scopes → type/solution states                                                      | named solution 的 authoritative closure 此时已参与；不能说所有 solution constraints 都发生在 freeze 后                                     |
-| 归属选择              | 具名约束和有效源配置的归属意图 → 语义类型                                                                                 | 在分析依赖前，对每份源配置命中的检查器名称去重。多个隐式选择保留 TypeScript 基线并产生警告                                                 |
+| 归属选择              | 具名约束和源码配置中的直接声明 → 语义类型                                                                                 | 在分析依赖前，对每份源配置命中的检查器名称去重。多个隐式选择保留 TypeScript 基线并产生警告                                                 |
 | 冻结、染色与最终选择  | 冻结的源输入和符合条件的声明关系 → 执行归属、solution 闭包、Checker 入口                                                  | [求解流程](../../../packages/limina/src/core/build-graph/checker-ownership-resolution.ts)先冻结语义，再使用依赖事实进行 Vue 提升和执行染色 |
 | Graph projection      | requirements + 实际 source membership + implicit refs → declaration / framework relations、generated files、artifact plan | 找不到唯一 owner、deny、checker identity conflict 不能靠最近目录或弱 resolver补齐                                                          |
 | Validation            | graph/route/source evidence → 域内 finding、issue/outcome                                                                 | graph、source、proof 各自有前置阶段；proof 的 route/config 失败会限制后续 coverage 判断                                                    |
 | Materialize / checker | authenticated plan/authority → files/receipt → external checker outcome                                                   | 内存 graph 不代表磁盘已完成；产物发布与 checker 程序退出分别报告                                                                           |
 | Complete / query      | settled outcomes → authenticated attempt terminal state                                                                   | query 读取已有状态，不重新运行；最新失败状态禁止伪装旧 completed inventory 为新结果                                                        |
 
-符合条件的原生 clean 调用按[持久化分析合同](./lifecycle.md#原生持久化分析缓存)，先验证 namespace 级有效 `configVersion`，再在创建分析 Program 前验证普通 context/graph DTO，重新建立当前 artifact authority，并继续领域判定、结果发布与 checker 执行。native 命中本身不验证已变化的治理规则或磁盘物化；cold/dirty 路径仍执行上述阶段。
+每次建图都执行上述阶段。对于合格的 clean Native context，[持久化分析合同](./lifecycle.md#原生持久化分析缓存)在创建 Program 前校验事实。本次根集、Checker 选择和合格依赖用于推导当前图、产物计划及后续判定。
 
 缓存职责复用现有所有者；存储分区不会建立新的语义权威。
 
@@ -159,8 +159,8 @@ Svelte 混合构建使用独立的 `ProducerBuildPlan`，不能以部分准入�
 | GenerationIndex | [Store index](../../../packages/limina/src/preflight/analysis-cache-store.ts)：namespace、版本、块身份与原子发布                      |
 | InputLedger     | [Inputs](../../../packages/limina/src/core/analysis-cache/inputs.ts)：唯一观测与订阅，语义版本独立于 checkpoint                       |
 | ContextFacts    | [Context records](../../../packages/limina/src/core/analysis-cache/context-records.ts)：完整 Bounded-context 证据及独立完整性 receipt |
-| Contributions   | [Contribution records](../../../packages/limina/src/core/analysis-cache/contributions.ts)：来源 context、occurrence 与支持的关系      |
-| GraphProjection | [Graph records](../../../packages/limina/src/core/analysis-cache/graph-records.ts)：合格视图、生成内容及当前 artifact-plan 交接       |
+| 请求事实        | [Importer 记录](../../../packages/limina/src/core/analysis-cache/importer-facts.ts)及解析回执保留 occurrence 与查找证据。             |
+| GraphProjection | [建图准备](../../../packages/limina/src/core/build-graph/prepare.ts)推导本次关系、生成内容及产物计划。                                |
 
 [存储生命周期](./lifecycle.md#原生持久化分析缓存)拥有解码与观测轮次；[持久语义有效性](./semantics.md#持久化-importer-有效性)拥有证明与 context 替换。
 
@@ -186,7 +186,7 @@ Svelte 混合构建使用独立的 `ProducerBuildPlan`，不能以部分准入�
 
 生成声明产物保留 artifact 终点边界。受管源码声明 `.d.ts/.d.mts/.d.cts` 则具有独立的配置上下文政策决策；选定上下文可以在没有 Emit 义务时生成 declaration-provider 引用。文件存在不证明政策选择或编译器 requirement。执行依赖计划同时看到声明边与调度边；dependency plan 先过滤相同 target 的自依赖；两个及以上 target 的 SCC 中含 declaration relation 被拒绝，纯 framework SCC 可以执行。准确 guard 见 [graph-validation](../../../packages/limina/src/core/build-graph/graph-validation.ts) 与 [dependency-plan](../../../packages/limina/src/typecheck/build/dependency-plan.ts)。
 
-Occurrence 和关系证据在治理裁定前保留。[ReferenceContributions](../../../packages/limina/src/core/analysis-cache/contributions.ts)按 contextual importer 原子替换已完成投影，去重阶段观察并保留独立 occurrence。Deny 不删除原始边或让未知关系消失；原始 references、implicitRefs、solution 和 framework schedule 保留自身来源。计数不证明 owner、产物准备或执行准入。
+Occurrence 与关系证据在治理裁定前保留。[引用推导](../../../packages/limina/src/core/build-graph/reference-inference.ts)根据合格事实与当前 owner 建立本轮关系。多个独立 occurrence 可以支持同一关系。原始 references、`implicitRefs`、solution 和 framework schedule 各自保留来源。Deny 规则对推导出的关系作治理裁定，并保留底层证据。
 
 ## Failure semantics 与投影边界
 

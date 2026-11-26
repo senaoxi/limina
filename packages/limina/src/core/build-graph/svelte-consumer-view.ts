@@ -4,9 +4,17 @@ import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import ts from 'typescript';
-import { createSvelteSemanticProject } from '../svelte-semantic/project';
-import { resolveSvelteSemanticToolchain } from '../svelte-semantic/toolchain';
-import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-references';
+import { parseFrameworkProjectConfig } from '../../checker/framework-project-config';
+import {
+  createSvelteSemanticProject,
+  parseSvelteConfig,
+  svelteCompilerOptions,
+  svelteSemanticOptions,
+} from '../svelte-semantic/project';
+import {
+  resolveSvelteSemanticToolchain,
+  type SvelteSemanticToolchain,
+} from '../svelte-semantic/toolchain';
 import { readImplicitReferences } from './generated/config-readers';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 import {
@@ -92,6 +100,8 @@ function checkReferences(
   state: GeneratedGraphPreparationState,
   config: ResolvedLiminaInputs,
   source: string,
+  originalReferences: readonly ts.ProjectReference[],
+  compiler: typeof ts,
 ): string[] {
   const targets = new Set(
     state.dependencyEdges
@@ -108,14 +118,9 @@ function checkReferences(
   for (const reference of implicit.implicitRefs)
     targets.add(reference.targetConfigPath);
   // Explicit effective references remain requirements even without a current import.
-  const parsed = parseTypeScriptProjectConfig({
-    configPath: source,
-    tsModule: ts,
-  });
-  const originalReferences = parsed?.projectReferences ?? [];
   for (const reference of originalReferences)
     targets.add(
-      normalizeAbsolutePath(ts.resolveProjectReferencePath(reference)),
+      normalizeAbsolutePath(compiler.resolveProjectReferencePath(reference)),
     );
   const units = state.governedSourcesByChecker.values().toArray().flat();
   return [...targets]
@@ -134,6 +139,31 @@ function checkReferences(
     .sort(compareCodeUnits);
 }
 
+function validateProjectionToolchain(input: {
+  check: string;
+  source: string;
+  toolchain: SvelteSemanticToolchain;
+}): void {
+  const fromCheck = createRequire(input.check);
+  const fromSource = createRequire(input.source);
+  const toolchainPaths = {
+    'svelte/compiler': input.toolchain.compilerPath,
+    typescript: input.toolchain.typeScriptPath,
+    svelte2tsx: input.toolchain.transformPath,
+  };
+  if (
+    Object.entries(toolchainPaths).some(([specifier, expected]) =>
+      [fromCheck, fromSource].some(
+        (require) =>
+          normalizeAbsolutePath(require.resolve(specifier)) !== expected,
+      ),
+    )
+  )
+    throw new Error(
+      `Svelte check projection changes the toolchain: ${input.source}`,
+    );
+}
+
 /**
 Install a staged execution view without changing source ownership or roots.
 */
@@ -145,11 +175,39 @@ export function projectSvelteConsumerConfigs(
   if (view === undefined) return;
   const projects = state.primaryProjectsByChecker.get('svelte-check') ?? [];
   const units = state.governedSourcesByChecker.get('svelte-check') ?? [];
-  const checks = projects.map((project) => ({
-    project,
-    check: svelteCheckConfigPath(project.configPath),
-    references: checkReferences(state, config, project.configPath),
-  }));
+  const checks = projects.map((project) => {
+    const source = units.find(
+      (unit) => unit.configPath === project.configPath,
+    )!;
+    const readSourceConfig = project.readSvelteSourceConfig;
+    if (readSourceConfig === undefined)
+      throw new Error(
+        `Svelte check projection lacks source config inputs: ${project.configPath}`,
+      );
+    const toolchain = resolveSvelteSemanticToolchain(project.packageRootDir);
+    const { tsModule } = toolchain;
+    const original = readSourceConfig(tsModule);
+    const check = svelteCheckConfigPath(project.configPath);
+    validateProjectionToolchain({
+      check,
+      source: project.configPath,
+      toolchain,
+    });
+    return {
+      check,
+      original,
+      project,
+      references: checkReferences(
+        state,
+        config,
+        project.configPath,
+        original.references,
+        tsModule,
+      ),
+      source,
+      tsModule,
+    };
+  });
   const referenceTargets = new Set(
     checks.flatMap(({ references }) => references),
   );
@@ -158,14 +216,8 @@ export function projectSvelteConsumerConfigs(
       .filter((edge) => edge.kind === 'framework-schedule')
       .map((edge) => edge.fromConfigPath),
   );
-  for (const { project, check, references } of checks) {
-    const source = units.find(
-      (unit) => unit.configPath === project.configPath,
-    )!;
-    const original = parseTypeScriptProjectConfig({
-      configPath: project.configPath,
-      tsModule: ts,
-    })!;
+  let nextFiles: Map<string, string> | undefined;
+  for (const { project, source, check, references, original } of checks) {
     const roots = [
       config.rootDir,
       view.mirrorRoot,
@@ -186,9 +238,13 @@ export function projectSvelteConsumerConfigs(
         sourceConsumers.has(project.configPath) && !referenceTargets.has(check)
           ? config.rootDir
           : undefined,
-      svelteOptions: original.raw?.svelteOptions,
+      svelteOptions: original.svelteOptions,
     });
-    view.files.set(check, `${JSON.stringify(projected, null, 2)}\n`);
+    const content = `${JSON.stringify(projected, null, 2)}\n`;
+    if (view.files.get(check) !== content) {
+      nextFiles ??= new Map(view.files);
+      nextFiles.set(check, content);
+    }
     view.checkFiles.add(check);
     source.checkConfigPath = check;
     source.checkReferences = new Set(references);
@@ -196,45 +252,48 @@ export function projectSvelteConsumerConfigs(
       if (capability.family === 'svelte')
         capability.executionConfigPath = check;
   }
-  for (const project of projects) {
-    const source = units.find(
-      (unit) => unit.configPath === project.configPath,
-    )!;
-    const check = source.checkConfigPath!;
-    const parsed = parseTypeScriptProjectConfig({
+  if (nextFiles === undefined) return;
+  // Both provisional and final checker views retain their independently observed bytes.
+  view.files = nextFiles;
+  const virtualFiles = config.virtualFiles?.size
+    ? new Map([...config.virtualFiles, ...view.files])
+    : view.files;
+  for (const { project, source, check, tsModule } of checks) {
+    const { parsed, configClosure } = parseSvelteConfig({
       configPath: check,
-      tsModule: ts,
-      virtualFiles: view.files,
-    })!;
-    const toolchain = resolveSvelteSemanticToolchain(project.packageRootDir);
-    const fromCheck = createRequire(check);
-    const fromSource = createRequire(project.configPath);
-    if (
-      ['svelte/compiler', 'typescript', 'svelte2tsx'].some(
-        (specifier) =>
-          fromCheck.resolve(specifier) !== fromSource.resolve(specifier),
-      ) ||
-      normalizeAbsolutePath(fromSource.resolve('svelte/compiler')) !==
-        toolchain.compilerPath
-    )
-      throw new Error(
-        `Svelte check projection changes the toolchain: ${project.configPath}`,
-      );
-    project.executionConfigPath = check;
-    project.options = parsed.options;
-    project.virtualFiles = view.files;
+      tsModule,
+      virtualFiles,
+    });
+    // Explicit staged files preserve the same options and references with either extension set.
+    const physicalTypeScript =
+      tsModule === ts
+        ? parsed
+        : parseFrameworkProjectConfig({
+            configPath: check,
+            tsModule: ts,
+            virtualFiles,
+            extraFileExtensions: [],
+          }).parsed;
+    const executionConfig = {
+      configPath: check,
+      options: physicalTypeScript.options,
+      references: physicalTypeScript.projectReferences ?? [],
+      virtualFiles,
+    };
+    project.executionConfig = executionConfig;
+    source.executionConfig = executionConfig;
     source.svelteSemanticProject = createSvelteSemanticProject({
       configPath: project.configPath,
       resolverConfigPath: check,
-      options: parsed.options,
+      options: svelteCompilerOptions(parsed.options),
       extensions: source.context.extensions,
       fileNames: source.ownedFileNames,
       generation: source.svelteSemanticProject?.generation ?? 0,
       packageRootDir: project.packageRootDir,
-      configClosure: project.configClosure,
-      virtualFiles: view.files,
+      configClosure,
+      virtualFiles,
       references: parsed.projectReferences,
-      svelteOptions: parsed.raw?.svelteOptions,
+      svelteOptions: svelteSemanticOptions(parsed.raw.svelteOptions),
     });
   }
 }

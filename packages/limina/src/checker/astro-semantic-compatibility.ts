@@ -40,6 +40,11 @@ function isMatchesVersionRanges(tuple: AstroSemanticVersionTuple): boolean {
       contract: TYPESCRIPT_CONTRACT,
       version: tuple.leafTypeScript,
     }),
+    tuple.kitTypeScript === undefined ||
+      isSupportedDependencyVersion({
+        contract: TYPESCRIPT_CONTRACT,
+        version: tuple.kitTypeScript,
+      }),
   ].every(Boolean);
 }
 
@@ -56,6 +61,9 @@ export function formatAstroSemanticVersionTuple(
     `@volar/typescript ${tuple.volarTypeScript}`,
     `TypeScript ${tuple.typeScript}`,
     `leaf TypeScript ${tuple.leafTypeScript}`,
+    ...(tuple.kitTypeScript === undefined
+      ? []
+      : [`Volar Kit TypeScript ${tuple.kitTypeScript}`]),
   ].join(', ');
 }
 

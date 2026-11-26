@@ -106,13 +106,13 @@ This import bypasses `ui`'s public entry. TypeScript may still resolve the targe
 import { Button } from '@acme/ui';
 ```
 
-Limina checks whether relative imports cross the nearest `package.json` package scope. For bare package imports, it also checks whether the current workspace package scope acknowledges the dependency through `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. Matching `source.importAuthority.allow` grants can make selected workspace root dependency declarations available to a specific source owner.
+With `source.forbidCrossPackageRelativeImports`, Limina checks whether relative imports cross the nearest `package.json` package scope. For bare package imports, it also checks whether the current workspace package scope acknowledges the dependency through `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. Matching `source.importAuthority.allow` grants can make selected workspace root dependency declarations available to a specific source owner.
 
-This distinction matters for an extended nested package scope: it inherits dependency authority from the surrounding workspace owner, but relative imports still cannot escape the nearest nested `package.json` scope. If the nested scope was not extended, or was removed with `scope.regions.exclude`, importing it from governed source crosses the region boundary before ordinary package access rules are considered.
+This distinction matters for an extended nested package scope: it inherits dependency authority from the surrounding workspace owner, but strict relative imports cannot escape the nearest nested `package.json` scope. If the nested scope was not extended, or was removed with `scope.regions.exclude`, importing it from governed source crosses the region boundary before ordinary package access rules are considered.
 
 `#imports` follows a similar boundary. Its declaration source is the nearest package scope of the importing file. Relative targets should remain inside the package scope that declares them. If the target points to a third-party package or a workspace dependency, that dependency still needs to be authorized by the workspace package scope that owns the importing file, or it must be covered by a matching workspace root dependency grant.
 
-Cross-package imports must follow the dependency declarations and public entries in the package manifests.
+Imports by package name must follow dependency declarations and public entries in the package manifests.
 
 ## Graph Checks Follow Consumed Exports
 
@@ -181,7 +181,7 @@ If a real declaration-build relationship is invisible to static analysis, such a
 
 ## Choose a declaration configuration context
 
-When a consumer uses a managed `.d.ts`, `.d.mts`, or `.d.cts`, Limina needs to know which source config provides the configuration context for that declaration. If complete coverage identifies one config, Limina selects it automatically. This can also create a reference to a project that contains only declarations. If multiple configs cover the declaration, an external consumer must choose one.
+When a consumer uses a managed `.d.ts`, `.d.mts`, or `.d.cts`, Limina needs to know which source config provides the configuration context for that declaration. If complete coverage identifies one config, Limina selects it automatically. This can also create a reference to a project that contains only declarations. If multiple active compilation units cover the declaration, choose one context for its requests. This also applies when the only inputs are declaration roots and nothing imports them.
 
 For example, suppose `packages/app` depends on the workspace package `@acme/types`, which exposes `packages/types/api.d.ts`. That file is included by `packages/types/tsconfig.json`. You can add this field to the consumer's `packages/app/tsconfig.json` to select that config explicitly:
 
@@ -193,7 +193,7 @@ For example, suppose `packages/app` depends on the workspace package `@acme/type
 }
 ```
 
-In this example, the selection is optional when `packages/types/tsconfig.json` is the only config that covers the declaration. Both paths are relative to the consuming ordinary source tsconfig. Use an exact declaration file and a currently covering managed source config; globs are unsupported. A project's own declaration roots remain local, including shared roots. This option does not assign a repository-wide owner, and `implicitRefs` does not select a declaration context.
+In this example, the selection is optional when `packages/types/tsconfig.json` is the only config that covers the declaration. Both paths are relative to the consuming ordinary source tsconfig. Use an exact declaration file and a currently covering managed source config; globs are unsupported. Every consumer uses the same valid selection for this declaration. A choice outside the active Regions, a solution config, or a unit that does not cover the declaration produces a diagnostic. A single remaining eligible unit is selected automatically. Incomplete coverage or conflicting valid choices leave the context undecided. Configured `implicitRefs` and imports in the consumer's own source retain their independent effects.
 
 Choosing a context does not bypass [source ownership rules](./config/source-boundary.md). For example, an ordinary declaration cannot belong to two source governance configs or be covered by a config owned by another package. Ambient declarations have their own [sharing rules](./config/source-checks.md#declarations-ambient).
 
@@ -205,7 +205,7 @@ Not every request that resolves to a declaration triggers context selection. For
 
 The selected project analyzes its own declaration dependencies. Limina checks that generated reference mappings and declaration requests agree with that analysis, including nested declarations. An explicit choice must match the actual mapping. Changing reference order cannot replace an explicit choice, and reference cycles remain invalid.
 
-If a declaration is actually consumed but its selected context is missing or unavailable, the affected build is blocked. An unused shared declaration does not fail the whole project for that reason. Responsibility follows actual declaration requests; it does not transfer every private declaration dependency of a referenced implementation to the consumer. Local ambient modules retain their compiler-proven context.
+If a declaration is actually consumed but its selected context is missing or unavailable, the affected build is blocked. A declaration listed in the complete roots is an input even when no source file imports it. Responsibility follows actual declaration requests; it does not transfer every private declaration dependency of a referenced implementation to the consumer. Local ambient modules retain their compiler-proven context.
 
 `tsc` and `vue-tsc` use the same declaration rules, but their toolchains must provide the necessary declaration-input information. Native TypeScript 5.9.0–5.9.2 lacks that information. Overriding the checker command or using a custom Vue plugin also prevents cross-project declaration delegation; local analysis with a custom Vue plugin remains available.
 

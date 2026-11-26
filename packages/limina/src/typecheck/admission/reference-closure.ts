@@ -1,4 +1,3 @@
-import { parseCheckerProjectConfigForContext } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
@@ -7,6 +6,7 @@ import { declarationCandidateExecutionInputs } from '../../core/analysis-cache/e
 import { frameworkExecutionInputs } from '../../core/analysis-cache/framework-execution-inputs';
 import { vueExecutionInputs } from '../../core/analysis-cache/vue-execution-inputs';
 import { readGraphRules } from '../../core/build-graph/generated/config-readers';
+import { governedSourceConfig } from '../../core/build-graph/governed-sources';
 import { libraryProjectionFiles } from '../../core/build-graph/library-projection';
 import type {
   GovernedSourceUnit,
@@ -103,12 +103,7 @@ function frameworkClosure(
   const source = frameworkSource(graph, target);
   if (source.checkConfigPath !== undefined)
     return svelteCheckClosure(graph, source, config);
-  const parsed = parseCheckerProjectConfigForContext({
-    allowNoInputDiagnostics: true,
-    configPath: source.configPath,
-    context: source.context,
-    projectRootDir: config.rootDir,
-  });
+  const parsed = governedSourceConfig(source);
   // Framework source commands consume their own inputs. A schedule does not add a process.
   return {
     observations: frameworkExecutionInputs(source),
@@ -174,14 +169,7 @@ function svelteCheckClosure(
     for (const input of unit.ownedFileNames) result.inputs.add(input);
     if (unit.frameworkCapabilities.length > 0)
       result.observations!.append(frameworkExecutionInputs(unit));
-    const configClosure =
-      unit.context.vueSemanticIdentity?.configClosure ??
-      parseCheckerProjectConfigForContext({
-        allowNoInputDiagnostics: true,
-        configPath: unit.configPath,
-        context: unit.context,
-        projectRootDir: config.rootDir,
-      }).configClosure;
+    const { configClosure } = governedSourceConfig(unit);
     for (const entry of configClosure) result.inputs.add(entry.filePath);
     const text = graph.generatedFiles.get(file);
     if (text === undefined)

@@ -16,7 +16,7 @@ import { loadConfig } from '../config/loader';
 import { AnalysisInputs } from '../core/analysis-cache/inputs';
 import { LiminaPreflightManager } from '../preflight';
 import { createPreflightGenerationController } from '../preflight/generation';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { createTestMetricsRecorder } from './helpers/metrics';
 import { createFixturePathResolver } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -101,7 +101,7 @@ describe('Svelte route exclusion', () => {
               },
             },
       );
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const manager = new LiminaPreflightManager({ config: f.config, metrics });
       try {
         await expect(manager.hasSvelteCheckProjects()).resolves.toBe(false);
@@ -129,7 +129,7 @@ describe('Svelte route exclusion', () => {
               ({ name, count }) =>
                 name === 'bounded-program-create' && count > 0,
             ),
-        ).toBe(true);
+        ).toBe(checker === 'auto');
         expect(existsSync(f.file('.limina'))).toBe(false);
       } finally {
         manager.dispose();
@@ -364,7 +364,7 @@ describe('Svelte route exclusion', () => {
       },
       { cache: true },
     );
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const manager = new LiminaPreflightManager({
       config: f.config,
       metrics,

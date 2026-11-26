@@ -30,6 +30,7 @@ describe('Node builtin specifiers', () => {
       allowedExternalPackages: new Set<string>(),
       importsField: undefined,
       outDir: '/unused',
+      relativeFilePath: 'index.js',
       packageName: '@example/pkg',
       selfSpecifiers: { exact: new Set<string>(), patterns: [] },
     };

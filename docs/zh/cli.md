@@ -49,7 +49,7 @@ limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
 
 `check` 是日常入口。它检查项目结构并运行类型检查器。其中 `checker:build` 写出内部声明，不负责生产打包。
 
-`limina check [pipeline] --force` 本次不复用已有的 Limina 持久化分析结果，而是重新分析项目，并在结果符合条件时刷新缓存。修复安装状态，或进行可能保留或回退文件时间戳的操作后，可以使用它。检查器的 `.tsbuildinfo` 等独立构建缓存仍遵守自身行为。该参数不能与只查询结果的 `--issues` 合用。
+`limina check [pipeline] --force` 跳过已有的持久化分析事实，重新分析项目，并在结果符合条件时更新缓存。修复安装状态、修改源码却保留或回退了时间戳，或者在 Limina 之前未观察过的路径新增影响解析的 `package.json` 后，可使用此参数。检查器的 `.tsbuildinfo` 等构建缓存仍按各自的规则处理。该参数不能与只查询结果的 `--issues` 合用。
 
 持久化分析缓存默认启用。[`cache: false`](./config/config-file.md#cache) 会关闭缓存读取和写入，`--force` 也不能重新开启；检查记录和检查器缓存仍按各自的规则处理。
 
@@ -70,6 +70,8 @@ pnpm exec limina check --package @scope/pkg
 默认检查会计划上述五项任务。必要准备失败时，依赖它的任务标记为 `blocked`；没有目标的框架检查标记为 `disabled`。命名流水线只记录它声明的任务及必要准备。`check --issues` 读取已保存的结果，不重新检查；配置加载错误应根据终端输出排查。独立的 `graph check`、`source check`、`proof check` 也可以在省略对应顶层配置时执行。
 
 默认组合中的任务按可用资源独立调度。命名流水线来自配置中的 `pipelines`，通过 `limina check <name>` 运行，步骤按配置顺序执行。流水线步骤可以是内置任务，也可以是外部命令。外部命令支持以对象形式配置 `command`、`args`、`cwd` 和 `env`。
+
+终端显示流水线和各任务的墙钟耗时，缩进的子行显示各阶段耗时。任务并行或等待同一项工作时，这些区间可以重叠。子阶段没有覆盖的明显耗时显示为 `outside reported phases`。实测不足一毫秒显示为 `<1ms`。禁用、跳过或阻塞的任务显示原因，实际执行过的准备阶段保留自己的耗时。
 
 `limina graph check` 运行内置的图检查命令。`limina check graph` 则只选择 `pipelines.graph`。命名流水线接受下方已声明的 Limina 选项，但拒绝额外的位置参数、未知选项和 `--` 透传。这些选项由 Limina 使用，传给外部命令的参数需要在[流水线配置](./config/pipelines.md)中定义。
 
@@ -95,7 +97,7 @@ pnpm exec limina check --package @scope/pkg
 
 #### 分析性能报告
 
-在执行 `check [pipeline]`、`graph check`、`graph prepare`、`graph export` 或 `source check` 时，可以添加 `--profile`。Limina 会将摘要打印到 stderr，并为每次调用写入一个带版本的 JSON 报告。问题查询不会执行分析，也不接受这些选项。
+在执行 `check [pipeline]`、`graph check`、`graph prepare`、`graph export` 或 `source check` 时，可以添加 `--profile`。Limina 会将摘要打印到 stderr，并为每次调用写入一个 JSON 报告。问题查询不会执行分析，也不接受这些选项。
 
 ```sh
 pnpm exec limina check --profile
@@ -107,9 +109,21 @@ pnpm exec limina graph prepare --profile-output ../profiles
 
 报告分别记录建图准备和第一份完整的物化凭据，以及观测到的工作、复用和缓存决策。时间戳和耗时以微秒表示。并发或嵌套的持续时间可能重叠。缺少里程碑或耗时为 `null`，表示观测器无法提供该值。要测量从启动到退出的耗时，请在进程外计时。
 
-安装的包在 `limina/schemas/analysis-profile-v2.schema.json` 提供机器可读的 schema。第 2 版使用项目相对路径，外部路径以不透明的标识符表示。stderr 报告包含项目行。添加 `--verbose` 可查看上下文工作、已记录操作和缓存分类原因。报告写入失败不会改变检查结果。若尚未确定治理根目录时就发生配置加载错误，可显式指定调用工作目录以外的安全目录来记录这次失败。
+暖跑仍会发现项目、选择检查器，并用已保存的事实推导引用。`schemaVersion: 2`、`metricRevision: 3` 的报告区分以下操作。比较多次运行时，应按指标修订版本分组。
 
-`LIMINA_PROFILE=1` 执行 `check` 时还会写入旧版 `.limina/check/last-profile.json`，供现有工具读取。旧版报告可能包含绝对路径。仅通过环境变量开启性能报告时，终端不会显示性能摘要。
+| 要回答的问题             | 读取的指标                                                                                                                                                                                                                                                                                    |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 哪些工作生成了图？       | `graph.reference-facts.native.projections` 统计完成的 Native 事实投影。`graph.reference-facts.native.memo-hits` 统计本次调用直接返回已有投影的次数。`graph.reference-facts.adapter.collections` 统计进入适配器收集路径的次数。                                                                |
+| 为什么重新解析？         | `cache.package-scope.configs-invalidated` 统计包作用域比较发现的配置失效次数。准入决策给出配置及原因。`cache.native-resolution.resolve` 统计实际调用底层有界解析器的次数，采用决策记录复用答案的来源。                                                                                        |
+| 实际创建了多少 Program？ | 工作记录区分 Native 分析、标准库选择、候选校验和框架执行输入。Vue 声明候选在独立进程中运行，尝试数、创建数和失败数来自该子进程。子进程观测不可用时，数量为未知。                                                                                                                              |
+| 快照有多少 I/O？         | 用 `.bytes` 统计已完成的读写字节。索引和分块的恢复读取对应 `snapshot.read-bytes` 和 `snapshot.read-block`，发布前核对对应 `snapshot.check-baseline` 和 `snapshot.check-block`，临时写入对应 `snapshot.write-index` 和 `snapshot.write-block`。`snapshot.write.calls` 统计成功替换索引的次数。 |
+| 任务在哪里等待？         | 对调度任务，`queueWaitUs` 从调度器启动计时，`readyQueueUs` 从依赖和执行代次均就绪时计时，两者均到派发为止。`dispatchToRunnerUs` 从派发计至进入 runner，`runnerUs` 覆盖任务体。未进入 runner 的任务没有 runner 耗时。                                                                          |
+
+顶层指标按作用域各计一次。项目与上下文摘要展示同一组观测的不同视图。`coverage.workDetail` 为 `partial` 时，明细中的 Program 数量只是下限。主进程经过时间使用主进程的工作区间计算，子进程耗时使用其自身时钟。
+
+安装的包在 `limina/schemas/analysis-profile.schema.json` 提供机器可读的 schema。报告使用项目相对路径，外部路径以不透明的标识符表示。stderr 报告包含项目行。添加 `--verbose` 可查看上下文工作、已记录操作和缓存分类原因。报告写入失败不会改变检查结果。若尚未确定治理根目录时就发生配置加载错误，可显式指定调用工作目录以外的安全目录来记录这次失败。
+
+执行 `check [pipeline]` 时，可用 `LIMINA_PROFILE=1` 写入性能报告并省略终端摘要。
 
 #### 查询已有问题
 
@@ -173,11 +187,11 @@ pnpm exec limina graph export
 pnpm exec limina graph export --view source --output graph.json
 ```
 
-`graph prepare` 验证输入并生成 `.limina` 下的工程图与检查器入口，但不运行完整的 `graph check` 或调用编译器。受管构建和类型检查会自动生成所需文件，需要单独查看或刷新磁盘文件时再运行它。`graph check`、`source check` 和 `proof check` 在内存中计算图，不生成检查器配置。
+`graph prepare` 验证输入并生成 `.limina` 下的工程图与检查器入口。它使用编译器证据推导引用，完整的 `graph check` 和检查器构建由各自的命令执行。受管构建和类型检查会自动生成所需文件。需要查看或刷新磁盘文件时，可以单独运行 `graph prepare`。`graph check`、`source check` 和 `proof check` 在内存中计算图，不生成检查器配置。
 
-启用分析缓存时，`graph prepare` 成功后可以保存经过校验的分析快照，供后续调用使用。`graph check` 可以读取已有快照，持久化状态保持不变。
+启用分析缓存时，`graph prepare` 成功后可以保存经校验的分析事实，供后续调用使用。`graph check` 和 `graph export` 可以读取这些事实。每次调用都从当前项目配置与合格的依赖事实构建本次的图。
 
-`graph check` 检查生成图与源码事实是否一致。它覆盖项目引用、源码图路由、引用完整性、图规则、工作区包依赖声明和部分解析边界。典型问题包括：源码导入对应的项目引用缺失；项目引用多余；跨包项目引用缺少依赖声明；图规则拒绝访问；工作区导入无法解析或目标不在工程图中。
+`graph check` 检查生成图与源码事实是否一致。它覆盖项目引用、源码图路由、引用完整性、图规则、工作区包依赖声明和部分解析边界。典型问题包括：源码导入对应的项目引用缺失；项目引用多余；包名来源或显式 `implicitRefs` 产生的跨包引用缺少依赖声明；图规则拒绝访问；工作区导入无法解析或目标不在工程图中。
 
 `graph export` 输出包级依赖图 `JSON`。`--view` 可取 `all`、`source` 或 `artifact`，默认是 `all`。不传 `--output` 时输出到标准输出。传入 `--output <path>` 时写入文件，相对路径以当前工作目录为准。缺少的父目录会自动创建，已有的同名文件会被覆盖。
 
@@ -195,7 +209,7 @@ pnpm exec limina source check --scope 'packages/app/**' --verbose
 
 `limina source check --scope` 还接受相对于所选源码归属方的范围。例如，源码归属方位于 `packages/app` 时，`src/theme` 可以匹配 `packages/app/src/theme`；工作区相对路径、绝对路径和通配模式也继续有效。
 
-它检查源码文件是否属于工作区源码归属方，非聚合型 `tsconfig` 是否混合多个源码归属方，普通相对导入是否越过最近的 `package.json` 包边界，裸包导入是否由最近的源码归属方或显式规则授权，`#...` 包导入是否保持在声明包范围内，以及 `Knip` 支撑的源码使用情况。
+每个源码叶子配置与它直接管辖的文件必须共享最近的激活 `package.json`。源码检查校验裸包导入授权、`#imports` 相对目标的声明作用域，以及停止或排除的区域。启用 `source.forbidCrossPackageRelativeImports` 后，普通相对导入也必须位于同一包作用域内。启用 Knip 时还会检查源码使用情况。
 
 `Knip` 相关检查依赖 `knip` 这个对等依赖，只有在 `source.knip` 明确写为 `true` 或拥有 `root` 或 `workspaces` 的对象时才运行。省略 `source.knip` 或写为 `false` 会关闭这部分源码使用检查，但不会关闭图检查、覆盖证明检查或检查器执行。启用后缺少 `knip` 对等依赖，会在源码分析开始前让 `source check` 失败。
 

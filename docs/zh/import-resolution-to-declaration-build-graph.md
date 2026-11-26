@@ -88,7 +88,7 @@ Vue、Astro 和 Svelte 的解析语义确定后，Limina 会分析相应工具�
 
 检查器选中 `dist/index.d.ts` 时，未选中的 default 源码分支不产生引用，也不能从声明路径反推出生产者。
 
-受管声明可能由某份源码配置负责。对 TypeScript 和 Vue 项目，如果完整的覆盖结果只指向一份配置，Limina 会自动选择它。如果多份配置都覆盖该声明，外部消费方需要用 `liminaOptions.declarationContexts` 指定使用哪份。信息不完整时，Limina 不会猜测唯一归属。共享声明也可以同时作为多个项目自己的本地输入。
+受管声明可能由某份源码配置负责。对 TypeScript 和 Vue 项目，如果完整的覆盖结果只指向一份配置，Limina 会自动选择它。如果多个有效编译单元都覆盖该声明，使用 `liminaOptions.declarationContexts` 选择解释声明内部请求的配置。没有入向导入的声明根也遵循这条规则。每个消费方保留自身源码的独立依赖。覆盖不完整时，声明上下文不可用。
 
 选择上下文不会使重叠的源码归属变得合规。归属要求和环境声明共享规则见[声明上下文说明](./monorepo-constraints.md#选择声明的配置上下文)。
 

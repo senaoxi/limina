@@ -1,12 +1,12 @@
 import type { VueSourceProfile } from '#checkers';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
-import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import {
   collectTypeScriptSourceTextImports,
   readTypeScriptSourceText,
 } from '../import-analysis/typescript-imports';
+import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import { cloneSourceEvidence } from './cache';
-import type { SourceEvidence } from './contracts';
+import type { ProjectDependencyCaches, SourceEvidence } from './contracts';
 
 const typeScriptExtensions = new Set([
   '.cjs',
@@ -28,15 +28,20 @@ export function isTypeScriptSemanticSource(filePath: string): boolean {
   return typeScriptExtensions.has(getExtension(filePath));
 }
 
+export function isNativeProjectDependencyTarget(file: string): boolean {
+  return isTypeScriptSemanticSource(file) || isDeclarationFile(file);
+}
+
 interface CollectSourceEvidenceOptions {
-  analysisCache?: NativeAnalysisCache;
-  cache?: Map<string, SourceEvidence>;
+  caches?: ProjectDependencyCaches;
   cacheIdentity?: string;
   filePath: string;
+  generation: number;
   importAnalysis: ImportAnalysisContext;
   packageRootDir: string;
   semanticFamily?: 'astro' | 'svelte' | 'typescript' | 'vue';
   sourceProfile?: VueSourceProfile;
+  virtualSourceText?: string;
 }
 
 function createSourceEvidenceCacheKey(
@@ -85,12 +90,36 @@ function storeSourceEvidence(options: {
 function collectTypeScriptRecords(
   options: CollectSourceEvidenceOptions,
 ): SourceEvidence['records'] {
-  const cached = options.analysisCache?.readSourceSyntax(options.filePath);
-  if (cached !== undefined) return cached;
-  options.analysisCache?.increment('sourceSyntaxParses');
+  const { caches, filePath, generation, virtualSourceText } = options;
+  if (virtualSourceText !== undefined)
+    return parseSourceText(options, virtualSourceText);
+  if (options.sourceProfile !== undefined)
+    return parseSourceText(options, readTypeScriptSourceText(filePath));
+  const qualified = caches?.analysisCache?.readSourceSyntax(filePath);
+  if (qualified !== undefined) return qualified;
+
+  const sourceText = readTypeScriptSourceText(filePath);
+  const cached = caches?.physicalSourceSyntax.get(filePath);
+  if (cached?.generation === generation && cached.sourceText === sourceText)
+    return structuredClone(cached.records);
+
+  const records = parseSourceText(options, sourceText);
+  caches?.physicalSourceSyntax.set(filePath, {
+    generation,
+    sourceText,
+    records: structuredClone(records),
+  });
+  return records;
+}
+
+function parseSourceText(
+  options: CollectSourceEvidenceOptions,
+  sourceText: string,
+): SourceEvidence['records'] {
+  options.caches?.analysisCache?.increment('sourceSyntaxParses');
   return collectTypeScriptSourceTextImports({
     filePath: options.filePath,
-    sourceText: readTypeScriptSourceText(options.filePath),
+    sourceText,
   });
 }
 
@@ -121,11 +150,12 @@ export function collectSourceEvidence(
   options: CollectSourceEvidenceOptions,
 ): SourceEvidence {
   const cacheKey = createSourceEvidenceCacheKey(options);
-  const cached = getCachedSourceEvidence({ cache: options.cache, cacheKey });
+  const cache = options.caches?.sourceEvidenceCache;
+  const cached = getCachedSourceEvidence({ cache, cacheKey });
   if (cached !== undefined) return cached;
   try {
     return storeSourceEvidence({
-      cache: options.cache,
+      cache,
       cacheKey,
       evidence: {
         diagnostics: [],
@@ -135,7 +165,7 @@ export function collectSourceEvidence(
     });
   } catch (error) {
     return storeSourceEvidence({
-      cache: options.cache,
+      cache,
       cacheKey,
       evidence: createFailureEvidence(options.filePath, error),
     });

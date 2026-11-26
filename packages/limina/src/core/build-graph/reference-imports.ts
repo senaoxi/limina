@@ -2,16 +2,19 @@ import { toRelativePath } from '#utils/path';
 import { currentProfile } from '../../application/analysis/observability';
 import { observeWork } from '../analysis-profile';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
-import { effectiveReferenceInputs } from '../project-dependencies/declaration-projection';
 import {
-  collectProjectDependencies,
-  createSourceProjectSemanticContext,
-} from '../project-dependencies/runner';
+  readReferenceGraphFacts,
+  type ReferenceGraphFacts,
+} from '../project-dependencies/reference-facts';
+import { createSourceProjectSemanticContext } from '../project-dependencies/runner';
 import { retainDependencyFailure } from './analysis-failure';
-import { collectDeclarationContextDecisions } from './declaration-context-decisions';
+import {
+  collectDeclarationContextDecisions,
+  type DeclarationContextProjection,
+} from './declaration-context-decisions';
 import { addDeclarationContextReferences } from './declaration-context-references';
 import { retainNativeAnalysis } from './native-analysis-evidence';
-import { recordNativeGovernanceProblems } from './native-governance';
+import { recordRequestGovernanceProblems } from './native-governance';
 import type {
   ReferenceImportContext,
   ReferenceImportOptions,
@@ -50,12 +53,34 @@ export function processDeclarationProviderImport(
   }
 }
 
+export function referenceDeclarationScope(
+  context: ReferenceImportContext,
+  project: SourceProject,
+  collection: ReferenceGraphFacts,
+): DeclarationContextProjection {
+  return collectDeclarationContextDecisions({
+    policy: context.projectDependencyCaches.declarationContextPolicy,
+    project,
+    evidence: collection.declarationEvidence,
+    allowUnqualifiedLocal: !['typescript', 'vue'].includes(
+      project.semanticAuthority.family,
+    ),
+    unsupportedDependencies:
+      project.semanticAuthority.family === 'typescript'
+        ? undefined
+        : collection.dependencies,
+    coverageIndex: context.projectDependencyCaches.sourceConfigCoverage,
+    isWorkspaceFile:
+      context.workspaceSourceBoundary.governance?.isWorkspaceFile,
+  });
+}
+
 function addProjectDependencyFailures(options: {
   context: ReferenceImportContext;
   project: SourceProject;
   source?: GovernedSourceUnit;
 }): void {
-  const collection = collectProjectDependencies({
+  const collection = readReferenceGraphFacts({
     compilationObligationScope: 'generated-declaration-project-v1',
     caches: options.context.projectDependencyCaches,
     context: createSourceProjectSemanticContext({
@@ -66,61 +91,75 @@ function addProjectDependencyFailures(options: {
     }),
     importAnalysis: options.context.importAnalysis,
   });
-  retainNativeAnalysis(options.context.analysis, collection.nativeEvidence);
   if (options.context.analysis && collection.declarationEvidence)
     (options.context.analysis.declarationEvidence ??= []).push(
       collection.declarationEvidence,
     );
-  recordCollectionGovernance(options, collection.dependencies);
-  addDependencyCollectionFailures(options.context, collection.failures);
-  const declaration = collectDeclarationContextDecisions({
-    config: options.context.config,
-    project: options.project,
-    evidence: collection.declarationEvidence,
-    unsupportedDependencies:
-      options.project.semanticAuthority.family === 'typescript'
-        ? undefined
-        : collection.dependencies,
-    coverageIndex: options.context.projectDependencyCaches.sourceConfigCoverage,
-    isWorkspaceFile:
-      options.context.workspaceSourceBoundary.governance?.isWorkspaceFile,
-  });
+  const declaration = referenceDeclarationScope(
+    options.context,
+    options.project,
+    collection,
+  );
+  const isActiveSource = (entry: { importRecord: { filePath: string } }) =>
+    declaration.isActiveSource(entry.importRecord.filePath);
+  recordCollectionGovernance(
+    options,
+    collection.dependencies.filter(isActiveSource),
+  );
+  addDependencyCollectionFailures(
+    options.context,
+    collection.failures.filter(
+      (failure) =>
+        !failure.importRecord ||
+        isActiveSource({ importRecord: failure.importRecord }),
+    ),
+  );
   options.context.problems.push(...declaration.problems);
+  const analysis = options.context.analysis;
+  if (analysis) {
+    analysis.diagnostics.push(...declaration.diagnostics);
+    if (
+      declaration.decisions.some(
+        (decision) => !('config' in decision.selection),
+      )
+    )
+      analysis.complete = false;
+    if (declaration.inactiveRequests.size > 0)
+      (analysis.inactiveDeclarationRequests ??= []).push(
+        ...declaration.inactiveRequests,
+      );
+  }
   if (options.context.analysis)
     (options.context.analysis.declarationContexts ??= []).push(
       ...declaration.decisions,
     );
-  const collect = () => {
-    const dependencies = effectiveReferenceInputs(collection);
-    processReferenceDependencies(options, dependencies);
-    processReferenceDependencies(
-      options,
-      collectSupplementalReferenceInputs({ ...options, dependencies }),
-    );
-    addDeclarationContextReferences({
-      ...options,
-      decisions: declaration.decisions,
-      evidence: collection.declarationEvidence,
-    });
-  };
-  const cache = options.context.projectDependencyCaches.analysisCache;
-  if (cache === undefined) collect();
-  else
-    cache.contributions.replaceProject({
-      config: options.project.configPath,
-      checker: options.project.checkerName,
-      collect,
-      complete: collection.failures.length === 0,
-    });
-  processMissingReferenceObservations(options, collection);
+  retainNativeAnalysis(options.context.analysis, collection.nativeEvidence);
+  const dependencies = collection.referenceInputs.filter(isActiveSource);
+  processReferenceDependencies(options, dependencies);
+  processReferenceDependencies(
+    options,
+    collectSupplementalReferenceInputs({ ...options, dependencies }).filter(
+      isActiveSource,
+    ),
+  );
+  addDeclarationContextReferences({
+    ...options,
+    decisions: declaration.decisions,
+    evidence: collection.declarationEvidence,
+  });
+  processMissingReferenceObservations(
+    options,
+    collection,
+    declaration.isActiveSource,
+  );
 }
 
 function recordCollectionGovernance(
   options: Parameters<typeof addProjectDependencyFailures>[0],
-  dependencies: ReturnType<typeof collectProjectDependencies>['dependencies'],
+  dependencies: ReferenceGraphFacts['dependencies'],
 ): void {
   for (const dependency of dependencies)
-    recordNativeGovernanceProblems({
+    recordRequestGovernanceProblems({
       context: options.context,
       fileName: dependency.importRecord.filePath,
       importRecord: dependency.importRecord,
@@ -131,7 +170,7 @@ function recordCollectionGovernance(
 
 function addDependencyCollectionFailures(
   context: ReferenceImportContext,
-  failures: ReturnType<typeof collectProjectDependencies>['failures'],
+  failures: ReferenceGraphFacts['failures'],
 ): void {
   if (failures.length > 0) markAnalysisIncomplete(context);
   for (const failure of failures) {
@@ -141,7 +180,7 @@ function addDependencyCollectionFailures(
 
 function retainDependencyCollectionFailure(
   context: ReferenceImportContext,
-  failure: ReturnType<typeof collectProjectDependencies>['failures'][number],
+  failure: ReferenceGraphFacts['failures'][number],
 ): void {
   const detail = [
     'Project dependency collection failed while inferring references:',
@@ -156,7 +195,7 @@ function retainDependencyCollectionFailure(
 
 function processReferenceDependencies(
   options: Parameters<typeof addProjectDependencyFailures>[0],
-  dependencies: ReturnType<typeof collectProjectDependencies>['dependencies'],
+  dependencies: ReferenceGraphFacts['dependencies'],
 ): void {
   for (const dependency of dependencies) {
     processReferenceDependency(options, dependency);
@@ -165,9 +204,7 @@ function processReferenceDependencies(
 
 function processReferenceDependency(
   options: Parameters<typeof addProjectDependencyFailures>[0],
-  dependency: ReturnType<
-    typeof collectProjectDependencies
-  >['dependencies'][number],
+  dependency: ReferenceGraphFacts['dependencies'][number],
 ): void {
   if (
     !shouldInferDeclarationReferenceFromImportRecord(dependency.importRecord)
@@ -185,12 +222,14 @@ function processReferenceDependency(
 
 function processMissingReferenceObservations(
   options: Parameters<typeof addProjectDependencyFailures>[0],
-  collection: ReturnType<typeof collectProjectDependencies>,
+  collection: ReferenceGraphFacts,
+  isActiveSource: (file: string) => boolean,
 ): void {
   const missing = collection.observations.filter(
     (entry) => entry.kind === 'missing',
   );
   for (const observation of missing) {
+    if (!isActiveSource(observation.importRecord.filePath)) continue;
     recordMissingObservation(options, observation);
     if (collection.nativeEvidence !== undefined) continue;
     markAnalysisIncomplete(options.context);
@@ -206,7 +245,7 @@ function processMissingReferenceObservations(
 function recordMissingObservation(
   options: Parameters<typeof addProjectDependencyFailures>[0],
   observation: Extract<
-    ReturnType<typeof collectProjectDependencies>['observations'][number],
+    ReferenceGraphFacts['observations'][number],
     { kind: 'missing' }
   >,
 ): void {

@@ -14,6 +14,7 @@ import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-out
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { SvelteDependencyPreparation } from './dependency';
 import { prepareSvelteSemanticDependencies } from './dependency';
+import { svelteCompilerOptions, svelteSemanticOptions } from './project';
 import {
   resolveSvelteSemanticToolchain,
   type SvelteSemanticToolchain,
@@ -43,6 +44,21 @@ function projectIdentity(project: SvelteSemanticProject): string {
     references: project.references,
     svelteOptions: project.svelteOptions,
   });
+}
+
+function configureSourceProject(
+  project: SvelteSemanticProject,
+  toolchain: SvelteSemanticToolchain,
+): SvelteSemanticProject {
+  const config = project.readSourceConfig?.(toolchain.tsModule);
+  if (config === undefined) return project;
+  return {
+    ...project,
+    configClosure: config.configClosure,
+    options: svelteCompilerOptions(config.options),
+    references: config.references,
+    svelteOptions: svelteSemanticOptions(config.svelteOptions),
+  };
 }
 
 export class SvelteSemanticContext {
@@ -192,7 +208,10 @@ export class SvelteSemanticContextManager {
       'svelte-context-create',
       () => {
         const toolchain = this.getToolchain(packageRootDirectory);
-        return new SvelteSemanticContext({ project, toolchain });
+        return new SvelteSemanticContext({
+          project: configureSourceProject(project, toolchain),
+          toolchain,
+        });
       },
       projectId === undefined ? undefined : ['project', projectId],
     );

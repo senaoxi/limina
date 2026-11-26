@@ -73,6 +73,7 @@ export interface WorkspaceOutputMutationAuthority {
 
 export interface ValidatedWorkspaceContext extends WorkspaceRegionTopology {
   readonly configRootDir: string;
+  readonly descriptorStamps?: ReadonlyMap<string, string | undefined>;
   readonly descriptorCandidates: readonly WorkspaceDescriptorCandidate[];
   readonly outputRoots: readonly string[];
   readonly outputMutationAuthorities?: ReadonlyMap<

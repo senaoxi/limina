@@ -9,6 +9,7 @@ import {
   resolveGeneratedKnipPackageConfigs,
   resolveGeneratedKnipPackageDiagnostics,
 } from './generated-knip-paths';
+import { publishGovernedSourceConfig } from './governed-sources';
 import type {
   GeneratedBuildModule,
   GeneratedBuildModuleManifest,
@@ -184,6 +185,7 @@ function cloneGovernedSource(unit: GovernedSourceUnit): GovernedSourceUnit {
     ownedFileNames: [...unit.ownedFileNames],
   };
   retainFrameworkExecutionInputs(unit, published);
+  publishGovernedSourceConfig(unit, published);
   return published;
 }
 

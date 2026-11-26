@@ -1,8 +1,5 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
-import {
-  isOrdinarySourceTypecheckConfigPath,
-  readJsonConfig,
-} from '#core/tsconfig/actions';
+import { readJsonConfig } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import path from 'pathe';
@@ -30,7 +27,7 @@ export function readDeclarationContextChoices(
       ],
     };
   for (const entry of value) {
-    const choice = parseChoice(entry, sourceConfig, config.rootDir);
+    const choice = parseChoice(entry, sourceConfig);
     if (typeof choice === 'string') problems.push(choice);
     else choices.push(choice);
   }
@@ -49,7 +46,6 @@ function isRelativePath(value: unknown): value is string {
 function parseChoice(
   entry: unknown,
   sourceConfig: string,
-  rootDirectory: string,
 ): DeclarationContextChoice | string {
   if (
     !isPlainRecord(entry) ||
@@ -60,8 +56,7 @@ function parseChoice(
   const base = path.dirname(sourceConfig);
   const file = normalizeAbsolutePath(path.resolve(base, entry.file));
   const config = normalizeAbsolutePath(path.resolve(base, entry.config));
-  return !isDeclarationFile(file) ||
-    !isOrdinarySourceTypecheckConfigPath(config, rootDirectory)
-    ? `${sourceConfig}: declarationContexts must select a declaration and an ordinary source tsconfig.`
-    : { file, config };
+  return isDeclarationFile(file)
+    ? { file, config }
+    : `${sourceConfig}: declarationContexts file must select a declaration.`;
 }

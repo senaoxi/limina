@@ -930,22 +930,22 @@ export default defineConfig({
 
       expect(output).toContain('  [start] resolve governance root\n');
       expect(output).toMatch(
-        / {2}\[pass\] governance root confirmed: .+ \(\d+ms\)\n/u,
+        / {2}\[pass\] governance root confirmed: .+ \((?:<?\d+ms|\d+\.\d+s)\)\n/u,
       );
-      expect(output).toMatch(
-        / {2}\[skip\] root \.limina \(skipped: not present\) \(\d+ms\)\n/u,
+      expect(output).toContain(
+        '  [skip] root .limina (skipped: not present)\n',
       );
-      expect(output).toMatch(
-        / {2}\[skip\] limina\.config\.mts \(skipped: already up to date\) \(\d+ms\)\n/u,
+      expect(output).toContain(
+        '  [skip] limina.config.mts (skipped: already up to date)\n',
       );
-      expect(output).toMatch(
-        / {2}\[skip\] \.gitignore \(skipped: \.limina\/ already ignored\) \(\d+ms\)\n/u,
+      expect(output).toContain(
+        '  [skip] .gitignore (skipped: .limina/ already ignored)\n',
       );
-      expect(output).toMatch(
-        / {2}\[skip\] package\.json \(skipped: script and dependencies already present\) \(\d+ms\)\n/u,
+      expect(output).toContain(
+        '  [skip] package.json (skipped: script and dependencies already present)\n',
       );
-      expect(output).toMatch(
-        / {2}\[skip\] limina skill \(skipped: --yes; run npx --yes skills add senaoxi\/limina --skill limina\) \(\d+ms\)\n/u,
+      expect(output).toContain(
+        '  [skip] limina skill (skipped: --yes; run npx --yes skills add senaoxi/limina --skill limina)\n',
       );
     } finally {
       await fixture.cleanup();

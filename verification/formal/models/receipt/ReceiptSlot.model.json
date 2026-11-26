@@ -2,7 +2,7 @@
   "scope": "Adoption in one manager materialization slot (I09). Historical callers may still receive an old Promise result.",
   "sourceMapping": {
     "packages/limina/src/preflight/manager.ts": "ensureGeneratedArtifactsMaterialized",
-    "packages/limina/src/preflight/materialization.ts": "commitReceipt",
+    "packages/limina/src/preflight/materialization.ts": "isCurrentCommit",
     "packages/limina/src/execution/executor.ts": "runExecution",
     "packages/limina/src/__tests__/preflight.spec.ts": "deduplicates in-flight materialization",
     ".agents/docs/lifecycle.md": "Execution",
@@ -18,8 +18,8 @@
   "actions": {
     "Advance": "packages/limina/src/preflight/manager.ts::#replaceProviderGeneration",
     "Replan": "packages/limina/src/preflight/manager.ts::#refreshProviderGenerationForMaterialization",
-    "Begin": "packages/limina/src/preflight/materialization.ts::createMaterializationPromise",
-    "Success": "packages/limina/src/preflight/materialization.ts::commitReceipt",
+    "Begin": "packages/limina/src/preflight/materialization.ts::options.slot.inFlight = inFlight",
+    "Success": "packages/limina/src/preflight/materialization.ts::options.slot.receipt = receipt",
     "Failure": "packages/limina/src/preflight/materialization.ts::clearFailedInFlight",
     "Stay": "packages/limina/src/preflight/materialization.ts::ensureMaterialization"
   },
@@ -58,8 +58,8 @@
   "counterexamples": "Late-receipt removes three guards together; never infer that each is necessary.",
   "empiricalVerification": "Run preflight.spec.ts (in-flight materialization and replacement cases).",
   "driftReview": {
-    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
-    "sourceHash": "888f65dfd4056e7ea86c87b3f430f6c26e43ee29d25f6e26c900957c26186e10",
+    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
+    "sourceHash": "ccb579186207f2c1155bace7b3dfcbfbf05b99966d700061d7f6e7e766679ad3",
     "modelHash": "61191d69107a73678261b55ce4352b571d7d7c528f933a9d3157a6cd6c214afb"
   }
 }

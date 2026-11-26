@@ -2,42 +2,59 @@ import type { AnalysisRead } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
 import { realpathSync } from 'node:fs';
 import ts from 'typescript';
-import { AnalysisInputDriftError, type InputKind } from './contracts';
-import { pathBinding } from './directory-fingerprint';
+import {
+  AnalysisInputDriftError,
+  type InputDependency,
+  type InputKind,
+} from './contracts';
+import {
+  directoryFingerprint,
+  packageManifestState,
+  pathBinding,
+} from './directory-fingerprint';
 import { EpochInputReplay, type EpochInputs } from './epoch-inputs';
 import { analysisHash } from './identity';
 import { inputStat, isRegularFile } from './input-state';
 import type { NativeAnalysisCache } from './native-cache';
+import { typePackageInventory } from './package-inputs';
+import { physicalEntry } from './physical-entry';
+
+function* contextDependencies(
+  cache: NativeAnalysisCache,
+  queryIds: Iterable<string>,
+  environment: readonly InputDependency[],
+): Iterable<InputDependency> {
+  yield* environment;
+  for (const id of queryIds) yield* cache.queries[id].dependencies;
+}
 
 export function bindResolutionExecutionInputs(
   scope: EpochInputs,
   cache: NativeAnalysisCache,
   queryIds: Iterable<string>,
+  environment: readonly InputDependency[] = [],
 ): void {
   const replay = new EpochInputReplay();
   const seen = new Set<string>();
-  for (const key of queryIds) {
-    const dependencies = cache.queries[key].dependencies;
-    for (const dependency of dependencies) {
-      if (seen.has(dependency.inputId)) continue;
-      seen.add(dependency.inputId);
-      const { kind, path } = cache.inputs.records[dependency.inputId];
-      const receipt = executionReceipt(
-        kind,
-        path,
-        dependency.expectedVersion,
-        cache,
+  for (const dependency of contextDependencies(cache, queryIds, environment)) {
+    if (seen.has(dependency.inputId)) continue;
+    seen.add(dependency.inputId);
+    const { kind, path } = cache.inputs.records[dependency.inputId];
+    const receipt = executionReceipt(
+      kind,
+      path,
+      dependency.expectedVersion,
+      cache,
+    );
+    if (receipt !== null)
+      scope.bind(
+        {
+          key: JSON.stringify(['resolution-execution', kind, path]),
+          path,
+          ...receipt,
+        },
+        replay,
       );
-      if (receipt !== null)
-        scope.bind(
-          {
-            key: JSON.stringify(['resolution-execution', kind, path]),
-            path,
-            ...receipt,
-          },
-          replay,
-        );
-    }
   }
 }
 
@@ -86,6 +103,27 @@ function executionReceipt(
               : null,
           ),
       };
+    }
+    case 'manifest': {
+      return {
+        value: version,
+        read: () => analysisHash(packageManifestState(path)),
+      };
+    }
+    case 'directory-identity': {
+      return {
+        value: version,
+        read: () => analysisHash([pathBinding(path), physicalEntry(path)]),
+      };
+    }
+    case 'type-packages': {
+      return {
+        value: version,
+        read: () => analysisHash(typePackageInventory(path)),
+      };
+    }
+    case 'tree': {
+      return { value: version, read: () => directoryFingerprint(path) };
     }
     case 'binding': {
       return { value: version, read: () => analysisHash(pathBinding(path)) };

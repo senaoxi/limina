@@ -49,7 +49,7 @@ The config file can export an object, a `Promise`, or a function that receives `
 
 `check` is the daily entry point. It checks structure and runs type checkers; `checker:build` writes internal declarations and does not produce the production bundle.
 
-`limina check [pipeline] --force` skips existing persistent analysis results for this run, analyzes the project again, and saves an eligible new result. Use it after installation repairs or operations that may preserve or roll back file timestamps. Checker build caches such as `.tsbuildinfo` retain their own behavior. This option cannot be combined with `--issues`, which only queries an existing result.
+`limina check [pipeline] --force` skips existing persistent analysis facts for this run, analyzes the project again, and saves an eligible new result. Use it after installation repairs, source edits that preserve or roll back timestamps, or the addition of a `package.json` that affects resolution at a path Limina did not previously observe. Checker build caches such as `.tsbuildinfo` retain their own behavior. This option cannot be combined with `--issues`, which only queries an existing result.
 
 Persistent analysis caching defaults to enabled. Set [`cache: false`](./config/config-file.md#cache) to prevent both restoration and publication, including with `--force`; this leaves existing snapshots, configuration drift protection, issue records and checker caches intact. `--force` can read old snapshot bytes for safe concurrent publication, but does not restore the old analysis model or delete this configuration's, other configurations' or other worktrees' snapshots.
 
@@ -70,6 +70,8 @@ Set `source.knip: true` to add Knip analysis. `false` retains source ownership, 
 Every default governance task appears in the current plan. Failed required preparation marks dependent tasks as `blocked`; a planned framework check without targets remains `disabled`. Named pipelines record only their declared tasks and required preparation. `check --issues` reads the saved invocation without rerunning checks; use terminal output to diagnose configuration-loading errors. Standalone `graph check`, `source check`, and `proof check` also run without their top-level domain.
 
 Tasks in the default group are scheduled independently according to available resources. Named pipelines come from configured `pipelines` and run through `limina check <name>`, with steps executed in configured order. Pipeline steps may be built-in tasks or external commands. External commands support object-form configuration with `command`, `args`, `cwd`, and `env`.
+
+The terminal shows wall time for the pipeline and each task. Indented rows show how long each phase took. Their intervals can overlap when tasks run in parallel or wait for the same work. A significant gap between the task and its phase intervals appears as `outside reported phases`. A measured duration below one millisecond appears as `<1ms`. A disabled, skipped or blocked task shows its reason, and any preparation it ran keeps its own timing.
 
 `limina graph check` dispatches a built-in command; `limina check graph` selects only `pipelines.graph`. A named workflow accepts the declared Limina options below, but rejects extra positional arguments, unknown options, and `--` passthrough. All options belong to Limina; downstream command inputs are defined in [pipeline configuration](./config/pipelines.md).
 
@@ -95,7 +97,7 @@ Inspect [task and analyzer states](./built-in-tasks.md#task-status) after a comm
 
 #### Profile analysis
 
-Use `--profile` with `check [pipeline]`, `graph check`, `graph prepare`, `graph export`, or `source check`. Limina prints a summary to stderr and writes one versioned JSON report per invocation. Issue queries do not run analysis and reject these options.
+Use `--profile` with `check [pipeline]`, `graph check`, `graph prepare`, `graph export`, or `source check`. Limina prints a summary to stderr and writes one JSON report per invocation. Issue queries do not run analysis and reject these options.
 
 ```sh
 pnpm exec limina check --profile
@@ -107,9 +109,21 @@ By default, the report goes to `.limina/profiles/<invocation-id>.json` under the
 
 The report distinguishes graph preparation from the first complete materialization receipt. It records observed work, reuse and cache decisions. Timestamps and durations use microseconds. Concurrent or nested durations can overlap. A missing milestone or `null` duration means the observer could not report that value. Use an external process timer for launch-to-exit measurements.
 
-The installed package includes the machine-readable schema at `limina/schemas/analysis-profile-v2.schema.json`. Version 2 uses project-relative paths and opaque aliases for external paths. The stderr report includes project rows. Add `--verbose` for context work, recorded operations and cache classification causes. A report write failure leaves the check result intact. If configuration loading fails before the governance root is known, use a safe explicit directory outside the invocation's working directory to capture the failure.
+A warm run still discovers projects, selects checkers and derives references from saved facts. Reports with `schemaVersion: 2` and `metricRevision: 3` distinguish the following operations. Group comparisons by metric revision.
 
-`LIMINA_PROFILE=1` also writes the legacy `.limina/check/last-profile.json` on `check` for existing readers. The legacy report can contain absolute paths. Environment-only profiling leaves the human profile summary off.
+| Question                        | What to read                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Which work produced the graph?  | `graph.reference-facts.native.projections` counts completed projections. `graph.reference-facts.native.memo-hits` counts returns of an existing projection in the same invocation. `graph.reference-facts.adapter.collections` counts calls to the adapter collection path.                                                                                     |
+| Why did resolution run again?   | `cache.package-scope.configs-invalidated` counts configuration invalidations during scope comparison. Admission decisions identify the affected configurations and causes. `cache.native-resolution.resolve` counts calls to the underlying bounded resolver. Adoptions record the origin of reused answers.                                                    |
+| How many Programs ran?          | Read the work records for Native analysis, library selection, candidate validation and framework execution inputs. Vue declaration candidates run in a separate process. Their attempt, creation and failure counters come from that process. An unavailable child observation leaves the count unknown.                                                        |
+| How much snapshot I/O occurred? | Read the `.bytes` counters for completed payloads. For index and block reads use `snapshot.read-bytes` and `snapshot.read-block`, for publication checks use `snapshot.check-baseline` and `snapshot.check-block`, and for temporary writes use `snapshot.write-index` and `snapshot.write-block`. `snapshot.write.calls` counts successful index replacements. |
+| Where did a task wait?          | For scheduled tasks, `queueWaitUs` starts at scheduler entry. `readyQueueUs` starts once dependencies and the generation are ready. Both end at dispatch. `dispatchToRunnerUs` covers dispatch to runner entry. `runnerUs` covers the task body. A task that never enters its runner has no runner duration.                                                    |
+
+Count each top-level metric once per scope. Project and context summaries present views of the same observations. When `coverage.workDetail` is `partial`, the detailed Program counts are lower bounds. Use the main-process work intervals to compute elapsed time. Subprocess durations have their own clock.
+
+The installed package includes the machine-readable schema at `limina/schemas/analysis-profile.schema.json`. The report uses project-relative paths and opaque aliases for external paths. The stderr report includes project rows. Add `--verbose` for context work, recorded operations and cache classification causes. A report write failure leaves the check result intact. If configuration loading fails before the governance root is known, use a safe explicit directory outside the invocation's working directory to capture the failure.
+
+Set `LIMINA_PROFILE=1` to write a performance report for `check [pipeline]` without printing the summary.
 
 #### Query Saved Issues
 
@@ -173,11 +187,11 @@ pnpm exec limina graph export
 pnpm exec limina graph export --view source --output graph.json
 ```
 
-`graph prepare` validates inputs and generates the project graph and checker entries under `.limina`. It does not run the full `graph check` or invoke the compiler. Managed builds and typechecks automatically materialize the files they need; run it separately to inspect or refresh files on disk. `graph check`, `source check`, and `proof check` calculate the graph in memory without materializing checker configs.
+`graph prepare` validates inputs and generates the project graph and checker entries under `.limina`. It uses compiler evidence to derive references and leaves the full `graph check` and checker builds to their own commands. Managed builds and typechecks automatically materialize the files they need. Run `graph prepare` separately to inspect or refresh files on disk. `graph check`, `source check`, and `proof check` calculate the graph in memory without materializing checker configs.
 
-With analysis caching enabled, a successful `graph prepare` can save a validated analysis snapshot for later invocations. `graph check` can read an existing snapshot and leaves its persistent state unchanged.
+With analysis caching enabled, a successful `graph prepare` can save validated analysis facts for later invocations. `graph check` and `graph export` can read those facts. Each invocation constructs its graph from current project configurations and qualified dependency facts.
 
-`graph check` checks whether the generated graph is consistent with source import relationships. It covers project references, source graph routing, reference completeness, graph rules, workspace package dependency declarations, and some resolution boundaries. Typical issues include missing project references for source imports, extra project references, missing dependency declarations for cross-package project references, graph-rule denials, and workspace imports that cannot resolve or whose targets are not in the generated graph.
+`graph check` checks whether the generated graph is consistent with source import relationships. It covers project references, source graph routing, reference completeness, graph rules, workspace package dependency declarations, and some resolution boundaries. Typical issues include missing project references for source imports, extra project references, missing dependency declarations for references backed by package names or explicit `implicitRefs`, graph-rule denials, and workspace imports that cannot resolve or whose targets are not in the generated graph.
 
 `graph export` outputs a package-level dependency graph as `JSON`. `--view` can be `all`, `source`, or `artifact`; the default is `all`. Without `--output`, it writes to stdout. With `--output <path>`, it writes to a file, resolving a relative path from the current working directory. It creates missing parent directories and overwrites an existing file at that path.
 
@@ -195,7 +209,7 @@ pnpm exec limina source check --scope 'packages/app/**' --verbose
 
 For `limina source check --scope`, a scope may also be relative to the selected source owner. For example, `src/theme` matches `packages/app/src/theme` for the `packages/app` owner. Workspace-relative, absolute, and glob forms continue to work as well.
 
-It checks whether source files belong to workspace packages, whether non-aggregator `tsconfig` files mix multiple workspace package owners, whether ordinary relative imports cross the nearest `package.json` package boundary, whether bare package imports are authorized by the owning workspace package or explicit rules, whether `#...` package imports stay inside the declaring package scope, and source usage backed by `Knip`.
+Each source leaf and its directly governed files must share their nearest active `package.json`. Source checks enforce bare-import authorization, the declaring scope of relative `#imports` targets, and stopped or excluded regions. Set `source.forbidCrossPackageRelativeImports` to apply the same nearest-manifest restriction to ordinary relative imports. Knip supplies source-usage findings when enabled.
 
 `Knip`-related checks depend on `knip` as a peer dependency and run only when `source.knip` is explicitly set to `true` or an object containing `root` or `workspaces`. Omitting or setting `source.knip` to `false` disables that part of source usage checking; it does not disable graph checks, proof checks, or checker execution. An enabled but missing `knip` peer dependency makes `source check` fail before source analysis.
 

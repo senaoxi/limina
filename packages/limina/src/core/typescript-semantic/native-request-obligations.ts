@@ -1,11 +1,11 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import type ts from 'typescript';
 import type {
   NativeCompilationObligation,
   ObligationExistence,
 } from '../../domain/analysis/native-obligation';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import { nativeFingerprint } from './native-file-identity';
-import type { NativeObservedProgram } from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
 import type { NativeRequestResult } from './native-program-request-data';
 
@@ -17,24 +17,30 @@ import type { NativeRequestResult } from './native-program-request-data';
 export function remainingNativeObligations(
   entries: readonly NativeRequestResult[],
   modules: readonly NativeCompilationObligation[],
-  program: NativeObservedProgram,
+  options: ts.CompilerOptions,
   frontier: NativeProgramFrontier,
+  wasAttempted: (target: string) => boolean = (target) =>
+    frontier.attempts.some(
+      (attempt) => frontier.fileKey(attempt.file.lexicalPath) === target,
+    ),
 ): NativeCompilationObligation[] {
   const assessed = new Set(modules.flatMap((item) => item.requestIds));
   return entries
     .filter((entry) => !assessed.has(entry.request.id))
-    .map((entry) => requestObligation(entry, program, frontier));
+    .map((entry) => requestObligation(entry, options, frontier, wasAttempted));
 }
 
 function requestObligation(
   entry: NativeRequestResult,
-  program: NativeObservedProgram,
+  options: ts.CompilerOptions,
   frontier: NativeProgramFrontier,
+  wasAttempted: (target: string) => boolean,
 ): NativeCompilationObligation {
   const { request } = entry;
   const context = request.origin.context;
   const existence =
-    typeInputExistence(entry, program, frontier) ?? requestExistence(entry);
+    typeInputExistence(entry, options, frontier, wasAttempted) ??
+    requestExistence(entry);
   const reason =
     existence.state === 'absent'
       ? {
@@ -88,8 +94,9 @@ function declarationAbsence(entry: NativeRequestResult): string | undefined {
 
 function typeInputExistence(
   entry: NativeRequestResult,
-  program: NativeObservedProgram,
+  options: ts.CompilerOptions,
   frontier: NativeProgramFrontier,
+  wasAttempted: (target: string) => boolean,
 ): ObligationExistence | undefined {
   const { request, resolution } = entry;
   if (
@@ -101,21 +108,14 @@ function typeInputExistence(
     return undefined;
   const key = (file: string) => frontier.fileKey(normalizeAbsolutePath(file));
   const target = key(resolution.target.lexicalPath);
-  const isRoot = program
-    .getRootFileNames()
-    .some((file) => key(file) === target);
-  const isDisabled =
-    request.sourceFile !== null &&
-    program.getCompilerOptions().noResolve === true;
-  const wasAttempted = frontier.attempts.some(
-    (attempt) => key(attempt.file.lexicalPath) === target,
-  );
+  const isRoot = frontier.isProjectRoot(resolution.target.lexicalPath);
+  const isDisabled = request.sourceFile !== null && options.noResolve === true;
   if (
     !isRoot &&
     !isDisabled &&
-    (!wasAttempted ||
+    (!wasAttempted(target) ||
       resolution.externalLibrary !== false ||
-      (program.getCompilerOptions().composite !== true &&
+      (options.composite !== true &&
         request.origin.context.inputs.compilationScope !==
           'generated-declaration-project-v1'))
   )

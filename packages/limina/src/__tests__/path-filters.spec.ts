@@ -135,9 +135,9 @@ describe('check issue scope path matching', () => {
 
   it('never treats diagnostic scope labels as path candidates', () => {
     const rootDirectory = path.resolve('path filter workspace');
-    const diagnosticScope = 'source.declarations.ambient[0]';
+    const diagnosticScope = 'source.importAuthority.allow[0]';
     const issue = createLiminaCheckIssue({
-      code: 'LIMINA_SOURCE_AMBIENT_DECLARATION_CONFIG_INVALID',
+      code: 'LIMINA_SOURCE_IMPORT_AUTHORITY_INVALID',
       locations: [{ label: 'field', scope: diagnosticScope }],
       reason: 'invalid ambient declaration config',
       rootDir: rootDirectory,

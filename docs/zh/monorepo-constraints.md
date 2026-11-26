@@ -56,7 +56,7 @@ packages/
 
 如果 `app/tsconfig.lib.json` 同时包含 `ui/src/Button.ts`，它就跨过了包归属边界。应让 `ui` 的配置拥有该文件，再让 `app` 通过公开包入口依赖它。检查器因导入读到一个文件，不等于这个文件归导入方所有。
 
-默认情况下，嵌套 `package.json`、嵌套工作区根和激活子包都会停止外层包的遍历。已激活的子包从自己的包根独立治理。满足条件的无名嵌套包作用域可以通过 `scope.regions.extendNestedPackageScopes` 留在外层区域，但它的最近包作用域仍约束相对导入和 `#imports`。
+默认情况下，嵌套 `package.json`、嵌套工作区根和激活子包都会停止外层包的遍历。已激活的子包从自己的包根独立治理。满足条件的无名嵌套包作用域可以通过 `scope.regions.extendNestedPackageScopes` 留在外层区域，但它的最近包作用域仍约束严格相对导入和 `#imports`。
 
 `scope.regions.exclude` 按种类排除包、嵌套包作用域或精确 `tsconfig`。排除父包不会自动排除独立激活的后代，只排除配置文件也不等于排除源码。详细条件见[治理区域](./config/regions.md)。
 
@@ -108,13 +108,13 @@ import { Button } from '../../ui/src/Button';
 import { Button } from '@acme/ui';
 ```
 
-Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。对于裸包导入，它还会检查当前工作区包作用域是否通过 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 承认了这个依赖。匹配的 `source.importAuthority.allow` 授权可以让特定源码归属方使用工作区根清单中的指定依赖声明。
+启用 `source.forbidCrossPackageRelativeImports` 后，Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。对于裸包导入，它还会检查当前工作区包作用域是否通过 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 承认了这个依赖。匹配的 `source.importAuthority.allow` 授权可以让特定源码归属方使用工作区根清单中的指定依赖声明。
 
-这个区别对已扩展的嵌套包作用域尤其重要：它会继承外层工作区包的依赖授权，但相对导入仍然不能越过最近的嵌套 `package.json` 作用域。如果这个嵌套作用域没有被扩展，或已被 `scope.regions.exclude` 裁剪，受治理源码导入其中内容时会先构成治理区域越界，再进入普通包访问规则。
+这个区别对已扩展的嵌套包作用域尤其重要：它会继承外层工作区包的依赖授权，但严格模式下的相对导入不能越过最近的嵌套 `package.json` 作用域。如果这个嵌套作用域没有被扩展，或已被 `scope.regions.exclude` 裁剪，受治理源码导入其中内容时会先构成治理区域越界，再进入普通包访问规则。
 
 `#imports` 也遵循类似边界。它的声明来源是导入文件最近的包作用域：相对目标应该留在声明它的包作用域内；如果目标指向三方包或工作区依赖，这个依赖仍然需要被导入文件所属的工作区包作用域授权，或者命中匹配的工作区根依赖授权。
 
-跨包导入须符合包清单中的依赖声明和公开入口。
+按包名导入时，须符合包清单中的依赖声明和公开入口。
 
 ## 图检查依据实际消费的导出
 
@@ -187,7 +187,7 @@ import { createClient } from '@acme/core';
 
 ## 选择声明的配置上下文
 
-消费方使用受管 `.d.ts`、`.d.mts` 或 `.d.cts` 时，Limina 需要知道应由哪份源码配置为这份声明提供配置上下文。如果完整的覆盖结果指向唯一配置，Limina 会自动选择它。即使该项目只包含声明，也可以生成引用。如果多个配置覆盖同一声明，外部消费方需要显式选择。
+消费方使用受管 `.d.ts`、`.d.mts` 或 `.d.cts` 时，Limina 需要知道应由哪份源码配置为这份声明提供配置上下文。如果完整的覆盖结果指向唯一配置，Limina 会自动选择它。即使该项目只包含声明，也可以生成引用。如果多个有效编译单元覆盖同一声明，需要为声明内部的请求选择一个上下文。即使只有声明根、没有文件导入它，也适用这条规则。
 
 例如，假设 `packages/app` 依赖工作区包 `@acme/types`，后者公开了 `packages/types/api.d.ts`。这个文件由 `packages/types/tsconfig.json` 包含。可以在消费方的 `packages/app/tsconfig.json` 中加入以下字段，显式选择这份配置：
 
@@ -199,7 +199,7 @@ import { createClient } from '@acme/core';
 }
 ```
 
-在这个例子中，如果只有 `packages/types/tsconfig.json` 覆盖该声明，就不必显式选择。两个路径都相对于消费方的源码 `tsconfig`。`file` 指向具体的声明文件，`config` 指向当前确实覆盖该文件的受管源码配置。两者都不支持通配模式。项目自己的声明根文件仍按本地输入处理，共享声明根文件也一样。这个选项不会为整个仓库指定唯一归属，`implicitRefs` 也不能代替它选择声明上下文。
+在这个例子中，如果只有 `packages/types/tsconfig.json` 覆盖该声明，就不必显式选择。两个路径都相对于消费方的源码 `tsconfig`。`file` 指向具体的声明文件，`config` 指向当前确实覆盖该文件的受管源码配置。两者都不支持通配模式。所有消费方对这份声明使用同一个有效选择。指向 Regions 外配置、Solution Config 或未覆盖该声明的编译单元会产生诊断。剩余唯一的有效单元仍可自动选定。覆盖不完整或有效选择相互冲突时，上下文保持未确定。`implicitRefs` 和消费方自身源码的导入继续各自贡献关系。
 
 选择上下文不能绕过[源码归属规则](./config/source-boundary.md)。例如，普通声明不能同时属于两个源码治理配置，也不能被另一个包所属的配置覆盖。环境声明有自己的[共享规则](./config/source-checks.md#declarations-ambient)。
 
@@ -211,7 +211,7 @@ import { createClient } from '@acme/core';
 
 选定的项目会独立分析自己的声明依赖。Limina 会比较生成引用后的实际映射与这份分析结果，嵌套声明也在检查范围内。显式选择必须与实际映射一致。调整引用顺序不能代替选择，引用环也仍然无效。
 
-如果实际消费的声明还没有选定上下文，或上下文不可用，相关构建会被阻止。没有被使用的共享声明不会因此让整个项目失败。责任只沿实际声明请求传播，不会把被引用实现的所有私有声明依赖都归给消费方。本地环境模块也会保留编译器证明的上下文。
+如果实际消费的声明还没有选定上下文，或上下文不可用，相关构建会被阻止。列在完整 roots 中的声明本身就是输入，即使没有源码导入它。责任只沿实际声明请求传播，不会把被引用实现的所有私有声明依赖都归给消费方。本地环境模块也会保留编译器证明的上下文。
 
 `tsc` 和 `vue-tsc` 使用同一套声明规则，但各自的工具链必须能够提供所需的声明输入信息。原生 TypeScript 5.9.0–5.9.2 缺少这项信息。使用自定义命令覆盖检查器，或使用自定义 Vue 插件时，也不能取得跨项目声明委派的资格。自定义 Vue 插件的本地分析仍可使用。
 

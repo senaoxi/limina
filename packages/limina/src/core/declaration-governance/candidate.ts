@@ -1,10 +1,8 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import type ts from 'typescript';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
-import type {
-  CheckerAuthority,
-  DeclarationRequestReceipt,
-} from '../../domain/analysis/declaration-governance';
+import type { DeclarationCandidateRequest } from '../../domain/analysis/declaration-context';
+import type { CheckerAuthority } from '../../domain/analysis/declaration-governance';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 
 export interface DeclarationCandidateInput {
@@ -30,6 +28,8 @@ export interface DeclarationCandidateInput {
     preset?: string;
   }[];
   requiresDelegationProof: boolean;
+  // Complete locked inventory for local declaration roots with no internal requests.
+  emptyLocalRootInventory?: string;
   metrics?: AnalysisMetricsRecorder;
 }
 
@@ -40,14 +40,14 @@ export interface DeclarationCandidateObservation {
   authority: CheckerAuthority;
   contextId: string;
   compilerVersion: string;
-  sources: readonly { file: string; defaultLibrary: boolean }[];
+  sources: readonly { file: string; defaultLibrary?: boolean }[];
   mappings: readonly {
     file: string;
     referenceConfig: string | null;
     declarationOutput: string | null;
     qualified: boolean;
   }[];
-  requests: readonly DeclarationRequestReceipt[];
+  requests: readonly DeclarationCandidateRequest[];
 }
 
 export class DeclarationObservationUnavailable extends Error {}
@@ -57,13 +57,13 @@ export class DeclarationObservationUnavailable extends Error {}
  * Their reads remain in the candidate's input fence. */
 export function declarationCandidateRequests(
   declarations: readonly string[],
-  inventory: readonly DeclarationRequestReceipt[],
+  inventory: readonly DeclarationCandidateRequest[],
   fileKey: (file: string) => string,
-): readonly DeclarationRequestReceipt[] {
+): readonly DeclarationCandidateRequest[] {
   const byFile = Map.groupBy(inventory, (request) => fileKey(request.file));
   const pending = [...declarations];
   const visited = new Set<string>();
-  const result: DeclarationRequestReceipt[] = [];
+  const result: DeclarationCandidateRequest[] = [];
   while (pending.length > 0) {
     const file = pending.pop()!;
     if (visited.has(fileKey(file))) continue;

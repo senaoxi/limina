@@ -84,14 +84,14 @@ function rootEntries(
 
 export function nativeProjectRelations(options: {
   context: NativeEvidenceContext;
-  program: ts.Program;
+  projectReferences: readonly ts.ProjectReference[];
   entries: readonly NativeRequestResult[];
   frontier: NativeProgramFrontier;
   obligations: readonly NativeCompilationObligation[];
 }): NativeProjectRelation[] {
   const disabled = disabledModuleRequests(options.context, options.obligations);
   return [
-    ...(options.program.getProjectReferences() ?? []).map((reference) => ({
+    ...options.projectReferences.map((reference) => ({
       kind: 'explicit-reference' as const,
       consumerContextId: options.context.id,
       targetConfigId: normalizeAbsolutePath(

@@ -7,6 +7,7 @@ import {
   prepareProducerBuildPlan,
   type ProducerBuildPlan,
 } from '#core/build-graph/runner';
+import { withSourceConfigTextScope } from '#utils/source-config-text';
 import { currentProfile } from '../application/analysis/observability';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { resolveGeneratedGraphCheckerSelections } from './build-graph/checker-resolution';
@@ -164,7 +165,7 @@ export class BuildGraphCore {
   }
 
   canExcludeSvelteCheckProjects(): Promise<boolean> {
-    this.#svelteExclusion ??= (async () => {
+    this.#svelteExclusion ??= withSourceConfigTextScope(async () => {
       const [workspaceContext, workspacePathIndex] = await Promise.all([
         this.#workspace.getValidatedContext(),
         this.#workspace.getPathIndex(),
@@ -172,15 +173,14 @@ export class BuildGraphCore {
       return canExcludeSvelteProjects({
         config: this.#config,
         activatedRegions: workspacePathIndex,
-        generation: this.#artifactNamespace.generation,
         workspaceSourceConfigPaths: workspaceContext.sourceConfigPaths,
       });
-    })();
+    });
     return this.#svelteExclusion;
   }
 
   hasSvelteCheckProjects(): Promise<boolean> {
-    this.#svelteProjects ??= (async () => {
+    this.#svelteProjects ??= withSourceConfigTextScope(async () => {
       const [workspaceContext, workspacePathIndex] = await Promise.all([
         this.#workspace.getValidatedContext(),
         this.#workspace.getPathIndex(),
@@ -201,7 +201,7 @@ export class BuildGraphCore {
       } finally {
         this.#retainInferenceDiagnostics(this.#projectDependencies);
       }
-    })();
+    });
     return this.#svelteProjects;
   }
 

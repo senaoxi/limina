@@ -1,16 +1,13 @@
-import {
-  mkdir,
-  readdir,
-  readFile,
-  realpath,
-  rm,
-  symlink,
-} from 'node:fs/promises';
+import { mkdir, readFile, realpath, rm, symlink } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import { createSemanticRepairFixture } from '../../src/__tests__/helpers/semantic-repair';
 import { readCheckIssueSnapshot } from '../../src/check-reporting/snapshot';
+import {
+  profileMetric,
+  readAnalysisProfile,
+} from '../helpers/analysis-profile';
 import { runLimina } from '../helpers/run-limina';
 
 const require = createRequire(import.meta.url);
@@ -59,41 +56,39 @@ it.each(['warm', 'outputs', 'analysis'] as const)(
         const installed = path.dirname(require.resolve(`${name}/package.json`));
         await symlink(await realpath(installed), target, 'junction');
       }
-      const check = async () => {
+      const check = async (name: string) => {
+        const outputDirectory = f.path('.limina', 'profiles', name);
         const result = await runLimina({
           fixtureName: 'declaration-output-freshness',
           cwd: f.root,
-          args: ['check'],
-          env: { LIMINA_PROFILE: '1' },
+          args: ['check', '--profile-output', outputDirectory],
         });
         expect(result.code, result.stdout + result.stderr).toBe(0);
         const snapshot = await readCheckIssueSnapshot(f.path());
         expect(snapshot).not.toBeNull();
         expect(snapshot?.issues).toEqual([]);
-        const entries = await readdir(f.path('.limina'), { recursive: true });
-        const profilePath = entries.find((entry) =>
-          entry.endsWith('last-profile.json'),
-        );
-        expect(profilePath).toBeDefined();
-        const profile = JSON.parse(
-          await readFile(f.path('.limina', profilePath!), 'utf8'),
-        ) as { metrics: { name: string; kind?: string; count?: number }[] };
-        return (
-          profile.metrics.find(
-            (event) =>
-              event.name === 'analysis-cache' && event.kind === 'graphHits',
-          )?.count ?? 0
-        );
+        const profile = await readAnalysisProfile(outputDirectory);
+        return {
+          reads: profileMetric(profile, 'snapshot.read-block.calls'),
+          restoredVueContexts: profile.decisions.filter(
+            (decision) =>
+              decision.layer === 'vue-context' &&
+              decision.outcome === 'adopted' &&
+              decision.origin === 'prior-disk',
+          ).length,
+        };
       };
-      expect(await check()).toBe(0);
+      expect((await check('cold')).reads).toBe(0);
       if (recovery === 'outputs') {
         await rm(f.path('.limina/dts'), { recursive: true });
         await rm(f.path('.limina/tsbuildinfo'), { recursive: true });
       } else if (recovery === 'analysis')
         await rm(f.path('.limina/cache'), { recursive: true });
-      const hits = await check();
-      if (recovery === 'warm') expect(hits).toBeGreaterThan(0);
-      else if (recovery === 'analysis') expect(hits).toBe(0);
+      const current = await check(recovery);
+      if (recovery === 'warm') {
+        expect(current.reads).toBeGreaterThan(0);
+        expect(current.restoredVueContexts).toBeGreaterThan(0);
+      } else if (recovery === 'analysis') expect(current.reads).toBe(0);
       expect(
         await readFile(
           f.path(

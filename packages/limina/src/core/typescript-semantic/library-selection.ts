@@ -47,7 +47,7 @@ function resolveLibrary(
         (file) => file,
       ),
     );
-  const configPaths = input.cache?.authorities[input.configPath]?.closure ?? [
+  const configPaths = input.cache?.configClosures.get(input.configPath) ?? [
     input.configPath,
   ];
   return input.kind === 'projection' ||

@@ -1,17 +1,26 @@
+import type { TaskProgressReporter } from '../../execution/progress';
 import type { ExecutionAdmission } from '../admission/execution-admission';
 import {
-  type BuildTargetCompletion,
-  runTargetWithMeasuredDuration,
-  type TypecheckRunner,
-  type TypecheckTarget,
+  runCheckerTargetProcess,
+  startCheckerTargetAdmission,
+} from '../runner-shared';
+import type {
+  BuildTargetCompletion,
+  TypecheckRunner,
+  TypecheckTarget,
 } from '../targets';
 
 export async function executeAuthorizedTypecheck(
-  options: { admission: ExecutionAdmission; signal?: AbortSignal },
+  options: {
+    admission: ExecutionAdmission;
+    progress?: TaskProgressReporter;
+    signal?: AbortSignal;
+  },
   target: TypecheckTarget,
   runner: TypecheckRunner,
 ): Promise<BuildTargetCompletion> {
   let hasLaunched = false;
+  let finishAdmission = startCheckerTargetAdmission(options.progress);
   try {
     return await options.admission.withManagedWrites(
       target,
@@ -23,11 +32,15 @@ export async function executeAuthorizedTypecheck(
           async (permit) => {
             await options.admission.assertPermit(permit, target, 'launch');
             hasLaunched = true;
-            return runTargetWithMeasuredDuration(
+            const admissionTiming = finishAdmission;
+            finishAdmission = undefined;
+            return runCheckerTargetProcess({
+              finishAdmission: admissionTiming,
+              progress: options.progress,
               runner,
+              signal: options.signal,
               target,
-              options.signal,
-            );
+            });
           },
         );
         return authorized.state === 'refused'
@@ -49,6 +62,8 @@ export async function executeAuthorizedTypecheck(
         },
       ],
     };
+  } finally {
+    finishAdmission?.('fail');
   }
 }
 

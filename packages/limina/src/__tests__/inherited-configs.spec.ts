@@ -1,12 +1,10 @@
-import { statSync } from 'node:fs';
+import { compareCodeUnits } from '#utils/collections';
 import {
   mkdir,
   mkdtemp,
   realpath,
   rename,
   rm,
-  stat,
-  utimes,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,8 +15,9 @@ import {
   CheckerProjectConfigCache,
   parseCheckerProjectConfigForContext,
 } from '../checker/context';
+import { parseTypeScriptCommandLine } from '../checker/project-base';
 import { emptyMetrics } from '../core/analysis-cache/cache-metrics';
-import { ResolvedConfigRecords } from '../core/analysis-cache/resolved-config-records';
+import { InvocationConfigReads } from '../core/analysis-cache/invocation-config-reads';
 import { inspectFrameworkIntent } from '../core/build-graph/framework-intent';
 import { readExplicitSourceCompilerTarget } from '../core/build-graph/generated/compiler-target';
 import { createNativeSemanticContext } from '../core/typescript-semantic/native-semantic-factory';
@@ -103,7 +102,7 @@ describe('TypeScript inherited config identity', () => {
       },
     },
   ])(
-    'uses the same target and framework ancestor for $name',
+    'uses the same target and actual closure as TypeScript for $name',
     async ({ request, source, files }) => {
       const raw = { extends: request, files: ['index.ts'] };
       const fixture = await createFixture({ ...files, 'tsconfig.json': raw });
@@ -133,19 +132,15 @@ describe('TypeScript inherited config identity', () => {
         expect(readExplicitSourceCompilerTarget(options)).toBe(
           ts.ScriptTarget[parsed!.options.target!],
         );
-        expect(
-          inspectFrameworkIntent({ ...options, configObject: raw }),
-        ).toEqual({
-          intentHints: [
-            {
-              configPath: fixture.path(source),
-              family: 'vue',
-              kind: 'vue-compiler-options',
-              value: 'vueCompilerOptions',
-            },
-          ],
-          problems: [],
+        const projection = parseTypeScriptCommandLine({
+          parseOptions: { configPath, projectRootDir: fixture.rootDir },
         });
+        expect(
+          projection.configClosure.map(({ filePath }) => filePath),
+        ).toEqual([fixture.path(source), configPath].sort(compareCodeUnits));
+        expect(
+          inspectFrameworkIntent({ configPath, configObject: raw }),
+        ).toEqual([]);
       } finally {
         await fixture.cleanup();
       }
@@ -179,81 +174,10 @@ describe('TypeScript inherited config identity', () => {
         }),
       };
       expect(() => readExplicitSourceCompilerTarget(options)).toThrow();
-      const inspection = inspectFrameworkIntent({
-        ...options,
-        configObject: raw,
-      });
-      expect(inspection.intentHints).toEqual([]);
-      expect(inspection.problems).toHaveLength(1);
-      expect(inspection.problems[0]).toContain(
-        'Unavailable auto checker extends config',
-      );
     } finally {
       await fixture.cleanup();
     }
   });
-  it('uses the contribution of a package-exported preset at its resolved filename', async () => {
-    const fixture = await createFixture({
-      'node_modules/astro/package.json': {
-        name: 'astro',
-        exports: { './tsconfigs/strict': './renamed.json' },
-      },
-      'node_modules/astro/renamed.json': { compilerOptions: { strict: true } },
-      'base.json': { extends: 'astro/tsconfigs/strict' },
-      'tsconfig.json': { extends: ['./base.json'], files: ['index.ts'] },
-    });
-    try {
-      const config = withFixtureGovernanceRoot({
-        rootDir: fixture.rootDir,
-        configPath: fixture.path('limina.config.mts'),
-        scope: {},
-      });
-      const configPath = fixture.path('tsconfig.json');
-      const inspect = () =>
-        inspectFrameworkIntent({ config, configObject: {}, configPath });
-      const receipts = new ResolvedConfigRecords({}, emptyMetrics());
-      const initial = receipts.run(inspect);
-      expect(initial).toEqual({
-        intentHints: [
-          {
-            configPath: fixture.path('base.json'),
-            family: 'astro',
-            kind: 'astro-preset',
-            value: 'astro/tsconfigs/strict',
-          },
-        ],
-        problems: [],
-      });
-      const metrics = emptyMetrics();
-      const baseline = (await stat(configPath)).mtimeMs;
-      const restored = new ResolvedConfigRecords(
-        structuredClone(receipts.records),
-        metrics,
-        (paths) =>
-          paths.every((filePath) => statSync(filePath).mtimeMs <= baseline),
-      );
-      expect(restored.run(inspect)).toEqual(initial);
-      expect(metrics).toMatchObject({
-        resolvedConfigHits: 1,
-        resolvedConfigParses: 1,
-      });
-      await writeFile(
-        configPath,
-        JSON.stringify({
-          extends: ['./base.json'],
-          compilerOptions: { strict: false },
-          files: ['index.ts'],
-        }),
-      );
-      const changedTime = new Date(baseline + 2000);
-      await utimes(configPath, changedTime, changedTime);
-      expect(restored.run(inspect)).toEqual({ intentHints: [], problems: [] });
-      expect(inspect()).toEqual({ intentHints: [], problems: [] });
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
   it('preserves compiler paths and package-scope output remapping through Checker config caching and Native resolution', async () => {
     const fixture = await createFixture({
       'config/base.json': {
@@ -324,7 +248,7 @@ describe('TypeScript inherited config identity', () => {
           context: { checkerPresets: ['tsc'], extensions: [] },
           cache,
         });
-      const previous = new ResolvedConfigRecords({}, emptyMetrics());
+      const previous = new InvocationConfigReads(emptyMetrics());
       const checkerCache = new CheckerProjectConfigCache();
       expect(
         scope(
@@ -371,17 +295,13 @@ describe('TypeScript inherited config identity', () => {
         resolvedFileName: sourcePath,
       });
       const metrics = emptyMetrics();
-      const current = new ResolvedConfigRecords(
-        structuredClone(previous.records),
-        metrics,
-      );
+      const current = new InvocationConfigReads(metrics);
       const renamed = fixture.path('pkg/src/replacement.ts');
       await rename(sourcePath, renamed);
       const config = current.run(() => parse(localConfig));
       expect(config.fileNames).toEqual([containing, renamed]);
       expect(scope(config.options, true)).toEqual(expected);
       expect(metrics).toMatchObject({
-        resolvedConfigHits: 0,
         resolvedConfigParses: 1,
       });
     } finally {

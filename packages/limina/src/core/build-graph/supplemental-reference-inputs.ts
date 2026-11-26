@@ -4,6 +4,7 @@ import {
   cloneDependencyEvidence,
   createUnobservedDependencyEvidence,
 } from '../project-dependencies/evidence';
+import type { ReferenceDependency } from '../project-dependencies/reference-facts';
 import { createSourceProjectSemanticContext } from '../project-dependencies/runner';
 import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import { createImportRecordIdentity } from '../typescript-semantic/import-record';
@@ -15,7 +16,7 @@ import type { GovernedSourceUnit, SourceProject } from './types';
 /** Supplies the existing reference consumer with qualified inputs.
  * The evidence is an audited supplement, never a fabricated Native fact. */
 export function collectSupplementalReferenceInputs(input: {
-  dependencies: readonly ProjectDependency[];
+  dependencies: readonly ReferenceDependency[];
   context: ReferenceImportContext;
   project: SourceProject;
   source?: GovernedSourceUnit;

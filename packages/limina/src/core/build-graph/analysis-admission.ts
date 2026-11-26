@@ -112,11 +112,21 @@ function isCompleted(entry: Prerequisites['core']['entries'][number]): boolean {
 function assessRelations(
   snapshot: NativeEvidenceSnapshot,
   candidate: CandidateBuildPlan,
-  result: { unknown: string[]; denied: string[]; configs: ReadonlySet<string> },
+  result: {
+    unknown: string[];
+    denied: string[];
+    configs: ReadonlySet<string>;
+    inactive: ReadonlySet<string>;
+  },
 ): void {
   const configs = result.configs;
-  const applicable = snapshot.obligations.filter((obligation) =>
-    isCandidateObligation(snapshot, obligation, configs),
+  const applicable = snapshot.obligations.filter(
+    (obligation) =>
+      isCandidateObligation(snapshot, obligation, configs) &&
+      !(
+        obligation.requestIds.length > 0 &&
+        obligation.requestIds.every((id) => result.inactive.has(id))
+      ),
   );
   for (const obligation of applicable)
     assessObligation({ snapshot, candidate, result }, obligation);
@@ -268,7 +278,12 @@ export function assessCompilationPrerequisites(
   candidate: CandidateBuildPlan,
   configs: ReadonlySet<string>,
 ): { unknown: string[]; denied: string[] } {
-  const result = { unknown: [] as string[], denied: [] as string[], configs };
+  const result = {
+    unknown: [] as string[],
+    denied: [] as string[],
+    configs,
+    inactive: new Set(analysis.inactiveDeclarationRequests),
+  };
   for (const evidence of nativeEntries(analysis))
     assessRelations(evidence.snapshot, candidate, result);
   const assessments = analysis.supplementalAssessments ?? [];

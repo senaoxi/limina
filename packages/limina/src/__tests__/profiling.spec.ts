@@ -10,7 +10,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { collectRuntimeTreeIdentity } from '../profiling/identity';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
 
 async function createRuntimeFixture(): Promise<{
   cleanup(): Promise<void>;
@@ -191,58 +190,5 @@ describe('profiling identity', () => {
     } finally {
       await fixture.cleanup();
     }
-  });
-});
-
-describe('profiling metrics', () => {
-  it('orders persisted metric snapshots independently of localeCompare', () => {
-    const metrics = createProfilingMetricsRecorder();
-    metrics.record({ name: 'validator', provider: 'z' });
-    metrics.record({ name: 'validator', provider: 'ä' });
-    metrics.record({ name: 'validator', provider: 'a' });
-    const localeCompare = vi
-      .spyOn(String.prototype, 'localeCompare')
-      .mockImplementation(() => {
-        throw new Error('profiling metrics used localeCompare');
-      });
-
-    try {
-      expect(metrics.snapshot().map((metric) => metric.provider)).toEqual([
-        'a',
-        'z',
-        'ä',
-      ]);
-    } finally {
-      localeCompare.mockRestore();
-    }
-  });
-
-  it('aggregates counters deterministically without retaining every event', () => {
-    const metrics = createProfilingMetricsRecorder();
-    metrics.record({
-      count: 2,
-      durationMs: 3,
-      kind: 'batch',
-      name: 'artifact-safety-lstat',
-      provider: 'artifact-namespace',
-    });
-    metrics.record({
-      durationMs: 5,
-      kind: 'batch',
-      name: 'artifact-safety-lstat',
-      provider: 'artifact-namespace',
-    });
-
-    expect(metrics.snapshot()).toEqual([
-      {
-        count: 3,
-        durationMs: 8,
-        estimatedBytes: 0,
-        kind: 'batch',
-        name: 'artifact-safety-lstat',
-        provider: 'artifact-namespace',
-        reports: 2,
-      },
-    ]);
   });
 });

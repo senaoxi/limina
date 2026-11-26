@@ -18,7 +18,6 @@ type LiminaCli = ReturnType<typeof createLiminaCli>;
 const RSS_SAMPLE_INTERVAL_MS = 50;
 
 class CliAnalysisObserver extends AnalysisObserver {
-  legacyWrite?: () => Promise<void>;
   namespace?: LiminaArtifactNamespace;
 }
 
@@ -280,28 +279,25 @@ export async function executeProfiledCommand(options: {
 export async function finishCliProfiling(
   profiling: CliProfiling,
   isPassed: boolean,
+  error: unknown,
 ): Promise<void> {
   const active = profiling.active;
   if (active === undefined) return;
   const { observer } = active;
-  let profile: AnalysisProfile | undefined;
+  let profile: AnalysisProfile;
   try {
     try {
-      observer.stop(isPassed);
+      observer.stop(isPassed, error);
     } finally {
       active.finishRss();
     }
     profile = observer.snapshot();
   } catch {
-    // A failed v2 projection must not prevent the v1 write.
-  }
-  const { legacyWrite, namespace } = observer;
-  if (legacyWrite !== undefined) await writeLegacyProfile(legacyWrite);
-  if (
-    profile === undefined ||
-    (namespace === undefined && observer.root !== undefined)
-  )
+    // A projection failure must preserve the command outcome.
     return;
+  }
+  const { namespace } = observer;
+  if (namespace === undefined && observer.root !== undefined) return;
   try {
     const { emitAnalysisProfile } = await import('../profiling/report');
     await emitAnalysisProfile({
@@ -310,29 +306,11 @@ export async function finishCliProfiling(
       outputDirectory: active.outputDirectory,
       profile,
       stderr: active.stderr,
+      failureDetail: (work) => observer.failureDetail(work),
     });
   } catch {
     // An unavailable observer or its output must preserve the command outcome.
   }
-}
-
-async function writeLegacyProfile(write: () => Promise<void>): Promise<void> {
-  try {
-    await write();
-  } catch {
-    // A compatibility artifact cannot replace the completed command outcome.
-  }
-}
-
-export async function publishFrozenLegacyProfile(
-  write: () => Promise<void>,
-): Promise<void> {
-  const observer = currentProfile();
-  if (!(observer instanceof CliAnalysisObserver)) {
-    await writeLegacyProfile(write);
-    return;
-  }
-  observer.legacyWrite = write;
 }
 
 export function bindCliProfileRoot(rootDirectory: string): void {
@@ -369,7 +347,7 @@ export async function observeCliPhase<T>(
     observer.finish(work);
     return result;
   } catch (error) {
-    observer.finish(work, 'failed');
+    observer.fail(work, error);
     throw error;
   }
 }

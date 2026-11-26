@@ -90,6 +90,17 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
       'packages/limina/src/__tests__/execution.spec.ts',
     ],
   },
+  [LIMINA_CHECK_ISSUE_CODES.graphSourcePackageScopeMismatch]: {
+    kind: 'fixture',
+    producers: [
+      'packages/limina/src/core/build-graph/source-package-scope.ts#sourcePackageScopeProblems',
+    ],
+    task: 'graph:prepare',
+    tests: [
+      'packages/limina/fixtures/detectors/source/owner-conflict/case.mts',
+      'packages/limina/src/__tests__/source.spec.ts',
+    ],
+  },
   [LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed]: {
     kind: 'fault-injection',
     producers: [

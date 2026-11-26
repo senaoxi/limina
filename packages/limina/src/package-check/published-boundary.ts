@@ -1,8 +1,11 @@
 import type { RuntimeEnvironment } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
+import { isRelativeSpecifier } from '#utils/module-specifier';
 import { type DynamicImport, type Import, init, parse } from 'es-module-lexer';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'pathe';
+import ts from 'typescript';
+import { collectRequireImports } from '../core/import-analysis/require-bindings';
 import { collectSelfSpecifierMatchers } from './manifest';
 import { validatePublishedSpecifier } from './published-boundary-specifier';
 import type {
@@ -102,13 +105,16 @@ function createImportViolation(options: {
   context: BoundaryAuditContext;
   environment: RuntimeEnvironment;
   relativeFilePath: string;
+  commonJs?: boolean;
   specifier: string | undefined;
 }): PublishedPackageBoundaryViolation | null {
   if (options.specifier === undefined) return null;
   const message = validatePublishedSpecifier({
     allowedExternalPackages: options.context.allowedExternalPackages,
     environment: options.environment,
+    commonJs: options.commonJs,
     importsField: options.context.importsField,
+    relativeFilePath: options.relativeFilePath,
     outDir: options.context.target.outDir,
     packageName: options.context.packageName,
     selfSpecifiers: options.context.selfSpecifiers,
@@ -152,12 +158,24 @@ async function collectFileViolations(options: {
   );
   const source = await readFile(options.filePath, 'utf8');
   const [importSpecifiers] = parse(source);
-  return importSpecifiers.flatMap((importSpecifier) => {
+  const requests = importSpecifiers.map((record) => ({
+    specifier: getAuditableSpecifier(record),
+    commonJs: false,
+  }));
+  const requires = collectRequireImports({
+    filePath: options.filePath,
+    sourceText: source,
+    scriptKind: ts.ScriptKind.JS,
+  });
+  for (const { specifier } of requires)
+    if (isRelativeSpecifier(specifier.replaceAll('\\', '/')))
+      requests.push({ specifier, commonJs: true });
+  return requests.flatMap((request) => {
     const violation = createImportViolation({
       context: options.context,
       environment,
       relativeFilePath,
-      specifier: getAuditableSpecifier(importSpecifier),
+      ...request,
     });
     return violation === null ? [] : [violation];
   });

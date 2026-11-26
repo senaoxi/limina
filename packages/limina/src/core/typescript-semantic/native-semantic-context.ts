@@ -31,7 +31,14 @@ export class NativeSemanticContext
     const adapter = new NativeObservationAdapter(options);
     super(options, adapter, readSyntax);
     this.#program = adapter.program;
-    this.#checker = new TypeCheckerObservation(options.metrics);
+    this.#checker = new TypeCheckerObservation({
+      metrics: options.metrics,
+      instance: options.context,
+      configPath:
+        options.project.declarationContextValidation?.sourceConfig ??
+        options.project.sourceConfigPath ??
+        options.project.configPath,
+    });
     const literals = new Map(
       adapter.modules.map((module) => [module.requestId, module.literal]),
     );

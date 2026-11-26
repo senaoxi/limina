@@ -1,12 +1,32 @@
+import { readAnalysisFileDigest } from '#utils/analysis-input';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { parseLiveConfig } from '#utils/resolved-config-cache';
+import {
+  readRawSourceConfig,
+  withSourceConfigTextScope,
+} from '#utils/source-config-text';
+import { typeScriptBomText } from '#utils/typescript-bom';
+import { isPlainRecord } from '#utils/values';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import path from 'pathe';
 import type ts from 'typescript';
+import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { compilerPathPolicy } from '../core/typescript-semantic/compiler-path-key';
 import { normalizeExtensions } from './extensions';
-import type { CheckerProjectConfigParseOptions } from './types';
+import {
+  canReuseConfigProjection,
+  createProjectParseHost,
+  observeConfigParse,
+  parseWithObservedConfigInputs,
+} from './project-base';
+import type { ResolvedConfigProjection } from './resolved-config';
+import type {
+  CheckerProjectConfigParseOptions,
+  ConfigRootSelector,
+} from './types';
+import { isVueCacheTuple } from './vue-semantic-compatibility';
 import {
   createVueConfigReadRecorder,
   createVueOverlayFingerprint,
@@ -36,11 +56,19 @@ export {
 } from './vue-semantic-toolchain';
 
 interface SemanticProjectParseResult {
+  rootSelectors: readonly ConfigRootSelector[];
   diagnostics: readonly ts.Diagnostic[];
   extensions: readonly string[];
   identity: VueProjectSemanticIdentity;
   parsed: ts.ParsedCommandLine;
 }
+
+type SemanticProjectParseOptions = CheckerProjectConfigParseOptions & {
+  wrapSystem?: (
+    system: ts.System,
+    toolchain: VueSemanticToolchain,
+  ) => ts.System;
+};
 
 function hashJson(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -100,34 +128,148 @@ function assertJsonConfigSourceFile(options: {
   );
 }
 
-export function parseVueConfigWithToolchain(options: {
+interface VueConfigParserInputs {
   configPath: string;
   extensions: readonly string[];
   host: typeof ts.sys;
+  rootSelectors?: ConfigRootSelector[];
   toolchain: VueSemanticToolchain;
-}): ts.ParsedCommandLine {
-  const configFile = options.toolchain.tsModule.readJsonConfigFile(
-    options.configPath,
-    options.host.readFile,
-  );
-  assertJsonConfigSourceFile({
-    configFile,
-    configPath: options.configPath,
-    host: options.host,
-  });
-  return parseLiveConfig(() =>
-    options.toolchain.tsModule.parseJsonSourceFileConfigFileContent(
-      configFile,
-      options.host,
-      path.dirname(options.configPath),
-      {},
+}
+
+export function parseVueConfigWithToolchain(
+  options: VueConfigParserInputs,
+): ts.ParsedCommandLine {
+  return parseLiveConfig(() => readVueCommandLine(options));
+}
+
+function readVueCommandLine(
+  options: VueConfigParserInputs,
+): ts.ParsedCommandLine {
+  return parseWithObservedConfigInputs(options.host, (host) => {
+    const configFile = options.toolchain.tsModule.readJsonConfigFile(
       options.configPath,
-      undefined,
-      createVueExtraFileExtensions({
-        extensions: options.extensions,
-        tsModule: options.toolchain.tsModule,
-      }),
-    ),
+      host.readFile,
+    );
+    assertJsonConfigSourceFile({
+      configFile,
+      configPath: options.configPath,
+      host,
+    });
+    return observeConfigParse(
+      options.configPath,
+      'source-config.live-parse',
+      () =>
+        options.toolchain.tsModule.parseJsonSourceFileConfigFileContent(
+          configFile,
+          {
+            ...host,
+            readDirectory: (...selector) => {
+              options.rootSelectors?.push(selector);
+              return host.readDirectory(...selector);
+            },
+          },
+          path.dirname(options.configPath),
+          {},
+          options.configPath,
+          undefined,
+          createVueExtraFileExtensions({
+            extensions: options.extensions,
+            tsModule: options.toolchain.tsModule,
+          }),
+        ),
+    );
+  });
+}
+
+function observeVueConfigBytes(entries: Iterable<VueConfigClosureEntry>): void {
+  for (const { filePath, contentHash } of entries) {
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(filePath);
+    } catch {
+      throw new AnalysisInputDriftError(filePath);
+    }
+    const text = typeScriptBomText(bytes) ?? bytes.toString('utf8');
+    if (createHash('sha256').update(text).digest('hex') !== contentHash)
+      throw new AnalysisInputDriftError(filePath);
+    readAnalysisFileDigest(filePath, bytes);
+  }
+}
+
+function parseVueSourceConfig(
+  inputs: VueConfigParserInputs,
+  binding: string,
+  metadata: VueConfigReadRecorder,
+  vueOptions: unknown,
+): ResolvedConfigProjection {
+  const { configPath, extensions, toolchain } = inputs;
+  const key = JSON.stringify([
+    'vue-source-command-line-v2',
+    binding,
+    configPath,
+    toolchain.tsModule.sys.getCurrentDirectory(),
+    toolchain.tsModule.sys.useCaseSensitiveFileNames,
+    extensions,
+    getSortedConfigClosure(metadata),
+    vueOptions,
+  ]);
+  return parseLiveConfig(
+    () => {
+      const contents = new Map<string, string>();
+      const rootSelectors: ConfigRootSelector[] = [];
+      const host = createProjectParseHost(
+        undefined,
+        contents,
+        toolchain.tsModule,
+      );
+      const parsed = readVueCommandLine({ ...inputs, host, rootSelectors });
+      const configClosure = [...contents].map(([filePath, text]) => ({
+        filePath,
+        contentHash: createHash('sha256').update(text).digest('hex'),
+      }));
+      const allReads = new Map(metadata.entries);
+      for (const entry of configClosure) allReads.set(entry.filePath, entry);
+      observeVueConfigBytes(allReads.values());
+      return {
+        configClosure,
+        configuredVueExtensions: [],
+        parsed,
+        rootSelectors,
+      };
+    },
+    key,
+    { configPath, key },
+  );
+}
+
+function hasConfiguredVuePlugins(recorder: VueConfigReadRecorder): boolean {
+  return recorder.entries.keys().some((file) => {
+    const { config, error } = readRawSourceConfig(file);
+    if (error !== undefined) return true;
+    const options = isPlainRecord(config)
+      ? config.vueCompilerOptions
+      : undefined;
+    return (
+      isPlainRecord(options) &&
+      options.plugins !== undefined &&
+      (!Array.isArray(options.plugins) || options.plugins.length > 0)
+    );
+  });
+}
+
+function canProjectVueConfig(
+  toolchain: VueSemanticToolchain,
+  vueOptions: unknown,
+  recorder: VueConfigReadRecorder,
+): boolean {
+  const { versions } = toolchain;
+  return (
+    isVueCacheTuple(versions) &&
+    canReuseConfigProjection(toolchain.tsModule) &&
+    isPlainRecord(vueOptions) &&
+    Array.isArray(vueOptions.plugins) &&
+    vueOptions.plugins.length === 0 &&
+    !hasConfiguredVuePlugins(recorder)
   );
 }
 
@@ -178,40 +320,74 @@ function createIdentity(options: {
 }
 
 export function createVueProjectSemanticIdentity(
-  options: CheckerProjectConfigParseOptions & {
-    wrapSystem?: (
-      system: ts.System,
-      toolchain: VueSemanticToolchain,
-    ) => ts.System;
-  },
+  options: SemanticProjectParseOptions,
+): SemanticProjectParseResult {
+  return withSourceConfigTextScope(() => parseVueProject(options));
+}
+
+function parseVueProject(
+  options: SemanticProjectParseOptions,
 ): SemanticProjectParseResult {
   const configPath = normalizeAbsolutePath(options.configPath);
   const projectRootDirectory = normalizeAbsolutePath(options.projectRootDir);
   const toolchain = resolveVueSemanticToolchain(projectRootDirectory);
+  const binding = options.bindVueSourceConfig?.(toolchain);
   const virtualFiles = normalizeVueVirtualFiles(options.virtualFiles);
   const recorder = createVueConfigReadRecorder();
   const overlay = createVueOverlaySystem({
+    observeConfigReads: true,
     recorder,
     tsModule: toolchain.tsModule,
     virtualFiles,
   });
   const host = options.wrapSystem?.(overlay, toolchain) ?? overlay;
-  const commandLine = toolchain.languageCore.createParsedCommandLine(
-    toolchain.tsModule,
-    host,
+  // The 2.2 adapter enumerates roots while resolving Vue options. Only the
+  // following toolchain TypeScript parse owns the final root inventory.
+  const shouldSkipMetadataRoots =
+    toolchain.adapter.kind === 'supported' &&
+    toolchain.adapter.family === 'vue-tsc-2.2';
+  const metadataHost = shouldSkipMetadataRoots
+    ? { ...host, readDirectory: () => [] }
+    : host;
+  const commandLine = observeConfigParse(
     configPath,
+    shouldSkipMetadataRoots
+      ? 'source-config.vue-metadata-no-root-scan'
+      : 'source-config.vue-metadata',
+    () =>
+      parseWithObservedConfigInputs(metadataHost, (host) =>
+        toolchain.languageCore.createParsedCommandLine(
+          toolchain.tsModule,
+          host,
+          configPath,
+        ),
+      ),
   );
   const extensions = normalizeExtensions([
     ...getNativeTypeScriptExtensions(toolchain.tsModule),
     ...getConfiguredExtensions(options),
     ...toolchain.languageCore.getAllExtensions(commandLine.vueOptions),
   ]);
-  const parsed = parseVueConfigWithToolchain({
-    configPath,
-    extensions,
-    host,
-    toolchain,
-  });
+  const rootSelectors: ConfigRootSelector[] = [];
+  const inputs = { configPath, extensions, host, rootSelectors, toolchain };
+  let parsed: ts.ParsedCommandLine;
+  if (
+    binding !== undefined &&
+    virtualFiles.size === 0 &&
+    options.wrapSystem === undefined &&
+    canProjectVueConfig(toolchain, commandLine.vueOptions, recorder)
+  ) {
+    const projection = parseVueSourceConfig(
+      inputs,
+      binding,
+      recorder,
+      commandLine.vueOptions,
+    );
+    parsed = projection.parsed;
+    rootSelectors.push(...projection.rootSelectors);
+    for (const entry of projection.configClosure)
+      recorder.entries.set(entry.filePath, entry);
+  } else parsed = parseVueConfigWithToolchain(inputs);
   const identity = createIdentity({
     commandLine,
     configPath,
@@ -225,6 +401,7 @@ export function createVueProjectSemanticIdentity(
   });
   return {
     diagnostics: [...parsed.errors],
+    rootSelectors,
     extensions,
     identity,
     parsed,
@@ -267,6 +444,7 @@ function reuseVueProjectSemanticIdentity(options: {
     options.parseOptions.virtualFiles,
   );
   const host = createVueOverlaySystem({
+    observeConfigReads: true,
     tsModule: options.identity.toolchain.tsModule,
     virtualFiles,
   });
@@ -274,14 +452,17 @@ function reuseVueProjectSemanticIdentity(options: {
     ...options.identity.extensions,
     ...getConfiguredExtensions(options.parseOptions),
   ]);
+  const rootSelectors: ConfigRootSelector[] = [];
   const parsed = parseVueConfigWithToolchain({
     configPath,
     extensions,
     host,
+    rootSelectors,
     toolchain: options.identity.toolchain,
   });
   return {
     diagnostics: [...parsed.errors],
+    rootSelectors,
     extensions,
     identity: options.identity,
     parsed,

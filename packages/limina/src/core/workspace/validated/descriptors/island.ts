@@ -52,6 +52,7 @@ function createIslandResult(): PackageIslandCollection {
     boundaries: [],
     descriptors: [],
     extendedScopes: [],
+    descriptorStamps: new Map(),
     workspaceBoundaries: [],
   };
 }

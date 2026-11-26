@@ -11,6 +11,10 @@ import {
   type NativeObservedProgram,
   nativeProgramSource,
 } from './native-program-api';
+import {
+  captureNativeInclusions,
+  type NativeInclusions,
+} from './native-program-inclusions';
 import type { NativeRequestRecord } from './native-program-records';
 import type { NativeModuleObservation } from './native-program-requests';
 
@@ -31,10 +35,19 @@ export interface NativeModulePremises {
   readonly sourceIsExternal: boolean;
   readonly excludedDocumentation: boolean;
   readonly ownAmbient: boolean;
+  readonly targetExtension?: string;
+}
+
+export interface NativePathPremises {
+  readonly requestId: string;
+  readonly sourceIsExternal: boolean;
+  readonly sourceLoadGap?: string;
 }
 
 export interface NativeContextInventory {
   readonly modules: readonly NativeModulePremises[];
+  readonly paths: readonly NativePathPremises[];
+  readonly inclusions?: NativeInclusions;
   readonly members: readonly string[];
   readonly syntax: readonly {
     readonly file: string;
@@ -79,6 +92,11 @@ export function captureNativeContextInventory(
     })),
     adapter.frontier.fileKey,
   );
+  const inclusions = captureNativeInclusions(
+    adapter.program,
+    adapter.snapshot.requests,
+    ts,
+  );
   const inventory = freezeNativeData({
     modules: adapter.modules.map((observation) => ({
       ...captureModulePremises(
@@ -90,6 +108,19 @@ export function captureNativeContextInventory(
         sourceLoadGap: 'path-fallback-source-classification-unavailable',
       }),
     })),
+    paths: adapter.snapshot.requests
+      .filter((request) => request.channel === 'path-directive')
+      .map((request) =>
+        capturePathPremises(
+          request.id,
+          request.sourceFile === null
+            ? undefined
+            : adapter.program.getSourceFile(request.sourceFile.lexicalPath),
+          adapter.program,
+          unqualified,
+        ),
+      ),
+    ...(inclusions !== undefined && { inclusions }),
     members: adapter.program
       .getSourceFiles()
       .map((source) => normalizeAbsolutePath(source.fileName)),
@@ -111,6 +142,26 @@ export function captureNativeContextInventory(
   });
   liveInventories.add(inventory);
   return inventory;
+}
+
+export function capturePathPremises(
+  requestId: string,
+  source: ts.SourceFile | undefined,
+  program: ts.Program,
+  unqualified: ReadonlySet<string>,
+): NativePathPremises {
+  const sourceLoadGap =
+    source === undefined
+      ? 'path-source-unavailable'
+      : unqualified.has(source.fileName)
+        ? 'path-fallback-source-classification-unavailable'
+        : undefined;
+  return {
+    requestId,
+    sourceIsExternal:
+      source !== undefined && program.isSourceFileFromExternalLibrary(source),
+    ...(sourceLoadGap !== undefined && { sourceLoadGap }),
+  };
 }
 
 function loadedSources(adapter: NativeObservationAdapter) {
@@ -139,10 +190,25 @@ export function captureModulePremises(
   program: NativeObservedProgram,
   compiler: typeof ts,
 ): NativeModulePremises {
-  const options = program.getCompilerOptionsForFile(observation.source);
+  const target = observation.raw?.resolvedModule;
   return {
     requestId: observation.requestId,
     sourceFingerprint: nativeFingerprint(observation.source.text),
+    ...observeModulePremises(observation, program, compiler),
+    ...(target !== undefined && { targetExtension: target.extension }),
+  };
+}
+
+export function observeModulePremises(
+  observation: NativeModuleObservation,
+  program: NativeObservedProgram,
+  compiler: typeof ts,
+): Omit<
+  NativeModulePremises,
+  'requestId' | 'sourceFingerprint' | 'targetExtension'
+> {
+  const options = program.getCompilerOptionsForFile(observation.source);
+  return {
     role: observation.role,
     ...(observation.mode !== undefined && { mode: observation.mode }),
     ...(options !== undefined && {

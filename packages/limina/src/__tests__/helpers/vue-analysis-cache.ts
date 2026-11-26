@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AnalysisSnapshot } from '../../core/analysis-cache/contracts';
+import type { GeneratedTsconfigGraphManifest } from '../../core/build-graph/manifest-types';
 import {
   readStoredAnalysisSnapshot,
   writeStoredAnalysisSnapshot,
@@ -21,9 +22,12 @@ import { createFixturePathResolver } from './path';
 
 export interface VueCacheRun {
   events: { name: string; kind: string; count: number }[];
-  graph: unknown;
+  graph: { manifest: GeneratedTsconfigGraphManifest; ownershipPlan: unknown };
   passed: boolean;
   vuePrograms: number;
+  diagnostics: string[];
+  declarationAdapters: string[];
+  outputConfigs: string[];
   generation: number;
   identities: { generation: number; hasRuntime: boolean }[];
   execution?: {
@@ -138,7 +142,11 @@ try {
     execution={before,after:(await run()).status,starts};
   }
   const identities=[...graph.governedSources.values()].flatMap(units=>[...units.values()]).flatMap(unit=>unit.context.vueSemanticIdentity ? [{generation:unit.context.vueSemanticIdentity.generation,hasRuntime:typeof unit.context.vueSemanticIdentity.toolchain.tsModule.createProgram==='function'}] : []);
-  console.log(JSON.stringify({events,graph:{manifest:graph.manifest,ownershipPlan:graph.ownershipPlan},passed,vuePrograms,identities,execution}));
+  const analysis=graph.dependencyAnalysis;
+  const diagnostics=analysis?.diagnostics??[];
+  const declarationAdapters=analysis?.declarationValidation?.receipts.map(receipt=>receipt.authority.adapter)??[];
+  const outputConfigs=graph.outputProjections?.map(receipt=>receipt.generatedConfig)??[];
+  console.log(JSON.stringify({events,graph:{manifest:graph.manifest,ownershipPlan:graph.ownershipPlan},passed,vuePrograms,identities,execution,diagnostics,declarationAdapters,outputConfigs}));
 }finally{manager.dispose();}
 `,
   );

@@ -8,6 +8,7 @@ import type {
   VueQueryResults,
 } from '../analysis-cache/vue-contracts';
 import { retainVueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
+import type { VueGraphFactReader } from '../analysis-cache/vue-graph-facts';
 import type { VueInputTrace } from '../analysis-cache/vue-inputs';
 import { observeWork } from '../analysis-profile';
 import type { TypeEvidenceMetricsRecorder } from '../type-evidence/cache';
@@ -136,6 +137,13 @@ export class VueSemanticContextManager {
     processWideVueContextSlot.context = context;
     processWideVueContextSlot.owners.add(this);
     return context;
+  }
+
+  graphFacts(
+    identity: VueProjectSemanticIdentity,
+  ): VueGraphFactReader | undefined {
+    this.#assertActive();
+    return this.analysisCache?.vue.graphFacts(identity, () => !this.#disposed);
   }
 
   query<K extends VueQueryKind>(

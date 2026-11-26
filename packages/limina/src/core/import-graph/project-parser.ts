@@ -225,7 +225,7 @@ export function parseProject(
   return {
     analysisGeneration: getAnalysisGeneration(cache),
     checkerPresets: context.checkerPresets,
-    configClosure: ownedParsed.configClosure.map((entry) => ({ ...entry })),
+    configClosure: [...ownedParsed.configClosure],
     configPath: normalizedConfigPath,
     extensions: parsed.extensions,
     fileNames: normalizeProjectFileNames({
@@ -249,6 +249,7 @@ export function parseProject(
       getProjectReferencePaths({ config, configPath, virtualFiles }),
     ),
     resolverConfigPath,
+    resolverProjectReferences: ownedParsed.projectReferences ?? [],
     vueSemanticIdentity: ownedParsed.vueSemanticIdentity,
   };
 }

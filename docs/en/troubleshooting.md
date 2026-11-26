@@ -44,7 +44,7 @@ For example, `limina.config.mts` itself matches the default TypeScript source sc
 
 ### A relative import crosses a package boundary
 
-`LIMINA_SOURCE_RELATIVE_IMPORT_ESCAPES_SCOPE` means a relative source import crosses the nearest `package.json` package boundary. Inspect the importing file, target, and both manifests in the report. If the code uses another package, expose a public entry in the provider, declare the dependency in the consumer's `package.json`, and import by package name. See [Source Checks](./built-in-tasks.md#relative-imports-must-not-cross-package-boundaries) for details.
+`LIMINA_SOURCE_RELATIVE_IMPORT_ESCAPES_SCOPE` is reported when `source.forbidCrossPackageRelativeImports` is enabled and a relative source import crosses the nearest `package.json` package boundary. Inspect the importing file, target, and both manifests in the report. If the code uses another package, expose a public entry in the provider, declare the dependency in the consumer's `package.json`, and import by package name. See [Source Checks](./built-in-tasks.md#relative-imports-and-package-boundaries) for details.
 
 ### A package import is not authorized
 

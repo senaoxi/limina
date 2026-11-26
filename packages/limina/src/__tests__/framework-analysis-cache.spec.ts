@@ -26,7 +26,7 @@ const checkers = [
 ] as const;
 
 for (const { name, extension, packages, options } of checkers) {
-  const title = `restores '${name}' source roots and its execution scope on a graph hit`;
+  const title = `recomputes '${name}' source roots and execution scope with cached Native facts`;
   it(title, options, async () => {
     const installedPackages = Object.entries({
       typescript: 'typescript',
@@ -91,10 +91,23 @@ for (const { name, extension, packages, options } of checkers) {
       };
       const cold = run('cold');
       const warm = run('warm');
+      const executionInputPrograms = [
+        {
+          checker: name,
+          configPath: 'tsconfig.json',
+          provider: 'typescript',
+          role: 'execution-inputs',
+        },
+      ];
       expect(cold.programCreates).toBeGreaterThan(0);
+      expect(cold.restoredContexts).toBe(0);
+      expect(cold.executionInputPrograms).toEqual(executionInputPrograms);
+      expect(warm.restoredContexts).toBeGreaterThan(0);
       expect(warm).toEqual({
-        graphHits: 1,
+        graphBuilds: 1,
+        restoredContexts: expect.any(Number),
         programCreates: 0,
+        executionInputPrograms,
         configFile: fixture.path('tsconfig.json'),
         roots: expect.arrayContaining([
           fixture.path(component),

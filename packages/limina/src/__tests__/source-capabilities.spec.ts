@@ -1,36 +1,6 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { inspectFrameworkIntent } from '../core/build-graph/framework-intent';
 import { partitionSourceFiles } from '../core/build-graph/source-capabilities';
-import { withFixtureGovernanceRoot } from './helpers/governance-root';
-
-async function createFixture(files: Record<string, unknown>): Promise<{
-  cleanup: () => Promise<void>;
-  config: ResolvedLiminaConfig;
-  rootDir: string;
-}> {
-  const rootDirectory = await mkdtemp(
-    path.join(tmpdir(), 'limina-capabilities-'),
-  );
-  for (const [relativePath, value] of Object.entries(files)) {
-    const filePath = path.join(rootDirectory, relativePath);
-    await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
-  }
-  return {
-    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
-    config: withFixtureGovernanceRoot({
-      configPath: path.join(rootDirectory, 'limina.config.mjs'),
-      rootDir: rootDirectory,
-      scope: {},
-    }),
-    rootDir: rootDirectory,
-  };
-}
-
 describe('source capability facts', () => {
   it('partitions checker-resolved effective files by source family', () => {
     const partition = partitionSourceFiles([
@@ -48,65 +18,48 @@ describe('source capability facts', () => {
     });
   });
 
-  it('reads inherited config intent in a project with no matched source files', async () => {
-    const fixture = await createFixture({
-      'base.json': {
+  it('uses direct framework declarations without resolving presets or selectors', () => {
+    const configPath = '/workspace/tsconfig.json';
+    const result = inspectFrameworkIntent({
+      configPath,
+      configObject: {
+        extends: [
+          'astro/tsconfigs/strict.json',
+          '.\\.svelte-kit\\tsconfig.json',
+        ],
         compilerOptions: {
           plugins: [{ name: '@astrojs/ts-plugin' }],
           types: ['astro/client'],
         },
+        files: ['unwritten.astro'],
+        include: ['src/**/*.svelte', 'src/**/*.vue'],
         vueCompilerOptions: {},
       },
-      'tsconfig.json': {
-        extends: './base.json',
-        include: ['src/**/*.ts'],
-      },
     });
 
-    try {
-      const result = inspectFrameworkIntent({
-        config: fixture.config,
-        configObject: {
-          extends: './base.json',
-          include: ['src/**/*.ts'],
-        },
-        configPath: path.join(fixture.rootDir, 'tsconfig.json'),
-      });
-
-      expect(result.problems).toEqual([]);
-      expect(result.intentHints.map((hint) => hint.kind)).toEqual([
-        'astro-plugin',
-        'astro-types',
-        'vue-compiler-options',
-      ]);
-    } finally {
-      await fixture.cleanup();
-    }
+    expect(result.map(({ kind }) => kind)).toEqual([
+      'astro-plugin',
+      'astro-preset',
+      'astro-selector',
+      'astro-types',
+      'svelte-kit-extends',
+      'svelte-selector',
+      'vue-compiler-options',
+      'vue-selector',
+    ]);
+    expect(result.every((hint) => hint.configPath === configPath)).toBe(true);
   });
 
-  it('reports an unavailable generated extends before checker parsing', async () => {
-    const fixture = await createFixture({
-      'tsconfig.json': {
-        extends: './.astro/tsconfigs/strict.json',
-      },
-    });
-
-    try {
-      const result = inspectFrameworkIntent({
-        config: fixture.config,
+  it('ignores unrelated extends, excludes, and non-object Vue options', () => {
+    expect(
+      inspectFrameworkIntent({
+        configPath: '/workspace/tsconfig.json',
         configObject: {
-          extends: './.astro/tsconfigs/strict.json',
+          extends: ['./base.json', './.astro/tsconfigs/strict.json'],
+          exclude: ['src/**/*.vue'],
+          vueCompilerOptions: null,
         },
-        configPath: path.join(fixture.rootDir, 'tsconfig.json'),
-      });
-
-      expect(result.problems).toHaveLength(1);
-      expect(result.problems[0]).toContain(
-        'Unavailable auto checker extends config',
-      );
-      expect(result.problems[0]).toContain('.astro/tsconfigs/strict.json');
-    } finally {
-      await fixture.cleanup();
-    }
+      }),
+    ).toEqual([]);
   });
 });

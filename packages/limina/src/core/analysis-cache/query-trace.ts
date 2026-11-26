@@ -1,9 +1,10 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { performance } from 'node:perf_hooks';
+import path from 'pathe';
 import type ts from 'typescript';
 import type { InputDependency } from './contracts';
 import type { AnalysisInputs } from './inputs';
-import { installationObservers } from './installation-domain';
+import { packageLocation } from './package-inputs';
 
 export class QueryTrace {
   readonly dependencies: Map<string, InputDependency> = new Map<
@@ -30,6 +31,8 @@ export class QueryTrace {
       return true;
     }
     const isValue = base.directoryExists(path);
+    if (path.split('/').at(-1) === 'node_modules')
+      this.add(path, 'directory-identity');
     if (isValue) this.add(path, 'binding');
     const dependency = this.inputs.structural(path, 'directory', isValue);
     this.record(dependency);
@@ -65,7 +68,10 @@ export class QueryTrace {
 
   #readFile(base: ts.ModuleResolutionHost, path: string): string | undefined {
     this.add(path, 'binding');
-    this.add(path, 'affecting-mtime');
+    this.add(
+      path,
+      path.endsWith('/package.json') ? 'manifest' : 'affecting-mtime',
+    );
     const start = performance.now();
     const text = base.readFile(path);
     this.inputs.metrics.reads += 1;
@@ -96,7 +102,10 @@ export class QueryTrace {
     }
     if (isAffecting) {
       this.add(path, 'binding');
-      this.add(path, 'affecting-mtime');
+      this.add(
+        path,
+        path.endsWith('/package.json') ? 'manifest' : 'affecting-mtime',
+      );
     } else this.add(path, 'file');
   }
 
@@ -129,10 +138,12 @@ export class QueryTrace {
       raw.resolvedTypeReferenceDirective) as
       | { resolvedFileName?: string; originalPath?: string }
       | undefined;
-    for (const path of [target?.resolvedFileName, target?.originalPath]) {
-      if (!path) continue;
-      this.add(path, 'binding');
-      installationObservers.get(this.inputs)?.resolved(path);
+    for (const file of [target?.resolvedFileName, target?.originalPath]) {
+      if (!file) continue;
+      this.add(file, 'binding');
+      const location = packageLocation(file);
+      if (location !== undefined)
+        this.add(path.join(location, 'package.json'), 'manifest');
     }
     this.#locations(raw.failedLookupLocations, false);
     this.#locations(raw.affectingLocations, true);

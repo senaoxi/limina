@@ -27,7 +27,7 @@ export function collectConfigTypeInputs(input: {
   const file = normalizeAbsolutePath(configPath);
   const source = normalizeAbsolutePath(input.sourceConfigPath ?? file);
   const effective = effectiveCompilerOptions(options);
-  const configPaths = cache?.authorities[source]?.closure ?? [
+  const configPaths = cache?.configClosures.get(source) ?? [
     source,
     ...((options.configFile as ts.TsConfigSourceFile | undefined)
       ?.extendedSourceFiles ?? []),

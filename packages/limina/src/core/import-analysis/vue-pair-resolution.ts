@@ -1,6 +1,6 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
-import { occurrenceKey } from '../analysis-cache/semantic-state';
+import { vueResolutionRequest } from '../analysis-cache/vue-graph-facts';
 import {
   createFrameworkSemanticEvidence,
   createFrameworkSemanticFailure,
@@ -53,11 +53,7 @@ export function resolveVueSemanticPair(options: {
   const evidence = options.manager.query({
     identity: options.identity,
     kind: 'resolution',
-    request: [
-      options.importRecord.filePath,
-      options.importRecord.line,
-      occurrenceKey(options.importRecord),
-    ],
+    request: vueResolutionRequest(options.importRecord),
     fromModuleReceipt: () =>
       projectRestoredVueResolution(
         options.manager!,

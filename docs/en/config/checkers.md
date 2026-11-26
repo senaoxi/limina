@@ -2,7 +2,7 @@
 
 When Limina checks or builds a project, it needs to know which checker handles each TypeScript config. `scope.checkers` selects the project's `tsconfig.json` entries and, when needed, assigns checkers to them.
 
-Limina automatically finds entries in the activated [regions](./regions.md). If the project's effective TypeScript config already expresses the intended framework, you can omit `scope.checkers`. Use this field to select a checker explicitly, set the default TypeScript build checker, or exclude an automatic entry.
+Limina automatically finds entries in the activated [regions](./regions.md). If each source config directly declares its intended framework, you can omit `scope.checkers`. Use this field to select a checker explicitly, set the default TypeScript build checker, or exclude an automatic entry.
 
 Limina supports these fixed names:
 
@@ -18,7 +18,7 @@ The key identifies the checker, its execution tool, and its associated caches. T
 
 ## Automatic discovery {#automatic-discovery}
 
-Automatic entry discovery continues when you configure named checkers. For entries without an explicit selection, Limina reads the effective configuration triggers below. Ordinary TypeScript projects default to `tsc` for execution unless a declaration-build relationship or `auto.useTsgo` selects another build checker.
+Automatic entry discovery continues when you configure named checkers. For source configs without an explicit selection, Limina reads the direct configuration triggers below. Ordinary TypeScript projects default to `tsc` for execution unless a declaration-build relationship or `auto.useTsgo` selects another build checker.
 
 | Project                           | Typical checker |
 | --------------------------------- | --------------- |
@@ -70,7 +70,7 @@ If no selected entry covers the playground's source, `proof:check` may report th
 
 ### Framework inference
 
-A named checker fixes the source analysis semantics for its selected config. Otherwise, Limina collects the matching configuration triggers in the table below and counts distinct checker names.
+A named checker fixes the source analysis semantics for its selected config. Otherwise, Limina reads the terminal source config and counts the distinct checkers selected by its own JSONC fields.
 
 | Distinct framework checkers in the config | Source analysis semantics | Execution checker                                                              |
 | ----------------------------------------- | ------------------------- | ------------------------------------------------------------------------------ |
@@ -80,19 +80,19 @@ A named checker fixes the source analysis semantics for its selected config. Oth
 
 Multiple Vue settings count as one `vue-tsc` choice. Vue and Astro settings count as two. When execution is still undecided, a declaration-build relationship may require sharing `vue-tsc` with another project. Without such a requirement, `auto.useTsgo` determines whether the build uses `tsc` or `tsgo`.
 
-Each of the following settings expresses framework ownership in the effective source config.
+The following settings express framework ownership when declared directly in the source config.
 
-| Checker        | Effective configuration triggers                                                                                                                                                                                                                                                                        |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `astro`        | An effective `extends` of `astro/tsconfigs/base`, `astro/tsconfigs/strict` or `astro/tsconfigs/strictest` (optionally `.json`); `compilerOptions.types` containing exactly `astro/client` or `astro/env`; a plugin named exactly `@astrojs/ts-plugin`; a `files` or `include` entry ending in `.astro`. |
-| `vue-tsc`      | An effective `vueCompilerOptions` object, including `{}`; a `files` or `include` entry ending in `.vue`.                                                                                                                                                                                                |
-| `svelte-check` | An effective `extends` whose final path components are `.svelte-kit/tsconfig` or `.svelte-kit/tsconfig.json`; a `files` or `include` entry ending in `.svelte`.                                                                                                                                         |
+| Checker        | Direct configuration triggers                                                                                                                                                                                                                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `astro`        | An `extends` entry of `astro/tsconfigs/base`, `astro/tsconfigs/strict` or `astro/tsconfigs/strictest` (optionally `.json`), an exact `compilerOptions.types` entry of `astro/client` or `astro/env`, a `compilerOptions.plugins` entry named exactly `@astrojs/ts-plugin`, or a `files` or `include` entry ending in `.astro`. |
+| `vue-tsc`      | A `vueCompilerOptions` object, including `{}`, or a `files` or `include` entry ending in `.vue`.                                                                                                                                                                                                                               |
+| `svelte-check` | An `extends` entry whose final path components are `.svelte-kit/tsconfig` or `.svelte-kit/tsconfig.json`, or a `files` or `include` entry ending in `.svelte`.                                                                                                                                                                 |
 
 If you previously relied on a component file or import to select the framework, choose a named checker or add the relevant selector to the source config. For example, keep `src/**/*` and add `src/**/*.vue` to express Vue ownership without dropping the project's other inputs. Install the [framework prerequisites](#framework-prerequisites). To include components in coverage checks, also set [the expected source scope](../getting-started.md#using-vue-astro-or-svelte).
 
-An effective Astro preset can select `astro` in a TypeScript-only project. An unfilled `**/*.vue` selector can select `vue-tsc`. The whole selector must end in the framework suffix. With only `**/*` or `**/*.{ts,vue}`, adding a Vue file, importing a Vue component or installing Vue leaves the source analysis semantics unchanged.
+A directly named Astro preset can select `astro` in a TypeScript-only project. An unfilled `**/*.vue` selector can select `vue-tsc`. The whole selector must end in the framework suffix. Adding a component under `**/*` or `**/*.{ts,vue}`, importing a component, or installing a framework package leaves the checker choice unchanged.
 
-Inherited `types`, plugins, `files` and `include` use TypeScript's effective values. An Astro or Svelte preset must occur in the resolved inheritance closure and still contribute to effective compiler options, `files`, `include` or `exclude`; a preset whose contributions have all been overridden does not trigger inference by itself. Vue-specific settings follow the installed Vue toolchain's inheritance order. For `@vue/language-core` 3.2.4, precedence between multiple bases can differ from TypeScript's `compilerOptions` precedence; set the intended Vue extension fields in the leaf config when bases disagree.
+Each source config makes its own choice. A framework setting in a shared base or a solution does not select a checker for a leaf. If a leaf previously relied on an inherited trigger, declare a trigger in that leaf or select a named checker. After the choice, the selected toolchain resolves inheritance, effective options, and actual roots as usual.
 
 Vue custom-extension inputs keep their normal discovery path even when Native TypeScript finds no roots. Their discovery does not add them to Native roots.
 
@@ -110,7 +110,7 @@ export default defineConfig({
 });
 ```
 
-Named selections and their terminal solution constraints take precedence. To remove an implicit choice, change the effective setting that selects it. Automatic inference has no separate global switch.
+Named selections and their terminal solution constraints take precedence. To remove an implicit choice, change the direct setting that selects it. Automatic inference has no separate global switch.
 
 The `LIMINA_GRAPH_FRAMEWORK_INFERENCE_AMBIGUOUS` warning identifies the source config and sorted checker names, states that TypeScript semantics were retained, and explains that the local owner was pending before build coloring. Each affected source config produces one warning in the final report, including when another independent problem fails the workflow. `limina check` lists these in its final Warnings section; standalone commands print them to stderr after completion, preserving machine-readable graph JSON on stdout. The warning itself does not change admission, governance results or the command's exit status.
 

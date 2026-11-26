@@ -159,9 +159,7 @@ These findings concern type evidence for source dependencies; they do not establ
 
 ### Whether Cross-Package References Have Dependency Declarations
 
-Cross-workspace-package project references represent source-level dependencies. Both the referencing package and referenced package need clear package identities, and the referencing package must declare the referenced package in its own `package.json` dependency fields.
-
-This keeps the same cross-package dependency recorded in source references and the package manifest.
+For cross-package references caused by bare package imports, package-name targets of `#imports`, or an explicit `implicitRefs` entry, both packages need names and the consumer must declare the dependency. Relative-only edges may connect projects in different packages. If both sources contribute to one edge, the package declaration is required. Reference rules apply to every generated project reference.
 
 ### Whether Graph Rules Are Violated
 
@@ -177,23 +175,9 @@ Graph rules only cover relationships expressed by source and configuration. They
 
 `graph:check` examines project references. `source:check` examines package ownership, manifests, and source imports.
 
-### Relative Imports Must Not Cross Package Boundaries
+### Relative imports and package boundaries
 
-Relative imports may only move inside the current nearest `package.json` package boundary. If an import crosses into another package directory, it should be rewritten as a package-name import and declared in the referencing package manifest.
-
-Incorrect example:
-
-```ts
-import { helper } from '../../core/src/helper';
-```
-
-Use a package-name import:
-
-```ts
-import { helper } from '@acme/core';
-```
-
-Then the dependency relationship appears in both source imports and `package.json`, rather than being hidden in directory-relative paths.
+Ordinary relative imports, including type imports, literal CommonJS calls and triple-slash path references, may cross package scopes inside active regions. Set `source.forbidCrossPackageRelativeImports: true` to require the importer and target to share their nearest `package.json`. Relative targets in `package.json#imports` must stay within their declaring scope. Imports into stopped or excluded regions always fail.
 
 ### Bare Package Imports Need Authorization
 
@@ -266,6 +250,8 @@ Workspace validation and generated-artifact materialization, including the revis
 `graph export` exports the dependency graph collected by Limina within managed `tsconfig` scopes. It supports different views, such as source edges only, artifact edges only, or both. This graph is suitable for architecture diagnostics and external analysis, but should not be treated as the authoritative build-order source.
 
 ## package:check: Check Built Package Artifacts
+
+The published JavaScript boundary check resolves ordinary relative import, export, dynamic import and literal CommonJS paths from the containing artifact. A path that escapes the distribution package root is a package finding.
 
 `package:check` is not part of the default check. It targets built package output directories, not source directories.
 

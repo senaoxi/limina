@@ -65,6 +65,8 @@ export function failedGraphAnalysis(
   if (isUnretainedFailure(error)) retainAnalysisFailure(caches, error);
   retainBlockedTransaction(caches, error);
   analysis.complete = false;
+  analysis.declarationContexts ??=
+    caches.coreCollectionRun?.declarationContexts;
   analysis.diagnostics.push(observationErrorDetail(error));
   finishAnalysisOutcome(analysis, caches, failedGovernance(error, analysis));
   return analysis;
@@ -94,17 +96,25 @@ export function retainAnalysisFailure(
   configPath?: string,
 ): void {
   const detail = observationErrorDetail(error);
-  const id = nativeFingerprint([configPath, detail]);
   const run = coreCollectionRun(caches);
   if (run.closed) {
     run.transaction = 'failed';
     run.transactionFailures.push(detail);
     return;
   }
+  const coverage = caches.sourceConfigCoverage;
+  const enumeration = coverage?.configurations.find(
+    (config) => config.configId === configPath,
+  );
+  const id =
+    enumeration?.state === 'failed'
+      ? enumeration.failureId
+      : nativeFingerprint([configPath, detail]);
   run.failureIds.add(id);
   const snapshot = freezeNativeData({
     ...collectNativeEvidence([]),
     run: 'failed' as const,
+    coverageIndexes: coverage ? [coverage] : [],
     failures: [
       {
         id,
@@ -130,32 +140,22 @@ function affectedScope(
   caches: ProjectDependencyCaches,
   configPath: string | undefined,
 ): NativeEvidenceFailure['affected'] {
-  const ids = sourceContextIds(caches, configPath);
-  return ids === undefined
-    ? affectedUniverse(caches)
-    : { kind: 'contexts', contextIds: ids };
-}
-function sourceContext(
-  caches: ProjectDependencyCaches,
-  configPath: string | undefined,
-) {
-  return caches.nativeSourceContexts?.get(configPath ?? '');
-}
-function affectedUniverse(
-  caches: ProjectDependencyCaches,
-): NativeEvidenceFailure['affected'] {
-  const universeId =
-    caches.sourceConfigCoverage?.universe.id ?? 'unavailable-source-universe';
-  return { kind: 'universe', universeId };
-}
-
-function sourceContextIds(
-  caches: ProjectDependencyCaches,
-  configPath: string | undefined,
-) {
-  return sourceContext(caches, configPath)?.nativeEvidence?.contexts.map(
-    (entry) => entry.id,
-  );
+  const ids = new Set<string>();
+  const observations = caches.nativeObservations?.values() ?? [];
+  for (const snapshot of observations) {
+    for (const context of snapshot.contexts) {
+      if ((context.inputs.sourceConfig ?? context.inputs.config) === configPath)
+        ids.add(context.id);
+    }
+  }
+  return ids.size > 0
+    ? { kind: 'contexts', contextIds: [...ids] }
+    : {
+        kind: 'universe',
+        universeId:
+          caches.sourceConfigCoverage?.universe.id ??
+          'unavailable-source-universe',
+      };
 }
 
 export function retainDependencyFailure(
@@ -215,10 +215,7 @@ export function assertCollectedExecution(
     throw new CollectedAnalysisFailure(collectedFailureDetails(caches));
 }
 function collectedFailureDetails(caches: ProjectDependencyCaches): string[] {
-  const snapshots = cachedFailureSnapshots(caches);
-  if (caches.nativeSourceEvidence !== undefined)
-    snapshots.push(caches.nativeSourceEvidence);
-  return snapshots.flatMap((snapshot) =>
+  return cachedFailureSnapshots(caches).flatMap((snapshot) =>
     snapshot.failures.map((failure) => failure.detail),
   );
 }

@@ -257,6 +257,7 @@ async function materializeUnderWriteLease(options: {
       )(selected.namespace);
       return { namespace: selected.namespace, plan: selected.plan };
     },
+    'artifact-application-failed',
   );
 }
 

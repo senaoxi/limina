@@ -3,10 +3,10 @@ import { compareCodeUnits } from '#utils/collections';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import { encodeData } from './data-codec';
 import { analysisHash } from './identity';
-import { observeTypeEnvironment } from './installation-environment';
 import type { NativeAnalysisCache } from './native-cache';
 import { createQueryDataPool } from './record-table';
 import { retainData } from './snapshot-records';
+import { observeTypeEnvironment } from './type-environment';
 import type { VueContextRecord, VueQueryRecord } from './vue-contracts';
 import { bindVueExecutionInputs } from './vue-execution-inputs';
 import {
@@ -83,7 +83,7 @@ export class VueRecordState {
     const environment = observeTypeEnvironment(
       vueEnvironmentProject(this.identity),
       this.cache.inputs,
-      { members, tsModule: this.identity.toolchain.tsModule },
+      { tsModule: this.identity.toolchain.tsModule },
     );
     const dependencies = new Map(this.trace.dependencies);
     for (const dependency of environment.dependencies)
@@ -91,11 +91,8 @@ export class VueRecordState {
     return retainData(previous, {
       adapter: VUE_ANALYSIS_ADAPTER,
       project: {
-        declarationLoading: this.identity.declarationLoading,
         configPath: this.identity.configPath,
-        projectRootDir: this.identity.projectRootDir,
-        extensions: [...this.identity.extensions],
-        outputProjection: this.identity.outputProjection,
+        sourceConfigPath: this.identity.outputProjection?.sourceConfigPath,
       },
       identity: vueDataIdentity(this.identity),
       dependencies: dependencies.values().toArray(),
@@ -118,7 +115,7 @@ export function vueRecordRejection(
 ): string | undefined {
   const checks = [
     ['vue-context-incomplete', record.complete],
-    ['manifest-domain-changed', !cache.inputs.domainDirty],
+    ['toolchain-input-changed', !cache.inputs.toolchainChanged],
     [
       'vue-config-closure-changed',
       cache.inputs.configCurrent(
@@ -148,7 +145,7 @@ function isCurrentVueEnvironment(
   const environment = observeTypeEnvironment(
     vueEnvironmentProject(identity),
     cache.inputs,
-    { members: record.members, tsModule: identity.toolchain.tsModule },
+    { tsModule: identity.toolchain.tsModule },
   );
   // Environment dependencies invalidate this Vue context and its owned queries.
   // Another independently qualified installation keeps its own authority.

@@ -27,9 +27,17 @@ export interface MaterializationSlot {
   receipt?: MaterializationReceipt;
 }
 
+export type MaterializationAccess = 'start' | 'join' | 'reuse';
+
+export type MaterializationAccessObserver = (
+  access: MaterializationAccess,
+  startedAt: number,
+) => void;
+
 interface EnsureMaterializationOptions {
   getCurrentSlot: () => MaterializationSlot;
   materialize: () => Promise<MaterializationReceipt>;
+  onAccess?: MaterializationAccessObserver;
   onCommit?: (receipt: MaterializationReceipt) => void;
   slot: MaterializationSlot;
 }
@@ -116,14 +124,18 @@ export function capturePendingMaterializationWait(
 export function ensureMaterialization(
   options: EnsureMaterializationOptions,
 ): Promise<MaterializationReceipt> {
-  if (options.slot.receipt !== undefined) {
-    return Promise.resolve(options.slot.receipt);
+  const { receipt: ready, inFlight: pending } = options.slot;
+  if (ready !== undefined) {
+    options.onAccess?.('reuse', performance.now());
+    return Promise.resolve(ready);
   }
 
-  if (options.slot.inFlight !== undefined) {
-    return options.slot.inFlight;
+  if (pending !== undefined) {
+    options.onAccess?.('join', performance.now());
+    return pending;
   }
 
+  const startedAt = performance.now();
   const profile = currentProfile();
   const work = profile?.start('graph.materialize');
   const inFlight =
@@ -133,6 +145,7 @@ export function ensureMaterialization(
   if (profile !== undefined && work !== undefined)
     recordedMaterializations(profile).set(options.slot, work);
   options.slot.inFlight = inFlight;
+  options.onAccess?.('start', startedAt);
 
   return (async () => {
     let receipt: MaterializationReceipt;
@@ -145,7 +158,7 @@ export function ensureMaterialization(
         slot: options.slot,
       });
       if (work !== undefined)
-        profile?.finish(work, 'failed', 'artifact-application-failed');
+        profile?.fail(work, error, 'materialization-failed');
       throw error;
     }
     const isCurrent = isCurrentCommit({
@@ -179,6 +192,7 @@ export function ensurePreflightGraphMaterialized(options: {
   getCurrentSlot: () => MaterializationSlot;
   getActiveView?: () => AnalysisRun | undefined;
   getPendingGraph: () => Promise<PreparedTsconfigGraph> | undefined;
+  onAccess?: MaterializationAccessObserver;
   willObserveJoin?: true;
   purpose: PreparedTsconfigGraph['purpose'];
   refreshProviders: () => void;
@@ -190,6 +204,7 @@ export function ensurePreflightGraphMaterialized(options: {
   const materialize = () =>
     ensureMaterialization({
       getCurrentSlot: options.getCurrentSlot,
+      onAccess: options.onAccess,
       materialize: () =>
         materializePreflightGraph({
           getGraph: (willObserveJoin) =>

@@ -450,6 +450,11 @@ describe('runSourceCheck package authority', () => {
       branches: { import: './missing.css', require: './exists.css' },
       line: 2,
     },
+    {
+      syntax: 'mixed',
+      branches: { import: './missing.css', require: './exists.js' },
+      line: 2,
+    },
   ])(
     'retains occurrence mode in CJS resource observations ($syntax, $branches)',
     async ({ syntax, branches, line }) => {
@@ -474,6 +479,7 @@ describe('runSourceCheck package authority', () => {
             exports: { './theme.css': branches },
           }),
           'app/node_modules/asset/exists.css': '',
+          'app/node_modules/asset/exists.js': 'module.exports = 1;',
         },
         { source: { knip: false } },
       );
@@ -909,84 +915,46 @@ export default kebabCase;
     }
   });
 
-  it.each([
-    [
-      false,
-      false,
-      [
-        'LIMINA_SOURCE_AMBIENT_DECLARATION_SHARED_UNAUTHORIZED',
-        'LIMINA_SOURCE_AMBIENT_DECLARATION_REFERENCE_UNAUTHORIZED',
-      ],
-    ],
-    [true, false, ['LIMINA_SOURCE_AMBIENT_DECLARATION_REFERENCE_UNAUTHORIZED']],
-    [false, true, ['LIMINA_SOURCE_AMBIENT_DECLARATION_SHARED_UNAUTHORIZED']],
-    [true, true, []],
-  ])(
-    'governs shared ambient consumers and triple-slash paths independently (%s, %s)',
-    async (
-      allowSharedAcrossOwners,
-      allowTripleSlashReferences,
-      expectedCodes,
-    ) => {
-      const fixture = await createFixture(
-        {
-          '__typings__/global.d.ts': 'interface SharedGlobal {}\n',
-          'packages/a/package.json': stringifyConfig({
-            name: '@example/a',
-            private: true,
-          }),
-          'packages/a/tsconfig.json': typecheckConfig([
-            'src/**/*.ts',
-            '../../__typings__/**/*.d.ts',
-          ]),
-          'packages/a/src/index.ts':
-            '/// <reference path="../../../__typings__/global.d.ts" />\nexport const a = 1;\n',
-          'packages/b/package.json': stringifyConfig({
-            name: '@example/b',
-            private: true,
-          }),
-          'packages/b/tsconfig.json': typecheckConfig([
-            'src/**/*.ts',
-            '../../__typings__/**/*.d.ts',
-          ]),
-          'packages/b/src/index.ts': 'export const b = 1;\n',
-        },
-        {
-          source: {
-            declarations: {
-              ambient: [
-                {
-                  allowSharedAcrossOwners,
-                  allowTripleSlashReferences,
-                  include: ['__typings__/**/*.d.ts'],
-                  reason: 'Shared workspace test shims.',
-                },
-              ],
-            },
-            knip: false,
+  it.each(['.d.ts', '.d.mts', '.d.cts'])(
+    'allows same-package declaration roots in two source leaves (%s)',
+    async (extension) => {
+      const shared = `shared${extension}`;
+      const fixture = await createFixture({
+        'packages/app/package.json': stringifyConfig({
+          name: '@example/app',
+          private: true,
+        }),
+        'packages/app/tsconfig.json': stringifyConfig({
+          files: [],
+          references: [
+            { path: './tsconfig.one.json' },
+            { path: './tsconfig.two.json' },
+          ],
+        }),
+        'packages/app/tsconfig.one.json': stringifyConfig({
+          compilerOptions: buildCompilerOptions,
+          files: ['one.ts', shared],
+          liminaOptions: {
+            declarationContexts: [
+              { file: `./${shared}`, config: './tsconfig.one.json' },
+            ],
           },
-        },
-      );
-      const sourceIssues: SourceCheckIssue[] = [];
-
+        }),
+        'packages/app/tsconfig.two.json': stringifyConfig({
+          compilerOptions: buildCompilerOptions,
+          files: ['two.ts', shared],
+        }),
+        [`packages/app/${shared}`]: 'export interface Shared {}',
+        'packages/app/one.ts': 'export const one = 1;',
+        'packages/app/two.ts': 'export const two = 2;',
+      });
       try {
-        await expect(
-          isRunSourceCheck(fixture.config, {
+        expect(
+          await isRunSourceCheck(fixture.config, {
             deferSnapshot: true,
             report: { defer: true },
-            sourceIssues,
           }),
-        ).resolves.toBe(expectedCodes.length === 0);
-        expect(
-          sourceIssues
-            .map((issue) => issue.code)
-            .filter((code) => code.startsWith('LIMINA_SOURCE_AMBIENT_'))
-            .sort((left, right) => Number(left > right) - Number(left < right)),
-        ).toEqual(
-          [...expectedCodes].sort(
-            (left, right) => Number(left > right) - Number(left < right),
-          ),
-        );
+        ).toBe(true);
       } finally {
         await fixture.cleanup();
       }
@@ -1071,25 +1039,13 @@ export default kebabCase;
           name: '@example/a',
           private: true,
         }),
-        'packages/a/tsconfig.json': typecheckConfig([
-          'src/**/*.ts',
-          '../../__typings__/**/*.d.ts',
-        ]),
+        'packages/a/tsconfig.json': typecheckConfig(['src/**/*.ts']),
         'packages/a/src/index.ts':
           "import type {} from '../../../__typings__/global';\nimport 'undeclared-package';\nexport const a = 1;\n",
       },
       {
         source: {
-          declarations: {
-            ambient: [
-              {
-                allowSharedAcrossOwners: true,
-                allowTripleSlashReferences: true,
-                include: ['__typings__/**/*.d.ts'],
-                reason: 'Shared workspace test shims.',
-              },
-            ],
-          },
+          forbidCrossPackageRelativeImports: true,
           knip: false,
         },
       },
@@ -2479,6 +2435,8 @@ packages:
         ...createPackageFixture({
           source: "export const rootValue = 'root';\n",
         }),
+        'app/tsconfig.lib.json': typecheckConfig(['src/index.ts']),
+        'app/src/nested/tsconfig.json': typecheckConfig(['*.ts']),
         'app/src/nested/package.json': stringifyConfig({
           type: 'module',
         }),
@@ -2549,6 +2507,8 @@ packages:
           },
           source: "export const rootValue = 'root';\n",
         }),
+        'app/tsconfig.lib.json': typecheckConfig(['src/index.ts']),
+        'app/src/nested/tsconfig.json': typecheckConfig(['*.ts']),
         'app/src/nested/package.json': stringifyConfig({
           type: 'module',
         }),
@@ -2572,7 +2532,7 @@ packages:
     }
   });
 
-  it('allows declaration leaves whose file set crosses nested non-workspace package scopes', async () => {
+  it('rejects source leaves whose file set crosses nested non-workspace package scopes', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -2594,7 +2554,7 @@ packages:
     );
 
     try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2606,6 +2566,8 @@ packages:
         ...createPackageFixture({
           source: "export const rootValue = 'root';\n",
         }),
+        'app/tsconfig.lib.json': typecheckConfig(['src/index.ts']),
+        'app/src/nested/tsconfig.json': typecheckConfig(['*.ts']),
         'app/src/nested/package.json': stringifyConfig({
           type: 'module',
         }),
@@ -2617,6 +2579,7 @@ packages:
           extendNestedPackageScopes: true,
         },
         source: {
+          forbidCrossPackageRelativeImports: true,
           knip: false,
         },
       },
@@ -2629,20 +2592,24 @@ packages:
     }
   });
 
-  it('rejects relative imports that cross workspace package scopes', async () => {
-    const fixture = await createFixture(
-      createWorkspacePackageFiles({
-        appSource:
-          "import { internalValue } from '../../internal/src/index';\nexport const value = internalValue;\n",
-      }),
-    );
+  it.each([false, true])(
+    'checks cross-package relative imports under the configured policy (strict: %s)',
+    async (strict) => {
+      const fixture = await createFixture(
+        createWorkspacePackageFiles({
+          appSource:
+            "import { internalValue } from '../../internal/src/index';\nexport const value = internalValue;\n",
+        }),
+        { source: { forbidCrossPackageRelativeImports: strict } },
+      );
 
-    try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+      try {
+        await expect(isRunSourceCheck(fixture.config)).resolves.toBe(!strict);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('requires workspace packages to be declared by the source owner', async () => {
     const fixture = await createFixture({
@@ -2826,6 +2793,8 @@ packages:
         'app/src/nested/file.ts':
           "import { internalValue } from '#internal';\nexport const nestedValue = internalValue;\n",
         'app/src/nested/internal.ts': 'export const internalValue = 1;\n',
+        'app/tsconfig.lib.json': typecheckConfig(['src/index.ts']),
+        'app/src/nested/tsconfig.json': typecheckConfig(['*.ts']),
         'app/src/nested/package.json': stringifyConfig({
           imports: {
             '#internal': './internal.ts',
@@ -2868,6 +2837,10 @@ packages:
         'app/src/nested/file.ts':
           "import { rootValue } from '#root';\nexport const nestedValue = rootValue;\n",
         'app/src/nested/local.ts': 'export const localValue = 1;\n',
+        'app/src/nested/tsconfig.json': typecheckConfig(['*.ts'], {
+          baseUrl: '.',
+          paths: { '#root': ['../index.ts'] },
+        }),
         'app/src/nested/package.json': stringifyConfig({
           imports: {
             '#root': './local.ts',
@@ -2878,7 +2851,7 @@ packages:
           compilerOptions: pathOptions,
           include: ['src/**/*.ts'],
         }),
-        'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], pathOptions),
+        'app/tsconfig.lib.json': typecheckConfig(['src/index.ts'], pathOptions),
       },
       {
         regions: {
@@ -2901,58 +2874,68 @@ packages:
     }
   });
 
-  it('rejects relative # package imports that resolve to another workspace package', async () => {
-    const errorSpy = vi
-      .spyOn(SourceLogger, 'error')
-      .mockImplementation(() => {});
-    const pathOptions = {
-      baseUrl: '.',
-      paths: {
-        '#internal': ['../packages/internal/src/index.ts'],
-      },
-    };
-    const fixture = await createFixture({
-      ...createWorkspaceRootFiles(['app', 'packages/*']),
-      ...createPackageFixture({
-        manifest: {
-          dependencies: {
-            '@example/internal': 'workspace:*',
-          },
-          imports: {
-            '#internal': './src/declared-but-not-used.ts',
-          },
+  it.each([
+    './src/declared-but-not-used.ts',
+    { import: './src/declared-but-not-used.ts', require: 'unrelated-package' },
+    {
+      types: './linked/../../packages/internal/src/index.ts',
+      default: '@example/internal',
+    },
+  ])(
+    'rejects a #imports relative target escaping its declaring package (%j)',
+    async (target) => {
+      const errorSpy = vi
+        .spyOn(SourceLogger, 'error')
+        .mockImplementation(() => {});
+      const pathOptions = {
+        baseUrl: '.',
+        paths: {
+          '#internal': ['../packages/internal/src/index.ts'],
         },
-        source:
-          "import { internalValue } from '#internal';\nexport const value = internalValue;\n",
-      }),
-      'app/tsconfig.lib.dts.json': buildConfig({
-        compilerOptions: pathOptions,
-        include: ['src/**/*.ts'],
-      }),
-      'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], pathOptions),
-      'packages/internal/package.json': stringifyConfig({
-        name: '@example/internal',
-        type: 'module',
-      }),
-      'packages/internal/tsconfig.json': typecheckConfig(['src/**/*.ts']),
-      'packages/internal/src/index.ts': 'export const internalValue = 1;\n',
-      'pnpm-workspace.yaml': `
+      };
+      const fixture = await createFixture({
+        ...createWorkspaceRootFiles(['app', 'packages/*']),
+        ...createPackageFixture({
+          manifest: {
+            dependencies: {
+              '@example/internal': 'workspace:*',
+            },
+            imports: {
+              '#internal': target,
+            },
+          },
+          source:
+            "import { internalValue } from '#internal';\nexport const value = internalValue;\n",
+        }),
+        'app/tsconfig.lib.dts.json': buildConfig({
+          compilerOptions: pathOptions,
+          include: ['src/**/*.ts'],
+        }),
+        'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], pathOptions),
+        'packages/internal/package.json': stringifyConfig({
+          name: '@example/internal',
+          type: 'module',
+        }),
+        'packages/internal/tsconfig.json': typecheckConfig(['src/**/*.ts']),
+        'packages/internal/src/index.ts': 'export const internalValue = 1;\n',
+        'pnpm-workspace.yaml': `
 packages:
   - app
   - packages/*
 `,
-    });
+      });
 
-    try {
-      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
-      expect(errorSpy.mock.calls.join('\n')).toContain(
-        'Package import relative target escapes package scope  1 issue',
-      );
-    } finally {
-      errorSpy.mockRestore();
-      await fixture.cleanup();
-    }
-  });
+      try {
+        await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
+        expect(errorSpy.mock.calls.join('\n')).toContain(
+          'Package import relative target escapes package scope  1 issue',
+        );
+      } finally {
+        errorSpy.mockRestore();
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('requires # package imports that resolve to artifact packages to be declared', async () => {
     const fixture = await createFixture({
@@ -3329,10 +3312,7 @@ packages:
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
-        'Tsconfig search cannot determine module owner  1 issue',
-      );
-      expect(errors).toContain(
-        'Source module belongs to multiple tsconfig governance units  1 issue',
+        'Source module belongs to multiple tsconfig governance units',
       );
       expect(errors).toContain('app/src/index.ts');
     } finally {
@@ -3809,7 +3789,11 @@ packages:
         }),
       ).rejects.toThrow('Missing Limina runtime dependency:');
 
-      expect(stripAnsi(chunks.join(''))).not.toContain('skipping check');
+      const output = stripAnsi(chunks.join(''));
+      expect(output).toMatch(
+        /\[fail\] knip source usage \((?:<?\d+ms|\d+(?:\.\d+)?s)\)/u,
+      );
+      expect(output).not.toContain('skipping check');
       expect(stats).toBeUndefined();
     } finally {
       await fixture.cleanup();

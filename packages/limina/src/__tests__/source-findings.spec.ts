@@ -56,48 +56,6 @@ type SourceFindingMatrix = {
 };
 
 const findingByCode = {
-  [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid]: {
-    ...commonFindingFields('Ambient declaration rule is invalid'),
-    code: LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid,
-    facts: {
-      include: ['types/**/*.d.ts'],
-      kind: 'no-matches',
-      ruleIdentity: 'types/**/*.d.ts',
-      ruleIndex: 0,
-    },
-  },
-  [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationSharedUnauthorized]: {
-    ...commonFindingFields('Shared declaration is not authorized'),
-    code: LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationSharedUnauthorized,
-    facts: {
-      consumers: [
-        {
-          configPaths: ['/repo/packages/app/tsconfig.json'],
-          packageManifestPath: '/repo/packages/app/package.json',
-          packageName: '@example/app',
-        },
-      ],
-      declarationPath: '/repo/types/global.d.ts',
-      kind: 'shared-across-owners',
-      ruleIdentity: 'types/**/*.d.ts',
-      ruleIndex: 0,
-    },
-  },
-  [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationReferenceUnauthorized]: {
-    ...commonFindingFields('Declaration reference is not authorized'),
-    code: LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationReferenceUnauthorized,
-    facts: {
-      declarationPath: '/repo/types/global.d.ts',
-      importerPath: '/repo/packages/app/src/index.ts',
-      kind: 'triple-slash-path-reference',
-      line: 1,
-      packageManifestPath: '/repo/packages/app/package.json',
-      packageName: '@example/app',
-      referenceKind: 'path',
-      ruleIdentity: 'types/**/*.d.ts',
-      ruleIndex: 0,
-    },
-  },
   [LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary]: {
     ...commonFindingFields('Source import crosses a governance boundary'),
     code: LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary,
@@ -320,14 +278,6 @@ describe('typed Source findings', () => {
   );
 
   it('keeps source-specific rule, importer, target, dependency, and owner facts typed', () => {
-    expect(
-      findingByCode[
-        LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid
-      ].facts,
-    ).toMatchObject({
-      ruleIdentity: 'types/**/*.d.ts',
-      ruleIndex: 0,
-    });
     expect(
       findingByCode[LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid].facts,
     ).toMatchObject({

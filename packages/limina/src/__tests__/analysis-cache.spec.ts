@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import fs, {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync,
@@ -31,6 +32,9 @@ import { createTypeScriptDependencyContext } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
 import type { NativeDependencyFact } from '../core/typescript-semantic/dependency-fact';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
+import { nativeCollectionStatus } from '../domain/analysis/native-collection';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
+import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
 import {
   readStoredAnalysisSnapshot,
   writeStoredAnalysisSnapshot,
@@ -190,6 +194,85 @@ function expectCold(
 }
 
 describe('persistent native analysis facts', () => {
+  it('counts resolver calls and both query reuse origins after omitting query detail', () => {
+    const { file, write } = fixture();
+    write('source.ts', 'import "./value.js";');
+    write('value.ts', 'export {};');
+    const input = project(file('tsconfig.json'), [file('source.ts')]);
+    let resolverCalls = 0;
+    const query = {
+      contextId: 'resolution-profile-fixture',
+      file: file('source.ts'),
+      identity: ['module', './value.js'],
+      retain: true,
+      host: ts.sys,
+      resolve: (host: ts.ModuleResolutionHost) => {
+        resolverCalls++;
+        return ts.resolveModuleName(
+          './value.js',
+          file('source.ts'),
+          input.options,
+          host,
+        );
+      },
+    };
+    const seed = new NativeAnalysisCache(
+      'fixture',
+      undefined,
+      'fixture-config',
+    );
+    const observer = new AnalysisObserver('limina check', performance.now());
+    const repeats = 750;
+    runWithProfile(observer, () => {
+      const cold = seed.query(query);
+      expect(cold.resolvedModule?.resolvedFileName).toBe(file('value.ts'));
+      for (let index = 0; index < repeats; index++) seed.query(query);
+      const previous = parseAnalysisSnapshot(diskSnapshot(seed), 'fixture');
+      expect(previous).toBeDefined();
+      const restored = new NativeAnalysisCache('fixture', previous, {
+        configVersion: 'fixture-config',
+        previousOrigin: 'prior-disk',
+      });
+      expect(restored.query(query)).toEqual(cold);
+      expect(restored.query(query)).toEqual(cold);
+    });
+    observer.stop(true);
+    const { coverage, decisions, metrics } = observer.snapshot();
+    expect(resolverCalls).toBe(1);
+    expect(coverage.omittedByKind['native-resolution']).toBeGreaterThan(0);
+    expect(decisions.some((decision) => decision.origin === 'prior-disk')).toBe(
+      false,
+    );
+    for (const [key, value] of [
+      ['cache.native-resolution.resolve', 1],
+      ['cache.native-resolution.prior-admission.calls', 1],
+      ['cache.native-resolution.adoption.adopted', repeats + 2],
+      [
+        'cache.native-resolution.adoption.adopted.invocation-memory',
+        repeats + 1,
+      ],
+      ['cache.native-resolution.adoption.adopted.prior-disk', 1],
+    ])
+      expect(metrics).toContainEqual({
+        key,
+        value,
+        scope: ['invocation'],
+        kind: 'counter',
+        unit: 'calls',
+      });
+    for (const key of [
+      'cache.native-resolution.resolve-elapsed-sum',
+      'cache.native-resolution.prior-admission.elapsed-sum',
+    ])
+      expect(metrics).toContainEqual({
+        key,
+        value: expect.any(Number),
+        scope: ['invocation'],
+        kind: 'counter',
+        unit: 'us',
+      });
+  });
+
   it('links a Native context memory hit to its disk adoption only within the same profile', () => {
     const { file, write } = fixture();
     write('a.ts', 'export const a = 1;');
@@ -966,39 +1049,60 @@ it.each(['a.ts', 'virtual.json'])(
   },
 );
 
-it('replaces occurrence contributions without duplicates or partial failed transactions', () => {
-  const { file, write } = fixture();
-  write('a.ts', 'import "./value"; import "./value"; export {};');
-  write('value.ts', 'export {};');
-  const result = analyze(project(file('tsconfig.json'), [file('a.ts')]));
-  const ledger = result.cache.contributions;
-  const contributions = result.facts.map(({ record }) => ({
-    occurrence: record,
-    fromConfigPath: file('tsconfig.json'),
-    toConfigPath: file('dep/tsconfig.json'),
-    fromChecker: 'tsc',
-    toChecker: 'tsc',
-    kind: 'declaration-provider',
-  }));
-  const replace = (items: typeof contributions, isComplete = true) =>
-    ledger.replaceProject({
-      config: file('tsconfig.json'),
-      checker: 'tsc',
-      complete: isComplete,
-      collect: () => {
-        for (const item of items) ledger.record(item);
-      },
-    });
-  replace(contributions);
-  expect(ledger.counts().values().toArray()).toEqual([2]);
-  replace([...contributions, ...contributions]);
-  expect(ledger.counts().values().toArray()).toEqual([2]);
-  replace([], false);
-  expect(ledger.counts().values().toArray()).toEqual([2]);
-  replace(contributions.slice(1));
-  expect(ledger.counts().values().toArray()).toEqual([1]);
-  replace([]);
-  expect(ledger.counts().size).toBe(0);
+it('keeps the last published generation when Native cannot observe a declared root', async () => {
+  const f = fixture();
+  f.write('tsconfig.json', '{"files":["input.ts"]}');
+  f.write('input.ts', 'export const input = 1;');
+  const input = withCoverage(
+    project(f.file('tsconfig.json'), [f.file('input.ts')]),
+  );
+  const options = {
+    namespace: createLiminaArtifactNamespace({
+      rootDir: f.file(),
+      generation: 0,
+    }),
+    configPath: f.file('limina.config.mts'),
+    identity: 'fixture',
+    configVersion: 'fixture-config',
+  };
+  const force = async () => {
+    const store = new AnalysisCacheStore(options);
+    store.read({ restore: false });
+    const cache = new NativeAnalysisCache(
+      'fixture',
+      undefined,
+      'fixture-config',
+    );
+    const context = cache.epoch.run(() =>
+      createTypeScriptDependencyContext(input, { analysisCache: cache }),
+    );
+    const status = nativeCollectionStatus(context.nativeEvidence!);
+    context.dispose();
+    await store.publish(cache, () => cache.epoch.assertStable());
+    return { status, index: readFileSync(store.path), path: store.path };
+  };
+
+  const completed = await force();
+  expect(completed.status).toMatchObject({
+    execution: 'completed',
+    traversal: 'complete-within-boundary',
+  });
+  expect(
+    Object.values(readStoredAnalysisSnapshot(completed.path).contexts),
+  ).toHaveLength(1);
+  rmSync(f.file('input.ts'));
+  const failed = await force();
+  expect(failed.status.traversal).toBe('incomplete');
+  expect(failed.status.failureIds.length).toBeGreaterThan(0);
+  expect(failed.index).toEqual(completed.index);
+
+  f.write('input.ts', 'export const input = 2;');
+  const repaired = await force();
+  expect(repaired.status).toMatchObject({
+    execution: 'completed',
+    traversal: 'complete-within-boundary',
+  });
+  expect(repaired.index).not.toEqual(completed.index);
 });
 
 it('reacquires context when a previously missing package manifest appears or disappears', () => {

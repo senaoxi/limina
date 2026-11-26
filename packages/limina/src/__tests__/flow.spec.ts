@@ -212,6 +212,78 @@ describe('LiminaFlowReporter', () => {
     ]);
   });
 
+  it.each(['plain', 'inline'] as const)(
+    'renders only measured task durations in %s output',
+    (renderer) => {
+      const isInteractive = renderer === 'inline';
+      const { chunks, flow } = createBufferedFlow({ forceTty: isInteractive });
+      const flatTaskOptions = { collapseOnSuccess: false };
+
+      flow.pass('measured zero', { elapsedTimeMs: 0 });
+      flow.start('fractional task', flatTaskOptions).pass(undefined, {
+        elapsedTimeMs: 0.25,
+      });
+      flow.start('untimed flat task', flatTaskOptions).fail(undefined, {
+        elapsedTimeMs: null,
+      });
+      flow.start('flat skipped task', flatTaskOptions).skip(undefined, {
+        elapsedTimeMs: 250,
+      });
+      flow.skip('direct skipped task', { elapsedTimeMs: 250 });
+
+      const parent = flow.tree('parent task');
+      parent.start();
+      parent.child('timed child').pass(undefined, { elapsedTimeMs: 1 });
+      parent.child('zero-time child').pass(undefined, { elapsedTimeMs: 0 });
+      const untimedChild = parent.child('untimed tree task');
+      untimedChild.start();
+      untimedChild.fail(undefined, { elapsedTimeMs: null });
+      const skippedChild = parent.child('tree skipped task');
+      skippedChild.start();
+      skippedChild.skip(undefined, { elapsedTimeMs: 250 });
+      parent
+        .child('tree blocked task')
+        .block(undefined, { elapsedTimeMs: 250 });
+      parent.pass(undefined, { elapsedTimeMs: 1250 });
+
+      const output = chunks.join('');
+      const lines = (isInteractive ? getLastRenderedFrame(output) : output)
+        .trimEnd()
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('[start]'));
+
+      expect(lines).toEqual(
+        isInteractive
+          ? [
+              '◆    measured zero (<1ms)',
+              '◆    fractional task (<1ms)',
+              '✕    untimed flat task',
+              '◇    flat skipped task',
+              '◇    direct skipped task',
+              '◆    parent task (1.25s total)',
+              '◆      timed child (1ms)',
+              '◆      zero-time child (<1ms)',
+              '✕      untimed tree task',
+              '◇      tree skipped task',
+              '⊘      tree blocked task',
+            ]
+          : [
+              '[pass] measured zero (<1ms)',
+              '[pass] fractional task (<1ms)',
+              '[fail] untimed flat task',
+              '[skip] flat skipped task',
+              '[skip] direct skipped task',
+              '  [pass] timed child (1ms)',
+              '  [pass] zero-time child (<1ms)',
+              '  [fail] untimed tree task',
+              '  [skip] tree skipped task',
+              '  [block] tree blocked task',
+              '[pass] parent task (1.25s total)',
+            ],
+      );
+    },
+  );
+
   it('writes stable plain text for dumb TTY terminals', () => {
     const chunks: string[] = [];
     const flow = createLiminaCheckFlowReporter({
@@ -442,10 +514,10 @@ describe('LiminaFlowReporter', () => {
 
     expect(getMaxCursorUpLineCount(stdout)).toBeLessThanOrEqual(8);
     expect(lastFrame).toContain('┌  limina check\n');
-    expect(lastFrame).toContain('✕    default check (900ms)\n');
-    expect(lastFrame).toContain('✕      graph check (200ms)\n');
+    expect(lastFrame).toContain('✕    default check (900ms total)\n');
+    expect(lastFrame).toContain('✕      graph check (200ms total)\n');
     expect(lastFrame).toContain('✕      source check (300ms)\n');
-    expect(lastFrame).toContain('◆      checker build (500ms)\n');
+    expect(lastFrame).toContain('◆      checker build (500ms total)\n');
     expect(lastFrame).toContain('└  limina check failed\n');
     expect(lastFrame).not.toContain('project routes and configs');
     expect(lastFrame).not.toContain('framework checker entries');
@@ -540,7 +612,7 @@ describe('LiminaFlowReporter', () => {
 
     expect(getMaxCursorUpLineCount(stdout)).toBeLessThanOrEqual(7);
     expect(lastFrame).toContain('┌  limina check\n');
-    expect(lastFrame).toContain('✕    default check (900ms)\n');
+    expect(lastFrame).toContain('✕    default check (900ms total)\n');
     expect(lastFrame).toContain('└  limina check failed\n');
     expect(lastFrame).not.toContain('project routes and configs');
     expect(lastFrame).not.toContain('framework checker entries');
@@ -808,7 +880,7 @@ describe('LiminaFlowReporter', () => {
 
     expect(lastFrame).toContain('┌  limina check\n');
     expect(lastFrame).toContain('◆    default check (9.77s)\n');
-    expect(lastFrame).toContain('◆      graph check (4.58s)\n');
+    expect(lastFrame).toContain('◆      graph check (4.58s total)\n');
     expect(lastFrame).toContain('│  ...\n');
     expect(lastFrame).toContain('└  limina check passed\n');
     expect(lastFrame.indexOf('│  ...')).toBeLessThan(
@@ -1161,7 +1233,7 @@ describe('LiminaFlowReporter', () => {
 
     expect(getMaxCursorUpLineCount(output)).toBeLessThanOrEqual(3);
     expect(lastFrame).toContain('┌  limina check\n');
-    expect(lastFrame).toContain('✕    default check (220ms)\n');
+    expect(lastFrame).toContain('✕    default check (220ms total)\n');
     expect(lastFrame).toContain('│  ...\n');
     expect(lastFrame).not.toContain('project references');
   });
@@ -1194,14 +1266,14 @@ describe('LiminaFlowReporter', () => {
     expect(beforeChildFinishes).toContain('◇    default check\n');
     expect(beforeChildFinishes).toContain(`${spinner}      source check\n`);
     expect(beforeChildFinishes).toContain(`${green('◆')}    default check\n`);
-    expect(beforeChildFinishes).not.toContain('default check (300ms)');
+    expect(beforeChildFinishes).not.toContain('default check (');
 
     source.pass(undefined, { elapsedTimeMs: 120 });
 
     const output = chunks.join('');
 
     expect(output).toContain(`${green('◆')}      source check (120ms)\n`);
-    expect(output).toContain(`${green('◆')}    default check (300ms)\n`);
+    expect(output).toContain(`${green('◆')}    default check (300ms total)\n`);
     expect(output).not.toContain('\u{1B}[H\u{1B}[2J\u{1B}[3J');
   });
 
@@ -1240,7 +1312,7 @@ describe('LiminaFlowReporter', () => {
 
     expect(output).toContain(`${green('◆')}      source graph routes (50ms)\n`);
     expect(output).toContain('◇      project references\n');
-    expect(output).toContain(`${red('✕')}    graph check (300ms)\n`);
+    expect(output).toContain(`${red('✕')}    graph check (300ms total)\n`);
   });
 
   it('keeps persisted warnings in the final TTY history', () => {

@@ -11,7 +11,6 @@ import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { nativeEvidenceSchema } from '../core/analysis-cache/native-evidence-schema';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
-import { collectNativeSourceEvidence } from '../core/build-graph/native-source-collection';
 import { analyzeProjectDependencies } from '../core/build-graph/prepare';
 import { collectSourceConfigCoverage } from '../core/build-graph/source-config-coverage';
 import { SourceConfigDiscovery } from '../core/build-graph/source-config-discovery';
@@ -29,10 +28,7 @@ import { NativeProgramFrontier } from '../core/typescript-semantic/native-progra
 import { nativeProgramRecords } from '../core/typescript-semantic/native-program-records';
 import { parseTypeScriptProjectConfig } from '../core/typescript-semantic/project-references';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
-import {
-  collectValidatedWorkspaceContext,
-  WorkspaceRegionPathIndex,
-} from '../core/workspace/validated-context';
+import { collectValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import { nativeCollectionStatus } from '../domain/analysis/native-collection';
 import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
 import { projectNativeReferences } from '../domain/analysis/native-reference-projection';
@@ -112,7 +108,7 @@ function config(files: string[], extra: Record<string, unknown> = {}): string {
 }
 
 describe('compiler-owned Native Program observations', () => {
-  it('attributes pending and locked compiler passes to the source leaf of a selected solution', async () => {
+  it('creates only a locked Native Program for a healthy source leaf of a selected solution', async () => {
     const fixture = await createSemanticRepairFixture({
       'package.json': '{}',
       'limina.config.mjs': 'export default {};',
@@ -161,42 +157,22 @@ describe('compiler-owned Native Program observations', () => {
     const contexts = profile.contexts.filter(
       (context) => context.provider === 'typescript',
     );
-    expect(contexts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          project: leaf!.id,
-          providerRun,
-          role: 'pending',
-        }),
-        expect.objectContaining({
-          project: leaf!.id,
-          providerRun,
-          role: 'locked',
-        }),
-      ]),
-    );
-    expect(contexts.some((context) => context.project === solution!.id)).toBe(
-      false,
-    );
-    for (const context of contexts) {
-      if (context.role !== 'pending' && context.role !== 'locked') continue;
-      const passes = profile.work.filter(
-        (work) =>
-          work.op === 'native-program-create' && work.scope[1] === context.id,
-      );
-      expect(passes.length).toBeGreaterThan(0);
-      expect(passes.map(({ pass }) => pass)).toEqual(
-        passes.map((_, index) => index + 1),
-      );
-      expect(passes.every(({ end }) => end === 'computed')).toBe(true);
-    }
-    expect(profile.work).toContainEqual(
+    expect(contexts).toEqual([
       expect.objectContaining({
-        op: 'native-baseline-context',
-        scope: ['project', solution!.id],
-        end: 'not-run',
+        project: leaf!.id,
+        providerRun,
+        role: 'locked',
       }),
-    );
+    ]);
+    expect(
+      profile.work.filter((work) => work.op === 'native-program-create'),
+    ).toEqual([
+      expect.objectContaining({
+        scope: ['context', contexts[0]!.id],
+        pass: 1,
+        end: 'computed',
+      }),
+    ]);
   });
 
   it('retains uncovered declarations without claiming their uncovered implementation relation is complete', async () => {
@@ -252,26 +228,6 @@ describe('compiler-owned Native Program observations', () => {
         },
       ],
     });
-    const evidence = collectNativeSourceEvidence({
-      config: inputs,
-      entries: [fixture.path('tsconfig.json')],
-      activatedRegions: new WorkspaceRegionPathIndex(workspace),
-    });
-    expect(evidence.coverageIndexes[0]!.universe.sourceConfigIds).toEqual([
-      fixture.path('tsconfig.good.json'),
-      fixture.path('tsconfig.bad.json'),
-    ]);
-    expect(evidence.requests).toContainEqual(
-      expect.objectContaining({ specifier: './missing.js' }),
-    );
-    expect(evidence.failures).toContainEqual(
-      expect.objectContaining({ kind: 'config-parse' }),
-    );
-    expect(nativeCollectionStatus(evidence)).toMatchObject({
-      execution: 'partial',
-      traversal: 'incomplete',
-      compilationRelations: 'undetermined',
-    });
     const analysis = await analyzeProjectDependencies(inputs, {
       artifactNamespace: createLiminaArtifactNamespace({
         generation: 0,
@@ -279,9 +235,39 @@ describe('compiler-owned Native Program observations', () => {
       }),
       workspaceContext: workspace,
     });
-    expect(
-      analysis.nativeEvidence?.flatMap((item) => item.snapshot.requests),
-    ).toContainEqual(expect.objectContaining({ specifier: './missing.js' }));
+    const snapshots = analysis.nativeEvidence!.map((item) => item.snapshot);
+    const independent = snapshots.find((item) =>
+      item.requests.some((request) => request.specifier === './missing.js'),
+    );
+    expect(independent?.contexts).toMatchObject([
+      {
+        authority: { phase: 'locked' },
+        inputs: {
+          config: fixture.path('tsconfig.good.json'),
+        },
+      },
+    ]);
+    const coverage = independent!.coverageIndexes[0]!;
+    expect(coverage.universe.discovery).toBe('open');
+    expect(coverage.universe.sourceConfigIds).toHaveLength(2);
+    expect(coverage.universe.sourceConfigIds).toEqual(
+      expect.arrayContaining([
+        fixture.path('tsconfig.good.json'),
+        fixture.path('tsconfig.bad.json'),
+      ]),
+    );
+    const failed = coverage.configurations.find(
+      ({ configId }) => configId === fixture.path('tsconfig.bad.json'),
+    );
+    expect(failed?.state).toBe('failed');
+    expect(snapshots.flatMap((value) => value.failures)).toEqual([
+      expect.objectContaining({
+        id: failed?.state === 'failed' ? failed.failureId : undefined,
+        kind: 'config-parse',
+        evidenceIds: [fixture.path('tsconfig.bad.json')],
+        affected: { kind: 'universe', universeId: coverage.universe.id },
+      }),
+    ]);
     expect(analysis.outcome).toMatchObject({
       execution: 'partial',
       traversal: 'incomplete',
@@ -352,9 +338,21 @@ describe('compiler-owned Native Program observations', () => {
     expect(analysis.outcome!.governance.diagnostics.join('\n')).toContain(
       'Checker ownership conflict',
     );
-    expect(
-      analysis.nativeEvidence?.flatMap((item) => item.snapshot.requests),
-    ).toContainEqual(expect.objectContaining({ specifier: './missing.js' }));
+    const observation = analysis.nativeEvidence
+      ?.map(({ snapshot }) => snapshot)
+      .find((snapshot) =>
+        snapshot.requests.some(
+          (request) => request.specifier === './missing.js',
+        ),
+      );
+    expect(observation?.contexts).toMatchObject([
+      {
+        authority: { phase: 'locked' },
+        inputs: {
+          config: fixture.path('good/tsconfig.json'),
+        },
+      },
+    ]);
   });
 
   it('records raw leaf references before governance without granting the referenced config source ownership', async () => {
@@ -389,11 +387,22 @@ describe('compiler-owned Native Program observations', () => {
         },
       ],
     });
-    const evidence = collectNativeSourceEvidence({
-      config: inputs,
-      entries: [fixture.path('tsconfig.json')],
-      activatedRegions: new WorkspaceRegionPathIndex(workspace),
+    const analysis = await analyzeProjectDependencies(inputs, {
+      artifactNamespace: createLiminaArtifactNamespace({
+        generation: 0,
+        rootDir: fixture.root,
+      }),
+      workspaceContext: workspace,
     });
+    const evidence = analysis
+      .nativeEvidence!.map((item) => item.snapshot)
+      .find((snapshot) =>
+        snapshot.contexts.some(
+          (context) =>
+            context.authority.phase === 'locked' &&
+            context.inputs.config === fixture.path('tsconfig.json'),
+        ),
+      )!;
     expect(evidence.run).toBe('completed');
     expect(evidence.failures).toEqual([]);
     expect(evidence.coverageIndexes[0]!.universe.sourceConfigIds).toEqual([
@@ -723,6 +732,192 @@ describe('compiler-owned Native Program observations', () => {
     expect(
       () => new NativeObservationAdapter(adapter.options, compiler),
     ).toThrow('Native source identity drift');
+  });
+
+  it('proves current project root membership for all selected requests in a partial Program', async () => {
+    const { adapter, fixture } = await setup(
+      {
+        'package.json': JSON.stringify({
+          name: 'local-types',
+          type: 'commonjs',
+          types: './env/helper.ts',
+        }),
+        'tsconfig.json': config(
+          ['src/main.ts', 'env/helper.ts', 'src/clean.ts'],
+          {
+            compilerOptions: {
+              ...compilerOptions,
+              noLib: true,
+              types: ['./'],
+              composite: true,
+            },
+          },
+        ),
+        'src/main.ts': [
+          '/// <reference path="../env/helper.ts" />',
+          '/// <reference types="../" />',
+          'export { helper } from "../env/helper.js";',
+          'declare module "../env/helper.js" {}',
+          'export { foreign } from "../foreign.js";',
+        ].join('\n'),
+        'env/helper.ts': 'export const helper = 1;',
+        'src/clean.ts': 'import "./clean-only.js";',
+        'other.json': config(['foreign.ts']),
+        'foreign.ts': 'export const foreign = 2;',
+      },
+      ['tsconfig.json', 'other.json'],
+    );
+    const main = fixture.path('src/main.ts');
+    const helper = fixture.path('env/helper.ts');
+    const partial = new NativeObservationAdapter({
+      ...adapter.options,
+      observationRootNames: [main],
+    });
+    expect(partial.program.getRootFileNames()).toEqual([main]);
+    expect(
+      new Set(partial.program.getSourceFiles().map((file) => file.fileName)),
+    ).toEqual(new Set([main, helper]));
+    const { requests, resolutions, obligations, completeness, failures } =
+      partial.snapshot;
+    expect(failures).toEqual([]);
+    expect(
+      completeness
+        .filter((entry) => entry.channel === 'implicit')
+        .map(({ entryId, state }) => [entryId, state]),
+    ).toEqual([[main, 'observed']]);
+    expect(requests.map((request) => request.specifier)).not.toContain(
+      './clean-only.js',
+    );
+    const helperRequests = requests.filter((request) =>
+      resolutions.some(
+        (resolution) =>
+          resolution.requestId === request.id &&
+          resolution.target?.lexicalPath === helper &&
+          resolution.compilerLoad === 'loaded',
+      ),
+    );
+    expect(helperRequests).toHaveLength(5);
+    const helperProofs = helperRequests.map((request) => {
+      const existence = obligations.find((item) =>
+        item.requestIds.includes(request.id),
+      )?.existence;
+      return [
+        request.channel,
+        request.entry.kind,
+        existence?.state,
+        existence?.state === 'absent' && existence.proof.ruleOrObservation,
+      ];
+    });
+    expect(helperProofs).toEqual(
+      expect.arrayContaining([
+        [
+          'path-directive',
+          'source',
+          'absent',
+          'consumer-root-has-no-cross-unit-obligation',
+        ],
+        ['type-directive', 'source', 'absent', 'type-input-is-consumer-root'],
+        ['type-directive', 'config', 'absent', 'type-input-is-consumer-root'],
+        [
+          'module',
+          'source',
+          'absent',
+          'consumer-root-has-no-cross-unit-obligation',
+        ],
+        [
+          'module',
+          'source',
+          'absent',
+          'compiler-augmentation-does-not-add-input',
+        ],
+      ]),
+    );
+    const foreign = requests.find(
+      (request) => request.specifier === '../foreign.js',
+    )!;
+    expect(
+      obligations.find((item) => item.requestIds.includes(foreign.id))
+        ?.existence.state,
+    ).toBe('present');
+    expect(
+      resolutions.find((item) => item.requestId === foreign.id)?.compilerLoad,
+    ).toBe('attempted');
+  });
+
+  it('requires an observed entry or request before loading a declaration fallback', async () => {
+    const options = { ...compilerOptions, noLib: true, types: [] };
+    const { adapter, fixture } = await setup(
+      {
+        'tsconfig.json': config(['main.ts', 'value.d.ts'], {
+          compilerOptions: options,
+        }),
+        'main.ts': '/// <reference path="./value" />\nexport {};',
+        'value.d.ts': 'import "./fallback-only.js";',
+        'other.json': config(['value.ts'], { compilerOptions: options }),
+        'value.ts': 'export const value = 1;',
+      },
+      ['tsconfig.json', 'other.json'],
+    );
+    const main = fixture.path('main.ts');
+    const fallback = fixture.path('value.d.ts');
+    expect(adapter.program.getSourceFile(fallback)).toBeDefined();
+    const partial = new NativeObservationAdapter({
+      ...adapter.options,
+      observationRootNames: [main],
+    });
+    expect(partial.program.getRootFileNames()).toEqual([main]);
+    expect(partial.program.getSourceFile(fallback)).toBeUndefined();
+    expect(partial.snapshot.requests.map((item) => item.specifier)).toEqual([
+      './value',
+    ]);
+    expect(partial.snapshot.resolutions).toMatchObject([
+      {
+        target: { lexicalPath: fixture.path('value.ts') },
+        compilerLoad: 'attempted',
+        pathSelection: { state: 'selected' },
+      },
+    ]);
+    expect(partial.snapshot.obligations).toMatchObject([
+      { existence: { state: 'present' } },
+    ]);
+  });
+
+  it('checks selected entries against canonical project roots and scopes missing-root evidence', async () => {
+    const { adapter, fixture } = await setup(
+      {
+        'tsconfig.json': config(['src/main.ts', 'missing.ts'], {
+          compilerOptions: { ...compilerOptions, noLib: true, types: [] },
+        }),
+        'src/main.ts': 'export {};',
+        'other.json': config(['foreign.ts']),
+        'foreign.ts': 'export {};',
+      },
+      ['tsconfig.json', 'other.json'],
+    );
+    const alternate = `${fixture.path('src')}/../src/main.ts`;
+    const loaded = new NativeObservationAdapter({
+      ...adapter.options,
+      observationRootNames: [alternate],
+    });
+    expect(loaded.program.getRootFileNames()).toEqual([alternate]);
+    expect(
+      loaded.program.getSourceFile(fixture.path('src/main.ts')),
+    ).toBeDefined();
+    expect(loaded.snapshot.failures).toEqual([]);
+    const missing = new NativeObservationAdapter({
+      ...adapter.options,
+      observationRootNames: [fixture.path('missing.ts')],
+    });
+    expect(
+      missing.snapshot.failures.map(({ evidenceIds }) => evidenceIds),
+    ).toEqual([[fixture.path('missing.ts')]]);
+    expect(
+      () =>
+        new NativeObservationAdapter({
+          ...adapter.options,
+          observationRootNames: [fixture.path('foreign.ts')],
+        }),
+    ).toThrow(NativeObservationError);
   });
 
   it('keeps unreadable roots unavailable instead of publishing a complete empty graph', async () => {

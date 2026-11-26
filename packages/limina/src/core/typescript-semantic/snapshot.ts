@@ -6,6 +6,7 @@ import type {
 } from './contracts';
 import type { NativeDependencyFact } from './dependency-fact';
 import { createImportRecordIdentity } from './import-record';
+import { nativeFileRequest } from './native-file-requests';
 
 function cloneImportRecord(record: ImportRecord): ImportRecord {
   return structuredClone(record);
@@ -90,6 +91,16 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
         );
       return structuredClone(fact);
     },
+    getNativeFileRequests:
+      options.context.getNativeFileRequests &&
+      ((file) =>
+        (recordsByFileName.get(normalizeAbsolutePath(file)) ?? []).map(
+          (record) =>
+            nativeFileRequest(
+              record,
+              facts.get(createImportRecordIdentity(record))!,
+            ),
+        )),
     getImportRecords(fileName) {
       return (recordsByFileName.get(normalizeAbsolutePath(fileName)) ?? []).map(
         cloneImportRecord,

@@ -1,6 +1,8 @@
 {
   "scope": "Internal analysis return versus active epoch (I09); not CLI publication or consumption.",
   "sourceMapping": {
+    "packages/limina/src/core/build-graph/workspace-input.ts": "workspaceTopology: true",
+    "packages/limina/src/core/analysis-cache/resolution-execution-inputs.ts": "bindResolutionExecutionInputs",
     "packages/limina/src/preflight/analysis-cache.ts": "async #attempt",
     "verification/formal/evidence/epoch/replay.mjs": "runImplementationReplay('epoch')",
     "verification/formal/run-implementation.mjs": "spawnSync",
@@ -55,8 +57,8 @@
   "counterexamples": "During validation: internal API can return old result. Proposed recheck is model-only.",
   "empiricalVerification": "See evidence/epoch/README.md and replay.mjs; distinguish historical return from publish.",
   "driftReview": {
-    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
-    "sourceHash": "d9ca21d1fed9308f5e3a1769b0e816d8dfe3570cedbc3214af840a151aebbd34",
+    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
+    "sourceHash": "5ca0b59f231941fb6c975c5b9a6d1f01be2b5d74f71a14444e2af0708313bdf4",
     "modelHash": "76f69bd34f3fb73234dfaa2ac9e49fab15ef938aeb230d126ccac4a2afab82cc"
   }
 }

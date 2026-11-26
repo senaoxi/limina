@@ -1,38 +1,61 @@
 {
-  "scope": "Freeze the explicit Checker or configuration-intent family separately from exact execution coloring and the solution consumer set (I02/I07/I08).",
+  "scope": "Account for proved solutions and failed visits, freeze named or direct config authority, and preserve the source and delegated companion contexts through exact execution coloring and solution publication (I02/I07/I08).",
   "sourceMapping": {
+    "packages/limina/src/core/build-graph/checker-ownership-discovery.ts": "discoverCheckerOwnership",
+    "packages/limina/src/core/build-graph/auto-checker-project.ts": "readSolutionRoleFileNames",
+    "packages/limina/src/core/build-graph/auto-checker-scope.ts": "readSolutionRoleFileNames",
+    "packages/limina/src/core/build-graph/source-config-projects.ts": "prepareSourceConfigProjects",
+    "packages/limina/src/core/build-graph/analysis-outcome.ts": "hasObservedPartition",
+    "packages/limina/src/core/build-graph/source-package-scope.ts": "sourcePackageScopeProblems",
     "packages/limina/src/core/build-graph/checker-ownership-resolution.ts": "finalizeLockedOwnership",
     "packages/limina/src/core/build-graph/checker-semantic-authority.ts": "freezeSemanticAuthorities",
     "packages/limina/src/core/build-graph/checker-build-coloring.ts": "colorBuildCheckerComponents",
     "packages/limina/src/core/build-graph/manifest-ownership.ts": "createOwnershipManifest",
-    "packages/limina/src/core/build-graph/cached-ownership-replay.ts": "replayCurrentOwnership",
     "packages/limina/src/__tests__/generated-graph.spec.ts": "ambiguous framework inference pending",
+    "packages/limina/src/__tests__/analysis-completion.spec.ts": "actual Core failure independently of a drained worklist",
+    "packages/limina/src/__tests__/independent-core-governance.spec.ts": "keeps independent work when explicit authority conflicts",
     "packages/limina/src/__tests__/typecheck.spec.ts": "inherited owners for the same source",
     ".agents/docs/semantics.md": "TypeScript",
     ".agents/docs/invariants.md": "I09",
     "pnpm-workspace.yaml": "typescript:",
     "packages/limina/src/core/build-graph/checker-ownership-config-evidence.ts": "applyConfigEvidence",
-    "packages/limina/src/core/build-graph/checker-ownership-evidence.ts": "commitFrameworkInference"
+    "packages/limina/src/core/build-graph/checker-ownership-evidence.ts": "commitFrameworkInference",
+    "packages/limina/src/core/build-graph/source-config-authorities.ts": "resolveSourceConfigAuthorities",
+    "packages/limina/src/core/build-graph/source-config-discovery.ts": "SourceConfigDiscovery",
+    "packages/limina/src/core/build-graph/checker-ownership-locked-facts.ts": "collectLockedProjectFacts",
+    "packages/limina/src/core/build-graph/locked-semantic-project.ts": "freezeSemanticProject",
+    "packages/limina/src/core/build-graph/framework-source-authority.ts": "bindVueSourceConfig",
+    "packages/limina/src/core/build-graph/native-source-baseline.ts": "collectUnavailableSourceDiagnostics",
+    "packages/limina/src/core/project-dependencies/semantic-facts.ts": "collectionBinding",
+    "packages/limina/src/utils/source-config-text.ts": "readRawSourceConfig",
+    "packages/limina/src/core/build-graph/framework-intent.ts": "inspectFrameworkIntent"
   },
   "stateVariables": {
-    "scenario": "Named selection, effective configuration intents, and exact component pins. The model accepts at most one named checker.",
-    "pending,seen": "Unobserved and observed auto configuration intents. Source membership and dependencies supply no intents.",
+    "scenario": "Named selection, direct configuration intents, exceptional role proof, selected checker outcome, and exact component pins. At most one named checker.",
+    "role": "Registered candidate, proved solution, source, or failed role probe.",
+    "pending,seen": "Unobserved and observed direct auto configuration intents. Inherited settings, source membership and dependencies supply no intents.",
     "frozen,family": "Authority snapshot vs current family after coloring.",
     "owner,solution": "Single source owner, separate checker set for nested or empty solution.",
-    "phase": "Configuration collection, freeze, execution selection, manifest or component rejection."
+    "contexts": "Prepared source context and any separately purposed TypeScript companion context.",
+    "phase": "Role discovery, intent collection, freeze, source preparation, execution selection, manifest, component rejection, or unavailable scope."
   },
-  "initialState": "Effective configuration intents in unspecified delivery order; no owner published.",
+  "initialState": "A registered discovery candidate and direct configuration intents in unspecified delivery order. No prepared context or published owner.",
   "actions": {
     "Observe": "packages/limina/src/core/build-graph/checker-ownership-config-evidence.ts::applyConfigEvidence",
+    "ResolveRole": "packages/limina/src/core/build-graph/auto-checker-project.ts::readSolutionRoleFileNames",
     "Select": "packages/limina/src/core/build-graph/checker-ownership-resolution.ts::finalizeLockedOwnership",
     "Freeze": "packages/limina/src/core/build-graph/checker-semantic-authority.ts::freezeSemanticAuthorities",
+    "PrepareSource": "packages/limina/src/core/build-graph/source-config-projects.ts::prepareSourceConfigProjects",
     "Manifest": "packages/limina/src/core/build-graph/manifest-ownership.ts::createOwnershipManifest",
     "Finish": "packages/limina/src/core/build-graph/manifest-ownership.ts::solutions.sort"
   },
-  "assumptions": "One representative source and a fixed sibling for the shared solution. Multiple inferred framework intents permit the Native baseline; reporting the nonblocking warning is tested in the CLI. Explicit-selection conflicts, config parsing and unsupported compiler inputs are outside the model.",
+  "assumptions": "One representative candidate and a fixed sibling for the shared solution. The role oracle supplies the outcome of an exceptional default-config probe. The selected source parser's preparation outcome is trusted. CacheReopen owns qualification when the selected parser can restore a result. Framework companion scenarios require one delegated TypeScript purpose. Multiple inferred framework intents permit the Native baseline; CLI tests own warning reporting. Independent diagnostic collection and execution outcomes after later framework failures are implementation witnesses. Explicit-selection conflicts, coverage impacts of other failed scopes, file membership, parser internals and compiler passes are outside the model.",
   "safety": {
     "FrozenAuthority": "Do not rewrite frozen authority.",
-    "ConfigAuthority": "Named selection wins; a sole implicit framework determines the family; zero or multiple intents freeze Native.",
+    "ConfigAuthority": "Named selection wins. A single direct framework intent determines the family. Zero or multiple direct intents freeze Native.",
+    "RoleAccounted": "A registered candidate leaves the source universe only after a successful solution proof. A failed role remains unavailable.",
+    "LockedContexts": "Prepare one locked source context. Astro and Svelte companion contexts carry their framework authority and a different purpose. A proved solution has no source context.",
+    "FailedScope": "A failed role or source preparation yields no successful source context or published owner.",
     "ExactComponent": "Same semantic family is not exact execution identity.",
     "SourceOwner": "Admitted source has a primary checker.",
     "SolutionConsumers": "Solution collects checkers of member sources only.",
@@ -49,6 +72,14 @@
       "breaks": [],
       "stable": true
     },
+    "mutation-drop-failed.cfg": {
+      "breaks": ["RoleAccounted"],
+      "stable": true
+    },
+    "mutation-extra-pending.cfg": {
+      "breaks": ["LockedContexts"],
+      "stable": true
+    },
     "mutation-family-color.cfg": {
       "breaks": ["ExactComponent"],
       "stable": true
@@ -57,6 +88,10 @@
       "breaks": ["ConfigAuthority"],
       "stable": false
     },
+    "mutation-inherit-intent.cfg": {
+      "breaks": ["ConfigAuthority"],
+      "stable": true
+    },
     "mutation-rewrite.cfg": {
       "breaks": ["FrozenAuthority"],
       "stable": false
@@ -64,18 +99,22 @@
     "mutation-single-root.cfg": {
       "breaks": ["SolutionConsumers"],
       "stable": false
+    },
+    "mutation-unbound-companion.cfg": {
+      "breaks": ["LockedContexts"],
+      "stable": true
     }
   },
   "bounds": {
     "maxStates": 50000,
-    "dimensions": "6 or 9 scenarios, up to two configuration intents.",
+    "dimensions": "6 or 14 scenarios, up to two configuration intents and two qualified context purposes.",
     "pruning": "None: no state/action constraints, symmetry or view filtering."
   },
-  "counterexamples": "Last-wins makes implicit authority depend on order. A shared solution can consume multiple exact checkers.",
-  "empiricalVerification": "Run generated-graph.spec.ts (ambiguous and unique config intent, Vue promotion and shared solutions), typecheck.spec.ts (inherited owners) and the default-check workflow warning across cold, warm and forced CLI invocations.",
+  "counterexamples": "Last-wins makes implicit authority depend on order. Inherited intent changes a leaf's authority. A failed role probe drops an unenumerated scope. Generic pending collection duplicates locked collection. Detached companion analysis loses its owning framework. A shared solution can consume multiple exact checkers.",
+  "empiricalVerification": "Run generated-graph.spec.ts (direct and ambiguous intent, solution discovery, Vue promotion and shared solutions), typecheck.spec.ts (inherited named ownership), analysis-observation.spec.ts (source and companion purposes), independent-core-governance.spec.ts (scoped failure), and analysis-completion.spec.ts (Core outcome and admission boundaries).",
   "driftReview": {
-    "baseline": "96dca6b6b52e01fc2513e294631d887f7303adbf",
-    "sourceHash": "d0790898b87e2037611f6d9380f8232b8c1d3191f2217bf2bef0dfa4bc683335",
-    "modelHash": "edfba11b55e0cfa48dacd3a38936a6fa3412faf81e2e50753133e16d41da64f2"
+    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
+    "sourceHash": "b3d72db19e54541df7f8bde9148fff9faeefad419d7f4c1bc109b3e6b58f84a5",
+    "modelHash": "70693175b8becc48ced7b77804fc335e982d589788b9c0732862757d33f01043"
   }
 }

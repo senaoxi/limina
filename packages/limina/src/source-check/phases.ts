@@ -4,6 +4,7 @@ import {
   collectGovernedSourceConfigPaths,
 } from '#core/build-graph/runner';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import { measureTaskProgress } from '../execution/progress';
 import { createSourceDiagnosticFinding } from './finding-utilities';
 import { addImportAuthorityOwnerConfigProblems } from './import-authority-config-findings';
 import {
@@ -53,7 +54,6 @@ async function runSourceRoutePhase(
 type TsconfigGovernancePhaseInput = Readonly<
   Pick<
     SourceCheckState,
-    | 'ambientDeclarations'
     | 'checkItems'
     | 'checks'
     | 'config'
@@ -69,7 +69,6 @@ async function runTsconfigGovernancePhase(
 ): Promise<void> {
   state.checkItems.start('tsconfig governance');
   await addTsconfigGovernanceProblems({
-    ambientDeclarations: state.ambientDeclarations.index,
     checks: state.checks,
     config: state.config,
     configPaths: [
@@ -89,7 +88,6 @@ async function runTsconfigGovernancePhase(
 type SourceProjectOwnershipPhaseInput = Readonly<
   Pick<
     SourceCheckState,
-    | 'ambientDeclarations'
     | 'checkItems'
     | 'checks'
     | 'config'
@@ -104,7 +102,6 @@ function runSourceProjectOwnershipPhase(
 ): void {
   state.checkItems.start('source project ownership');
   addSourceProjectOwnerProblems({
-    ambientDeclarations: state.ambientDeclarations.index,
     checks: state.checks,
     config: state.config,
     findings: state.findings,
@@ -117,7 +114,6 @@ function runSourceProjectOwnershipPhase(
 type SourceImportAuthorityPhaseInput = Readonly<
   Pick<
     SourceCheckState,
-    | 'ambientDeclarations'
     | 'checkItems'
     | 'checks'
     | 'config'
@@ -160,7 +156,6 @@ async function runSourceImportAuthorityPhase(
     ownerIdentities: collectOwnerIdentities(state),
   });
   addSourceImportProblems({
-    ambientDeclarations: state.ambientDeclarations.index,
     checks: state.checks,
     config: state.config,
     importAnalysis: state.preflight.importAnalysis,
@@ -196,56 +191,67 @@ export async function prepareSourceCheck(
   config: ResolvedLiminaConfig,
   options: RunSourceCheckImplOptions = {},
 ): Promise<SourceCheckState> {
-  precheckKnipDependency(config, options);
-  const state = await createSourceCheckState(config, options);
+  const state = await measureTaskProgress(
+    options.progress,
+    'prepare source check inputs',
+    () => {
+      precheckKnipDependency(config, options);
+      return createSourceCheckState(config, options);
+    },
+  );
 
-  await runSourceRoutePhase({
-    checkItems: state.checkItems,
-    checks: state.checks,
-    findings: state.findings,
-    graphRoute: state.graphRoute,
-    projectPaths: state.projectPaths,
-  });
-  await runTsconfigGovernancePhase({
-    ambientDeclarations: state.ambientDeclarations,
-    checkItems: state.checkItems,
-    checks: state.checks,
-    config: state.config,
-    core: state.core,
-    findings: state.findings,
-    generatedGraph: state.generatedGraph,
-    workspaceLookup: state.workspaceLookup,
-  });
+  try {
+    await runSourceRoutePhase({
+      checkItems: state.checkItems,
+      checks: state.checks,
+      findings: state.findings,
+      graphRoute: state.graphRoute,
+      projectPaths: state.projectPaths,
+    });
+    await runTsconfigGovernancePhase({
+      checkItems: state.checkItems,
+      checks: state.checks,
+      config: state.config,
+      core: state.core,
+      findings: state.findings,
+      generatedGraph: state.generatedGraph,
+      workspaceLookup: state.workspaceLookup,
+    });
+  } catch (error) {
+    return state.checkItems.failActive(error);
+  }
   return state;
 }
 
 export async function isFinishSourceCheckAnalysis(
   state: SourceCheckState,
 ): Promise<boolean> {
-  runSourceProjectOwnershipPhase({
-    ambientDeclarations: state.ambientDeclarations,
-    checkItems: state.checkItems,
-    checks: state.checks,
-    config: state.config,
-    findings: state.findings,
-    sourceProjectEntries: state.sourceProjectEntries,
-    workspaceLookup: state.workspaceLookup,
-  });
-  await runSourceImportAuthorityPhase({
-    ambientDeclarations: state.ambientDeclarations,
-    checkItems: state.checkItems,
-    checks: state.checks,
-    config: state.config,
-    core: state.core,
-    findings: state.findings,
-    packageOwners: state.packageOwners,
-    packages: state.packages,
-    preflight: state.preflight,
-    rootPackage: state.rootPackage,
-    sourceProjectEntries: state.sourceProjectEntries,
-    workspaceLookup: state.workspaceLookup,
-    workspacePathIndex: state.workspacePathIndex,
-  });
+  try {
+    runSourceProjectOwnershipPhase({
+      checkItems: state.checkItems,
+      checks: state.checks,
+      config: state.config,
+      findings: state.findings,
+      sourceProjectEntries: state.sourceProjectEntries,
+      workspaceLookup: state.workspaceLookup,
+    });
+    await runSourceImportAuthorityPhase({
+      checkItems: state.checkItems,
+      checks: state.checks,
+      config: state.config,
+      core: state.core,
+      findings: state.findings,
+      packageOwners: state.packageOwners,
+      packages: state.packages,
+      preflight: state.preflight,
+      rootPackage: state.rootPackage,
+      sourceProjectEntries: state.sourceProjectEntries,
+      workspaceLookup: state.workspaceLookup,
+      workspacePathIndex: state.workspacePathIndex,
+    });
+  } catch (error) {
+    return state.checkItems.failActive(error);
+  }
   return isFinishSourceCheck({
     checkItems: state.checkItems,
     checks: state.checks,

@@ -72,11 +72,13 @@ function addProjectValidationProblems(options: {
   allProjects: ReturnType<typeof getAllProjects>;
   allPrimaryProjects: ReturnType<typeof getAllProjects>;
   config: ResolvedLiminaInputs;
+  projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
 }): void {
   addActivatedRegionSourceProjectProblems({
     activatedRegions: options.activatedRegions,
+    cache: options.projectDependencyCaches?.analysisCache,
     config: options.config,
     problems: options.state.problems,
     projects: options.allProjects,

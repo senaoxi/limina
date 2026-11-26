@@ -64,10 +64,15 @@ class ConfigModuleSnapshotBuilder {
     if (record.role === 'module') this.#qualify(record);
     return { ...record, contentHash: this.#hash(record) };
   }
-  snapshot(): ConfigModuleSnapshot {
-    const files = Array.from(this.#evidence.files.values(), (file) =>
-      this.#file(file),
-    ).sort((a, b) => compareCodeUnits(a.path, b.path));
+  snapshot(governanceFiles: ReadonlySet<string>): ConfigModuleSnapshot {
+    const files = this.#evidence.files
+      .values()
+      .filter(
+        (file) => file.role !== 'anchor' || !governanceFiles.has(file.path),
+      )
+      .map((file) => this.#file(file))
+      .toArray()
+      .sort((a, b) => compareCodeUnits(a.path, b.path));
     const resolutions = Array.from(this.#evidence.resolutions)
       .sort(([a], [b]) => compareCodeUnits(a, b))
       .map(([, edge]) => edge);
@@ -93,6 +98,9 @@ class ConfigModuleSnapshotBuilder {
 export function captureConfigModuleSnapshot(
   evidence: ConfigModuleEvidence,
   previous?: ConfigModuleSnapshot,
+  governanceFiles: ReadonlySet<string> = new Set(),
 ): ConfigModuleSnapshot {
-  return new ConfigModuleSnapshotBuilder(evidence, previous).snapshot();
+  return new ConfigModuleSnapshotBuilder(evidence, previous).snapshot(
+    governanceFiles,
+  );
 }

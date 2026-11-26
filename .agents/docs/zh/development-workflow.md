@@ -58,7 +58,7 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 ## 验证与交付
 
-[Generated-graph 测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)将共享声明的歧义选择、consumer reference 冲突和 owner reference 冲突分成使用新 fixture 的独立用例，每例最多准备两次 graph。原组合用例在 macOS CI 超过 30 秒。保留默认标准库、显式选择成功和两种精确的映射冲突拒绝断言，并保持原有单例时限。
+[Generated-graph 测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)将共享声明的歧义选择、consumer reference 冲突和 owner reference 冲突分成使用新 fixture 的独立用例，每例最多准备两次 graph。原组合用例在 macOS CI 超过 30 秒。保留默认标准库、显式选择成功及实际生成映射的断言。引用顺序选错所有者时拒绝，隐式引用重复所选所有者时允许。保持原有单例时限。
 
 [CLI 测试](../../../packages/limina/src/__tests__/cli.spec.ts)中的输出隐藏用例仅为数值导出 fixture 省略默认标准库。其编译器 shim 观察进程报告而非类型检查；无关的标准库发现增加了开销，该用例在 Windows CI 超时。断言退出状态和输出隐藏之前，检查 shim 的启动标记，防止较早的准备失败让测试误通过。保留真实的隔离 CLI、编译器进程及 30 秒时限。
 
@@ -68,7 +68,7 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 [Generated-graph 测试](../../../packages/limina/src/__tests__/generated-graph.spec.ts)中的 Astro owner 路由用例将显式 Astro scope 与自动配置推断分成使用新 fixture 的独立用例，每例只准备一次 graph，并为纯文本和布尔导出项目省略默认标准库。原组合用例在 Windows CI 超过其 120 秒时限。每例保持 120 秒预算、真实的 Astro、Svelte 和 Vue 工具链、全部五条精确的 framework-schedule 与 declaration-provider 关系，以及 Astro 最终 owner；自动推断用例还保留来自配置的 authority 和零推断歧义断言。
 
-[外部库缓存测试](../../../packages/limina/src/__tests__/external-library-checker-qualification.spec.ts)为执行器替换和 Native API 缺失分别使用新夹具。执行器用例先恢复原图，再要求替换执行器后重新构图，并保留 tsgo 执行成功和失败的对照。API 缺失用例使用真实 tsgo 二进制文件构建并恢复图，期间修改未使用的观察器文件。每例在 30 秒时限内最多启动三个 runner。
+[外部库缓存测试](../../../packages/limina/src/__tests__/external-library-checker-qualification.spec.ts)为执行器替换和 Native API 缺失分别使用新夹具。执行器用例先验证暖跑语义事实复用，再要求替换执行器后重新收集事实，并保留 tsgo 执行成功和失败的对照。API 缺失用例使用真实 tsgo 二进制文件构建并验证事实复用，期间修改未使用的观察器文件。每例在 30 秒时限内最多启动三个 runner。
 
 真实 HTTP timeout fixture 的客户端预算须容纳首次客户端初始化与进程调度，服务端延迟须大于该预算。[Metadata](../../../packages/limina/fixtures/detectors/release/registry-metadata-timeout/case.mts) 与 [tarball](../../../packages/limina/fixtures/detectors/release/registry-tarball-timeout/case.mts) timeout fixture 保留精确的请求次数与身份断言，以及包含配置预算的类型化 timeout evidence。同步调整两个时序输入时，仍保留刻意超时的条件；生产时限与 test runner deadline 保持独立。
 
@@ -82,7 +82,7 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 将相互独立的跨进程损坏 gate 分成使用新 fixture 和正向恢复控制的独立用例。[配置模块缓存回归](../../../packages/limina/src/__tests__/config-module-cache.spec.ts)此前把九个 gate 与二十次 runner 启动放入同一个用例，在 Linux、macOS 和 Windows CI 超过未调整的单例时限。每个 gate 仍断言拒绝原因、不采用旧输入、适用时跳过旧模型 validation，以及冷发布后的再次恢复。
 
-[标准库投影回归](../../../packages/limina/src/__tests__/library-projection.spec.ts)分别覆盖未变化时的恢复、更高优先级替换后的跨进程失效，以及失效后发布的新图恢复。各自使用新 fixture、精确的库选择检查，每例最多启动两个 runner。发布对照在同一个子进程内通过分别 dispose 的 manager 建立和替换绑定，再用新的子进程验证恢复及库选择身份；独立的失效用例仍保留真实进程边界。这三个用例使用 60 秒预算，因为 Windows CI 中即使只有两次真实 Node／TypeScript 启动也超过了 30 秒。全局测试时限保持不变。Teardown 在删除工作目录前终止并等待尚未结束的子进程，避免超时清理与仍在运行的 Windows 进程竞争。
+[标准库投影回归](../../../packages/limina/src/__tests__/library-projection.spec.ts)分别覆盖未变化时的恢复、更高优先级替换后的跨进程失效，以及失效后发布的新事实复用。各自使用新 fixture、精确的库选择检查，每例最多启动两个 runner。发布对照在同一个子进程内通过分别 dispose 的 manager 建立和替换绑定，再用新的子进程验证恢复及库选择身份；独立的失效用例仍保留真实进程边界。这三个用例使用 60 秒预算，因为 Windows CI 中即使只有两次真实 Node／TypeScript 启动也超过了 30 秒。全局测试时限保持不变。Teardown 在删除工作目录前终止并等待尚未结束的子进程，避免超时清理与仍在运行的 Windows 进程竞争。
 
 [Full-analysis-cache](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts) 的声明治理用例省略本地声明输入不使用的默认标准库，同时保留 Coverage、显式选择、独立 types 贡献及 owner 检查选项变更后的重建与恢复断言。每例三到五次新 runner 启动及候选 Checker 进程使用 60 秒预算。[Execution-admission](../../../packages/limina/src/__tests__/execution-admission.spec.ts) 中真实 CommonJS 受管刷新用例也为 Node loader 与框架 generation 使用 60 秒，其余用例保留既有预算。[Vue 缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts) 将 Pending 出现／消失与 output target 恢复／变化分别放入新 fixture，每例两到三次 runner 启动，继续使用既有 60 秒预算。Adapter 版本拒绝保留冷启动 seed 及重建后的恢复控制；普通未变化恢复已有独立覆盖。这些 fixture 调整保留真实进程边界与语义拒绝控制，不改变生产执行时限。
 
@@ -90,9 +90,9 @@ fixture 需要将预期路径与 resolver realpath 比较时，应先通过 `rea
 
 [Windows / Node 22 分片 4](https://github.com/senaoxi/limina/actions/runs/44685298583/job/136120001962)中的两个 [Vue 缓存用例](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)和 [Astro 导出用例](../../../packages/limina/src/__tests__/full-analysis-cache.spec.ts)超过了 60 秒。Vue 归属迁移和最后一条导入移除的 fixture 为数值源码项目省略默认标准库。归属迁移保留 60 秒时限、精确引用断言和强制冷分析对照。导入移除用例为四次新进程和变更前后两次 warm 恢复预留 90 秒。Astro 导出用例为图检查和两次独立导出预留 120 秒，保留导出相等及只读快照字节不变的断言。
 
-[Windows / Node 22 分片 2](https://github.com/senaoxi/limina/actions/runs/44685298583/job/136120001968)中的 [Astro 执行作用域恢复用例](../../../packages/limina/src/__tests__/framework-analysis-cache.spec.ts)超过了 30 秒。纯文本组件和数值 companion 省略默认标准库，两次独立进程使用 60 秒时限。保留图命中、warm 阶段零次 Program 创建、根文件及配置身份和执行作用域漂移拒绝断言。Svelte 与全局测试时限沿用既有配置。
+[Windows / Node 22 分片 2](https://github.com/senaoxi/limina/actions/runs/44685298583/job/136120001968)中的 [Astro 执行作用域用例](../../../packages/limina/src/__tests__/framework-analysis-cache.spec.ts)超过了 30 秒。纯文本组件和数值 companion 省略默认标准库，两次独立进程使用 60 秒时限。保留跨进程 Native 事实复用、当前根文件和配置身份，以及执行作用域漂移拒绝断言。Svelte 与全局测试时限沿用既有配置。
 
-[Checker 执行测试](../../../packages/limina/src/__tests__/typecheck.spec.ts)中的 Svelte target 排除和物化后重规划用例，为仅含文本的组件使用 `noLib: true` 和空 `types`。这些用例负责 target 选择、局部受管配置移除、package root 变化及 receipt 新鲜度；注入的 runner 不检查标准库诊断。排除和 add-replan 用例曾在 macOS CI 超过 30 秒；省去无关的默认标准库发现可减少多轮真实 Svelte generation 的工作量，同时保留原时限。保留真实框架转换、两个 manager、全部 target/cwd 断言及 stale-receipt 负向控制。[缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)中的 Vue 引用擦除用例保留冷启动发布、篡改拒绝及重建后的新进程恢复，在既有 60 秒内启动三次 runner。相邻用例继续覆盖未变化的跨项目恢复，不在每个篡改用例重复第四次启动。
+[Checker 执行测试](../../../packages/limina/src/__tests__/typecheck.spec.ts)中的 Svelte target 排除和物化后重规划用例，为仅含文本的组件使用 `noLib: true` 和空 `types`。这些用例负责 target 选择、局部受管配置移除、package root 变化及 receipt 新鲜度；注入的 runner 不检查标准库诊断。排除和 add-replan 用例曾在 macOS CI 超过 30 秒；省去无关的默认标准库发现可减少多轮真实 Svelte generation 的工作量，同时保留原时限。保留真实框架转换、两个 manager、全部 target/cwd 断言及 stale-receipt 负向控制。[缓存回归](../../../packages/limina/src/__tests__/vue-analysis-cache.spec.ts)的 Vue 引用擦除用例先保存合格事实，再从磁盘生成配置擦除引用，部分用例同时擦除根文件。下一次运行重新生成配置，核对实际字节与 provider。每例在 60 秒内启动两个独立 runner。
 
 [CI Git 路径 fixture](../../../packages/gates/src/ci/ci.spec.ts)通过 `mktree -z` 和 `commit-tree` 创建包含控制字符的文件名。Git for Windows 即使通过 `update-index --index-info` 也可能拒绝这些路径，输出忽略路径的诊断却以成功状态退出。Tree object 保留真实 NUL 分隔 diff，无须创建 Windows 不允许的工作树路径，也不关闭路径保护。保留 rename 两端、净回退、新目录及格式错误／特殊 entry 拒绝断言。本地 object 协议重放不替代原生 Windows 验收。
 

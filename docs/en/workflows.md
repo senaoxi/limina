@@ -109,7 +109,7 @@ Both repositories need their lockfiles. CI also needs compatible Node.js and pnp
 
 ### How does Limina recognize a solution config?
 
-The checker's effective file set is empty, the config directly declares `references`, and its filename is exactly `tsconfig.json`. `files: []` is the most direct expression; inherited options and framework files still affect the final file set. See [Aggregator Config](./concepts.md#aggregator-config).
+Use a `tsconfig.json` with direct `references` and an empty root set. `files: []` expresses an empty file list. Inherited settings and applicable named checker extensions can affect the role check. See [Aggregator Config](./concepts.md#aggregator-config).
 
 ### How do `limina checker build` and `checker typecheck` choose targets?
 

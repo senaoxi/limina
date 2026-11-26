@@ -4,6 +4,7 @@ import { currentProfile } from '../../application/analysis/observability';
 import { LiminaStructuredError } from '../../check-reporting/errors';
 import { observeAsyncWork, observeWork } from '../analysis-profile';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
+import { createProjectDependencyCaches } from '../project-dependencies/runner';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { assertCollectedExecution } from './analysis-failure';
 import { promoteDirectedCheckerDependencies } from './auto-checker-promotion';
@@ -119,7 +120,7 @@ function runVuePromotion(options: {
   });
 }
 
-export async function resolveCheckerOwnership(options: {
+interface CheckerOwnershipOptions {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   importAnalysisContext: NonNullable<
@@ -128,13 +129,30 @@ export async function resolveCheckerOwnership(options: {
   projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceSourceConfigPaths: readonly string[];
-}): Promise<CheckerSelectionResolution> {
+}
+
+export async function prepareCheckerOwnership(
+  options: CheckerOwnershipOptions,
+): Promise<() => CheckerSelectionResolution> {
   const observer = currentProfile();
+  const scoped = {
+    ...options,
+    projectDependencyCaches:
+      options.projectDependencyCaches ?? createProjectDependencyCaches(),
+  };
   const discovery = await observeAsyncWork(
     observer,
     'checker-ownership-discovery',
-    () => discoverCheckerOwnership(options),
+    () => discoverCheckerOwnership(scoped),
   );
+  return () => resolveCheckerOwnership(scoped, discovery);
+}
+
+function resolveCheckerOwnership(
+  options: CheckerOwnershipOptions,
+  discovery: CheckerOwnershipDiscovery,
+): CheckerSelectionResolution {
+  const observer = currentProfile();
   discovery.collectionProblems ??= [];
   deferOwnershipProblems(discovery, () =>
     validateOwnershipConstraints({
@@ -148,9 +166,7 @@ export async function resolveCheckerOwnership(options: {
       options.projectDependencyCaches,
       discovery.ambiguities ?? [],
     );
-  await observeAsyncWork(observer, 'locked-dependency-analysis', () =>
-    collectFrozenDependencyFacts(options, discovery),
-  );
+  collectFrozenDependencyFacts(options, discovery);
   if (options.projectDependencyCaches)
     coreCollectionRun(options.projectDependencyCaches).closed = true;
   assertOwnershipPhase({
@@ -216,18 +232,31 @@ export function finalizeLockedOwnership(options: {
   });
 }
 
-async function collectFrozenDependencyFacts(
-  options: Parameters<typeof resolveCheckerOwnership>[0],
+function collectFrozenDependencyFacts(
+  options: CheckerOwnershipOptions,
   discovery: CheckerOwnershipDiscovery,
-): Promise<void> {
-  const problems = await collectCheckerDependencyFacts({
-    config: options.config,
-    discovery,
-    importAnalysis: options.importAnalysisContext,
-    projectDependencyCaches: options.projectDependencyCaches,
-    projectConfigCache: options.projectConfigCache,
-  });
-  discovery.collectionProblems!.push(...problems);
+): void {
+  const collect = () =>
+    collectCheckerDependencyFacts({
+      config: options.config,
+      discovery,
+      importAnalysis: options.importAnalysisContext,
+      projectDependencyCaches: options.projectDependencyCaches,
+    });
+  const observer = currentProfile();
+  if (observer === undefined) {
+    discovery.collectionProblems!.push(...collect());
+    return;
+  }
+  const work = observer.start('locked-dependency-analysis');
+  try {
+    const problems = observer.inWork(work, collect);
+    observer.finish(work);
+    discovery.collectionProblems!.push(...problems);
+  } catch (error) {
+    observer.fail(work, error);
+    throw error;
+  }
 }
 
 function deferOwnershipProblems(

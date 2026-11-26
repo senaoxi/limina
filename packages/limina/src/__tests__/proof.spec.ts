@@ -16,10 +16,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import { isRunProofCheck } from '../commands/proof';
 import { collectValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
+import { createTaskProgressReporter } from '../execution/progress';
+import { LiminaFlowReporter } from '../flow';
 import { ProofLogger } from '../logger';
 import { LiminaPreflightManager } from '../preflight';
 import { addDtsConfigSemanticFindings } from '../proof/declaration-parity';
@@ -837,6 +840,17 @@ describe('runProofCheck dts config semantics', () => {
 
   it('emits a typed checker-coverage finding for a missing generated entry', async () => {
     const fixture = await createFixture(createPassingFiles());
+    const onStats = vi.fn<(stats: LiminaCheckRunTaskStats) => void>();
+    const chunks: string[] = [];
+    const flow = new LiminaFlowReporter({
+      env: { CI: 'true' },
+      output: {
+        write: (line) => {
+          chunks.push(line);
+        },
+      },
+    });
+    const progress = createTaskProgressReporter(flow.tree('proof check'));
 
     try {
       const generatedGraph = createCheckerGraphCoverageProofGeneratedGraph(
@@ -847,6 +861,8 @@ describe('runProofCheck dts config semantics', () => {
           ...generatedGraph,
           checkerEntries: new Map(),
         }),
+        onStats,
+        progress,
       });
       const finding = requireProofFinding(
         result.findings,
@@ -854,6 +870,7 @@ describe('runProofCheck dts config semantics', () => {
       );
 
       expect(result.passed).toBe(false);
+      expect(chunks.join('')).toContain('[fail] prepare proof inputs (');
       expect(finding).toMatchObject({
         checkerName: 'tsc',
         code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
@@ -867,6 +884,13 @@ describe('runProofCheck dts config semantics', () => {
         },
         task: 'proof:check',
       });
+      expect(onStats.mock.calls[0]?.[0].items).toEqual([
+        expect.objectContaining({
+          issues: 0,
+          name: 'project routes and configs',
+          status: 'passed',
+        }),
+      ]);
     } finally {
       await fixture.cleanup();
     }
@@ -931,7 +955,7 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
-  it('rejects removed metadata in a source-level declaration config interpreted by proof', async () => {
+  it('rejects removed metadata in a declaration base config interpreted by proof', async () => {
     const fixture = await createFixture(
       createSingleEnvironmentFiles({
         '.limina/tsconfig.typescript.build.json': JSON.stringify({
@@ -943,11 +967,31 @@ describe('runProofCheck dts config semantics', () => {
           ],
         }),
         'packages/pkg/tsconfig.dts.json': JSON.stringify({
+          extends: './tsconfig.dts.base.json',
+          liminaOptions: {
+            sourceConfig: './tsconfig.json',
+          },
+        }),
+        'packages/pkg/tsconfig.dts.base.json': JSON.stringify({
           extends: './tsconfig.json',
           limina: 'runtime',
         }),
       }),
     );
+    const chunks: string[] = [];
+    const flow = new LiminaFlowReporter({
+      env: { CI: 'true' },
+      output: {
+        write: (message) => {
+          chunks.push(message);
+          if (message.includes('[fail] project routes and configs')) {
+            throw new Error('Cannot write proof progress output.');
+          }
+        },
+      },
+      stdout: { isTTY: false },
+    });
+    const progress = createTaskProgressReporter(flow.tree('proof check'));
 
     try {
       await expect(
@@ -955,12 +999,16 @@ describe('runProofCheck dts config semantics', () => {
           deferSnapshot: true,
           generatedGraphProvider: async () =>
             createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
+          progress,
           report: {
             defer: true,
           },
         }),
       ).rejects.toThrow(
         'root-level limina metadata is not part of the Limina 0.2.0 tsconfig contract',
+      );
+      expect(chunks.join('')).toMatch(
+        /\[fail\] project routes and configs \((?:<?\d+ms|\d+(?:\.\d+)?s)\)/u,
       );
     } finally {
       await fixture.cleanup();
@@ -1568,7 +1616,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(isRunProofCheck(fixture.config)).rejects.toThrow(
-        'Source typecheck config declares project references',
+        'Source project crosses its nearest package.json scope:',
       );
     } finally {
       await fixture.cleanup();
@@ -3249,22 +3297,48 @@ describe('runProofCheck dts config semantics', () => {
         'packages/pkg/fixtures/allowed.ts': 'export const allowed = 1;\n',
       }),
     );
+    const onStats = vi.fn<(stats: LiminaCheckRunTaskStats) => void>();
+    const chunks: string[] = [];
+    const flow = new LiminaFlowReporter({
+      env: { CI: 'true' },
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
+      stdout: { isTTY: false },
+    });
+    const progress = createTaskProgressReporter(flow.tree('proof check'));
 
     try {
       await expect(
-        isRunProofCheck({
-          ...fixture.config,
-          proof: {
-            allowlist: [
-              {
-                file: 'packages/pkg/fixtures/allowed.ts',
-                reason:
-                  'fixture intentionally lives outside TypeScript entries',
-              },
-            ],
+        isRunProofCheck(
+          {
+            ...fixture.config,
+            proof: {
+              allowlist: [
+                {
+                  file: 'packages/pkg/fixtures/allowed.ts',
+                  reason:
+                    'fixture intentionally lives outside TypeScript entries',
+                },
+              ],
+            },
           },
-        }),
+          { onStats, progress },
+        ),
       ).resolves.toBe(true);
+      expect(chunks.join('')).toMatch(
+        /\[pass\] expected source files \((?:<?\d+ms|\d+(?:\.\d+)?s)\)/u,
+      );
+      expect(
+        onStats.mock.calls[0]?.[0].items?.map((item) => item.name),
+      ).toEqual([
+        'project routes and configs',
+        'checker coverage targets',
+        'proof allowlist',
+        'source coverage',
+      ]);
     } finally {
       await fixture.cleanup();
     }

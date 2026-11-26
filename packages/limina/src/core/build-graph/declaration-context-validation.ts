@@ -26,11 +26,15 @@ import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
-import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
+import {
+  observedCompilerSystem,
+  observedConfigSystem,
+} from '../typescript-semantic/observed-resolution-host';
 import {
   hasVueCandidatePlugins,
   observeVueDeclarationCandidate,
 } from '../vue-semantic/declaration-candidate';
+import { validateOwnerDeclarationRequests } from './declaration-owner-requests';
 import {
   declarationPackageFiles,
   validateDeclarationPackageFormat,
@@ -63,7 +67,6 @@ export interface DeclarationValidationInput {
   coverage?: SourceConfigCoverageIndex;
   targets: readonly DeclarationValidationTarget[];
   metrics?: AnalysisMetricsRecorder;
-  phase?: 'generation' | 'restore';
 }
 interface CandidateProject extends DeclarationValidationTarget {
   parsed: ts.ParsedCommandLine;
@@ -122,12 +125,9 @@ export function validateDeclarationContexts(
         requests: moduleInputs.get(project.sourceConfig) ?? [],
       });
       const applicable = scope(project.sourceConfig);
-      const localInputs = relevantDeclarationRoots(input, project, decisions);
       const implementations = referenceInputs.get(project.sourceConfig) ?? [];
       const requiresMappingReceipt =
-        applicable.length > 0 ||
-        localInputs.length > 0 ||
-        implementations.length > 0;
+        applicable.length > 0 || implementations.length > 0;
       if (
         !requiresMappingReceipt &&
         !hasVueCandidatePlugins(project.executionIdentity)
@@ -141,20 +141,25 @@ export function validateDeclarationContexts(
           project,
           closure,
           applicable,
-          localInputs,
           implementations,
         );
         if (requiresMappingReceipt) result.receipts.push(receipt);
       } finally {
         input.metrics?.record({
           name: 'declaration-candidate',
-          kind: input.phase ?? 'generation',
+          kind: 'generation',
           count: 1,
           durationMs: performance.now() - start,
         });
       }
     }
     compareDelegatedRequests(input, result.receipts);
+    for (const receipt of result.receipts)
+      validateOwnerDeclarationRequests(
+        receipt,
+        input.analysis.declarationEvidence ?? [],
+        (file) => fileKey(input, file, receipt.sourceConfig),
+      );
   } catch (error) {
     if (
       !(error instanceof DeclarationObservationUnavailable) &&
@@ -206,7 +211,7 @@ function readProjects(
         );
         return [target.generatedConfig, { ...target, parsed }];
       }
-      const system = observedCompilerSystem(ts, target.generatedConfig);
+      const system = observedConfigSystem(ts, target.generatedConfig);
       const parsed = ts.getParsedCommandLineOfConfigFile(
         target.generatedConfig,
         {},
@@ -298,47 +303,14 @@ function fileKey(
     : vueCompilerPathPolicy(identity).key(file);
 }
 
-function relevantDeclarationRoots(
-  input: DeclarationValidationInput,
-  project: CandidateProject,
-  decisions: readonly DeclarationContextDecision[],
-): string[] {
-  const consumed = new Set(
-    decisions.map((decision) =>
-      fileKey(input, decision.file.lexicalPath, project.sourceConfig),
-    ),
-  );
-  return project.parsed.fileNames.filter(
-    (file) =>
-      isDeclarationFile(file) &&
-      consumed.has(fileKey(input, file, project.sourceConfig)),
-  );
-}
 function expectedContexts(
   input: DeclarationValidationInput,
   project: CandidateProject,
   closure: readonly CandidateProject[],
   decisions: readonly DeclarationContextDecision[],
-  localInputs: readonly string[],
 ): Map<string, CandidateProject> {
   const expected = new Map<string, CandidateProject>();
-  const direct = new Set(
-    decisions
-      .filter((decision) => decision.consumerConfig === project.sourceConfig)
-      .map((decision) =>
-        fileKey(input, decision.file.lexicalPath, project.sourceConfig),
-      ),
-  );
   for (const decision of decisions) {
-    // A descendant's independent checking context does not override this
-    // consumer's explicit/local selection for the same declaration input.
-    if (
-      decision.consumerConfig !== project.sourceConfig &&
-      direct.has(
-        fileKey(input, decision.file.lexicalPath, project.sourceConfig),
-      )
-    )
-      continue;
     const selection = decision.selection;
     if (selection.state !== 'selected' && selection.state !== 'local')
       throw new UnavailableDeclarationContext(
@@ -368,8 +340,6 @@ function expectedContexts(
     expected.set(decision.file.lexicalPath, owner);
     checkOwner(owner);
   }
-  // A root may be remapped by references even without an import in that root.
-  for (const file of localInputs) expected.set(file, project);
   for (const [file, owner] of expected) {
     const key = fileKey(input, file, project.sourceConfig);
     if (
@@ -401,16 +371,9 @@ function validateProject(
   project: CandidateProject,
   closure: readonly CandidateProject[],
   decisions: readonly DeclarationContextDecision[],
-  localInputs: readonly string[],
   implementations: readonly { file: string; provider: string }[],
 ): DeclarationContextReceipt {
-  const expected = expectedContexts(
-    input,
-    project,
-    closure,
-    decisions,
-    localInputs,
-  );
+  const expected = expectedContexts(input, project, closure, decisions);
   const observe =
     (project.preset ?? project.checker) === 'tsc' ||
     ((project.preset ?? project.checker) === 'tsgo' && expected.size === 0)
@@ -422,6 +385,22 @@ function validateProject(
     throw new UnavailableDeclarationContext(
       `Declaration context consumption is not qualified for ${project.checker}: ${project.sourceConfig}`,
     );
+  const localSource = (input.analysis.declarationEvidence ?? []).find(
+    (evidence) =>
+      evidence.sourceConfig === project.sourceConfig &&
+      evidence.authority.checker === project.checker,
+  );
+  const hasOnlyLocalRoots =
+    decisions.length > 0 &&
+    closure.length === 1 &&
+    decisions.every(
+      (item) =>
+        item.kind === 'root-input' &&
+        item.selection.state === 'local' &&
+        item.coverage.state === 'unique' &&
+        item.coverage.completeness === 'complete',
+    );
+  const localKeys = new Set(expected.keys().map(compilerFileKey));
   const observation = observe({
     ...project,
     files: input.files,
@@ -431,6 +410,14 @@ function validateProject(
     declarations: expected.keys().toArray(),
     referenceInputs: implementations.map((item) => item.file),
     referenceProjects: closure,
+    emptyLocalRootInventory:
+      hasOnlyLocalRoots &&
+      localSource?.completeness === 'complete' &&
+      localSource.requestOrigins.every(
+        (origin) => !localKeys.has(compilerFileKey(origin.file)),
+      )
+        ? localSource.contextId
+        : undefined,
     requiresDelegationProof: decisions.some(
       (decision) => decision.selection.state === 'selected',
     ),

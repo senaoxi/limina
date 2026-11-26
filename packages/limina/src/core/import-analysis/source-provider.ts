@@ -9,6 +9,7 @@ import type {
 } from './types';
 import {
   collectTypeScriptSourceTextImports,
+  isTypeScriptJsonSourcePath,
   readTypeScriptSourceText,
 } from './typescript-imports';
 
@@ -73,12 +74,12 @@ function createSourceTextReader(options: {
       metrics: options.metrics,
     });
     if (cached !== undefined) return cached;
-    const sourceText = readTypeScriptSourceText(filePath);
     recordSourceOperation({
       filePath,
       metrics: options.metrics,
       name: 'source-read',
     });
+    const sourceText = readTypeScriptSourceText(filePath);
     options.caches.sourceTextCache.set(filePath, sourceText);
     return sourceText;
   };
@@ -113,14 +114,16 @@ export function createSourceProvider(options: {
       metrics,
     });
     if (cached !== undefined) return cached;
+    const sourceText = readSourceText(normalizedFilePath);
+    if (!isTypeScriptJsonSourcePath(normalizedFilePath))
+      recordSourceOperation({
+        filePath: normalizedFilePath,
+        metrics,
+        name: 'source-parse',
+      });
     const imports = collectTypeScriptSourceTextImports({
       filePath: normalizedFilePath,
-      sourceText: readSourceText(normalizedFilePath),
-    });
-    recordSourceOperation({
-      filePath: normalizedFilePath,
-      metrics,
-      name: 'source-parse',
+      sourceText,
     });
     options.caches.importsCache.set(cacheKey, imports);
     return imports;

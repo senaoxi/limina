@@ -40,7 +40,11 @@ function renderTreeNodeLine(
 ): string {
   return formatInteractiveLine(
     toTreeFlowStatus(node.status),
-    formatMessageWithElapsed(node.message, getTreeNodeElapsedTime(node)),
+    formatMessageWithElapsed(
+      node.message,
+      getTreeNodeElapsedTime(node),
+      node.children.length > 0 ? 'total' : undefined,
+    ),
     node.depth,
     spinnerFrameIndex,
   );

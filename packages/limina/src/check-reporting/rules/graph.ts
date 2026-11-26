@@ -40,6 +40,12 @@ export const graphIssueRules: readonly LiminaCheckIssueRuleDefinition[] = [
     task: 'graph:materialize',
   }),
   defineIssueRule({
+    code: C.graphSourcePackageScopeMismatch,
+    description:
+      'A source config directly governs a root outside its nearest active package scope.',
+    task: 'graph:prepare',
+  }),
+  defineIssueRule({
     code: C.graphPrepareFailed,
     description: 'Generated graph preparation failed.',
     task: 'graph:prepare',

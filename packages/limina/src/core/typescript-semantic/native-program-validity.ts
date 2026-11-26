@@ -50,22 +50,24 @@ function compilationScope(options: NativeProgramObservationOptions): string {
   return options.project.compilationObligationScope ?? 'source-options';
 }
 
-export function nativeRootFailures(
-  options: NativeProgramObservationOptions,
-  program: ts.Program,
-  frontier: NativeProgramFrontier,
-): NativeEvidenceFailure[] {
-  return options.project.fileNames
+export function nativeRootFailures(options: {
+  contextId: string;
+  observationRootNames: readonly string[];
+  program: ts.Program;
+  frontier: NativeProgramFrontier;
+}): NativeEvidenceFailure[] {
+  const { contextId, observationRootNames, program, frontier } = options;
+  return observationRootNames
     .filter((file) => program.getSourceFile(file) === undefined)
     .filter((file) => !isBoundedRootStop(frontier, file))
     .map((file) => ({
-      id: nativeFingerprint(['missing-root', options.context.id, file]),
+      id: nativeFingerprint(['missing-root', contextId, file]),
       kind: 'identity',
       detail: `Root input was not loaded: ${file}`,
       evidenceIds: [file],
       affected: {
         kind: 'entries',
-        contextId: options.context.id,
+        contextId,
         entryIds: [file],
       },
     }));

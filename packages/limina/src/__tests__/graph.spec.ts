@@ -802,6 +802,62 @@ describe('runGraphExport workspace validation', () => {
 });
 
 describe('runGraphCheck checker entry', () => {
+  it.each(['data.json', 'index.ts'] as const)(
+    'only follows TypeScript reference directives when the comment is in %s',
+    async (fileName) => {
+      const directive = '/// <reference path="../../types/src/shape.d.ts" />\n';
+      const compilerOptions = {
+        ...buildCompilerOptions,
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+      };
+      const fixture = await createFixture({
+        'packages/app/package.json': stringifyConfig({
+          name: '@example/app',
+          private: true,
+          type: 'module',
+        }),
+        'packages/app/tsconfig.json': stringifyConfig({
+          compilerOptions,
+          files: ['src/index.ts', 'src/data.json', 'package.json'],
+        }),
+        'packages/app/src/index.ts': `${fileName === 'index.ts' ? directive : ''}import data from './data.json' with { type: 'json' };\nexport const value = data.value;\n`,
+        'packages/app/src/data.json': `${fileName === 'data.json' ? directive : ''}{"value":1}\n`,
+        'packages/types/package.json': stringifyConfig({
+          name: '@example/types',
+          private: true,
+          type: 'module',
+        }),
+        'packages/types/tsconfig.json': stringifyConfig({
+          compilerOptions,
+          files: ['src/shape.d.ts'],
+        }),
+        'packages/types/src/shape.d.ts':
+          'export interface Shape { x: number }\n',
+      });
+      const preflight = new LiminaPreflightManager({ config: fixture.config });
+      try {
+        const result = await runGraphCheckWithIssues(fixture.config, {
+          preflight,
+        });
+        expect(result).toEqual({ passed: true, issues: [] });
+        const graph = await collectDependencyGraph(fixture.config, {
+          providers: preflight.providers,
+          view: 'source',
+        });
+        const crossPackageEdges = graph.edges.filter(
+          (edge) =>
+            edge.from === 'pkg:@example/app' &&
+            edge.to === 'pkg:@example/types',
+        );
+        expect(crossPackageEdges).toHaveLength(Number(fileName === 'index.ts'));
+      } finally {
+        preflight.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('does not duplicate source-owned diagnostics for physical or missing resources', async () => {
     const fixture = await createFixture({
       'app/src/index.ts': [
@@ -2044,7 +2100,99 @@ packages:
     }
   });
 
-  it('reports an undeclared dependency on an injected cross-package reference', async () => {
+  it.each([
+    { origin: 'relative', file: 'index.ts', deny: false, code: undefined },
+    {
+      origin: 'mixed',
+      file: 'index.ts',
+      deny: false,
+      code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceDependencyUndeclared,
+    },
+    {
+      origin: 'mixed',
+      file: 'index.d.ts',
+      deny: false,
+      code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceDependencyUndeclared,
+    },
+    {
+      origin: 'relative',
+      file: 'index.ts',
+      deny: true,
+      code: LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
+    },
+  ])(
+    'checks generated references by request origin ($origin, $file, deny=$deny)',
+    async ({ origin, file, deny, code }) => {
+      const fixture = await createFixture(
+        {
+          'packages/a/package.json': stringifyConfig({
+            name: '@fixture/a',
+            private: true,
+          }),
+          'packages/b/package.json': stringifyConfig({
+            name: '@fixture/b',
+            private: true,
+          }),
+          'packages/a/tsconfig.lib.json': stringifyConfig({
+            compilerOptions: {
+              ...buildCompilerOptions,
+              types: [],
+              paths: { '@fixture/b': [`../b/src/${file}`] },
+            },
+            files: ['src/index.ts'],
+            liminaOptions: { graphRules: ['runtime'] },
+          }),
+          'packages/b/tsconfig.lib.json': typecheckConfig(['src']),
+          'packages/a/src/index.ts': [
+            'import type { B } from "../../b/src/index";',
+            ...(origin === 'mixed'
+              ? ['export type { B as Other } from "@fixture/b";']
+              : []),
+            'export type A = B;',
+          ].join('\n'),
+          [`packages/b/src/${file}`]: 'export interface B { value: number }',
+        },
+        {
+          rules: {
+            runtime: deny
+              ? {
+                  deny: {
+                    deps: [
+                      {
+                        name: '@fixture/b',
+                        reason: 'application may not depend on b',
+                      },
+                    ],
+                  },
+                }
+              : {},
+          },
+        },
+      );
+      try {
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(graph.dependencyEdges).toContainEqual(
+          expect.objectContaining({
+            fromConfigPath: fixture.path('packages/a/tsconfig.lib.json'),
+            toConfigPath: fixture.path('packages/b/tsconfig.lib.json'),
+          }),
+        );
+        const result = await runGraphCheckWithIssues(fixture.config);
+        const codes = result.issues.map((issue) => issue.code);
+        if (code === undefined) expect(result.issues).toEqual([]);
+        else expect(codes).toContain(code);
+        expect(
+          codes.includes(
+            LIMINA_CHECK_ISSUE_CODES.graphWorkspaceDependencyUndeclared,
+          ),
+        ).toBe(origin === 'mixed');
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('reports only the extra reference when an injected edge has no package request', async () => {
     const files = createManualWorkspacePackageFiles({
       appReferences: ['../internal/tsconfig.lib.dts.json'],
       appSource: 'export const value = 1;\n',
@@ -2062,19 +2210,18 @@ packages:
       });
 
       expect(passed).toBe(false);
-      expect(issues).toContainEqual(
+      expect(issues).toEqual([
         expect.objectContaining({
-          code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceDependencyUndeclared,
-          packageName: '@example/app',
+          code: LIMINA_CHECK_ISSUE_CODES.graphReferenceExtra,
           task: 'graph:check',
         }),
-      );
+      ]);
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('reports a nameless package on an injected cross-package reference', async () => {
+  it('reports only the extra reference for an injected edge into an unnamed scope', async () => {
     const files = createManualWorkspacePackageFiles({
       appReferences: ['../internal/tsconfig.lib.dts.json'],
       appSource: 'export const value = 1;\n',
@@ -2094,12 +2241,12 @@ packages:
       });
 
       expect(passed).toBe(false);
-      expect(issues).toContainEqual(
+      expect(issues).toEqual([
         expect.objectContaining({
-          code: LIMINA_CHECK_ISSUE_CODES.graphWorkspacePackageNameMissing,
+          code: LIMINA_CHECK_ISSUE_CODES.graphReferenceExtra,
           task: 'graph:check',
         }),
-      );
+      ]);
     } finally {
       await fixture.cleanup();
     }

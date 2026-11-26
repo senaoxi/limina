@@ -228,10 +228,9 @@ it('preserves an explicit libReplacement=false without introducing replacement t
 });
 
 interface CachedResult {
-  hit: boolean;
+  restored: boolean;
   generated: string;
-  files: string[];
-  seedHit?: boolean;
+  seedRestored?: boolean;
 }
 
 it('preserves replacement identity when an output target activates a different default library', async () => {
@@ -292,13 +291,13 @@ try {
   await manager.ensureGeneratedArtifactsMaterialized();
   const graph=await manager.ensureGeneratedGraph();
   await manager.publishAnalysisCache();
-  return {hit:events.some(e=>e.name==='analysis-cache'&&e.kind==='graphHits'&&e.count===1),generated:graph.sourceToDts.get('tsc').get(${JSON.stringify(input.file('packages/a/tsconfig.json'))}),files:[...graph.generatedFiles.keys()]};
+  return {restored:events.some(e=>e.name==='analysis-cache'&&e.kind==='restoredContexts'&&e.count>0),generated:graph.sourceToDts.get('tsc').get(${JSON.stringify(input.file('packages/a/tsconfig.json'))})};
 }finally{manager.dispose();}
 }
 if (process.argv[2] === 'publish-replacement') {
   const seed = await collect();
   renameSync(${JSON.stringify(input.file('pending/node_modules'))}, ${JSON.stringify(input.file('packages/a/node_modules'))});
-  console.log(JSON.stringify({...await collect(), seedHit:seed.hit}));
+  console.log(JSON.stringify({...await collect(), seedRestored:seed.restored}));
 } else {
   console.log(JSON.stringify(await collect()));
 }`,
@@ -322,22 +321,24 @@ it('restores library bindings across processes', async () => {
   const first = replacement(input, '.', 'workspace');
   const cold = await cached(input);
   expect(program(cold.generated).getSourceFile(first)).toBeDefined();
-  expect((await cached(input)).hit).toBe(true);
+  const warm = await cached(input);
+  expect(warm.restored).toBe(true);
+  expect(program(warm.generated).getSourceFile(first)).toBeDefined();
 }, 60_000);
 
 it('invalidates a new higher-priority library replacement across processes', async () => {
   const input = fixture();
   const first = replacement(input, '.', 'workspace');
-  expect((await cached(input)).hit).toBe(false);
+  expect((await cached(input)).restored).toBe(false);
   const second = replacement(input, 'packages/a', 'local');
   const changed = await cached(input);
-  expect(changed.hit).toBe(false);
+  expect(changed.restored).toBe(false);
   const compiled = program(changed.generated);
   expect(compiled.getSourceFile(second)).toBeDefined();
   expect(compiled.getSourceFile(first)).toBeUndefined();
 }, 60_000);
 
-it('restores the graph published after a library replacement invalidates prior bindings', async () => {
+it('reuses the library bindings published after a library replacement', async () => {
   const input = fixture();
   const first = replacement(input, '.', 'workspace');
   replacement(input, 'pending', 'local');
@@ -345,10 +346,10 @@ it('restores the graph published after a library replacement invalidates prior b
     'packages/a/node_modules/@typescript/lib-dom/index.d.ts',
   );
   const changed = await cached(input, true);
-  expect(changed.seedHit).toBe(false);
-  expect(changed.hit).toBe(false);
+  expect(changed.seedRestored).toBe(false);
+  expect(changed.restored).toBe(false);
   const restored = await cached(input);
-  expect(restored.hit).toBe(true);
+  expect(restored.restored).toBe(true);
   const compiled = program(restored.generated);
   expect(compiled.getSourceFile(second)).toBeDefined();
   expect(compiled.getSourceFile(first)).toBeUndefined();

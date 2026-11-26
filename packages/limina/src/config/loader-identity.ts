@@ -3,6 +3,11 @@ import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'pathe';
+import {
+  activePnpRuntime,
+  nodeOptionArguments,
+  withoutPnpHooks,
+} from './pnp-runtime';
 import type { LiminaConfigLoader } from './root-types';
 function tsxInstallation(): { root: string; version: string } | undefined {
   try {
@@ -83,8 +88,7 @@ function installationVersion(
 ): string | null {
   return installation?.version ?? null;
 }
-function hasLoaderNodeOptions(): boolean {
-  const options = process.env.NODE_OPTIONS ?? '';
+function hasLoaderNodeOptions(options: string): boolean {
   if (options.startsWith('-r')) return true;
   return [
     '--import',
@@ -100,13 +104,24 @@ export function configLoaderIdentity(loader: LiminaConfigLoader): {
   identity: string;
   hasTransforms: boolean;
   unknownReasons: string[];
+  runtimeFiles: string[];
 } {
   const installation = tsxInstallation();
+  const pnp = activePnpRuntime();
+  const arguments_ = withoutPnpHooks(process.execArgv, pnp);
+  const nodeOptions = process.env.NODE_OPTIONS ?? '';
+  const otherOptions =
+    pnp === undefined
+      ? nodeOptions
+      : withoutPnpHooks(nodeOptionArguments(nodeOptions), pnp).join(' ');
+  const runtimeFiles =
+    pnp === undefined ? [] : [pnp.entry, pnp.data, pnp.esmLoader];
   const isUnknown = hasUnknownLoader(
-    process.execArgv,
+    arguments_,
     installationRoot(installation),
   );
   return {
+    runtimeFiles,
     hasTransforms:
       loader === 'tsx' ||
       process.execArgv.some((argument) =>
@@ -118,8 +133,11 @@ export function configLoaderIdentity(loader: LiminaConfigLoader): {
       process.version,
       loaderRuntimeArguments(process.execArgv),
       installationVersion(installation),
+      runtimeFiles,
     ]),
-    unknownReasons: [isUnknown, hasLoaderNodeOptions()].some(Boolean)
+    unknownReasons: [isUnknown, hasLoaderNodeOptions(otherOptions)].some(
+      Boolean,
+    )
       ? ['custom-loader-unobserved']
       : [],
   };

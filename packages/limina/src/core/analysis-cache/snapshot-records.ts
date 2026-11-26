@@ -2,10 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { AnalysisSnapshot, ConfigModuleSnapshot } from './contracts';
 import { ANALYSIS_ADAPTER, ANALYSIS_SCHEMA } from './contracts';
-import type { InstallationLockGate } from './installation-gate';
 import type { NativeAnalysisCache } from './native-cache';
 import type { CacheOrigin } from './profile-decisions';
-import { availableSnapshotGraphs } from './snapshot-graphs';
 import {
   referencedSnapshotInputs,
   usedSnapshotQueries,
@@ -31,9 +29,12 @@ export function currentSnapshotRecords(
     Object.entries(cache.queries).filter(([id]) => used.has(id)),
   );
   const referenced = referencedSnapshotInputs(cache, { importers, queries });
-  const members = new Set(
-    Object.values(cache.projects).flatMap((project) => project.members),
-  );
+  const members = new Set([
+    ...Object.values(cache.projects).flatMap((project) => project.members),
+    ...Object.values(cache.contexts).flatMap(
+      (context) => context.native?.inventory.members ?? [],
+    ),
+  ]);
   const retainedPaths = new Set(
     [...referenced].map((id) => cache.inputs.records[id].path),
   );
@@ -47,8 +48,6 @@ export function currentSnapshotRecords(
   );
   return {
     configModules: cache.configModules,
-    authorities: cache.authorities,
-    resolvedConfigs: cache.resolvedConfigs.records,
     inputs,
     queries,
     importers,
@@ -58,8 +57,7 @@ export function currentSnapshotRecords(
     projects: cache.projects,
     contexts: cache.contexts,
     vueContexts: cache.vue.records,
-    contributions: cache.contributions.records,
-    graphs: cache.graphs,
+    sourceConfigs: cache.sourceConfigProjections.snapshotRecords(),
   };
 }
 export function emptySnapshot(
@@ -73,19 +71,17 @@ export function emptySnapshot(
       identity,
       configVersion: configVersion ?? null,
       revision: randomUUID(),
+      packageScopes: { manifests: {}, configs: {} },
     },
     configModules: emptyConfigModules(),
-    authorities: {},
-    resolvedConfigs: {},
     inputs: {},
     projects: {},
     queries: {},
     importers: {},
     files: {},
-    contributions: {},
     contexts: {},
     vueContexts: {},
-    graphs: {},
+    sourceConfigs: {},
   };
 }
 
@@ -123,6 +119,7 @@ export function snapshotModel(cache: NativeAnalysisCache): AnalysisSnapshot {
       schema: ANALYSIS_SCHEMA,
       implementation: ANALYSIS_ADAPTER,
       identity: cache.identity,
+      packageScopes: cache.packageScopes,
       configVersion: cache.configVersion ?? null,
       revision: randomUUID(),
     },
@@ -171,7 +168,6 @@ function hasCompleteConfigModules(snapshot: AnalysisSnapshot): boolean {
 export interface ConfigCacheOptions {
   previousOrigin?: CacheOrigin;
   liveConfigTimes?: ReadonlyMap<string, number>;
-  installationGate?: InstallationLockGate;
   configVersion?: string;
   configModules?: ConfigModuleSnapshot;
 }
@@ -221,7 +217,7 @@ function matchingModuleRecords(
 export function isUnchangedCache(cache: NativeAnalysisCache): boolean {
   if (
     cache.previous === undefined ||
-    availableSnapshotGraphs(cache.previous) === undefined
+    !isDeepStrictEqual(cache.previous.header.packageScopes, cache.packageScopes)
   )
     return false;
   const records = cache.snapshotRecords();

@@ -21,6 +21,12 @@ export function nativeDeclarationEvidence(
   const context = snapshot.contexts[0];
   if (context?.authority.phase !== 'locked' || snapshot.contexts.length !== 1)
     return undefined;
+  const resolutions = new Map(
+    snapshot.resolutions.map((resolution) => [
+      resolution.requestId,
+      resolution,
+    ]),
+  );
   return freezeNativeData({
     version: 5,
     authority: {
@@ -33,11 +39,25 @@ export function nativeDeclarationEvidence(
     contextId: context.id,
     purpose: 'graph',
     coverageVersion: context.inputs.coverage,
-    requestOrigins: snapshot.requests.map((request) => ({
-      id: request.id,
-      file: request.sourceFile?.lexicalPath ?? context.inputs.config,
-      specifier: request.specifier,
-    })),
+    requestOrigins: snapshot.requests.map((request) => {
+      const file = request.sourceFile?.lexicalPath ?? context.inputs.config;
+      const resolution = resolutions.get(request.id);
+      return {
+        id: request.id,
+        file,
+        specifier: request.specifier,
+        ...(isDeclarationFile(file) && {
+          binding: {
+            channel: request.channel,
+            position:
+              request.entry.kind === 'source' ? request.entry.position : -1,
+            mode: request.resolutionMode,
+            target: resolution?.target?.lexicalPath ?? null,
+            resolutionState: resolution?.state ?? 'unavailable',
+          },
+        }),
+      };
+    }),
     declarations: snapshot.relations.flatMap((relation) =>
       relation.kind === 'declaration-consumption' &&
       relation.consumerContextId === context.id
@@ -100,6 +120,16 @@ export function collectDeclarationCompilationEvidence(
       id: nativeFingerprint([identity.id, item]),
       file: item.file,
       specifier: item.specifier,
+      ...(isDeclarationFile(item.file) &&
+        item.channel !== 'root' && {
+          binding: {
+            channel: item.channel,
+            position: item.position,
+            mode: item.mode,
+            target: item.target,
+            resolutionState: item.resolutionState,
+          },
+        }),
     })),
     completeness:
       collection.failures.length === 0 && inventory.complete

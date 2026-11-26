@@ -17,11 +17,26 @@ import {
   type NativeContextInventory,
 } from './native-context-inventory';
 import {
+  nativeFileRequest,
+  type NativeFileRequest,
+} from './native-file-requests';
+import {
   NativeObservationAdapter,
   type NativeProgramObservationOptions,
 } from './native-observation-adapter';
 import { nativeProgramFacts } from './native-program-facts';
-import { nativeProgramRecords } from './native-program-records';
+import {
+  nativeProgramRecords,
+  type NativeRequestRecord,
+} from './native-program-records';
+
+export interface NativeContextData {
+  evidence: NativeEvidenceSnapshot;
+  inventory: NativeContextInventory;
+  records: readonly NativeRequestRecord[];
+  facts: Map<string, NativeDependencyFact>;
+  syntax: ReadonlyMap<string, FileDependencyFacts>;
+}
 
 /**
  * Compiler lifetime ends after collection. The consumer receives only owned
@@ -43,34 +58,38 @@ export class NativeDependencyContext
     options: NativeProgramObservationOptions,
     adapter: NativeObservationAdapter = new NativeObservationAdapter(options),
     readSyntax?: FileDependencyFactsReader,
+    data: NativeContextData = captureContextData(adapter, readSyntax),
   ) {
     this.identity = options.context.id;
-    this.nativeEvidence = adapter.snapshot;
-    this.#files = new Set(
-      adapter.program
-        .getSourceFiles()
-        .map((source) => normalizeAbsolutePath(source.fileName)),
-    );
-    this.#typeEntries = typeEnvironmentEntries(adapter.snapshot);
-    const entries = nativeProgramRecords(adapter);
-    this.#syntax =
-      readSyntax === undefined ? new Map() : sourceSyntax(adapter, readSyntax);
-    this.nativeInventory = captureNativeContextInventory(
-      adapter,
-      entries,
-      this.#syntax,
-    );
-    this.#facts = nativeProgramFacts(adapter, entries);
-    this.#registerRecords(entries);
+    this.nativeEvidence = data.evidence;
+    this.#files = new Set(data.inventory.members);
+    this.#typeEntries = typeEnvironmentEntries(data.evidence);
+    this.#syntax = data.syntax;
+    this.nativeInventory = data.inventory;
+    this.#facts = data.facts;
+    this.#registerRecords(data.records);
   }
 
-  #registerRecords(entries: ReturnType<typeof nativeProgramRecords>): void {
+  #registerRecords(entries: readonly NativeRequestRecord[]): void {
     for (const entry of entries) {
       const { record } = entry;
       const records = this.#records.get(record.filePath) ?? [];
       records.push(record);
       this.#records.set(record.filePath, records);
     }
+  }
+
+  #fact(record: ImportRecord): NativeDependencyFact {
+    const fact = this.#facts.get(createImportRecordIdentity(record));
+    if (fact === undefined)
+      throw new Error('Occurrence was not observed in this Native context.');
+    return fact;
+  }
+
+  getNativeFileRequests(file: string): readonly NativeFileRequest[] {
+    return (this.#records.get(normalizeAbsolutePath(file)) ?? []).map(
+      (record) => nativeFileRequest(record, this.#fact(record)),
+    );
   }
 
   getImportRecords(file: string): readonly ImportRecord[] {
@@ -84,10 +103,7 @@ export class NativeDependencyContext
   }
 
   getDependencyFact(record: ImportRecord): NativeDependencyFact {
-    const fact = this.#facts.get(createImportRecordIdentity(record));
-    if (fact === undefined)
-      throw new Error('Occurrence was not observed in this Native context.');
-    return structuredClone(fact);
+    return structuredClone(this.#fact(record));
   }
 
   resolveImportRecord(record: ImportRecord): TypeScriptSemanticResolution {
@@ -109,6 +125,22 @@ export class NativeDependencyContext
   dispose(): void {
     // No compiler, host or checker survives the constructor.
   }
+}
+
+function captureContextData(
+  adapter: NativeObservationAdapter,
+  readSyntax: FileDependencyFactsReader | undefined,
+): NativeContextData {
+  const records = nativeProgramRecords(adapter);
+  const syntax =
+    readSyntax === undefined ? new Map() : sourceSyntax(adapter, readSyntax);
+  return {
+    evidence: adapter.snapshot,
+    inventory: captureNativeContextInventory(adapter, records, syntax),
+    records,
+    facts: nativeProgramFacts(adapter, records),
+    syntax,
+  };
 }
 
 function sourceSyntax(

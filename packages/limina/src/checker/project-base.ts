@@ -1,13 +1,16 @@
 import {
   observeAnalysisRead,
   readAnalysisInput,
-  readTypeScriptConfigInput,
   typeScriptDirectoryDescriptor,
 } from '#utils/analysis-input';
 import { cloneCompilerOptions } from '#utils/compiler-options';
 import { normalizeAbsolutePath } from '#utils/path';
 import { parseLiveConfig } from '#utils/resolved-config-cache';
+import { readSourceConfigText } from '#utils/source-config-text';
 import ts from 'typescript';
+import { currentProfile } from '../application/analysis/observability';
+import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
+import { observeWork } from '../core/analysis-profile';
 import {
   createExtraFileExtensions,
   normalizeExtensions,
@@ -23,13 +26,70 @@ import type {
   ParsedCheckerProjectConfig,
 } from './types';
 
-export class TypeScriptConfigInputError extends Error {}
+export class TypeScriptConfigInputError extends Error {
+  readonly diagnosticCodes: readonly number[];
+  constructor(message: string, diagnostics: readonly ts.Diagnostic[] = []) {
+    super(message);
+    this.diagnosticCodes = diagnostics.map(({ code }) => code);
+  }
+}
+
+export function observeConfigParse<T>(
+  configPath: string,
+  operation:
+    | 'source-config.live-parse'
+    | 'source-config.role-probe'
+    | 'source-config.vue-metadata'
+    | 'source-config.vue-metadata-no-root-scan',
+  parse: () => T,
+): T {
+  const observer = currentProfile();
+  if (observer === undefined) return parse();
+  if (operation === 'source-config.role-probe')
+    return observeWork(observer, operation, parse, [
+      'project',
+      observer.project(configPath),
+    ]);
+  return observer.currentOperation === 'source-config.authorized-read'
+    ? observeWork(observer, operation, parse)
+    : parse();
+}
+
+export function parseWithObservedConfigInputs<T>(
+  host: typeof ts.sys,
+  parse: (host: typeof ts.sys) => T,
+): T {
+  let drift: AnalysisInputDriftError | undefined;
+  let result: T;
+  try {
+    result = parse({
+      ...host,
+      readFile(fileName, encoding) {
+        try {
+          return host.readFile(fileName, encoding);
+        } catch (error) {
+          if (error instanceof AnalysisInputDriftError) drift ??= error;
+          throw error;
+        }
+      },
+    });
+  } catch (error) {
+    throw drift ?? error;
+  }
+  // Compilers can translate Host read failures into diagnostics or defaults.
+  if (drift !== undefined) throw drift;
+  return result;
+}
 
 export function createProjectParseHost(
   virtualFiles: ReadonlyMap<string, string> | undefined,
   contentByPath?: Map<string, string>,
+  compiler: typeof ts = ts,
+  config?: {
+    rootSelectors?: Parameters<typeof ts.sys.readDirectory>[];
+  },
 ): typeof ts.sys {
-  const base = ts.sys;
+  const base = compiler.sys;
   return {
     ...base,
     fileExists: (fileName) =>
@@ -56,6 +116,7 @@ export function createProjectParseHost(
           'realpath',
         )),
     readDirectory: (...arguments_) => {
+      config?.rootSelectors?.push(arguments_);
       const read = () => base.readDirectory(...arguments_);
       const value = read();
       observeAnalysisRead({
@@ -68,13 +129,12 @@ export function createProjectParseHost(
       return value;
     },
     readFile(fileName, encoding): string | undefined {
-      const content =
-        virtualFiles?.get(normalizeAbsolutePath(fileName)) ??
-        readTypeScriptConfigInput(fileName, () =>
-          base.readFile(fileName, encoding),
-        );
+      const file = normalizeAbsolutePath(fileName);
+      const content = readSourceConfigText(file, virtualFiles, (name) =>
+        base.readFile(name, encoding),
+      );
       if (content !== undefined) {
-        contentByPath?.set(normalizeAbsolutePath(fileName), content);
+        contentByPath?.set(file, content);
       }
       return content;
     },
@@ -102,6 +162,7 @@ function requireParsedCommandLine(options: {
       options.diagnostics,
       createFormatHost(options.projectRootDir),
     ),
+    options.diagnostics,
   );
 }
 
@@ -122,6 +183,7 @@ function assertNoParseErrors(options: {
       errors,
       createFormatHost(options.projectRootDir),
     ),
+    errors,
   );
 }
 
@@ -134,7 +196,7 @@ export function createParsedCheckerProjectConfig(options: {
 }): ParsedCheckerProjectConfig {
   return {
     configuredVueExtensions: options.configuredVueExtensions,
-    configClosure: options.configClosure.map((entry) => ({ ...entry })),
+    configClosure: [...options.configClosure],
     extensions: normalizeExtensions(options.extensions),
     fileNames: options.fileNames
       .map(normalizeAbsolutePath)
@@ -149,9 +211,18 @@ export function cloneParsedCheckerProjectConfig(
 ): ParsedCheckerProjectConfig {
   return {
     configuredVueExtensions: parsedConfig.configuredVueExtensions?.slice(),
-    configClosure: parsedConfig.configClosure.map((entry) => ({ ...entry })),
+    configClosure: [...parsedConfig.configClosure],
     extensions: [...parsedConfig.extensions],
     fileNames: [...parsedConfig.fileNames],
+    rootSelectors: parsedConfig.rootSelectors?.map(
+      ([path, extensions, excludes, includes, depth]) => [
+        path,
+        extensions?.slice(),
+        excludes?.slice(),
+        includes?.slice(),
+        depth,
+      ],
+    ),
     options: cloneCompilerOptions(parsedConfig.options),
     projectReferences: parsedConfig.projectReferences?.map((reference) => ({
       ...reference,
@@ -163,43 +234,80 @@ export function cloneParsedCheckerProjectConfig(
 interface ConfigParseRequest {
   extraFileExtensions?: readonly ts.FileExtensionInfo[];
   parseOptions: CheckerProjectConfigParseOptions;
+  roleOnly?: boolean;
+}
+
+const projectParseSystem = { ...ts.sys };
+
+export function canReuseConfigProjection(compiler: typeof ts): boolean {
+  return (
+    compiler === ts &&
+    ts.version === '6.0.3' &&
+    !process.versions.pnp &&
+    ts.sys.getCurrentDirectory === projectParseSystem.getCurrentDirectory &&
+    ts.sys.useCaseSensitiveFileNames ===
+      projectParseSystem.useCaseSensitiveFileNames &&
+    ts.sys.readFile === projectParseSystem.readFile &&
+    ts.sys.fileExists === projectParseSystem.fileExists &&
+    ts.sys.directoryExists === projectParseSystem.directoryExists &&
+    ts.sys.getDirectories === projectParseSystem.getDirectories &&
+    ts.sys.realpath === projectParseSystem.realpath &&
+    ts.sys.readDirectory === projectParseSystem.readDirectory
+  );
 }
 
 export function parseTypeScriptCommandLine(
   options: ConfigParseRequest,
 ): ResolvedConfigProjection {
   const { parseOptions, extraFileExtensions } = options;
+  const configPath = normalizeAbsolutePath(parseOptions.configPath);
+  const key = parseOptions.virtualFiles?.size
+    ? undefined
+    : JSON.stringify([
+        options.roleOnly ? 'source-config-role' : 'command-line',
+        ts.version,
+        ts.sys.getCurrentDirectory(),
+        ts.sys.useCaseSensitiveFileNames,
+        parseOptions.configPath,
+        parseOptions.allowNoInputDiagnostics === true,
+        extraFileExtensions ?? [],
+      ]);
   return parseLiveConfig(
-    () => parseConfig(options),
-    parseOptions.virtualFiles?.size
-      ? undefined
-      : JSON.stringify([
-          'command-line',
-          ts.version,
-          ts.sys.getCurrentDirectory(),
-          ts.sys.useCaseSensitiveFileNames,
-          normalizeAbsolutePath(parseOptions.configPath),
-          parseOptions.allowNoInputDiagnostics === true,
-          extraFileExtensions ?? [],
-        ]),
+    () =>
+      observeConfigParse(
+        configPath,
+        options.roleOnly
+          ? 'source-config.role-probe'
+          : 'source-config.live-parse',
+        () => parseConfig(options),
+      ),
+    key,
+    key !== undefined &&
+      !options.roleOnly &&
+      configPath === parseOptions.configPath &&
+      canReuseConfigProjection(ts)
+      ? { configPath, key }
+      : undefined,
   );
 }
 
 function parseConfig(options: ConfigParseRequest): ResolvedConfigProjection {
   const diagnostics: ts.Diagnostic[] = [];
   const contentByPath = new Map<string, string>();
+  const rootSelectors: Parameters<typeof ts.sys.readDirectory>[] = [];
   const host = createProjectParseHost(
     options.parseOptions.virtualFiles,
     contentByPath,
+    ts,
+    { rootSelectors },
   );
   const extendedConfigCache = new Map<string, ts.ExtendedConfigCacheEntry>();
-  const parsed = requireParsedCommandLine({
-    diagnostics,
-    parsed: ts.getParsedCommandLineOfConfigFile(
+  const result = parseWithObservedConfigInputs(host, (observedHost) =>
+    ts.getParsedCommandLineOfConfigFile(
       options.parseOptions.configPath,
       {},
       {
-        ...host,
+        ...observedHost,
         onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
           diagnostics.push(diagnostic);
         },
@@ -208,6 +316,10 @@ function parseConfig(options: ConfigParseRequest): ResolvedConfigProjection {
       undefined,
       options.extraFileExtensions,
     ),
+  );
+  const parsed = requireParsedCommandLine({
+    diagnostics,
+    parsed: result,
     projectRootDir: options.parseOptions.projectRootDir,
   });
   assertNoParseErrors({
@@ -221,6 +333,7 @@ function parseConfig(options: ConfigParseRequest): ResolvedConfigProjection {
     parsed,
     extendedConfigCache,
     contentByPath,
+    rootSelectors,
   );
 }
 
@@ -230,17 +343,20 @@ export function parseProjectConfigWithExtensions(
 ): ParsedCheckerProjectConfig {
   const resolvedExtensions = resolveExtensionsForChecker(options, extensions);
   const extraFileExtensions = createExtraFileExtensions(resolvedExtensions);
-  const { configClosure, configuredVueExtensions, parsed } =
+  const { configClosure, configuredVueExtensions, parsed, rootSelectors } =
     parseTypeScriptCommandLine({
       extraFileExtensions:
         extraFileExtensions.length === 0 ? undefined : extraFileExtensions,
       parseOptions: options,
     });
-  return createParsedCheckerProjectConfig({
-    configClosure,
-    configuredVueExtensions,
-    extensions: resolvedExtensions,
-    fileNames: parsed.fileNames,
-    parsed,
-  });
+  return {
+    ...createParsedCheckerProjectConfig({
+      configClosure,
+      configuredVueExtensions,
+      extensions: resolvedExtensions,
+      fileNames: parsed.fileNames,
+      parsed,
+    }),
+    rootSelectors,
+  };
 }

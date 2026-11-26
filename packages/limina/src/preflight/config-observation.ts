@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { readFileSync } from 'node:fs';
+import path from 'pathe';
 import {
   type ConfigModuleEvidence,
   getConfigBindings,
@@ -73,7 +74,16 @@ export class ConfigObservation {
     return this.#snapshot ?? this.capture(previous);
   }
   capture(previous?: ConfigModuleSnapshot): ConfigModuleSnapshot {
-    this.#snapshot = captureConfigModuleSnapshot(this.#evidence, previous);
+    // The current region inventory qualifies governance changes per project. Explicit config inputs retain global authority.
+    const governanceFiles = new Set([
+      this.#config.governanceRoot.manifestPath,
+      path.join(this.#config.rootDir, 'pnpm-workspace.yaml'),
+    ]);
+    this.#snapshot = captureConfigModuleSnapshot(
+      this.#evidence,
+      previous,
+      governanceFiles,
+    );
     warnConfigModuleCoverage(this.#evidence, this.#snapshot);
     return this.#snapshot;
   }

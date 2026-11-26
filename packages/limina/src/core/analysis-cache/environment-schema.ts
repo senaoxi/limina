@@ -9,23 +9,12 @@ import { nativeEvidenceSchema } from './native-evidence-schema';
 const text = z.string();
 const texts = z.array(text);
 const dependencies = z.array(dependency);
-const domain = z.object({
-  adapter: z.literal('physical-installation-v2'),
-  root: text,
-  lockRoot: text,
-  resolutionRoot: text,
-  managerIdentity: text,
-  manager: z.enum(['pnpm', 'npm', 'yarn', 'bun']),
-  locks: texts,
-  dependencies,
-});
 export const typeEnvironmentSchema: z.ZodType<unknown> = z.object({
-  policy: z.literal('lockfile-and-local-roots-v1'),
+  policy: z.literal('physical-type-roots-v1'),
   effectiveTypeRoots: texts,
   typeRootsHash: text,
-  domains: z.array(domain),
   dependencies,
-  evidence: z.enum(['observed', 'lockfile-trusted', 'unknown']),
+  evidence: z.enum(['observed', 'unknown']),
   reason: text.optional(),
 });
 const reference = z.object({
@@ -66,10 +55,25 @@ const modulePremises = z.object({
   sourceIsExternal: z.boolean(),
   excludedDocumentation: z.boolean(),
   ownAmbient: z.boolean(),
+  targetExtension: text.optional(),
 });
+
+const pathPremises = z.object({
+  requestId: text,
+  sourceIsExternal: z.boolean(),
+  sourceLoadGap: text.optional(),
+});
+const inclusion = z.object({ requestId: text, source: text });
 
 const compilerInventory = z.object({
   modules: z.array(modulePremises),
+  paths: z.array(pathPremises),
+  inclusions: z
+    .object({
+      requests: z.array(inclusion),
+      projectReferences: texts,
+    })
+    .optional(),
   members: texts,
   syntax: z.array(z.object({ file: text, fingerprint: text })),
   occurrences: z.array(z.object({ requestId: text, fingerprint: text })),

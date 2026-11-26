@@ -6,7 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { EpochInputs } from '../core/analysis-cache/epoch-inputs';
-import { hasValidRestoredDeclarationContexts } from '../core/build-graph/declaration-context-candidate';
+import { validateDeclarationContexts } from '../core/build-graph/declaration-context-validation';
 import { prepareAndMaterializeGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
@@ -193,8 +193,9 @@ describe('required implementation reference mappings', () => {
     async (checker) => {
       const f = await fixture(checker, false);
       try {
-        const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
-          f.config,
+        const epoch = new EpochInputs();
+        const graph = await epoch.run(() =>
+          prepareAndMaterializeGeneratedTsconfigGraph(f.config),
         );
         expect(graph.dependencyEdges).toEqual([
           expect.objectContaining({
@@ -203,10 +204,9 @@ describe('required implementation reference mappings', () => {
             kind: 'declaration-provider',
           }),
         ]);
-        const beforeBuild = new EpochInputs();
-        expect(
-          beforeBuild.run(() => hasValidRestoredDeclarationContexts(graph)),
-        ).toBe(true);
+        expect(graph.dependencyAnalysis?.declarationValidation?.state).toBe(
+          'admitted',
+        );
         const bin = require.resolve(
           checker === 'tsc' ? 'typescript/bin/tsc' : 'vue-tsc/bin/vue-tsc.js',
         );
@@ -215,11 +215,7 @@ describe('required implementation reference mappings', () => {
           [bin, '-b', graph.checkerEntries.get(checker)!, '--pretty', 'false'],
           { cwd: f.root },
         );
-        await expect(beforeBuild.assertStable()).resolves.toBeUndefined();
-        const epoch = new EpochInputs();
-        expect(
-          epoch.run(() => hasValidRestoredDeclarationContexts(graph)),
-        ).toBe(true);
+        await expect(epoch.assertStable()).resolves.toBeUndefined();
         const consumer = graph.sourceToDts
           .get(checker)!
           .get(f.path('a/tsconfig.json'))!;
@@ -235,17 +231,23 @@ describe('required implementation reference mappings', () => {
   );
 
   it.each(['tsc', 'vue-tsc'] as const)(
-    'revalidates %s restored input mappings despite previous admission',
+    'rejects a %s candidate whose generated input mapping changes',
     async (checker) => {
       const f = await fixture(checker, false);
       try {
         const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
           f.config,
         );
-        expect(hasValidRestoredDeclarationContexts(graph)).toBe(true);
-        const provider = graph.sourceToDts
-          .get(checker)!
-          .get(f.path('b/tsconfig.json'))!;
+        const targets = ['a', 'b'].map((name) => {
+          const sourceConfig = f.path(name, 'tsconfig.json');
+          return {
+            checker,
+            sourceConfig,
+            generatedConfig: graph.sourceToDts.get(checker)!.get(sourceConfig)!,
+            executionRoot: f.root,
+          };
+        });
+        const provider = targets[1]!.generatedConfig;
         const json = JSON.parse(graph.generatedFiles.get(provider)!) as {
           files: string[];
           compilerOptions: { rootDir: string };
@@ -255,18 +257,22 @@ describe('required implementation reference mappings', () => {
           f.path('alias', checker === 'tsc' ? 'index.ts' : 'Child.vue'),
         ];
         json.compilerOptions.rootDir = f.path('alias');
-        graph.generatedFiles = new Map(graph.generatedFiles).set(
+        const files = new Map(graph.generatedFiles).set(
           provider,
           JSON.stringify(json),
         );
-        expect(graph.dependencyAnalysis?.declarationValidation?.state).toBe(
-          'admitted',
-        );
-        expect(hasValidRestoredDeclarationContexts(graph)).toBe(false);
+        const analysis = graph.dependencyAnalysis!;
+        expect(analysis.declarationValidation?.state).toBe('admitted');
+        validateDeclarationContexts({
+          analysis,
+          dependencyEdges: graph.dependencyEdges,
+          coverage: graph.sourceConfigCoverage,
+          files,
+          targets,
+        });
+        expect(analysis.declarationValidation?.state).not.toBe('admitted');
         expect(
-          graph.dependencyAnalysis?.declarationValidation?.diagnostics.join(
-            '\n',
-          ),
+          analysis.declarationValidation?.diagnostics.join('\n'),
         ).toContain(
           'Required compilation input is not covered by the compiler reference mapping',
         );

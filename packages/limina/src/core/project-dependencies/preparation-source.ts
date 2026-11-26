@@ -55,14 +55,8 @@ function getSvelteProjectForRoot(options: {
   if (project === undefined) return project;
   if (project.packageRootDir === options.packageRootDir) return project;
   return createSvelteSemanticProject({
-    configClosure: project.configClosure,
-    configPath: project.configPath,
-    extensions: project.extensions,
-    fileNames: project.fileNames,
-    generation: project.generation,
-    options: project.options,
+    ...project,
     packageRootDir: options.packageRootDir,
-    resolverConfigPath: project.resolverConfigPath,
   });
 }
 
@@ -127,10 +121,10 @@ export function collectFileSourceEvidence(
   const semanticSource = collectSemanticSourceEvidence(options);
   if (semanticSource !== null) return semanticSource;
   const source = collectSourceEvidence({
-    analysisCache: request.caches?.analysisCache,
-    cache: request.caches?.sourceEvidenceCache,
+    caches: request.caches,
     cacheIdentity: getProjectSemanticCacheIdentity(request),
     filePath: options.fileName,
+    generation: request.context.generation,
     importAnalysis: request.importAnalysis,
     packageRootDir: request.context.packageRootDir,
     semanticFamily: request.context.semanticAuthority.family,
@@ -138,6 +132,7 @@ export function collectFileSourceEvidence(
       fileName: options.fileName,
       identity: request.context.vueSemanticIdentity,
     }),
+    virtualSourceText: request.context.virtualFiles?.get(options.fileName),
   });
   addSourceDiagnostics({ base: options, diagnostics: source.diagnostics });
   return source;
@@ -175,15 +170,17 @@ function collectVueSourceEvidence(
     !isTypeScriptSemanticSource(fileName)
   )
     return null;
-  const records = request.importAnalysis.collectCheckerSourceRecords?.({
-    context: {
-      checkerPresets: [],
-      extensions: [...request.context.extensions],
-      semanticFamily: 'vue',
-      vueSemanticIdentity: request.context.vueSemanticIdentity,
-    },
-    filePath: fileName,
-  });
+  const records =
+    request.vueGraphFacts?.source(fileName) ??
+    request.importAnalysis.collectCheckerSourceRecords?.({
+      context: {
+        checkerPresets: [],
+        extensions: [...request.context.extensions],
+        semanticFamily: 'vue',
+        vueSemanticIdentity: request.context.vueSemanticIdentity,
+      },
+      filePath: fileName,
+    });
   const diagnostics =
     records === undefined
       ? [`Vue compiler request inventory unavailable: ${fileName}`]

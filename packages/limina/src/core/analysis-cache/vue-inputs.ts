@@ -109,8 +109,8 @@ export class VueInputTrace extends QueryTrace {
     const normalized = normalizeAbsolutePath(file);
     const kind = this.#configPaths.has(normalized)
       ? 'config-mtime'
-      : this.#resolution !== undefined && normalized.endsWith('/package.json')
-        ? 'affecting-mtime'
+      : normalized.endsWith('/package.json')
+        ? 'manifest'
         : 'content';
     this.add(file, kind);
     this.add(file, 'binding');

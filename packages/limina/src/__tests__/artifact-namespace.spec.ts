@@ -33,7 +33,7 @@ import {
   type ArtifactPlan,
   createArtifactPlan,
 } from '../domain/artifacts/plan';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { createTestMetricsRecorder } from './helpers/metrics';
 import { createFixturePathResolver } from './helpers/path';
 
 async function createFixture(): Promise<{
@@ -635,7 +635,7 @@ describe('trusted artifact namespace', () => {
     await mkdir(path.dirname(firstPath), { recursive: true });
     await writeFile(firstPath, 'generated\n');
     await writeFile(secondPath, 'generated\n');
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const plan = createArtifactPlan(
       namespace,
       [createUnchangedChange(firstPath), createUnchangedChange(secondPath)],
@@ -667,7 +667,7 @@ describe('trusted artifact namespace', () => {
     const stalePath = fixture.path('.limina/stale.json');
     await mkdir(namespace.rootDir, { recursive: true });
     await writeFile(stalePath, 'stale\n');
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const plan = createArtifactPlan(
       namespace,
       [{ path: stalePath, status: 'delete' }],

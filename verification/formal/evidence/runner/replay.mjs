@@ -102,7 +102,7 @@ assert.deepEqual(
 );
 const upstream = path.join(
   isolated,
-  'packages/limina/src/core/build-graph/cached-reference-reconstruction.ts',
+  'packages/limina/src/core/analysis-cache/package-scopes.ts',
 );
 writeFileSync(
   upstream,

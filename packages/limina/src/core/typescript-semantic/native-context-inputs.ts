@@ -1,10 +1,13 @@
 import { isNativeTypeScriptProjectInput } from '#checkers';
 import { readAnalysisInput } from '#utils/analysis-input';
+import { configFileStamp } from '#utils/config-file-stamp';
+import { digestFile } from '#utils/file-digest';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import ts from 'typescript';
 import type { NativeEvidenceContext } from '../../domain/analysis/native-context';
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
+import { prepareTypeScriptContentObservation } from '../analysis-cache/epoch-inputs';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { BoundedResolutionQueries } from './bounded-resolution-queries';
 import type { TypeScriptSemanticProject } from './contracts';
@@ -14,6 +17,17 @@ import { createNativeObservationContext } from './native-observation-context';
 import { NativeObservationError } from './native-observation-failure';
 
 const require = createRequire(import.meta.url);
+const systemReadFile = ts.sys.readFile;
+
+const compilerImplementations = new WeakMap<
+  NativeAnalysisCache,
+  {
+    path: string;
+    stamp: string;
+    fingerprint: string;
+    observe(): void;
+  }
+>();
 
 /**
 Actual loaded baseline and input identity, independent of final Checker startup.
@@ -29,27 +43,9 @@ export function nativeContextInputs(
   const coverage =
     project.workspaceSourceBoundary.sourceConfigCoverage ??
     unavailableCoverage(project);
-  const compilerPath = require.resolve('typescript');
-  const implementation = readAnalysisInput(
-    compilerPath,
-    () => ts.sys.readFile(compilerPath),
-    'typescript-content',
-  );
-  if (implementation === undefined)
-    throw new NativeObservationError(
-      'file-read',
-      `Cannot read the loaded TypeScript implementation: ${compilerPath}`,
-    );
+  const typescriptImplementation = compilerImplementation(cache);
   const sourceVersion = nativeFingerprint(
-    project.fileNames.map((file) => [
-      file,
-      project.virtualFiles?.get(file) ??
-        readAnalysisInput(
-          file,
-          () => ts.sys.readFile(file),
-          'typescript-content',
-        ),
-    ]),
+    project.fileNames.map((file) => [file, rootVersion(file, project, cache)]),
   );
   const authority = nativeAuthority(project);
   return {
@@ -66,13 +62,71 @@ export function nativeContextInputs(
       epoch: coverage.inputVersion,
       collectionId: randomUUID(),
       typescriptVersion: ts.version,
-      typescriptImplementation: nativeFingerprint([
-        compilerPath,
-        implementation,
-      ]),
+      typescriptImplementation,
       toolchain: nativeFingerprint([process.execPath, process.versions]),
     }),
   };
+}
+
+function compilerImplementation(cache?: NativeAnalysisCache): string {
+  const path = require.resolve('typescript');
+  const stamp =
+    cache !== undefined && ts.sys.readFile === systemReadFile
+      ? configFileStamp(path)
+      : undefined;
+  if (cache === undefined || stamp === undefined)
+    return implementationFingerprint(
+      path,
+      readAnalysisInput(
+        path,
+        () => ts.sys.readFile(path),
+        'typescript-content',
+      ),
+    );
+  const prior = compilerImplementations.get(cache);
+  if (prior?.path === path && prior.stamp === stamp) {
+    prior.observe();
+    return prior.fingerprint;
+  }
+  const input = prepareTypeScriptContentObservation(path);
+  input.observe();
+  const fingerprint = implementationFingerprint(path, input.value);
+  if (stamp === configFileStamp(path))
+    compilerImplementations.set(cache, {
+      path,
+      stamp,
+      fingerprint,
+      observe: input.observe,
+    });
+  return fingerprint;
+}
+
+function implementationFingerprint(
+  path: string,
+  content: string | undefined,
+): string {
+  if (content === undefined)
+    throw new NativeObservationError(
+      'file-read',
+      `Cannot read the loaded TypeScript implementation: ${path}`,
+    );
+  return nativeFingerprint([path, content]);
+}
+
+function rootVersion(
+  file: string,
+  project: TypeScriptSemanticProject,
+  cache: NativeAnalysisCache | undefined,
+): string | null {
+  const virtual = project.virtualFiles?.get(file);
+  if (virtual !== undefined) return nativeFingerprint(virtual);
+  return readAnalysisInput(file, () => ts.sys.fileExists(file), 'file')
+    ? readAnalysisInput(
+        file,
+        () => cache?.inputs.sourceDigest(file) ?? digestFile(file).hash,
+        'source-digest',
+      )
+    : null;
 }
 
 function nativeAuthority(

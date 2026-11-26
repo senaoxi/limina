@@ -8,7 +8,6 @@ import { identifier } from '../../domain/shared/identifiers';
 
 export type AnalysisMetricName =
   | 'analysis-cache'
-  | 'source-phase'
   | 'syntax-cache'
   | 'syntax-cache-retained'
   | 'bounded-program-create'

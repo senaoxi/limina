@@ -5,27 +5,13 @@ import {
 } from '#checkers';
 import type { CheckerName, ResolvedLiminaInputs } from '#config/runner';
 import { isLiminaSolutionConfig, readJsonConfig } from '#core/tsconfig/actions';
-import { compareCodeUnits } from '#utils/collections';
-import { normalizeAbsolutePath } from '#utils/path';
-import { getRawReferencePaths } from '../tsconfig/actions';
-import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
-import {
-  capabilityDiscoveryExtensions,
-  getFileExtension,
-} from './generated/file-extensions';
-import { partitionSourceFiles } from './source-capabilities';
-import type { AutoScopeProject } from './types';
+import { createExtraFileExtensions } from '../../checker/extensions';
+import { parseTypeScriptCommandLine } from '../../checker/project-base';
+import { capabilityDiscoveryExtensions } from './generated/file-extensions';
 
 type ParsedCheckerProject = ReturnType<
   typeof parseCheckerProjectConfigForContext
 >;
-
-interface NeutralProjectEvidence {
-  context: CheckerProjectParseContext;
-  fileNames: string[];
-  parsed: ParsedCheckerProject;
-  partition: ReturnType<typeof partitionSourceFiles>;
-}
 
 const discoveryExtensions = {
   'vue-tsc': ['.vue'],
@@ -35,12 +21,12 @@ const discoveryExtensions = {
   tsgo: [],
 } as const satisfies Record<CheckerName, readonly string[]>;
 
-export function parseNeutralProject(options: {
+function parseNeutralProject(options: {
   checkerName?: CheckerName;
   config: ResolvedLiminaInputs;
   configPath: string;
   projectConfigCache?: CheckerProjectConfigCache;
-}): NeutralProjectEvidence {
+}): { parsed: ParsedCheckerProject } {
   const context: CheckerProjectParseContext = {
     checkerPresets: ['tsc'],
     extensions:
@@ -73,40 +59,54 @@ export function parseNeutralProject(options: {
       virtualFiles: options.config.virtualFiles,
     });
   }
-  const fileNames = parsed.fileNames
-    .map(normalizeAbsolutePath)
-    .sort(compareCodeUnits);
-  const partition = partitionSourceFiles(fileNames);
-  partition.vueFiles = [
-    ...new Set([
-      ...partition.vueFiles,
-      ...fileNames.filter((file) =>
-        customExtensions.includes(getFileExtension(file)),
-      ),
-    ]),
-  ].sort(compareCodeUnits);
-  return { context, fileNames, parsed, partition };
-}
-function getPackageRootForFile(options: {
-  activatedRegions: WorkspaceRegionPathIndex;
-  fallbackPackageRootDir: string;
-  fileName: string;
-}): string {
-  const region = options.activatedRegions.findPackageForPath(options.fileName);
-  return region === null ? options.fallbackPackageRootDir : region.directory;
+  return { parsed };
 }
 
-export function parseScopeProjectInputs(options: {
+export function readSolutionRoleFileNames(options: {
+  checkerName?: CheckerName;
+  config: ResolvedLiminaInputs;
+  configPath: string;
+}): readonly string[] {
+  const extensions =
+    options.checkerName === undefined
+      ? []
+      : [...discoveryExtensions[options.checkerName]];
+  const parse = (extensions: string[]) =>
+    parseTypeScriptCommandLine({
+      roleOnly: true,
+      extraFileExtensions: createExtraFileExtensions(extensions),
+      parseOptions: {
+        allowNoInputDiagnostics: true,
+        configPath: options.configPath,
+        projectRootDir: options.config.rootDir,
+        virtualFiles: options.config.virtualFiles,
+      },
+    });
+  const { parsed, configuredVueExtensions } = parse(extensions);
+  return parsed.fileNames.length > 0 ||
+    options.checkerName !== 'vue-tsc' ||
+    configuredVueExtensions.length === 0
+    ? parsed.fileNames
+    : parse([...extensions, ...configuredVueExtensions]).parsed.fileNames;
+}
+
+function parseRoleProjectInputs(options: {
   checkerName?: CheckerName;
   config: ResolvedLiminaInputs;
   configPath: string;
   projectConfigCache?: CheckerProjectConfigCache;
-}): NeutralProjectEvidence {
+}): { parsed: ParsedCheckerProject } {
+  if (
+    options.checkerName !== undefined &&
+    options.checkerName !== 'tsc' &&
+    options.checkerName !== 'tsgo'
+  )
+    return parseNeutralProject(options);
   const context: CheckerProjectParseContext = {
     checkerPresets: [options.checkerName === 'tsgo' ? 'tsgo' : 'tsc'],
     extensions: [],
   };
-  const native = parseCheckerProjectConfigForContext({
+  const parsed = parseCheckerProjectConfigForContext({
     allowNoInputDiagnostics: true,
     cache: options.projectConfigCache,
     configPath: options.configPath,
@@ -114,61 +114,26 @@ export function parseScopeProjectInputs(options: {
     projectRootDir: options.config.rootDir,
     virtualFiles: options.config.virtualFiles,
   });
-  const isNativeScope =
-    options.checkerName === 'tsc' ||
-    options.checkerName === 'tsgo' ||
-    (options.checkerName === undefined &&
-      isLiminaSolutionConfig({
-        configPath: options.configPath,
-        configObject: readJsonConfig(options.config, options.configPath),
-        fileNames: native.fileNames,
-      }));
-  return isNativeScope
-    ? {
-        parsed: native,
-        fileNames: native.fileNames,
-        partition: partitionSourceFiles(native.fileNames),
-        context,
-      }
-    : parseNeutralProject(options);
+  return { parsed };
 }
 
-export function createScopeProject(options: {
-  activatedRegions: WorkspaceRegionPathIndex;
+export function parseScopeProjectInputs(options: {
   checkerName?: CheckerName;
   config: ResolvedLiminaInputs;
   configPath: string;
-  packageRootDir: string;
   projectConfigCache?: CheckerProjectConfigCache;
-}): AutoScopeProject {
-  const {
-    parsed,
-    fileNames,
-    partition,
-    context: selectedContext,
-  } = parseScopeProjectInputs(options);
-  return {
-    analysisGeneration: options.projectConfigCache?.generation ?? 0,
-    configClosure: parsed.configClosure,
-    configPath: options.configPath,
-    context: selectedContext,
-    fileNames,
-    filePartition: partition,
-    options: parsed.options,
-    packageRootByFileName: new Map(
-      fileNames.map((fileName) => [
-        fileName,
-        getPackageRootForFile({
-          activatedRegions: options.activatedRegions,
-          fallbackPackageRootDir: options.packageRootDir,
-          fileName,
-        }),
-      ]),
-    ),
-    packageRootDir: options.packageRootDir,
-    virtualFiles: options.config.virtualFiles,
-    references: getRawReferencePaths(options.config, options.configPath).map(
-      (referencePath) => ({ path: referencePath }),
-    ),
-  };
+}): { parsed: ParsedCheckerProject } {
+  if (options.checkerName !== undefined) return parseRoleProjectInputs(options);
+  const configObject = readJsonConfig(options.config, options.configPath);
+  if (
+    isLiminaSolutionConfig({
+      configPath: options.configPath,
+      configObject,
+      fileNames: [],
+    })
+  ) {
+    const native = parseRoleProjectInputs(options);
+    if (native.parsed.fileNames.length === 0) return native;
+  }
+  return parseNeutralProject(options);
 }

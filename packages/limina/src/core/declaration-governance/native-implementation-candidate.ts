@@ -4,7 +4,7 @@ import ts from 'typescript';
 import { currentProfile } from '../../application/analysis/observability';
 import { observeWork, profileContextScope } from '../analysis-profile';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
-import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
+import { observedConfigSystem } from '../typescript-semantic/observed-resolution-host';
 import { observeNativeReferenceMapping } from '../typescript-semantic/reference-redirect';
 import type {
   DeclarationCandidateInput,
@@ -37,7 +37,7 @@ export function observeNativeImplementationCandidate(
       );
     return observation(input, proof);
   }
-  const system = observedCompilerSystem(ts, input.generatedConfig);
+  const system = observedConfigSystem(ts, input.generatedConfig);
   const host = ts.createCompilerHost(input.parsed.options);
   host.readFile = (file) =>
     input.files.get(normalizeAbsolutePath(file)) ?? system.readFile(file);

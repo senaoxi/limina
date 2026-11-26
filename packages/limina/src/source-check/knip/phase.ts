@@ -28,18 +28,22 @@ export async function runKnipSourcePhase(
     return;
   }
   state.checkItems.start('knip source usage');
-  await addKnipBackedSourceProblems({
-    checks: state.checks,
-    config: state.config,
-    findings: state.findings,
-    generatedGraph: state.generatedGraph,
-    knipRunner: state.options.knipRunner,
-    ownerModuleSets: state.ownerModuleSets,
-    sourceIssues: state.sourceIssues,
-    workspaceDependencyDeclarations: state.workspaceDependencyDeclarations,
-    workspacePackages: state.packages,
-    workspaceContext: state.workspaceContext,
-    pathIndex: state.workspacePathIndex,
-  });
+  try {
+    await addKnipBackedSourceProblems({
+      checks: state.checks,
+      config: state.config,
+      findings: state.findings,
+      generatedGraph: state.generatedGraph,
+      knipRunner: state.options.knipRunner,
+      ownerModuleSets: state.ownerModuleSets,
+      sourceIssues: state.sourceIssues,
+      workspaceDependencyDeclarations: state.workspaceDependencyDeclarations,
+      workspacePackages: state.packages,
+      workspaceContext: state.workspaceContext,
+      pathIndex: state.workspacePathIndex,
+    });
+  } catch (error) {
+    state.checkItems.failActive(error);
+  }
   state.checkItems.record('knip source usage');
 }

@@ -18,16 +18,17 @@ import type { AutoScopeProject } from './auto-checker-types';
 import { resolveOwnershipEntries } from './checker-ownership-entries';
 import {
   collectOwnershipScopes,
+  createCandidateByConfigPath,
   createDirectSolutionReferences,
   createOwnershipPlan,
-  createProjectByConfigPath,
 } from './checker-ownership-graph';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import type { FrameworkInferenceAmbiguity } from './core-collection-run';
 import { recordCoreWork } from './core-collection-run';
 import type { FrozenSemanticProject } from './locked-semantic-project';
-import { prepareNativeSourceBaseline } from './native-source-baseline';
+import { collectUnavailableSourceDiagnostics } from './native-source-baseline';
 import { resolveSourceConfigAuthorities } from './source-config-authorities';
+import { prepareSourceConfigProjects } from './source-config-projects';
 import type {
   AutoScope,
   PrepareGeneratedTsconfigGraphOptions,
@@ -35,7 +36,6 @@ import type {
 } from './types';
 
 export interface CheckerOwnershipDiscovery {
-  authoritiesComplete?: boolean;
   ambiguities?: readonly FrameworkInferenceAmbiguity[];
   collectionInputFailure?: Error;
   collectionProblems?: string[];
@@ -45,6 +45,7 @@ export interface CheckerOwnershipDiscovery {
   autoChecker: 'tsc' | 'tsgo';
   explicitOwnerByEntryPath: Map<string, CheckerName>;
   plan: CheckerOwnershipPlan;
+  preparationFailures?: ReadonlyMap<string, unknown>;
   projectByConfigPath: Map<string, AutoScopeProject>;
   frozenProjectsByConfigPath: Map<string, FrozenSemanticProject>;
   scopes: AutoScope[];
@@ -120,7 +121,6 @@ function createExplicitOwnerByEntryPath(options: {
 
 export async function discoverCheckerOwnership(options: {
   cache?: NativeAnalysisCache;
-  restoreOnly?: boolean;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
@@ -159,53 +159,53 @@ export async function discoverCheckerOwnership(options: {
       config: options.config,
       entryConfigPaths: activeEntryPaths,
       explicitOwnerByEntryPath,
-      projectConfigCache: options.projectConfigCache,
     }),
   );
-  const projectByConfigPath = createProjectByConfigPath(scopes);
+  const candidates = createCandidateByConfigPath(scopes);
   const cache = options.cache ?? options.projectDependencyCaches?.analysisCache;
-  for (const project of projectByConfigPath.values()) {
-    cache?.observeProjectLock(project.configPath);
-    cache?.inputs.observeConfig(project.configClosure, project.virtualFiles);
-  }
   const plan = createOwnershipPlan({
     directReferences: createDirectSolutionReferences(scopes),
-    projectByConfigPath,
+    candidates,
   });
+  if (cache !== undefined)
+    observeWork(observer, 'cache.package-scope.scan', () =>
+      cache.observePackageScopes(
+        options.activatedRegions,
+        plan.typeConfigs.keys(),
+        plan.solutions.keys(),
+      ),
+    );
   const authorities = observeWork(observer, 'checker-semantic-authority', () =>
     resolveSourceConfigAuthorities({
-      restoreOnly: options.restoreOnly,
       cache,
       config: options.config,
       namedSelections,
       plan,
-      projects: projectByConfigPath,
       scopes,
     }),
   );
   collectionProblems.push(...authorities.problems);
-  const baseline = options.restoreOnly
-    ? undefined
-    : prepareNativeSourceBaseline({
-        ...options,
-        entries: activeEntryPaths,
-        discoveredProjects: projectByConfigPath,
-      });
-  const sourceCoverage = baseline?.coverageIndexes[0];
-  const enumerations = sourceCoverage?.configurations ?? [];
-  for (const enumeration of enumerations) {
-    if (
-      enumeration.state === 'enumerated' &&
-      enumeration.members.length > 0 &&
-      !inputFailures.has(enumeration.configId) &&
-      !plan.typeConfigs.has(enumeration.configId) &&
-      !plan.solutions.has(enumeration.configId)
-    ) {
-      collectionProblems.push(
-        `Selected source config has no ownership result: ${enumeration.configId}`,
-      );
-    }
-  }
+  const {
+    coverage: sourceCoverage,
+    frozenProjectsByConfigPath,
+    problems: preparationProblems,
+    preparationFailures,
+    projectByConfigPath,
+    unavailableProjects,
+  } = prepareSourceConfigProjects({
+    ...options,
+    activeEntryPaths,
+    cache,
+    candidates,
+    plan,
+    scopes,
+  });
+  collectionProblems.push(...preparationProblems);
+  collectUnavailableSourceDiagnostics({
+    coverage: sourceCoverage,
+    projectDependencyCaches: options.projectDependencyCaches,
+    unavailableProjects,
+  });
   const managedEntryPaths = activeEntryPaths.filter(
     (entryPath) =>
       plan.typeConfigs.has(entryPath) || plan.solutions.has(entryPath),
@@ -217,40 +217,24 @@ export async function discoverCheckerOwnership(options: {
         seenVia: 'checker-ownership',
       });
     for (const configPath of plan.solutions.keys()) {
-      const project = observer.project(configPath, {
+      observer.project(configPath, {
         role: 'solution',
         seenVia: 'checker-ownership',
       });
-      observer.notRun(
-        'native-baseline-context',
-        ['project', project],
-        'organizing-solution',
-      );
     }
     for (const configPath of inputFailures.keys())
       observer.project(configPath, { seenVia: 'config-input-failure' });
     if (
       inputFailures.size === 0 &&
       collectionProblems.length === 0 &&
-      authorities.complete &&
-      sourceCoverage?.universe.discovery !== 'open'
+      sourceCoverage.universe.discovery !== 'open'
     )
       observer.inventoryComplete();
   }
-  registerCoreWork(options.projectDependencyCaches, projectByConfigPath);
+  registerCoreWork(options.projectDependencyCaches, plan.typeConfigs.keys());
   if (options.projectDependencyCaches !== undefined) {
     for (const [configPath, error] of inputFailures) {
-      const retained = baseline?.failures.some(
-        (failure) =>
-          failure.kind === 'config-parse' &&
-          failure.evidenceIds.includes(configPath),
-      );
-      if (!retained)
-        retainAnalysisFailure(
-          options.projectDependencyCaches,
-          error,
-          configPath,
-        );
+      retainAnalysisFailure(options.projectDependencyCaches, error, configPath);
       recordCoreWork(options.projectDependencyCaches, {
         configPath,
         phase: 'selection',
@@ -278,8 +262,9 @@ export async function discoverCheckerOwnership(options: {
     }
   }
   return {
-    authoritiesComplete: authorities.complete,
-    ambiguities: authorities.ambiguities,
+    ambiguities: authorities.ambiguities.filter(({ sourceConfigPath }) =>
+      plan.typeConfigs.has(sourceConfigPath),
+    ),
     collectionInputFailure: inputFailures.values().next().value,
     collectionProblems,
     sourceConfigCoverage: sourceCoverage,
@@ -291,7 +276,8 @@ export async function discoverCheckerOwnership(options: {
     explicitOwnerByEntryPath,
     plan,
     projectByConfigPath,
-    frozenProjectsByConfigPath: new Map(),
+    frozenProjectsByConfigPath,
+    preparationFailures,
     scopes,
   };
 }
@@ -350,10 +336,10 @@ function addCheckerEntry(
 
 function registerCoreWork(
   caches: ProjectDependencyCaches | undefined,
-  projects: CheckerOwnershipDiscovery['projectByConfigPath'],
+  configs: Iterable<string>,
 ): void {
   if (caches === undefined) return;
-  for (const configPath of projects.keys()) {
+  for (const configPath of configs) {
     recordCoreWork(caches, {
       configPath,
       phase: 'locked',

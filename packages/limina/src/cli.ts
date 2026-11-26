@@ -103,14 +103,20 @@ async function executeMatchedProductCli(
 
 export async function runCli(argv: string[] = process.argv): Promise<void> {
   const profiling = beginCliProfiling(argv, import.meta.url);
+  let failure: unknown;
   try {
     await executeCli(argv, profiling);
   } catch (error) {
+    failure = error;
     CliLogger.error(`limina failed: ${formatErrorMessage(error)}`);
     process.exitCode = 1;
   } finally {
     if (profiling !== undefined)
-      await finishCliProfiling(profiling, Number(process.exitCode ?? 0) === 0);
+      await finishCliProfiling(
+        profiling,
+        Number(process.exitCode ?? 0) === 0,
+        failure,
+      );
   }
 }
 

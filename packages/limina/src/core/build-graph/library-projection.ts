@@ -109,12 +109,15 @@ export function projectLibraryInputs(input: {
     families,
   };
   const files = libraryProjectionFiles(receipt);
-  const projected = collectLibrarySelections({
-    kind: 'projection',
-    ...base,
-    configPath: generatedConfigPath,
-    files,
-  });
+  const projected =
+    files.size === 0
+      ? generated
+      : collectLibrarySelections({
+          kind: 'projection',
+          ...base,
+          configPath: generatedConfigPath,
+          files,
+        });
   if (!hasSameTargets(selections, projected))
     throw new Error(
       `Library selection projection failed: ${generatedConfigPath}`,
@@ -123,14 +126,11 @@ export function projectLibraryInputs(input: {
   return files;
 }
 
-export function isValidLibraryProjection(input: {
+function isValidLibraryProjection(input: {
   receipt: LibraryProjectionReceipt;
-  cache?: NativeAnalysisCache;
-  files?: ReadonlyMap<string, string>;
-  compiler?: typeof ts;
+  compiler: typeof ts;
 }): boolean {
-  const { receipt, cache, files } = input;
-  const compiler = input.compiler ?? ts;
+  const { receipt, compiler } = input;
   if (receipt.compilerVersion !== compiler.version) return false;
   const base = {
     compiler,
@@ -144,16 +144,8 @@ export function isValidLibraryProjection(input: {
     kind: 'source',
     ...base,
     configPath: receipt.sourceConfig,
-    cache,
   });
   if (JSON.stringify(source) !== JSON.stringify(receipt.selections))
-    return false;
-  if (
-    files !== undefined &&
-    [...libraryProjectionFiles(receipt)].some(
-      ([file, content]) => files.get(file) !== content,
-    )
-  )
     return false;
   return hasSameTargets(
     source,
@@ -161,36 +153,7 @@ export function isValidLibraryProjection(input: {
       kind: 'projection',
       ...base,
       configPath: receipt.generatedConfig,
-      files,
     }),
-  );
-}
-
-export function hasValidLibraryProjections(
-  graph: Pick<
-    PreparedTsconfigGraph,
-    'libraryProjections' | 'typeInputProjections' | 'generatedFiles'
-  >,
-  cache: NativeAnalysisCache,
-): boolean {
-  const receipts = graph.libraryProjections ?? [];
-  return (
-    graph.typeInputProjections?.length === receipts.length &&
-    graph.typeInputProjections.every((typeInput) =>
-      receipts.some(
-        (receipt) =>
-          receipt.generatedConfig === typeInput.generatedConfig &&
-          receipt.sourceConfig === typeInput.sourceConfig &&
-          receipt.libReplacement === typeInput.generatedOptions.libReplacement,
-      ),
-    ) &&
-    receipts.every((receipt) =>
-      isValidLibraryProjection({
-        receipt,
-        cache,
-        files: graph.generatedFiles,
-      }),
-    )
   );
 }
 

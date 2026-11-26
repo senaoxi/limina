@@ -16,10 +16,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runPipeline } from '../pipeline/runner';
 import { LiminaPreflightManager } from '../preflight';
-import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { collectCoverage } from '../proof/coverage-collection';
 import { createSourceCheckState } from '../source-check/run-state';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
+import { createTestMetricsRecorder } from './helpers/metrics';
 import {
   createFixturePathResolver,
   toPortablePath,
@@ -228,22 +228,35 @@ async function createCoreFixture(): Promise<{
 }
 
 describe('AnalysisProviderSet', () => {
-  it('retains Native ownership observations from the Svelte route probe', async () => {
+  it('defers Native compiler collection until after the Svelte route probe', async () => {
     const fixture = await createCoreFixture();
 
     try {
       await expect(
+        fixture.core.buildGraph.canExcludeSvelteCheckProjects(),
+      ).resolves.toBe(true);
+      expect(
+        fixture.core.projectDependencies.nativeObservations,
+      ).toBeUndefined();
+
+      await expect(
         fixture.core.buildGraph.hasSvelteCheckProjects(),
       ).resolves.toBe(false);
       expect(
-        fixture.core.projectDependencies.nativeSourceEvidence,
-      ).toBeDefined();
-      expect(
-        fixture.core.projectDependencies.nativeSourceContexts?.size,
-      ).toBeGreaterThan(0);
+        fixture.core.projectDependencies.nativeObservations
+          ?.values()
+          .flatMap((snapshot) => snapshot.contexts)
+          .map((context) => context.authority.phase)
+          .toArray(),
+      ).toEqual(['locked']);
 
       const graph = await fixture.core.buildGraph.getGraph();
       expect(graph.checkers.map((checker) => checker.name)).toEqual(['tsc']);
+      expect(
+        graph.dependencyAnalysis?.nativeEvidence?.flatMap(({ snapshot }) =>
+          snapshot.contexts.map((context) => context.authority.phase),
+        ),
+      ).toEqual(['locked']);
     } finally {
       await fixture.cleanup();
     }
@@ -519,7 +532,7 @@ describe('AnalysisProviderSet', () => {
 
   it('shares one workspace path and lookup index within a provider generation', async () => {
     const fixture = await createCoreFixture();
-    const metrics = createProfilingMetricsRecorder();
+    const metrics = createTestMetricsRecorder();
     const core = createAnalysisProviders(fixture.config, undefined, metrics);
     const filePath = path.join(fixture.rootDir, 'packages/a/src/index.ts');
 

@@ -1,12 +1,14 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
-import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
+import type { ProjectInfo } from '#core/import-graph/context';
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
 import type { CheckCounter } from '../check-reporting/stats';
+import { getCheckerSemanticFamily } from '../core/build-graph/checker-semantic-authority';
 import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
 import {
   collectRuntimeProjectDependencies,
   createParsedProjectSemanticContext,
+  type ProjectDependency,
   type ProjectDependencyCaches,
 } from '../core/project-dependencies/runner';
 import {
@@ -15,7 +17,6 @@ import {
 } from '../core/typescript-semantic';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
-import type { AmbientDeclarationIndex } from './ambient-declarations';
 import type { SourceFinding } from './findings';
 import { addImportRecordProblems } from './import-record-validation';
 import { addResourceModuleProblems } from './resource-module-findings';
@@ -26,7 +27,6 @@ import type {
 } from './source-types';
 
 interface SourceImportOptions {
-  ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   importAnalysis: AnalysisProviderSet['imports']['context'];
@@ -41,6 +41,11 @@ interface SourceImportOptions {
   workspaceLookup: WorkspaceLookupIndex;
   workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
+
+type CollectedSourceImport = Pick<
+  ProjectDependency,
+  'importRecord' | 'resolutionMode' | 'evidence'
+>;
 
 function getSourceAuthority(entry: SourceProjectEntry) {
   const authority = entry.project.semanticAuthority;
@@ -84,19 +89,29 @@ function assertSourceCollection(
 function addResourceProblemsForCheckers(options: {
   base: SourceImportOptions;
   checkerNames: string[];
-  importRecord: ImportRecord;
-  resolutionMode: string;
+  collected: CollectedSourceImport;
   owner: PackageOwner;
   project: ProjectInfo;
 }): void {
+  const { evidence, importRecord, resolutionMode } = options.collected;
+  const checkerPreset = options.project.checkerPresets[0];
+  const evidenceChecker =
+    checkerPreset !== undefined &&
+    options.project.checkerPresets.length === 1 &&
+    getCheckerSemanticFamily(checkerPreset) ===
+      evidence.context.authority.family
+      ? checkerPreset
+      : undefined;
   for (const checkerName of options.checkerNames) {
     addResourceModuleProblems({
       checkerName,
       config: options.base.config,
       findings: options.base.findings,
-      importRecord: options.importRecord,
-      resolutionMode: options.resolutionMode,
+      importRecord,
+      resolutionMode,
       resourceResolver: options.base.resourceResolver,
+      runtimeEvidence:
+        checkerName === evidenceChecker ? evidence.runtime : undefined,
       owner: options.owner,
       project: options.project,
       typeEvidence: options.base.typeEvidence,
@@ -107,9 +122,8 @@ function addResourceProblemsForCheckers(options: {
 function processImportRecord(options: {
   base: SourceImportOptions;
   checkerNames: string[];
+  collected: CollectedSourceImport;
   filePath: string;
-  importRecord: ImportRecord;
-  resolutionMode: string;
   owner: PackageOwner;
   project: ProjectInfo;
   resolvedFilePath: string | null;
@@ -117,11 +131,10 @@ function processImportRecord(options: {
   options.base.checks.add();
   addResourceProblemsForCheckers(options);
   addImportRecordProblems({
-    ambientDeclarations: options.base.ambientDeclarations,
     config: options.base.config,
     filePath: options.filePath,
     importAuthorityAllowRules: options.base.importAuthorityAllowRules,
-    importRecord: options.importRecord,
+    importRecord: options.collected.importRecord,
     owner: options.owner,
     packages: options.base.packages,
     pathIndex: options.base.pathIndex,
@@ -171,8 +184,7 @@ function processSourceDependencies(options: {
     processCollectedImport({
       base: options.base,
       checkerNames: options.entry.checkerNames,
-      importRecord: dependency.importRecord,
-      resolutionMode: dependency.resolutionMode,
+      collected: dependency,
       project: options.project,
       resolvedFilePath: dependency.resolvedFilePath,
     });
@@ -202,8 +214,7 @@ function processSourceObservation(options: {
   processCollectedImport({
     base: options.base,
     checkerNames: options.entry.checkerNames,
-    importRecord: options.observation.importRecord,
-    resolutionMode: options.observation.resolutionMode,
+    collected: options.observation,
     project: options.project,
     resolvedFilePath: null,
   });
@@ -212,12 +223,11 @@ function processSourceObservation(options: {
 function processCollectedImport(options: {
   base: SourceImportOptions;
   checkerNames: string[];
-  importRecord: ImportRecord;
-  resolutionMode: string;
+  collected: CollectedSourceImport;
   project: ProjectInfo;
   resolvedFilePath: string | null;
 }): void {
-  const filePath = options.importRecord.filePath;
+  const filePath = options.collected.importRecord.filePath;
   const owner = options.base.workspaceLookup.findOwnerForFile(filePath);
   if (owner === null) return;
   processImportRecord({ ...options, filePath, owner });

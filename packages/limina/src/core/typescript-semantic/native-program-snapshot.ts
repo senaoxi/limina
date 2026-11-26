@@ -1,4 +1,6 @@
-import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
+import type ts from 'typescript';
+import type { NativeEvidenceContext } from '../../domain/analysis/native-context';
+import type { NativeCoverage } from '../../domain/analysis/native-coverage';
 import {
   NATIVE_EVIDENCE_VERSION,
   type NativeCompletenessPartition,
@@ -12,10 +14,7 @@ import type {
   NativeProgramFrontier,
   NativeSourceAttempt,
 } from './native-program-frontier';
-import {
-  nativeCoverageFailures,
-  nativeEntryPartitions,
-} from './native-program-partitions';
+import { nativeEntryPartitions } from './native-program-partitions';
 import {
   nativeProjectRelations,
   nativeTraversalLinks,
@@ -52,7 +51,7 @@ function targetAttempt(
     : attempts.get(resolution.target.lexicalPath);
 }
 
-function partition(
+export function nativeRequestPartition(
   entry: NativeRequestResult,
   attempt: NativeSourceAttempt | undefined,
 ): NativeCompletenessPartition {
@@ -103,12 +102,11 @@ function stoppedPartition(
 export function createNativeProgramSnapshot(options: {
   program: NativeObservedProgram;
   frontier: NativeProgramFrontier;
-  coverage: SourceConfigCoverageIndex;
   requests: NativeProgramRequests;
   failures: readonly NativeEvidenceFailure[];
   obligations: readonly NativeCompilationObligation[];
 }): NativeEvidenceSnapshot {
-  const { requests, frontier, program } = options;
+  const { requests, frontier, program, failures } = options;
   const attempts = new Map(
     frontier.attempts.map((attempt) => [attempt.file.lexicalPath, attempt]),
   );
@@ -118,37 +116,25 @@ export function createNativeProgramSnapshot(options: {
     ...remainingNativeObligations(
       entries,
       options.obligations,
-      program,
+      program.getCompilerOptions(),
       frontier,
     ),
-  ];
-  const failures = [
-    ...options.failures,
-    ...nativeCoverageFailures(options.coverage),
   ];
   const coverage = observedCoverage(frontier, entries);
-  return {
-    version: NATIVE_EVIDENCE_VERSION,
-    run: failures.length === 0 ? 'completed' : 'unavailable',
-    contexts: [requests.context],
-    coverageIndexes: [options.coverage],
+  return assembleNativeSnapshot({
+    context: requests.context,
+    frontier,
     coverage: coverage.values().toArray(),
-    requests: entries.map((entry) => entry.request),
-    traversal: nativeTraversalLinks({
-      entries,
-      roots: program.getRootFileNames(),
-      fileKey: frontier.fileKey,
-    }),
-    resolutions: entries.map(({ resolution }) =>
-      resolutionLoad(resolution, program, targetAttempt(resolution, attempts)),
-    ),
-    relations: nativeProjectRelations({
-      entries,
-      frontier,
-      obligations,
-      program,
-      context: requests.context,
-    }),
+    entries: entries.map((entry) => ({
+      ...entry,
+      resolution: resolutionLoad(
+        entry.resolution,
+        program,
+        targetAttempt(entry.resolution, attempts),
+      ),
+    })),
+    projectReferences: program.getProjectReferences() ?? [],
+    roots: program.getRootFileNames(),
     obligations,
     completeness: [
       ...nativeEntryPartitions({
@@ -158,17 +144,58 @@ export function createNativeProgramSnapshot(options: {
         failures,
       }),
       ...entries.map((entry) =>
-        partition(entry, targetAttempt(entry.resolution, attempts)),
+        nativeRequestPartition(
+          entry,
+          targetAttempt(entry.resolution, attempts),
+        ),
       ),
     ],
+    failures,
+  });
+}
+
+export function assembleNativeSnapshot(options: {
+  context: NativeEvidenceContext;
+  frontier: NativeProgramFrontier;
+  coverage: NativeEvidenceSnapshot['coverage'];
+  entries: readonly NativeRequestResult[];
+  projectReferences: readonly ts.ProjectReference[];
+  roots: readonly string[];
+  completeness: NativeEvidenceSnapshot['completeness'];
+  failures: NativeEvidenceSnapshot['failures'];
+  obligations: NativeEvidenceSnapshot['obligations'];
+}): NativeEvidenceSnapshot {
+  const { context, entries, frontier, failures, obligations } = options;
+  return {
+    version: NATIVE_EVIDENCE_VERSION,
+    run: failures.length === 0 ? 'completed' : 'unavailable',
+    contexts: [context],
+    coverageIndexes: [frontier.index],
+    coverage: options.coverage,
+    requests: entries.map((entry) => entry.request),
+    traversal: nativeTraversalLinks({
+      entries,
+      roots: options.roots,
+      fileKey: frontier.fileKey,
+    }),
+    resolutions: entries.map((entry) => entry.resolution),
+    relations: nativeProjectRelations({
+      context,
+      entries,
+      frontier,
+      obligations,
+      projectReferences: options.projectReferences,
+    }),
+    obligations,
+    completeness: options.completeness,
     failures,
   };
 }
 
-function observedCoverage(
+export function observedCoverage(
   frontier: NativeProgramFrontier,
   entries: readonly NativeRequestResult[],
-) {
+): Map<string, NativeCoverage> {
   const coverage = new Map(
     frontier.attempts.map((attempt) => [
       attempt.file.lexicalPath,

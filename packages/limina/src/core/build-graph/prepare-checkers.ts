@@ -165,21 +165,6 @@ function createProjectionSolutions(
   return governedSources.flatMap(createProjectionSolution);
 }
 
-function getCheckerParsingOptions(
-  checkerName: ResolvedCheckerEntrySelection['checker']['name'],
-): {
-  checkerPreset: ResolvedCheckerEntrySelection['checker']['name'];
-  discoveryExtensions?: string[];
-} {
-  if (isBuildCapablePreset(checkerName)) {
-    return { checkerPreset: checkerName };
-  }
-  return {
-    checkerPreset: 'tsc',
-    discoveryExtensions: [checkerName === 'astro' ? '.astro' : '.svelte'],
-  };
-}
-
 function createGraphSolutions(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   buildCapable: boolean;
@@ -211,19 +196,15 @@ export function prepareCheckerGraph(options: {
   ownershipPlan: CheckerOwnershipPlan;
   frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>;
 }): PreparedCheckerGraph {
-  const parsing = getCheckerParsingOptions(options.selection.checker.name);
   const collection = collectCheckerSourceConfigs({
     activatedRegions: options.activatedRegions,
     checkerName: options.selection.checker.name,
-    checkerPreset: parsing.checkerPreset,
-    discoveryExtensions: parsing.discoveryExtensions,
     config: options.config,
     entryConfigPaths:
       options.selection.sourceConfigPaths ??
       options.selection.selection.effectiveEntryPaths,
     explicitOwnerByConfigPath: options.explicitOwnerByConfigPath,
     inheritedOwnerByConfigPath: options.inheritedOwnerByConfigPath,
-    projectConfigCache: options.projectConfigCache,
     selectedLeafConfigPaths: new Set(options.selection.sourceConfigPaths),
     sourceConfigParser: (configPath) =>
       getFrozenProject({
@@ -256,7 +237,6 @@ export function prepareCheckerGraph(options: {
         frozenProjectsByConfigPath: options.frozenProjectsByConfigPath,
       }),
       project,
-      projectConfigCache: options.projectConfigCache,
     }),
   );
   applyBuildProjections({ collection, governedSources });

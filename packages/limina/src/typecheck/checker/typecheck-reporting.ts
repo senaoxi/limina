@@ -20,18 +20,6 @@ import {
   type TypecheckTarget,
 } from '../targets';
 
-function reportNoCheckerProgress(options: {
-  flowDepth: number;
-  request: RunCheckerTypecheckOptions;
-}): void {
-  options.request.flow?.info(
-    'checker typecheck is disabled (no framework targets)',
-    {
-      depth: options.flowDepth + 1,
-    },
-  );
-}
-
 function shouldLogSuccess(request: RunCheckerTypecheckOptions): boolean {
   return (
     shouldLogCheckReport(request.report) && request.flow?.interactive !== true
@@ -39,12 +27,14 @@ function shouldLogSuccess(request: RunCheckerTypecheckOptions): boolean {
 }
 
 export function createNoTypecheckCheckerResult(options: {
-  flowDepth: number;
   projectRootDir: string;
   request: RunCheckerTypecheckOptions;
 }): RunCheckerTypecheckResult {
-  reportNoCheckerProgress(options);
-  if (shouldLogSuccess(options.request)) {
+  if (
+    options.request.flow === undefined &&
+    options.request.progress === undefined &&
+    shouldLogSuccess(options.request)
+  ) {
     TypecheckLogger.info(
       'checker typecheck is disabled: no Svelte or Astro targets were discovered.',
     );
@@ -63,11 +53,7 @@ function failPeerProgress(options: {
   flowDepth: number;
   request: RunCheckerTypecheckOptions;
 }): void {
-  const progress = options.request.progress;
-  if (progress !== undefined) {
-    progress.startItem('checker dependency preflight').fail();
-    return;
-  }
+  if (options.request.progress !== undefined) return;
   options.request.flow?.fail('checker dependency preflight failed', {
     depth: options.flowDepth + 1,
   });

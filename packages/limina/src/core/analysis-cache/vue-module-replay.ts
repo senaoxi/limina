@@ -1,69 +1,24 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import type ts from 'typescript';
-import { z } from 'zod';
 import { vueCompilerPathPolicy } from '../../checker/vue-semantic-identity';
 import { deriveCompilerCoverage } from '../typescript-semantic/compiler-coverage';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import { observeNativeFileIdentity } from '../typescript-semantic/native-file-identity';
-import { decodeData, encodeData } from './data-codec';
-import { resolutionOriginSchema } from './declaration-schema';
 import { analysisHash } from './identity';
 import type { NativeAnalysisCache } from './native-cache';
 import { recordCacheHit, recordCacheMiss } from './profile-decisions';
 import type { VueContextRecord, VueModuleRecord } from './vue-contracts';
 import { bindVueExecutionInputs } from './vue-execution-inputs';
 import type { VueInputTrace } from './vue-inputs';
+import {
+  decodeVueModuleResult,
+  encodeVueModuleResult,
+  type ModuleResult,
+} from './vue-module-result';
 
-type LiteralResolver = NonNullable<
-  ts.LanguageServiceHost['resolveModuleNameLiterals']
->;
-type ModuleResult = ReturnType<LiteralResolver>[number];
 type VolarResolutionHost = ts.LanguageServiceHost & {
   getModuleResolutionCache?(): ts.ModuleResolutionCache;
 };
-
-const packageIdSchema = z.object({
-  name: z.string(),
-  version: z.string(),
-  subModuleName: z.string(),
-  peerDependencies: z.string().optional(),
-});
-const resolvedModuleSchema = z.looseObject({
-  resolvedFileName: z.string(),
-  originalPath: z.string().optional(),
-  extension: z.string(),
-  isExternalLibraryImport: z.boolean().optional(),
-  resolutionOrigin: resolutionOriginSchema.optional(),
-  packageId: packageIdSchema.optional(),
-});
-const resultSchema = z.looseObject({
-  resolvedModule: resolvedModuleSchema.optional(),
-  failedLookupLocations: z.array(z.string()).optional(),
-  affectingLocations: z.array(z.string()).optional(),
-  resolutionDiagnostics: z.undefined().optional(),
-});
-
-function decodeResult(
-  data: VueModuleRecord['result'],
-): ModuleResult | undefined {
-  try {
-    const parsed = resultSchema.safeParse(decodeData(data));
-    return parsed.success ? (parsed.data as ModuleResult) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function encodeResult(
-  result: ModuleResult,
-): VueModuleRecord['result'] | undefined {
-  if (!resultSchema.safeParse(result).success) return undefined;
-  try {
-    return encodeData(result);
-  } catch {
-    return undefined;
-  }
-}
 
 export class VueModuleReplay {
   readonly #previous: VueContextRecord | undefined;
@@ -134,8 +89,8 @@ export class VueModuleReplay {
       });
       return undefined;
     }
-    if (this.#cache.inputs.domainDirty) {
-      recordCacheMiss('vue-resolution', 'manifest-domain-changed', { file });
+    if (this.#cache.inputs.toolchainChanged) {
+      recordCacheMiss('vue-resolution', 'toolchain-input-changed', { file });
       return undefined;
     }
     const stale = record.dependencies.find(
@@ -154,7 +109,7 @@ export class VueModuleReplay {
       });
       return undefined;
     }
-    const result = decodeResult(record.result);
+    const result = decodeVueModuleResult(record.result);
     if (result === undefined) {
       recordCacheMiss('vue-resolution', 'vue-resolution-payload-invalid', {
         file,
@@ -198,7 +153,7 @@ export class VueModuleReplay {
       this.#identity,
       this.#cache.inputs,
       record.dependencies,
-      this.#cache.resolvedConfigs.replay(),
+      this.#cache.configReads.replay(),
     );
     this.records[id] = record;
     this.#cache.increment('restoredVueModuleResolutions');
@@ -227,7 +182,7 @@ export class VueModuleReplay {
     this.#trace.complete &&= trace.complete;
     const dependencies = trace.dependencies.values().toArray();
     this.#trace.retainResolution(dependencies, members);
-    const encoded = trace.complete ? encodeResult(result) : undefined;
+    const encoded = trace.complete ? encodeVueModuleResult(result) : undefined;
     if (encoded !== undefined)
       this.records[options.id] = {
         members,

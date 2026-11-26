@@ -1,8 +1,8 @@
 import { formatImportRecordLocation } from '#core/import-graph/context';
 import { toRelativePath } from '#utils/path';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
-import type { ProjectDependency } from '../project-dependencies/contracts';
 import { getDependencyCheckerTarget } from '../project-dependencies/evidence';
+import type { ReferenceDependency } from '../project-dependencies/reference-facts';
 import { qualifiedNativeDependencyTarget } from '../typescript-semantic/native-fact-qualification';
 import type { ReferenceImportContext } from './reference-import-types';
 import type { GeneratedDependencyEdge, GovernedSourceUnit } from './types';
@@ -10,7 +10,7 @@ import type { GeneratedDependencyEdge, GovernedSourceUnit } from './types';
 type FrameworkImportRecord = Parameters<typeof formatImportRecordLocation>[1];
 
 export function hasFrameworkCompilationRequirement(
-  dependency: ProjectDependency,
+  dependency: ReferenceDependency,
 ): boolean {
   const evidence = dependency.nativeFact?.nativeEvidence;
   return evidence === undefined
@@ -19,7 +19,7 @@ export function hasFrameworkCompilationRequirement(
 }
 
 function hasSourceCompilationRequirement(
-  dependency: ProjectDependency,
+  dependency: ReferenceDependency,
 ): boolean {
   return [
     dependency.targetKind === 'source',
@@ -31,14 +31,15 @@ function hasSourceCompilationRequirement(
 }
 
 function hasFrameworkMembershipRequirement(
-  dependency: ProjectDependency,
+  dependency: ReferenceDependency,
 ): boolean {
   // A framework resolver's component target still needs its owning checker
   // even when a wildcard ambient declaration supplies the current types.
   return [
     dependency.referenceRequirement?.kind === 'compiler-membership',
-    getDependencyCheckerTarget(dependency.evidence)?.resolvedBy ===
-      'checker-source',
+    dependency.evidence !== undefined &&
+      getDependencyCheckerTarget(dependency.evidence)?.resolvedBy ===
+        'checker-source',
   ].every(Boolean);
 }
 

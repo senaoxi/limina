@@ -37,10 +37,15 @@ function getFileExtension(filePath: string): string {
   return index === -1 ? '' : filePath.slice(index);
 }
 
+export function isTypeScriptJsonSourcePath(filePath: string): boolean {
+  return getFileExtension(filePath).toLowerCase() === '.json';
+}
+
 export function getSourceFileKind(
   filePath: string,
   tsModule: typeof ts = ts,
 ): ts.ScriptKind {
+  if (isTypeScriptJsonSourcePath(filePath)) return tsModule.ScriptKind.JSON;
   const scriptKinds = new Map<string, ts.ScriptKind>([
     ['.cjs', tsModule.ScriptKind.JS],
     ['.js', tsModule.ScriptKind.JS],
@@ -122,10 +127,17 @@ export function collectTypeScriptSourceTextImports(options: {
   tsModule?: typeof ts;
 }): ImportRecord[] {
   const tsModule = options.tsModule ?? ts;
+  const scriptKind =
+    options.scriptKind ?? getSourceFileKind(options.filePath, tsModule);
+  if (
+    scriptKind === tsModule.ScriptKind.JSON ||
+    (scriptKind === tsModule.ScriptKind.Unknown &&
+      isTypeScriptJsonSourcePath(options.filePath))
+  )
+    return [];
   const syntax = collectTypeScriptImports({
     ...options,
-    scriptKind:
-      options.scriptKind ?? getSourceFileKind(options.filePath, tsModule),
+    scriptKind,
     tsModule,
   });
   return finalizeImportRecords([
@@ -140,6 +152,7 @@ export function collectTypeScriptSourceFileImports(options: {
   tsModule?: typeof ts;
 }): ImportRecord[] {
   const tsModule = options.tsModule ?? ts;
+  if ((options.sourceFile.flags & tsModule.NodeFlags.JsonFile) !== 0) return [];
   ensureParentPointers(options.sourceFile, tsModule);
   const sourceText = options.sourceFile.text;
   const syntax = collectTypeScriptImportsFromSourceFile({

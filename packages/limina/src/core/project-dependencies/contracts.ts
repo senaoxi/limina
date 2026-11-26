@@ -11,8 +11,10 @@ import type { DeclarationCompilationEvidence } from '../../domain/analysis/decla
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { NativeEvidenceSnapshot } from '../../domain/analysis/native-evidence';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import type { VueGraphFactReader } from '../analysis-cache/vue-graph-facts';
 import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-types';
 import type { CoreCollectionRun } from '../build-graph/core-collection-run';
+import type { DeclarationContextPolicy } from '../build-graph/declaration-context-policy';
 import type { SupplementalAssessment } from '../build-graph/pending-supplemental-assessment';
 import type { RequirementDecision } from '../dependency-semantics';
 import type { PreparedDependencyFact } from '../framework-semantic/contracts';
@@ -32,6 +34,7 @@ import type {
 
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import type { ProjectDependencyEvidence } from './evidence';
+import type { ReferenceGraphFacts } from './reference-facts';
 import type { RuntimeSourceResolver } from './runtime-source-resolution';
 
 export interface ProjectSemanticContext {
@@ -164,6 +167,7 @@ export interface SourceEvidence {
 }
 
 export interface ProjectDependencyRequest {
+  vueGraphFacts?: VueGraphFactReader;
   purpose?: 'runtime-source';
   runtimeSourceResolver?: RuntimeSourceResolver;
   compilationObligationScope?: 'generated-declaration-project-v1';
@@ -176,17 +180,21 @@ export interface ProjectDependencyRequest {
 }
 
 export interface ProjectDependencyCaches {
+  referenceFacts?: Map<
+    string,
+    { context: TypeScriptSemanticDependencyContext; facts: ReferenceGraphFacts }
+  >;
   supplementalAssessments?: SupplementalAssessment[];
   coreCollectionRun?: CoreCollectionRun;
   readonly metrics?: AnalysisMetricsRecorder;
-  nativeSourceEvidence?: NativeEvidenceSnapshot;
-  nativeSourceContexts?: ReadonlyMap<
-    string,
-    TypeScriptSemanticDependencyContext
-  >;
   nativeObservations?: Map<string, NativeEvidenceSnapshot>;
   sourceConfigCoverage?: SourceConfigCoverageIndex;
+  declarationContextPolicy?: DeclarationContextPolicy;
   readonly analysisCache?: NativeAnalysisCache;
+  physicalSourceSyntax: Map<
+    string,
+    { generation: number; sourceText: string; records: ImportRecord[] }
+  >;
   projectDependencyCache: Map<string, ProjectDependencyCollection>;
   projectDependencyPreparationCache: Map<string, ProjectDependencyPreparation>;
   sourceEvidenceCache: Map<string, SourceEvidence>;

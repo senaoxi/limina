@@ -44,7 +44,7 @@ pnpm exec limina check --issues --task source:check
 
 ### 相对导入跨过包边界
 
-`LIMINA_SOURCE_RELATIVE_IMPORT_ESCAPES_SCOPE` 表示源码的相对导入跨过了最近的 `package.json` 包边界。查看报告中的导入文件、目标文件和两侧清单。如果确实是在使用另一个包，应让提供方暴露公开入口，在使用方的 `package.json` 声明依赖，并改用包名导入。更完整的说明见[源码检查](./built-in-tasks.md#相对导入不能跨包边界)。
+`LIMINA_SOURCE_RELATIVE_IMPORT_ESCAPES_SCOPE` 表示已启用 `source.forbidCrossPackageRelativeImports`，且源码的相对导入跨过了最近的 `package.json` 包边界。查看报告中的导入文件、目标文件和两侧清单。如果确实是在使用另一个包，应让提供方暴露公开入口，在使用方的 `package.json` 声明依赖，并改用包名导入。更完整的说明见[源码检查](./built-in-tasks.md#相对导入与包边界)。
 
 ### 包导入没有获得授权
 

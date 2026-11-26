@@ -16,7 +16,12 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, expect, it } from 'vitest';
 import { createFixturePathResolver } from '../../src/__tests__/helpers/path';
+import type { AnalysisProfile } from '../../src/application/analysis/observability';
 import type { AnalysisSnapshotIndex } from '../../src/core/analysis-cache/snapshot-shards';
+import {
+  profileMetric,
+  readAnalysisProfile,
+} from '../helpers/analysis-profile';
 import { runLimina } from '../helpers/run-limina';
 
 const cli = fileURLToPath(new URL('../../dist/bin/limina.js', import.meta.url));
@@ -76,27 +81,51 @@ function artifact(f: ReturnType<typeof fixture>, suffix: string): string {
   expect(name).toBeDefined();
   return f.path('.limina', name!);
 }
-interface Metric {
-  name?: string;
-  kind?: string;
-  count?: number;
+function nativePrograms(profile: AnalysisProfile): number {
+  return profile.work.filter(
+    (work) => work.op === 'native-program-create' && work.end === 'computed',
+  ).length;
 }
-function count(events: Metric[], kind: string): number {
-  return events.find((event) => event.kind === kind)?.count ?? 0;
+
+function computedGraphs(profile: AnalysisProfile): number {
+  return profile.graphs.filter((graph) => graph.source === 'computed').length;
 }
-function expectRebuiltGraph(events: Metric[], expectedGraphHits = 0): void {
-  expect(count(events, 'semanticPrograms')).toBeGreaterThan(0);
-  expect(count(events, 'graphHits')).toBe(expectedGraphHits);
-  expect(count(events, 'graphBuilds')).toBeGreaterThan(0);
+
+function restoredContexts(
+  profile: AnalysisProfile,
+  origin?: 'prior-disk' | 'invocation-memory',
+): number {
+  return profile.decisions.filter(
+    (decision) =>
+      decision.layer === 'native-context' &&
+      decision.outcome === 'adopted' &&
+      (origin === undefined || decision.origin === origin),
+  ).length;
 }
-function expectUncachedAnalysis(events: Metric[]): void {
-  expect(
-    events.find((event) => event.name === 'bounded-program-create')?.count ?? 0,
-  ).toBeGreaterThan(0);
-  for (const name of ['typescript-program-create', 'vue-program-create']) {
-    expect(events.find((event) => event.name === name)?.count ?? 0).toBe(0);
-  }
+
+function snapshotBlockReads(profile: AnalysisProfile): number {
+  return profileMetric(profile, 'snapshot.read-block.calls');
 }
+
+function expectColdAnalysis(profile: AnalysisProfile): void {
+  expect(nativePrograms(profile)).toBeGreaterThan(0);
+  expect(computedGraphs(profile)).toBeGreaterThan(0);
+}
+
+function expectRestoredAnalysis(profile: AnalysisProfile): void {
+  expect(restoredContexts(profile, 'prior-disk')).toBeGreaterThan(0);
+  expect(computedGraphs(profile)).toBeGreaterThan(0);
+  expect(nativePrograms(profile)).toBe(0);
+}
+
+function expectUncachedAnalysis(profile: AnalysisProfile): void {
+  expect(profile.invocation.cachePolicy).toBe('disabled');
+  expect(profileMetric(profile, 'snapshot.read-bytes.calls')).toBe(0);
+  expect(snapshotBlockReads(profile)).toBe(0);
+  expect(profileMetric(profile, 'snapshot.write.calls')).toBe(0);
+  expectColdAnalysis(profile);
+}
+
 async function runProfile(
   f: ReturnType<typeof fixture>,
   loader: string,
@@ -106,6 +135,10 @@ async function runProfile(
     existsSync(cli),
     'Build Limina before process-cache integration tests.',
   ).toBe(true);
+  const outputDirectory = mkdtempSync(
+    path.join(tmpdir(), 'limina-process-profile-'),
+  );
+  roots.push(outputDirectory);
   const result = await runLimina({
     fixtureName: 'process-cache',
     cwd: f.root,
@@ -117,15 +150,16 @@ async function runProfile(
       f.path(f.entry),
       '--config-loader',
       loader,
+      '--profile-output',
+      outputDirectory,
       ...(options.args ?? []),
     ],
-    env: { NODE_OPTIONS: '', LIMINA_PROFILE: '1', ...options.env },
+    env: { NODE_OPTIONS: '', LIMINA_PROFILE: '0', ...options.env },
   });
   expect(result.code, result.stdout + result.stderr).toBe(0);
-  const profile = JSON.parse(
-    readFileSync(artifact(f, 'last-profile.json'), 'utf8'),
-  ) as { metrics: Metric[] };
-  return { events: profile.metrics };
+  const profile = await readAnalysisProfile(outputDirectory);
+  expect(profile.coverage.detailsOmitted).toBe(0);
+  return { profile };
 }
 async function check(
   f: ReturnType<typeof fixture>,
@@ -154,7 +188,7 @@ async function runStandaloneGraph(
   expect(result.code, result.stdout + result.stderr).toBe(0);
 }
 
-it('restores the persistent graph seeded by standalone graph prepare', async () => {
+it('rebuilds from analysis facts published by standalone graph prepare', async () => {
   const f = fixture('mjs');
   await runStandaloneGraph(f, 'prepare');
   const snapshotPath = artifact(f, 'index.liminainfo');
@@ -164,9 +198,9 @@ it('restores the persistent graph seeded by standalone graph prepare', async () 
   expect(readFileSync(snapshotPath)).toEqual(snapshot);
   expect(statSync(snapshotPath).mtimeMs).toBe(mtime);
   const restored = await runProfile(f, 'native');
-  expect(count(restored.events, 'graphHits')).toBe(1);
-  expect(count(restored.events, 'graphBuilds')).toBe(0);
-  expect(count(restored.events, 'restoredContexts')).toBeGreaterThan(0);
+  expect(snapshotBlockReads(restored.profile)).toBeGreaterThan(0);
+  expect(restoredContexts(restored.profile)).toBeGreaterThan(0);
+  expect(computedGraphs(restored.profile)).toBe(1);
 });
 
 it.each(['read-only', 'disabled'] as const)(
@@ -188,39 +222,35 @@ it.each(['read-only', 'disabled'] as const)(
   },
 );
 
-it('leaves the analysis snapshot intact after deleting the only lockfile', async () => {
+it('reuses valid analysis facts after deleting the only lockfile', async () => {
   const f = fixture('mjs');
   const seed = await check(f, 'native');
   const bytes = readFileSync(seed.path);
   const restored = await runProfile(f, 'native');
-  expect(count(restored.events, 'graphHits')).toBe(1);
-  expect(count(restored.events, 'read-block')).toBeGreaterThan(0);
+  expectRestoredAnalysis(restored.profile);
+  expect(snapshotBlockReads(restored.profile)).toBeGreaterThan(0);
 
   rmSync(f.path('package-lock.json'));
-  const unproven = await runProfile(f, 'native');
-  expect(count(unproven.events, 'read-block')).toBe(0);
-  expect(count(unproven.events, 'graphHits')).toBe(0);
-  expect(count(unproven.events, 'graphBuilds')).toBeGreaterThan(0);
+  const lockless = await runProfile(f, 'native');
+  expect(snapshotBlockReads(lockless.profile)).toBeGreaterThan(0);
+  expectRestoredAnalysis(lockless.profile);
+  expect(computedGraphs(lockless.profile)).toBeGreaterThan(0);
   expect(readFileSync(seed.path).equals(bytes)).toBe(true);
 });
 
 it.each(['normal', 'forced'] as const)(
-  'does not publish a first analysis snapshot without a lockfile in a %s check',
+  'publishes and reuses the first analysis snapshot without a lockfile in a %s check',
   async (mode) => {
     const f = fixture('mjs');
     rmSync(f.path('package-lock.json'));
     const arguments_ = mode === 'forced' ? ['--force'] : [];
     const first = await runProfile(f, 'native', { args: arguments_ });
-    expect(count(first.events, 'graphBuilds')).toBeGreaterThan(0);
-    expect(
-      readdirSync(f.path('.limina'), { recursive: true }).some((name) =>
-        String(name).endsWith('index.liminainfo'),
-      ),
-    ).toBe(false);
+    expect(computedGraphs(first.profile)).toBeGreaterThan(0);
+    expectRestoredAnalysis((await check(f, 'native')).profile);
   },
 );
 
-it('stops using the shared pnpm lockfile when the workspace excludes the config package', async () => {
+it('retains single-package facts when an ancestor workspace changes membership', async () => {
   const f = fixture('mjs', 'packages/child');
   rmSync(f.path('package-lock.json'));
   f.write('package.json', '{"name":"child","private":true,"type":"module"}');
@@ -240,17 +270,17 @@ it('stops using the shared pnpm lockfile when the workspace excludes the config 
   const seed = await check(f, 'native');
   const bytes = readFileSync(seed.path);
   const restored = await runProfile(f, 'native');
-  expect(count(restored.events, 'graphHits')).toBe(1);
-  expect(count(restored.events, 'read-block')).toBeGreaterThan(0);
+  expectRestoredAnalysis(restored.profile);
+  expect(snapshotBlockReads(restored.profile)).toBeGreaterThan(0);
 
   f.write(
     '../../pnpm-workspace.yaml',
     "packages: ['packages/*', '!packages/child']\n",
   );
   const excluded = await runProfile(f, 'native');
-  expect(count(excluded.events, 'read-block')).toBe(0);
-  expect(count(excluded.events, 'graphHits')).toBe(0);
-  expect(count(excluded.events, 'graphBuilds')).toBeGreaterThan(0);
+  expect(snapshotBlockReads(excluded.profile)).toBeGreaterThan(0);
+  expectRestoredAnalysis(excluded.profile);
+  expect(computedGraphs(excluded.profile)).toBeGreaterThan(0);
   expect(readFileSync(seed.path).equals(bytes)).toBe(true);
 });
 
@@ -265,21 +295,26 @@ it.each([
     const f = fixture(extension);
     const cold = await check(f, loader);
     expect(cold.snapshot.configModules.complete).toBe(true);
-    expectRebuiltGraph(cold.events);
-    expect(count(cold.events, 'read-block')).toBe(0);
+    expectColdAnalysis(cold.profile);
+    expect(snapshotBlockReads(cold.profile)).toBe(0);
     const bytes = readFileSync(cold.path);
     const timestamp = statSync(cold.path).mtimeMs;
     const warm = await check(f, loader);
-    expect(count(warm.events, 'semanticPrograms')).toBe(0);
-    expect(count(warm.events, 'graphHits')).toBe(1);
-    expect(count(warm.events, 'read-block')).toBe(
+    expectRestoredAnalysis(warm.profile);
+    expect(snapshotBlockReads(warm.profile)).toBe(
       cold.snapshot.storage.blocks.length,
     );
     const mtime = statSync(f.path(f.helper)).mtimeMs / 1000;
     utimesSync(f.path(f.helper), mtime + 100, mtime + 100);
     const touch = await check(f, loader);
-    expect(count(touch.events, 'config-modules-hashes')).toBe(1);
-    expect(count(touch.events, 'semanticPrograms')).toBe(0);
+    expect(touch.profile.decisions).toContainEqual(
+      expect.objectContaining({
+        layer: 'config-modules',
+        stage: 'admission',
+        outcome: 'admitted',
+      }),
+    );
+    expect(nativePrograms(touch.profile)).toBe(0);
     expect(readFileSync(cold.path)).toEqual(bytes);
     expect(statSync(cold.path).mtimeMs).toBe(timestamp);
     f.write(
@@ -287,9 +322,9 @@ it.each([
       `${f.declaration} // changed module, identical configuration`,
     );
     const changed = await check(f, loader);
-    expectRebuiltGraph(changed.events);
-    expect(count(changed.events, 'graphHits')).toBe(0);
-    expect(count(changed.events, 'read-block')).toBe(0);
+    expectColdAnalysis(changed.profile);
+    expect(restoredContexts(changed.profile)).toBe(0);
+    expect(snapshotBlockReads(changed.profile)).toBe(0);
   },
 );
 it('keeps tsx CommonJS cold when its extension hook bypasses source observation', async () => {
@@ -297,12 +332,60 @@ it('keeps tsx CommonJS cold when its extension hook bypasses source observation'
   await check(f, 'tsx');
   const next = await check(f, 'tsx');
   expect(next.snapshot.configModules.complete).toBe(false);
-  expect(count(next.events, 'graphHits')).toBe(0);
-  expectRebuiltGraph(next.events);
+  expect(restoredContexts(next.profile)).toBe(0);
+  expectColdAnalysis(next.profile);
   expect(next.snapshot.configModules.otherUnknownReasons).toContain(
     `module-format-unobserved:${f.path(f.entry)}`,
   );
 });
+it.each([false, true])(
+  'qualifies root package edits by their role as a declared config input (%s)',
+  async (declared) => {
+    const f = fixture('mjs');
+    const manifest = {
+      name: 'fixture',
+      private: true,
+      type: 'module',
+      packageManager: 'npm@11.6.1',
+      workspaces: ['packages/*'],
+    };
+    f.write('package.json', JSON.stringify(manifest));
+    f.write('packages/child/package.json', '{"name":"child","type":"module"}');
+    f.write('packages/child/src/a.ts', 'export const child = 1;');
+    f.write(
+      'packages/child/tsconfig.json',
+      readFileSync(f.path('tsconfig.json'), 'utf8'),
+    );
+    f.write(
+      f.entry,
+      `export default ${JSON.stringify({
+        scope: {
+          checkers: {
+            tsc: {
+              include: ['tsconfig.json', 'packages/child/tsconfig.json'],
+            },
+          },
+        },
+        pipelines: { probe: ['graph:check'] },
+        ...(declared && { cache: { dependencies: ['package.json'] } }),
+      })}`,
+    );
+    await check(f, 'native');
+    expectRestoredAnalysis((await check(f, 'native')).profile);
+    f.write(
+      'package.json',
+      JSON.stringify({ ...manifest, description: 'changed root manifest' }),
+    );
+    const changed = await check(f, 'native');
+    expect(restoredContexts(changed.profile) > 0).toBe(!declared);
+    expect(
+      changed.snapshot.configModules.files.some(
+        (file) => file.path === f.path('package.json'),
+      ),
+    ).toBe(declared);
+  },
+);
+
 it.each(['native', 'tsx'])(
   'preserves one evaluation when a %s configuration factory imports its own URL',
   async (loader) => {
@@ -316,8 +399,8 @@ export default async()=>{await import(import.meta.url);return config;};`,
     );
     const result = await check(f, loader);
     expect(result.snapshot.configModules.complete).toBe(true);
-    expect(count(result.events, 'graphHits')).toBe(0);
-    expect(count((await check(f, loader)).events, 'graphHits')).toBe(1);
+    expect(restoredContexts(result.profile)).toBe(0);
+    expectRestoredAnalysis((await check(f, loader)).profile);
   },
 );
 it.each([
@@ -363,13 +446,21 @@ function expectCache(
   result: Awaited<ReturnType<typeof check>>,
   isWarm: boolean,
 ): void {
-  expect(count(result.events, 'graphHits')).toBe(isWarm ? 1 : 0);
   if (isWarm) {
-    expect(count(result.events, 'semanticPrograms')).toBe(0);
-    expect(count(result.events, 'graphBuilds')).toBe(0);
-    expect(count(result.events, 'syntaxExtractions')).toBe(0);
-    expect(count(result.events, 'resolverCalls')).toBe(0);
-  } else expectRebuiltGraph(result.events);
+    expectRestoredAnalysis(result.profile);
+    expect(
+      profileMetric(result.profile, 'cache.native-syntax.adoption.not-adopted'),
+    ).toBe(0);
+    expect(
+      profileMetric(
+        result.profile,
+        'cache.native-resolution.adoption.not-adopted',
+      ),
+    ).toBe(0);
+  } else {
+    expectColdAnalysis(result.profile);
+    expect(snapshotBlockReads(result.profile)).toBe(0);
+  }
 }
 
 it.each(['native', 'tsx'])(
@@ -546,7 +637,13 @@ it.each(['native', 'tsx'])(
     utimesSync(f.path('rules.json'), time + 100, time + 100);
     const touch = await check(f, loader);
     expectCache(touch, true);
-    expect(count(touch.events, 'config-modules-hashes')).toBe(1);
+    expect(touch.profile.decisions).toContainEqual(
+      expect.objectContaining({
+        layer: 'config-modules',
+        stage: 'admission',
+        outcome: 'admitted',
+      }),
+    );
     expect(readFileSync(cold.path)).toEqual(bytes);
     expect(statSync(cold.path).mtimeMs).toBe(modified);
     f.write('rules.json', '{"ignored":2}');
@@ -555,7 +652,14 @@ it.each(['native', 'tsx'])(
     expect(changed.snapshot.header.configVersion).toBe(
       cold.snapshot.header.configVersion,
     );
-    expect(count(changed.events, 'config-modules-result-content')).toBe(1);
+    const hasContentRejection = changed.profile.decisions.some(
+      (decision) =>
+        decision.layer === 'config-modules' &&
+        decision.stage === 'admission' &&
+        decision.outcome === 'rejected' &&
+        decision.causes.some((cause) => cause.code === 'content'),
+    );
+    expect(hasContentRejection).toBe(true);
     expectCache(await check(f, loader), true);
   },
 );
@@ -624,19 +728,19 @@ it.each([undefined, true, { dependencies: [] }])(
     const before = readFileSync(seed.path);
     const forced = await check(f, 'native', { args: ['--force'] });
     expectCache(forced, false);
-    expect(forced.events).toContainEqual(
-      expect.objectContaining({ name: 'analysis-cache', kind: 'read-bytes' }),
+    expect(
+      profileMetric(forced.profile, 'snapshot.read-bytes.calls'),
+    ).toBeGreaterThan(0);
+    expect(forced.profile.decisions).toContainEqual(
+      expect.objectContaining({
+        layer: 'analysis-snapshot',
+        stage: 'admission',
+        outcome: 'bypassed',
+      }),
     );
     expect(
-      forced.events.some(
-        (event) =>
-          event.name === 'analysis-cache' &&
-          ['parse', 'validation'].includes(event.kind ?? ''),
-      ),
-    ).toBe(false);
-    expect(forced.events).toContainEqual(
-      expect.objectContaining({ name: 'analysis-cache', kind: 'write' }),
-    );
+      profileMetric(forced.profile, 'snapshot.write.calls'),
+    ).toBeGreaterThan(0);
     expect(readFileSync(seed.path)).not.toEqual(before);
     expectCache(await check(f, 'native'), true);
   },
@@ -659,10 +763,7 @@ it.each([
     );
     const disabledOptions = { env: { DISABLE_CACHE: '1' } };
     const initial = await runProfile(f, loader, disabledOptions);
-    expect(
-      initial.events.some((event) => event.name === 'analysis-cache'),
-    ).toBe(false);
-    expectUncachedAnalysis(initial.events);
+    expectUncachedAnalysis(initial.profile);
     expect(
       readdirSync(f.path('.limina'), { recursive: true }).some((entry) =>
         String(entry).endsWith('index.liminainfo'),
@@ -677,10 +778,7 @@ it.each([
         ...disabledOptions,
         args: arguments_,
       });
-      expect(
-        disabled.events.some((event) => event.name === 'analysis-cache'),
-      ).toBe(false);
-      expectUncachedAnalysis(disabled.events);
+      expectUncachedAnalysis(disabled.profile);
       expect(readFileSync(seed.path)).toEqual(bytes);
       expect(statSync(seed.path).mtimeMs).toBe(modified);
     }
@@ -744,8 +842,8 @@ it('forces one config namespace without changing another config or worktree snap
     f.entry,
     "import config from './helper.mjs'; export default {...config,cache:true};",
   );
-  expectRebuiltGraph((await runProfile(f, 'native')).events);
-  expect(count((await runProfile(f, 'native')).events, 'graphHits')).toBe(1);
+  expectColdAnalysis((await runProfile(f, 'native')).profile);
+  expectRestoredAnalysis((await runProfile(f, 'native')).profile);
   const secondPath = readdirSync(f.path('.limina'), { recursive: true })
     .map(String)
     .filter((entry) => entry.endsWith('index.liminainfo'))
@@ -761,7 +859,7 @@ it('forces one config namespace without changing another config or worktree snap
   expect(readFileSync(otherSeed.path)).toEqual(otherBytes);
   expect(statSync(otherSeed.path).mtimeMs).toBe(otherTime);
   f.entry = 'second.config.mjs';
-  expect(count((await runProfile(f, 'native')).events, 'graphHits')).toBe(1);
+  expectRestoredAnalysis((await runProfile(f, 'native')).profile);
 });
 
 it('keeps a newer snapshot when a stale forced CLI writer resumes after its command', async () => {
@@ -792,8 +890,9 @@ pipelines:{probe:[
     args: ['--force'],
     env: { TOUCH_CACHE_CONFIG: '1' },
   });
-  expect(count(touched.events, 'graphHits')).toBe(0);
-  expect(count(touched.events, 'graphBuilds')).toBe(2);
+  expect(snapshotBlockReads(touched.profile)).toBe(0);
+  expectColdAnalysis(touched.profile);
+  expect(computedGraphs(touched.profile)).toBe(2);
   const seed = await check(f, 'native');
   const old = readFileSync(seed.path);
   const stale = (async () => {
@@ -814,8 +913,13 @@ pipelines:{probe:[
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     const current = await check(f, 'native', { args: ['--force'] });
-    // The second graph task reuses the first graph after observing unchanged inputs.
-    expectRebuiltGraph(current.events, 1);
+    // The second graph derives its result using this invocation's first collection.
+    expectColdAnalysis(current.profile);
+    expect(computedGraphs(current.profile)).toBe(2);
+    expect(
+      restoredContexts(current.profile, 'invocation-memory'),
+    ).toBeGreaterThan(0);
+    expect(snapshotBlockReads(current.profile)).toBe(0);
     const published = readFileSync(seed.path);
     const modified = statSync(seed.path).mtimeMs;
     expect(published).not.toEqual(old);
@@ -824,8 +928,7 @@ pipelines:{probe:[
     expect(readFileSync(seed.path)).toEqual(published);
     expect(statSync(seed.path).mtimeMs).toBe(modified);
     const restored = await check(f, 'native');
-    expect(count(restored.events, 'semanticPrograms')).toBe(0);
-    expect(count(restored.events, 'graphHits')).toBeGreaterThan(0);
+    expectRestoredAnalysis(restored.profile);
   } finally {
     f.write('writer-release', 'yes');
     await stale;
@@ -857,10 +960,9 @@ pipelines:{probe:['graph:check','checker:build']}};`,
   );
   const seed = await check(f, 'native');
   const warm = await check(f, 'native');
-  // Producer admission creates its own Program after restoring the full graph.
-  expect(count(warm.events, 'graphBuilds')).toBe(0);
-  expect(count(warm.events, 'restoredContexts')).toBeGreaterThan(0);
-  expect(count(warm.events, 'graphHits')).toBeGreaterThan(0);
+  // Producer admission can observe its own Program after graph preparation.
+  expect(computedGraphs(warm.profile)).toBeGreaterThan(0);
+  expect(restoredContexts(warm.profile)).toBeGreaterThan(0);
   const buildInfo = readdirSync(f.root, { recursive: true })
     .map(String)
     .filter((entry) => entry.endsWith('.tsbuildinfo'))
@@ -882,15 +984,13 @@ pipelines:{probe:['graph:check','checker:build']}};`,
       expect(statSync(record.file).mtimeMs).toBe(record.modified);
     }
     if (isDisabled) {
-      expect(
-        profile.events.some((event) => event.name === 'analysis-cache'),
-      ).toBe(false);
+      expectUncachedAnalysis(profile.profile);
     } else {
       // Producer preparation may reuse this invocation's freshly built graph.
-      // Force still rebuilds without loading a persisted graph.
-      expect(count(profile.events, 'semanticPrograms')).toBeGreaterThan(0);
-      expect(count(profile.events, 'graphBuilds')).toBeGreaterThan(0);
-      expect(count(profile.events, 'read-block')).toBe(0);
+      // Force starts without loading any prior facts.
+      expect(nativePrograms(profile.profile)).toBeGreaterThan(0);
+      expect(computedGraphs(profile.profile)).toBeGreaterThan(0);
+      expect(snapshotBlockReads(profile.profile)).toBe(0);
     }
   }
   expect(readFileSync(seed.path)).not.toEqual(snapshot);

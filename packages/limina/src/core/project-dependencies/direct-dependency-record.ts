@@ -1,10 +1,9 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import type { VueGraphOccurrence } from '../analysis-cache/vue-graph-facts';
 import type { DeclarationReferenceRequirement } from '../dependency-semantics';
+import { lockedCheckerEvidence } from '../import-analysis/checker-resolution-provider';
 import type { CanonicalImportResolutionEvidence } from '../import-analysis/runner';
-import {
-  getResolvedTargetKind,
-  isDeclarationFile,
-} from '../import-graph/declaration-classifier';
+import { getResolvedTargetKind } from '../import-graph/declaration-classifier';
 import type { TypeEvidence } from '../type-evidence/cache';
 import type {
   DirectSourceDependency,
@@ -20,7 +19,7 @@ import { createDirectDependencyEvidence } from './evidence';
 import { createProjectDependencyFailure } from './failure';
 import { getDirectNativeFact, getNativeTargetPath } from './native-dependency';
 import { getDirectResolutionMode } from './resolution-mode';
-import { isTypeScriptSemanticSource } from './source-evidence';
+import { isNativeProjectDependencyTarget } from './source-evidence';
 
 export interface CollectRecordOptions {
   collection: ProjectDependencyCollection;
@@ -69,13 +68,6 @@ function createDirectDependency(options: {
     targetKind: getResolvedTargetKind(resolvedFilePath),
     typeEvidence: options.typeEvidence,
   };
-}
-
-function isNativeProjectDependencyTarget(resolvedFilePath: string): boolean {
-  return [
-    isDeclarationFile(resolvedFilePath),
-    isTypeScriptSemanticSource(resolvedFilePath),
-  ].some(Boolean);
 }
 
 function getDirectResolvedFilePath(
@@ -235,7 +227,13 @@ function isAdmittedDirectTarget(options: {
 export function collectProjectDependencyRecord(
   options: CollectRecordOptions,
 ): void {
-  const evidence = resolveDirectCheckerEvidence(options);
+  const projected = options.request.vueGraphFacts?.occurrence(
+    options.importRecord,
+  );
+  const evidence =
+    projected === undefined
+      ? resolveDirectCheckerEvidence(options)
+      : projectVueEvidence(options, projected);
   if (isCollectNonDependency(options, evidence)) return;
   const resolved = {
     evidence,
@@ -247,7 +245,11 @@ export function collectProjectDependencyRecord(
     addDirectObservation({ base: options, ...resolved });
     return;
   }
-  const observed = observeDirectRequirement(options, evidence);
+  const observed = observeDirectRequirement(
+    options,
+    evidence,
+    projected?.observation,
+  );
   if (isRecordedObservation(options, evidence, observed)) return;
   recordResolvedDependency(
     options,
@@ -256,6 +258,29 @@ export function collectProjectDependencyRecord(
     resolved.resolvedFilePath,
   );
 }
+function projectVueEvidence(
+  options: CollectRecordOptions,
+  fact: VueGraphOccurrence,
+) {
+  const context = options.request.context;
+  return lockedCheckerEvidence(
+    {
+      oxc: null,
+      typescript: fact.resolution.target,
+      semanticEvidence: {
+        ...fact.resolution,
+        identityId: context.vueSemanticIdentity!.id,
+      },
+    },
+    {
+      compilerOptions: context.compilerOptions,
+      context,
+      containingFile: normalizeAbsolutePath(options.importRecord.filePath),
+    },
+    options.importRecord,
+  );
+}
+
 function recordResolvedDependency(
   options: CollectRecordOptions,
   evidence: CanonicalImportResolutionEvidence,

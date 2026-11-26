@@ -801,15 +801,12 @@ describe('framework checker targets', () => {
           (item) => item.status === 'admission-rejected',
         ),
       ).toBe(true);
-      expect(
-        progress.events.filter((event) => event.startsWith('plan:')),
-      ).toHaveLength(2);
-      expect(
-        progress.events.filter((event) => event.startsWith('start:')),
-      ).toHaveLength(2);
-      expect(
-        progress.events.filter((event) => event.startsWith('fail:')),
-      ).toHaveLength(2);
+      for (const label of ['astro', 'svelte-check']) {
+        const target = `${label}: packages/a/tsconfig.json`;
+        expect(
+          progress.events.filter((event) => event.endsWith(target)),
+        ).toEqual([`plan:${target}`, `start:${target}`, `fail:${target}`]);
+      }
     } finally {
       await fixture.cleanup();
     }

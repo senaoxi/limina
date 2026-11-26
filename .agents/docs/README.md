@@ -35,7 +35,7 @@ Read the relevant paired records before edits. For architecture work, use the Li
 | Change CI, security, reports or external workflow integration            | [Infrastructure](./infrastructure.md)                                            |
 | Check local migration scope and remote/publication/deployment gates      | [Migration](./migration.md)                                                      |
 
-Persistent importer/context validity, restoration before Program creation and the provider support boundary are owned by [semantics](./semantics.md#persistent-importer-validity); global lockfile admission, generation time, source-config authority recovery, local typeRoots fingerprints, invocation freezing, namespace-wide config versions, epochs, targeted rebuild and snapshot publication are owned by [lifecycle](./lifecycle.md#persistent-native-analysis-cache).
+Persistent importer/context validity, restoration before Program creation and the provider support boundary are owned by [semantics](./semantics.md#persistent-importer-validity); package-scope invalidation, generation time, current source-config discovery and checker selection, local typeRoots fingerprints, invocation freezing, namespace-wide config versions, epochs, targeted rebuild and snapshot publication are owned by [lifecycle](./lifecycle.md#persistent-native-analysis-cache).
 
 ## Bilingual publishing and maintenance
 

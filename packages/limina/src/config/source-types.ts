@@ -40,26 +40,15 @@ export interface SourceImportAuthorityConfig {
   allow: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
 }
 
-export interface SourceAmbientDeclarationConfig {
-  allowSharedAcrossOwners?: boolean;
-  allowTripleSlashReferences?: boolean;
-  include: string[];
-  reason: string;
-}
-
-export interface SourceDeclarationsConfig {
-  ambient: SourceAmbientDeclarationConfig[];
-}
-
 interface SourceCheckOptions {
-  declarations?: SourceDeclarationsConfig;
+  forbidCrossPackageRelativeImports?: boolean;
   importAuthority?: SourceImportAuthorityConfig;
   knip?: boolean | SourceKnipCheckConfig;
 }
 
 export type SourceCheckConfig = SourceCheckOptions &
   (
-    | { declarations: SourceDeclarationsConfig }
+    | { forbidCrossPackageRelativeImports: boolean }
     | { importAuthority: SourceImportAuthorityConfig }
     | { knip: boolean | SourceKnipCheckConfig }
   );

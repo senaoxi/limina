@@ -1,9 +1,12 @@
 import type { RuntimeEnvironment } from '#config/runner';
 import { getPackageRootSpecifier } from '#core/workspace/actions';
+import { isRelativeSpecifier } from '#utils/module-specifier';
 import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
-import { isBuiltin } from 'node:module';
+import { createRequire, isBuiltin } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'pathe';
+import { canonicalProjectedPathSync } from '../core/workspace/validated/shared';
 import type {
   DistPackageJson as DistributionPackageJson,
   SelfSpecifierMatchers,
@@ -11,6 +14,8 @@ import type {
 import { findPackageImportTargets, isAllowedSelfSpecifier } from './manifest';
 
 export interface PublishedSpecifierValidationOptions {
+  relativeFilePath: string;
+  commonJs?: boolean;
   allowedExternalPackages: Set<string>;
   environment: RuntimeEnvironment;
   importsField: DistributionPackageJson['imports'];
@@ -224,12 +229,42 @@ function validatePackageSpecifier(
     : `"${options.specifier}" resolves to package "${packageRoot}" which is not listed in dependencies, peerDependencies, optionalDependencies, or self exports`;
 }
 
+function validateLocalSpecifier(
+  options: PublishedSpecifierValidationOptions,
+): string | null {
+  const relative = options.specifier.replaceAll('\\', '/');
+  if (!isRelativeSpecifier(relative)) return null;
+  const importer = path.resolve(options.outDir, options.relativeFilePath);
+  let target: string;
+  try {
+    target = options.commonJs
+      ? path.resolve(path.dirname(importer), relative)
+      : fileURLToPath(new URL(options.specifier, pathToFileURL(importer)));
+  } catch {
+    return `invalid relative module path "${options.specifier}" in the published package`;
+  }
+  if (options.commonJs && isPathInsideDirectory(target, options.outDir)) {
+    try {
+      target = createRequire(importer).resolve(relative);
+    } catch {
+      // A missing module still has a lexical package boundary.
+    }
+  }
+  return isPathInsideDirectory(target, options.outDir) &&
+    isPathInsideDirectory(
+      canonicalProjectedPathSync(target),
+      canonicalProjectedPathSync(options.outDir),
+    )
+    ? null
+    : `relative import "${options.specifier}" escapes the published package root`;
+}
+
 const validators: Record<
   SpecifierKind,
   (options: PublishedSpecifierValidationOptions) => string | null
 > = {
   builtin: validateBuiltinSpecifier,
-  local: () => null,
+  local: validateLocalSpecifier,
   package: validatePackageSpecifier,
   'package-import': validatePackageImportSpecifier,
 };

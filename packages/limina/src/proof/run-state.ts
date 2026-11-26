@@ -17,6 +17,7 @@ import {
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import { ProofLogger } from '../logger';
 import { resolvePreflight } from '../preflight';
+import { createProofCheckerRouteFinding } from './checker-targets';
 import {
   collectProofReportIssues,
   formatProofFindingReport,
@@ -24,7 +25,7 @@ import {
 import type { ProofFinding } from './findings';
 import {
   type CheckerCoverageTarget,
-  PROOF_CHECK_ITEM_NAMES,
+  PROOF_PROGRESS_ITEM_NAMES,
   type RunProofCheckImplOptions,
 } from './runner-types';
 
@@ -112,15 +113,36 @@ export async function createProofRunState(
   const checkItems = createCheckItemAccumulator(
     () => findings.length,
     () => checks.value,
-    { plannedItems: PROOF_CHECK_ITEM_NAMES, progress: options.progress },
+    { plannedItems: PROOF_PROGRESS_ITEM_NAMES, progress: options.progress },
   );
   const preflight = resolvePreflight(config, options);
   const generatedGraph = await preflight.ensureGeneratedGraph();
-  const graphRoutes = (await preflight.ensureGraphProjectRoutes()).routes;
-  const entryRoutes = (await preflight.ensureCheckerEntryProjectRoutes())
-    .routes;
+  const graphCollection = await preflight.ensureGraphProjectRoutes();
+  const entryCollection = await preflight.ensureCheckerEntryProjectRoutes();
+  const entryRoutes = entryCollection.routes;
   const entryProjectPaths = uniqueSortedStrings(
     entryRoutes.flatMap((route) => route.projectPaths),
+  );
+  const ordinaryConfigPaths = collectGeneratedSourceConfigPaths(generatedGraph);
+  const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
+
+  findings.push(
+    ...graphCollection.diagnostics.map((diagnostic) =>
+      createProofCheckerRouteFinding({
+        checkerName: diagnostic.checkerName,
+        diagnostic,
+        projection: 'graph',
+        workspaceLookup,
+      }),
+    ),
+    ...entryCollection.diagnostics.map((diagnostic) =>
+      createProofCheckerRouteFinding({
+        checkerName: diagnostic.checkerName,
+        diagnostic,
+        projection: 'checker-entry',
+        workspaceLookup,
+      }),
+    ),
   );
 
   return {
@@ -133,10 +155,10 @@ export async function createProofRunState(
     entryRoutes,
     findings,
     generatedGraph,
-    graphRoutes,
+    graphRoutes: graphCollection.routes,
     options,
-    ordinaryConfigPaths: collectGeneratedSourceConfigPaths(generatedGraph),
+    ordinaryConfigPaths,
     preflight,
-    workspaceLookup: await preflight.ensureWorkspaceLookupIndex(),
+    workspaceLookup,
   };
 }

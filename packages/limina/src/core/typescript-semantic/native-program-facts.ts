@@ -1,6 +1,9 @@
 import type { ResolvedCheckerModuleName } from '#checkers';
 import type ts from 'typescript';
-import type { NativeResolution } from '../../domain/analysis/native-evidence';
+import type {
+  NativeEvidenceSnapshot,
+  NativeResolution,
+} from '../../domain/analysis/native-evidence';
 import { summarizeCompilationObligation } from '../../domain/analysis/native-obligation';
 import type { DeclarationReferenceRequirement } from '../dependency-semantics';
 import type {
@@ -11,50 +14,82 @@ import type { NativeDependencyFact } from './dependency-fact';
 import { createImportRecordIdentity } from './import-record';
 import { nativeFingerprint } from './native-file-identity';
 import type { NativeObservationAdapter } from './native-observation-adapter';
+import type { NativeProgramFrontier } from './native-program-frontier';
 import type { NativeRequestRecord } from './native-program-records';
-import { observedDeclarationRedirect } from './reference-redirect';
-import { getResolutionOrigin } from './resolution-origin';
+import {
+  type NativeReferenceObservation,
+  observedDeclarationRedirect,
+} from './reference-redirect';
+import {
+  getResolutionOrigin,
+  type ResolutionOrigin,
+} from './resolution-origin';
 
 export function nativeProgramFacts(
   adapter: NativeObservationAdapter,
   entries: readonly NativeRequestRecord[],
 ): Map<string, NativeDependencyFact> {
-  const resolutions = new Map(
-    adapter.snapshot.resolutions.map((item) => [item.requestId, item]),
-  );
-  const obligations = new Map(
-    adapter.snapshot.obligations.flatMap((item) =>
-      item.requestIds.map((id) => [id, item] as const),
-    ),
-  );
   const modules = new Map(
     adapter.modules.map((item) => [item.requestId, item.raw?.resolvedModule]),
   );
+  return projectNativeProgramFacts({
+    snapshot: adapter.snapshot,
+    frontier: adapter.frontier,
+    references: adapter.references,
+    entries,
+    origin: (id) => {
+      const raw = modules.get(id);
+      return raw === undefined ? undefined : getResolutionOrigin(raw);
+    },
+  });
+}
+
+interface FactProjection {
+  snapshot: NativeEvidenceSnapshot;
+  frontier: NativeProgramFrontier;
+  references: ReadonlyMap<string, NativeReferenceObservation>;
+  entries: readonly NativeRequestRecord[];
+  origin(id: string): ResolutionOrigin | undefined;
+}
+
+export function projectNativeProgramFacts(
+  input: FactProjection,
+): Map<string, NativeDependencyFact> {
+  const resolutions = new Map(
+    input.snapshot.resolutions.map((item) => [item.requestId, item]),
+  );
+  const obligations = new Map(
+    input.snapshot.obligations.flatMap((item) =>
+      item.requestIds.map((id) => [id, item] as const),
+    ),
+  );
   return new Map(
-    entries.map((entry) => [
+    input.entries.map((entry) => [
       createImportRecordIdentity(entry.record),
       nativeProgramFact({
-        adapter,
+        projection: input,
         entry,
         observed: resolutions.get(entry.request.id)!,
         obligation: obligations.get(entry.request.id) ?? null,
-        raw: modules.get(entry.request.id),
       }),
     ]),
   );
 }
 
 function nativeProgramFact(input: {
-  adapter: NativeObservationAdapter;
+  projection: FactProjection;
   entry: NativeRequestRecord;
   observed: NativeResolution;
   obligation: NonNullable<NativeDependencyFact['nativeEvidence']>['obligation'];
-  raw: ts.ResolvedModuleFull | undefined;
 }): NativeDependencyFact {
-  const { adapter, entry, observed, obligation, raw } = input;
+  const { projection, entry, observed, obligation } = input;
   const target = observed.target?.lexicalPath;
-  const coverage = targetCoverage(adapter, target);
-  const resolution = nativeSemanticResolution(entry, observed, raw);
+  const coverage = targetCoverage(projection, target);
+  const resolution = nativeSemanticResolution(
+    entry,
+    observed,
+    projection.origin(entry.request.id),
+  );
   return {
     nativeEvidence: {
       requestId: entry.request.id,
@@ -66,26 +101,26 @@ function nativeProgramFact(input: {
     referenceRequirement: referenceRequirement(obligation, target),
     admission:
       observed.state === 'resolved' ? loadedAdmission(observed) : 'unresolved',
-    redirect: targetRedirect(adapter, target),
+    redirect: targetRedirect(projection, target),
   };
 }
 
 function targetCoverage(
-  adapter: NativeObservationAdapter,
+  projection: FactProjection,
   target: string | undefined,
 ) {
   return target === undefined
     ? null
-    : adapter.frontier.inspect(target).coverage;
+    : projection.frontier.inspect(target).coverage;
 }
 
 function targetRedirect(
-  adapter: NativeObservationAdapter,
+  projection: FactProjection,
   target: string | undefined,
 ) {
   return target === undefined
     ? undefined
-    : observedDeclarationRedirect(adapter.references.get(target));
+    : observedDeclarationRedirect(projection.references.get(target));
 }
 
 function referenceRequirement(
@@ -116,7 +151,7 @@ function loadedAdmission(
 function nativeSemanticResolution(
   entry: NativeRequestRecord,
   observed: NativeResolution,
-  raw: ts.ResolvedModuleFull | undefined,
+  origin: ResolutionOrigin | undefined,
 ): TypeScriptSemanticResolution {
   return {
     channel: semanticChannel(entry),
@@ -126,7 +161,7 @@ function nativeSemanticResolution(
         ? null
         : nativeFingerprint(observed.rawRedirectEvidenceIds),
     resolutionMode: resolutionMode(entry.request.resolutionMode),
-    target: checkerTarget(observed, raw),
+    target: checkerTarget(observed, origin),
   };
 }
 
@@ -151,13 +186,13 @@ function resolutionMode(mode: string | null): ts.ResolutionMode {
 
 function checkerTarget(
   observed: NativeResolution,
-  raw: ts.ResolvedModuleFull | undefined,
+  origin: ResolutionOrigin | undefined,
 ): ResolvedCheckerModuleName | null {
   if (observed.target === null) return null;
   return {
     resolvedBy: 'typescript',
     resolvedFileName: observed.target.lexicalPath,
     isExternalLibraryImport: observed.externalLibrary === true,
-    ...(raw !== undefined && { resolutionOrigin: getResolutionOrigin(raw) }),
+    ...(origin !== undefined && { resolutionOrigin: origin }),
   };
 }

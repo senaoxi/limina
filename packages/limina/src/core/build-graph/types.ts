@@ -24,7 +24,7 @@ import type {
 } from '../workspace/validated-context';
 import type { CandidateBuildPlan } from './analysis-admission';
 import type { AnalysisOutcome } from './analysis-outcome';
-import type { AutoScopeProject } from './auto-checker-types';
+import type { SourceConfigCandidate } from './auto-checker-types';
 import type {
   CheckerOwnershipPlan,
   LockedSemanticAuthority,
@@ -46,7 +46,6 @@ import type {
 } from './producer-receipt';
 import type { ReferenceValidation } from './reference-validation';
 import type { AutoFrameworkEvidence } from './source-capabilities';
-import type { SourceConfigDiscovery } from './source-config-discovery';
 import type { TypeInputProjectionReceipt } from './type-input-projection';
 
 export type { AutoScopeProject } from './auto-checker-types';
@@ -161,8 +160,15 @@ export interface PrepareGeneratedTsconfigGraphOptions {
   workspacePathIndex?: WorkspaceRegionPathIndex;
 }
 
+export interface SourceProjectExecutionConfig {
+  readonly configPath: string;
+  readonly options: ts.CompilerOptions;
+  readonly references: readonly ts.ProjectReference[];
+  readonly virtualFiles: ReadonlyMap<string, string>;
+}
+
 export interface SourceProject {
-  executionConfigPath?: string;
+  executionConfig?: SourceProjectExecutionConfig;
   outputProjections?: OutputProjectionReceipt[];
   typeInputProjections?: TypeInputProjectionReceipt[];
   libraryProjections?: LibraryProjectionReceipt[];
@@ -181,6 +187,8 @@ export interface SourceProject {
   packageRootDir: string;
   options: ts.CompilerOptions;
   references: Set<string>;
+  sourceConfigReferences: readonly ts.ProjectReference[];
+  readSvelteSourceConfig?: SvelteSemanticProject['readSourceConfig'];
   semanticAuthority: LockedSemanticAuthority;
 }
 
@@ -210,6 +218,7 @@ export type SourceBuildProjection =
     };
 
 export interface GovernedSourceUnit {
+  executionConfig?: SourceProjectExecutionConfig;
   checkConfigPath?: string;
   checkReferences?: Set<string>;
   astroSemanticProject?: AstroSemanticProject;
@@ -243,9 +252,9 @@ export interface OutputSolutionProject {
 }
 
 export interface CheckerSourceConfigCollection {
-  sourceDiscovery?: SourceConfigDiscovery;
   buildModulesBySourcePath: Map<string, GeneratedBuildModule>;
   entryConfigPaths: Set<string>;
+  incompleteTopology: boolean;
   projectConfigPaths: Set<string>;
   packageRootBySourcePath: Map<string, string>;
   rootConfigPaths: string[];
@@ -306,7 +315,15 @@ export interface SemanticSourceRelation {
   specifier: string;
 }
 
+export interface ReferencePackageRequest {
+  consumerProject: string;
+  providerProject: string;
+  file: string;
+  specifier: string;
+}
+
 export interface DependencyAnalysisResult {
+  packageRequests?: ReferencePackageRequest[];
   /** Current compiler relations can be determined while migration comparison
    * must preserve explicit references for unresolved source requests. */
   unresolvedDependencies?: {
@@ -319,6 +336,8 @@ export interface DependencyAnalysisResult {
   supplementalAssessments?: readonly SupplementalAssessment[];
   referenceValidation?: ReferenceValidation;
   declarationContexts?: DeclarationContextDecision[];
+  // Raw observations outside the selected declaration responsibility for this graph.
+  inactiveDeclarationRequests?: string[];
   declarationValidation?: {
     state: 'admitted' | 'denied' | 'unavailable';
     diagnostics: string[];
@@ -365,5 +384,5 @@ export interface AutoScope {
   collection: CheckerSourceConfigCollection;
   entryConfigPath: string;
   frameworkEvidence: AutoFrameworkEvidence[];
-  projects: AutoScopeProject[];
+  candidates: SourceConfigCandidate[];
 }

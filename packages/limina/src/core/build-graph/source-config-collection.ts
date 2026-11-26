@@ -1,15 +1,9 @@
-import {
-  type CheckerProjectConfigCache,
-  normalizeExtensions,
-  parseCheckerProjectConfigForContext,
-  type ParsedCheckerProjectConfig,
-} from '#checkers';
 import type {
   ResolvedCheckerConfig,
   ResolvedLiminaInputs,
 } from '#config/runner';
 import {
-  collectReferencePathInfosForConfig,
+  collectReferencePathInfosFromConfigObject,
   isLiminaSolutionConfig,
   isOrdinarySourceTypecheckConfigPath,
   type JsonObject,
@@ -19,7 +13,6 @@ import {
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
-import type ts from 'typescript';
 import { TypeScriptConfigInputError } from '../../checker/project-base';
 import { TsconfigInputError } from '../tsconfig/config-paths';
 import { getWorkspaceRegionBoundaryExclusionReason } from '../workspace/regions';
@@ -32,9 +25,7 @@ import {
   addSourceReferenceConfigProblems,
   readOutputOptions,
 } from './generated/config-readers';
-import { capabilityDiscoveryExtensions } from './generated/file-extensions';
 import { createGeneratedGraphStructuredError } from './problems';
-import type { SourceConfigDiscovery } from './source-config-discovery';
 import type { CheckerSourceConfigCollection } from './types';
 
 interface CollectionContext {
@@ -42,30 +33,22 @@ interface CollectionContext {
   onInvalidReference?: (configPath: string, error: Error) => void;
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: ResolvedCheckerConfig['name'];
-  checkerPreset: ResolvedCheckerConfig['name'];
   collection: CheckerSourceConfigCollection;
   config: ResolvedLiminaInputs;
-  discoveryExtensions?: string[];
   explicitOwnerByConfigPath?: ReadonlyMap<
     string,
     ResolvedCheckerConfig['name']
   >;
   inheritedOwnerByConfigPath?: Map<string, ResolvedCheckerConfig['name']>;
   problems: string[];
-  projectConfigCache?: CheckerProjectConfigCache;
   selectedLeafConfigPaths?: ReadonlySet<string>;
   seenConfigs: Set<string>;
-  sourceConfigInspector?: SourceConfigInspector;
-  sourceConfigParser?: (
+  sourceConfigParser: (
     configPath: string,
-    referencedFromConfigPath?: string,
-  ) => Pick<SourceConfigAnalysis, 'configClosure' | 'fileNames' | 'options'>;
+    referencedFromConfigPath: string | undefined,
+    configObject: JsonObject,
+  ) => { fileNames?: readonly string[] };
 }
-
-type SourceConfigInspector = (options: {
-  configObject: JsonObject;
-  sourceConfigPath: string;
-}) => void;
 
 interface ConfigVisit extends CollectionContext {
   referencedFromConfigPath?: string;
@@ -73,29 +56,24 @@ interface ConfigVisit extends CollectionContext {
 }
 
 interface SourceConfigAnalysis {
-  configClosure: ParsedCheckerProjectConfig['configClosure'];
   configObject: JsonObject;
-  fileNames: string[];
-  options: ts.CompilerOptions;
+  fileNames?: readonly string[];
+  isSolution: boolean;
 }
 
 interface CollectCheckerSourceConfigsOptions {
-  sourceConfigParser?: CollectionContext['sourceConfigParser'];
+  sourceConfigParser: CollectionContext['sourceConfigParser'];
   onInputError?: (configPath: string, error: Error) => void;
   onProblems?: (problems: string[]) => void;
-  sourceDiscovery?: SourceConfigDiscovery;
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: ResolvedCheckerConfig['name'];
-  checkerPreset: ResolvedCheckerConfig['name'];
   config: ResolvedLiminaInputs;
-  discoveryExtensions?: string[];
   entryConfigPaths: readonly string[];
   explicitOwnerByConfigPath?: ReadonlyMap<
     string,
     ResolvedCheckerConfig['name']
   >;
   inheritedOwnerByConfigPath?: Map<string, ResolvedCheckerConfig['name']>;
-  projectConfigCache?: CheckerProjectConfigCache;
   selectedLeafConfigPaths?: ReadonlySet<string>;
 }
 
@@ -109,6 +87,7 @@ export function createEmptySourceConfigCollection(
     buildModulesBySourcePath: new Map(),
     crossCheckerReferences: [],
     entryConfigPaths: new Set(normalizedEntries),
+    incompleteTopology: false,
     packageRootBySourcePath: new Map(),
     projectConfigPaths: new Set(),
     rootConfigPaths: [],
@@ -134,7 +113,6 @@ export function collectCheckerSourceConfigs(
   const collection = createEmptySourceConfigCollection(
     options.entryConfigPaths,
   );
-  collection.sourceDiscovery = options.sourceDiscovery;
   const context: CollectionContext = {
     ...options,
     collection,
@@ -156,6 +134,7 @@ function isRejectOutsideActivatedRegion(options: ConfigVisit): boolean {
   if (options.activatedRegions.isSourceConfigPath(options.sourceConfigPath)) {
     return false;
   }
+  options.collection.incompleteTopology = true;
   options.problems.push(getOutsideRegionProblem(options));
   return true;
 }
@@ -168,7 +147,6 @@ function shouldSkipConfigVisit(options: ConfigVisit): boolean {
 }
 
 function registerSourceConfig(options: ConfigVisit): string {
-  options.collection.sourceDiscovery?.begin(options.sourceConfigPath);
   options.seenConfigs.add(options.sourceConfigPath);
   const packageRootDirectory = options.activatedRegions.findPackageForPath(
     options.sourceConfigPath,
@@ -228,7 +206,9 @@ function collectSolutionReference(options: {
       options.context.config.rootDir,
     )
   ) {
-    const { config, onInvalidReference, problems } = options.context;
+    const { collection, config, onInvalidReference, problems } =
+      options.context;
+    collection.incompleteTopology = true;
     const reason =
       'Solution membership target is missing or is not an ordinary config';
     if (onInvalidReference) {
@@ -252,15 +232,19 @@ function collectSolutionReference(options: {
   collectOwnedSolutionReference({ ...options, targetChecker });
 }
 
-function collectSolutionReferences(options: ConfigVisit): string[] {
-  const references = collectReferencePathInfosForConfig(
+function collectSolutionReferences(
+  options: ConfigVisit,
+  analysis: SourceConfigAnalysis,
+): string[] {
+  const raw = collectReferencePathInfosFromConfigObject(
     options.config.rootDir,
     options.sourceConfigPath,
-    options.config.virtualFiles,
+    analysis.configObject,
   );
-  options.problems.push(...references.problems);
+  if (raw.problems.length > 0) options.collection.incompleteTopology = true;
+  options.problems.push(...raw.problems);
   const sourceConfigPaths: string[] = [];
-  for (const reference of references.references) {
+  for (const reference of raw.references) {
     collectSolutionReference({
       context: options,
       fromConfigPath: options.sourceConfigPath,
@@ -274,12 +258,12 @@ function collectSolutionReferences(options: ConfigVisit): string[] {
 function collectSolutionConfig(
   options: ConfigVisit,
   packageRootDirectory: string,
-  configObject: JsonObject,
+  analysis: SourceConfigAnalysis,
 ): void {
   const outputOptions = readOutputOptions(
     options.config,
     options.sourceConfigPath,
-    configObject,
+    analysis.configObject,
   );
   options.problems.push(...outputOptions.problems);
   if (outputOptions.outputs) {
@@ -297,7 +281,7 @@ function collectSolutionConfig(
   );
   options.collection.solutionReferencesBySourcePath.set(
     options.sourceConfigPath,
-    collectSolutionReferences(options),
+    collectSolutionReferences(options, analysis),
   );
 }
 
@@ -307,7 +291,7 @@ function collectLeafConfig(
   analysis: SourceConfigAnalysis,
 ): void {
   if (
-    analysis.fileNames.length === 0 &&
+    analysis.fileNames?.length === 0 &&
     !Object.hasOwn(analysis.configObject, 'include') &&
     !options.selectedLeafConfigPaths?.has(options.sourceConfigPath)
   ) {
@@ -330,21 +314,11 @@ function collectValidConfig(options: {
   packageRootDir: string;
   visit: ConfigVisit;
 }): void {
-  const isSolution = isLiminaSolutionConfig({
-    configObject: options.analysis.configObject,
-    configPath: options.visit.sourceConfigPath,
-    fileNames: options.analysis.fileNames,
-  });
-  options.visit.collection.sourceDiscovery?.parsed(
-    options.visit.sourceConfigPath,
-    options.analysis.fileNames,
-    { isSolution, basis: options.analysis.configClosure },
-  );
-  if (isSolution) {
+  if (options.analysis.isSolution) {
     collectSolutionConfig(
       options.visit,
       options.packageRootDir,
-      options.analysis.configObject,
+      options.analysis,
     );
     return;
   }
@@ -355,20 +329,6 @@ function collectValidConfig(options: {
   );
   options.visit.problems.push(...outputOptions.problems);
   collectLeafConfig(options.visit, options.packageRootDir, options.analysis);
-}
-
-function hasInvalidSourceReferences(
-  configPath: string,
-  analysis: SourceConfigAnalysis,
-): boolean {
-  return (
-    Object.hasOwn(analysis.configObject, 'references') &&
-    !isLiminaSolutionConfig({
-      configObject: analysis.configObject,
-      configPath,
-      fileNames: analysis.fileNames,
-    })
-  );
 }
 
 export function collectCheckerSourceConfigModules(options: ConfigVisit): void {
@@ -391,13 +351,15 @@ function collectParsedSourceConfig(options: {
   packageRootDir: string;
 }): void {
   const analysis = parseSourceConfig(options.options);
-  if (analysis === null) return;
   validateUserMaintainedLiminaTsconfigMetadata({
     configObject: analysis.configObject,
     configPath: options.options.sourceConfigPath,
     rootDir: options.options.config.rootDir,
   });
-  if (hasInvalidSourceReferences(options.options.sourceConfigPath, analysis)) {
+  if (
+    !analysis.isSolution &&
+    Object.hasOwn(analysis.configObject, 'references')
+  ) {
     addSourceReferenceConfigProblems({
       config: options.options.config,
       configObject: analysis.configObject,
@@ -425,58 +387,23 @@ function reportInputError(options: ConfigVisit, error: unknown): void {
   options.onInputError(options.sourceConfigPath, error);
 }
 
-function resolveDiscoveryExtensions(options: ConfigVisit): string[] {
-  return (
-    options.discoveryExtensions ??
-    normalizeExtensions(capabilityDiscoveryExtensions)
-  );
-}
-
-function isInspectionAddedProblems(options: {
-  configObject: SourceConfigAnalysis['configObject'];
-  problemCount: number;
-  visit: ConfigVisit;
-}): boolean {
-  if (!options.visit.sourceConfigInspector) return false;
-  options.visit.sourceConfigInspector({
-    configObject: options.configObject,
-    sourceConfigPath: options.visit.sourceConfigPath,
-  });
-  return options.visit.problems.length > options.problemCount;
-}
-
-function parseSourceConfig(options: ConfigVisit): SourceConfigAnalysis | null {
+function parseSourceConfig(options: ConfigVisit): SourceConfigAnalysis {
   const configObject = readJsonConfig(options.config, options.sourceConfigPath);
-  if (
-    isInspectionAddedProblems({
-      configObject,
-      problemCount: options.problems.length,
-      visit: options,
-    })
-  ) {
-    return null;
-  }
-  const parsed =
-    options.sourceConfigParser?.(
-      options.sourceConfigPath,
-      options.referencedFromConfigPath,
-    ) ??
-    parseCheckerProjectConfigForContext({
-      allowNoInputDiagnostics: true,
-      cache: options.projectConfigCache,
-      configPath: options.sourceConfigPath,
-      context: {
-        checkerPresets: [options.checkerPreset],
-        extensions: resolveDiscoveryExtensions(options),
-      },
-      projectRootDir: options.config.rootDir,
-      virtualFiles: options.config.virtualFiles,
-    });
+  const { fileNames } = options.sourceConfigParser(
+    options.sourceConfigPath,
+    options.referencedFromConfigPath,
+    configObject,
+  );
   return {
     configObject,
-    configClosure: parsed.configClosure,
-    fileNames: parsed.fileNames,
-    options: parsed.options,
+    fileNames,
+    isSolution:
+      fileNames !== undefined &&
+      isLiminaSolutionConfig({
+        configObject,
+        configPath: options.sourceConfigPath,
+        fileNames,
+      }),
   };
 }
 

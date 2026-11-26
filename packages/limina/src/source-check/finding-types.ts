@@ -3,9 +3,6 @@ import {
   type LiminaWritableCheckIssueCode,
 } from '../check-reporting/codes';
 import type {
-  SourceAmbientDeclarationConfigInvalidFacts,
-  SourceAmbientDeclarationReferenceUnauthorizedFacts,
-  SourceAmbientDeclarationSharedUnauthorizedFacts,
   SourceCrossGovernanceBoundaryFacts,
   SourceImportAuthorityInvalidFacts,
   SourceKnipBuildScriptUnsupportedFacts,
@@ -28,9 +25,6 @@ import type {
 export type * from './finding-facts';
 
 export type SourceSemanticIssueCode =
-  | typeof LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid
-  | typeof LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationSharedUnauthorized
-  | typeof LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationReferenceUnauthorized
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceImportAuthorityInvalid
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceKnipBuildScriptUnsupported
@@ -45,9 +39,6 @@ export type SourceSemanticIssueCode =
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency;
 
 export const SOURCE_SEMANTIC_ISSUE_CODES: readonly SourceSemanticIssueCode[] = [
-  LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid,
-  LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationSharedUnauthorized,
-  LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationReferenceUnauthorized,
   LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary,
   LIMINA_CHECK_ISSUE_CODES.sourceImportAuthorityInvalid,
   LIMINA_CHECK_ISSUE_CODES.sourceKnipBuildScriptUnsupported,
@@ -63,9 +54,6 @@ export const SOURCE_SEMANTIC_ISSUE_CODES: readonly SourceSemanticIssueCode[] = [
 ] satisfies readonly LiminaWritableCheckIssueCode[];
 
 export interface SourceFindingFactsByCode {
-  readonly [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid]: SourceAmbientDeclarationConfigInvalidFacts;
-  readonly [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationReferenceUnauthorized]: SourceAmbientDeclarationReferenceUnauthorizedFacts;
-  readonly [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationSharedUnauthorized]: SourceAmbientDeclarationSharedUnauthorizedFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary]: SourceCrossGovernanceBoundaryFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceImportAuthorityInvalid]: SourceImportAuthorityInvalidFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceKnipBuildScriptUnsupported]: SourceKnipBuildScriptUnsupportedFacts;

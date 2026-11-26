@@ -1,6 +1,7 @@
 import type { CheckerName } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import type { CoreWorkItem } from '../../domain/analysis/core-collection';
+import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { SemanticSourceRelation } from './types';
 
@@ -11,6 +12,7 @@ export interface FrameworkInferenceAmbiguity {
 
 export interface CoreCollectionRun {
   frameworkInferenceAmbiguities?: readonly FrameworkInferenceAmbiguity[];
+  declarationContexts?: DeclarationContextDecision[];
   closed: boolean;
   readonly work: Map<string, CoreWorkItem>;
   readonly failureIds: Set<string>;
@@ -70,7 +72,10 @@ Begin a new attempt without inheriting a previous transaction's completion.
 */
 export function beginCoreCollection(caches: ProjectDependencyCaches): void {
   caches.coreCollectionRun = undefined;
+  caches.declarationContextPolicy = undefined;
+  caches.referenceFacts?.clear();
   caches.nativeObservations = new Map();
-  caches.nativeSourceEvidence = undefined;
+  caches.sourceConfigCoverage = undefined;
+  caches.supplementalAssessments = undefined;
   coreCollectionRun(caches);
 }

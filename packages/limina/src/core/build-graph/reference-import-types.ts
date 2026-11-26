@@ -4,10 +4,8 @@ import type {
   ImportRecord,
   ResolvedCheckerModuleName,
 } from '#core/import-analysis/runner';
-import type {
-  ProjectDependency,
-  ProjectDependencyCaches,
-} from '../project-dependencies/contracts';
+import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
+import type { ReferenceDependency } from '../project-dependencies/reference-facts';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { FileOwnerLookup } from './file-owner-lookup';
@@ -32,7 +30,6 @@ export type ResolvedProvider =
     };
 
 export interface ReferenceImportContext {
-  replayFrameworkExecutionInputs?: boolean;
   svelteConsumerView?: SvelteConsumerView;
   analysis?: DependencyAnalysisResult;
   activatedRegions: WorkspaceRegionPathIndex;
@@ -50,7 +47,7 @@ export interface ReferenceImportOptions {
   context: ReferenceImportContext;
   fileName: string;
   importRecord: ImportRecord;
-  projectDependency: ProjectDependency;
+  projectDependency: ReferenceDependency;
   project: SourceProject;
 }
 

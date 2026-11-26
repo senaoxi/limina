@@ -10,14 +10,14 @@ import {
   collectValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../workspace/validated-context';
-import { resolveCheckerOwnership } from './checker-ownership-resolution';
+import { prepareCheckerOwnership } from './checker-ownership-resolution';
 import { resolveBuildGraphImportAnalysis } from './import-analysis-context';
 import type {
   CheckerSelectionResolution,
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 
-export async function resolveGeneratedGraphCheckerSelections(options: {
+interface CheckerSelectionOptions {
   config: ResolvedLiminaInputs;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
   projectDependencyCaches?: ProjectDependencyCaches;
@@ -26,11 +26,21 @@ export async function resolveGeneratedGraphCheckerSelections(options: {
     PrepareGeneratedTsconfigGraphOptions['workspaceContext']
   >;
   workspacePathIndex?: WorkspaceRegionPathIndex;
-}): Promise<CheckerSelectionResolution> {
+}
+
+export async function resolveGeneratedGraphCheckerSelections(
+  options: CheckerSelectionOptions,
+): Promise<CheckerSelectionResolution> {
+  return (await prepareGeneratedGraphCheckerSelections(options))();
+}
+
+export function prepareGeneratedGraphCheckerSelections(
+  options: CheckerSelectionOptions,
+): Promise<() => CheckerSelectionResolution> {
   const activatedRegions =
     options.workspacePathIndex ??
     new WorkspaceRegionPathIndex(options.workspaceContext);
-  return resolveCheckerOwnership({
+  return prepareCheckerOwnership({
     activatedRegions,
     config: options.config,
     importAnalysisContext: resolveBuildGraphImportAnalysis(options),

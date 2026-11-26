@@ -26,8 +26,8 @@ import { prepareVueSemanticDependencies } from '../core/vue-semantic/preparation
 import { resolveVueSemanticImport } from '../core/vue-semantic/resolution';
 import {
   type AnalysisMetricAggregate,
-  createProfilingMetricsRecorder,
-} from '../profiling/metrics';
+  createTestMetricsRecorder,
+} from './helpers/metrics';
 
 const requireFromTest = createRequire(import.meta.url);
 
@@ -256,7 +256,7 @@ describe('Vue resource type evidence', () => {
       await linkVueToolchain(fixture.rootDir);
       const project = createVueProject(fixture.rootDir);
       const filePath = path.join(fixture.rootDir, 'src/App.vue');
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const contexts = new VueSemanticContextManager(metrics);
       const context = contexts.acquire(project.vueSemanticIdentity!);
       const preparation = prepareVueSemanticDependencies({
@@ -356,7 +356,7 @@ describe('Vue resource type evidence', () => {
       await linkVueToolchain(fixture.rootDir);
       const project = createVueProject(fixture.rootDir);
       const filePath = path.join(fixture.rootDir, 'src/index.ts');
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const contexts = new VueSemanticContextManager(metrics);
       const importAnalysis = createImportAnalysisContext({
         metrics,

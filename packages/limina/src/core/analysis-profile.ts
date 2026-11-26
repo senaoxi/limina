@@ -51,6 +51,27 @@ export function profileContextScope(
   return scope;
 }
 
+export function observeContextRestore<T extends object>(
+  observer: AnalysisObserver,
+  op: 'native-context-restore' | 'vue-context-restore',
+  restore: () => T | undefined,
+  identity: Omit<Parameters<typeof profileContextScope>[1], 'instance'>,
+): T | undefined {
+  const work = observer.start(op);
+  try {
+    const instance = observer.inWork(work, restore);
+    if (instance === undefined) observer.finish(work);
+    else {
+      const scope = profileContextScope(observer, { ...identity, instance });
+      observer.finish(work, 'restored', undefined, scope);
+    }
+    return instance;
+  } catch (error) {
+    observer.finish(work, 'failed');
+    throw error;
+  }
+}
+
 export function observeWork<T>(
   observer: AnalysisObserver | undefined,
   op: string,
@@ -75,17 +96,17 @@ export function observeAsyncWork<T>(
   observer: AnalysisObserver | undefined,
   op: string,
   action: () => Promise<T>,
-  scope?: ProfileScope,
+  failureReason?: string,
 ): Promise<T> {
   if (observer === undefined) return action();
-  const work = observer.start(op, scope);
+  const work = observer.start(op);
   return observer.inWork(work, async () => {
     try {
       const result = await action();
       observer.finish(work);
       return result;
     } catch (error) {
-      observer.finish(work, 'failed');
+      observer.fail(work, error, failureReason);
       throw error;
     }
   });

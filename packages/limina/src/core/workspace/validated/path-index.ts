@@ -2,6 +2,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import type { WorkspacePackage } from '../actions';
 import type { WorkspaceRegionBoundary } from '../regions';
 import { classifyGovernancePath } from './governance-trie';
+import { RegionPackageScopes } from './package-scopes';
 import {
   createWorkspacePathIndexState,
   type WorkspacePathIndexState,
@@ -63,6 +64,7 @@ export class WorkspaceRegionPathIndex {
   readonly packages: readonly WorkspacePackage[];
 
   readonly rootDir: string;
+  readonly packageScopes: RegionPackageScopes;
 
   constructor(
     context: ValidatedWorkspaceContext,
@@ -71,6 +73,9 @@ export class WorkspaceRegionPathIndex {
     this.#metrics = metrics;
     this.#state = createWorkspacePathIndexState(context, (filePath) =>
       this.#canonicalProjectedPath(filePath),
+    );
+    this.packageScopes = new RegionPackageScopes(context, (file) =>
+      this.#canonicalProjectedPath(file),
     );
     this.packages = this.#state.packages;
     this.rootDir = this.#state.rootDir;
@@ -152,6 +157,25 @@ export class WorkspaceRegionPathIndex {
     this.#classificationCache.set(normalizedFilePath, classification);
     this.#recordClassification('miss', classification);
     return classification;
+  }
+
+  packageScopeForFile(file: string): string | undefined {
+    const location = this.classifyPath(file);
+    return location.package === null
+      ? undefined
+      : this.packageScopes.forFile(location.canonicalPath);
+  }
+
+  compilerPackageScopeForFile(file: string): string | undefined {
+    const location = this.classifyPath(file);
+    if (location.package === null) return undefined;
+    const normalized = normalizeAbsolutePath(file);
+    if (normalized === location.canonicalPath)
+      return this.packageScopes.forFile(location.canonicalPath);
+    return this.packageScopes.forCompilerFile(normalized, (directory) => {
+      const parent = this.classifyPath(directory);
+      return parent.package === null ? undefined : parent.canonicalPath;
+    });
   }
 
   findPackageForPath(filePath: string): WorkspacePackage | null {

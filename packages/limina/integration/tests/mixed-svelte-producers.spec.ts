@@ -172,24 +172,22 @@ it('builds independent producers before resolving all Svelte consumers and repai
       { purpose: 'producer-build', mode: 'cold' },
       { purpose: 'complete', mode: 'cold' },
     ]);
-    const bypasses = profile.decisions.filter(
-      ({ layer, outcome }) =>
-        layer === 'analysis-graph' && outcome === 'bypassed',
-    );
-    for (const code of ['producer-build-plan', 'managed-execution-view'])
-      expect(bypasses).toContainEqual(
+    expect(profile.graphs).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({
-          causes: [{ code }],
-          basis: [expect.any(String)],
+          purpose: 'producer-build',
+          source: 'computed',
         }),
-      );
+        expect.objectContaining({ purpose: 'complete', source: 'computed' }),
+      ]),
+    );
 
     const preparation = cold.indexOf(
       '[pass] materialize producer reference graph',
     );
     const compiler = cold.indexOf('[start] vue-tsc: vue-tsc -b');
     const producersFinished = cold.indexOf('[pass] checker build');
-    const complete = cold.indexOf('[start] graph materialize');
+    const complete = cold.indexOf('[start] ensure complete reference graph');
     expect(preparation, cold).toBeGreaterThanOrEqual(0);
     expect(compiler, cold).toBeGreaterThan(preparation);
     expect(producersFinished, cold).toBeGreaterThan(compiler);

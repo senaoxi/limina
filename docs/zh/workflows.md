@@ -109,7 +109,7 @@ pnpm exec limina check
 
 ### Limina 如何识别聚合配置？ {#limina-如何识别-solution-配置}
 
-检查器解析后的有效文件集合为空，配置直接声明 `references`，且文件名恰好为 `tsconfig.json`。`files: []` 是最直接的表达，继承选项和框架文件仍影响最终文件集合。详见[聚合配置](./concepts.md#聚合器配置)。
+使用直接声明 `references` 且根文件集合为空的 `tsconfig.json`。`files: []` 表达空文件列表。继承设置和具名检查器适用的扩展名都可能影响角色检查。详见[聚合配置](./concepts.md#聚合器配置)。
 
 ### `limina checker build` 和 `checker typecheck` 如何选择目标？
 

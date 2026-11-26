@@ -15,7 +15,7 @@ import { analysisCacheIdentity } from './analysis-cache-identity';
 import { AnalysisCacheStore } from './analysis-cache-store';
 import { AnalysisToolObservation } from './analysis-cache-tools';
 import { ConfigObservation } from './config-observation';
-import { isObserverOnlyMetrics } from './profile-metrics';
+import { injectedAnalysisMetrics } from './profile-metrics';
 
 export class AnalysisCacheController {
   readonly #store: AnalysisCacheStore;
@@ -40,16 +40,17 @@ export class AnalysisCacheController {
       force?: boolean;
     } = {},
   ) {
-    const toolStart = performance.now();
+    const metrics = injectedAnalysisMetrics(options.metrics);
+    const toolStart = metrics === undefined ? undefined : performance.now();
     this.#tools = new AnalysisToolObservation(config.configPath);
-    options.metrics?.record({
-      name: 'analysis-cache',
-      kind: 'tool-identity',
-      durationMs: performance.now() - toolStart,
-    });
+    if (toolStart !== undefined)
+      metrics?.record({
+        name: 'analysis-cache',
+        kind: 'tool-identity',
+        durationMs: performance.now() - toolStart,
+      });
     this.#canPublish = options.canPublish !== false;
     this.#force = options.force === true;
-    const metrics = options.metrics;
     this.#configuration = new ConfigObservation(config);
     this.#configPath = config.configPath;
     this.#metrics = metrics;
@@ -60,7 +61,7 @@ export class AnalysisCacheController {
       identity: analysisCacheIdentity(config, this.#tools.identity),
       configPath: config.configPath,
       configVersion: this.#configVersion,
-      metrics,
+      metrics: options.metrics,
       configuration: this.#configuration,
     });
     this.cache = this.#createCache();
@@ -83,7 +84,6 @@ export class AnalysisCacheController {
     const cache = new NativeAnalysisCache(this.#store.identity, candidate, {
       configVersion: this.#configVersion,
       configModules: this.#configuration.snapshot(),
-      installationGate: this.#store.installationGate,
       previousOrigin: this.#store.candidateOrigin,
       liveConfigTimes,
     });
@@ -115,14 +115,11 @@ export class AnalysisCacheController {
   async #attempt<T>(analyze: () => Promise<T>): Promise<T> {
     this.assertConfigurationStable();
     const epoch = this.cache;
-    const result = await epoch.resolvedConfigs.run(() =>
-      epoch.epoch.run(analyze),
-    );
+    const result = await epoch.configReads.run(() => epoch.epoch.run(analyze));
     if (epoch !== this.cache)
       throw new Error('Analysis epoch was replaced before completion.');
     this.assertConfigurationStable();
     await this.cache.epoch.assertStable();
-    this.cache.installationGate?.assertStable();
     this.cache.inputs.assertStable();
     this.#analyzed = true;
     return result;
@@ -138,15 +135,11 @@ export class AnalysisCacheController {
 
   #reportMetrics(): void {
     const metrics = this.#metrics;
-    if (metrics === undefined || isObserverOnlyMetrics(metrics)) return;
+    if (metrics === undefined) return;
     this.#reportConfigMetrics(metrics);
     this.cache.metrics.uniquePaths = new Set(
       Object.values(this.cache.inputs.records).map((input) => input.path),
     ).size;
-    this.cache.metrics.referenceEdges = this.cache.contributions.counts().size;
-    this.cache.metrics.referenceOccurrences = Object.values(
-      this.cache.contributions.records,
-    ).flat().length;
     this.#reportCacheMetrics(metrics);
   }
 
@@ -202,7 +195,6 @@ export class AnalysisCacheController {
     await this.cache.epoch.assertStable(outputs);
     this.cache.inputs.assertStable(outputs);
     this.assertConfigurationStable();
-    this.cache.installationGate?.assertStable();
     for (const receipt of this.#managedOutputs.values())
       await receipt.assertStable();
   }
@@ -218,7 +210,7 @@ export class AnalysisCacheController {
 
   refresh(reason?: 'producer-handoff'): void {
     this.assertConfigurationStable();
-    this.#completeMetrics();
+    if (this.#metrics !== undefined) this.#completeMetrics();
     this.cache = this.#refreshedCache(reason);
     this.#managedOutputs.clear();
     this.#analyzed = false;
@@ -265,7 +257,6 @@ export class AnalysisCacheController {
         });
       } else {
         await this.cache.epoch.assertStable();
-        this.cache.installationGate?.assertStable();
         this.cache.inputs.assertStable();
         this.#recordSkippedPublication('read-only');
       }

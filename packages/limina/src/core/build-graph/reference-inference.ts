@@ -8,6 +8,7 @@ import {
 import { createWorkspaceSourceBoundary } from '../typescript-semantic';
 import { withVueDeclarationLoading } from '../vue-semantic/loading-identity';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import { createDeclarationContextPolicy } from './declaration-context-policy';
 import { FileOwnerLookup } from './file-owner-lookup';
 import {
   type GovernedBuildOwner,
@@ -133,7 +134,6 @@ function resolveProjectDependencyCaches(
 }
 
 export function inferProjectReferences(options: {
-  replayFrameworkExecutionInputs?: boolean;
   svelteConsumerView?: SvelteConsumerView;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
@@ -192,8 +192,15 @@ export function inferProjectReferences(options: {
         }),
       };
     }
+  if (caches.sourceConfigCoverage)
+    caches.declarationContextPolicy ??= createDeclarationContextPolicy({
+      config: options.config,
+      coverage: caches.sourceConfigCoverage,
+      units: projects.values().map((project) => project.configPath),
+      inRegion: (path) =>
+        options.activatedRegions.isInsideActivatedRegion(path),
+    });
   const context: ReferenceImportContext = {
-    replayFrameworkExecutionInputs: options.replayFrameworkExecutionInputs,
     svelteConsumerView: options.svelteConsumerView,
     analysis,
     activatedRegions: options.activatedRegions,

@@ -9,6 +9,10 @@ import path from 'pathe';
 import ts from 'typescript';
 import { currentProfile } from '../../application/analysis/observability';
 import {
+  pathBinding,
+  PathBindingReplay,
+} from '../analysis-cache/directory-fingerprint';
+import {
   declarationCandidateExecutionInputs,
   graphExecutionInputScope,
 } from '../analysis-cache/execution-inputs';
@@ -19,6 +23,7 @@ import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-ref
 import { observeNativeReferenceMapping } from '../typescript-semantic/reference-redirect';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import { observeVueDeclarationCandidate } from '../vue-semantic/declaration-candidate';
+import { governedSourceConfig } from './governed-sources';
 import type { PreparedTsconfigGraph, ProducerBuildPlan } from './types';
 
 export interface ProducerDeclaration {
@@ -39,6 +44,7 @@ export type ProducerOutputMapping = Omit<
 export interface ProducerBuildInputs {
   readonly semantics: string;
   readonly ownership: string;
+  readonly sourceConfigClosures: string;
   readonly inputs: ReadonlyMap<string, string>;
 }
 
@@ -114,6 +120,34 @@ function ownershipIdentity(graph: PreparedTsconfigGraph): string {
   );
 }
 
+function sourceConfigClosureIdentity(graph: PreparedTsconfigGraph): string {
+  const units = graph.governedSources
+    .values()
+    .flatMap((units) => units.values())
+    .toArray()
+    .sort(
+      (a, b) =>
+        a.configPath.localeCompare(b.configPath) ||
+        a.primaryCheckerName.localeCompare(b.primaryCheckerName),
+    );
+  const bindings = new PathBindingReplay({ reuseLeafBindings: true });
+  return bindings.run(() =>
+    nativeFingerprint(
+      units.map((unit) => ({
+        configPath: unit.configPath,
+        checker: unit.primaryCheckerName,
+        closure: governedSourceConfig(unit).configClosure.map(
+          ({ filePath, contentHash }) => [
+            filePath,
+            contentHash,
+            pathBinding(filePath),
+          ],
+        ),
+      })),
+    ),
+  );
+}
+
 export function captureProducerBuildInputs(
   plan: ProducerBuildPlan,
 ): ProducerBuildInputs {
@@ -175,24 +209,14 @@ export function captureProducerBuildInputs(
   // the already admitted producer closure.
   for (const units of plan.governedSources.values())
     for (const unit of units.values()) {
-      const parsed = parseTypeScriptProjectConfig({
-        configPath: unit.configPath,
-        tsModule: ts,
-      });
-      const config = parsed?.options.configFile as
-        | ts.TsConfigSourceFile
-        | undefined;
+      const { configClosure } = governedSourceConfig(unit);
       const files = [
         unit.configPath,
         ...unit.ownedFileNames,
         ...Object.values(
           unit.context.vueSemanticIdentity?.toolchain.paths ?? {},
         ),
-        ...((
-          config as
-            | (ts.TsConfigSourceFile & { extendedSourceFiles?: string[] })
-            | undefined
-        )?.extendedSourceFiles ?? []),
+        ...configClosure.map((entry) => entry.filePath),
         ...(unit.svelteSemanticProject?.configClosure?.map(
           (entry) => entry.filePath,
         ) ?? []),
@@ -205,6 +229,7 @@ export function captureProducerBuildInputs(
   return {
     semantics: producerSemantics(plan),
     ownership: ownershipIdentity(plan),
+    sourceConfigClosures: sourceConfigClosureIdentity(plan),
     inputs,
   };
 }
@@ -342,6 +367,8 @@ export function issueProducerBuildReceipt(
   assertInputs(baseline.inputs);
   if (producerSemantics(plan) !== baseline.semantics)
     throw new Error('Producer compilation semantics changed during build.');
+  if (sourceConfigClosureIdentity(plan) !== baseline.sourceConfigClosures)
+    throw new Error('Producer Source Config closure changed during build.');
   const mappings = observeProducerOutputMappings(plan, projectRootDirectory);
   if (JSON.stringify(mappings) !== JSON.stringify(plan.declarationOutputs))
     throw new Error(
@@ -364,6 +391,7 @@ export function issueProducerBuildReceipt(
       JSON.stringify([
         baseline.semantics,
         baseline.ownership,
+        baseline.sourceConfigClosures,
         [...baseline.inputs],
         declarations.map((entry) => [
           entry.sourceConfig,
@@ -387,6 +415,12 @@ export function assertProducerBuildReceipt(
   if (producerSemantics(receipt.plan) !== receipt.semantics)
     throw new Error('Producer compilation semantics changed after build.');
   assertInputs(receipt.inputs);
+  if (
+    sourceConfigClosureIdentity(receipt.plan) !== receipt.sourceConfigClosures
+  )
+    throw new Error(
+      'Producer Source Config closure binding changed after build.',
+    );
   for (const declaration of receipt.declarations)
     if (
       readAnalysisFileDigest(declaration.outputFile) !==
@@ -404,6 +438,13 @@ export function assertProducerBuildReceipt(
     );
   if (
     finalGraph !== undefined &&
+    sourceConfigClosureIdentity(finalGraph) !== receipt.sourceConfigClosures
+  )
+    throw new Error(
+      'Final reference graph changes the frozen Source Config closure.',
+    );
+  if (
+    finalGraph !== undefined &&
     producerSemantics(finalGraph) !== receipt.semantics
   )
     throw new Error(
@@ -417,6 +458,7 @@ function receiptIdentity(receipt: ProducerBuildReceipt): string {
       receipt.identity,
       receipt.semantics,
       receipt.ownership,
+      receipt.sourceConfigClosures,
       [...receipt.inputs],
       receipt.declarations,
     ]),

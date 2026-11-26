@@ -259,6 +259,11 @@ export class WorkspacePackageScopeLookup {
     return packageInfo;
   }
 
+  findGovernedPackageScopeInfo(file: string): NearestPackageInfo | null {
+    const manifest = this.#region.packageScopeForFile(file);
+    return manifest === undefined ? null : this.#readPackageInfo(manifest);
+  }
+
   findNearestPackageScopeInfo(filePath: string): NearestPackageInfo | null {
     const directory = normalizeAbsolutePath(
       path.dirname(normalizeAbsolutePath(filePath)),

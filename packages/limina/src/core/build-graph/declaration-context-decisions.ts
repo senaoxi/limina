@@ -1,198 +1,197 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
-import type { ResolvedLiminaInputs } from '#config/runner';
 import { vueCompilerPathPolicy } from '../../checker/vue-semantic-identity';
 import type { DeclarationContextDecision } from '../../domain/analysis/declaration-context';
-import type { DeclarationCompilationEvidence } from '../../domain/analysis/declaration-governance';
 import type {
-  NativeFileIdentity,
+  DeclarationCompilationEvidence,
+  DeclarationObservation,
+} from '../../domain/analysis/declaration-governance';
+import type {
+  NativeCoverage,
   SourceConfigCoverageIndex,
 } from '../../domain/analysis/native-coverage';
-import type { ProjectDependency } from '../project-dependencies/contracts';
-import {
-  compilerFileKey,
-  deriveCompilerCoverage,
-} from '../typescript-semantic/compiler-coverage';
+import type { ReferenceDependency } from '../project-dependencies/reference-facts';
+import { deriveCompilerCoverage } from '../typescript-semantic/compiler-coverage';
 import { nativeCompilerPathPolicy } from '../typescript-semantic/compiler-path-key';
 import {
   nativeFingerprint,
   observeNativeFileIdentity,
 } from '../typescript-semantic/native-file-identity';
-import { readDeclarationContextChoices } from './declaration-context-options';
+import { isNodeModulesPath } from '../workspace/lookup/shared';
+import type { DeclarationContextPolicy } from './declaration-context-policy';
+import {
+  type DeclarationRequestScope,
+  declarationRequestScope,
+} from './declaration-request-scope';
+import { isManagedDeclarationRoot } from './source-config-discovery';
 
-export function declarationFileKey(
-  file: NativeFileIdentity,
-  fileKey: (file: string) => string = compilerFileKey,
-): string {
-  return fileKey(file.lexicalPath);
+export interface DeclarationContextProjection extends DeclarationRequestScope {
+  decisions: DeclarationContextDecision[];
+  diagnostics: string[];
+  problems: string[];
 }
 
 export function collectDeclarationContextDecisions(options: {
-  config: ResolvedLiminaInputs;
   project: {
     configPath: string;
     fileNames: readonly string[];
+    ownedFileNames?: readonly string[];
     context?: { vueSemanticIdentity?: VueProjectSemanticIdentity };
   };
   evidence: DeclarationCompilationEvidence | undefined;
-  unsupportedDependencies?: readonly ProjectDependency[];
+  unsupportedDependencies?: readonly ReferenceDependency[];
+  allowUnqualifiedLocal: boolean;
   coverageIndex?: SourceConfigCoverageIndex;
+  policy?: DeclarationContextPolicy;
   isWorkspaceFile?: (file: string) => boolean;
-}): { decisions: DeclarationContextDecision[]; problems: string[] } {
-  const { project, evidence } = options;
+}): DeclarationContextProjection {
+  const { project, evidence, policy, coverageIndex: index } = options;
+  const contextId =
+    evidence?.contextId ??
+    nativeFingerprint(['unqualified-declarations', project.configPath]);
   const fileKey =
     project.context?.vueSemanticIdentity === undefined
       ? nativeCompilerPathPolicy().key
       : vueCompilerPathPolicy(project.context.vueSemanticIdentity).key;
-  const read = readDeclarationContextChoices(
-    options.config,
-    project.configPath,
+  const decisions: DeclarationContextDecision[] = [];
+  const diagnostics = new Set(
+    policy?.choiceDiagnostics(project.configPath, fileKey),
   );
-  const decisions: DeclarationContextDecision[] = unsupportedDecisions(
-    options,
-    fileKey,
-  );
-  const index = options.coverageIndex;
-  if (index === undefined) return { decisions, problems: read.problems };
-  const identity = (file: string) =>
-    observeNativeFileIdentity(file, index.inputVersion);
-  const roots = new Set(
-    project.fileNames.map((file) =>
-      declarationFileKey(identity(file), fileKey),
-    ),
-  );
-  const choices = new Map<string, string>();
-  for (const choice of read.choices) {
-    const file = identity(choice.file);
-    const key = declarationFileKey(file, fileKey);
-    const coverage = deriveCompilerCoverage(index, file, fileKey);
-    const previous = choices.get(key);
-    if (
-      (previous !== undefined && previous !== choice.config) ||
-      (roots.has(key) && choice.config !== project.configPath) ||
-      coverage.members.every((member) => member.configId !== choice.config)
-    )
-      read.problems.push(
-        `${project.configPath}: invalid or conflicting declarationContexts choice for ${choice.file} -> ${choice.config}.`,
+  const problems = policy?.problems.get(project.configPath) ?? [];
+  const roots =
+    policy?.declarationRoots(project.configPath) ??
+    (project.ownedFileNames ?? project.fileNames)
+      .filter(isManagedDeclarationRoot)
+      .map((file) =>
+        observeNativeFileIdentity(file, index?.inputVersion ?? 'unavailable'),
       );
-    else choices.set(key, choice.config);
-  }
-  if (evidence === undefined) return { decisions, problems: read.problems };
-  for (const relation of evidence.declarations) {
-    if (
-      relation.consumerConfig !== project.configPath ||
-      relation.contextId !== evidence.contextId
-    )
-      continue;
-    const coverage = deriveCompilerCoverage(index, relation.file, fileKey);
-    // Unmanaged declarations retain the existing boundary; no producer is inferred.
-    if (
-      coverage.members.length === 0 &&
-      !(
-        coverage.state === 'unavailable' &&
-        options.isWorkspaceFile?.(relation.file.lexicalPath)
-      )
-    )
-      continue;
-    const key = declarationFileKey(relation.file, fileKey);
-    decisions.push({
-      kind: relation.kind,
-      consumerConfig: project.configPath,
-      contextId: evidence.contextId,
-      file: relation.file,
-      requestIds: relation.requestIds,
-      coverage,
-      selection: chooseContext(
-        coverage,
-        roots.has(key),
-        project.configPath,
-        choices.get(key),
-      ),
-    });
-  }
-  return { decisions, problems: read.problems };
-}
-
-function chooseContext(
-  coverage: DeclarationContextDecision['coverage'],
-  isLocal: boolean,
-  consumer: string,
-  explicit: string | undefined,
-): DeclarationContextDecision['selection'] {
-  if (
-    isLocal &&
-    !coverage.gaps.includes('lexical-identity-conflict') &&
-    coverage.members.some((member) => member.configId === consumer)
-  )
-    return { state: 'local', config: consumer };
-  if (coverage.completeness !== 'complete')
-    return {
-      state: 'unavailable',
-      reason: `Declaration Coverage is incomplete: ${coverage.gaps.join(', ')}`,
-    };
-  if (
-    explicit !== undefined &&
-    coverage.members.some((member) => member.configId === explicit)
-  )
-    return { state: 'selected', config: explicit, basis: 'explicit-selection' };
-  if (coverage.state === 'unique')
-    return {
-      state: 'selected',
-      config: coverage.members[0]!.configId,
-      basis: 'unique-coverage',
-    };
-  return {
-    state: 'awaiting-selection',
-    reason:
-      'Choose a declaration context with liminaOptions.declarationContexts.',
-  };
-}
-
-function unsupportedDecisions(
-  options: Parameters<typeof collectDeclarationContextDecisions>[0],
-  fileKey: (file: string) => string,
-): DeclarationContextDecision[] {
-  const index = options.coverageIndex;
-  if (index === undefined || options.evidence !== undefined) return [];
-  const localInputs = new Set(
-    options.project.fileNames.map((file) =>
-      declarationFileKey(
-        observeNativeFileIdentity(file, index.inputVersion),
-        fileKey,
-      ),
-    ),
+  const observations: DeclarationObservation[] = (
+    evidence?.declarations ?? []
+  ).filter(
+    (item) =>
+      item.contextId === contextId &&
+      item.consumerConfig === project.configPath,
   );
-  return (options.unsupportedDependencies ?? []).flatMap((dependency) => {
-    if (dependency.targetKind !== 'declaration') return [];
-    const file = observeNativeFileIdentity(
-      dependency.resolvedFilePath,
-      index.inputVersion,
-    );
-    const coverage = deriveCompilerCoverage(index, file, fileKey);
-    if (coverage.members.length === 0) return [];
-    // Existing framework analysis owns its local inputs. Qualification is needed
-    // for a new cross-project context delegation, not for local ambient support.
-    if (
-      localInputs.has(declarationFileKey(file, fileKey)) &&
-      !coverage.gaps.includes('lexical-identity-conflict') &&
-      coverage.members.some(
-        (member) => member.configId === options.project.configPath,
-      )
-    )
-      return [];
-    return [
-      {
-        kind: 'consumption' as const,
-        consumerConfig: options.project.configPath,
-        contextId: nativeFingerprint(dependency.evidence),
+  const unsupported = options.unsupportedDependencies ?? [];
+  if (index && !evidence)
+    for (const dependency of unsupported)
+      if (dependency.targetKind === 'declaration')
+        observations.push({
+          kind: 'consumption',
+          contextId,
+          consumerConfig: project.configPath,
+          file: observeNativeFileIdentity(
+            dependency.resolvedFilePath,
+            index.inputVersion,
+          ),
+          requestIds: [],
+        });
+  // Keep real incoming occurrences when available. A complete parsed root is
+  // independently active even if its only incoming request is later excluded.
+  const rootObservations = new Set(
+    observations
+      .filter((item) => item.kind === 'root-input')
+      .map((item) => fileKey(item.file.lexicalPath)),
+  );
+  for (const file of roots)
+    if (!rootObservations.has(fileKey(file.lexicalPath)))
+      observations.push({
+        kind: 'root-input',
+        consumerConfig: project.configPath,
+        contextId,
         file,
         requestIds: [],
-        coverage,
-        selection: {
-          state: 'unavailable' as const,
-          reason:
-            'Managed declaration contexts require a qualified Checker declaration adapter.',
-        },
-      },
+      });
+  for (const observation of observations) {
+    if (isNodeModulesPath(observation.file.lexicalPath)) continue;
+    if (!index || !policy) {
+      if (
+        observation.kind === 'root-input' ||
+        options.isWorkspaceFile?.(observation.file.lexicalPath)
+      ) {
+        const coverage: NativeCoverage = index
+          ? deriveCompilerCoverage(index, observation.file, fileKey)
+          : {
+              universeId: 'unavailable',
+              indexRevision: 'unavailable',
+              inputVersion: 'unavailable',
+              target: observation.file,
+              members: [],
+              completeness: 'incomplete',
+              gaps: ['source-config-coverage-unavailable'],
+              state: 'unavailable',
+            };
+        decisions.push({
+          ...observation,
+          coverage,
+          selection: {
+            state: 'unavailable',
+            reason: 'The active declaration compilation units are unavailable.',
+          },
+        });
+      }
+      continue;
+    }
+    const coverage = deriveCompilerCoverage(index, observation.file, fileKey);
+    if (
+      observation.kind !== 'root-input' &&
+      coverage.members.length === 0 &&
+      !(
+        (coverage.completeness === 'incomplete' ||
+          policy.hasChoice(observation.file.lexicalPath, fileKey)) &&
+        options.isWorkspaceFile?.(observation.file.lexicalPath)
+      )
+    )
+      continue;
+    let selection = policy.select(
+      project.configPath,
+      coverage,
+      fileKey,
+      diagnostics,
+    );
+    if (
+      !evidence &&
+      selection.state !== 'local' &&
+      selection.state !== 'awaiting-selection'
+    )
+      selection = {
+        state: 'unavailable',
+        reason:
+          'Managed declaration contexts require a qualified Checker declaration adapter.',
+      };
+    // Unqualified adapters can continue checking their own unique roots.
+    if (!evidence && selection.state === 'local') {
+      if (options.allowUnqualifiedLocal && coverage.members.length === 1)
+        continue;
+      selection = {
+        state: 'unavailable',
+        reason:
+          'The selected declaration context has no qualified Checker request inventory.',
+      };
+    }
+    decisions.push({ ...observation, coverage, selection });
+  }
+  const scope = declarationRequestScope(
+    project.configPath,
+    evidence,
+    decisions,
+    roots,
+    fileKey,
+  );
+  const active = decisions.flatMap((item) => {
+    if (item.kind === 'root-input' || item.requestIds.length === 0)
+      return [item];
+    const ids = item.requestIds.filter((id) => !scope.inactiveRequests.has(id));
+    if (ids.length === 0) return [];
+    return [
+      ids.length === item.requestIds.length
+        ? item
+        : { ...item, requestIds: ids },
     ];
   });
+  return {
+    decisions: active,
+    diagnostics: [...diagnostics],
+    problems,
+    ...scope,
+  };
 }

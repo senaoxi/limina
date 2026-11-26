@@ -1,5 +1,6 @@
 import { currentProfile } from '../../application/analysis/observability';
 import type { CoreWorkItem } from '../../domain/analysis/core-collection';
+import { AnalysisInputDriftError } from '../analysis-cache/contracts';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { observationErrorDetail } from '../typescript-semantic/native-observation-failure';
 import { retainAnalysisFailure } from './analysis-failure';
@@ -81,6 +82,7 @@ function executeWork(
   try {
     return completeWork(input, item);
   } catch (error) {
+    if (error instanceof AnalysisInputDriftError) throw error;
     const reason = observationErrorDetail(error);
     recordCoreWork(input.caches, { ...item, execution: 'failed', reason });
     retainAnalysisFailure(input.caches, error, item.configPath);

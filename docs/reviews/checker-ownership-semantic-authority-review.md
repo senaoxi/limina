@@ -1,6 +1,6 @@
 # Checker Ownership 与 Semantic Authority 实施审查
 
-本文保留提交 `7c4b890c` 的实现与验收记录。当前版本仅使用具名检查器约束和有效配置中的归属意图来决定语义权威，现行规则见[检查器配置](../zh/config/checkers.md#框架推导)。
+本文保留提交 `7c4b890c` 的实现与验收记录。当前规则使用具名检查器约束和源码配置中的直接声明决定语义权威，见[检查器配置](../zh/config/checkers.md#框架推导)。
 
 隐式 Framework 推导是一项直接、确定的 Ownership 策略。对每个 terminal Source Config 完整收集 Config、Root-file 和 Dependency 要求，按精确 Checker 身份去重：唯一结果直接选定 Framework；零结果或多个结果保留 Pending Local Owner，Freeze 使用 Native TypeScript baseline。多命中只在最终报告中产生非阻断 Warning，后续 Build Coloring 继续独立决定执行 Checker。
 
@@ -10,15 +10,15 @@
 
 ## 最终合同与知识归属
 
-| 决策                | 合同                                                                                      | 持续维护位置                                                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| 推导规则            | 受支持的有效配置、文件和依赖特征直接产生要求，不设独立 Framework Qualification。          | [推导语义](../../.agents/docs/zh/semantics.md#确定性框架推导)                                                         |
-| 唯一与多命中        | 按精确 Checker 去重；唯一选定，多命中 Pending + Native freeze + 最终 Warning。            | [系统模型](../../.agents/docs/zh/system-model.md#authority-的六个维度)                                                |
-| 用户控制            | Named Checker 优先，或移除不期望的触发特征；不增加 `inferFrameworks` 或整体自动推导开关。 | [配置设计](../../.agents/docs/zh/configuration-design.md#框架推导策略)、[公共文档](../zh/config/checkers.md#框架推导) |
-| Native 边界         | Native roots/options/raw refs/solution role 与 Framework Discovery 分开。                 | [语义事实](../../.agents/docs/zh/semantics.md#一个项目的原生语义输入)                                                 |
-| Freeze / Coloring   | 冻结语义；执行颜色只沿合法声明关系传播，无色时使用现有 fallback。                         | [I02 / I07](../../.agents/docs/zh/invariants.md)                                                                      |
-| Warning / Admission | Warning 不影响完整性、治理、准入或退出状态；真实错误和必要义务仍可拒绝。                  | [推导语义](../../.agents/docs/zh/semantics.md#确定性框架推导)                                                         |
-| 缓存                | 重放当前推导，旧颜色不授予权威；无 Qualification DTO/Cache 或独立 Warning Cache。         | [生命周期](../../.agents/docs/zh/lifecycle.md#框架推导重放与-warning)                                                 |
+| 决策                | 合同                                                                                      | 持续维护位置                                                                                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 推导规则            | 受支持的有效配置、文件和依赖特征直接产生要求，不设独立 Framework Qualification。          | [推导语义](../../.agents/docs/zh/semantics.md#确定性框架推导)                                                                                   |
+| 唯一与多命中        | 按精确 Checker 去重；唯一选定，多命中 Pending + Native freeze + 最终 Warning。            | [系统模型](../../.agents/docs/zh/system-model.md#authority-的六个维度)                                                                          |
+| 用户控制            | Named Checker 优先，或移除不期望的触发特征；不增加 `inferFrameworks` 或整体自动推导开关。 | [配置设计](../../.agents/docs/zh/configuration-design.md#框架推导策略)、[公共文档](../zh/config/checkers.md#框架推导)                           |
+| Native 边界         | Native roots/options/raw refs/solution role 与 Framework Discovery 分开。                 | [语义事实](../../.agents/docs/zh/semantics.md#一个项目的原生语义输入)                                                                           |
+| Freeze / Coloring   | 冻结语义；执行颜色只沿合法声明关系传播，无色时使用现有 fallback。                         | [I02 / I07](../../.agents/docs/zh/invariants.md)                                                                                                |
+| Warning / Admission | Warning 不影响完整性、治理、准入或退出状态；真实错误和必要义务仍可拒绝。                  | [推导语义](../../.agents/docs/zh/semantics.md#确定性框架推导)                                                                                   |
+| 缓存                | 重放当前推导，旧颜色不授予权威；无 Qualification DTO/Cache 或独立 Warning Cache。         | [生命周期](https://github.com/senaoxi/limina/blob/7c4b890ce51c582323c393f4d2bd9e63bd592d95/.agents/docs/zh/lifecycle.md#框架推导重放与-warning) |
 
 ## 问题分级与修正范围
 
@@ -35,7 +35,7 @@
 
 ## 调用链与状态收敛
 
-[BuildGraphCore](../../packages/limina/src/core/build-graph.ts) 经 [prepare](../../packages/limina/src/core/build-graph/prepare.ts) 进入 Ownership；缓存路径经 [ownership replay](../../packages/limina/src/core/build-graph/cached-ownership-replay.ts) 重建当前来源。
+[BuildGraphCore](../../packages/limina/src/core/build-graph.ts) 经 [prepare](../../packages/limina/src/core/build-graph/prepare.ts) 进入 Ownership；缓存路径经 [ownership replay](https://github.com/senaoxi/limina/blob/7c4b890ce51c582323c393f4d2bd9e63bd592d95/packages/limina/src/core/build-graph/cached-ownership-replay.ts) 重建当前来源。
 
 ```text
 已选入口 / 独立 Native baseline / 正常 Framework 输入发现
@@ -75,7 +75,7 @@ Auto pending 的 Framework supplement 则按现有证据合同处理。实际 Vu
 
 [Warning Reporter](../../packages/limina/src/check-reporting/framework-inference.ts)使用 `LIMINA_GRAPH_FRAMEWORK_INFERENCE_AMBIGUOUS`、task `graph:prepare`、severity `warning`。最终 check summary 逐配置列出且不受 blocker 数量上限影响；独立 CLI 结束后写 stderr，Graph JSON stdout 保持机器可读。Warning 中的 Pending 明确是 Build Coloring 前状态，不掩盖已确定的最终 Checker。
 
-当前源码为 [analysis adapter v31](../../packages/limina/src/core/analysis-cache/contracts.ts) 与 [graph key v24](../../packages/limina/src/core/build-graph/analysis-cache.ts)。Snapshot schema 12、storage version 3、`analysis-v2` 目录保持，未增加 Qualification/Warning DTO 或 Cache；这些源码身份不替代运行验收。
+该提交使用 [analysis adapter v31](https://github.com/senaoxi/limina/blob/7c4b890ce51c582323c393f4d2bd9e63bd592d95/packages/limina/src/core/analysis-cache/contracts.ts) 与 [graph key v24](https://github.com/senaoxi/limina/blob/7c4b890ce51c582323c393f4d2bd9e63bd592d95/packages/limina/src/core/build-graph/analysis-cache.ts)。Snapshot schema 12、storage version 3、`analysis-v2` 目录保持，未增加 Qualification/Warning DTO 或 Cache；这些源码身份不替代运行验收。
 
 ## 26 案例测试矩阵
 

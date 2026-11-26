@@ -26,9 +26,9 @@ import {
 } from '../core/workspace/validated-context';
 import { canonicalProjectedPathSync } from '../core/workspace/validated/shared';
 import {
-  createProfilingMetricsRecorder,
-  type ProfilingMetricsRecorder,
-} from '../profiling/metrics';
+  createTestMetricsRecorder,
+  type TestMetricsRecorder,
+} from './helpers/metrics';
 import { createFixturePathResolver } from './helpers/path';
 
 interface LinearClassification {
@@ -215,7 +215,7 @@ function linearImporterForFile(options: {
 }
 
 function metricCount(
-  metrics: ProfilingMetricsRecorder,
+  metrics: TestMetricsRecorder,
   name: string,
   kind?: string,
   provider?: string,
@@ -372,7 +372,7 @@ describe('workspace canonical directory indexes', () => {
         packages: [firstPackage],
         rootDir: fixture.rootDir,
       });
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const pathIndex = new WorkspaceRegionPathIndex(context, metrics);
       const insidePath = path.join(fixture.rootDir, 'src/index.ts');
       const boundaryPath = path.join(fixture.rootDir, 'generated/index.ts');
@@ -488,7 +488,7 @@ describe('workspace canonical directory indexes', () => {
         packages: [workspacePackage],
         rootDir: fixture.rootDir,
       });
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const pathIndex = new WorkspaceRegionPathIndex(context, metrics);
       const aliasBoundaryPath = path.join(aliasRoot, 'generated/missing.ts');
       const physicalBoundaryPath = path.join(
@@ -685,7 +685,7 @@ describe('workspace canonical directory indexes', () => {
           `@fixture/p${index}`,
         ),
       );
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const pathIndex = new WorkspaceRegionPathIndex(
         createContext({ packages, rootDir: fixture.rootDir }),
         metrics,
@@ -744,7 +744,7 @@ describe('workspace canonical directory indexes', () => {
       );
 
       const rootPackage = createPackage(fixture.rootDir, '.', 'root');
-      const importerMetrics = createProfilingMetricsRecorder();
+      const importerMetrics = createTestMetricsRecorder();
       const importerContext = createContext({
         packages: [rootPackage],
         rootDir: fixture.rootDir,
@@ -1067,7 +1067,7 @@ describe('workspace region adversarial cases', () => {
           fixture.path('alias/generated/tsconfig.json'),
         ],
       };
-      const metrics = createProfilingMetricsRecorder();
+      const metrics = createTestMetricsRecorder();
       const index = new WorkspaceRegionPathIndex(context, metrics);
       const nativeAliasConfig = nativePath.join(
         fixture.rootDir,

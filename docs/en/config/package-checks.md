@@ -154,7 +154,7 @@ The exact discovery and filtering behavior depends on the installed supported AT
 
 `boundary.environment` may be a string or a function of the output-relative file path. Without it, files below `node/` or `plugin/` use `'node'`; all others use `'browser'`. Only the exact `'node'` result permits Node built-ins; a custom environment string does not.
 
-The boundary scan reads `.js`, `.mjs`, and `.cjs` throughout `outDir`, including files not selected for packing. It checks concrete module specifiers returned by `es-module-lexer`; CommonJS `require`, computed dynamic imports, and `import.meta` do not establish covered imports. It does not validate the existence of every relative output import.
+The boundary scan reads `.js`, `.mjs`, and `.cjs` throughout `outDir`, including files outside the packed file list. It checks literal ESM imports, re-exports and dynamic imports. For an unshadowed CommonJS `require` with a literal relative path, it also checks the resolved destination, including directory entries. A relative request must stay inside the published root through both its written path and any symlinks. Computed targets and the existence of every in-package relative target are outside this check.
 
 ## boundary.ignoredExternalPackages
 

@@ -1,6 +1,7 @@
 import { cloneCompilerOptions } from '#utils/compiler-options';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import type ts from 'typescript';
+import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { createFormatHost } from './project-base';
 import type {
   CheckerProjectConfigParseOptions,
@@ -47,6 +48,7 @@ function createSemanticParseResult(options: {
   try {
     return parseVueProjectWithSemanticIdentity(options.parseOptions);
   } catch (error) {
+    if (error instanceof AnalysisInputDriftError) throw error;
     throw new Error(
       [
         'Unable to initialize Vue project semantics:',
@@ -102,6 +104,7 @@ export function parseVueProjectConfig(
       .map(normalizeAbsolutePath)
       .sort((left, right) => Number(left > right) - Number(left < right)),
     options: cloneCompilerOptions(result.parsed.options),
+    rootSelectors: result.rootSelectors,
     projectReferences: result.parsed.projectReferences,
     vueSemanticIdentity: result.identity,
   };

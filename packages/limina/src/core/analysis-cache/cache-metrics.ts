@@ -2,7 +2,6 @@ import type { AnalysisCacheMetrics } from './contracts';
 export function emptyMetrics(): AnalysisCacheMetrics {
   return {
     ownershipResolutions: 0,
-    authorityRecoveries: 0,
     probes: 0,
     probeMs: 0,
     reads: 0,
@@ -14,8 +13,8 @@ export function emptyMetrics(): AnalysisCacheMetrics {
     hashMs: 0,
     resolverCalls: 0,
     queryHits: 0,
-    resolvedConfigHits: 0,
     resolvedConfigParses: 0,
+    resolvedConfigProjectionHits: 0,
     factQueries: 0,
     factHits: 0,
     fallbacks: 0,
@@ -23,7 +22,6 @@ export function emptyMetrics(): AnalysisCacheMetrics {
     importerQueries: 0,
     compilerReads: 0,
     compilerReadMs: 0,
-    projectionMs: 0,
     semanticQueryMs: 0,
     firstSemanticQueryMs: 0,
     semanticPrograms: 0,

@@ -155,7 +155,7 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./schemas/analysis-profile-v2.schema.json": "./schemas/analysis-profile-v2.schema.json",
+    "./schemas/analysis-profile.schema.json": "./schemas/analysis-profile.schema.json",
     "./schemas/tsconfig-schema.json": "./schemas/tsconfig-schema.json",
     "./package.json": "./package.json",
     "./internal/check-reporting/*": "./src/check-reporting/*.ts",

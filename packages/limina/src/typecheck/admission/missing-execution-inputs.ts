@@ -1,8 +1,8 @@
-import { parseCheckerProjectConfigForContext } from '#checkers';
 import type { PreparedTsconfigGraph } from '#core/build-graph/runner';
 import ts from 'typescript';
 import type { CandidateBuildPlan } from '../../core/build-graph/analysis-admission';
 import { projections } from '../../core/build-graph/compilation-projection';
+import { governedSourceConfig } from '../../core/build-graph/governed-sources';
 import type { GovernedSourceUnit } from '../../core/build-graph/types';
 import { qualifyNativeEvidence } from '../../domain/analysis/native-context';
 import type {
@@ -16,7 +16,6 @@ import { collectExecutionReferenceClosure } from './reference-closure';
 interface MissingInput {
   graph: PreparedTsconfigGraph;
   target: TypecheckTarget;
-  root: string;
 }
 function moduleMode(request: NativeRequest): ts.ResolutionMode {
   if (request.resolutionMode === String(ts.ModuleKind.ESNext))
@@ -32,22 +31,14 @@ function moduleCandidates(
 ): string[] {
   if (!isModuleSourceRequest(request)) return [];
   const source = governedSource(input, config);
-  return source === undefined
-    ? []
-    : sourceModuleCandidates({ source, root: input.root }, request);
+  return source === undefined ? [] : sourceModuleCandidates(source, request);
 }
 function sourceModuleCandidates(
-  input: { source: GovernedSourceUnit; root: string },
+  source: GovernedSourceUnit,
   request: NativeRequest,
 ): string[] {
-  const { source } = input;
   if (source.semanticAuthority.family !== 'typescript') return [];
-  const parsed = parseCheckerProjectConfigForContext({
-    configPath: source.configPath,
-    context: source.context,
-    projectRootDir: input.root,
-    allowNoInputDiagnostics: true,
-  });
+  const parsed = governedSourceConfig(source);
   const result = ts.resolveModuleName(
     request.specifier,
     request.sourceFile!.lexicalPath,
@@ -133,7 +124,7 @@ export function missingExecutionInputs(
     target,
     config,
   ).configs;
-  const input = { graph, target, root: config.rootDir };
+  const input = { graph, target };
   return (graph.dependencyAnalysis?.nativeEvidence ?? []).flatMap(
     ({ snapshot }) => {
       const unresolved = snapshot.resolutions.filter(

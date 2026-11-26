@@ -1,12 +1,8 @@
-import { isNativeTypeScriptProjectInput } from '#checkers';
 import { PathBindingReplay } from '../analysis-cache/directory-fingerprint';
+import { appendVueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
 import { collectDeclarationCompilationEvidence } from '../declaration-governance/evidence';
 import { managedOutputLookupIdentity } from '../import-graph/managed-output-provider';
-import {
-  createTypeScriptDependencyContext,
-  createTypeScriptProjectDependencyFactsIdentity,
-  createTypeScriptSemanticDependencySnapshot,
-} from '../typescript-semantic';
+import { createTypeScriptSemanticDependencySnapshot } from '../typescript-semantic';
 import { withVueDeclarationLoading } from '../vue-semantic/loading-identity';
 import {
   cloneProjectDependencyCollection,
@@ -20,14 +16,23 @@ import type {
   ProjectDependencyRequest,
 } from './contracts';
 import { collectionReferenceInputs } from './declaration-projection';
-import { getWorkspaceSourceBoundarySnapshotIdentity } from './identity';
 import { retainNativeObservation } from './native-evidence-retention';
 import { collectProjectDependencyFile } from './preparation';
+import {
+  createCollectionContext,
+  projectDependencyFactsKey,
+  restoreCollectionContext,
+} from './semantic-facts';
 import { collectSupportContributions } from './support-contributions';
+
+interface CollectionReplay {
+  collection: ProjectDependencyCollection;
+  vueIdentity: ProjectDependencyRequest['context']['vueSemanticIdentity'];
+}
 
 const collectionReplays = new WeakMap<
   ProjectDependencyCaches,
-  Map<string, ProjectDependencyCollection>
+  Map<string, CollectionReplay>
 >();
 
 /**
@@ -61,24 +66,28 @@ function getCachedCollection(options: {
   const caches = options.request.caches;
   return caches === undefined
     ? undefined
-    : readCachedCollection(caches, options.cacheKey);
+    : readCachedCollection(caches, options.cacheKey, options.request.context);
 }
 function readCachedCollection(
-  caches: NonNullable<ProjectDependencyRequest['caches']>,
+  caches: ProjectDependencyCaches,
   key: string,
+  context: ProjectDependencyRequest['context'],
 ): ProjectDependencyCollection | undefined {
-  const cached = collectionMemo(caches)?.get(key);
-  if (cached !== undefined)
-    caches.analysisCache?.increment('collectionReplayHits');
-  return cached === undefined
-    ? undefined
-    : cloneProjectDependencyCollection(cached);
-}
-
-function collectionMemo(caches: ProjectDependencyCaches) {
-  return caches.analysisCache === undefined
-    ? caches.projectDependencyCache
-    : collectionReplays.get(caches);
+  if (caches.analysisCache === undefined) {
+    const cached = caches.projectDependencyCache.get(key);
+    return cached === undefined
+      ? undefined
+      : cloneProjectDependencyCollection(cached);
+  }
+  const replay = collectionReplays.get(caches)?.get(key);
+  if (replay === undefined) return undefined;
+  if (
+    replay.vueIdentity !== undefined &&
+    context.vueSemanticIdentity !== undefined
+  )
+    appendVueExecutionInputs(replay.vueIdentity, context.vueSemanticIdentity);
+  caches.analysisCache.increment('collectionReplayHits');
+  return cloneProjectDependencyCollection(replay.collection);
 }
 
 function cacheCollection(options: {
@@ -98,10 +107,17 @@ function cacheCollection(options: {
     return;
   const caches = options.request.caches;
   if (caches === undefined) return;
-  collectionMemo(caches)?.set(
-    options.cacheKey,
-    cloneProjectDependencyCollection(options.collection),
-  );
+  if (caches.analysisCache === undefined) {
+    caches.projectDependencyCache.set(
+      options.cacheKey,
+      cloneProjectDependencyCollection(options.collection),
+    );
+    return;
+  }
+  collectionReplays.get(caches)?.set(options.cacheKey, {
+    collection: cloneProjectDependencyCollection(options.collection),
+    vueIdentity: options.request.context.vueSemanticIdentity,
+  });
 }
 
 function deduplicateFailures(collection: ProjectDependencyCollection): void {
@@ -110,49 +126,6 @@ function deduplicateFailures(collection: ProjectDependencyCollection): void {
   )
     .values()
     .toArray();
-}
-
-function createCollectionContext(request: ProjectDependencyRequest) {
-  return createTypeScriptDependencyContext(
-    collectionProject(request),
-    collectionServices(request),
-  );
-}
-
-function restoreCollectionContext(
-  request: ProjectDependencyRequest,
-): ProjectDependencyRequest['typeScriptSemanticContext'] {
-  return persistentCollectionCache(request)?.restoreContext(
-    collectionProject(request),
-  );
-}
-function collectionBinding(request: ProjectDependencyRequest) {
-  const { context } = request;
-  const family = context.semanticAuthority.family;
-  return {
-    phase: 'locked' as const,
-    checker: context.analysisChecker ?? 'tsc',
-    ...((family === 'astro' || family === 'svelte') && {
-      workspaceSourceBoundaryIdentity:
-        getWorkspaceSourceBoundarySnapshotIdentity(
-          context.workspaceSourceBoundary,
-        ),
-    }),
-  };
-}
-function collectionProject(request: ProjectDependencyRequest) {
-  return {
-    compilationObligationScope: request.compilationObligationScope,
-    admissionMode: 'coverage-bounded' as const,
-    analysisBinding: collectionBinding(request),
-    configPath: request.context.configPath,
-    sourceConfigPath: request.context.resolverConfigPath,
-    fileNames: request.context.fileNames,
-    options: request.context.compilerOptions,
-    projectReferences: request.context.references,
-    virtualFiles: request.context.virtualFiles,
-    workspaceSourceBoundary: request.context.workspaceSourceBoundary,
-  };
 }
 
 function collectProjectDependenciesWithNewContext(options: {
@@ -255,20 +228,7 @@ export function collectProjectDependencies(
     ...request,
     projectSemanticCacheIdentity: projectSemanticIdentity,
   };
-  const factsCacheKey = JSON.stringify([
-    projectSemanticIdentity,
-    createTypeScriptProjectDependencyFactsIdentity({
-      compilationObligationScope: request.compilationObligationScope,
-      analysisBinding: collectionBinding(request),
-      configPath: request.context.configPath,
-      sourceConfigPath: request.context.resolverConfigPath,
-      fileNames: request.context.fileNames,
-      options: request.context.compilerOptions,
-      projectReferences: request.context.references,
-      virtualFiles: request.context.virtualFiles,
-      workspaceSourceBoundary: request.context.workspaceSourceBoundary,
-    }),
-  ]);
+  const factsCacheKey = projectDependencyFactsKey(semanticRequest);
   const collection = collectUncachedProjectDependencies({
     factsCacheKey,
     request: semanticRequest,
@@ -321,55 +281,6 @@ export function isProjectDependencyCreatesSourceEdge(
   return 'provenance' in dependency;
 }
 
-function collectionServices(request: ProjectDependencyRequest) {
-  const caches = request.caches;
-  if (caches === undefined) return {};
-  return {
-    analysisCache: persistentCollectionCache(request),
-    metrics: caches.metrics,
-  };
-}
-
-function persistentCollectionCache(request: ProjectDependencyRequest) {
-  const cache = request.caches?.analysisCache;
-  return cache === undefined ? cache : eligibleCollection(cache, request);
-}
-function eligibleCollection(
-  cache: NonNullable<
-    NonNullable<ProjectDependencyRequest['caches']>['analysisCache']
-  >,
-  request: ProjectDependencyRequest,
-) {
-  return canPersistCollection(cache, request)
-    ? cache
-    : coldCollection(cache, request.context.semanticAuthority.family);
-}
-function canPersistCollection(
-  cache: NonNullable<
-    NonNullable<ProjectDependencyRequest['caches']>['analysisCache']
-  >,
-  request: ProjectDependencyRequest,
-): boolean {
-  const family = request.context.semanticAuthority.family;
-  if (family === 'vue')
-    return cache.vue.expect(request.context.vueSemanticIdentity);
-  // Native context capture filters component roots. Each framework still
-  // collects its own mappings, declaration observations and generated inputs.
-  return (
-    family === 'typescript' ||
-    ((request.context.virtualFiles?.size ?? 0) === 0 &&
-      request.context.fileNames.some(isNativeTypeScriptProjectInput))
-  );
-}
-function coldCollection(
-  cache: NonNullable<
-    NonNullable<ProjectDependencyRequest['caches']>['analysisCache']
-  >,
-  family: string,
-): undefined {
-  cache.fallback(family);
-}
-
 function collectVueDependencies(
   request: ProjectDependencyRequest,
 ): ProjectDependencyCollection {
@@ -377,9 +288,23 @@ function collectVueDependencies(
   // fresh bindings. Content reads and independent later fences stay live.
   return new PathBindingReplay({ reuseLeafBindings: true }).run(() => {
     const collection = createEmptyCollection();
+    const identity = request.context.vueSemanticIdentity;
+    const graphRequest = {
+      ...request,
+      vueGraphFacts:
+        identity !== undefined &&
+        request.purpose === undefined &&
+        request.runtimeSourceResolver === undefined
+          ? request.importAnalysis.restoreVueGraphFacts?.(identity)
+          : undefined,
+    };
     for (const fileName of request.context.fileNames)
-      collectProjectDependencyFile({ collection, fileName, request });
-    collectSupportContributions(collection, request);
+      collectProjectDependencyFile({
+        collection,
+        fileName,
+        request: graphRequest,
+      });
+    collectSupportContributions(collection, graphRequest);
     deduplicateFailures(collection);
     return collection;
   });

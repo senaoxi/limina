@@ -8,7 +8,11 @@ import type { ProjectDependencyCaches } from '../project-dependencies/contracts'
 import { candidateAdmission } from './analysis-admission';
 import { bindCurrentCompilationContexts } from './compilation-prerequisite';
 import { bindSupplementalCompilationContexts } from './compilation-projection';
-import { retainNativeAnalysis } from './native-analysis-evidence';
+import {
+  effectiveNativeCollection,
+  type NativeAnalysisEvidence,
+  retainNativeAnalysis,
+} from './native-analysis-evidence';
 import type { DependencyAnalysisResult } from './types';
 
 export interface AnalysisOutcome {
@@ -56,12 +60,15 @@ export function finishAnalysisOutcome(
     );
   const core = collectionSummary(analysis, caches);
   const graphTransaction = transactionSummary(analysis, caches, governance);
-  const statuses = coreStatuses(analysis, core);
+  const observations = coreObservations(analysis, core);
+  const statuses = observations.map((item) =>
+    effectiveNativeCollection(analysis, item.snapshot, item.collection),
+  );
   const compilationRelations = relationSummary(analysis, core, statuses);
   const facts = { core, governance, graphTransaction };
   analysis.outcome = {
     ...facts,
-    execution: executionSummary(core),
+    execution: executionSummary(core, observations),
     traversal: traversalSummary(core, statuses),
     compilationRelations,
     buildAdmission: candidateAdmission(analysis, facts),
@@ -73,7 +80,6 @@ function retainCollectedEvidence(
   analysis: DependencyAnalysisResult,
   caches: ProjectDependencyCaches,
 ): void {
-  retainNativeAnalysis(analysis, caches.nativeSourceEvidence);
   const snapshots = new Set(caches.nativeObservations?.values());
   for (const snapshot of snapshots) retainNativeAnalysis(analysis, snapshot);
   retainCoreFacts(analysis, caches);
@@ -149,23 +155,27 @@ function blockedTransaction(
     ? { ...transaction, state: 'blocked' }
     : transaction;
 }
-function coreStatuses(
+function coreObservations(
   analysis: DependencyAnalysisResult,
   core: CoreCollection,
-): NativeCollectionStatus[] {
+): NativeAnalysisEvidence[] {
   const ids = new Set(core.entries.map((entry) => entry.configPath));
-  return (analysis.nativeEvidence ?? [])
-    .filter((item) =>
-      item.snapshot.contexts.some((context) => ids.has(context.inputs.config)),
-    )
-    .map((item) => item.collection);
+  return (analysis.nativeEvidence ?? []).filter((item) =>
+    item.snapshot.contexts.some((context) => ids.has(context.inputs.config)),
+  );
 }
-function executionSummary(core: CoreCollection): AnalysisOutcome['execution'] {
-  if (core.executionFailureIds.length > 0)
-    return core.entries.some((entry) => entry.execution === 'completed')
-      ? 'partial'
-      : 'failed';
-  return dispatchExecution(core);
+function executionSummary(
+  core: CoreCollection,
+  observations: readonly NativeAnalysisEvidence[],
+): AnalysisOutcome['execution'] {
+  if (core.executionFailureIds.length === 0) return dispatchExecution(core);
+  const hasCompletedProject = core.entries.some(
+    (entry) => entry.execution === 'completed',
+  );
+  const hasObservedPartition = observations.some(({ snapshot }) =>
+    snapshot.completeness.some((partition) => partition.state !== 'gap'),
+  );
+  return hasCompletedProject || hasObservedPartition ? 'partial' : 'failed';
 }
 function dispatchExecution(core: CoreCollection): AnalysisOutcome['execution'] {
   return core.dispatch === 'completed' ? 'completed' : 'partial';

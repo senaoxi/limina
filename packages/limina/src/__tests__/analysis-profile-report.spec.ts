@@ -108,6 +108,7 @@ test('writes a schema-backed allowlisted report and shows project, Program and c
   const document: unknown = JSON.parse(content);
   expect(document).toMatchObject({
     schemaVersion: 2,
+    metricRevision: 3,
     projects: [
       { path: 'a space/配置.json' },
       { path: expect.stringMatching(/^external-\d+$/u) },
@@ -134,11 +135,13 @@ test('writes a schema-backed allowlisted report and shows project, Program and c
     },
   });
   expect(stderr).toHaveBeenCalledWith(
-    expect.stringContaining('a space/配置.json  tsgo  partial'),
+    expect.stringContaining('a space/配置.json · tsgo · partial\n'),
     expect.any(Function),
   );
   expect(stderr).toHaveBeenCalledWith(
-    expect.stringContaining('1/1  input-changed, prior-disk\n'),
+    expect.stringContaining(
+      'Native Programs attempted/created 1/1 · Cache cause input-changed, prior-disk\n',
+    ),
     expect.any(Function),
   );
   expect(stderr).toHaveBeenCalledWith(
@@ -148,7 +151,7 @@ test('writes a schema-backed allowlisted report and shows project, Program and c
   if (process.platform !== 'win32')
     expect((await lstat(file)).mode & 0o777).toBe(0o600);
   const schemaUrl = new URL(
-    '../../schemas/analysis-profile-v2.schema.json',
+    '../../schemas/analysis-profile.schema.json',
     import.meta.url,
   );
   expect(JSON.parse(await readFile(schemaUrl, 'utf8'))).toEqual(
@@ -156,7 +159,7 @@ test('writes a schema-backed allowlisted report and shows project, Program and c
   );
 });
 
-test('expires only recognized default v2 reports and leaves explicitly routed reports intact', async ({
+test('expires only recognized default reports and leaves explicitly routed reports intact', async ({
   workspace,
 }) => {
   const { cwd } = workspace;
@@ -164,19 +167,24 @@ test('expires only recognized default v2 reports and leaves explicitly routed re
   const explicit = path.join(profiles, 'explicit');
   await mkdir(explicit, { recursive: true });
   const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
-  async function oldJson(directory: string, schemaVersion: number) {
+  async function oldJson(
+    directory: string,
+    schemaVersion: number,
+    metricRevision: number,
+  ) {
     const id = randomUUID();
     const file = path.join(directory, `${id}.json`);
     await writeFile(
       file,
-      JSON.stringify({ schemaVersion, invocation: { id } }),
+      JSON.stringify({ schemaVersion, metricRevision, invocation: { id } }),
     );
     await utimes(file, old, old);
     return path.basename(file);
   }
-  const retired = await oldJson(profiles, 2);
-  const unrelated = await oldJson(profiles, 1);
-  const archived = await oldJson(explicit, 2);
+  const retired = await oldJson(profiles, 2, 2);
+  const retiredCurrentRevision = await oldJson(profiles, 2, 3);
+  const unrelated = await oldJson(profiles, 1, 1);
+  const archived = await oldJson(explicit, 2, 2);
   const current = createProfile(workspace);
   await emitAnalysisProfile({
     cwd,
@@ -195,10 +203,74 @@ test('expires only recognized default v2 reports and leaves explicitly routed re
   });
 
   expect(await readdir(profiles)).not.toContain(retired);
+  expect(await readdir(profiles)).not.toContain(retiredCurrentRevision);
   expect(await readdir(profiles)).toContain(unrelated);
   expect(await readdir(profiles)).toContain(`${current.invocation.id}.json`);
   expect(await readdir(explicit)).toEqual(
     expect.arrayContaining([archived, `${explicitProfile.invocation.id}.json`]),
+  );
+});
+
+test('labels retained Program counts as incomplete only when work was omitted', async ({
+  workspace,
+}) => {
+  const { cwd, base } = workspace;
+  const observer = new AnalysisObserver('limina check', performance.now());
+  observer.setRoot(cwd);
+  const scope = [
+    'project',
+    observer.project(path.join(cwd, 'tsconfig.json')),
+  ] as const;
+  observer.notRun('native-program-create', scope, 'policy-skipped');
+  observer.notRun('native-baseline-context', scope, 'policy-skipped');
+  for (let index = 0; index < 2049; index++)
+    observer.decision('native-source-syntax', {
+      stage: 'lookup',
+      outcome: 'found',
+    });
+  expect(observer.snapshot().coverage).toMatchObject({
+    workDetail: 'complete',
+    detailsOmitted: 1,
+  });
+
+  for (let index = 0; index < 50_000; index++)
+    observer.notRun('fixture-operation', ['invocation'], 'fixture-skipped');
+  const omitted = observer.start('native-program-create', scope);
+  observer.finish(omitted, 'computed');
+  observer.stop(true);
+  const profile = observer.snapshot();
+  const outputDirectory = path.join(base, 'external');
+  const stderr = vi
+    .spyOn(process.stderr, 'write')
+    .mockImplementation((chunk, encoding, callback) => {
+      const done = typeof encoding === 'function' ? encoding : callback;
+      done?.();
+      return String(chunk).length > 0;
+    });
+  await emitAnalysisProfile({
+    cwd,
+    namespace: namespace(cwd),
+    outputDirectory,
+    profile,
+    stderr: 'summary',
+  });
+  const file = path.join(outputDirectory, `${profile.invocation.id}.json`);
+  const document: unknown = JSON.parse(await readFile(file, 'utf8'));
+  expect(document).toMatchObject({
+    coverage: { workDetail: 'partial' },
+    summary: {
+      projectRows: [{ workUnionUs: null, programs: [{ attempts: 0 }] }],
+    },
+  });
+  expect(stderr).toHaveBeenCalledWith(
+    expect.stringContaining('tsconfig.json · — · unavailable\n'),
+    expect.any(Function),
+  );
+  expect(stderr).toHaveBeenCalledWith(
+    expect.stringContaining(
+      'Observed work union unavailable · Native Programs attempted/created unavailable',
+    ),
+    expect.any(Function),
   );
 });
 

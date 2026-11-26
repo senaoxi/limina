@@ -2,7 +2,8 @@ import path from 'pathe';
 import ts from 'typescript';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
-import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
+import { isRelativeTypeName } from '../typescript-semantic/effective-roots';
+import { observedConfigSystem } from '../typescript-semantic/observed-resolution-host';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import {
   collectConfigTypeInputs,
@@ -26,6 +27,19 @@ export interface TypeInputProjectionReceipt {
 function compilerFor(project: SourceProject): typeof ts {
   return project.context.vueSemanticIdentity?.toolchain.tsModule ?? ts;
 }
+
+export function sourceTypeInputs(
+  project: SourceProject,
+  cache?: NativeAnalysisCache,
+): EffectiveTypeInput[] {
+  return collectConfigTypeInputs({
+    compiler: compilerFor(project),
+    configPath: project.configPath,
+    options: project.options,
+    cache,
+  });
+}
+
 function projectedOptions(
   project: SourceProject,
   generatedConfig: string,
@@ -33,7 +47,7 @@ function projectedOptions(
 ): ts.CompilerOptions {
   const compiler = compilerFor(project);
   const host = withVirtualResolutionFiles(
-    observedCompilerSystem(compiler, project.configPath),
+    observedConfigSystem(compiler, project.configPath),
     project.virtualFiles,
   );
   const parsed = compiler.parseJsonConfigFileContent(
@@ -69,15 +83,20 @@ export function projectTypeDirectiveNames(
 ): string[] {
   const { overrides, cache } = projection;
   const compiler = compilerFor(project);
-  const source = collectConfigTypeInputs({
-    compiler,
-    configPath: project.configPath,
-    options: project.options,
-    cache,
-  });
+  const source = sourceTypeInputs(project, cache);
+  // Explicit typeRoots already anchor compiler lookup, including a miss.
+  // Otherwise preserve the source selection before probing the generated
+  // configuration so materialization cannot invalidate its own lookup.
+  const names = source.map((entry) =>
+    project.options.typeRoots === undefined && isRelativeTypeName(entry.name)
+      ? (entry.originalPath ??
+        entry.target ??
+        path.resolve(path.dirname(project.configPath), entry.name))
+      : entry.name,
+  );
   const options = projectedOptions(project, generatedConfig, {
     ...overrides,
-    types: source.map((entry) => entry.name),
+    types: names,
   });
   const generated = collectConfigTypeInputs({
     compiler,
@@ -90,7 +109,7 @@ export function projectTypeDirectiveNames(
   return source.map((entry, index) =>
     shouldPinTypeInput(entry, generated[index])
       ? (entry.originalPath ?? entry.target!)
-      : entry.name,
+      : names[index]!,
   );
 }
 
@@ -109,12 +128,7 @@ export function proveTypeInputProjection(
     generatedConfig,
     overrides,
   );
-  const source = collectConfigTypeInputs({
-    compiler,
-    configPath: project.configPath,
-    options: project.options,
-    cache,
-  });
+  const source = sourceTypeInputs(project, cache);
   const generated = collectConfigTypeInputs({
     compiler,
     configPath: generatedConfig,
@@ -143,40 +157,6 @@ export function proveTypeInputProjection(
     source,
     generated,
   };
-}
-
-export function isValidTypeInputProjection(
-  receipt: TypeInputProjectionReceipt,
-  cache: NativeAnalysisCache,
-  files?: ReadonlyMap<string, string>,
-): boolean {
-  if (
-    ![
-      receipt.scope === 'config-type-directives',
-      receipt.version === 4,
-      receipt.compilerVersion === ts.version,
-    ].every(Boolean)
-  )
-    return false;
-  const source = collectConfigTypeInputs({
-    compiler: ts,
-    configPath: receipt.sourceConfig,
-    options: receipt.sourceOptions,
-    cache,
-  });
-  const generated = collectConfigTypeInputs({
-    compiler: ts,
-    configPath: receipt.generatedConfig,
-    sourceConfigPath: receipt.sourceConfig,
-    options: receipt.generatedOptions,
-    cache,
-    files,
-  });
-  return (
-    hasEquivalentTypeInputs(source, generated) &&
-    JSON.stringify(source) === JSON.stringify(receipt.source) &&
-    JSON.stringify(generated) === JSON.stringify(receipt.generated)
-  );
 }
 
 function hasEquivalentTypeInputs(

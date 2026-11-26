@@ -36,10 +36,31 @@ type SpecializedIssueFactory = (options: {
   lines: readonly string[];
 }) => LiminaCheckIssue;
 
+const sourcePackageScopeIssue: SpecializedIssueFactory = ({ config, lines }) =>
+  createTaskFailureIssue({
+    code: LIMINA_CHECK_ISSUE_CODES.graphSourcePackageScopeMismatch,
+    detailLines: lines,
+    filePath: findGeneratedGraphProblemLineValue(lines, ['config']),
+    fix: 'Give the root a source leaf in its own active package scope and narrow the original leaf to its own roots.',
+    reason: findGeneratedGraphProblemLineValue(lines, ['reason']),
+    rootDir: config.rootDir,
+    task: 'graph:prepare',
+    title: getGeneratedGraphProblemTitle(lines),
+    verifyCommands: ['limina graph prepare'],
+  });
+
 const SPECIALIZED_ISSUE_FACTORIES: ReadonlyMap<
   string,
   SpecializedIssueFactory
 > = new Map([
+  [
+    'Source project crosses its nearest package.json scope',
+    sourcePackageScopeIssue,
+  ],
+  [
+    'Source project owns files outside activated workspace package regions',
+    sourcePackageScopeIssue,
+  ],
   [
     'Generated project reference cycle',
     ({ config, lines }) =>

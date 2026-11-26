@@ -1,9 +1,12 @@
 import { lstatSync, readFileSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import path from 'pathe';
+import { currentProfile } from '../application/analysis/observability';
 import { writeJsonAtomically } from '../check-reporting/atomic-writer';
 import type { AnalysisSnapshot } from '../core/analysis-cache/contracts';
 import { analysisHash } from '../core/analysis-cache/identity';
 import {
+  ANALYSIS_STORAGE,
   analysisBlockDigest,
   type AnalysisBlockReference,
   type AnalysisSnapshotIndex,
@@ -17,10 +20,16 @@ import {
   assertArtifactPathStatsSafe,
   getRelativeSegments,
 } from '../domain/artifacts/namespace-safety-shared';
+import {
+  recordSnapshotIo,
+  type SnapshotReadOperation,
+  snapshotWriteObserver,
+} from './profile-metrics';
 
 export function readAnalysisCacheFile(
   namespace: LiminaArtifactNamespace,
   file: string,
+  operation: SnapshotReadOperation,
 ): Buffer {
   assertArtifactPathLexicallyContained(namespace, file);
   let cursor = namespace.rootDir;
@@ -29,7 +38,21 @@ export function readAnalysisCacheFile(
     const role = cursor === file ? 'target-file' : 'parent-directory';
     assertArtifactPathStatsSafe(cursor, lstatSync(cursor), new Set([role]));
   }
-  return readFileSync(file);
+  const profile = currentProfile();
+  if (profile === undefined) return readFileSync(file);
+  const start = performance.now();
+  let bytes: Buffer | undefined;
+  try {
+    bytes = readFileSync(file);
+    return bytes;
+  } finally {
+    recordSnapshotIo(
+      profile,
+      operation,
+      performance.now() - start,
+      bytes?.length,
+    );
+  }
 }
 
 export class AnalysisCacheBlocks {
@@ -51,7 +74,7 @@ export class AnalysisCacheBlocks {
   }
   #hasContent(block: AnalysisBlockReference): boolean {
     try {
-      const bytes = this.read(block);
+      const bytes = this.read(block, 'check-block');
       return (
         bytes.length === block.bytes &&
         analysisBlockDigest(bytes) === block.digest
@@ -60,8 +83,11 @@ export class AnalysisCacheBlocks {
       return false;
     }
   }
-  read(block: AnalysisBlockReference): Buffer {
-    return readAnalysisCacheFile(this.#namespace, this.#path(block));
+  read(
+    block: AnalysisBlockReference,
+    operation: 'read-block' | 'check-block',
+  ): Buffer {
+    return readAnalysisCacheFile(this.#namespace, this.#path(block), operation);
   }
   async write(
     snapshot: AnalysisSnapshot,
@@ -69,6 +95,7 @@ export class AnalysisCacheBlocks {
     const header = structuredClone(snapshot.header);
     const configModules = structuredClone(snapshot.configModules);
     const blocks: AnalysisBlockReference[] = [];
+    const observePayloadWrite = snapshotWriteObserver('write-block');
     let writtenBytes = 0;
     for (const block of encodeAnalysisBlocks(snapshot)) {
       if (!this.#hasContent(block.reference)) {
@@ -77,6 +104,7 @@ export class AnalysisCacheBlocks {
           this.#path(block.reference),
           null,
           {
+            observePayloadWrite,
             serialize: () => block.text.trimEnd(),
           },
         );
@@ -88,7 +116,7 @@ export class AnalysisCacheBlocks {
       index: {
         header,
         configModules,
-        storage: { version: 3, blocks },
+        storage: { version: ANALYSIS_STORAGE, blocks },
       },
       writtenBytes,
     };

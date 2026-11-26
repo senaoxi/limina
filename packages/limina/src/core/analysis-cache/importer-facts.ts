@@ -109,7 +109,7 @@ export class ImporterFacts {
         'coverage',
         old.coverage === 'complete' && current.coverage === 'complete',
       ],
-      ['manifest-domain', !this.#options.inputs.domainDirty],
+      ['toolchain-input', !this.#options.inputs.toolchainChanged],
       ['source', old.sourceVersion === current.sourceVersion],
       ['environment', old.environmentVersion === current.environmentVersion],
       ['membership', old.membershipVersion === current.membershipVersion],

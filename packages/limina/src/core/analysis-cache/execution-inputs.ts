@@ -3,6 +3,7 @@ import type {
   DependencyAnalysisResult,
   PreparedTsconfigGraph,
 } from '../build-graph/types';
+import type { InputDependency } from './contracts';
 import type { EpochInputs } from './epoch-inputs';
 import { EpochInputReplay } from './epoch-inputs';
 import type { NativeAnalysisCache } from './native-cache';
@@ -46,11 +47,20 @@ export function retainContextExecutionInputs(
   snapshot: NativeEvidenceSnapshot | undefined,
   configPath: string,
   inputs: EpochInputs,
-  queries?: { cache: NativeAnalysisCache; ids: Iterable<string> },
+  queries?: {
+    cache: NativeAnalysisCache;
+    ids: Iterable<string>;
+    environment?: readonly InputDependency[];
+  },
 ): void {
   if (snapshot === undefined) return;
   if (queries !== undefined)
-    bindResolutionExecutionInputs(inputs, queries.cache, queries.ids);
+    bindResolutionExecutionInputs(
+      inputs,
+      queries.cache,
+      queries.ids,
+      queries.environment,
+    );
   contexts.set(snapshot, { configPath, inputs });
 }
 export function retainGraphExecutionInputs(
@@ -153,36 +163,6 @@ async function validateSelected(
 ): Promise<void> {
   for (const input of inputs) await input.assertStable(except, replay);
 }
-export function hasBoundRestoredGraphExecutionInputs(
-  graph: PreparedTsconfigGraph,
-  cache: NativeAnalysisCache,
-): boolean {
-  const contexts = new Map(
-    Object.values(cache.contexts).map((record) => [
-      contextIdentity(record),
-      record,
-    ]),
-  );
-  for (const { snapshot } of nativeEntries(graph)) {
-    if (!hasLockedContext(snapshot)) continue;
-    const record = contexts.get(snapshot.contexts[0]?.id);
-    if (record?.native === undefined) return false;
-    const inputs = cache.epoch.selectRecords(record.native.discovery);
-    if (inputs === undefined) return false;
-    retainContextExecutionInputs(snapshot, record.project.configPath, inputs, {
-      cache,
-      ids: record.queryIds,
-    });
-  }
-  retainGraphExecutionInputs(graph, cache.epoch);
-  return true;
-}
-function contextIdentity(
-  record: NativeAnalysisCache['contexts'][string],
-): string | undefined {
-  return record.native?.snapshot.contexts[0]?.id;
-}
-
 function nativeEntries(graph: PreparedTsconfigGraph) {
   return graph.dependencyAnalysis?.nativeEvidence ?? [];
 }

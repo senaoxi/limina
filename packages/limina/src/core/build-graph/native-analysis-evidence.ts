@@ -39,7 +39,9 @@ function appendNativeAnalysis(
     collection: collected,
     referenceProjection: projectNativeReferences(snapshot),
   });
-  markRelationCompleteness(analysis, collected);
+  analysis.complete &&=
+    effectiveNativeCollection(analysis, snapshot, collected)
+      .compilationRelations === 'determined';
 }
 
 export function mergeNativeAnalysis(
@@ -53,9 +55,15 @@ export function mergeNativeAnalysis(
   (target.declarationEvidence ??= []).push(
     ...(source.declarationEvidence ?? []),
   );
+  if (source.inactiveDeclarationRequests?.length)
+    (target.inactiveDeclarationRequests ??= []).push(
+      ...source.inactiveDeclarationRequests,
+    );
   (target.declarationContexts ??= []).push(
     ...(source.declarationContexts ?? []),
   );
+  if (source.packageRequests?.length)
+    (target.packageRequests ??= []).push(...source.packageRequests);
   target.facts.push(...source.facts);
   target.diagnostics.push(...source.diagnostics);
   target.complete &&= source.complete;
@@ -71,9 +79,38 @@ function appendNativeAssessments(
   target.nativeEvidence.push(...source.nativeEvidence);
 }
 
-function markRelationCompleteness(
+/** Raw observation completeness remains available on each snapshot. A proved
+ * stop or unknown obligation from a delegated request concerns its observing
+ * Program only. Failures and unbound gaps retain their original meaning. */
+export function effectiveNativeCollection(
   analysis: DependencyAnalysisResult,
+  snapshot: NativeEvidenceSnapshot,
   collected: NativeCollectionStatus,
-): void {
-  analysis.complete &&= collected.compilationRelations === 'determined';
+): NativeCollectionStatus {
+  if (
+    collected.compilationRelations === 'determined' ||
+    collected.traversal !== 'complete-within-boundary' ||
+    !analysis.inactiveDeclarationRequests?.length
+  )
+    return collected;
+  const inactive = new Set(analysis.inactiveDeclarationRequests);
+  const unknown = new Set(collected.undeterminedObligationIds);
+  for (const obligation of snapshot.obligations)
+    if (
+      obligation.requestIds.length > 0 &&
+      obligation.requestIds.every((id) => inactive.has(id))
+    )
+      unknown.delete(obligation.id);
+  const boundaries = collected.relationBoundaryIds.filter(
+    (id) => !inactive.has(id),
+  );
+  return {
+    ...collected,
+    compilationRelations:
+      unknown.size === 0 && boundaries.length === 0
+        ? 'determined'
+        : 'undetermined',
+    undeterminedObligationIds: [...unknown],
+    relationBoundaryIds: boundaries,
+  };
 }

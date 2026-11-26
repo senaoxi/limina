@@ -79,7 +79,7 @@ packages/core/tsconfig.tools.json
 
 ## 聚合配置 {#聚合器配置}
 
-当检查器解析出的文件集合为空，并且配置直接声明了 `references` 时，Limina 才把它视为 TypeScript 聚合配置。文件集合会使用当前检查器解析，因此会考虑 `extends`、`.vue` 等框架扩展名以及 TypeScript 项目规则。`files: []` 显式声明空文件列表，其他配置写法也可能满足这一条件。
+默认 `tsconfig.json` 直接声明 `references` 且没有非空的 `files` 列表时，Limina 会检查它是否属于聚合配置。解析得到的根文件集合为空时，可以确认聚合角色。检查使用 TypeScript 的配置解析器，并为具名检查器加入适用的框架扩展名。继承的选择器和选项仍可能影响结果。可以用 `files: []` 表达空文件列表。
 
 ```jsonc
 {
@@ -88,7 +88,7 @@ packages/core/tsconfig.tools.json
 }
 ```
 
-只有路径名称恰好为 `tsconfig.json` 的聚合配置才受 Limina 支持。解析后仍拥有源码文件的默认 `tsconfig.json` 属于普通源码叶子配置；如果它同时声明 `references`，Limina 会报告源码引用问题，而不会把它当作聚合配置。`tsconfig.solution.json` 这类带名称的配置虽然可能符合 TypeScript 的聚合配置语义，但不是 Limina 支持的聚合配置入口，不能这样使用。
+Limina 管理的聚合配置使用文件名 `tsconfig.json`。源码配置直接声明 `references` 时会收到源码引用诊断，包括角色检查后仍含根文件的默认配置，以及 `tsconfig.solution.json` 等具名配置。
 
 运行 `limina graph prepare` 时，Limina 会从检查器入口出发，沿着受支持的 `tsconfig.json` 聚合配置的有效 `references` 展开源码配置，并生成检查器实际消费的构建图。
 

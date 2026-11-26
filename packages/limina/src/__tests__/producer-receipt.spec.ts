@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, utimes, writeFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
+import { publishGovernedSourceConfig } from '../core/build-graph/governed-sources';
 import {
   assertProducerBuildReceipt,
   issueProducerBuildReceipt,
@@ -13,7 +14,7 @@ import { createDefaultRunner } from '../typecheck/targets';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
-it('revokes a real producer receipt after external declaration or in-memory plan drift', async () => {
+it('revokes a real producer receipt after declaration, plan, or config closure drift', async () => {
   const fixture = await createSemanticRepairFixture({
     'package.json': JSON.stringify({
       name: 'receipt-inputs',
@@ -23,7 +24,9 @@ it('revokes a real producer receipt after external declaration or in-memory plan
     }),
     'src/index.ts':
       'import type { Value } from "external-value"; export const value: Value = 1;',
+    'base.json': '{"compilerOptions":{}}',
     'tsconfig.json': JSON.stringify({
+      extends: './base',
       compilerOptions: {
         composite: true,
         declaration: true,
@@ -121,10 +124,12 @@ it('revokes a real producer receipt after external declaration or in-memory plan
     const configPath = fixture.path('tsconfig.json');
     const unit = units.get(configPath)!;
     const { kind, family, source } = unit.semanticAuthority;
-    const projected = new Map(units).set(configPath, {
+    const unchangedUnit = {
       ...unit,
       semanticAuthority: { kind, family, source },
-    });
+    };
+    publishGovernedSourceConfig(unit, unchangedUnit);
+    const projected = new Map(units).set(configPath, unchangedUnit);
     const finalGraph = {
       ...receipt.plan,
       governedSources: new Map(receipt.plan.governedSources).set(
@@ -139,6 +144,13 @@ it('revokes a real producer receipt after external declaration or in-memory plan
     });
     expect(() => assertProducerBuildReceipt(receipt, finalGraph)).toThrow(
       /frozen checker ownership or semantic authority/u,
+    );
+
+    const originalBase = await readFile(fixture.path('base.json'));
+    await writeFile(fixture.path('base'), originalBase);
+    await preflight.prepareConsumerPhase(receipt);
+    await expect(preflight.ensureGeneratedGraph()).rejects.toThrow(
+      /changes the frozen Source Config closure/u,
     );
   } finally {
     preflight.dispose();

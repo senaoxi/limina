@@ -2,9 +2,7 @@ import ts from 'typescript';
 import { nativeFingerprint } from '../typescript-semantic/native-file-identity';
 import { hasValidBoundedContext } from './bounded-context-validity';
 import type { AnalysisSnapshot, InputDependency } from './contracts';
-import { validateData } from './data-codec';
 import { analysisHash } from './identity';
-import { hasBrokenInstallationCoverage } from './installation-lock-coverage';
 import { hasResolutionReceipt } from './resolution-queries';
 import { occurrenceKey } from './semantic-state';
 import { hasVueModuleContextId } from './vue-identity';
@@ -24,7 +22,6 @@ function hasBrokenInputs(
 }
 function hasBrokenQueries(snapshot: AnalysisSnapshot): boolean {
   const consumers = [
-    ...Object.values(snapshot.graphs),
     ...Object.values(snapshot.importers),
     ...Object.values(snapshot.contexts),
     ...Object.values(snapshot.contexts).map(
@@ -80,8 +77,15 @@ function hasBrokenContextSyntax(
   context: AnalysisSnapshot['contexts'][string],
 ): boolean {
   if (context.native !== undefined) {
-    const { members, syntax } = context.native.inventory;
+    const { inventory, snapshot: evidence } = context.native;
+    const { members, syntax } = inventory;
     const files = new Set(syntax.map((entry) => entry.file));
+    const sources = new Map(
+      evidence.requests.map((request) => [
+        request.id,
+        request.sourceFile?.lexicalPath,
+      ]),
+    );
     return [
       files.size !== syntax.length,
       files.size !== members.length,
@@ -90,6 +94,13 @@ function hasBrokenContextSyntax(
         ({ file, fingerprint }) =>
           nativeFingerprint(snapshot.files[file]) !== fingerprint,
       ),
+      inventory.modules.some(({ requestId, sourceFingerprint }) => {
+        const file = sources.get(requestId);
+        return (
+          file === undefined ||
+          snapshot.files[file]?.sourceVersion !== sourceFingerprint
+        );
+      }),
     ].some(Boolean);
   }
   return (
@@ -107,52 +118,10 @@ function hasBrokenSyntax(snapshot: AnalysisSnapshot): boolean {
     )
   );
 }
-function hasBrokenContributions(snapshot: AnalysisSnapshot): boolean {
-  return Object.values(snapshot.contributions)
-    .flat()
-    .some((contribution) => {
-      const id = JSON.stringify([
-        'physical',
-        'content',
-        contribution.occurrence.filePath,
-      ]);
-      return snapshot.inputs[id]?.version !== contribution.sourceVersion;
-    });
-}
-function isGraphValid(
-  snapshot: AnalysisSnapshot,
-  graph: AnalysisSnapshot['graphs'][string],
-): boolean {
-  try {
-    validateData(graph.data);
-  } catch {
-    return false;
-  }
-  return (
-    graph.contextIds.every((id) => snapshot.contexts[id] !== undefined) &&
-    graph.vueContextIds.every((id) => snapshot.vueContexts[id]?.complete)
-  );
-}
-
-export function hasValidGraphRecords(
-  snapshot: AnalysisSnapshot,
-  graphs: AnalysisSnapshot['graphs'],
-): boolean {
-  const records = Object.values(graphs);
-  return (
-    !hasBrokenInputs(snapshot, records) &&
-    records.every(
-      (graph) =>
-        graph.queryIds.every((id) => snapshot.queries[id] !== undefined) &&
-        isGraphValid(snapshot, graph),
-    )
-  );
-}
 export function validatedSnapshot(
   snapshot: AnalysisSnapshot,
 ): AnalysisSnapshot | undefined {
   const records = [
-    ...Object.values(snapshot.graphs),
     ...Object.values(snapshot.queries),
     ...Object.values(snapshot.importers),
     ...Object.values(snapshot.contexts),
@@ -160,15 +129,9 @@ export function validatedSnapshot(
     ...Object.values(snapshot.vueContexts).map(
       (context) => context.environment,
     ),
-    ...Object.values(snapshot.vueContexts).flatMap(
-      (context) => context.environment.domains,
-    ),
     ...Object.values(snapshot.contexts).map((context) => context.environment),
     ...Object.values(snapshot.contexts).map(
       (context) => context.sharedEnvironment,
-    ),
-    ...Object.values(snapshot.contexts).flatMap(
-      (context) => context.environment.domains,
     ),
   ];
   const broken = [
@@ -184,17 +147,12 @@ export function validatedSnapshot(
       (query) => !hasResolutionReceipt(query),
     ),
     hasBrokenInputs(snapshot, records),
-    hasBrokenInstallationCoverage(snapshot),
     hasBrokenQueries(snapshot),
     hasBrokenSources(snapshot),
     hasBrokenFacts(snapshot),
     hasBrokenSyntax(snapshot),
-    hasBrokenContributions(snapshot),
     Object.entries(snapshot.vueContexts).some(
       ([id, context]) => !isVueRecordValid(id, context),
-    ),
-    Object.values(snapshot.graphs).some(
-      (graph) => !isGraphValid(snapshot, graph),
     ),
   ];
   return broken.some(Boolean) ? undefined : snapshot;

@@ -41,15 +41,24 @@ export function collectSupportContributions(
   }
 }
 function vueSupportFiles(request: ProjectDependencyRequest) {
-  return (
+  const inputs =
     request.importAnalysis.collectCheckerSupportInputs?.({
       checkerPresets: [],
       extensions: [...request.context.extensions],
       semanticFamily: 'vue',
       vueSemanticIdentity: request.context.vueSemanticIdentity,
-    }) ?? []
-  );
+    }) ?? [];
+  return new Map(inputs.map((input) => [input.filePath, input.records]));
 }
+
+function currentVueSupportFiles(request: ProjectDependencyRequest) {
+  const projected = request.vueGraphFacts?.support();
+  let live = projected === undefined ? vueSupportFiles(request) : undefined;
+  // A missing query can start live collection while the closure is walking.
+  return () =>
+    projected?.isCurrent() ? projected : (live ??= vueSupportFiles(request));
+}
+
 function createDependencyFactReader(collection: ProjectDependencyCollection) {
   const dependencies = new Map<
     string,
@@ -94,13 +103,12 @@ function collectObservedSupportContributions(
   request: ProjectDependencyRequest,
 ): void {
   const roots = new Set(request.context.fileNames);
-  const files = new Map(
-    vueSupportFiles(request).map((input) => [input.filePath, input.records]),
-  );
+  const supportFiles = currentVueSupportFiles(request);
   const rootRecords = [
     ...collection.dependencies,
     ...collection.observations.filter((item) => 'importRecord' in item),
   ].flatMap((item) => ('importRecord' in item ? [item.importRecord] : []));
+  const recordsByRoot = Map.groupBy(rootRecords, (record) => record.filePath);
   const facts = new Map<string, ClosureFact>();
   const readDependencyFact = createDependencyFactReader(collection);
   const projection = projectObservedDeclarationClosure({
@@ -118,11 +126,11 @@ function collectObservedSupportContributions(
       }) ?? []),
     ],
     incomplete: [],
-    loaded: (file) => files.has(file),
+    loaded: (file) => supportFiles().has(file),
     records: (file) =>
       roots.has(file)
-        ? rootRecords.filter((record) => record.filePath === file)
-        : (files.get(file) ?? []),
+        ? (recordsByRoot.get(file) ?? [])
+        : (supportFiles().get(file) ?? []),
     fact: (record) => {
       const key = createImportRecordIdentity(record);
       const cached = facts.get(key);

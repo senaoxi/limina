@@ -11,7 +11,7 @@ import {
 import { isPathInsideDirectory, toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { isKnownFrameworkVirtualSpecifier } from '../import-analysis/virtual-modules';
-import type { ProjectDependency } from '../project-dependencies/contracts';
+import type { ReferenceDependency } from '../project-dependencies/reference-facts';
 import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import type { ReferenceImportContext } from './reference-import-types';
 import { isInsideNodeModules } from './source-projects';
@@ -113,7 +113,7 @@ interface ContributionOptions {
   context: ReferenceImportContext;
   frameworkFiles: ReadonlySet<string>;
   project: SourceProject;
-  projectDependency: ProjectDependency;
+  projectDependency: ReferenceDependency;
 }
 export function isFrameworkContribution(options: ContributionOptions): boolean {
   const fileName = options.projectDependency.importRecord.filePath;

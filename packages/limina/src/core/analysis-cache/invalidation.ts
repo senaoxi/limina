@@ -20,13 +20,6 @@ export class AnalysisInvalidation {
         changed.add(id);
     if (changed.size > 0) this.#invalidate(snapshot, changed);
     this.#invalidateSyntax(snapshot, inputs);
-    for (const [id, { project }] of Object.entries(snapshot.contexts)) {
-      const authority =
-        snapshot.authorities[project.configPath] ??
-        snapshot.authorities[project.sourceConfigPath ?? ''];
-      if (authority !== undefined && !inputs.configCurrent(authority.closure))
-        this.invalidateContext(id);
-    }
   }
 
   #invalidate(snapshot: AnalysisSnapshot, changed: Set<string>): void {

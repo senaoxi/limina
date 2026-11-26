@@ -115,7 +115,7 @@ it.each(['direct', 'solution', 'same-family'] as const)(
         files: [],
         references: [{ path: '../bad/tsconfig.json' }],
       }),
-      'bad/bad.ts': 'export const bad=1;',
+      'bad/bad.ts': 'import "./missing.js"; export const bad=1;',
       'healthy/healthy.ts':
         'import {b} from "../b/b.js"; export const healthy=b;',
       'b/b.ts': 'export const b=1;',
@@ -157,6 +157,22 @@ it.each(['direct', 'solution', 'same-family'] as const)(
       expectEqual(analysis.outcome!.core.executionFailureIds, []);
       expectEqual(analysis.outcome!.governance.state, 'violations');
       expectEqual(analysis.outcome!.buildAdmission.state, 'denied');
+      const observations = analysis.nativeEvidence!.map(
+        ({ snapshot }) => snapshot,
+      );
+      const badConfig = f.path('bad/tsconfig.json');
+      const badSource = observations.filter((snapshot) =>
+        snapshot.contexts.some(
+          (context) => context.inputs.config === badConfig,
+        ),
+      );
+      expect(badSource).toHaveLength(1);
+      expect(
+        badSource[0]?.contexts.map((context) => context.authority.phase),
+      ).toEqual([mode === 'same-family' ? 'locked' : 'pending']);
+      expect(badSource[0]?.requests).toContainEqual(
+        expect.objectContaining({ specifier: './missing.js' }),
+      );
       expectEqual(
         analysis.facts.some(
           (fact) =>

@@ -6,7 +6,6 @@ import type ts from 'typescript';
 import type {
   AstroMaterializedProject,
   AstroSemanticProject,
-  AstroSemanticProjectSnapshotInput,
   AstroSemanticSeed,
   AstroSemanticToolchain,
 } from './astro-semantic-types';
@@ -37,7 +36,7 @@ export function createAstroSemanticProject(options: {
   overlayGeneration?: number;
   packageRootDir: string;
   projectFingerprint: string;
-  readSnapshot: () => AstroSemanticProjectSnapshotInput;
+  readSnapshot: AstroSemanticProject['readSnapshot'];
 }): AstroSemanticProject {
   const configPath = normalizeAbsolutePath(options.configPath);
   const packageRootDirectory = normalizeAbsolutePath(options.packageRootDir);
@@ -57,8 +56,9 @@ export function createAstroSemanticProject(options: {
 
 export function materializeAstroSemanticProject(
   project: AstroSemanticProject,
+  toolchain: AstroSemanticToolchain,
 ): AstroMaterializedProject {
-  const snapshot = project.readSnapshot();
+  const snapshot = project.readSnapshot(toolchain);
   return {
     seed: project.seed,
     snapshot: {

@@ -701,118 +701,6 @@ export default { source: { tsconfigOwnership: { ignore: [] } } };
     }
   });
 
-  it('validates source ambient declaration config and loads a complete rule', async () => {
-    const rootDirectory = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
-
-    try {
-      await writeText(
-        path.join(rootDirectory, 'pnpm-workspace.yaml'),
-        'packages: []\n',
-      );
-      await writeText(path.join(rootDirectory, 'package.json'), '{}');
-      const invalidCases: [unknown, string][] = [
-        [[], 'declarations must be an object'],
-        [{ ambient: {} }, 'ambient must be an array'],
-        [{ ambient: ['bad'] }, 'ambient declaration rules must be objects'],
-        [
-          { ambient: [{ reason: 'needed' }] },
-          'ambient declaration include must be a non-empty string array',
-        ],
-        [
-          { ambient: [{ include: [], reason: 'needed' }] },
-          'ambient declaration include must be a non-empty string array',
-        ],
-        [
-          { ambient: [{ include: [1], reason: 'needed' }] },
-          'ambient declaration include entries must be non-empty strings',
-        ],
-        [
-          { ambient: [{ include: ['/types.d.ts'], reason: 'needed' }] },
-          'ambient declaration include entries must be config.rootDir-relative paths',
-        ],
-        [
-          { ambient: [{ include: ['types.d.ts'] }] },
-          'ambient declaration reason must be a non-empty string',
-        ],
-        [
-          { ambient: [{ include: ['types.d.ts'], reason: ' '.repeat(3) }] },
-          'ambient declaration reason must be a non-empty string',
-        ],
-        [
-          {
-            ambient: [
-              {
-                allowSharedAcrossOwners: 'yes',
-                include: ['types.d.ts'],
-                reason: 'needed',
-              },
-            ],
-          },
-          'allowSharedAcrossOwners must be a boolean',
-        ],
-        [
-          {
-            ambient: [
-              {
-                allowTripleSlashReferences: 1,
-                include: ['types.d.ts'],
-                reason: 'needed',
-              },
-            ],
-          },
-          'allowTripleSlashReferences must be a boolean',
-        ],
-        [
-          {
-            ambient: [
-              { include: ['types.d.ts'], reason: 'needed', unknown: true },
-            ],
-          },
-          'unknown ambient declaration rule field',
-        ],
-      ];
-
-      for (const [index, [declarations, message]] of invalidCases.entries()) {
-        const configPath = `limina-${index}.config.mjs`;
-        await writeText(
-          path.join(rootDirectory, configPath),
-          `export default ${JSON.stringify({ source: { declarations } })};\n`,
-        );
-        await expect(
-          loadConfig({ configPath, cwd: rootDirectory }),
-        ).rejects.toThrow(message);
-      }
-
-      const configPath = 'limina-valid.config.mjs';
-      await writeText(
-        path.join(rootDirectory, configPath),
-        `export default ${JSON.stringify({
-          source: {
-            declarations: {
-              ambient: [
-                {
-                  allowSharedAcrossOwners: true,
-                  allowTripleSlashReferences: true,
-                  include: ['types/**/*.d.ts'],
-                  reason: 'Shared type shims.',
-                },
-              ],
-            },
-          },
-        })};\n`,
-      );
-      const config = await loadConfig({ configPath, cwd: rootDirectory });
-      expect(config.source?.declarations?.ambient?.[0]).toEqual({
-        allowSharedAcrossOwners: true,
-        allowTripleSlashReferences: true,
-        include: ['types/**/*.d.ts'],
-        reason: 'Shared type shims.',
-      });
-    } finally {
-      await rm(rootDirectory, { force: true, recursive: true });
-    }
-  });
-
   it('loads owner-keyed source import authority config', async () => {
     const rootDirectory = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
@@ -3392,7 +3280,7 @@ describe('configuration-driven default governance', () => {
     { source: { knip: true } },
     { source: { knip: { root: {} } } },
     { source: { knip: { workspaces: {} } } },
-    { source: { declarations: { ambient: [] } } },
+    { source: { forbidCrossPackageRelativeImports: true } },
     { source: { importAuthority: { allow: {} } } },
   ])('accepts explicit empty collections and false: %j', (config) => {
     expect(() => validateLiminaConfig(config)).not.toThrow();
@@ -3433,7 +3321,7 @@ describe('configuration-driven default governance', () => {
       config: { source: { knip: false, declarations: undefined } },
       field: 'declarations',
     },
-    { config: { source: { declarations: {} } }, field: 'ambient' },
+    { config: { source: { declarations: {} } }, field: 'declarations' },
     { config: { source: { importAuthority: {} } }, field: 'allow' },
     {
       config: {
@@ -3566,7 +3454,7 @@ export default async ({ mode }: { mode: string }) => {
     const proof = defineConfig({ proof: {} });
     // @ts-expect-error A configured source must declare a supported field.
     const source = defineConfig({ source: {} });
-    // @ts-expect-error Declarations must explicitly declare ambient rules.
+    // @ts-expect-error Removed configuration is rejected.
     const declarations = defineConfig({ source: { declarations: {} } });
     // @ts-expect-error Import authority must explicitly declare grants.
     const authority = defineConfig({ source: { importAuthority: {} } });

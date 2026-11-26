@@ -1,4 +1,5 @@
 import { currentProfile } from '../../application/analysis/observability';
+import { AnalysisInputDriftError } from '../analysis-cache/contracts';
 import { observeWork } from '../analysis-profile';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { observationErrorDetail } from '../typescript-semantic/native-observation-failure';
@@ -37,6 +38,7 @@ function observeOutput(input: {
     );
     (input.project.outputProjections ??= []).push(receipt);
   } catch (error) {
+    if (error instanceof AnalysisInputDriftError) throw error;
     input.state.dependencyAnalysis.diagnostics.push(
       observationErrorDetail(error),
     );

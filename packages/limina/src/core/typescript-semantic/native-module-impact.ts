@@ -1,26 +1,18 @@
 import type ts from 'typescript';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import { compilerFileKey } from './compiler-coverage';
-import {
-  nativeCompilerApi,
-  type NativeObservedProgram,
-} from './native-program-api';
-import type { NativeModuleObservation } from './native-program-requests';
+import { nativeCompilerApi } from './native-program-api';
 import type { NativeReferenceObservation } from './reference-redirect';
 
 export type NativeModuleImpact =
   | { readonly state: 'absent' | 'present'; readonly rule: string }
   | { readonly state: 'unknown'; readonly reason: string };
 
-interface ImpactInput {
-  observation: NativeModuleObservation;
-  program: NativeObservedProgram;
-  compiler: typeof ts;
-  reference: NativeReferenceObservation | undefined;
+interface ModuleInput {
+  role: 'import' | 'augmentation';
+  options: ts.CompilerOptions | undefined;
+  target: string | undefined;
 }
-type RequestInput = Pick<ImpactInput, 'observation' | 'program'> & {
-  fileKey?: (file: string) => string;
-};
 interface TargetInput {
   service?: { extension: string; scriptKind: ts.ScriptKind };
   target: string;
@@ -31,62 +23,38 @@ interface TargetInput {
   reference: NativeReferenceObservation | undefined;
 }
 
-/** These proofs apply to this occurrence, including unresolved requests. They
- * do not depend on declaration mapping or cancel another request's obligation. */
-export function independentModuleAbsence(
-  input: RequestInput,
+export function independentModuleInputAbsence(
+  input: ModuleInput & {
+    roots: readonly string[];
+    fileKey?: (file: string) => string;
+  },
 ): NativeModuleImpact | undefined {
-  return independentModuleInputAbsence({
-    role: input.observation.role,
-    options: input.program.getCompilerOptionsForFile(input.observation.source),
-    target: moduleTarget(input.observation),
-    roots: input.program.getRootFileNames(),
-    fileKey: input.fileKey,
+  const fileKey = input.fileKey ?? compilerFileKey;
+  return independentModuleInputAbsenceForRoot(input, (target) => {
+    const targetKey = fileKey(target);
+    return input.roots.some((root) => fileKey(root) === targetKey);
   });
 }
-export function independentModuleInputAbsence(input: {
-  role: 'import' | 'augmentation';
-  options: ts.CompilerOptions | undefined;
-  target: string | undefined;
-  roots: readonly string[];
-  fileKey?: (file: string) => string;
-}): NativeModuleImpact | undefined {
+
+/** These proofs apply to this occurrence, including unresolved requests. They
+ * do not depend on declaration mapping or cancel another request's obligation. */
+export function independentModuleInputAbsenceForRoot(
+  input: ModuleInput,
+  isConsumerRoot: (file: string) => boolean,
+): NativeModuleImpact | undefined {
   if (input.role === 'augmentation')
     return {
       state: 'absent',
       rule: 'compiler-augmentation-does-not-add-input',
     };
-  if (input.target !== undefined) {
-    const fileKey = input.fileKey ?? compilerFileKey;
-    const targetKey = fileKey(input.target);
-    if (input.roots.some((root) => fileKey(root) === targetKey))
-      return {
-        state: 'absent',
-        rule: 'consumer-root-has-no-cross-unit-obligation',
-      };
-  }
+  if (input.target !== undefined && isConsumerRoot(input.target))
+    return {
+      state: 'absent',
+      rule: 'consumer-root-has-no-cross-unit-obligation',
+    };
   return input.options?.noResolve
     ? { state: 'absent', rule: 'compiler-noResolve-disables-module-input' }
     : undefined;
-}
-function moduleTarget(
-  observation: NativeModuleObservation,
-): string | undefined {
-  return observation.raw?.resolvedModule?.resolvedFileName;
-}
-
-/** Sufficient input and emit premises for the existing fixed-root declaration
- * project contract. Selection, diagnostics, JSDoc and roles stay at the entry. */
-export function observeNativeModuleImpact(
-  input: ImpactInput,
-): NativeModuleImpact {
-  const target = input.observation.raw?.resolvedModule;
-  return target === undefined
-    ? {
-        state: 'unknown',
-        reason: 'compiler-resolution-observation-unavailable',
-      }
-    : classifyTarget(input, target);
 }
 /** Shared premises for native observations and separately qualified adapters.
  * A service classification describes an actual generated script, never a
@@ -101,27 +69,6 @@ export interface ModuleImpactPremises {
   sourceIsDeclaration: boolean;
   excludedDocumentation: boolean;
   service?: { extension: string; scriptKind: ts.ScriptKind };
-}
-function classifyTarget(
-  input: ImpactInput,
-  target: ts.ResolvedModuleFull,
-): NativeModuleImpact {
-  return evaluateModuleImpact({
-    target,
-    compiler: input.compiler,
-    reference: input.reference,
-    inputOptions: input.program.getCompilerOptionsForFile(
-      input.observation.source,
-    ),
-    emitOptions: input.program.getCompilerOptions(),
-    sourceIsExternal: input.program.isSourceFileFromExternalLibrary(
-      input.observation.source,
-    ),
-    sourceIsDeclaration: input.observation.source.isDeclarationFile,
-    excludedDocumentation:
-      (input.observation.literal.flags & 16_777_216) !== 0 &&
-      !nativeCompilerApi(input.compiler).isInJSFile(input.observation.literal),
-  });
 }
 export function evaluateModuleImpact(
   input: ModuleImpactPremises,

@@ -394,8 +394,8 @@ it('keeps config closure out of the seed and includes it only in materialized id
   expect(firstProject.seed.id).toBe(secondProject.seed.id);
 
   const toolchain = createFakeToolchain(createState());
-  const first = materializeAstroSemanticProject(firstProject);
-  const second = materializeAstroSemanticProject(secondProject);
+  const first = materializeAstroSemanticProject(firstProject, toolchain);
+  const second = materializeAstroSemanticProject(secondProject, toolchain);
 
   expect(snapshotReads).toBe(2);
   expect(first.snapshot.configClosure).toEqual([

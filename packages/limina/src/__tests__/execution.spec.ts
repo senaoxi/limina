@@ -752,7 +752,7 @@ describe('runExecutionTasks', () => {
       expect(output).toContain(
         `${green('◆')}        source graph routes (5ms)\n`,
       );
-      expect(output).toMatch(/graph check \(\d+ms\)/u);
+      expect(output).toMatch(/graph check \((?:<?\d+ms|\d+\.\d+s) total\)/u);
       expect(output).not.toContain('stats replay should stay hidden');
     });
   });

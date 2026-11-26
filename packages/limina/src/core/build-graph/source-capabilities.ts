@@ -34,11 +34,6 @@ export interface AutoFrameworkEvidence {
   intentHints: FrameworkIntentHint[];
 }
 
-export interface FrameworkIntentInspection {
-  intentHints: FrameworkIntentHint[];
-  problems: string[];
-}
-
 type SourceFilePartitionKey = keyof SourceFilePartition;
 
 const partitionKeyByExtension = new Map<string, SourceFilePartitionKey>([

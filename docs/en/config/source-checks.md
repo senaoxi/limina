@@ -1,16 +1,16 @@
 # Source Checks
 
-`source` configures source import rules, ambient declarations, and optional unused-code analysis. For example, when `packages/app` imports `@acme/core`, Limina checks whether the `app` manifest authorizes that import. The default checks already include these base rules; you do not need to configure them to enable them.
+`source` configures source import rules and optional unused-code analysis. For example, when `packages/app` imports `@acme/core`, Limina checks whether the `app` manifest authorizes that import. The default checks already include these base rules; you do not need to configure them to enable them.
 
 If an import is unauthorized, first consider declaring the dependency in the package that uses it. Use `importAuthority` below when the project intentionally shares a workspace root dependency declaration.
 
-Omitting `source` still runs base Source Check. `source: { knip: false }` runs all applicable base checks and skips only Knip; `source: { knip: true }` also runs Knip. Standalone `limina source check` uses the same policy. Empty `source`, `declarations`, or `importAuthority` wrappers are invalid. Use `declarations: { ambient: [] }` or `importAuthority: { allow: {} }` for explicit empty collections.
+Omitting `source` still runs base Source Check. `source: { knip: false }` runs all applicable base checks and skips only Knip; `source: { knip: true }` also runs Knip. Standalone `limina source check` uses the same policy. Use `importAuthority: { allow: {} }` for an explicit empty grant collection.
 
-| Field                         | Purpose                                                                      | When omitted                                                            |
-| ----------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `source.importAuthority`      | Grant selected source access to dependencies declared by the governance root | Bare package dependencies must be declared by the source-owning package |
-| `source.declarations.ambient` | Mark ambient declaration roles that need explicit management                 | No additional explicit ambient declaration authorization                |
-| `source.knip`                 | Check unused workspace dependencies and unused source modules                | Disabled; enabling it requires `knip` to be installed                   |
+| Field                                      | Purpose                                                                      | When omitted                                                            |
+| ------------------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `source.importAuthority`                   | Grant selected source access to dependencies declared by the governance root | Bare package dependencies must be declared by the source-owning package |
+| `source.forbidCrossPackageRelativeImports` | Restrict relative imports to one package scope                               | `false`                                                                 |
+| `source.knip`                              | Check unused workspace dependencies and unused source modules                | Disabled; enabling it requires `knip` to be installed                   |
 
 These fields do not select the global source set. File scope is determined by [`scope.source`](./source-boundary.md).
 
@@ -18,7 +18,11 @@ These fields do not select the global source set. File scope is determined by [`
 
 Limina discovers source within the independent governance scope of each validated, activated package, including external and unnamed packages. The package root manifest determines source ownership and dependency authorization. Source selectors relative to `config.rootDir` may contain `../`, but only filter discovered candidates; they cannot add inactive directories to governance.
 
-By default, a nested `package.json` stops traversal by the outer package. With [`scope.regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes), eligible unnamed nested scopes can remain in the outer region. Their source uses the outer package's dependency declarations, while the nested manifest still defines the package scope for relative imports and `#imports`. See [Regions](./regions.md) for the full rules on nested workspace boundaries and exclusions.
+By default, a nested `package.json` stops traversal by the outer package. With [`scope.regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes), eligible unnamed nested scopes can remain in the outer region. Their source uses the outer package's dependency declarations, while the nested manifest still defines the package scope for strict relative imports and `#imports`. See [Regions](./regions.md) for the full rules on nested workspace boundaries and exclusions.
+
+Each ordinary source config and all its directly governed roots share one nearest `package.json`. One package may have multiple source configs, including named leaves reached through a solution. Each implementation root has one leaf. Declaration roots (`.d.ts`, `.d.mts`, and `.d.cts`) may be shared by leaves in that scope. When more than one leaf can interpret a declaration, select its semantic context with `liminaOptions.declarationContexts` in the source tsconfig. Standalone source checks use the same declaration-context decision during graph preparation. A reference-only solution organizes its leaves. Imported files and relative `compilerOptions.types` entries are compiler inputs and do not acquire root ownership through consumption. A relative type entry may select a declaration in another active package. The source tsconfig determines its resolution. Graph preparation rejects a target in a stopped or excluded region, including when the request contributes no reference.
+
+For the source leaf itself and every directly governed root, the compiler path and the physical file must also share their nearest manifest. The leaf needs this binding even when it currently has no roots. A link to the whole package can satisfy this condition. A link to just its source directory can expose the linking package’s module format or `#imports` to TypeScript, in which case graph preparation rejects the root.
 
 ## Resource module imports
 
@@ -76,48 +80,9 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 
 For imports used at runtime by the source owner, prefer declaring the dependency in that owner's manifest.
 
-## declarations.ambient
+## Relative imports
 
-`source.declarations.ambient` explicitly identifies declaration files that provide an ambient TypeScript role instead of an ordinary package-owned declaration API.
-
-```ts
-interface SourceAmbientDeclarationConfig {
-  include: string[];
-  allowSharedAcrossOwners?: boolean;
-  allowTripleSlashReferences?: boolean;
-  reason: string;
-}
-
-interface SourceDeclarationsConfig {
-  ambient: SourceAmbientDeclarationConfig[];
-}
-```
-
-Each `include` list contains config-root-relative patterns and may use `../` for an external activated package. These patterns only filter files already discovered from validated package islands; they cannot make an unactivated path or a path behind an owner-local boundary visible. Every rule must match at least one declaration file, and one physical file cannot match multiple rules.
-
-A matched file must have an ambient declaration shape. Managed output declarations, package public declaration entries, and ordinary external declaration modules with imports or exports cannot be reclassified as ambient declarations.
-
-`allowSharedAcrossOwners` defaults to `false`. Set it to `true` only when multiple source owners intentionally consume the same ambient declaration. `allowTripleSlashReferences` also defaults to `false`; it authorizes `/// <reference path="...">` access to a matched declaration, but does not authorize ordinary imports, package dependencies, or `/// <reference types>`.
-
-For example, assume `../shared-types` is an activated package and `globals.d.ts` is an existing ambient declaration that multiple source owners need to share. Adjust the path to the actual package and file:
-
-```js
-import { defineConfig } from 'limina';
-
-export default defineConfig({
-  source: {
-    declarations: {
-      ambient: [
-        {
-          include: ['../shared-types/globals.d.ts'],
-          allowSharedAcrossOwners: true,
-          reason: 'Applications share the host-provided global declarations.',
-        },
-      ],
-    },
-  },
-});
-```
+Ordinary relative imports, including type imports, literal CommonJS calls and triple-slash path references, may cross package scopes inside active regions. Set `source.forbidCrossPackageRelativeImports: true` to require the importer and target to share their nearest `package.json`. Relative targets in `package.json#imports` must stay within their declaring scope. Imports into stopped or excluded regions always fail.
 
 ## knip
 

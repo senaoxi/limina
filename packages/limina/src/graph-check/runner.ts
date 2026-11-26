@@ -9,6 +9,8 @@ import {
   type DependencyGraphDocument,
   stringifyDependencyGraph,
 } from '../dependency-graph/runner';
+import { measureGraphMaterialization } from '../execution/graph-materialization-progress';
+import { measureTaskProgress } from '../execution/progress';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import {
   runGraphRoutePhase,
@@ -38,7 +40,11 @@ export async function isRunGraphCheckImpl(
 ): Promise<boolean> {
   let state;
   try {
-    state = await createGraphCheckState(config, options);
+    state = await measureTaskProgress(
+      options.progress,
+      'prepare graph check inputs',
+      () => createGraphCheckState(config, options),
+    );
   } catch (error) {
     if (
       error instanceof LiminaStructuredError &&
@@ -50,9 +56,13 @@ export async function isRunGraphCheckImpl(
     throw error;
   }
 
-  runGraphRoutePhase(state);
-  runProjectReferencePhase(state);
-  runReferenceCompletenessPhase(state);
+  try {
+    runGraphRoutePhase(state);
+    runProjectReferencePhase(state);
+    runReferenceCompletenessPhase(state);
+  } catch (error) {
+    return state.checkItems.failActive(error);
+  }
   return isFinishGraphCheck(state);
 }
 
@@ -61,7 +71,13 @@ export async function runGraphPrepareImpl(
   options: RunGraphPrepareOptions = {},
 ): Promise<GeneratedTsconfigGraphResult> {
   const preflight = resolvePreflight(config, options);
-  return (await preflight.ensureGeneratedArtifactsMaterialized()).graph;
+  const receipt = await measureGraphMaterialization({
+    materialize: (onAccess) =>
+      preflight.ensureGeneratedArtifactsMaterialized(onAccess),
+    progress: options.progress,
+    purpose: 'complete',
+  });
+  return receipt.graph;
 }
 
 function disposeOwnedGraphExportPreflight(

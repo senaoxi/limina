@@ -27,6 +27,12 @@ export interface DeclarationContextDecision {
       };
 }
 
+/** A candidate can bind a triple-slash path to the referenced implementation
+ * even when its physical declaration output has not been built yet. */
+export interface DeclarationCandidateRequest extends DeclarationRequestReceipt {
+  readonly referencedPathInput?: string;
+}
+
 export interface DeclarationContextReceipt {
   readonly version: 3;
   readonly authority: CheckerAuthority;
@@ -49,5 +55,5 @@ export interface DeclarationContextReceipt {
     readonly declarationOutput: string | null;
     readonly qualified: boolean;
   }[];
-  readonly requests: readonly DeclarationRequestReceipt[];
+  readonly requests: readonly DeclarationCandidateRequest[];
 }

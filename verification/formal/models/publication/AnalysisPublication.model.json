@@ -10,7 +10,7 @@
     ".agents/docs/invariants.md": "I09",
     "packages/limina/src/preflight/analysis-cache-decode.ts": "AnalysisSnapshotDecoder",
     "packages/limina/src/preflight/analysis-cache-tools.ts": "AnalysisToolObservation",
-    "packages/limina/src/core/build-graph/analysis-cache.ts": "generated-graph-declaration-governance"
+    "packages/limina/src/core/analysis-cache/context-records.ts": "hasValidBoundedContext"
   },
   "stateVariables": {
     "phase,commands,retries": "Command settled once; only analysis retries.",
@@ -70,8 +70,8 @@
   "counterexamples": "Snapshots distinguish old physical bytes from semantic equivalence.",
   "empiricalVerification": "Run analysis-cache-lifecycle.spec.ts retry, final validation and physical baseline cases.",
   "driftReview": {
-    "baseline": "51cf25c8421ba4d445e45e414e028ef70fa6fae8",
-    "sourceHash": "9700573c97d92564d05d0968a81b3aa327dd296e063134eb5b9a3ff6b70da2ab",
+    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
+    "sourceHash": "560a2d11c83f03932c9d0f3fc3e9f9d35e6663b1619cfc3842d03c90cf5808e9",
     "modelHash": "25aa9a3e4ba7765cd681d8381f80d389c09409d232ba35f25c33bd429bd56469"
   }
 }

@@ -3,21 +3,21 @@ import type { ReferenceImportOptions } from './reference-import-types';
 import { isLocalPathOutsideActivatedRegions } from './source-projects';
 
 /**
-Apply the existing activated-region rule to observations independently of
-compilation obligations. Being uncovered alone is not this rule's predicate.
+Check resolved requests even when the compiler did not demand a project reference.
 */
-export function recordNativeGovernanceProblems(
+export function recordRequestGovernanceProblems(
   options: ReferenceImportOptions,
 ): void {
-  if (!isNativeSourceObservation(options)) return;
   const resolvedFilePath = options.projectDependency.resolvedFilePath;
   const { config, activatedRegions } = options.context;
   if (
-    isLocalPathOutsideActivatedRegions({
-      config,
-      activatedRegions,
-      filePath: resolvedFilePath,
-    })
+    activatedRegions.findBoundaryForPath(resolvedFilePath) !== null ||
+    (isNativeSourceObservation(options) &&
+      isLocalPathOutsideActivatedRegions({
+        config,
+        activatedRegions,
+        filePath: resolvedFilePath,
+      }))
   )
     options.context.problems.push(
       formatReferenceBoundaryProblem({

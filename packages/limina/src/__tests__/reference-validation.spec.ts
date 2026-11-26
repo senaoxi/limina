@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CheckerOwnershipPlan } from '../core/build-graph/checker-ownership-types';
 import { createGeneratedGraphStructuredError } from '../core/build-graph/problems';
-import { validateRestoredReferences } from '../core/build-graph/reference-validation';
+import { validateStagedReferences } from '../core/build-graph/reference-validation';
 import type {
   DependencyAnalysisResult,
   GovernedSourceUnit,
@@ -19,10 +19,9 @@ function candidate(references: Record<string, string[]>) {
     complete: true,
     facts: [],
     diagnostics: [],
-    referenceValidation: { state: 'admitted', diagnostics: [] },
   };
   return {
-    ownershipPlan: {
+    checkerOwnershipPlan: {
       dependencyFacts: [],
       sourceConfigPathsByEntry: new Map(),
       solutions: new Map(),
@@ -44,13 +43,12 @@ function candidate(references: Record<string, string[]>) {
         ]),
       ),
     } satisfies CheckerOwnershipPlan,
-    governedSources: new Map([
+    governedSourcesByChecker: new Map([
       [
         'tsc',
-        new Map(
-          ['a', 'b'].map((name) => [
-            `source-${name}`,
-            {
+        ['a', 'b'].map(
+          (name) =>
+            ({
               configPath: `source-${name}`,
               primaryCheckerName: 'tsc',
               buildProjection: {
@@ -68,30 +66,31 @@ function candidate(references: Record<string, string[]>) {
                 family: 'typescript',
                 source: 'explicit',
               },
-            } satisfies GovernedSourceUnit,
-          ]),
+            }) satisfies GovernedSourceUnit,
         ),
       ],
     ]),
     dependencyAnalysis,
-    generatedFiles: new Map(
-      Object.entries(references).map(([from, to]) => [
-        file(from),
-        JSON.stringify({
-          references: to.map((target) => ({ path: `./${target}` })),
-        }),
-      ]),
-    ),
-    sourceToDts: new Map([
+    writeContext: {
+      files: new Map(
+        Object.entries(references).map(([from, to]) => [
+          file(from),
+          JSON.stringify({
+            references: to.map((target) => ({ path: `./${target}` })),
+          }),
+        ]),
+      ),
+    },
+    projectsByChecker: new Map([
       [
         'tsc',
-        new Map([
-          ['source-a', file('a.json')],
-          ['source-b', file('b.json')],
-        ]),
+        [
+          { configPath: 'source-a', dtsConfigPath: file('a.json') },
+          { configPath: 'source-b', dtsConfigPath: file('b.json') },
+        ],
       ],
     ]),
-    sourceToBuild: new Map([
+    sourceToBuildByChecker: new Map([
       [
         'tsc',
         new Map([
@@ -102,7 +101,7 @@ function candidate(references: Record<string, string[]>) {
         ]),
       ],
     ]),
-    configToOutputBuild: new Map([
+    configToOutputBuildByChecker: new Map([
       [
         'tsc',
         new Map([
@@ -126,12 +125,12 @@ function dag(): Record<string, string[]> {
 
 describe('final serialized project reference admission', () => {
   it.each(['a.json', 'solution.json', 'entry.json', 'output.json'] as const)(
-    'rejects a restored cycle involving %s despite claimed admission',
+    'rejects a staged cycle involving %s',
     (target) => {
       const references = dag();
       references['b.json'] = [target];
       const graph = candidate(references);
-      validateRestoredReferences(graph);
+      validateStagedReferences(graph);
       expect(graph.dependencyAnalysis.referenceValidation?.state).toBe(
         'denied',
       );
@@ -144,23 +143,22 @@ describe('final serialized project reference admission', () => {
     const references = dag();
     references['b.json'] = ['b.json'];
     const graph = candidate(references);
-    validateRestoredReferences(graph);
+    validateStagedReferences(graph);
     expect(graph.dependencyAnalysis.referenceValidation?.state).toBe('denied');
     expect(
       graph.dependencyAnalysis.referenceValidation?.diagnostics.join('\n'),
     ).toContain(`${file('b.json')} -> ${file('b.json')}`);
   });
   it.each(['tsc', 'vue-tsc'])(
-    'preserves restored cycle attribution when another member uses %s',
+    'preserves cycle attribution when another member uses %s',
     (checkerName) => {
       const references = dag();
       references['b.json'] = ['a.json'];
       const graph = candidate(references);
-      graph.sourceToDts.get('tsc')!.delete('source-b');
-      const entries = graph.sourceToDts.get(checkerName) ?? new Map();
-      entries.set('source-b', file('b.json'));
-      graph.sourceToDts.set(checkerName, entries);
-      validateRestoredReferences(graph);
+      const moved = graph.projectsByChecker.get('tsc')!.pop()!;
+      const projects = graph.projectsByChecker.get(checkerName) ?? [];
+      graph.projectsByChecker.set(checkerName, [...projects, moved]);
+      validateStagedReferences(graph);
       const error = createGeneratedGraphStructuredError({
         config: withFixtureGovernanceRoot({
           rootDir: file('.'),
@@ -197,7 +195,7 @@ describe('final serialized project reference admission', () => {
         },
       ],
     };
-    validateRestoredReferences(graph);
+    validateStagedReferences(graph);
     expect(graph.dependencyAnalysis.referenceValidation).toEqual({
       state: 'admitted',
       diagnostics: [],
@@ -205,8 +203,8 @@ describe('final serialized project reference admission', () => {
   });
   it('rejects colliding generated identities before indexing overwrites either source', () => {
     const graph = candidate(dag());
-    graph.sourceToDts.get('tsc')!.set('source-b', file('a.json'));
-    validateRestoredReferences(graph);
+    graph.projectsByChecker.get('tsc')![1]!.dtsConfigPath = file('a.json');
+    validateStagedReferences(graph);
     expect(graph.dependencyAnalysis.referenceValidation).toMatchObject({
       state: 'denied',
       diagnostics: [
@@ -216,10 +214,10 @@ describe('final serialized project reference admission', () => {
   });
   it('rejects an output path colliding with the same source declaration identity', () => {
     const graph = candidate(dag());
-    graph.configToOutputBuild
+    graph.configToOutputBuildByChecker
       .get('tsc')!
       .set('source-a', { kind: 'project', path: file('a.json') });
-    validateRestoredReferences(graph);
+    validateStagedReferences(graph);
     expect(graph.dependencyAnalysis.referenceValidation).toMatchObject({
       state: 'denied',
       diagnostics: [
@@ -229,8 +227,8 @@ describe('final serialized project reference admission', () => {
   });
   it('cannot admit a missing serialized target', () => {
     const graph = candidate(dag());
-    graph.generatedFiles.delete(file('b.json'));
-    validateRestoredReferences(graph);
+    graph.writeContext.files.delete(file('b.json'));
+    validateStagedReferences(graph);
     expect(graph.dependencyAnalysis.referenceValidation?.state).toBe(
       'unavailable',
     );
@@ -240,7 +238,7 @@ describe('final serialized project reference admission', () => {
     references['a.json'] = [];
     references['solution.json'] = ['a.json'];
     const graph = candidate(references);
-    validateRestoredReferences(graph);
+    validateStagedReferences(graph);
     expect(graph.dependencyAnalysis.referenceValidation?.state).toBe('denied');
     expect(
       graph.dependencyAnalysis.referenceValidation?.diagnostics.join('\n'),
@@ -255,16 +253,19 @@ describe('final serialized project reference admission', () => {
     ['vue-tsc', 'tsgo'],
   ])('rejects an acyclic %s root reaching a %s target', (from, checker) => {
     const graph = candidate(dag());
-    graph.sourceToDts = new Map([
-      [from, new Map([['source-a', file('a.json')]])],
-      [checker, new Map([['source-b', file('b.json')]])],
+    const [a, b] = graph.projectsByChecker.get('tsc')!;
+    graph.projectsByChecker = new Map([
+      [from, [a!]],
+      [checker, [b!]],
     ]);
-    graph.sourceToBuild = new Map([[from, graph.sourceToBuild.get('tsc')!]]);
-    graph.configToOutputBuild = new Map([
-      [from, graph.configToOutputBuild.get('tsc')!],
+    graph.sourceToBuildByChecker = new Map([
+      [from, graph.sourceToBuildByChecker.get('tsc')!],
+    ]);
+    graph.configToOutputBuildByChecker = new Map([
+      [from, graph.configToOutputBuildByChecker.get('tsc')!],
     ]);
     graph.checkerEntries = new Map([[from, file('entry.json')]]);
-    validateRestoredReferences(graph);
+    validateStagedReferences(graph);
     expect(graph.dependencyAnalysis.referenceValidation?.state).toBe('denied');
     expect(
       graph.dependencyAnalysis.referenceValidation?.diagnostics.join('\n'),

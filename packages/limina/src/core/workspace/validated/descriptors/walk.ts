@@ -1,6 +1,7 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { lstat, opendir, realpath, stat } from 'node:fs/promises';
 import path from 'pathe';
+import { descriptorStamp } from '../descriptor-stamp';
 import { createDescriptorCandidate, isMissingFsError } from '../shared';
 import { isAddPackageDescriptor, isAddWorkspaceDescriptor } from './boundaries';
 import type {
@@ -143,7 +144,13 @@ async function isProcessDirectoryDescriptors(options: {
   names: DirectoryEntries;
 }): Promise<boolean> {
   const isWorkspaceBoundary = await isAddWorkspaceDescriptor(options);
-  return isWorkspaceBoundary || isAddPackageDescriptor(options);
+  // A workspace descriptor may stop descent in a directory that also has a
+  // package manifest. Retain both descriptors for package-scope invalidation.
+  const isPackageBoundary = await isAddPackageDescriptor({
+    ...options,
+    workspaceBoundary: isWorkspaceBoundary,
+  });
+  return isWorkspaceBoundary || isPackageBoundary;
 }
 
 async function isBlockedChildDirectory(options: {
@@ -163,7 +170,16 @@ async function prepareDirectoryWalk(options: {
   isOwnerRoot: boolean;
 }): Promise<DirectoryEntries | null> {
   const isBlocked = await isBlockedChildDirectory(options);
-  return isBlocked ? null : readDirectoryEntries(options.directory);
+  if (isBlocked) return null;
+  const { directory, context } = options;
+  context.result.descriptorStamps.set(directory, descriptorStamp(directory));
+  const entries = await readDirectoryEntries(directory);
+  for (const name of ['package.json', 'pnpm-workspace.yaml']) {
+    if (!entries?.has(name)) continue;
+    const file = path.join(directory, name);
+    context.result.descriptorStamps.set(file, descriptorStamp(file));
+  }
+  return entries;
 }
 
 async function processDirectoryWalk(options: {

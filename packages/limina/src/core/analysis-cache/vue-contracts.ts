@@ -10,7 +10,7 @@ import type { DeclarationEntry } from '../typescript-semantic/declaration-closur
 import type { VueDependencyObservation } from '../vue-semantic/dependency-observation';
 import type { InputDependency } from './contracts';
 import type { DataNode } from './data-codec';
-import type { TypeEnvironmentRecord } from './installation-environment';
+import type { TypeEnvironmentRecord } from './type-environment';
 import type { VUE_ANALYSIS_ADAPTER } from './vue-identity';
 
 export interface VueQueryResults {
@@ -46,11 +46,7 @@ export interface VueModuleRecord {
 }
 export interface VueContextRecord {
   adapter: typeof VUE_ANALYSIS_ADAPTER;
-  project: Pick<VueProjectSemanticIdentity, 'configPath' | 'projectRootDir'> & {
-    declarationLoading?: VueProjectSemanticIdentity['declarationLoading'];
-    extensions: string[];
-    outputProjection?: VueProjectSemanticIdentity['outputProjection'];
-  };
+  project: { configPath: string; sourceConfigPath?: string };
   identity: DataNode;
   dependencies: InputDependency[];
   environment: TypeEnvironmentRecord;

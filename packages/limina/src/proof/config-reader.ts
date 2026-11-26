@@ -89,10 +89,14 @@ export function readProofConfig(
   configPath: string,
   virtualFiles?: ReadonlyMap<string, string>,
 ): JsonObject {
-  const content = virtualFiles?.get(normalizeAbsolutePath(configPath));
-  const configObject = content
-    ? (JSON.parse(content) as JsonObject)
-    : readJsonConfig(config, configPath);
+  const hasOverlay = Boolean(
+    virtualFiles?.get(normalizeAbsolutePath(configPath)),
+  );
+  const configObject = readJsonConfig(
+    config,
+    configPath,
+    hasOverlay ? virtualFiles : undefined,
+  );
 
   validateUserMaintainedLiminaTsconfigMetadata({
     configObject,

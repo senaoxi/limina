@@ -40,6 +40,20 @@ function canonicalFields(_key: string, value: unknown): unknown {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
+
+export function hasSameNativeFileBinding(
+  previous: NativeFileIdentity,
+  current: NativeFileIdentity,
+): boolean {
+  if (previous.lexicalPath !== current.lexicalPath) return false;
+  const prior = previous.physical;
+  const actual = current.physical;
+  return prior.state === 'verified' && actual.state === 'verified'
+    ? prior.evidenceId === actual.evidenceId &&
+        prior.canonicalId === actual.canonicalId
+    : nativeFingerprint(prior) === nativeFingerprint(actual);
+}
+
 /**
  * A lexical path is not proof of physical identity. In particular, a missing
  * output or an unreadable symlink must not acquire membership by its spelling.

@@ -232,12 +232,15 @@ export function cloneProjectInfo(project: ProjectInfo): ProjectInfo {
   return {
     ...project,
     checkerPresets: [...project.checkerPresets],
-    configClosure: project.configClosure.map((entry) => ({ ...entry })),
+    configClosure: [...project.configClosure],
     extensions: [...project.extensions],
     fileNames: [...project.fileNames],
     labels: [...project.labels],
     ownedFileNames: [...project.ownedFileNames],
     references: new Set(project.references),
+    resolverProjectReferences: project.resolverProjectReferences.map(
+      (reference) => ({ ...reference }),
+    ),
     semanticAuthority:
       project.semanticAuthority === undefined
         ? undefined

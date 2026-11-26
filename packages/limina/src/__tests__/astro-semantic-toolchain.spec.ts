@@ -372,8 +372,12 @@ async function createToolchainFixture(
       manifest({
         dependencies: { '@volar/typescript': '2.4.28' },
         name: '@volar/kit',
+        peerDependencies: { typescript: '*' },
         version: '2.4.28',
       }),
+    'node_modules/@astrojs/check/node_modules/@astrojs/language-server/node_modules/@volar/kit/node_modules/typescript/index.cjs': `module.exports = require(${JSON.stringify(realTypeScriptEntry)});\n`,
+    'node_modules/@astrojs/check/node_modules/@astrojs/language-server/node_modules/@volar/kit/node_modules/typescript/package.json':
+      manifest({ name: 'typescript', version: '6.0.3' }),
     'node_modules/@astrojs/check/node_modules/@astrojs/language-server/node_modules/@volar/kit/node_modules/@volar/typescript/index.cjs':
       'module.exports = { createLanguageServiceHost() {} };\n',
     'node_modules/@astrojs/check/node_modules/@astrojs/language-server/node_modules/@volar/kit/node_modules/@volar/typescript/package.json':
@@ -741,6 +745,21 @@ describe('Astro semantic toolchain', () => {
       expect(toolchain.paths.volarTypeScript).toContain(
         toPortablePath(path.join('@volar', 'kit', 'node_modules')),
       );
+      expect(toolchain.paths.kitTypeScript).toContain(
+        toPortablePath(path.join('@volar', 'kit', 'node_modules')),
+      );
+      const kitTypeScriptEntry = toPortablePath(
+        path.join(path.dirname(toolchain.paths.kitTypeScript), 'index.cjs'),
+      );
+      expect(
+        toolchain.runtimeModules.map((entry) => ({
+          ...entry,
+          file: toPortablePath(entry.file),
+        })),
+      ).toContainEqual({
+        specifier: 'typescript',
+        file: kitTypeScriptEntry,
+      });
     } finally {
       await fixture.cleanup();
     }

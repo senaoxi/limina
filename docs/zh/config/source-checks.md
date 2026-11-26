@@ -1,18 +1,18 @@
 # 源码检查
 
-`source` 用来配置源码导入规则、环境声明和可选的未使用代码分析。比如，`packages/app` 导入 `@acme/core` 时，Limina 会检查这条导入能否由 `app` 的包清单授权。默认检查已经包含这些基础规则，不需要为了启用它们而填写配置。
+`source` 用来配置源码导入规则和可选的未使用代码分析。比如，`packages/app` 导入 `@acme/core` 时，Limina 会检查这条导入能否由 `app` 的包清单授权。默认检查已经包含这些基础规则，不需要为了启用它们而填写配置。
 
 如果报告导入未授权，通常应先在实际使用依赖的包中声明它。只有确实需要共享工作区根目录的依赖声明时，再考虑下文的 `importAuthority`。
 
 省略 `source` 时，Limina 仍会执行基础源码检查。`source: { knip: false }` 同样执行适用的基础检查，但不运行 Knip。`source: { knip: true }` 还会启用 Knip。单独运行 `limina source check` 时使用相同策略。
 
-`source`、`declarations` 和 `importAuthority` 不能写成空对象。需要显式声明空集合时，可以使用 `declarations: { ambient: [] }` 或 `importAuthority: { allow: {} }`。
+空的导入授权集合写作 `importAuthority: { allow: {} }`。
 
-| 字段                          | 用途                                   | 未配置时                   |
-| ----------------------------- | -------------------------------------- | -------------------------- |
-| `source.importAuthority`      | 为指定源码授予使用治理根依赖声明的权限 | 裸包依赖须由源码所属包声明 |
-| `source.declarations.ambient` | 标记需要显式管理的环境声明角色         | 不增加显式环境声明授权     |
-| `source.knip`                 | 检查未使用工作区依赖和未使用源码模块   | 关闭；启用后须安装 `knip`  |
+| 字段                                       | 用途                                   | 未配置时                   |
+| ------------------------------------------ | -------------------------------------- | -------------------------- |
+| `source.importAuthority`                   | 为指定源码授予使用治理根依赖声明的权限 | 裸包依赖须由源码所属包声明 |
+| `source.forbidCrossPackageRelativeImports` | 限制普通相对导入跨包                   | `false`                    |
+| `source.knip`                              | 检查未使用工作区依赖和未使用源码模块   | 关闭；启用后须安装 `knip`  |
 
 这些字段不选择全局源码集合。文件范围由 [`scope.source`](./source-boundary.md) 决定。
 
@@ -20,7 +20,11 @@
 
 Limina 从每个已验证、已激活包的独立治理范围发现源码，包括外部包和无名称包。包根的清单决定源码归属和依赖授权。相对 `config.rootDir` 的源码选择器可以包含 `../`，但只能过滤已发现的候选，不能把未激活目录加入治理。
 
-默认情况下，嵌套 `package.json` 会停止外层包的遍历。启用 [`scope.regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，符合条件的无名嵌套作用域可以继续留在外层区域。其中源码使用外层包的依赖声明，嵌套清单仍负责相对导入和 `#imports` 的包作用域。嵌套工作区边界与区域排除的完整规则见[治理区域](./regions.md)。
+默认情况下，嵌套 `package.json` 会停止外层包的遍历。启用 [`scope.regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，符合条件的无名嵌套作用域可以继续留在外层区域。其中源码使用外层包的依赖声明，嵌套清单仍负责严格相对导入和 `#imports` 的包作用域。嵌套工作区边界与区域排除的完整规则见[治理区域](./regions.md)。
+
+每个普通源码配置及其直接管辖的 roots 必须共享最近的 `package.json`。一个包可以有多个源码配置，包括由 solution 引用的命名叶子。实现文件只能归属一个叶子，同一作用域的多个叶子可共享 `.d.ts`、`.d.mts`、`.d.cts` 声明根。多个叶子都有资格解释同一声明时，通过源码 tsconfig 的 `liminaOptions.declarationContexts` 选择语义上下文。独立运行源码检查也会在图准备阶段使用这一声明上下文决策。纯引用 solution 负责组织叶子。导入文件与相对 `compilerOptions.types` 条目是编译输入，消费它们不会取得 root 归属。相对类型条目可以选中其他激活包中的声明，由源码 tsconfig 确定其解析。即使该请求不产生项目引用，图准备也会拒绝位于停止或排除区域的目标。
+
+普通叶子配置本身及其每个直接 root 都按 TypeScript 使用的路径和物理路径校验最近清单。即使当前 root 集为空，配置也须有唯一绑定。指向整个包的目录链接可以满足这一条件。若链接只暴露另一包的源码子目录，编译器可能采用链接所在包的模块格式或 `#imports`，图准备会拒绝这种归属。
 
 ## 资源模块导入
 
@@ -82,48 +86,9 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 
 用于源码归属方运行时的导入，优先在该归属方自己的清单中声明依赖。
 
-## `declarations.ambient`
+## 相对导入
 
-`source.declarations.ambient` 用于明确标记承担 TypeScript 环境声明角色的声明文件，避免把它们当成普通的包归属声明 API。
-
-```ts
-interface SourceAmbientDeclarationConfig {
-  include: string[];
-  allowSharedAcrossOwners?: boolean;
-  allowTripleSlashReferences?: boolean;
-  reason: string;
-}
-
-interface SourceDeclarationsConfig {
-  ambient: SourceAmbientDeclarationConfig[];
-}
-```
-
-每个 `include` 数组都使用相对于 `config.rootDir` 的模式，外部激活包可以使用 `../`。这些模式只过滤已验证的包中发现的文件，不能让未激活目录或所属包边界之外的路径变得可见。每条规则必须至少匹配一个声明文件，同一个物理文件也不能同时匹配多条规则。
-
-被匹配文件必须确实符合环境声明的结构。Limina 管理的输出声明、包的公开声明入口，以及包含普通导入或导出的外部声明模块，都不能重新归类为环境声明。
-
-`allowSharedAcrossOwners` 默认为 `false`，只有多个源码所属包确实需要共同使用同一份环境声明时才设为 `true`。`allowTripleSlashReferences` 同样默认为 `false`，它只授权通过 `/// <reference path="...">` 访问匹配的声明文件，不会授权普通导入、包依赖或 `/// <reference types>`。
-
-例如，假设 `../shared-types` 是已激活的包，其中的 `globals.d.ts` 是多个源码所属包需要共享的现有环境声明。请将路径改为项目中的实际包和文件：
-
-```js
-import { defineConfig } from 'limina';
-
-export default defineConfig({
-  source: {
-    declarations: {
-      ambient: [
-        {
-          include: ['../shared-types/globals.d.ts'],
-          allowSharedAcrossOwners: true,
-          reason: '多个应用共用宿主环境提供的全局声明。',
-        },
-      ],
-    },
-  },
-});
-```
+普通相对导入可以在激活区域内跨包作用域，适用于类型导入、字面量 CommonJS 调用和三斜杠 path 引用。启用 `source.forbidCrossPackageRelativeImports: true` 后，导入方与目标必须共享最近的 `package.json`。清单 `imports` 中的相对 target 必须留在声明它的作用域内。导入停止或排除的区域始终报错。
 
 ## `knip`
 

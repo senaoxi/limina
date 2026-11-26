@@ -156,9 +156,9 @@ export function loadAnalyzedGraph<T extends PreparedTsconfigGraph>(options: {
     try {
       await result;
       if (previousAttempt !== undefined) profile.finish(previousAttempt);
-    } catch {
+    } catch (error) {
       if (previousAttempt !== undefined)
-        profile.finish(previousAttempt, 'failed', 'graph-attempt-failed');
+        profile.fail(previousAttempt, error, 'graph-attempt-failed');
     }
   })();
   return result;

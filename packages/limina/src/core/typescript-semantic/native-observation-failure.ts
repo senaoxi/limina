@@ -38,9 +38,13 @@ export function initializeNativeCompiler<T>(initialize: () => T): T {
   try {
     return initialize();
   } catch (error) {
-    if (error instanceof NativeObservationError) throw error;
+    if (
+      error instanceof NativeObservationError ||
+      error instanceof AnalysisInputDriftError
+    )
+      throw error;
     throw new NativeObservationError(
-      initializationFailureKind(error),
+      'compiler-initialization',
       observationErrorDetail(error),
     );
   }
@@ -51,12 +55,4 @@ export function nativeObservationFailureKind(
 ): NativeEvidenceFailure['kind'] {
   if (error instanceof AnalysisInputDriftError) return 'input-drift';
   return error instanceof NativeObservationError ? error.kind : 'internal';
-}
-
-function initializationFailureKind(
-  error: unknown,
-): NativeEvidenceFailure['kind'] {
-  return error instanceof AnalysisInputDriftError
-    ? 'input-drift'
-    : 'compiler-initialization';
 }

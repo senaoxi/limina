@@ -52,6 +52,7 @@ function colorInteractiveSymbol(status: FlowStatus, symbol: string): string {
 }
 
 export function formatElapsedTime(milliseconds: number): string {
+  if (milliseconds < 1) return '<1ms';
   return milliseconds < 1000
     ? `${Math.round(milliseconds)}ms`
     : `${(milliseconds / 1000).toFixed(2)}s`;
@@ -59,11 +60,19 @@ export function formatElapsedTime(milliseconds: number): string {
 
 export function formatMessageWithElapsed(
   message: string,
-  elapsedTimeMs: number | undefined,
+  elapsedTimeMs: number | null | undefined,
+  elapsedTimeLabel?: 'total',
 ): string {
-  return typeof elapsedTimeMs === 'number'
-    ? `${message} (${formatElapsedTime(elapsedTimeMs)})`
-    : message;
+  if (
+    typeof elapsedTimeMs !== 'number' ||
+    !Number.isFinite(elapsedTimeMs) ||
+    elapsedTimeMs < 0
+  ) {
+    return message;
+  }
+
+  const label = elapsedTimeLabel === undefined ? '' : ` ${elapsedTimeLabel}`;
+  return `${message} (${formatElapsedTime(elapsedTimeMs)}${label})`;
 }
 
 export function indentMessage(message: string, depth: number): string {

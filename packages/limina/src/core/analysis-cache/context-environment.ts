@@ -1,61 +1,49 @@
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import type { NativeContextRecord, ProjectRecord } from './contracts';
-import type { EpochInputReplay } from './epoch-inputs';
+import { type EpochInputReplay, EpochInputs } from './epoch-inputs';
 import { analysisHash, nativeContextId } from './identity';
-import { observeTypeEnvironment } from './installation-environment';
 import type { NativeAnalysisCache } from './native-cache';
+import { observeTypeEnvironment } from './type-environment';
 
 interface ContextEnvironment {
   record: NativeContextRecord;
   state: ProjectRecord;
 }
 
-export function hasCurrentContextEnvironment(
+export function currentContextReads(
   cache: NativeAnalysisCache,
   project: TypeScriptSemanticProject,
   candidate: ContextEnvironment,
   replay?: EpochInputReplay,
-): boolean {
-  return (
-    hasCurrentCompilerReads(cache, candidate.record, replay) &&
-    hasCurrentInstallationEnvironment(cache, project, candidate)
-  );
-}
-
-function hasCurrentCompilerReads(
-  cache: NativeAnalysisCache,
-  record: NativeContextRecord,
-  replay?: EpochInputReplay,
-): boolean {
-  if (record.native === undefined) return true;
-  const project = record.project.sourceConfigPath ?? record.project.configPath;
-  const closure = cache.previous?.authorities[project]?.closure;
+): EpochInputs | undefined {
+  if (!hasCurrentTypeEnvironment(cache, project, candidate)) return undefined;
+  const reads = new EpochInputs(cache.inputs);
+  const { record } = candidate;
+  if (record.native === undefined) return reads;
+  const owner = record.project.sourceConfigPath ?? record.project.configPath;
+  const closure = cache.configClosures.get(owner);
   const currentConfigs =
     closure !== undefined && cache.inputs.configCurrent(closure)
       ? new Set(closure)
       : undefined;
-  return cache.epoch.validateSynchronous(
+  return reads.validateSynchronous(
     record.native.discovery,
     replay,
     currentConfigs,
-  );
+  )
+    ? reads
+    : undefined;
 }
 
-function hasCurrentInstallationEnvironment(
+export function hasCurrentTypeEnvironment(
   cache: NativeAnalysisCache,
   project: TypeScriptSemanticProject,
   candidate: ContextEnvironment,
 ): boolean {
-  const current = observeTypeEnvironment(project, cache.inputs, {
-    members: candidate.state.members,
-  });
-  if (
-    analysisHash(current.domains) !==
-    analysisHash(candidate.record.environment.domains)
-  )
+  const current = observeTypeEnvironment(project, cache.inputs);
+  const isCurrent =
+    analysisHash(current) === analysisHash(candidate.record.environment);
+  if (!isCurrent)
     cache.invalidation.invalidateContext(nativeContextId(project));
-  return (
-    current.evidence !== 'unknown' &&
-    analysisHash(current) === analysisHash(candidate.record.environment)
-  );
+  return isCurrent && current.evidence === 'observed';
 }

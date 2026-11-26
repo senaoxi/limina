@@ -3,7 +3,6 @@ import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { hasValidRestoredDeclarationContexts } from '../core/build-graph/declaration-context-candidate';
 import { prepareAndMaterializeGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
@@ -32,7 +31,8 @@ async function createFixture(channel: Channel, mapping: Mapping) {
       name: 'type-directive-workspace',
       private: true,
     }),
-    'pnpm-workspace.yaml': 'packages:\n  - a\n  - b\n  - c\n',
+    'pnpm-workspace.yaml':
+      'packages:\n  - a\n  - b\n  - b/types/versioned\n  - c\n',
     'a/package.json': JSON.stringify({ name: '@example/a', private: true }),
     'a/tsconfig.json': JSON.stringify({
       compilerOptions: {
@@ -59,7 +59,7 @@ async function createFixture(channel: Channel, mapping: Mapping) {
       }),
     }),
     'b/types/versioned/package.json': JSON.stringify({
-      name: '@example/b',
+      name: '@example/versioned',
       private: true,
       types: isMissing ? 'missing.d.ts' : 'v6.d.ts',
       ...(mapping !== 'ordinary-miss' && {
@@ -212,16 +212,13 @@ describe('host type directive authority with independent Checker execution', () 
     },
   );
 
-  it('restores a completed host miss without cross-version qualification', async () => {
+  it('admits a completed host miss without cross-version qualification', async () => {
     const fixture = await createFixture('config', 'no-match');
     try {
       const graph = await prepareAndMaterializeGeneratedTsconfigGraph(
         fixture.config,
       );
       expect(graph.dependencyEdges).toEqual([]);
-      expect(
-        hasValidRestoredDeclarationContexts(graph, undefined, fixture.root),
-      ).toBe(true);
       expect(graph.dependencyAnalysis?.declarationValidation?.state).toBe(
         'admitted',
       );
@@ -251,6 +248,21 @@ describe('host type directive authority with independent Checker execution', () 
       }
     },
   );
+
+  it('rejects an automatically selected type package when it leaves the active workspace', async () => {
+    const fixture = await createFixture('automatic', 'equivalent');
+    try {
+      await writeFile(
+        fixture.path('pnpm-workspace.yaml'),
+        'packages:\n  - a\n  - b\n  - c\n',
+      );
+      await expect(
+        prepareAndMaterializeGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow(/outside activated workspace package regions/u);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
 
   it.each<Channel>(['source', 'config'])(
     'preserves completed host misses when another Checker can select an input: %s',

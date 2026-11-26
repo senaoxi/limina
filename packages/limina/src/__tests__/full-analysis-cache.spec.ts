@@ -16,8 +16,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AnalysisMetricMeasurement } from '../application/analysis/analysis-run';
+import type { AnalysisProfile } from '../application/analysis/observability';
 import { parseTypeScriptCommandLine } from '../checker/project-base';
 import {
   captureInvocationData,
@@ -30,7 +31,9 @@ import { directoryFingerprint } from '../core/analysis-cache/directory-fingerpri
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { occurrenceKey } from '../core/analysis-cache/semantic-state';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
-import type { StoredGraphData } from '../core/build-graph/analysis-cache-schema';
+import type { CheckerOwnershipPlan } from '../core/build-graph/checker-ownership-types';
+import type { GeneratedTsconfigGraphManifest } from '../core/build-graph/manifest-types';
+import { projectNativeReferenceFacts } from '../core/project-dependencies/native-reference-facts';
 import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic/workspace-source-boundary';
@@ -38,17 +41,16 @@ import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { LiminaPreflightManager } from '../preflight';
 import { AnalysisCacheStore } from '../preflight/analysis-cache-store';
 import {
-  analysisBlockPath,
-  decodeGraphProjection as decodeData,
-  encodeGraphProjection as encodeData,
   readStoredAnalysisSnapshot,
   writeStoredAnalysisSnapshot,
 } from './helpers/analysis-snapshot';
-import { corruptFrameworkSnapshot } from './helpers/framework-cache-corruption';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { graphMeaning, nativeFactMeaning } from './helpers/native-meaning';
-import { createFixturePathResolver } from './helpers/path';
+import {
+  createFixturePathResolver,
+  toPortableRelativePath,
+} from './helpers/path';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -138,22 +140,30 @@ import {loadConfig} from ${JSON.stringify(url('config/loader'))};
 import {LiminaPreflightManager} from ${JSON.stringify(url('preflight/manager'))};
 import {createPreflightGenerationController} from ${JSON.stringify(url('preflight/generation'))};
 import {isRunGraphCheckImpl} from ${JSON.stringify(url('graph-check/runner'))};
+import {AnalysisObserver,runWithProfile} from ${JSON.stringify(url('application/analysis/observability'))};
 async function runCache(options={}) {
   const config=await loadConfig({configPath:${JSON.stringify(file('limina.config.mjs'))}});
   const events=[];
   const manager=new LiminaPreflightManager({config,analysisCache:options.cache==='read-only'?'read-only':options.cache!==false,forceAnalysisCache:options.force,metrics:{record:event=>events.push(event)}});
   try {
     if(options.materialize)await manager.ensureGeneratedArtifactsMaterialized();
-    const graph=await manager.ensureGeneratedGraph();
+    let graph=await manager.ensureGeneratedGraph();
     const isPassed=options.check ? await isRunGraphCheckImpl(config,{preflight:manager}) : true;
     if(!options.deferPublish)await manager.publishAnalysisCache();
     if(options.refresh) {
       createPreflightGenerationController(manager).startNextGeneration();
-      await manager.ensureGeneratedGraph();
+      graph=await manager.ensureGeneratedGraph();
       await manager.publishAnalysisCache();
     }
     return {graph:{manifest:graph.manifest,ownershipPlan:graph.ownershipPlan,edges:graph.dependencyEdges},events,isPassed,ambiguities:manager.getFrameworkInferenceAmbiguities()};
   }finally{manager.dispose();}
+}
+async function profileGraph(options) {
+  const observer=new AnalysisObserver('limina graph prepare',performance.now());
+  observer.setRoot(${JSON.stringify(root)});
+  const result=await runWithProfile(observer,()=>runCache(options));
+  observer.stop(result.isPassed);
+  return {...result,profile:observer.snapshot()};
 }
 ${script}`,
     );
@@ -270,7 +280,7 @@ describe('complete native restoration and R02 scope evidence', () => {
     },
   );
 
-  it('restores config-only ownership without creating a selection Program', async () => {
+  it('selects current config-only ownership without creating a selection Program', async () => {
     const f = fixture();
     f.write('limina.config.mjs', 'export default {};');
     const config = await loadConfig({
@@ -322,7 +332,7 @@ describe('complete native restoration and R02 scope evidence', () => {
     );
     try {
       expect(await warm.buildGraph.hasSvelteCheckProjects()).toBe(false);
-      expect(cache.metrics.authorityRecoveries).toBe(1);
+      expect(cache.metrics.ownershipResolutions).toBe(1);
       expect(cache.metrics.restoredContexts).toBeGreaterThan(0);
       expect(cache.metrics.semanticPrograms).toBe(0);
       expect(
@@ -452,7 +462,7 @@ describe('complete native restoration and R02 scope evidence', () => {
   });
 });
 
-describe('R01 effective local metadata and installation trust', () => {
+describe('physical type environments', () => {
   it.each([false, true])(
     'restores a shared pnpm member without scanning installed roots (explicit roots: %s)',
     (explicitRoots) => {
@@ -516,80 +526,21 @@ describe('R01 effective local metadata and installation trust', () => {
       expect(warm.cache.metrics.semanticPrograms).toBe(0);
       expect(warm.cache.metrics.localRootScans ?? 0).toBe(0);
       expect(warm.facts).toEqual(first.facts);
-      const encoded = structuredClone(first.cache.snapshot());
-      const context = Object.values(encoded.contexts)[0] as {
-        environment: {
-          domains: {
-            adapter: string;
-            locks: string[];
-            dependencies: { inputId: string }[];
-          }[];
-        };
-      };
-      const domain = context.environment.domains[0]!;
-      const receiptId = JSON.stringify(['physical', 'bytes', domain.locks[0]]);
-      domain.dependencies = domain.dependencies.filter(
-        (item) => item.inputId !== receiptId,
+      f.write(
+        'node_modules/.pnpm/types/node_modules/@types/pkg/package.json',
+        '{"name":"@types/pkg","version":"2.0.0"}',
       );
-      expect(parseAnalysisSnapshot(encoded, 'fixture')).toBeUndefined();
-      const legacy = structuredClone(first.cache.snapshot());
-      for (const value of Object.values(legacy.contexts) as (typeof context)[])
-        for (const item of value.environment.domains)
-          item.adapter = 'physical-installation-v1';
-      expect(parseAnalysisSnapshot(legacy, 'fixture')).toBeUndefined();
-      f.write('pnpm-lock.yaml', 'changed opaque lock');
       const changed = analyze(
         f.project('packages/member/tsconfig.json'),
         warm.cache,
       );
       expect(changed.restored).toBe(false);
-      expect(changed.cache.metrics.semanticPrograms).toBe(1);
-      expect(changed.cache.metrics.factHits).toBe(0);
-      expect(changed.facts.map(nativeFactMeaning)).toEqual(
-        first.facts.map(nativeFactMeaning),
-      );
       expect(
         analyze(f.project('packages/member/tsconfig.json'), changed.cache)
           .restored,
       ).toBe(true);
-      f.write('packages/member/package-lock.json', '{"lockfileVersion":3}');
-      const independent = analyze(
-        f.project('packages/member/tsconfig.json'),
-        warm.cache,
-      );
-      expect(independent.restored).toBe(false);
-      expect(
-        Object.values(independent.cache.contexts)[0]?.environment.domains.map(
-          (domain) => domain.lockRoot,
-        ),
-      ).toContain(f.file('packages/member'));
     },
   );
-
-  it('keeps unknown installation coverage cold and recollects qualified facts', () => {
-    const f = fixture();
-    f.write(
-      'node_modules/@types/pkg/index.d.ts',
-      'declare const installed: string;',
-    );
-    rmSync(f.file('package-lock.json'));
-    const project = {
-      ...f.project(),
-      options: { ...f.project().options, types: ['pkg'] },
-    };
-    const first = analyze(project);
-    const warm = analyze(project, first.cache);
-    expect(warm.restored).toBe(false);
-    expect(warm.cache.metrics.semanticPrograms).toBe(1);
-    expect(warm.cache.metrics.factHits).toBe(0);
-    expect(warm.facts.map(nativeFactMeaning)).toEqual(
-      first.facts.map(nativeFactMeaning),
-    );
-    expect(warm.facts[0]!.nativeEvidence!.origin.context.id).not.toBe(
-      first.facts[0]!.nativeEvidence!.origin.context.id,
-    );
-    expect(collectContextEnvironment(warm)).toBe('unknown');
-  });
 
   it('observes inherited paths, backdated additions, renames, touches and missing versus empty', () => {
     const f = fixture();
@@ -619,34 +570,6 @@ describe('R01 effective local metadata and installation trust', () => {
     expect(touched.restored).toBe(false);
     mkdirSync(f.file('missing'));
     expect(analyze(f.project(), touched.cache).restored).toBe(false);
-  });
-
-  it('rebuilds a subscribed context on a related lock change and records trusted installation evidence', () => {
-    const f = fixture();
-    f.write(
-      'node_modules/@types/pkg/index.d.ts',
-      'declare const installed: string;',
-    );
-    const project = {
-      ...f.project(),
-      options: { ...f.project().options, types: ['pkg'] },
-    };
-    const first = analyze(project);
-    expect(Object.values(first.cache.contexts)[0]?.environment.evidence).toBe(
-      'lockfile-trusted',
-    );
-    expect(analyze(project, first.cache).restored).toBe(true);
-    f.write(
-      'package-lock.json',
-      '{"name":"fixture","lockfileVersion":3,"packages":{"":{}},"revision":2}',
-    );
-    const next = analyze(project, first.cache);
-    expect(next.cache.inputs.domainDirty).toBe(false);
-    expect(next.cache.metrics.semanticPrograms).toBe(1);
-    expect(next.cache.metrics.factHits).toBe(0);
-    expect(next.restored).toBe(false);
-    rmSync(f.file('package-lock.json'));
-    expect(analyze(project, next.cache).restored).toBe(false);
   });
 
   it('scans structure and rejects failures while preserving the declared metadata blindspot', () => {
@@ -681,9 +604,7 @@ describe('R03 evaluation, own data and namespace validity', () => {
       process.env.LIMINA_TEST_CONCURRENCY='2'; const changed=await runCache();
       console.log(JSON.stringify([first,changed]));`);
     expect(changed.graph).toEqual(first.graph);
-    expect(changed.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(changed);
     expect(changed.events).toContainEqual(
       expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
     );
@@ -719,16 +640,12 @@ graph:{rules:{runtime:process.env.LIMINA_CONFIG_DENIED === 'yes' ? {deny:{deps:[
     expect(changed.events).toContainEqual(
       expect.objectContaining({ kind: 'factHits', count: 0 }),
     );
-    expect(changed.events).not.toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expect(cacheCount(changed, 'restoredContexts')).toBe(0);
     expect(clean.isPassed).toBe(false);
     expect(clean.events).toContainEqual(
       expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
     );
-    expect(clean.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(clean);
     expect(clean.events).toContainEqual(
       expect.objectContaining({ kind: 'unchanged', count: 1 }),
     );
@@ -944,13 +861,131 @@ console.log(JSON.stringify([config.pipelines,Object.isFrozen(config.pipelines)])
 interface GraphRunResult {
   ambiguities: { sourceConfigPath: string; checkers: string[] }[];
   graph: {
-    manifest: unknown;
-    ownershipPlan: unknown;
+    manifest: GeneratedTsconfigGraphManifest;
+    ownershipPlan: CheckerOwnershipPlan;
     edges: { fromConfigPath: string; toConfigPath: string }[];
   };
   events: { name?: string; kind?: string; count?: number }[];
   isPassed: boolean;
 }
+
+interface ProfiledGraphRunResult extends GraphRunResult {
+  profile: AnalysisProfile;
+}
+
+function cacheCount(result: GraphRunResult, kind: string): number {
+  return result.events.find((event) => event.kind === kind)?.count ?? 0;
+}
+
+function expectRestoredFacts(result: GraphRunResult): void {
+  expect(cacheCount(result, 'restoredContexts')).toBeGreaterThan(0);
+  expect(cacheCount(result, 'graphBuilds')).toBeGreaterThan(0);
+}
+
+it('revalidates the containing scope when a manifest shadows and releases a source subtree', () => {
+  const f = fixture();
+  rmSync(f.file('package-lock.json'));
+  f.write(
+    'limina.config.mjs',
+    'export default {scope:{regions:{extendNestedPackageScopes:true},checkers:{tsc:{include:["**/tsconfig.json"]}}}};',
+  );
+  f.write('src/inner/index.ts', 'export const inner = 1;');
+  const run = 'console.log(JSON.stringify(await runCache()));';
+  const seed = f.execute<GraphRunResult>(run);
+  expectRestoredFacts(f.execute<GraphRunResult>(run));
+  f.write('src/inner/package.json', '{}');
+  expect(() => f.execute<GraphRunResult>(run)).toThrow(
+    /crosses its nearest package.json scope/u,
+  );
+  const options = { module: 'NodeNext', noLib: true, types: [] };
+  f.write(
+    'tsconfig.json',
+    JSON.stringify({
+      compilerOptions: options,
+      files: ['src/a.ts', 'src/value.d.ts'],
+    }),
+  );
+  f.write(
+    'src/inner/tsconfig.json',
+    JSON.stringify({ compilerOptions: options, files: ['index.ts'] }),
+  );
+  const profiled = 'console.log(JSON.stringify(await profileGraph()));';
+  const warm = f.execute<ProfiledGraphRunResult>(profiled);
+  const cold = f.execute<GraphRunResult>(
+    'console.log(JSON.stringify(await runCache({cache:false})));',
+  );
+  expect(graphMeaning(warm.graph)).toEqual(graphMeaning(cold.graph));
+  const store = new AnalysisCacheStore({
+    namespace: createLiminaArtifactNamespace({
+      rootDir: f.root,
+      generation: 0,
+    }),
+    configPath: f.config.configPath,
+    identity: 'unused',
+  });
+  const bindings = readStoredAnalysisSnapshot(store.path).header.packageScopes;
+  expect(bindings.configs[f.file('src/inner/tsconfig.json')]).toEqual({
+    role: 'source',
+    scope: f.file('src/inner/package.json'),
+  });
+  const invalidation = (profile: AnalysisProfile) =>
+    profile.decisions
+      .filter(
+        (decision) =>
+          decision.layer === 'package-scope' &&
+          decision.stage === 'admission' &&
+          decision.outcome === 'rejected',
+      )
+      .map(({ subject, causes }) => [subject, causes?.[0].code]);
+  expect(invalidation(warm.profile)).toEqual(
+    expect.arrayContaining([
+      ['tsconfig.json', 'package-scope-containing-boundary-changed'],
+      ['src/inner/tsconfig.json', 'package-scope-binding-changed'],
+    ]),
+  );
+  const innerProject = warm.profile.projects.find(
+    (project) => project.path === 'src/inner/tsconfig.json',
+  );
+  expect(innerProject).toBeDefined();
+  for (const event of [
+    'configs-scanned',
+    'configs-bound',
+    'configs-invalidated',
+  ])
+    expect(warm.profile.metrics).toContainEqual({
+      key: `cache.package-scope.${event}`,
+      scope: ['project', innerProject?.id],
+      value: 1,
+      kind: 'counter',
+      unit: 'items',
+    });
+  rmSync(f.file('src/inner/package.json'));
+  rmSync(f.file('src/inner/tsconfig.json'));
+  f.write(
+    'tsconfig.json',
+    JSON.stringify({ compilerOptions: options, include: ['src/**/*'] }),
+  );
+  const reflow = f.execute<ProfiledGraphRunResult>(profiled);
+  expect(invalidation(reflow.profile)).toEqual(
+    expect.arrayContaining([
+      ['tsconfig.json', 'package-scope-containing-boundary-changed'],
+      ['src/inner/tsconfig.json', 'package-scope-binding-changed'],
+    ]),
+  );
+  expect(reflow.profile.projects.map(({ path }) => path)).not.toContain(
+    'src/inner/tsconfig.json',
+  );
+  expect(reflow.graph.edges).toEqual(seed.graph.edges);
+  const clean = f.execute<GraphRunResult>(
+    'console.log(JSON.stringify(await runCache({cache:false})));',
+  );
+  expect(graphMeaning(reflow.graph)).toEqual(graphMeaning(clean.graph));
+  expect(
+    readStoredAnalysisSnapshot(store.path).header.packageScopes.manifests[
+      f.file('src/inner/package.json')
+    ],
+  ).toBeUndefined();
+}, 60_000);
 
 function solutionRetirementFixture() {
   const f = fixture();
@@ -1001,7 +1036,7 @@ function solutionRetirementFixture() {
 
 describe('retirement of graph config inputs', () => {
   it.each(['solution leaf', 'extends ancestor'] as const)(
-    'does not rebuild when an unconsumed %s changes',
+    'reuses analysis facts when an unconsumed %s changes',
     (kind) => {
       const f = solutionRetirementFixture();
       const ancestor = '00-config/base.json';
@@ -1032,12 +1067,9 @@ describe('retirement of graph config inputs', () => {
       if (kind === 'solution leaf') f.setLeaf(true);
       else setAncestor(true);
       const restored = f.run();
-      expect(
-        restored.events.find(({ kind }) => kind === 'graphHits')?.count,
-      ).toBe(1);
-      expect(
-        restored.events.find(({ kind }) => kind === 'graphBuilds')?.count ?? 0,
-      ).toBe(0);
+      expectRestoredFacts(restored);
+      expect(cacheCount(restored, 'semanticPrograms')).toBe(0);
+      expect(cacheCount(restored, 'resolverCalls')).toBe(0);
       expect(
         restored.events.find(({ kind }) => kind === 'resolvedConfigParses')
           ?.count,
@@ -1074,9 +1106,7 @@ describe('retirement of graph config inputs', () => {
 
     f.setSolution([f.active, f.leaf]);
     const reentered = f.run();
-    expect(reentered.events).toContainEqual(
-      expect.objectContaining({ kind: 'ownershipResolutions', count: 1 }),
-    );
+    expect(cacheCount(reentered, 'ownershipResolutions')).toBe(2);
     expect(reentered.graph.manifest).toEqual(cold.graph.manifest);
   });
 });
@@ -1176,57 +1206,109 @@ function frameworkBindingFixture(checker: 'astro' | 'svelte-check') {
 }
 
 describe('framework graph binding', () => {
-  it.each([
-    'schedule occurrence',
-    'locked occurrence',
-    'manifest bytes',
-  ] as const)(
-    'rebuilds a valid-envelope snapshot after corrupting a %s',
-    (fault) => {
-      const f = frameworkBindingFixture('svelte-check');
-      const run =
-        'console.log(JSON.stringify(await runCache({materialize:true})));';
-      const initial = f.execute<GraphRunResult>(run);
-      const manifest = f.file('.limina', 'manifest.json');
-      const initialManifest = readFileSync(manifest);
-      expect(initial.graph.edges).toContainEqual(
-        expect.objectContaining({
-          kind: 'framework-schedule',
-          fromConfigPath: f.file('consumer/tsconfig.json'),
-          toConfigPath: f.file('provider/tsconfig.json'),
-          importedSpecifier: '../../provider/src/value.js',
+  it('recomputes live source authority before restoring facts across a TypeScript to Svelte change', () => {
+    const f = frameworkBindingFixture('svelte-check');
+    f.write(
+      'limina.config.mjs',
+      'export default {scope:{source:{include:["provider/src/**/*","consumer/src/**/*"]}}};',
+    );
+    const setInclude = (include: string[]) =>
+      f.write(
+        'consumer/tsconfig.json',
+        JSON.stringify({
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            noLib: true,
+            types: [],
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+          },
+          include,
         }),
       );
-      const store = new AnalysisCacheStore({
-        namespace: createLiminaArtifactNamespace({
-          rootDir: f.root,
-          generation: 0,
-        }),
-        configPath: f.config.configPath,
-        identity: 'unused',
-      });
-      corruptFrameworkSnapshot(store.path, fault);
-      const rebuilt = f.execute<GraphRunResult>(run);
-      expect(rebuilt.events).toContainEqual(
-        expect.objectContaining({
-          kind: 'fallback-graph-dto-invalid',
-          count: 1,
-        }),
+    const run = () =>
+      f.execute<ProfiledGraphRunResult>(
+        'console.log(JSON.stringify(await profileGraph({})));',
       );
-      expect(rebuilt.events).toContainEqual(
-        expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
+    const store = new AnalysisCacheStore({
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
+      configPath: f.config.configPath,
+      identity: 'unused',
+    });
+    const authority = () =>
+      readStoredAnalysisSnapshot(store.path).sourceConfigs[
+        f.file('consumer/tsconfig.json')
+      ]?.authority;
+    const authorityDecisions = (result: ProfiledGraphRunResult) =>
+      result.profile.decisions.filter(
+        ({ layer }) => layer === 'source-config-authority',
       );
-      expect(graphMeaning(rebuilt.graph)).toEqual(graphMeaning(initial.graph));
-      expect(readFileSync(manifest)).toEqual(initialManifest);
-      const restored = f.execute<GraphRunResult>(run);
-      expect(restored.events).toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
-      );
-      expect(graphMeaning(restored.graph)).toEqual(graphMeaning(initial.graph));
-      expect(readFileSync(manifest)).toEqual(initialManifest);
-    },
-    60_000,
-  );
+
+    setInclude(['src/**/*.ts']);
+    const cold = run();
+    expect(authority()).toMatchObject({
+      family: 'typescript',
+      provider: 'native-typescript',
+    });
+    expect(cacheCount(cold, 'semanticPrograms')).toBeGreaterThan(0);
+    setInclude(['src/**/*.ts', 'src/**/*.svelte']);
+    const changed = run();
+    expect(authority()).toMatchObject({ family: 'svelte', provider: 'svelte' });
+    expect(authorityDecisions(changed)).toContainEqual(
+      expect.objectContaining({
+        stage: 'admission',
+        outcome: 'rejected',
+        causes: [{ code: 'semantic-authority-changed' }],
+      }),
+    );
+    expect(cacheCount(changed, 'semanticPrograms')).toBeGreaterThan(0);
+    const warm = run();
+    expect(authority()).toMatchObject({ family: 'svelte', provider: 'svelte' });
+    expect(authorityDecisions(warm)).not.toContainEqual(
+      expect.objectContaining({
+        stage: 'admission',
+        outcome: 'rejected',
+        causes: [{ code: 'semantic-authority-changed' }],
+      }),
+    );
+    expectRestoredFacts(warm);
+  }, 60_000);
+
+  it('recomputes framework scheduling when the materialized manifest is corrupted', () => {
+    const f = frameworkBindingFixture('svelte-check');
+    const run =
+      'console.log(JSON.stringify(await runCache({materialize:true})));';
+    const initial = f.execute<GraphRunResult>(run);
+    const manifest = f.file('.limina', 'manifest.json');
+    const initialManifest = readFileSync(manifest);
+    expect(initial.graph.edges).toContainEqual(
+      expect.objectContaining({
+        kind: 'framework-schedule',
+        fromConfigPath: f.file('consumer/tsconfig.json'),
+        toConfigPath: f.file('provider/tsconfig.json'),
+        importedSpecifier: '../../provider/src/value.js',
+      }),
+    );
+    const edited = structuredClone(initial.graph.manifest);
+    const schedule = edited.dependencyEdges.find(
+      (edge) => edge.kind === 'framework-schedule',
+    );
+    expect(schedule).toBeDefined();
+    schedule!.importedSpecifier = './incorrect-dependency.js';
+    writeFileSync(manifest, JSON.stringify(edited));
+    const rebuilt = f.execute<GraphRunResult>(run);
+    expectRestoredFacts(rebuilt);
+    expect(graphMeaning(rebuilt.graph)).toEqual(graphMeaning(initial.graph));
+    expect(readFileSync(manifest)).toEqual(initialManifest);
+    const restored = f.execute<GraphRunResult>(run);
+    expectRestoredFacts(restored);
+    expect(graphMeaning(restored.graph)).toEqual(graphMeaning(initial.graph));
+    expect(readFileSync(manifest)).toEqual(initialManifest);
+  }, 60_000);
 
   it('exports from a fresh process after Astro graph checking observes another compiler boundary', () => {
     const f = frameworkBindingFixture('astro');
@@ -1257,8 +1339,8 @@ finally { preflight.dispose(); }
   }, 120_000);
 });
 
-describe('production graph snapshots and publication', () => {
-  it('binds the live producer receipt separately from a restorable ordinary graph', () => {
+describe('persistent analysis facts and publication', () => {
+  it('binds the live producer receipt separately from ordinary analysis facts', () => {
     const f = fixture();
     f.write('src/a.ts', 'export const value = 1;');
     f.write(
@@ -1280,7 +1362,7 @@ describe('production graph snapshots and publication', () => {
     );
     const result = f.execute<{
       declared: number;
-      ordinaryHits: number;
+      ordinaryContexts: number;
       boundReceipt: boolean;
     }>(`
 const { ensureBuilt } = await import(${JSON.stringify(new URL('../typecheck/checker/build-runner.ts', import.meta.url).href)});
@@ -1303,7 +1385,7 @@ try {
     const {graph} = await consumer.ensureGeneratedArtifactsMaterialized();
     console.log(JSON.stringify({
       declared: receipt.declarations.length,
-      ordinaryHits: events.find(event=>event.kind==='graphHits')?.count,
+      ordinaryContexts: events.find(event=>event.kind==='restoredContexts')?.count,
       boundReceipt: graph.producerBuildReceipt === receipt,
     }));
   }finally{ordinary.dispose();consumer.dispose();}
@@ -1311,9 +1393,10 @@ try {
 `);
     expect(result).toEqual({
       declared: 1,
-      ordinaryHits: 1,
+      ordinaryContexts: expect.any(Number),
       boundReceipt: true,
     });
+    expect(result.ordinaryContexts).toBeGreaterThan(0);
   });
 
   it.each([
@@ -1321,7 +1404,7 @@ try {
     'rebound extends',
     'new installation directory',
   ] as const)(
-    'applies the installation gate and rebuilds the affected authorities after %s',
+    'reuses the snapshot and rebuilds the affected authorities after %s',
     (change) => {
       const f = fixture();
       f.write('limina.config.mjs', 'export default {};');
@@ -1364,26 +1447,8 @@ try {
         utimesSync(f.file(localPreset), ancestorTime, ancestorTime);
       }
       const changed = f.execute<GraphRunResult>(run);
-      if (change === 'new installation directory') {
-        expect(changed.events).toContainEqual(
-          expect.objectContaining({ kind: 'lockGateMisses', count: 1 }),
-        );
-        expect(changed.events.some(({ kind }) => kind === 'read-block')).toBe(
-          false,
-        );
-        expect(changed.events).toContainEqual(
-          expect.objectContaining({ kind: 'ownershipResolutions', count: 2 }),
-        );
-      } else {
-        for (const kind of [
-          'lockGateHits',
-          'ownershipResolutions',
-          'authorityRecoveries',
-        ])
-          expect(changed.events).toContainEqual(
-            expect.objectContaining({ kind, count: 1 }),
-          );
-      }
+      expect(cacheCount(changed, 'ownershipResolutions')).toBe(2);
+      expect(cacheCount(changed, 'read-block')).toBeGreaterThan(0);
       const resolutions = changed.events.find(
         ({ kind }) => kind === 'resolverCalls',
       );
@@ -1402,64 +1467,6 @@ try {
     },
   );
 
-  it('rebuilds a corrupt graph projection from qualified context facts and repairs the next invocation', () => {
-    const f = fixture();
-    const first = f.execute<GraphRunResult>(
-      'console.log(JSON.stringify(await runCache()));',
-    );
-    const control = f.execute<GraphRunResult>(
-      'console.log(JSON.stringify(await runCache()));',
-    );
-    expect(control.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
-    expect(first.events).toContainEqual(
-      expect.objectContaining({ kind: 'ownershipResolutions', count: 1 }),
-    );
-    for (const [kind, count] of [
-      ['ownershipResolutions', 0],
-      ['authorityRecoveries', 1],
-    ] as const)
-      expect(control.events).toContainEqual(
-        expect.objectContaining({ kind, count }),
-      );
-    const store = new AnalysisCacheStore({
-      namespace: createLiminaArtifactNamespace({
-        rootDir: f.root,
-        generation: 0,
-      }),
-      configPath: f.config.configPath,
-      identity: 'unused',
-    });
-    const index = JSON.parse(readFileSync(store.path, 'utf8'));
-    const block = index.storage.blocks.find(
-      (item: { kind: string }) => item.kind === 'graph',
-    );
-    expect(block).toBeDefined();
-    writeFileSync(analysisBlockPath(store.path, block), '{corrupt projection');
-    const repaired = f.execute<GraphRunResult>(
-      'console.log(JSON.stringify(await runCache()));',
-    );
-    expect(graphMeaning(repaired.graph)).toEqual(graphMeaning(first.graph));
-    expect(repaired.events).toContainEqual(
-      expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
-    );
-    expect(repaired.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
-    );
-    expect(repaired.events).toContainEqual(
-      expect.objectContaining({ kind: 'authorityRecoveries', count: 1 }),
-    );
-    expect(repaired.events).toContainEqual(
-      expect.objectContaining({ kind: 'ownershipResolutions', count: 0 }),
-    );
-    const next = f.execute<GraphRunResult>(
-      'console.log(JSON.stringify(await runCache()));',
-    );
-    expect(next.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
-  });
   it.each([
     'missing-source',
     'missing-empty-source',
@@ -1501,13 +1508,11 @@ try {
         '/** @type {import("./value.js").V} */\nexport let value;',
       );
       f.write('src/empty.ts', 'export const independent = 1;');
-      const run = 'console.log(JSON.stringify(await runCache()));';
+      const run = 'console.log(JSON.stringify(await runCache({check:true})));';
       const cold = f.execute<GraphRunResult>(run);
       const warm = f.execute<GraphRunResult>(run);
       expect(warm.graph).toEqual(cold.graph);
-      expect(warm.events).toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
-      );
+      expectRestoredFacts(warm);
       const store = new AnalysisCacheStore({
         namespace: createLiminaArtifactNamespace({
           rootDir: f.root,
@@ -1517,10 +1522,10 @@ try {
         identity: 'unused',
       });
       const snapshot = readStoredAnalysisSnapshot(store.path);
-      const before = decodeData(
-        Object.values(snapshot.graphs)[0]!.data,
-      ) as StoredGraphData;
-      expect(before.ownershipPlan.dependencyFacts).toHaveLength(1);
+      expect(cold.graph.ownershipPlan.dependencyFacts).toHaveLength(1);
+      expect(cold.graph.ownershipPlan.dependencyFacts[0]?.importRecord).toEqual(
+        expect.objectContaining({ specifier: './value.js' }),
+      );
       const compilerEvidence = () =>
         Object.values(snapshot.contexts).map((context) => ({
           inventory: context.native?.inventory,
@@ -1578,11 +1583,6 @@ try {
         // real checksummed envelope. Copy equality cannot validate provenance.
         corruptProofs(snapshot.contexts);
         corruptProofs(snapshot.importers);
-        for (const graph of Object.values(snapshot.graphs)) {
-          const data = decodeData(graph.data);
-          corruptProofs(data);
-          graph.data = encodeData(data);
-        }
       }
       for (const [contextId, context] of Object.entries(snapshot.contexts)) {
         const id = context.sources[f.file('src/a.js')];
@@ -1674,9 +1674,6 @@ try {
         expect(compilerEvidence()).toEqual(retainedEvidence);
       writeStoredAnalysisSnapshot(store.path, snapshot);
       const rebuilt = f.execute<GraphRunResult>(run);
-      expect(rebuilt.events).not.toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
-      );
       expect(rebuilt.events).toContainEqual(
         expect.objectContaining({
           kind: 'semanticPrograms',
@@ -1695,17 +1692,12 @@ try {
       ).toBe(false);
       expect(graphMeaning(rebuilt.graph)).toEqual(graphMeaning(cold.graph));
       const repaired = readStoredAnalysisSnapshot(store.path);
-      const graph = decodeData(
-        Object.values(repaired.graphs)[0]!.data,
-      ) as StoredGraphData;
-      expect(graph.ownershipPlan.dependencyFacts).toHaveLength(1);
-      expect(graph.dependencyAnalysis.outcome?.execution).toBe('completed');
+      expect(rebuilt.graph.ownershipPlan.dependencyFacts).toHaveLength(1);
+      expect(rebuilt.isPassed).toBe(true);
       expect(repaired.header.revision).not.toBe(snapshot.header.revision);
       const recovered = f.execute<GraphRunResult>(run);
       expect(recovered.graph).toEqual(rebuilt.graph);
-      expect(recovered.events).toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
-      );
+      expectRestoredFacts(recovered);
       expect(
         recovered.events.some(
           (event) => event.kind === 'semanticPrograms' && event.count! > 0,
@@ -1715,203 +1707,57 @@ try {
     },
   );
 
-  it.each([
-    'old-graph-key',
-    'missing-coloring-inputs',
-    'forged-coloring-seed',
-    'forged-manifest-owner',
-    'forged-manifest-roots',
-    'forged-manifest-targets',
-    'missing-root-member',
-    'foreign-target',
-    'missing-native-proof',
-    'missing-core-work',
-    'foreign-candidate',
-    'missing-generated-reference',
-    'extra-generated-reference',
-    'redirected-generated-reference',
-    'consistent-reference-removal',
-  ] as const)(
-    'rejects ownership %s in a valid storage envelope and restores the recollected result',
+  it.each(['missing', 'extra', 'redirected'] as const)(
+    'reconstructs %s generated declaration references from current policy',
     (corruption) => {
       const f = fixture();
-      if (corruption.includes('reference')) {
-        const rootConfig = JSON.parse(
-          readFileSync(f.file('tsconfig.json'), 'utf8'),
-        );
-        rootConfig.liminaOptions = {
-          implicitRefs: [
-            { path: './provider/tsconfig.json', reason: 'runtime input' },
-          ],
-        };
-        f.write('tsconfig.json', JSON.stringify(rootConfig));
-        f.write(
-          'provider/tsconfig.json',
-          JSON.stringify({
-            compilerOptions: { noLib: true, types: [], module: 'NodeNext' },
-            files: ['index.ts'],
-          }),
-        );
-        f.write('provider/index.ts', 'export const provider = 1;');
-        f.write(
-          'limina.config.mjs',
-          'export default {scope:{checkers:{tsc:{include:["tsconfig.json", "provider/tsconfig.json"]}}}};',
-        );
-      }
-
-      const run = 'console.log(JSON.stringify(await runCache()));';
-      const first = f.execute<GraphRunResult>(run);
-      const warm = f.execute<GraphRunResult>(run);
-      expect(warm.graph).toEqual(first.graph);
-      expect(warm.events).toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
+      const rootConfig = JSON.parse(
+        readFileSync(f.file('tsconfig.json'), 'utf8'),
       );
-      const store = new AnalysisCacheStore({
-        namespace: createLiminaArtifactNamespace({
-          rootDir: f.root,
-          generation: 0,
+      rootConfig.liminaOptions = {
+        implicitRefs: [
+          { path: './provider/tsconfig.json', reason: 'runtime input' },
+        ],
+      };
+      f.write('tsconfig.json', JSON.stringify(rootConfig));
+      f.write(
+        'provider/tsconfig.json',
+        JSON.stringify({
+          compilerOptions: { noLib: true, types: [], module: 'NodeNext' },
+          files: ['index.ts'],
         }),
-        configPath: f.config.configPath,
-        identity: 'unused',
-      });
-      const snapshot = readStoredAnalysisSnapshot(store.path);
-      const record = Object.values(snapshot.graphs)[0]!;
-      const data = decodeData(record.data) as StoredGraphData;
-      const fact = data.ownershipPlan.dependencyFacts[0]!;
-      expect(fact.nativeEvidence).toBeDefined();
-      switch (corruption) {
-        case 'old-graph-key': {
-          const key = Object.keys(snapshot.graphs)[0]!;
-          delete snapshot.graphs[key];
-          snapshot.graphs['generated-graph-declaration-governance-v21'] =
-            record;
-          break;
-        }
-        case 'forged-manifest-roots': {
-          data.manifest.checkers.tsc!.roots = [];
-          break;
-        }
-        case 'forged-manifest-targets': {
-          data.manifest.targets.build = [];
-          break;
-        }
-        case 'forged-manifest-owner': {
-          const source = data.manifest.ownership.configs.find(
-            (entry) => entry.role === 'type',
-          )!;
-          if (source.role === 'type') source.owner = 'tsgo';
-          break;
-        }
-        case 'missing-root-member': {
-          const root = data.checkerEntries.get('tsc')!;
-          data.generatedFiles = new Map(data.generatedFiles).set(
-            root,
-            JSON.stringify({ references: [] }),
-          );
-          data.manifest.checkers.tsc!.roots = [];
-          break;
-        }
-        case 'missing-coloring-inputs': {
-          delete data.ownershipPlan.coloringInputs;
-          break;
-        }
-        case 'forged-coloring-seed': {
-          const seed = data.ownershipPlan
-            .coloringInputs!.seeds.values()
-            .next().value!;
-          seed.localOwner = { kind: 'resolved', checker: 'tsgo' };
-          break;
-        }
-        case 'missing-generated-reference':
-        case 'extra-generated-reference':
-        case 'redirected-generated-reference':
-        case 'consistent-reference-removal': {
-          const [file, content] = [...data.generatedFiles].find(
-            ([file, text]) =>
-              file.endsWith('.dts.json') &&
-              JSON.parse(text).references?.length > 0,
-          )!;
-          const generated = JSON.parse(content);
-          const previous = generated.references[0];
-          if (corruption === 'extra-generated-reference')
-            generated.references.push({ path: './foreign.dts.json' });
-          else if (corruption === 'redirected-generated-reference')
-            generated.references[0] = { path: './foreign.dts.json' };
-          else generated.references = [];
-          data.generatedFiles = new Map(data.generatedFiles).set(
-            file,
-            JSON.stringify(generated),
-          );
-          if (corruption === 'consistent-reference-removal') {
-            const unit = data.governedSources
-              .values()
-              .flatMap((units) => units.values())
-              .find(
-                (source) =>
-                  'dtsConfigPath' in source.buildProjection &&
-                  source.buildProjection.dtsConfigPath === file,
-              )!;
-            unit.declarationReferences.clear();
-            data.dependencyAnalysis.candidate = {
-              ...data.dependencyAnalysis.candidate!,
-              references: data.dependencyAnalysis.candidate!.references.filter(
-                (pair) => pair.from !== unit.configPath,
-              ),
-            };
-            expect(previous).toBeDefined();
-          }
-          break;
-        }
-        case 'foreign-target': {
-          fact.physicalTargetPath = f.file('foreign.ts');
-          break;
-        }
-        case 'missing-native-proof': {
-          delete fact.nativeEvidence;
-          break;
-        }
-        case 'missing-core-work': {
-          data.dependencyAnalysis.outcome = {
-            ...data.dependencyAnalysis.outcome!,
-            core: { ...data.dependencyAnalysis.outcome!.core, entries: [] },
-          };
-          break;
-        }
-        default: {
-          data.dependencyAnalysis.candidate = {
-            configPaths: [],
-            references: [],
-            schedules: [],
-          };
-        }
-      }
-      record.data = encodeData(data);
-      writeStoredAnalysisSnapshot(store.path, snapshot);
-      const rejected = f.execute<GraphRunResult>(run);
-      if (corruption !== 'old-graph-key')
-        expect(rejected.events).toContainEqual(
-          expect.objectContaining({
-            kind: 'fallback-graph-dto-invalid',
-            count: 1,
-          }),
-        );
-      expect(rejected.events).not.toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
       );
-      expect(rejected.events).toContainEqual(
-        expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
+      f.write('provider/index.ts', 'export const provider = 1;');
+      f.write(
+        'limina.config.mjs',
+        'export default {scope:{checkers:{tsc:{include:["tsconfig.json", "provider/tsconfig.json"]}}}};',
       );
-      expect(
-        rejected.events.some(
-          (event) => event.kind === 'restoredContexts' && event.count! > 0,
-        ),
-      ).toBe(true);
-      expect(graphMeaning(rejected.graph)).toEqual(graphMeaning(first.graph));
-      const recovered = f.execute<GraphRunResult>(run);
-      expect(recovered.graph).toEqual(rejected.graph);
-      expect(recovered.events).toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
-      );
+
+      const run =
+        'console.log(JSON.stringify(await runCache({materialize:true})));';
+      const cold = f.execute<GraphRunResult>(run);
+      const dts = cold.graph.manifest.checkers.tsc!.sourceToDts;
+      const declaration = f.file(dts['tsconfig.json']!);
+      const bytes = readFileSync(declaration, 'utf8');
+      const config = JSON.parse(bytes);
+      expect(config.references).toEqual([
+        {
+          path: `./${toPortableRelativePath(
+            path.dirname(declaration),
+            f.file(dts['provider/tsconfig.json']!),
+          )}`,
+        },
+      ]);
+      const foreign = { path: './foreign.dts.json' };
+      if (corruption === 'extra') config.references.push(foreign);
+      else config.references = corruption === 'missing' ? [] : [foreign];
+      writeFileSync(declaration, JSON.stringify(config));
+
+      const repaired = f.execute<GraphRunResult>(run);
+      expectRestoredFacts(repaired);
+      expect(cacheCount(repaired, 'semanticPrograms')).toBe(0);
+      expect(graphMeaning(repaired.graph)).toEqual(graphMeaning(cold.graph));
+      expect(readFileSync(declaration, 'utf8')).toBe(bytes);
     },
   );
 
@@ -1954,9 +1800,7 @@ try {
     const run = 'console.log(JSON.stringify(await runCache()));';
     f.execute<GraphRunResult>(run);
     const warm = f.execute<GraphRunResult>(run);
-    expect(warm.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(warm);
     f.write('src/value.d.ts', 'import "compat";export interface V {}');
     f.write(
       'node_modules/compat/package.json',
@@ -1986,9 +1830,7 @@ try {
     ).toBeGreaterThan(0);
     const restored = f.execute<GraphRunResult>(run);
     expect(restored.graph).toEqual(compatibility.graph);
-    expect(restored.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(restored);
     expect(restored.events).toContainEqual(
       expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
     );
@@ -2011,9 +1853,7 @@ try {
     const run = 'console.log(JSON.stringify(await runCache()));';
     f.execute<GraphRunResult>(run);
     const warm = f.execute<GraphRunResult>(run);
-    expect(warm.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(warm);
     const store = new AnalysisCacheStore({
       namespace: createLiminaArtifactNamespace({
         rootDir: f.root,
@@ -2039,9 +1879,7 @@ try {
     f.write('limina.config.mjs', validConfig);
     const recovered = f.execute<GraphRunResult>(run);
     expect(recovered.graph).toEqual(warm.graph);
-    expect(recovered.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(recovered);
     expect(recovered.events).toContainEqual(
       expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
     );
@@ -2065,9 +1903,7 @@ try {
     const warm = f.execute<GraphRunResult>(
       'console.log(JSON.stringify(await runCache({cache:"read-only"})));',
     );
-    expect(warm.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(warm);
     f.write('src/a.ts', 'export const changed = true;');
     const changed = f.execute<GraphRunResult>(
       'console.log(JSON.stringify(await runCache({cache:"read-only"})));',
@@ -2103,9 +1939,7 @@ try {
       const warm = f.execute<GraphRunResult>(
         'console.log(JSON.stringify(await runCache()));',
       );
-      expect(warm.events).toContainEqual(
-        expect.objectContaining({ kind: 'graphHits', count: 1 }),
-      );
+      expectRestoredFacts(warm);
       const bytes = readFileSync(store.path);
       const modified = statSync(store.path).mtimeMs;
       f.write(
@@ -2129,7 +1963,60 @@ try {
     },
   );
 
-  it('restores the graph and artifact authority before Program and keeps a strict clean snapshot unchanged', () => {
+  it('projects a restored request-bearing root and its cyclic support declarations once', async () => {
+    const f = fixture();
+    f.write('src/empty.ts', 'export {};');
+    f.write('src/a.ts', "export type { V } from '../support/first.js';");
+    f.write('support/first.d.ts', "export type { V } from './second.js';");
+    f.write(
+      'support/second.d.ts',
+      "import './first.js'; export type V = number;",
+    );
+    const project = f.project();
+    const store = new AnalysisCacheStore({
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
+      configPath: f.config.configPath,
+      identity: 'fixture',
+      configVersion: 'fixture-config',
+    });
+    await store.publish(analyze(project).cache);
+    const persisted = parseAnalysisSnapshot(
+      readStoredAnalysisSnapshot(store.path),
+      'fixture',
+    );
+    const restored = new NativeAnalysisCache(
+      'fixture',
+      persisted,
+      'fixture-config',
+    ).restoreContext(project)!;
+    const importers = vi.spyOn(restored, 'getNativeFileRequests');
+    const legacyRecords = vi.spyOn(restored, 'getImportRecords');
+    const legacyFacts = vi.spyOn(restored, 'getDependencyFact');
+    const facts = projectNativeReferenceFacts(restored, {
+      fileNames: project.fileNames,
+      compilerOptions: project.options,
+      extensions: [],
+    })!;
+    expect(facts.dependencies.map((row) => row.importRecord.specifier)).toEqual(
+      ['../support/first.js', './second.js', './first.js'],
+    );
+    expect(importers.mock.calls.map(([file]) => file)).toEqual([
+      f.file('src/a.ts'),
+      f.file('support/first.d.ts'),
+      f.file('support/second.d.ts'),
+    ]);
+    expect(legacyRecords).not.toHaveBeenCalled();
+    expect(legacyFacts).not.toHaveBeenCalled();
+    expect(
+      facts.ownershipInputs.map((row) => row.importRecord.filePath),
+    ).toEqual([f.file('src/a.ts')]);
+    expect(facts.referenceInputs).toEqual([]);
+  });
+
+  it('recomputes graph and materializes deleted artifacts from a clean facts snapshot', () => {
     const f = fixture();
     const sourceConfig = JSON.parse(
       readFileSync(f.file('tsconfig.json'), 'utf8'),
@@ -2147,9 +2034,21 @@ try {
     );
     f.write('env.d.ts', 'export interface Competing {}');
     f.write('types/env/index.d.ts', 'export interface Selected {}');
-    const first = f.execute<GraphRunResult>(
-      'console.log(JSON.stringify(await runCache()));',
+    const profiledRun =
+      'console.log(JSON.stringify(await profileGraph({materialize:true})));';
+    const first = f.execute<ProfiledGraphRunResult>(profiledRun);
+    for (const kind of [
+      'semanticPrograms',
+      'resolverCalls',
+      'syntaxFactBuilds',
+    ])
+      expect(cacheCount(first, kind)).toBeGreaterThan(0);
+    const manifest = f.file('.limina/manifest.json');
+    const expectedManifest = readFileSync(manifest);
+    const dts = f.file(
+      first.graph.manifest.checkers.tsc!.sourceToDts['tsconfig.json']!,
     );
+    const expectedDeclarations = readFileSync(dts);
     const store = new AnalysisCacheStore({
       namespace: createLiminaArtifactNamespace({
         rootDir: f.root,
@@ -2162,38 +2061,100 @@ try {
     const encoded = readStoredAnalysisSnapshot(store.path);
     const persisted = parseAnalysisSnapshot(encoded, encoded.header.identity);
     expect(persisted).toBeDefined();
-    expect(Object.keys(persisted!.graphs)).toHaveLength(1);
     expect(Object.values(persisted!.contexts)).toEqual(
       expect.arrayContaining([expect.objectContaining({ complete: true })]),
     );
     const mtime = statSync(store.path).mtimeMs;
-    const next = f.execute<GraphRunResult>(
-      'console.log(JSON.stringify(await runCache()));',
+    rmSync(f.file('.limina/tsconfig'), { recursive: true });
+    rmSync(manifest);
+    const next = f.execute<ProfiledGraphRunResult>(profiledRun);
+    expect(graphMeaning(next.graph)).toEqual(graphMeaning(first.graph));
+    expect(readFileSync(manifest)).toEqual(expectedManifest);
+    expect(readFileSync(dts)).toEqual(expectedDeclarations);
+    expect(cacheCount(next, 'nativeReferenceFactProjections')).toBeGreaterThan(
+      0,
     );
-    expect(next.graph).toEqual(first.graph);
-    expect(next.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
+    expect(cacheCount(next, 'graphAdapterCollections')).toBe(0);
+    const sourceProject = next.profile.projects.find(
+      ({ path }) => path === 'tsconfig.json',
     );
+    expect(sourceProject).toBeDefined();
+    expect(first.profile.work).toContainEqual(
+      expect.objectContaining({
+        op: 'source-config.live-parse',
+        scope: [
+          'project',
+          first.profile.projects.find(({ path }) => path === 'tsconfig.json')
+            ?.id,
+        ],
+        end: 'performed',
+      }),
+    );
+    const sourceRead = next.profile.work.find(
+      ({ op, scope }) =>
+        op === 'source-config.authorized-read' &&
+        scope[1] === sourceProject?.id,
+    );
+    expect(sourceRead).toBeDefined();
+    expect(next.profile.decisions).toContainEqual(
+      expect.objectContaining({
+        work: sourceRead?.id,
+        layer: 'resolved-config-projection',
+        stage: 'adoption',
+        outcome: 'adopted',
+        origin: 'prior-disk',
+        subject: 'tsconfig.json',
+      }),
+    );
+    expect(next.profile.work).not.toContainEqual(
+      expect.objectContaining({ op: 'source-config.live-parse' }),
+    );
+    expect(
+      next.profile.metrics.filter(
+        ({ key, unit }) =>
+          unit === 'calls' && key.startsWith('graph.reference-facts.'),
+      ),
+    ).toEqual([
+      {
+        key: 'graph.reference-facts.native.projection-attempts',
+        scope: ['project', sourceProject?.id],
+        value: 1,
+        kind: 'counter',
+        unit: 'calls',
+      },
+      {
+        key: 'graph.reference-facts.native.projections',
+        scope: ['project', sourceProject?.id],
+        value: 1,
+        kind: 'counter',
+        unit: 'calls',
+      },
+      {
+        key: 'graph.reference-facts.native.memo-hits',
+        scope: ['project', sourceProject?.id],
+        value: 2,
+        kind: 'counter',
+        unit: 'calls',
+      },
+    ]);
+    expect(next.profile.metrics).toContainEqual({
+      key: 'graph.reference-facts.native.projection-elapsed-sum',
+      scope: ['project', sourceProject?.id],
+      value: expect.any(Number),
+      kind: 'counter',
+      unit: 'us',
+    });
+    expect(cacheCount(next, 'graphBuilds')).toBe(1);
+    expect(cacheCount(next, 'ownershipResolutions')).toBe(1);
+    expect(cacheCount(next, 'resolvedConfigProjectionHits')).toBeGreaterThan(0);
+    expect(cacheCount(next, 'resolverCalls')).toBe(0);
+    expect(cacheCount(next, 'syntaxFactBuilds')).toBe(0);
+    expectRestoredFacts(next);
     expect(next.events).toContainEqual(
       expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
     );
     expect(readFileSync(store.path)).toEqual(before);
     expect(statSync(store.path).mtimeMs).toBe(mtime);
-    f.write(
-      'src/a.ts',
-      "\nimport type { V } from './value.js'; export type T = V;",
-    );
-    const changed = f.execute<GraphRunResult>(
-      'console.log(JSON.stringify(await runCache()));',
-    );
-    expect(changed.graph.edges).toEqual(first.graph.edges);
-    expect(changed.graph.manifest).toEqual(first.graph.manifest);
-    expect(
-      changed.events.find((event) => event.kind === 'resolverCalls')?.count,
-    ).toBeGreaterThan(0);
-    expect(
-      changed.events.find((event) => event.kind === 'semanticPrograms')?.count,
-    ).toBeGreaterThan(0);
   });
   it('cold-starts forced analysis, publishes its result and restores it on the next normal run', () => {
     const f = fixture();
@@ -2213,9 +2174,7 @@ try {
       'console.log(JSON.stringify(await runCache({force:true})));',
     );
     expect(graphMeaning(forced.graph)).toEqual(graphMeaning(seed.graph));
-    expect(forced.events).not.toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expect(cacheCount(forced, 'restoredContexts')).toBe(0);
     expect(
       forced.events.find((event) => event.kind === 'semanticPrograms')?.count,
     ).toBeGreaterThan(0);
@@ -2228,27 +2187,22 @@ try {
       'console.log(JSON.stringify(await runCache()));',
     );
     expect(restored.graph).toEqual(forced.graph);
-    expect(restored.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(restored);
     expect(restored.events).toContainEqual(
       expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
     );
     expect(readFileSync(store.path)).toEqual(refreshed);
   });
-  it('reuses the updated graph across a provider refresh before publication', () => {
+  it('reuses updated analysis facts across a provider refresh before publication', () => {
     const f = fixture();
     f.execute('console.log(JSON.stringify(await runCache()));');
     f.write('src/a.ts', 'export const changed = 1;');
     const result = f.execute<GraphRunResult>(
       'console.log(JSON.stringify(await runCache({refresh:true,deferPublish:true})));',
     );
-    expect(result.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphBuilds', count: 1 }),
-    );
-    expect(result.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(result);
+    expect(cacheCount(result, 'graphBuilds')).toBe(2);
+    expect(result.graph.ownershipPlan.dependencyFacts).toEqual([]);
   });
   it('reuses validated analysis from the forced invocation after a provider refresh', () => {
     const f = fixture();
@@ -2260,9 +2214,7 @@ try {
       .map((event) => event.count);
     expect(programs[0]).toBeGreaterThan(0);
     expect(programs[1]).toBe(programs[0]);
-    expect(result.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(result);
   });
 });
 
@@ -2324,10 +2276,6 @@ it.each(['relative', 'package-import'])(
   },
 );
 
-function collectContextEnvironment(result: ReturnType<typeof analyze>) {
-  return Object.values(result.cache.contexts)[0]?.environment.evidence;
-}
-
 // These cases start up to five Node runners plus candidate Checker processes.
 // Give slow Windows starts a case budget independent of the global default.
 it.each(['Coverage', 'explicit choice'] as const)(
@@ -2375,9 +2323,7 @@ it.each(['Coverage', 'explicit choice'] as const)(
     const run = 'console.log(JSON.stringify(await runCache()));';
     const first = f.execute<GraphRunResult>(run);
     const warm = f.execute<GraphRunResult>(run);
-    expect(warm.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(warm);
     expect(warm.graph).toEqual(first.graph);
     if (change === 'Coverage') {
       f.write('tsconfig.b2.json', JSON.stringify(b));
@@ -2394,19 +2340,23 @@ it.each(['Coverage', 'explicit choice'] as const)(
     }
     writeChoice('./tsconfig.b2.json');
     const selected = f.execute<GraphRunResult>(run);
-    expect(selected.graph.edges.map((edge) => edge.toConfigPath)).toEqual([
-      f.file('tsconfig.b2.json'),
+    expect(
+      selected.graph.edges.map((edge) => [
+        edge.fromConfigPath,
+        edge.toConfigPath,
+      ]),
+    ).toEqual([
+      [f.file('tsconfig.a.json'), f.file('tsconfig.b2.json')],
+      [f.file('tsconfig.b.json'), f.file('tsconfig.b2.json')],
     ]);
     const restored = f.execute<GraphRunResult>(run);
     expect(restored.graph).toEqual(selected.graph);
-    expect(restored.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(restored);
   },
   60_000,
 );
 
-it('counts restored declaration candidates and revokes the last independent types contribution', () => {
+it('revalidates declaration candidates and revokes the last independent types reference', () => {
   const f = fixture();
   const compilerOptions = {
     noLib: true,
@@ -2453,13 +2403,11 @@ it('counts restored declaration candidates and revokes the last independent type
   );
   const warm = f.execute<GraphRunResult>(run);
   expect(warm.graph).toEqual(first.graph);
-  expect(warm.events).toContainEqual(
-    expect.objectContaining({ kind: 'graphHits', count: 1 }),
-  );
+  expectRestoredFacts(warm);
   expect(warm.events).toContainEqual(
     expect.objectContaining({
       name: 'declaration-candidate',
-      kind: 'restore',
+      kind: 'generation',
       count: 1,
     }),
   );
@@ -2478,9 +2426,7 @@ it('counts restored declaration candidates and revokes the last independent type
   expect(removed.graph.edges).toEqual([]);
   const restored = f.execute<GraphRunResult>(run);
   expect(restored.graph).toEqual(removed.graph);
-  expect(restored.events).toContainEqual(
-    expect.objectContaining({ kind: 'graphHits', count: 1 }),
-  );
+  expectRestoredFacts(restored);
 }, 60_000);
 
 it.each(['skipLibCheck', 'noCheck'] as const)(
@@ -2512,9 +2458,7 @@ it.each(['skipLibCheck', 'noCheck'] as const)(
     const run = 'console.log(JSON.stringify(await runCache()));';
     const first = f.execute<GraphRunResult>(run);
     const warm = f.execute<GraphRunResult>(run);
-    expect(warm.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(warm);
     f.write(
       'tsconfig.b.json',
       JSON.stringify({
@@ -2523,9 +2467,7 @@ it.each(['skipLibCheck', 'noCheck'] as const)(
       }),
     );
     const updated = f.execute<GraphRunResult>(run);
-    expect(
-      updated.events.find((event) => event.kind === 'graphHits')?.count ?? 0,
-    ).toBe(0);
+    expect(cacheCount(updated, 'semanticPrograms')).toBeGreaterThan(0);
     expect(updated.events).toContainEqual(
       expect.objectContaining({
         name: 'declaration-candidate',
@@ -2536,13 +2478,11 @@ it.each(['skipLibCheck', 'noCheck'] as const)(
     expect(updated.graph.edges).toEqual(first.graph.edges);
     const restored = f.execute<GraphRunResult>(run);
     expect(restored.graph).toEqual(updated.graph);
-    expect(restored.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(restored);
     expect(restored.events).toContainEqual(
       expect.objectContaining({
         name: 'declaration-candidate',
-        kind: 'restore',
+        kind: 'generation',
         count: 1,
       }),
     );
@@ -2595,15 +2535,8 @@ it.each(['analysis-v29', 'canonical-membership', 'host-policy'] as const)(
         (event) => event.kind === 'semanticPrograms' && event.count! > 0,
       ),
     ).toBe(true);
-    expect(
-      rebuilt.events.some(
-        (event) => event.kind === 'graphHits' && event.count! > 0,
-      ),
-    ).toBe(false);
     const warm = f.execute<GraphRunResult>(run);
-    expect(warm.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(warm);
     expect(
       warm.events.some(
         (event) => event.kind === 'semanticPrograms' && event.count! > 0,
@@ -2637,17 +2570,10 @@ it('recomputes logical declaration membership after alias retargeting across fre
   const run = 'console.log(JSON.stringify(await runCache()));';
   const cold = f.execute<GraphRunResult>(run);
   const warm = f.execute<GraphRunResult>(run);
-  expect(warm.events).toContainEqual(
-    expect.objectContaining({ kind: 'graphHits', count: 1 }),
-  );
+  expectRestoredFacts(warm);
   rmSync(f.file('alias'), { recursive: true });
   symlinkSync(f.file('other'), f.file('alias'), 'junction');
   const changed = f.execute<GraphRunResult>(run);
-  expect(
-    changed.events.some(
-      (event) => event.kind === 'graphHits' && event.count! > 0,
-    ),
-  ).toBe(false);
   expect(
     changed.events.some(
       (event) => event.kind === 'semanticPrograms' && event.count! > 0,
@@ -2664,9 +2590,7 @@ it('recomputes logical declaration membership after alias retargeting across fre
       members: decision.coverage.members.map((member) => member.configId),
     }));
   expect(decisions(changed)).toEqual(decisions(cold));
-  expect(f.execute<GraphRunResult>(run).events).toContainEqual(
-    expect.objectContaining({ kind: 'graphHits', count: 1 }),
-  );
+  expectRestoredFacts(f.execute<GraphRunResult>(run));
 }, 60_000);
 
 it.skipIf(ts.sys.useCaseSensitiveFileNames)(
@@ -2699,9 +2623,7 @@ it.skipIf(ts.sys.useCaseSensitiveFileNames)(
     expect(cold.graph.edges).toEqual([]);
     const warm = f.execute<GraphRunResult>(run);
     expect(warm.graph).toEqual(cold.graph);
-    expect(warm.events).toContainEqual(
-      expect.objectContaining({ kind: 'graphHits', count: 1 }),
-    );
+    expectRestoredFacts(warm);
     expect(
       warm.events.find((event) => event.kind === 'semanticPrograms')?.count ??
         0,
@@ -2709,3 +2631,41 @@ it.skipIf(ts.sys.useCaseSensitiveFileNames)(
   },
   60_000,
 );
+
+it('reassesses a missing Native import without creating a Program after warm adoption', () => {
+  const f = fixture();
+  f.write('limina.config.mjs', 'export default {scope:{checkers:{auto:{}}}};');
+  rmSync(f.file('src/value.d.ts'));
+  f.write(
+    'src/a.ts',
+    "export const value = 1; export type { Missing } from './missing.js';",
+  );
+  const oxc = pathToFileURL(
+    createRequire(import.meta.url).resolve('oxc-resolver'),
+  ).href;
+  const script = `
+import { ResolverFactory } from ${JSON.stringify(oxc)};
+const original = ResolverFactory.prototype.resolveFileSync;
+let freshLookups = 0;
+ResolverFactory.prototype.resolveFileSync = function (...args) {
+  if (args[1] === './missing.js') freshLookups++;
+  return original.apply(this, args);
+};
+const { profile, ...result } = await profileGraph();
+const programs = profile.work.filter(row =>
+  row.op === 'native-program-create' && ['performed', 'computed'].includes(row.end),
+).length;
+console.log(JSON.stringify({ ...result, programs, freshLookups }));`;
+  const run = () =>
+    f.execute<GraphRunResult & { programs: number; freshLookups: number }>(
+      script,
+    );
+  const cold = run();
+  expect(cold.programs).toBeGreaterThan(0);
+  expect(cold.freshLookups).toBeGreaterThan(0);
+  const warm = run();
+  expectRestoredFacts(warm);
+  expect(warm.programs).toBe(0);
+  expect(warm.freshLookups).toBeGreaterThan(0);
+  expect(graphMeaning(warm.graph)).toEqual(graphMeaning(cold.graph));
+}, 60_000);

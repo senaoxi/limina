@@ -427,6 +427,58 @@ describe('project dependency authority', () => {
     expect(resolveOxcImport).not.toHaveBeenCalled();
   });
 
+  it('isolates runtime syntax across physical text changes, virtual inputs, and callers', async () => {
+    const fixture = await createSemanticRepairFixture({
+      'index.ts': "import './first';\n",
+      'first.ts': 'export {};',
+      'second.ts': 'export {};',
+      'overlay.ts': 'export {};',
+    });
+    const source = fixture.path('index.ts');
+    const caches = createProjectDependencyCaches();
+    const importAnalysis = createImportAnalysisContext();
+    const context = createSemanticContext({
+      family: 'typescript',
+      fileName: source,
+      rootDir: fixture.root,
+    });
+    const collect = (
+      config: string,
+      virtualFiles?: ReadonlyMap<string, string>,
+    ) =>
+      collectRuntimeProjectDependencies({
+        caches,
+        context: { ...context, configPath: fixture.path(config), virtualFiles },
+        importAnalysis,
+      });
+    try {
+      const first = collect('first.json');
+      expect(first.dependencies).toMatchObject([
+        { importRecord: { specifier: './first', locator: { sourceStart: 7 } } },
+      ]);
+      first.dependencies[0]!.importRecord.locator.sourceStart = -1;
+      expect(collect('other.json').dependencies).toMatchObject([
+        { importRecord: { specifier: './first', locator: { sourceStart: 7 } } },
+      ]);
+
+      const overlay = collect(
+        'overlay.json',
+        new Map([[source, "import './overlay';\n"]]),
+      );
+      expect(overlay.dependencies).toMatchObject([
+        { resolvedFilePath: fixture.path('overlay.ts') },
+      ]);
+
+      await writeFile(source, "\nimport './second';\n");
+      expect(collect('updated.json').dependencies).toMatchObject([
+        { importRecord: { specifier: './second', line: 2 } },
+      ]);
+    } finally {
+      importAnalysis.dispose?.();
+      await fixture.cleanup();
+    }
+  });
+
   it('uses the admitted triple-slash path target without module reinterpretation', async () => {
     const temporaryRoot = await mkdtemp(
       path.join(tmpdir(), 'limina-project-deps-triple-'),

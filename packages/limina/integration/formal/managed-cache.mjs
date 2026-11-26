@@ -14,8 +14,6 @@ import path from 'node:path';
 import process from 'node:process';
 import { URL } from 'node:url';
 import {
-  decodeGraphProjection,
-  encodeGraphProjection,
   readStoredAnalysisSnapshot,
   writeStoredAnalysisSnapshot,
 } from '../../src/__tests__/helpers/analysis-snapshot.ts';
@@ -66,9 +64,14 @@ async function replay() {
       const checker = graph.checkers.find((c) => c.name === 'tsc');
       const name = 'tsconfig.a.json';
       const projection = graph.sourceToBuild.get('tsc').get(portable(name));
+      const declarationConfig = graph.sourceToDts
+        .get('tsc')
+        .get(portable(name));
       const references = JSON.parse(
         readFileSync(projection.path, 'utf8'),
       ).references;
+      const metric = (kind) =>
+        events.find((event) => event.kind === kind)?.count ?? 0;
       const target = createCheckerTarget({
         checker,
         configPath: projection.path,
@@ -107,9 +110,11 @@ async function replay() {
         owner: graph.manifest.ownership.configs.find((c) => c.config === name)
           ?.owner,
         refs: references,
-        hit: events.some(
-          (event) => event.kind === 'graphHits' && event.count > 0,
-        ),
+        declarationRefs: JSON.parse(readFileSync(declarationConfig, 'utf8'))
+          .references,
+        graphBuilds: metric('graphBuilds'),
+        restoredContexts: metric('restoredContexts'),
+        semanticPrograms: metric('semanticPrograms'),
         launched,
         failures: result.failedTargets.map((t) => ({
           stage: t.admission?.stage,
@@ -122,38 +127,49 @@ async function replay() {
         path.join(out, 'observations.json'),
         `${JSON.stringify(reports, null, 2)}\n`,
       );
-      return { record, index: store.path };
+      return { record, index: store.path, declarationConfig };
     } finally {
       manager.dispose();
     }
   }
-  const { index, record: cold } = await launch('cold');
+  const { index, declarationConfig, record: cold } = await launch('cold');
   const { record: warm } = await launch('warm');
-  assert.equal(cold.hit, false);
-  assert.equal(warm.hit, true);
-  // Remove the required serialized edge inside a valid block/index envelope.
+  assert.equal(cold.restoredContexts, 0);
+  assert.ok(cold.semanticPrograms > 0);
+  assert.ok(warm.restoredContexts > 0);
+  assert.equal(warm.semanticPrograms, 0);
+
+  const bytes = readFileSync(declarationConfig, 'utf8');
+  const declaration = JSON.parse(bytes);
+  assert.equal(declaration.references.length, 1);
+  declaration.references = [];
+  writeFileSync(declarationConfig, JSON.stringify(declaration));
+  const { record: repaired } = await launch('wrong-materialized-closure');
+  assert.ok(repaired.restoredContexts > 0);
+  assert.equal(repaired.semanticPrograms, 0);
+  assert.equal(readFileSync(declarationConfig, 'utf8'), bytes);
+
   const snapshot = readStoredAnalysisSnapshot(index);
-  const records = Object.values(snapshot.graphs);
-  assert.equal(records.length, 1);
-  const projection = decodeGraphProjection(records[0].data);
-  const leaf = [...projection.generatedFiles].find(
-    ([p, s]) => p.endsWith('.dts.json') && JSON.parse(s).references?.length,
+  const source = portable('a.ts');
+  const contexts = Object.values(snapshot.contexts).filter(
+    (context) =>
+      context.project.configPath === portable('tsconfig.a.json') &&
+      Object.hasOwn(context.sources, source),
   );
-  assert.ok(leaf, 'positive serialized reference control');
-  projection.generatedFiles.set(
-    leaf[0],
-    JSON.stringify({ ...JSON.parse(leaf[1]), references: [] }),
-  );
-  records[0].data = encodeGraphProjection(projection);
+  assert.ok(contexts.length > 0, 'expected complete facts for the consumer');
+  for (const context of contexts) delete context.sources[source];
   writeStoredAnalysisSnapshot(index, snapshot);
-  const { record: repaired } = await launch('wrong-closure');
-  assert.equal(repaired.hit, false);
+  const { record: recollected } = await launch('missing-source-facts');
+  assert.ok(recollected.semanticPrograms > 0);
   const { record: reopened } = await launch('reopened');
-  assert.equal(reopened.hit, true);
-  for (const record of [cold, warm, repaired, reopened]) {
+  assert.ok(reopened.restoredContexts > 0);
+  assert.equal(reopened.semanticPrograms, 0);
+  for (const record of [cold, warm, repaired, recollected, reopened]) {
+    assert.equal(record.graphBuilds, 1);
     assert.equal(record.owner, 'tsc');
     assert.equal(record.refs.length, 1);
     assert.deepEqual(record.refs, cold.refs);
+    assert.deepEqual(record.declarationRefs, cold.declarationRefs);
     assert.deepEqual(record.launched, []);
     assert.deepEqual(record.failures, [
       {

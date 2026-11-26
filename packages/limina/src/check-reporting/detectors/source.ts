@@ -17,44 +17,6 @@ export const SOURCE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
       FAULT_FIXTURE_TEST,
     ],
   },
-  [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid]: {
-    kind: 'fixture',
-    producers: [
-      'packages/limina/src/source-check/ambient-declaration-rules.ts#createAmbientConfigIssue',
-    ],
-    task: 'source:check',
-    tests: [
-      'packages/limina/fixtures/detectors/source/ambient-config-no-matches/case.mts',
-      'packages/limina/integration/tests/detector-fixtures.spec.ts',
-      'packages/limina/src/__tests__/ambient-declarations.spec.ts',
-    ],
-  },
-  [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationSharedUnauthorized]: {
-    kind: 'fixture',
-    producers: [
-      'packages/limina/src/source-check/tsconfig-governance.ts#addTsconfigGovernanceProblems',
-    ],
-    task: 'source:check',
-    tests: [
-      'packages/limina/fixtures/detectors/source/ambient-shared-unauthorized/case.mts',
-      'packages/limina/integration/tests/detector-fixtures.spec.ts',
-      'packages/limina/src/__tests__/source-findings.spec.ts',
-      'packages/limina/src/__tests__/source.spec.ts',
-    ],
-  },
-  [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationReferenceUnauthorized]: {
-    kind: 'fixture',
-    producers: [
-      'packages/limina/src/source-check/relative-import-validation.ts#addRelativeImportProblems',
-    ],
-    task: 'source:check',
-    tests: [
-      'packages/limina/fixtures/detectors/source/ambient-reference-unauthorized/case.mts',
-      'packages/limina/integration/tests/detector-fixtures.spec.ts',
-      'packages/limina/src/__tests__/source-findings.spec.ts',
-      'packages/limina/src/__tests__/source.spec.ts',
-    ],
-  },
   [LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary]: {
     kind: 'fixture',
     producers: [
@@ -106,7 +68,7 @@ export const SOURCE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     ],
   },
   [LIMINA_CHECK_ISSUE_CODES.sourceOwnerInvalid]: {
-    kind: 'fixture',
+    kind: 'integration',
     producers: [
       'packages/limina/src/source-check/project-owner-findings.ts#addProjectOwnerProblems',
       'packages/limina/src/source-check/import-boundary-findings.ts#addSourceImportOutsideActivatedRegionProblem',
@@ -114,7 +76,6 @@ export const SOURCE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     ],
     task: 'source:check',
     tests: [
-      'packages/limina/fixtures/detectors/source/owner-conflict/case.mts',
       'packages/limina/integration/tests/detector-fixtures.spec.ts',
       'packages/limina/src/__tests__/source-findings.spec.ts',
       'packages/limina/src/__tests__/source.spec.ts',
@@ -178,7 +139,6 @@ export const SOURCE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     ],
     task: 'source:check',
     tests: [
-      'packages/limina/fixtures/detectors/source/owner-conflict/case.mts',
       'packages/limina/fixtures/detectors/source/tsconfig-module-owner-unresolved/case.mts',
       'packages/limina/integration/tests/detector-fixtures.spec.ts',
       'packages/limina/src/__tests__/source-findings.spec.ts',

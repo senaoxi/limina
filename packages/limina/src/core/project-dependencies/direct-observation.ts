@@ -5,6 +5,7 @@ import {
 } from '../dependency-semantics';
 import type { CanonicalImportResolutionEvidence } from '../import-analysis/runner';
 import type { TypeEvidence } from '../type-evidence/cache';
+import type { VueDependencyObservation } from '../vue-semantic/dependency-observation';
 import type { CollectRecordOptions } from './direct-dependency-record';
 import { createDirectDependencyEvidence } from './evidence';
 import { createProjectDependencyFailure } from './failure';
@@ -22,15 +23,17 @@ function checkerTarget(evidence: CanonicalImportResolutionEvidence) {
 export function observeDirectRequirement(
   options: CollectRecordOptions,
   evidence: CanonicalImportResolutionEvidence,
+  observation?: VueDependencyObservation,
 ): DirectObservation {
   return options.request.purpose === 'runtime-source'
     ? { decision: { state: 'decided', value: null } }
-    : observeCompilerRequirement(options, evidence);
+    : observeCompilerRequirement(options, evidence, observation);
 }
 
 function observeCompilerRequirement(
   options: CollectRecordOptions,
   evidence: CanonicalImportResolutionEvidence,
+  observation?: VueDependencyObservation,
 ): DirectObservation {
   const nativeFact = getDirectNativeFact(options);
   if (nativeFact !== undefined)
@@ -41,22 +44,25 @@ function observeCompilerRequirement(
   const target = checkerTarget(evidence);
   return target === null
     ? { decision: decideReferenceRequirement({ target }) }
-    : queryDirectRequirement(options, evidence);
+    : queryDirectRequirement(options, evidence, observation);
 }
 function queryDirectRequirement(
   options: CollectRecordOptions,
   evidence: CanonicalImportResolutionEvidence,
+  observation?: VueDependencyObservation,
 ): DirectObservation {
-  const observed = options.request.importAnalysis.observeCheckerDependency?.({
-    importRecord: options.importRecord,
-    resolution: evidence,
-    context: {
-      checkerPresets: [],
-      extensions: [...options.request.context.extensions],
-      semanticFamily: options.request.context.semanticAuthority.family,
-      vueSemanticIdentity: options.request.context.vueSemanticIdentity,
-    },
-  });
+  const observed =
+    observation ??
+    options.request.importAnalysis.observeCheckerDependency?.({
+      importRecord: options.importRecord,
+      resolution: evidence,
+      context: {
+        checkerPresets: [],
+        extensions: [...options.request.context.extensions],
+        semanticFamily: options.request.context.semanticAuthority.family,
+        vueSemanticIdentity: options.request.context.vueSemanticIdentity,
+      },
+    });
   return {
     decision: decideReferenceRequirement({
       target: checkerTarget(evidence),

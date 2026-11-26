@@ -1,5 +1,6 @@
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { readSourceConfigText } from '#utils/source-config-text';
 import { createHash } from 'node:crypto';
 import type ts from 'typescript';
 import type { VueConfigClosureEntry } from './vue-semantic-types';
@@ -92,6 +93,7 @@ function recordRead(options: {
 }
 
 export function createVueOverlaySystem(options: {
+  observeConfigReads?: true;
   recorder?: VueConfigReadRecorder;
   tsModule: typeof ts;
   virtualFiles: ReadonlyMap<string, string>;
@@ -110,13 +112,22 @@ export function createVueOverlaySystem(options: {
     },
     readFile(fileName, encoding): string | undefined {
       const normalized = normalizeAbsolutePath(fileName);
-      const content = readOverlayOrDisk({
-        base,
-        encoding,
-        fileName,
-        normalized,
-        virtualFiles: options.virtualFiles,
-      });
+      const content =
+        options.observeConfigReads === true
+          ? readSourceConfigText(
+              normalized,
+              options.virtualFiles.size === 0
+                ? undefined
+                : options.virtualFiles,
+              (name) => base.readFile(name, encoding),
+            )
+          : readOverlayOrDisk({
+              base,
+              encoding,
+              fileName,
+              normalized,
+              virtualFiles: options.virtualFiles,
+            });
       recordRead({ content, fileName: normalized, recorder: options.recorder });
       return content;
     },
