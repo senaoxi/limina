@@ -3,8 +3,6 @@ import { validateLiminaConfig } from '#config/schema';
 import type {
   AutoCheckerConfig,
   CheckerConfigMode,
-  CheckerName,
-  CheckerScope,
   ResolvedCheckerConfig,
 } from './pipeline-checker-types';
 import type { LiminaConfig } from './root-types';
@@ -36,16 +34,8 @@ export function getAutoCheckerConfig(
   return checkers?.auto ?? {};
 }
 
-export function getNamedCheckerConfigs(
-  checkers: CheckerConfigMode | undefined,
-): Partial<Record<CheckerName, CheckerScope>> {
-  if (checkers === undefined) return {};
-  const named = { ...checkers };
-  delete named.auto;
-  return named;
-}
-
 export { defineConfig } from './define';
+export { getNamedCheckerConfigs } from './named-checkers';
 
 function isResolvedConfig(config: LiminaConfig): boolean {
   return 'governanceRoot' in config && 'rootDir' in config;

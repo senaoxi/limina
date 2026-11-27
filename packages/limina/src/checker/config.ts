@@ -1,3 +1,4 @@
+import { getNamedCheckerConfigs } from '#config/named-checkers';
 import type {
   BuildCheckerName,
   CheckerConfig,
@@ -5,7 +6,6 @@ import type {
   LiminaConfig,
   ResolvedCheckerConfig,
 } from '#config/runner';
-import { getNamedCheckerConfigs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import {

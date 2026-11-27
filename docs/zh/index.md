@@ -4,7 +4,7 @@ pageClass: limina-home limina-zh-source-home
 
 hero:
   name: Limina
-  text: 让 TypeScript 工程<span class="hero-accent">井井有条</span>
+  text: 让 TypeScript 项目保持 <span class="hero-accent">井然有序</span>
   tagline: 围绕 tsconfig 做项目治理
   actions:
     - theme: brand

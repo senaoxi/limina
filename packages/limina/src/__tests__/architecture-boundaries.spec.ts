@@ -7,6 +7,12 @@ import { collectStronglyConnectedComponents } from '../utils/strongly-connected-
 import { toPortablePath } from './helpers/path';
 
 const sourceRoot = fileURLToPath(new URL('..', import.meta.url));
+const packageRoot = path.resolve(sourceRoot, '..');
+
+type PackageImportTarget =
+  | string
+  | readonly PackageImportTarget[]
+  | { readonly [key: string]: PackageImportTarget | null };
 
 async function collectProductionSourceFiles(
   directory = sourceRoot,
@@ -20,7 +26,11 @@ async function collectProductionSourceFiles(
           ? []
           : collectProductionSourceFiles(entryPath);
       }
-      return entry.isFile() && entry.name.endsWith('.ts') ? [entryPath] : [];
+      return entry.isFile() &&
+        /\.(?:ts|mts|cts)$/u.test(entry.name) &&
+        !/\.d\.[cm]?ts$/u.test(entry.name)
+        ? [entryPath]
+        : [];
     }),
   );
   return files.flat();
@@ -85,25 +95,15 @@ async function findProductionCallers(importedName: string): Promise<string[]> {
   );
 }
 
-function hasRuntimeImport(importDeclaration: ts.ImportDeclaration): boolean {
-  const clause = importDeclaration.importClause;
-  if (clause === undefined) return true;
-  if (clause.isTypeOnly) return false;
-  if (clause.name !== undefined) return true;
-  const bindings = clause.namedBindings;
-  return (
-    bindings === undefined ||
-    ts.isNamespaceImport(bindings) ||
-    bindings.elements.some((element) => !element.isTypeOnly)
-  );
-}
-
+// Under verbatimModuleSyntax: true, TypeScript preserves every non-type-only
+// import/export declaration at runtime, including `import {} from` and
+// `import { type X } from` (emitted as `import {} from`).
 function getRuntimeSpecifiers(sourceFile: ts.SourceFile): string[] {
   const specifiers: string[] = [];
   for (const statement of sourceFile.statements) {
     if (
       ts.isImportDeclaration(statement) &&
-      hasRuntimeImport(statement) &&
+      !statement.importClause?.isTypeOnly &&
       ts.isStringLiteral(statement.moduleSpecifier)
     ) {
       specifiers.push(statement.moduleSpecifier.text);
@@ -116,99 +116,208 @@ function getRuntimeSpecifiers(sourceFile: ts.SourceFile): string[] {
     ) {
       specifiers.push(statement.moduleSpecifier.text);
     }
+    if (
+      ts.isImportEqualsDeclaration(statement) &&
+      !statement.isTypeOnly &&
+      ts.isExternalModuleReference(statement.moduleReference) &&
+      ts.isStringLiteral(statement.moduleReference.expression)
+    ) {
+      specifiers.push(statement.moduleReference.expression.text);
+    }
   }
   return specifiers.filter(
     (specifier) => specifier.startsWith('.') || specifier.startsWith('#'),
   );
 }
 
-const packageImportAliases: readonly [prefix: string, target: string][] = [
-  ['#core/', 'core/'],
-  ['#utils/', 'utils/'],
-  ['#config/', 'config/'],
-];
+async function loadPackageImports(): Promise<
+  Readonly<Record<string, PackageImportTarget | null>>
+> {
+  const raw = JSON.parse(
+    await readFile(path.join(packageRoot, 'package.json'), 'utf8'),
+  ) as { imports?: Record<string, PackageImportTarget | null> };
+  return raw.imports ?? {};
+}
+
+function collectPackageTargetStrings(
+  target: PackageImportTarget | null | undefined,
+): string[] {
+  if (target === null || target === undefined) return [];
+  if (typeof target === 'string') return [target];
+  const entries = Array.isArray(target) ? target : Object.values(target);
+  return entries.flatMap((entry) => collectPackageTargetStrings(entry));
+}
+
+function mapRuntimeExtension(candidatePath: string): string[] | undefined {
+  if (candidatePath.endsWith('.js')) {
+    const stem = candidatePath.slice(0, -3);
+    return [`${stem}.ts`, `${stem}.tsx`];
+  }
+  if (candidatePath.endsWith('.mjs')) {
+    return [`${candidatePath.slice(0, -4)}.mts`];
+  }
+  return candidatePath.endsWith('.cjs')
+    ? [`${candidatePath.slice(0, -4)}.cts`]
+    : undefined;
+}
+
+function resolveCandidatePath(
+  candidatePath: string,
+  productionFiles: ReadonlySet<string>,
+): string | undefined {
+  if (productionFiles.has(candidatePath)) return candidatePath;
+  const mapped = mapRuntimeExtension(candidatePath);
+  if (mapped !== undefined) {
+    return mapped.find((candidate) => productionFiles.has(candidate));
+  }
+  return [
+    `${candidatePath}.ts`,
+    `${candidatePath}.mts`,
+    `${candidatePath}.cts`,
+    path.join(candidatePath, 'index.ts'),
+    path.join(candidatePath, 'index.mts'),
+    path.join(candidatePath, 'index.cts'),
+  ].find((candidate) => productionFiles.has(candidate));
+}
 
 function resolvePackageImportAlias(
   specifier: string,
+  packageImports: Readonly<Record<string, PackageImportTarget | null>>,
   productionFiles: ReadonlySet<string>,
-): string | undefined {
-  if (specifier === '#core') {
-    const candidate = path.join(sourceRoot, 'core/index.ts');
-    return productionFiles.has(candidate) ? candidate : undefined;
+): string[] {
+  if (Object.hasOwn(packageImports, specifier)) {
+    return collectPackageTargetStrings(packageImports[specifier])
+      .map((target) =>
+        resolveCandidatePath(
+          path.resolve(packageRoot, target),
+          productionFiles,
+        ),
+      )
+      .filter((resolved): resolved is string => resolved !== undefined);
   }
-  if (specifier === '#checkers') {
-    const candidate = path.join(sourceRoot, 'checkers.ts');
-    return productionFiles.has(candidate) ? candidate : undefined;
-  }
-  for (const [prefix, target] of packageImportAliases) {
-    if (!specifier.startsWith(prefix)) continue;
-    const basePath = path.join(
-      sourceRoot,
-      `${target}${specifier.slice(prefix.length)}`,
+  const wildcardMatches = Object.entries(packageImports)
+    .filter(([pattern]) => pattern.includes('*'))
+    .flatMap(([pattern, target]) => {
+      const [prefix, suffix] = pattern.split('*', 2);
+      if (
+        prefix === undefined ||
+        suffix === undefined ||
+        !specifier.startsWith(prefix) ||
+        !specifier.endsWith(suffix) ||
+        specifier.length < prefix.length + suffix.length
+      ) {
+        return [];
+      }
+      const matched = specifier.slice(
+        prefix.length,
+        specifier.length - suffix.length,
+      );
+      return [{ prefix, suffix, matched, target }];
+    })
+    .sort(
+      (left, right) =>
+        right.prefix.length - left.prefix.length ||
+        right.suffix.length - left.suffix.length,
     );
-    return [`${basePath}.ts`, path.join(basePath, 'index.ts')].find(
-      (candidate) => productionFiles.has(candidate),
-    );
-  }
-  return undefined;
+  const best = wildcardMatches[0];
+  return best === undefined
+    ? []
+    : collectPackageTargetStrings(best.target)
+        .map((target) =>
+          resolveCandidatePath(
+            path.resolve(
+              packageRoot,
+              target.replaceAll('*', () => best.matched),
+            ),
+            productionFiles,
+          ),
+        )
+        .filter((resolved): resolved is string => resolved !== undefined);
 }
 
 function resolveProductionImport(
   importer: string,
   specifier: string,
+  packageImports: Readonly<Record<string, PackageImportTarget | null>>,
   productionFiles: ReadonlySet<string>,
-): string | undefined {
+): string[] {
   if (specifier.startsWith('#')) {
-    return resolvePackageImportAlias(specifier, productionFiles);
+    return resolvePackageImportAlias(
+      specifier,
+      packageImports,
+      productionFiles,
+    );
   }
-  const basePath = path.resolve(path.dirname(importer), specifier);
-  return [`${basePath}.ts`, path.join(basePath, 'index.ts')].find((candidate) =>
-    productionFiles.has(candidate),
+  const resolved = resolveCandidatePath(
+    path.resolve(path.dirname(importer), specifier),
+    productionFiles,
   );
+  return resolved === undefined ? [] : [resolved];
 }
 
-async function collectRuntimeImportGraph(options?: {
-  includePackageAliases?: boolean;
-}): Promise<{
+function buildRuntimeImportGraph(
+  sourcesByFile: ReadonlyMap<string, string>,
+  packageImports: Readonly<Record<string, PackageImportTarget | null>>,
+): {
   files: string[];
   neighbors: Map<string, string[]>;
-}> {
-  const isIncludePackageAliases = options?.includePackageAliases === true;
-  const files = await collectProductionSourceFiles();
+} {
+  const files = sourcesByFile.keys().toArray();
   const productionFiles = new Set(files);
   const neighbors = new Map<string, string[]>();
-  for (const filePath of files) {
+  for (const [filePath, source] of sourcesByFile) {
     const sourceFile = ts.createSourceFile(
       filePath,
-      await readFile(filePath, 'utf8'),
+      source,
       ts.ScriptTarget.Latest,
       true,
       ts.ScriptKind.TS,
     );
-    neighbors.set(
-      filePath,
-      getRuntimeSpecifiers(sourceFile)
-        .filter(
-          (specifier) => isIncludePackageAliases || specifier.startsWith('.'),
-        )
-        .map((specifier) =>
-          resolveProductionImport(filePath, specifier, productionFiles),
-        )
-        .filter((target): target is string => target !== undefined),
-    );
+    neighbors.set(filePath, [
+      ...new Set(
+        getRuntimeSpecifiers(sourceFile).flatMap((specifier) =>
+          resolveProductionImport(
+            filePath,
+            specifier,
+            packageImports,
+            productionFiles,
+          ),
+        ),
+      ),
+    ]);
   }
   return { files, neighbors };
 }
 
-async function collectRuntimeImportCycles(): Promise<string[][]> {
-  const { files, neighbors } = await collectRuntimeImportGraph({
-    includePackageAliases: false,
-  });
+async function collectRuntimeImportGraph(): Promise<{
+  files: string[];
+  neighbors: Map<string, string[]>;
+}> {
+  const [files, packageImports] = await Promise.all([
+    collectProductionSourceFiles(),
+    loadPackageImports(),
+  ]);
+  const sourcesByFile = new Map<string, string>();
+  for (const filePath of files) {
+    sourcesByFile.set(filePath, await readFile(filePath, 'utf8'));
+  }
+  return buildRuntimeImportGraph(sourcesByFile, packageImports);
+}
+
+function findRuntimeImportCycles(
+  files: readonly string[],
+  neighbors: ReadonlyMap<string, readonly string[]>,
+): string[][] {
   return collectStronglyConnectedComponents(
     files,
     (filePath) => neighbors.get(filePath) ?? [],
   )
-    .filter((component) => component.length > 1)
+    .filter(
+      (component) =>
+        component.length > 1 ||
+        (component.length === 1 &&
+          (neighbors.get(component[0]!) ?? []).includes(component[0]!)),
+    )
     .map((component) =>
       component.map((filePath) =>
         toPortablePath(path.relative(sourceRoot, filePath)),
@@ -216,9 +325,60 @@ async function collectRuntimeImportCycles(): Promise<string[][]> {
     );
 }
 
+async function collectRuntimeImportCycles(): Promise<string[][]> {
+  const { files, neighbors } = await collectRuntimeImportGraph();
+  return findRuntimeImportCycles(files, neighbors);
+}
+
 describe('production architecture boundaries', () => {
-  it('keeps the relative runtime import graph acyclic', async () => {
+  it('keeps relative and package-alias runtime imports acyclic', async () => {
     await expect(collectRuntimeImportCycles()).resolves.toEqual([]);
+  });
+
+  it('detects runtime cycles across package aliases, explicit .js paths, empty named imports/re-exports, and self-imports', async () => {
+    const packageImports = await loadPackageImports();
+    const runnerPath = path.join(sourceRoot, 'config/runner.ts');
+    const checkerConfigPath = path.join(sourceRoot, 'checker/config.ts');
+    const selfPath = path.join(sourceRoot, 'config/self.ts');
+
+    const cyclesFor = (checkerConfigSource: string) => {
+      const { files, neighbors } = buildRuntimeImportGraph(
+        new Map([
+          [
+            runnerPath,
+            "import { load } from '../checker/config'; export const run = load;",
+          ],
+          [checkerConfigPath, checkerConfigSource],
+        ]),
+        packageImports,
+      );
+      return findRuntimeImportCycles(files, neighbors);
+    };
+
+    for (const cyclicSource of [
+      "import { run } from '#config/runner'; export const load = run;",
+      "import { run } from '../config/runner.js'; export const load = run;",
+      "import {} from '#config/runner'; export const load = 1;",
+      "import { type Foo } from '#config/runner'; export const load = 1;",
+      "export {} from '#config/runner'; export const load = 1;",
+    ]) {
+      expect(cyclesFor(cyclicSource), cyclicSource).toHaveLength(1);
+    }
+
+    for (const typeOnlySource of [
+      "import type { Foo } from '#config/runner'; export const load: Foo | null = null;",
+      "export type { Foo } from '#config/runner'; export const load = 1;",
+    ]) {
+      expect(cyclesFor(typeOnlySource), typeOnlySource).toEqual([]);
+    }
+
+    const selfGraph = buildRuntimeImportGraph(
+      new Map([[selfPath, "import './self.js'; export const self = 1;"]]),
+      packageImports,
+    );
+    expect(
+      findRuntimeImportCycles(selfGraph.files, selfGraph.neighbors),
+    ).toEqual([['config/self.ts']]);
   });
 
   it('keeps generated artifact application at the preflight manager boundary', async () => {
@@ -254,9 +414,12 @@ describe('production architecture boundaries', () => {
         ts.ScriptKind.TS,
       );
       const executionImports = sourceFile.statements.filter(
-        (statement): statement is ts.ImportDeclaration =>
-          ts.isImportDeclaration(statement) &&
-          ts.isStringLiteral(statement.moduleSpecifier) &&
+        (statement) =>
+          ((ts.isImportDeclaration(statement) &&
+            ts.isStringLiteral(statement.moduleSpecifier)) ||
+            (ts.isExportDeclaration(statement) &&
+              statement.moduleSpecifier !== undefined &&
+              ts.isStringLiteral(statement.moduleSpecifier))) &&
           /(?:^|\/)execution(?:\/|$)/u.test(statement.moduleSpecifier.text),
       );
       expect(executionImports, filePath).toHaveLength(0);
@@ -264,9 +427,7 @@ describe('production architecture boundaries', () => {
   });
 
   it('prevents governance modules from directly importing Core low-level producers or cache stores', async () => {
-    const { neighbors } = await collectRuntimeImportGraph({
-      includePackageAliases: true,
-    });
+    const { neighbors } = await collectRuntimeImportGraph();
     const governanceRoots = [
       'graph-check/',
       'source-check/',
@@ -302,9 +463,7 @@ describe('production architecture boundaries', () => {
   });
 
   it('keeps Core Stage A/B1 facts modules independent of Stage B2 graph preparation', async () => {
-    const { neighbors } = await collectRuntimeImportGraph({
-      includePackageAliases: true,
-    });
+    const { neighbors } = await collectRuntimeImportGraph();
     const forbiddenStageB2Targets = new Set([
       'core/build-graph.ts',
       'core/build-graph/prepare.ts',
