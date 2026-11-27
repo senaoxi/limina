@@ -1,13 +1,13 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
-import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
+import type { LiminaCheckIssue } from '../check-reporting/snapshot';
 import type { TaskProgressReporter } from '../execution/progress';
+import type { LiminaCheckRunTaskStats } from '../execution/run-recorder';
 import type { LiminaFlowReporter } from '../flow';
 import type { LiminaPreflightManager } from '../preflight';
 import type { KnipCliRunner } from './knip';
 import type { SourceCheckIssue, SourceIssueReportOptions } from './report';
-import type { LiminaCheckIssue } from './snapshot';
 
 export interface RunSourceCheckOptions {
   clearScreen?: boolean;

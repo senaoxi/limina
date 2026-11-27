@@ -2,14 +2,11 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'pathe';
 import {
-  type AtomicWriteOptions,
-  writeJsonAtomically,
-} from '../../check-reporting/atomic-writer';
-import { generatedRootDirName as generatedRootDirectoryName } from '../../core/build-graph/generated/paths';
-import {
+  LIMINA_ARTIFACT_DIR_NAME as generatedRootDirectoryName,
   type LiminaArtifactNamespace,
   resolveArtifactNamespacePath,
 } from '../../domain/artifacts/namespace';
+import { type AtomicWriteOptions, writeJsonAtomically } from '../atomic-writer';
 import {
   assertWritableLiminaCheckIssue,
   isCheckInventoryOwner,

@@ -1,6 +1,6 @@
 import type { AnalysisObserver } from '../application/analysis/observability';
-import type { CheckRunRecorder } from '../check-reporting/run-recorder';
 import type { LiminaFlowTreeNode } from '../flow';
+import type { CheckRunRecorder } from './run-recorder';
 import type { ExecutionTask, TaskLifecycleEvent } from './tasks';
 
 export function nowIso(): string {

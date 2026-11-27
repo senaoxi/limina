@@ -2,7 +2,7 @@ import {
   isPathCandidatesMatchFileFilters,
   isPathCandidatesMatchScopeFilters,
   type PathFilterCandidate,
-} from '../../../check-reporting/path-filters';
+} from '../../path-filters';
 import type {
   CheckIssueInventoryFilters,
   LiminaCheckIssue,

@@ -4,9 +4,9 @@ import {
   AnalysisObserver,
   runWithProfile,
 } from '../application/analysis/observability';
-import { createCheckRunRecorder } from '../check-reporting/run-recorder';
 import { measureTaskProgress } from '../execution/progress';
 import { ResourceLockSet } from '../execution/resources';
+import { createCheckRunRecorder } from '../execution/run-recorder';
 import { runScheduler } from '../execution/scheduler-loop';
 import type { SchedulerContext } from '../execution/scheduler-types';
 import { ExecutionStateStore } from '../execution/state-store';

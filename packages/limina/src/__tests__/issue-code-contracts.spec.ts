@@ -13,11 +13,11 @@ import {
   LIMINA_CHECK_ISSUE_DETECTOR_COVERAGE,
   LIMINA_DETECTOR_SCENARIO_COVERAGE,
 } from '../check-reporting/detector-coverage';
-import { createLiminaCheckIssue } from '../check-reporting/structured';
 import {
   LIMINA_CHECK_TASK_NAMES,
   type LiminaCheckTaskName,
-} from '../source-check/snapshot';
+} from '../check-reporting/snapshot';
+import { createLiminaCheckIssue } from '../check-reporting/structured';
 import { normalizeSlashes } from '../utils/path';
 
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, '../../../..');

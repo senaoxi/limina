@@ -17,7 +17,6 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { readCheckIssueSnapshot } from '../check-reporting/snapshot';
-import { createCheckCounter } from '../check-reporting/stats';
 import {
   isRunGraphCheck,
   type RunGraphCheckOptions,
@@ -26,6 +25,7 @@ import {
 import { collectDependencyGraph } from '../dependency-graph/runner';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
+import { createCheckCounter } from '../execution/stats';
 import { addTypecheckParityProblems } from '../graph-check/dts-typecheck-parity';
 import type { GraphFinding } from '../graph-check/findings';
 import { GraphLogger } from '../logger';

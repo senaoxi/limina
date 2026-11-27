@@ -6,15 +6,15 @@ import {
 } from '#core/import-graph/context';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import {
-  type CheckCounter,
-  createCheckCounter,
-  createCheckItemAccumulator,
-} from '../check-reporting/stats';
-import {
   createManagedOutputDeclarationLookup,
   type ManagedOutputDeclarationLookup,
 } from '../core/import-graph/managed-output-provider';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
+import {
+  type CheckCounter,
+  createCheckCounter,
+  createCheckItemAccumulator,
+} from '../execution/stats';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import {
   alignProjectOwnedFilesWithGeneratedGraph,

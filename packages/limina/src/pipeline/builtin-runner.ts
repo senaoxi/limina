@@ -1,17 +1,17 @@
 import type { BuiltinTaskName, ResolvedLiminaConfig } from '#config/runner';
 import { LiminaStructuredError } from '../check-reporting/errors';
-import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
+import {
+  createTaskFailureIssue,
+  type LiminaCheckIssue,
+} from '../check-reporting/snapshot';
 import { isRunGraphCheck, isRunGraphPrepare } from '../commands/graph';
 import { isRunPackageCheck } from '../commands/package';
 import { isRunProofCheck } from '../commands/proof';
 import { runReleaseCheck } from '../commands/release';
 import { isRunSourceCheck } from '../commands/source';
 import { runCheckerBuild, runCheckerTypecheck } from '../commands/typecheck';
+import type { LiminaCheckRunTaskStats } from '../execution/run-recorder';
 import type { SourceCheckIssue } from '../source-check/report';
-import {
-  createTaskFailureIssue,
-  type LiminaCheckIssue,
-} from '../source-check/snapshot';
 import { createSourceIssueReportOptions } from './capabilities';
 import { createCheckerTaskStats } from './stats';
 import type { BuiltinTaskResult, RunPipelineOptions } from './types';

@@ -11,7 +11,6 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createCheckRunRecorder } from '../check-reporting/run-recorder';
 import {
   CHECK_ISSUE_SNAPSHOT_VERSION,
   readCheckIssueSnapshot,
@@ -21,6 +20,7 @@ import {
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { runExecutionTasks } from '../execution/executor';
 import { ResourceLockSet } from '../execution/resources';
+import { createCheckRunRecorder } from '../execution/run-recorder';
 import { LiminaOptionalToolMissingError } from '../execution/tools';
 import { createLiminaCheckFlowReporter, LiminaFlowReporter } from '../flow';
 import {

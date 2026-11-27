@@ -8,12 +8,12 @@ import type {
 } from '#config/runner';
 import type { AnalysisProviderSet, PackageArtifactProvider } from '#core';
 import type { CheckIssueReportOptions } from '../check-reporting/human';
-import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import type { LiminaCheckIssue } from '../check-reporting/snapshot';
 import type {
   TaskProgressItem,
   TaskProgressReporter,
 } from '../execution/progress';
+import type { LiminaCheckRunTaskStats } from '../execution/run-recorder';
 import type { LiminaFlowReporter } from '../flow';
 import type { LiminaPreflightManager } from '../preflight';
 

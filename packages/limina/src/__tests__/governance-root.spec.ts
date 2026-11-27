@@ -9,7 +9,7 @@ import {
 } from '#utils/workspace-root';
 import { mkdir, rename, rm, symlink } from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
-import { locateCheckIssueWorkspace } from '../check-reporting/workspace-locator';
+import { locateCheckIssueWorkspace } from '../cli/workspace-locator';
 import { collectPackageBuildScripts } from '../core/packages/build-scripts';
 import { collectWorkspaceDependencyDeclarations } from '../core/packages/dependency-authority';
 import { cloneValidatedWorkspaceContext } from '../core/workspace/clones';

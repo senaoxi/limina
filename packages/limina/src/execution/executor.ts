@@ -1,9 +1,9 @@
 import { collectFrameworkInferenceIssues } from '../check-reporting/framework-inference';
-import { createPreflightGenerationController } from '../preflight/generation';
 import {
   abortCheckAttempt,
   publishCheckAttempt,
-} from '../source-check/snapshot/check-attempt-io';
+} from '../check-reporting/snapshot/check-attempt-io';
+import { createPreflightGenerationController } from '../preflight/generation';
 import { resolveTaskConcurrency } from './config';
 import {
   collectExecutionIssues,

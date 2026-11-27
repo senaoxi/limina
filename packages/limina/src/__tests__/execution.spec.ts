@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { createCheckRunRecorder } from '../check-reporting/run-recorder';
+import type { LiminaCheckIssue } from '../check-reporting/snapshot';
 import {
   getSourceIssueSnapshotPath,
   readCheckIssueSnapshot,
@@ -16,7 +16,8 @@ import {
   writeNotRunCheckIssueSnapshot,
   writeSourceIssueSnapshotOnly,
 } from '../check-reporting/snapshot';
-import { createCheckItemStats } from '../check-reporting/stats';
+import { getCheckAttemptPaths } from '../check-reporting/snapshot/check-attempt-io';
+import { queryLatestCheckAttempt } from '../check-reporting/snapshot/check-attempt-query';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import {
   resolveCheckerBuildConcurrency,
@@ -34,7 +35,9 @@ import {
 import { sortCollectedIssues } from '../execution/issues';
 import { runPool } from '../execution/pool';
 import { ResourceLockSet, type ResourceRequest } from '../execution/resources';
+import { createCheckRunRecorder } from '../execution/run-recorder';
 import { transitionTask } from '../execution/state-store';
+import { createCheckItemStats } from '../execution/stats';
 import type { ExecutionTask, ExecutionTaskOutcome } from '../execution/tasks';
 import { taskId } from '../execution/tasks';
 import { LiminaFlowReporter } from '../flow';
@@ -44,9 +47,6 @@ import {
   SOURCE_ISSUE_CODES,
   type SourceCheckIssue,
 } from '../source-check/report';
-import type { LiminaCheckIssue } from '../source-check/snapshot';
-import { getCheckAttemptPaths } from '../source-check/snapshot/check-attempt-io';
-import { queryLatestCheckAttempt } from '../source-check/snapshot/check-attempt-query';
 import { createCheckerTargetId } from '../typecheck/targets';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createPreflightGenerationController } from './helpers/preflight-generation';

@@ -1,7 +1,7 @@
 import { normalizeSlashes } from '#utils/path';
 import { plural } from '#utils/reporting';
 import path from 'pathe';
-import { generatedRootDirName as generatedRootDirectoryName } from '../../core/build-graph/generated/paths';
+import { LIMINA_ARTIFACT_DIR_NAME as generatedRootDirectoryName } from '../../domain/artifacts/namespace';
 import type {
   CheckIssueSnapshot,
   LiminaCheckIssue,

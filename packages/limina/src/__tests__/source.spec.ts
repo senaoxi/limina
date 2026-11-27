@@ -13,15 +13,20 @@ import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
+import {
+  createSourceCheckIssue,
+  type LiminaCheckIssue,
+  readCheckIssueSnapshot,
+  readSourceIssueSnapshot,
+} from '../check-reporting/snapshot';
 import { isRunSourceCheck } from '../commands/source';
 import { sortCollectedIssues } from '../execution/issues';
 import { createTaskProgressReporter } from '../execution/progress';
+import type { LiminaCheckRunTaskStats } from '../execution/run-recorder';
 import { LiminaOptionalToolMissingError } from '../execution/tools';
 import { LiminaFlowReporter } from '../flow';
 import { SourceLogger } from '../logger';
 import {
-  createSourceCheckIssueFromFinding,
   createSourceUnusedModuleFinding,
   createSourceUnusedWorkspaceDependencyFinding,
 } from '../source-check/findings';
@@ -31,11 +36,6 @@ import {
   SOURCE_ISSUE_CODES,
   type SourceCheckIssue,
 } from '../source-check/report';
-import {
-  type LiminaCheckIssue,
-  readCheckIssueSnapshot,
-  readSourceIssueSnapshot,
-} from '../source-check/snapshot';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
@@ -699,14 +699,14 @@ export default logo;
           issue.code === LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
       );
       const canonical = resourceFindings.map((finding) =>
-        createSourceCheckIssueFromFinding({
-          finding,
+        createSourceCheckIssue({
+          issue: finding,
           rootDir: fixture.rootDir,
         }),
       );
       const repeated = resourceFindings.map((finding) =>
-        createSourceCheckIssueFromFinding({
-          finding,
+        createSourceCheckIssue({
+          issue: finding,
           rootDir: fixture.rootDir,
         }),
       );
@@ -748,8 +748,8 @@ export default logo;
 
   it('keeps exact stable identities for two unused workspace dependencies in one manifest', () => {
     const createIssue = (dependencyName: string) =>
-      createSourceCheckIssueFromFinding({
-        finding: createSourceUnusedWorkspaceDependencyFinding({
+      createSourceCheckIssue({
+        issue: createSourceUnusedWorkspaceDependencyFinding({
           dependencyName,
           externalCode: 'dependencies',
           ownerName: '@example/app',

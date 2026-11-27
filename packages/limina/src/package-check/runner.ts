@@ -1,7 +1,7 @@
 export {
   createPackageEntrySelectionPlan,
   type PackageEntrySelectionPlan,
-} from './entry/selection';
+} from '../preflight/package-entry-selection';
 export type { DistPackageJson } from './manifest';
 export { isRunPackageCheckImpl as runPackageCheckImpl } from './plan-runner';
 export { auditPublishedPackageBoundaries } from './published-boundary';

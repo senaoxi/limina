@@ -1,13 +1,10 @@
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { createLiminaCheckIssue } from '../check-reporting/structured';
 import type { SourceKnipConfigInvalidFacts } from './finding-facts';
 import type {
-  SourceFinding,
   SourceFindingForCode,
   SourceUnusedModuleFinding,
   SourceUnusedWorkspaceDependencyFinding,
 } from './finding-types';
-import type { CanonicalLiminaCheckIssue } from './snapshot';
 
 export type * from './finding-facts';
 export type * from './finding-types';
@@ -175,34 +172,4 @@ export function createSourceUnusedWorkspaceDependencyFinding(options: {
     tool: 'knip',
     verifyCommands: ['limina source check'],
   };
-}
-
-export function createSourceCheckIssueFromFinding(options: {
-  finding: SourceFinding;
-  rootDir: string;
-}): CanonicalLiminaCheckIssue {
-  return createLiminaCheckIssue({
-    checkerName: options.finding.checkerName,
-    code: options.finding.code,
-    detailLines: options.finding.detailLines,
-    detector: options.finding.detector,
-    domain: 'source',
-    evidence: options.finding.evidence,
-    external: options.finding.external,
-    filePath: options.finding.filePath,
-    fix: options.finding.fix,
-    fixSteps: options.finding.fixSteps,
-    locations: options.finding.locations,
-    packageManifestPath: options.finding.packageJsonPath,
-    packageName: options.finding.ownerName,
-    reason: options.finding.reason,
-    rootDir: options.rootDir,
-    scope: options.finding.scope,
-    semanticIdentity: options.finding.facts,
-    summary: options.finding.summary,
-    task: options.finding.task,
-    title: options.finding.title,
-    tool: options.finding.tool,
-    verifyCommands: options.finding.verifyCommands,
-  });
 }

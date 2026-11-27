@@ -5,9 +5,9 @@ import {
   toPosixPath,
   toRelativePath,
 } from '#utils/path';
+import { LIMINA_ARTIFACT_DIR_NAME as generatedRootDirectoryName } from '../../../domain/artifacts/namespace';
 import { getManagedSourceRelativeDirectory } from './source-paths';
 
-const generatedRootDirectoryName: string = '.limina';
 export const generatedTsconfigDirectory: string = path.join(
   generatedRootDirectoryName,
   'tsconfig',
@@ -248,7 +248,5 @@ export function getGeneratedOutputTsBuildInfoPath(options: {
   );
 }
 
-export {
-  generatedRootDirectoryName as generatedRootDirName,
-  getGeneratedOutputDirectory as getGeneratedOutDir,
-};
+export { LIMINA_ARTIFACT_DIR_NAME as generatedRootDirName } from '../../../domain/artifacts/namespace';
+export { getGeneratedOutputDirectory as getGeneratedOutDir };

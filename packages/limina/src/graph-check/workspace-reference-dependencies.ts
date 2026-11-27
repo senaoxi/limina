@@ -16,12 +16,12 @@ import {
 import { toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import type { CheckCounter } from '../check-reporting/stats';
 import { readImplicitReferences } from '../core/build-graph/generated/config-readers';
 import type { ReferencePackageRequest } from '../core/build-graph/types';
 import { findPackageImportMatch } from '../core/packages/authority';
 import { expandPackageImportTargets } from '../core/packages/import-targets';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
+import type { CheckCounter } from '../execution/stats';
 import { getProjectCheckerName } from './finding-utilities';
 import type {
   GraphFinding,

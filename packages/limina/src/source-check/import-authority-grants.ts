@@ -2,7 +2,7 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import type { ImportRecord } from '#core/import-graph/context';
 import type { PackageOwner } from '#core/workspace/actions';
 import { normalizeSlashes, toRelativePath } from '#utils/path';
-import type { CheckCounter } from '../check-reporting/stats';
+import type { CheckCounter } from '../execution/stats';
 import type { SourceFinding } from './findings';
 import { addImportAuthorityConfigFinding } from './import-authority-config-findings';
 import {

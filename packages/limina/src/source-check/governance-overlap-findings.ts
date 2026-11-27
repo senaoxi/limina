@@ -7,7 +7,7 @@ import { parseProject } from '#core/import-graph/context';
 import { compareCodeUnits, uniqueValues } from '#utils/collections';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import type { CheckCounter } from '../check-reporting/stats';
+import type { CheckCounter } from '../execution/stats';
 import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import type {

@@ -1,9 +1,9 @@
+import type { LiminaCheckRunCheckItemSummary } from '../check-reporting/snapshot';
 import {
   startTaskProgressTiming,
   type TaskProgressItem,
   type TaskProgressReporter,
-} from '../execution/progress';
-import type { LiminaCheckRunCheckItemSummary } from './snapshot';
+} from './progress';
 
 export interface CreateCheckItemStatsOptions {
   durationMs?: number;

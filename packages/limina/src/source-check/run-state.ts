@@ -2,17 +2,17 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
-import {
-  type CheckCounter,
-  createCheckCounter,
-  createCheckItemAccumulator,
-} from '../check-reporting/stats';
 import type { WorkspaceDependencyDeclaration } from '../core/packages/authority';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type {
   ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
+import {
+  type CheckCounter,
+  createCheckCounter,
+  createCheckItemAccumulator,
+} from '../execution/stats';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import type { SourceFinding } from './findings';
 import { findWorkspaceRootPackage } from './import-authorization-resolution';

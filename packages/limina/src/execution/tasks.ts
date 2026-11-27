@@ -1,4 +1,3 @@
-import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import type {
   LiminaCheckIssue,
   LiminaCheckTaskName,
@@ -8,6 +7,7 @@ import type { LiminaPreflightManager } from '../preflight';
 import type { SourceCheckIssue } from '../source-check/report';
 import type { TaskProgressReporter } from './progress';
 import type { ResourceRequest } from './resources';
+import type { LiminaCheckRunTaskStats } from './run-recorder';
 
 declare const taskIdBrand: unique symbol;
 

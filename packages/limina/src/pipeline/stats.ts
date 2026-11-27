@@ -1,6 +1,6 @@
 import { toRelativePath } from '#utils/path';
-import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
-import { createCheckItemStats } from '../check-reporting/stats';
+import type { LiminaCheckRunTaskStats } from '../execution/run-recorder';
+import { createCheckItemStats } from '../execution/stats';
 import type { TypecheckTargetResult } from '../typecheck/targets';
 import type { CheckerTaskStatsInput } from './types';
 

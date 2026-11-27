@@ -10,11 +10,11 @@ import {
   appendCheckIssues,
   type LiminaCheckIssue,
 } from '../check-reporting/snapshot';
+import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
   createCheckCounter,
   createCheckItemAccumulator,
-} from '../check-reporting/stats';
-import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
+} from '../execution/stats';
 import { ProofLogger } from '../logger';
 import { resolvePreflight } from '../preflight';
 import { createProofCheckerRouteFinding } from './checker-targets';

@@ -1,8 +1,8 @@
 import type { cac } from 'cac';
+import type { LiminaCheckIssue } from '../../check-reporting/snapshot';
 import { isRunPackageCheck } from '../../commands/package';
 import { runReleaseCheck } from '../../commands/release';
 import { LiminaPreflightManager } from '../../preflight';
-import type { LiminaCheckIssue } from '../../source-check/snapshot';
 import { loadStandaloneContext } from '../command-runtime';
 import { createCliFlow } from '../flow';
 import {

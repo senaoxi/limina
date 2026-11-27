@@ -1,16 +1,16 @@
-import { transitionTask } from '../execution/state-store';
+import type {
+  LiminaCheckRunCheckItemSummary,
+  LiminaCheckRunSummary,
+  LiminaCheckRunTaskSummary,
+} from '../check-reporting/snapshot';
+import { transitionTask } from './state-store';
 import type {
   CompletedRunOutcome,
   ExecutionTaskIdentity,
   TaskLifecycleEvent,
   TaskReference,
-} from '../execution/tasks';
-import type { ExecutionTrace } from '../execution/trace';
-import type {
-  LiminaCheckRunCheckItemSummary,
-  LiminaCheckRunSummary,
-  LiminaCheckRunTaskSummary,
-} from './snapshot';
+} from './tasks';
+import type { ExecutionTrace } from './trace';
 
 export interface LiminaCheckRunTaskStats {
   items?: readonly LiminaCheckRunCheckItemSummary[];

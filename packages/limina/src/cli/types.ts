@@ -1,10 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { GlobalQueryCommandContext } from '../check-reporting/standalone-invocation-command';
-import type { LiminaPreflightManager } from '../preflight';
 import type {
   LiminaCheckIssue,
   LiminaCheckTaskName,
-} from '../source-check/snapshot';
+} from '../check-reporting/snapshot';
+import type { GlobalQueryCommandContext } from '../check-reporting/standalone-invocation-command';
+import type { LiminaPreflightManager } from '../preflight';
 
 export interface GlobalFlags {
   config?: string;

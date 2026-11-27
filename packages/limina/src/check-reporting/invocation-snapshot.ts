@@ -2,20 +2,20 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'pathe';
-import { generatedRootDirName as generatedRootDirectoryName } from '../core/build-graph/generated/paths';
 import {
+  LIMINA_ARTIFACT_DIR_NAME as generatedRootDirectoryName,
   type LiminaArtifactNamespace,
   resolveArtifactNamespacePath,
 } from '../domain/artifacts/namespace';
+import { writeJsonAtomically } from './atomic-writer';
+import { LiminaStructuredError } from './errors';
+import { isLiminaCheckIssue } from './snapshot/issue-validation';
 import {
   CHECK_ISSUE_SNAPSHOT_VERSION,
   type CheckIssueInventoryInvocationMetadata,
   type CheckIssueSnapshot,
-  isLiminaCheckIssue,
   type LiminaCheckIssue,
-} from '../source-check/snapshot';
-import { writeJsonAtomically } from './atomic-writer';
-import { LiminaStructuredError } from './errors';
+} from './snapshot/types';
 
 export const STANDALONE_ISSUE_INVOCATION_VERSION = 1;
 const UUID_V4_PATTERN =

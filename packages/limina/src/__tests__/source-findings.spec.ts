@@ -7,8 +7,8 @@ import {
   LIMINA_CHECK_ISSUE_CODES,
   listLiminaCheckIssueCodes,
 } from '../check-reporting/codes';
+import { createSourceCheckIssue } from '../check-reporting/snapshot';
 import {
-  createSourceCheckIssueFromFinding,
   createSourceUnusedModuleFinding,
   createSourceUnusedWorkspaceDependencyFinding,
   SOURCE_SEMANTIC_ISSUE_CODES,
@@ -245,8 +245,8 @@ describe('typed Source findings', () => {
   it.each(sourceFindingEntries())(
     'adapts %s without inferring code, task, location, owner, or evidence',
     (code, finding) => {
-      const issue = createSourceCheckIssueFromFinding({
-        finding,
+      const issue = createSourceCheckIssue({
+        issue: finding,
         rootDir: config.rootDir,
       });
 
@@ -302,8 +302,8 @@ describe('typed Source findings', () => {
   ])('keeps producer-selected code with misleading title %s', (title) => {
     const finding =
       findingByCode[LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid];
-    const issue = createSourceCheckIssueFromFinding({
-      finding: {
+    const issue = createSourceCheckIssue({
+      issue: {
         ...finding,
         summary: title,
         title,
@@ -320,8 +320,8 @@ describe('typed Source findings', () => {
   it('keeps structured paths and ownership when display labels change', () => {
     const finding =
       findingByCode[LIMINA_CHECK_ISSUE_CODES.sourceRelativeImportEscapesScope];
-    const issue = createSourceCheckIssueFromFinding({
-      finding: {
+    const issue = createSourceCheckIssue({
+      issue: {
         ...finding,
         evidence: [
           {
@@ -356,8 +356,8 @@ describe('typed Source findings', () => {
 
   it('does not use a rendered problem as code or location identity', () => {
     const finding = findingByCode[LIMINA_CHECK_ISSUE_CODES.sourceOwnerInvalid];
-    const issue = createSourceCheckIssueFromFinding({
-      finding: {
+    const issue = createSourceCheckIssue({
+      issue: {
         ...finding,
         evidence: [
           {
@@ -400,8 +400,8 @@ describe('typed Source findings', () => {
       packageJsonPath: '/repo/packages/app/package.json',
     });
     const issues = [first, second].map((finding) =>
-      createSourceCheckIssueFromFinding({
-        finding,
+      createSourceCheckIssue({
+        issue: finding,
         rootDir: config.rootDir,
       }),
     );
@@ -438,8 +438,8 @@ describe('typed Source findings', () => {
         title: 'Neutral command title',
       },
     ].map((finding) =>
-      createSourceCheckIssueFromFinding({
-        finding,
+      createSourceCheckIssue({
+        issue: finding,
         rootDir: config.rootDir,
       }),
     );
@@ -459,8 +459,8 @@ describe('typed Source findings', () => {
       sectionName: 'dependencies',
       specifier: 'workspace:*',
     });
-    const issue = createSourceCheckIssueFromFinding({
-      finding,
+    const issue = createSourceCheckIssue({
+      issue: finding,
       rootDir: config.rootDir,
     });
 
@@ -485,8 +485,8 @@ describe('typed Source findings', () => {
       findingByCode[LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized];
 
     expect(() =>
-      createSourceCheckIssueFromFinding({
-        finding: {
+      createSourceCheckIssue({
+        issue: {
           ...finding,
           task: 'workspace:validate',
         } as unknown as SourceFinding,

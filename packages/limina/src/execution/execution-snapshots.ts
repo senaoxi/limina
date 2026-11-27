@@ -13,7 +13,7 @@ import {
   completeCheckAttempt,
   failCheckAttemptPersistence,
   type PublishedCheckAttempt,
-} from '../source-check/snapshot/check-attempt-io';
+} from '../check-reporting/snapshot/check-attempt-io';
 import type { RunExecutionPlanOptions } from './executor-types';
 import { nowIso } from './task-observers';
 import type { ExecutionTask, StartedTaskResult } from './tasks';

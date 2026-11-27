@@ -19,15 +19,15 @@ import {
   currentProfile,
 } from '../application/analysis/observability';
 import { graphPreparationWork } from '../core/build-graph/graph-profile';
+import { collectExpectedSourceFiles } from '../core/workspace/expected-source-files';
 import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
-import {
-  createPackageEntrySelectionPlan,
-  type PackageEntrySelectionPlan,
-} from '../package-check/entry/selection';
-import { collectExpectedSourceFiles } from '../proof/source-files';
 import type { AnalysisCacheController } from './analysis-cache';
 import type { ConfigObservation } from './config-observation';
 import type { LiminaPreflightManager } from './manager';
+import {
+  createPackageEntrySelectionPlan,
+  type PackageEntrySelectionPlan,
+} from './package-entry-selection';
 import type { PackageEntryPlanOptions } from './types';
 
 export async function loadCheckerRouteSnapshot(

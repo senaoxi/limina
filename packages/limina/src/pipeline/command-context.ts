@@ -2,9 +2,9 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import { shouldUseShellForCommand } from '#utils/process';
 import type { SpawnOptions } from 'node:child_process';
 import path from 'pathe';
+import { createTaskFailureIssue } from '../check-reporting/snapshot';
 import type { TaskProgressItem } from '../execution/progress';
 import type { LiminaFlowTask } from '../flow';
-import { createTaskFailureIssue } from '../source-check/snapshot';
 import {
   type CommandPipelineStep,
   createCommandStepEnvironment,

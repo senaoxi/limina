@@ -1,17 +1,17 @@
 import path from 'pathe';
 import type { LiminaCheckRunCheckItemSummary } from '../check-reporting/snapshot';
 import { createTaskFailureIssue } from '../check-reporting/snapshot';
-import {
-  createCheckItemStats,
-  createSkippedCheckItemStats,
-} from '../check-reporting/stats';
 import { resolvePackageEntryConcurrency } from '../execution/config';
 import { runPool } from '../execution/pool';
 import type { TaskProgressItem } from '../execution/progress';
+import {
+  createCheckItemStats,
+  createSkippedCheckItemStats,
+} from '../execution/stats';
 import { formatErrorMessage } from '../logger';
 import { resolvePreflight } from '../preflight';
+import type { PackageEntrySelectionPlan } from '../preflight/package-entry-selection';
 import { runPackageCheckEntry } from './entry/runner';
-import type { PackageEntrySelectionPlan } from './entry/selection';
 import type {
   PackageCheckEntryRunResult,
   RunPackageCheckOptions,

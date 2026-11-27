@@ -1,9 +1,9 @@
-import type { LiminaWritableCheckIssueCode } from '../../check-reporting/codes';
+import type { SourceIssueCode } from '../../source-check/report';
+import type { LiminaWritableCheckIssueCode } from '../codes';
 import type {
   CheckIssueInventoryPresentationOptions,
   InventoryQueryContext,
-} from '../../check-reporting/inventory-presentation';
-import type { SourceIssueCode } from '../report';
+} from '../inventory-presentation';
 
 export const SOURCE_ISSUE_SNAPSHOT_VERSION = 2;
 export const CHECK_ISSUE_SNAPSHOT_VERSION = 10;

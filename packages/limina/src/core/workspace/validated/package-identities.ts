@@ -4,7 +4,7 @@ import { findWorkspaceRootDescriptor } from '#utils/workspace-root';
 import { realpath } from 'node:fs/promises';
 import path from 'pathe';
 import { LiminaStructuredError } from '../../../check-reporting/errors';
-import type { LiminaCheckIssue } from '../../../source-check/snapshot';
+import type { LiminaCheckIssue } from '../../../check-reporting/snapshot';
 import type { WorkspacePackage } from '../actions';
 import { createWorkspaceIssue, displayWorkspacePath } from './shared';
 import type { WorkspacePackageIdentity } from './types';

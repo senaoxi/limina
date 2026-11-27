@@ -1,7 +1,6 @@
-import type { LiminaWritableCheckIssueCode } from '../../check-reporting/codes';
-import { createLiminaCheckIssue } from '../../check-reporting/structured';
-import { createSourceCheckIssueFromFinding } from '../findings';
-import type { SourceCheckIssue } from '../report';
+import type { SourceCheckIssue } from '../../source-check/report';
+import type { LiminaWritableCheckIssueCode } from '../codes';
+import { createLiminaCheckIssue } from '../structured';
 import type {
   CanonicalLiminaCheckIssue,
   LiminaCheckIssueEvidence,
@@ -43,8 +42,28 @@ export function createSourceCheckIssue(options: {
   issue: SourceCheckIssue;
   rootDir: string;
 }): CanonicalLiminaCheckIssue {
-  return createSourceCheckIssueFromFinding({
-    finding: options.issue,
+  return createLiminaCheckIssue({
+    checkerName: options.issue.checkerName,
+    code: options.issue.code,
+    detailLines: options.issue.detailLines,
+    detector: options.issue.detector,
+    domain: 'source',
+    evidence: options.issue.evidence,
+    external: options.issue.external,
+    filePath: options.issue.filePath,
+    fix: options.issue.fix,
+    fixSteps: options.issue.fixSteps,
+    locations: options.issue.locations,
+    packageManifestPath: options.issue.packageJsonPath,
+    packageName: options.issue.ownerName,
+    reason: options.issue.reason,
     rootDir: options.rootDir,
+    scope: options.issue.scope,
+    semanticIdentity: options.issue.facts,
+    summary: options.issue.summary,
+    task: options.issue.task,
+    title: options.issue.title,
+    tool: options.issue.tool,
+    verifyCommands: options.issue.verifyCommands,
   });
 }

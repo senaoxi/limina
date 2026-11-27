@@ -1,19 +1,19 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { createElapsedTimer } from 'logaria/helper';
 import { LiminaStructuredError } from '../check-reporting/errors';
-import { clearCliScreen, formatErrorMessage, SourceLogger } from '../logger';
-import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
-import {
-  isRunSourceCheckImpl,
-  type RunSourceCheckOptions,
-} from '../source-check/runner';
 import {
   type CanonicalLiminaCheckIssue,
   createSourceCheckIssue,
   createTaskFailureIssue,
   type LiminaCheckIssue,
   writeNotRunSourceIssueSnapshot,
-} from '../source-check/snapshot';
+} from '../check-reporting/snapshot';
+import { clearCliScreen, formatErrorMessage, SourceLogger } from '../logger';
+import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
+import {
+  isRunSourceCheckImpl,
+  type RunSourceCheckOptions,
+} from '../source-check/runner';
 
 interface SourceCommandTask {
   fail(reason: string): void;

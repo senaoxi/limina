@@ -9,8 +9,8 @@ import { realpathSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import path from 'pathe';
 import type { LiminaWritableCheckIssueCode } from '../../../check-reporting/codes';
+import type { LiminaCheckIssue } from '../../../check-reporting/snapshot';
 import { createLiminaCheckIssue } from '../../../check-reporting/structured';
-import type { LiminaCheckIssue } from '../../../source-check/snapshot';
 import type {
   WorkspaceDescriptorCandidate,
   WorkspaceDescriptorKind,

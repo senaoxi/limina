@@ -42,7 +42,6 @@ import {
   createLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
 } from '../domain/artifacts/namespace';
-import type { PackageEntrySelectionPlan } from '../package-check/entry/selection';
 import type { AnalysisCacheController } from './analysis-cache';
 import { PreflightGenerationCache } from './cache';
 import { registerPreflightGenerationAdvancer } from './generation';
@@ -54,6 +53,7 @@ import {
   observeMaterializationRequest,
   recordActiveMaterializationReceipt,
 } from './materialization';
+import type { PackageEntrySelectionPlan } from './package-entry-selection';
 import { withAnalysisProfileMetrics } from './profile-metrics';
 import * as queries from './queries';
 import * as setup from './setup';

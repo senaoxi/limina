@@ -73,20 +73,20 @@ relative to the installed skill. Use the accompanying checkout or retrieve the
 corresponding revision from [senaoxi/limina](https://github.com/senaoxi/limina).
 Do not assume the latest branch describes an older installed package.
 
-| Question                                       | Source owner                                                                                                                          |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Version, Node and peer support, public exports | `packages/limina/package.json`, `packages/limina/src/index.ts`                                                                        |
-| Commands and flags                             | `packages/limina/src/cli/factory.ts`, `packages/limina/src/cli/register/`                                                             |
-| Config loading and public schema               | `packages/limina/src/config/loader.ts`, `loader-paths.ts`, `root-types.ts`, `schema/` in that directory                               |
-| Root selection and workspace classification    | `packages/limina/src/utils/governance-manifest.ts`, `workspace-root.ts` in that directory                                             |
-| Checker names, toolchain, and ownership        | `packages/limina/src/config/pipeline-checker-types.ts`, `packages/limina/src/checker/`, `packages/limina/src/core/build-graph/`       |
-| Source dependency evidence                     | `packages/limina/src/core/import-graph/`, `packages/limina/src/core/import-analysis/`, `packages/limina/src/core/framework-semantic/` |
-| Source tsconfig declarations                   | `packages/limina/schemas/tsconfig-schema.json` and its runtime consumers                                                              |
-| Pipeline parsing and ordering                  | `packages/limina/src/pipeline/steps.ts`, `plan.ts`, `command-runner.ts` in that directory                                             |
-| Package selection and checks                   | `packages/limina/src/package-check/entry/`, `packages/limina/src/package-check/release/`                                              |
-| Issue query freshness                          | `packages/limina/src/cli/issue-query.ts`, `packages/limina/src/source-check/snapshot/check-attempt-query.ts`                          |
-| Init and optional skill installation           | `packages/limina/src/commands/init/`                                                                                                  |
-| Migration transaction and verification         | `packages/migrate/src/`                                                                                                               |
+| Question                                       | Source owner                                                                                                                                         |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Version, Node and peer support, public exports | `packages/limina/package.json`, `packages/limina/src/index.ts`                                                                                       |
+| Commands and flags                             | `packages/limina/src/cli/factory.ts`, `packages/limina/src/cli/register/`                                                                            |
+| Config loading and public schema               | `packages/limina/src/config/loader.ts`, `loader-paths.ts`, `root-types.ts`, `schema/` in that directory                                              |
+| Root selection and workspace classification    | `packages/limina/src/utils/governance-manifest.ts`, `workspace-root.ts` in that directory                                                            |
+| Checker names, toolchain, and ownership        | `packages/limina/src/config/pipeline-checker-types.ts`, `packages/limina/src/checker/`, `packages/limina/src/core/build-graph/`                      |
+| Source dependency evidence                     | `packages/limina/src/core/import-graph/`, `packages/limina/src/core/import-analysis/`, `packages/limina/src/core/framework-semantic/`                |
+| Source tsconfig declarations                   | `packages/limina/schemas/tsconfig-schema.json` and its runtime consumers                                                                             |
+| Pipeline parsing and ordering                  | `packages/limina/src/pipeline/steps.ts`, `plan.ts`, `command-runner.ts` in that directory                                                            |
+| Package selection and checks                   | `packages/limina/src/preflight/package-entry-selection.ts`, `packages/limina/src/package-check/entry/`, `packages/limina/src/package-check/release/` |
+| Issue query freshness                          | `packages/limina/src/cli/issue-query.ts`, `packages/limina/src/check-reporting/snapshot/check-attempt-query.ts`                                      |
+| Init and optional skill installation           | `packages/limina/src/commands/init/`                                                                                                                 |
+| Migration transaction and verification         | `packages/migrate/src/`                                                                                                                              |
 
 Use the source repository's `.agents/docs/README.md` for its maintenance context
 when available. Source/tests establish behavior; records and this skill help find

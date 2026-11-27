@@ -1,7 +1,4 @@
-import {
-  createIssueOverview,
-  selectTopBlockers,
-} from '../../../check-reporting/summary';
+import { createIssueOverview, selectTopBlockers } from '../../summary';
 import type {
   CheckIssueInventoryFilters,
   CheckIssueInventoryInvocationMetadata,

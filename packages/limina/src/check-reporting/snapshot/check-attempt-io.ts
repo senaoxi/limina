@@ -1,16 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
-import {
-  type AtomicWriteOptions,
-  writeJsonAtomically,
-} from '../../check-reporting/atomic-writer';
-import type { CheckIssueSnapshot } from '../../check-reporting/snapshot';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import { identifier } from '../../domain/shared/identifiers';
 import {
   acquireCrossProcessWriteLease,
   type CrossProcessLeaseOwner,
 } from '../../utils/mutation/cross-process-lease';
+import { type AtomicWriteOptions, writeJsonAtomically } from '../atomic-writer';
 import {
   getAttemptPaths,
   getIndexPaths,
@@ -27,6 +23,7 @@ import {
   persistFailureStatus,
   writeAttemptStatus,
 } from './check-attempt-status';
+import type { CheckIssueSnapshot } from './types';
 
 export {
   abortCheckAttempt,

@@ -121,7 +121,7 @@
 - **Statement / Applies when**：proof 在配置的 source boundary 内，将 expected source 与 checker 实际覆盖分别收集后比较；一个文件有 package/config owner，不足以证明它被所选 checker 覆盖。
 - **Problem**：显式选择只理解 Astro 的 checker 后，邻接 Svelte 文件仍可能属于包，却没有进入该 checker 的有效 roots。
 - **Root cause**：治理想覆盖的 source 与 checker observation capability 不同。
-- **Enforcement / Why it works**：[source-files](../../../packages/limina/src/proof/source-files.ts) 收集 expected source；[coverage](../../../packages/limina/src/proof/coverage-collection.ts)、[source coverage findings](../../../packages/limina/src/proof/source-coverage-findings.ts) 与 framework coverage 比较差集和冲突。前置 route/config 阶段失败时不伪造后续完整证明。
+- **Enforcement / Why it works**：[expected-source-files](../../../packages/limina/src/core/workspace/expected-source-files.ts) 收集 expected source；[coverage](../../../packages/limina/src/proof/coverage-collection.ts)、[source coverage findings](../../../packages/limina/src/proof/source-coverage-findings.ts) 与 framework coverage 比较差集和冲突。前置 route/config 阶段失败时不伪造后续完整证明。
 - **Concrete example**：显式 Astro scope 中出现未被 checker roots 覆盖的邻接 framework 文件，不仅凭“文件存在”拒绝 graph，而由适用的 proof source boundary 检查 coverage 缺口。
 - **Protected property**：治理覆盖声明不超出实际 checker 能力。
 - **Evidence / Strength / Confidence**：[proof tests](../../../packages/limina/src/__tests__/proof.spec.ts)、[generated graph tests](../../../packages/limina/src/__tests__/generated-graph.spec.ts)；**Strongly executable / Confirmed**。
@@ -181,7 +181,7 @@
 - **Statement / Applies when**：latest check issue query 必须与最新 published attempt 的 freshness 一致；running、aborted、persistence-failed、corrupt/inconsistent 等状态禁止返回旧 completed inventory。独立 invocation query 使用其独立身份。
 - **Problem**：最新检查失败或根本没跑完时，用户仍看到上轮“零问题”，会据此误判当前 source。
 - **Root cause**：inventory 的存在不等于它代表最新 attempt；完成写入也可能只完成了一半。
-- **Enforcement / Why it works**：[attempt IO](../../../packages/limina/src/source-check/snapshot/check-attempt-io.ts) 维护 sequence、identity 与 digest；[attempt query](../../../packages/limina/src/source-check/snapshot/check-attempt-query.ts) 校验 freshness；CLI query 使用独立 config anchor：显式配置缺失是合法状态，最近 manifest 仍须验证，并且不运行 loader、manager adapter 或 preflight。`single-package-cli.spec.ts` 删除配置后实际回放绝对命令，对比持久化状态与配置 import 观测。人类和机器格式均报告 unavailable，而不是空成功。
+- **Enforcement / Why it works**：[attempt IO](../../../packages/limina/src/check-reporting/snapshot/check-attempt-io.ts) 维护 sequence、identity 与 digest；[attempt query](../../../packages/limina/src/check-reporting/snapshot/check-attempt-query.ts) 校验 freshness；CLI query 使用独立 config anchor：显式配置缺失是合法状态，最近 manifest 仍须验证，并且不运行 loader、manager adapter 或 preflight。`single-package-cli.spec.ts` 删除配置后实际回放绝对命令，对比持久化状态与配置 import 观测。人类和机器格式均报告 unavailable，而不是空成功。
 - **Concrete example**：先有 completed inventory，再发布一个 aborted attempt，human/JSON/NDJSON 查询必须显示 aborted/unavailable 并退出失败；corrupt latest metadata 也不允许分配新 sequence。
 - **Protected property**：结果新鲜度、失败可见性、自动化消费者不会误用旧成功。
 - **Evidence / Strength / Confidence**：[check attempt](../../../packages/limina/src/__tests__/check-attempt.spec.ts)、[invocation snapshot](../../../packages/limina/src/__tests__/invocation-snapshot.spec.ts)、[execution](../../../packages/limina/src/__tests__/execution.spec.ts)；**Strongly executable / Confirmed**。
@@ -210,7 +210,7 @@
 
 ## Supporting invariants 与 implementation details
 
-- [architecture-boundaries.spec.ts](../../../packages/limina/src/__tests__/architecture-boundaries.spec.ts) 检查指定的 materializer 和 controller 调用方。无环检查在 `verbatimModuleSyntax` 语义下沿相对路径（含显式 `.js`/`.mjs`/`.cjs`/`.ts` 扩展名）与 `package.json#imports` 全部包内别名解析生产文件之间的静态运行时导入和重导出（包括空具名 `import {}`／`export {}`），同时报告多文件环与单文件自环。动态导入（例如运行时 `import(entryURL)`）、隐式依赖，以及通过命名空间或重导出的符号发起的调用均在这些检查的范围之外。
+- [architecture-boundaries.spec.ts](../../../packages/limina/src/__tests__/architecture-boundaries.spec.ts) 检查指定的 materializer 和 controller 调用方，并校验子系统单向分层边界（`check-reporting`、`preflight`、`execution` 不得静态运行时导入更高层目录，且 `{ checker, config, core }` 之外的顶层子系统不得形成目录级运行时强连通分量）。运行时导入图在 `verbatimModuleSyntax` 语义下沿相对路径（含显式 `.js`/`.mjs`/`.cjs`/`.ts` 扩展名）、`package.json#imports` 全部包内别名与 `package.json#exports` 自身包名引用解析生产文件之间的静态运行时导入和重导出（包括空具名 `import {}`／`export {}`），同时报告多文件环与单文件自环。动态导入（例如运行时 `import(entryURL)`）、隐式依赖，以及通过命名空间或重导出的符号发起的调用均在这些检查的范围之外。
 - portable `/` path、code-unit sorting、snapshot schema versions、manifest legacy cleanup policy、Svelte source-map 不重复 rebasing Windows drive 都是重要 supporting contracts；归各 source/tests 与[生命周期页](./lifecycle.md)。
 - helper 命名、目录层数、active context slot 数量、默认 timeout、adapter version tag 是 implementation details；只有当改动影响上述 core 性质时才触发 architecture review。
 - 产品受众、长期插件扩展、兼容承诺与为何选某工具链是 human judgments。不能用测试写死尚未决定的方向。

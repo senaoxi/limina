@@ -7,15 +7,16 @@ import type {
   SpawnSyncOptions,
 } from 'node:child_process';
 import type { CheckIssueReportOptions } from '../check-reporting/human';
-import type {
-  CheckRunRecorder,
-  LiminaCheckRunTaskStats,
-} from '../check-reporting/run-recorder';
+import type { LiminaCheckIssue } from '../check-reporting/snapshot';
 import type {
   RunExecutionPlanOptions,
   RunExecutionResult,
 } from '../execution/executor';
 import type { TaskProgressReporter } from '../execution/progress';
+import type {
+  CheckRunRecorder,
+  LiminaCheckRunTaskStats,
+} from '../execution/run-recorder';
 import type { ExecutionPlan } from '../execution/tasks';
 import type { LiminaFlowReporter } from '../flow';
 import type { LiminaPreflightManager } from '../preflight';
@@ -23,7 +24,6 @@ import type {
   SourceCheckIssue,
   SourceIssueReportOptions,
 } from '../source-check/report';
-import type { LiminaCheckIssue } from '../source-check/snapshot';
 import type { CheckerFailureTarget } from '../typecheck/runner';
 import type {
   CheckerTargetOutcome,

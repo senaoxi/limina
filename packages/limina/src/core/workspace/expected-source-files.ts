@@ -14,8 +14,8 @@ import {
 import {
   collectActivatedPackageFileCandidates,
   createCandidateGlobMatcher,
-} from '../core/workspace/file-candidates';
-import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
+} from './file-candidates';
+import type { ValidatedWorkspaceContext } from './validated-context';
 
 const DEFAULT_SOURCE_TOKEN = '...' as const;
 

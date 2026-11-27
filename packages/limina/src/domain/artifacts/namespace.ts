@@ -1,5 +1,6 @@
 export {
   ArtifactNamespaceContainmentError,
+  LIMINA_ARTIFACT_DIR_NAME,
   assertArtifactNamespaceGenerationToken,
   assertArtifactPathLexicallyContained,
   assertLiminaArtifactNamespace,

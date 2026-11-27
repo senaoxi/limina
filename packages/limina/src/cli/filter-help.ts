@@ -7,18 +7,18 @@ import {
 } from '../check-reporting/filter-help';
 import {
   LIMINA_CHECK_TASK_NAMES,
-  locateCheckIssueWorkspace,
   type readCheckIssueSnapshot,
   readStandaloneIssueInvocation,
   toCheckIssueSnapshot,
 } from '../check-reporting/snapshot';
-import { queryLatestCheckAttempt } from '../source-check/snapshot/check-attempt-query';
-import type { CheckAttemptQueryResult } from '../source-check/snapshot/check-attempt-query-types';
+import { queryLatestCheckAttempt } from '../check-reporting/snapshot/check-attempt-query';
+import type { CheckAttemptQueryResult } from '../check-reporting/snapshot/check-attempt-query-types';
 import {
   parseCheckIssueFilterHelpKind,
   readArgvOptionValue,
   readGlobalFlagsFromArgv,
 } from './argv';
+import { locateCheckIssueWorkspace } from './workspace-locator';
 
 type Snapshot = Awaited<ReturnType<typeof readCheckIssueSnapshot>>;
 interface RequestedSnapshot {

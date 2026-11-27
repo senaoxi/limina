@@ -1,9 +1,9 @@
-import { formatCheckIssueInventoryCard } from '../../../check-reporting/human';
+import { formatCheckIssueInventoryCard } from '../../human';
 import {
   getCanonicalIssueLocation,
   selectInventoryIssues,
-} from '../../../check-reporting/inventory-presentation';
-import { formatCheckIssueSnapshotSummaryHuman } from '../../../check-reporting/summary';
+} from '../../inventory-presentation';
+import { formatCheckIssueSnapshotSummaryHuman } from '../../summary';
 import type {
   CheckIssueInventoryHumanOptions,
   LiminaCheckIssue,

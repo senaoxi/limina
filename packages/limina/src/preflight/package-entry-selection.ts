@@ -6,8 +6,11 @@ import type {
 import {
   type ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
-} from '../../core/workspace/validated-context';
-import { createEntryPlan, type PlannedPackageEntry } from './selection-tools';
+} from '../core/workspace/validated-context';
+import {
+  createEntryPlan,
+  type PlannedPackageEntry,
+} from './package-entry-selection-tools';
 
 interface SelectedPackageEntries {
   entries: PackageEntry[];

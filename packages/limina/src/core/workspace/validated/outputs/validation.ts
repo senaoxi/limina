@@ -3,7 +3,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import type { Stats } from 'node:fs';
 import { lstat as lstatAsync } from 'node:fs/promises';
 import path from 'pathe';
-import type { LiminaCheckIssue } from '../../../../source-check/snapshot';
+import type { LiminaCheckIssue } from '../../../../check-reporting/snapshot';
 import {
   canonicalProjectedPath,
   createWorkspaceIssue,

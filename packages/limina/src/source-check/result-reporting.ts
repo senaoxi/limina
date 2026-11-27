@@ -1,8 +1,8 @@
 import { shouldUseColor } from '#utils/reporting';
+import { writeCompletedStandaloneSourceCheckSnapshots } from '../check-reporting/snapshot';
 import { SourceLogger } from '../logger';
 import { formatSourceCheckHumanReport, type SourceCheckIssue } from './report';
 import type { SourceCheckState } from './run-state';
-import { writeCompletedStandaloneSourceCheckSnapshots } from './snapshot';
 
 type SourceCheckResultInput = Readonly<
   Pick<

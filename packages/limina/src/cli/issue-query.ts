@@ -5,7 +5,6 @@ import {
   type CheckIssueInventoryInvocationMetadata,
   type CheckIssueSnapshot,
   formatCheckIssueSnapshotInventory,
-  locateCheckIssueWorkspace,
   readStandaloneIssueInvocation,
   type StandaloneIssueInvocationSnapshot,
   toCheckIssueInventoryInvocationMetadata,
@@ -14,7 +13,7 @@ import {
 import {
   type CheckAttemptQueryResult,
   queryLatestCheckAttempt,
-} from '../source-check/snapshot/check-attempt-query';
+} from '../check-reporting/snapshot/check-attempt-query';
 import {
   assertHumanIssueInventoryLimit,
   assertKnownCheckRuleCodes,
@@ -24,6 +23,7 @@ import {
 } from './issue-inventory';
 import { parsePackageNames, parseRepeatedStrings } from './parse';
 import type { CheckFlags } from './types';
+import { locateCheckIssueWorkspace } from './workspace-locator';
 
 interface InventoryInput {
   attemptQuery?: CheckAttemptQueryResult;

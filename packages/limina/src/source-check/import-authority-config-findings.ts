@@ -1,6 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import type { CheckCounter } from '../check-reporting/stats';
+import type { CheckCounter } from '../execution/stats';
 import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding, SourceFindingFactsByCode } from './findings';
 

@@ -12,13 +12,13 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import {
   CHECK_ISSUE_SNAPSHOT_VERSION,
   type CheckIssueSnapshot,
   formatCheckIssueSnapshotInventory,
   type LiminaCheckIssue,
 } from '../check-reporting/snapshot';
+import type { LiminaCheckRunTaskStats } from '../execution/run-recorder';
 import { LiminaFlowReporter } from '../flow';
 import { ReleaseLogger } from '../logger';
 import type { ReleaseFinding } from '../package-check/release-findings';

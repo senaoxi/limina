@@ -1,8 +1,8 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
-import type { CheckCounter } from '../check-reporting/stats';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
+import type { CheckCounter } from '../execution/stats';
 import type { SourceFinding } from './findings';
 import { addGovernanceOverlapFindings } from './governance-overlap-findings';
 import { collectTsconfigGovernance } from './tsconfig-governance-collection';

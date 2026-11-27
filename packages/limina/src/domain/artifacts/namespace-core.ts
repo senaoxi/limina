@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import path from 'pathe';
 
+export const LIMINA_ARTIFACT_DIR_NAME = '.limina';
+
 const generationTokenBrand: unique symbol = Symbol(
   'ArtifactNamespaceGenerationToken',
 );
@@ -91,11 +93,14 @@ export function createLiminaArtifactNamespace(options: {
   });
   const namespace = Object.freeze({
     [namespaceBrand]: true as const,
-    canonicalRootDir: path.join(canonicalConfigRootDirectory, '.limina'),
+    canonicalRootDir: path.join(
+      canonicalConfigRootDirectory,
+      LIMINA_ARTIFACT_DIR_NAME,
+    ),
     configRootDir: configRootDirectory,
     generation: options.generation,
     generationToken,
-    rootDir: path.join(configRootDirectory, '.limina'),
+    rootDir: path.join(configRootDirectory, LIMINA_ARTIFACT_DIR_NAME),
   });
 
   authenticatedTokens.add(generationToken);

@@ -15,23 +15,21 @@ import {
   type CheckIssueSnapshot,
   completeCheckIssueSnapshot,
   formatCheckIssueSnapshotInventory,
+  formatSourceIssueSnapshotInventory,
   getCheckIssueSnapshotPath,
   type LiminaCheckRunSummary,
   readCheckIssueSnapshot,
+  readSourceIssueSnapshot,
+  SOURCE_ISSUE_SNAPSHOT_VERSION,
+  type SourceIssueSnapshot,
   writeCheckIssueSnapshotOnly,
   writeNotRunCheckIssueSnapshot,
+  writeSourceIssueSnapshotOnly,
 } from '../check-reporting/snapshot';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { sortCollectedIssues } from '../execution/issues';
 import { SOURCE_ISSUE_CODES } from '../source-check/report';
-import {
-  formatSourceIssueSnapshotInventory,
-  readSourceIssueSnapshot,
-  SOURCE_ISSUE_SNAPSHOT_VERSION,
-  type SourceIssueSnapshot,
-  writeSourceIssueSnapshotOnly,
-} from '../source-check/snapshot';
 import { createCheckerTargetId } from '../typecheck/targets';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);

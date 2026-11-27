@@ -1,5 +1,4 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { CheckCounter } from '../../../check-reporting/stats';
 import type { WorkspaceDependencyDeclaration } from '../../../core/packages/authority';
 import {
   createWorkspaceDependencyKey as createPackageDependencyIssueKey,
@@ -7,6 +6,7 @@ import {
 } from '../../../core/packages/dependency-authority';
 import { projectToPackageOwnerPath } from '../../../core/workspace/owner-identity';
 import type { WorkspaceRegionPathIndex } from '../../../core/workspace/validated-context';
+import type { CheckCounter } from '../../../execution/stats';
 import {
   createSourceUnusedModuleFinding,
   createSourceUnusedWorkspaceDependencyFinding,

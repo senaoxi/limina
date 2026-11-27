@@ -14,6 +14,12 @@ type PackageImportTarget =
   | readonly PackageImportTarget[]
   | { readonly [key: string]: PackageImportTarget | null };
 
+interface PackageResolutionManifest {
+  readonly exports: Readonly<Record<string, PackageImportTarget | null>>;
+  readonly imports: Readonly<Record<string, PackageImportTarget | null>>;
+  readonly name: string;
+}
+
 async function collectProductionSourceFiles(
   directory = sourceRoot,
 ): Promise<string[]> {
@@ -98,7 +104,10 @@ async function findProductionCallers(importedName: string): Promise<string[]> {
 // Under verbatimModuleSyntax: true, TypeScript preserves every non-type-only
 // import/export declaration at runtime, including `import {} from` and
 // `import { type X } from` (emitted as `import {} from`).
-function getRuntimeSpecifiers(sourceFile: ts.SourceFile): string[] {
+function getRuntimeSpecifiers(
+  sourceFile: ts.SourceFile,
+  packageName: string,
+): string[] {
   const specifiers: string[] = [];
   for (const statement of sourceFile.statements) {
     if (
@@ -125,18 +134,47 @@ function getRuntimeSpecifiers(sourceFile: ts.SourceFile): string[] {
       specifiers.push(statement.moduleReference.expression.text);
     }
   }
+  const packagePrefix = `${packageName}/`;
   return specifiers.filter(
-    (specifier) => specifier.startsWith('.') || specifier.startsWith('#'),
+    (specifier) =>
+      specifier.startsWith('.') ||
+      specifier.startsWith('#') ||
+      specifier === packageName ||
+      specifier.startsWith(packagePrefix),
   );
 }
 
-async function loadPackageImports(): Promise<
-  Readonly<Record<string, PackageImportTarget | null>>
-> {
+function isPackageTargetRecord(
+  value: PackageImportTarget,
+): value is Readonly<Record<string, PackageImportTarget | null>> {
+  return typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizePackageExports(
+  rawExports: PackageImportTarget | null | undefined,
+): Readonly<Record<string, PackageImportTarget | null>> {
+  if (rawExports === null || rawExports === undefined) return {};
+  if (!isPackageTargetRecord(rawExports)) {
+    return { '.': rawExports };
+  }
+  return Object.keys(rawExports).every((key) => key.startsWith('.'))
+    ? rawExports
+    : { '.': rawExports };
+}
+
+async function loadPackageManifest(): Promise<PackageResolutionManifest> {
   const raw = JSON.parse(
     await readFile(path.join(packageRoot, 'package.json'), 'utf8'),
-  ) as { imports?: Record<string, PackageImportTarget | null> };
-  return raw.imports ?? {};
+  ) as {
+    exports?: PackageImportTarget | null;
+    imports?: Record<string, PackageImportTarget | null>;
+    name?: string;
+  };
+  return {
+    exports: normalizePackageExports(raw.exports),
+    imports: raw.imports ?? {},
+    name: raw.name ?? 'limina',
+  };
 }
 
 function collectPackageTargetStrings(
@@ -180,13 +218,13 @@ function resolveCandidatePath(
   ].find((candidate) => productionFiles.has(candidate));
 }
 
-function resolvePackageImportAlias(
-  specifier: string,
-  packageImports: Readonly<Record<string, PackageImportTarget | null>>,
+function resolvePackageMapTarget(
+  key: string,
+  targetMap: Readonly<Record<string, PackageImportTarget | null>>,
   productionFiles: ReadonlySet<string>,
 ): string[] {
-  if (Object.hasOwn(packageImports, specifier)) {
-    return collectPackageTargetStrings(packageImports[specifier])
+  if (Object.hasOwn(targetMap, key)) {
+    return collectPackageTargetStrings(targetMap[key])
       .map((target) =>
         resolveCandidatePath(
           path.resolve(packageRoot, target),
@@ -195,23 +233,20 @@ function resolvePackageImportAlias(
       )
       .filter((resolved): resolved is string => resolved !== undefined);
   }
-  const wildcardMatches = Object.entries(packageImports)
+  const wildcardMatches = Object.entries(targetMap)
     .filter(([pattern]) => pattern.includes('*'))
     .flatMap(([pattern, target]) => {
       const [prefix, suffix] = pattern.split('*', 2);
       if (
         prefix === undefined ||
         suffix === undefined ||
-        !specifier.startsWith(prefix) ||
-        !specifier.endsWith(suffix) ||
-        specifier.length < prefix.length + suffix.length
+        !key.startsWith(prefix) ||
+        !key.endsWith(suffix) ||
+        key.length < prefix.length + suffix.length
       ) {
         return [];
       }
-      const matched = specifier.slice(
-        prefix.length,
-        specifier.length - suffix.length,
-      );
+      const matched = key.slice(prefix.length, key.length - suffix.length);
       return [{ prefix, suffix, matched, target }];
     })
     .sort(
@@ -235,16 +270,35 @@ function resolvePackageImportAlias(
         .filter((resolved): resolved is string => resolved !== undefined);
 }
 
+function toPackageExportKey(
+  specifier: string,
+  packageName: string,
+): string | undefined {
+  if (specifier === packageName) return '.';
+  const prefix = `${packageName}/`;
+  return specifier.startsWith(prefix)
+    ? `./${specifier.slice(prefix.length)}`
+    : undefined;
+}
+
 function resolveProductionImport(
   importer: string,
   specifier: string,
-  packageImports: Readonly<Record<string, PackageImportTarget | null>>,
+  manifest: PackageResolutionManifest,
   productionFiles: ReadonlySet<string>,
 ): string[] {
   if (specifier.startsWith('#')) {
-    return resolvePackageImportAlias(
+    return resolvePackageMapTarget(
       specifier,
-      packageImports,
+      manifest.imports,
+      productionFiles,
+    );
+  }
+  const exportKey = toPackageExportKey(specifier, manifest.name);
+  if (exportKey !== undefined) {
+    return resolvePackageMapTarget(
+      exportKey,
+      manifest.exports,
       productionFiles,
     );
   }
@@ -257,7 +311,7 @@ function resolveProductionImport(
 
 function buildRuntimeImportGraph(
   sourcesByFile: ReadonlyMap<string, string>,
-  packageImports: Readonly<Record<string, PackageImportTarget | null>>,
+  manifest: PackageResolutionManifest,
 ): {
   files: string[];
   neighbors: Map<string, string[]>;
@@ -275,11 +329,11 @@ function buildRuntimeImportGraph(
     );
     neighbors.set(filePath, [
       ...new Set(
-        getRuntimeSpecifiers(sourceFile).flatMap((specifier) =>
+        getRuntimeSpecifiers(sourceFile, manifest.name).flatMap((specifier) =>
           resolveProductionImport(
             filePath,
             specifier,
-            packageImports,
+            manifest,
             productionFiles,
           ),
         ),
@@ -293,15 +347,15 @@ async function collectRuntimeImportGraph(): Promise<{
   files: string[];
   neighbors: Map<string, string[]>;
 }> {
-  const [files, packageImports] = await Promise.all([
+  const [files, manifest] = await Promise.all([
     collectProductionSourceFiles(),
-    loadPackageImports(),
+    loadPackageManifest(),
   ]);
   const sourcesByFile = new Map<string, string>();
   for (const filePath of files) {
     sourcesByFile.set(filePath, await readFile(filePath, 'utf8'));
   }
-  return buildRuntimeImportGraph(sourcesByFile, packageImports);
+  return buildRuntimeImportGraph(sourcesByFile, manifest);
 }
 
 function findRuntimeImportCycles(
@@ -330,13 +384,109 @@ async function collectRuntimeImportCycles(): Promise<string[][]> {
   return findRuntimeImportCycles(files, neighbors);
 }
 
+const higherCheckSubsystems = [
+  'dependency-graph',
+  'graph-check',
+  'package-check',
+  'proof',
+  'source-check',
+  'typecheck',
+  'commands',
+  'pipeline',
+  'cli',
+];
+
+const forbiddenByLayer = new Map<string, ReadonlySet<string>>([
+  [
+    'check-reporting',
+    new Set([
+      'checker',
+      'config',
+      'core',
+      'preflight',
+      'execution',
+      ...higherCheckSubsystems,
+    ]),
+  ],
+  ['preflight', new Set(['execution', ...higherCheckSubsystems])],
+  ['execution', new Set(higherCheckSubsystems)],
+]);
+
+const allowedCoreCycleMembers = new Set([
+  'checker',
+  'checkers.ts',
+  'config',
+  'core',
+]);
+
+function topLevelNode(filePath: string): string {
+  const relative = toPortablePath(path.relative(sourceRoot, filePath));
+  const slashIndex = relative.indexOf('/');
+  return slashIndex === -1 ? relative : relative.slice(0, slashIndex);
+}
+
+function findUpwardLayerViolations(
+  neighbors: ReadonlyMap<string, readonly string[]>,
+): string[] {
+  const violations: string[] = [];
+  for (const [filePath, targets] of neighbors) {
+    const relative = toPortablePath(path.relative(sourceRoot, filePath));
+    if (!relative.includes('/')) continue;
+    const [sourceLayer] = relative.split('/', 1);
+    const forbidden = forbiddenByLayer.get(sourceLayer);
+    if (forbidden === undefined) continue;
+    for (const target of targets) {
+      const relativeTarget = toPortablePath(path.relative(sourceRoot, target));
+      if (!relativeTarget.includes('/')) continue;
+      const [targetLayer] = relativeTarget.split('/', 1);
+      if (forbidden.has(targetLayer)) {
+        violations.push(`${relative} -> ${relativeTarget}`);
+      }
+    }
+  }
+  return violations;
+}
+
+function findUnexpectedTopLevelCycles(
+  files: readonly string[],
+  neighbors: ReadonlyMap<string, readonly string[]>,
+): string[][] {
+  const layerNeighbors = new Map<string, Set<string>>();
+  for (const filePath of files) {
+    const fromLayer = topLevelNode(filePath);
+    const targets = layerNeighbors.get(fromLayer) ?? new Set<string>();
+    layerNeighbors.set(fromLayer, targets);
+    const directTargets = neighbors.get(filePath) ?? [];
+    for (const target of directTargets) {
+      const toLayer = topLevelNode(target);
+      if (toLayer !== fromLayer) {
+        targets.add(toLayer);
+      }
+    }
+  }
+  return collectStronglyConnectedComponents(
+    layerNeighbors.keys().toArray(),
+    (layer) => [...(layerNeighbors.get(layer) ?? [])],
+  )
+    .filter(
+      (component) =>
+        component.length > 1 &&
+        component.some((member) => !allowedCoreCycleMembers.has(member)),
+    )
+    .map((component) =>
+      component.toSorted(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    );
+}
+
 describe('production architecture boundaries', () => {
-  it('keeps relative and package-alias runtime imports acyclic', async () => {
+  it('keeps relative, package-alias, and self-export runtime imports acyclic', async () => {
     await expect(collectRuntimeImportCycles()).resolves.toEqual([]);
   });
 
-  it('detects runtime cycles across package aliases, explicit .js paths, empty named imports/re-exports, and self-imports', async () => {
-    const packageImports = await loadPackageImports();
+  it('detects runtime cycles across package aliases, self-exports, explicit .js paths, empty named imports/re-exports, and self-imports', async () => {
+    const manifest = await loadPackageManifest();
     const runnerPath = path.join(sourceRoot, 'config/runner.ts');
     const checkerConfigPath = path.join(sourceRoot, 'checker/config.ts');
     const selfPath = path.join(sourceRoot, 'config/self.ts');
@@ -350,13 +500,14 @@ describe('production architecture boundaries', () => {
           ],
           [checkerConfigPath, checkerConfigSource],
         ]),
-        packageImports,
+        manifest,
       );
       return findRuntimeImportCycles(files, neighbors);
     };
 
     for (const cyclicSource of [
       "import { run } from '#config/runner'; export const load = run;",
+      "import { run } from 'limina/internal/config/runner'; export const load = run;",
       "import { run } from '../config/runner.js'; export const load = run;",
       "import {} from '#config/runner'; export const load = 1;",
       "import { type Foo } from '#config/runner'; export const load = 1;",
@@ -367,6 +518,7 @@ describe('production architecture boundaries', () => {
 
     for (const typeOnlySource of [
       "import type { Foo } from '#config/runner'; export const load: Foo | null = null;",
+      "import type { Foo } from 'limina/internal/config/runner'; export const load: Foo | null = null;",
       "export type { Foo } from '#config/runner'; export const load = 1;",
     ]) {
       expect(cyclesFor(typeOnlySource), typeOnlySource).toEqual([]);
@@ -374,7 +526,7 @@ describe('production architecture boundaries', () => {
 
     const selfGraph = buildRuntimeImportGraph(
       new Map([[selfPath, "import './self.js'; export const self = 1;"]]),
-      packageImports,
+      manifest,
     );
     expect(
       findRuntimeImportCycles(selfGraph.files, selfGraph.neighbors),
@@ -423,6 +575,89 @@ describe('production architecture boundaries', () => {
           /(?:^|\/)execution(?:\/|$)/u.test(statement.moduleSpecifier.text),
       );
       expect(executionImports, filePath).toHaveLength(0);
+    }
+  });
+
+  it('keeps check-reporting, preflight, and execution free of upward subsystem runtime dependencies', async () => {
+    const { files, neighbors } = await collectRuntimeImportGraph();
+    expect(findUpwardLayerViolations(neighbors)).toEqual([]);
+    expect(findUnexpectedTopLevelCycles(files, neighbors)).toEqual([]);
+  });
+
+  it('detects upward layer violations and directory cycles across relative paths and package self-exports', async () => {
+    const manifest = await loadPackageManifest();
+    const reportingProbePath = path.join(
+      sourceRoot,
+      'check-reporting/probe.ts',
+    );
+    const coreTargetPath = path.join(
+      sourceRoot,
+      'core/workspace/owner-identity.ts',
+    );
+    const checkerTargetPath = path.join(sourceRoot, 'checker/project-base.ts');
+    const preflightEntryPath = path.join(sourceRoot, 'preflight/index.ts');
+    const preflightConsumerPath = path.join(
+      sourceRoot,
+      'preflight/consumer.ts',
+    );
+    const reportingLeafPath = path.join(sourceRoot, 'check-reporting/leaf.ts');
+
+    const analyzeUpward = (probeSource: string) =>
+      findUpwardLayerViolations(
+        buildRuntimeImportGraph(
+          new Map([
+            [reportingProbePath, probeSource],
+            [coreTargetPath, 'export const owner = 1;'],
+            [checkerTargetPath, 'export const checker = 1;'],
+          ]),
+          manifest,
+        ).neighbors,
+      );
+
+    expect(
+      analyzeUpward(
+        "export { owner } from '../core/workspace/owner-identity';",
+      ),
+    ).toEqual(['check-reporting/probe.ts -> core/workspace/owner-identity.ts']);
+    expect(
+      analyzeUpward(
+        "export { owner } from 'limina/internal/core/workspace/owner-identity';",
+      ),
+    ).toEqual(['check-reporting/probe.ts -> core/workspace/owner-identity.ts']);
+    expect(
+      analyzeUpward("export { checker } from '../checker/project-base';"),
+    ).toEqual(['check-reporting/probe.ts -> checker/project-base.ts']);
+    expect(
+      analyzeUpward(
+        "export { checker } from 'limina/internal/checker/project-base';",
+      ),
+    ).toEqual(['check-reporting/probe.ts -> checker/project-base.ts']);
+    expect(
+      analyzeUpward(
+        "import type { Foo } from 'limina/internal/checker/project-base'; export const value: Foo | null = null;",
+      ),
+    ).toEqual([]);
+
+    for (const reportingImport of [
+      "import { entry } from '../preflight/index'; export const probe = entry;",
+      "import { entry } from 'limina/internal/preflight'; export const probe = entry;",
+    ]) {
+      const { files, neighbors } = buildRuntimeImportGraph(
+        new Map([
+          [preflightEntryPath, 'export const entry = 1;'],
+          [
+            preflightConsumerPath,
+            "import { leaf } from '../check-reporting/leaf'; export const used = leaf;",
+          ],
+          [reportingLeafPath, 'export const leaf = 1;'],
+          [reportingProbePath, reportingImport],
+        ]),
+        manifest,
+      );
+      expect(findRuntimeImportCycles(files, neighbors)).toEqual([]);
+      expect(findUnexpectedTopLevelCycles(files, neighbors)).toEqual([
+        ['check-reporting', 'preflight'],
+      ]);
     }
   });
 

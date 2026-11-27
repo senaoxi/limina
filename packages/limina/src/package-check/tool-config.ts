@@ -7,7 +7,7 @@ import type {
 import { toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import { PackageLogger } from '../logger';
-import type { PackageEntrySelectionPlan } from './entry/selection';
+import type { PackageEntrySelectionPlan } from '../preflight/package-entry-selection';
 
 export function getPackagePublintCheckConfig(
   entry: PackageEntry,

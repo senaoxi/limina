@@ -1,12 +1,12 @@
 import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
-import type { CheckCounter } from '../../check-reporting/stats';
 import type { WorkspaceDependencyDeclaration } from '../../core/packages/authority';
 import type {
   ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../../core/workspace/validated-context';
+import type { CheckCounter } from '../../execution/stats';
 import type { SourceFinding } from '../findings';
 import { collectKnipSourceIssues, type KnipCliRunner } from '../knip';
 import type { SourceCheckIssue } from '../report';

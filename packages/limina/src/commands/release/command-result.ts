@@ -8,7 +8,7 @@ import {
   type LiminaCheckIssue,
   type LiminaCheckRunCheckItemSummary,
 } from '../../check-reporting/snapshot';
-import { createCheckItemStats } from '../../check-reporting/stats';
+import { createCheckItemStats } from '../../execution/stats';
 import { formatErrorMessage, ReleaseLogger } from '../../logger';
 import { createReleaseCheckIssuesFromFindings } from '../../package-check/release-findings';
 import { RegistryAuthorityError } from '../../package-check/release/registry/authority';

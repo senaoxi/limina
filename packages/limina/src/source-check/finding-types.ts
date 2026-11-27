@@ -3,6 +3,11 @@ import {
   type LiminaWritableCheckIssueCode,
 } from '../check-reporting/codes';
 import type {
+  LiminaCheckIssueEvidence,
+  LiminaCheckIssueExternal,
+  LiminaCheckIssueLocation,
+} from '../check-reporting/snapshot';
+import type {
   SourceCrossGovernanceBoundaryFacts,
   SourceImportAuthorityInvalidFacts,
   SourceKnipBuildScriptUnsupportedFacts,
@@ -16,11 +21,6 @@ import type {
   SourceUnusedModuleFacts,
   SourceUnusedWorkspaceDependencyFacts,
 } from './finding-facts';
-import type {
-  LiminaCheckIssueEvidence,
-  LiminaCheckIssueExternal,
-  LiminaCheckIssueLocation,
-} from './snapshot';
 
 export type * from './finding-facts';
 

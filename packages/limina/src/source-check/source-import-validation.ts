@@ -2,7 +2,6 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisProviderSet, SubscribedCoreFactView } from '#core';
 import type { ProjectInfo } from '#core/import-graph/context';
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
-import type { CheckCounter } from '../check-reporting/stats';
 import { getCheckerSemanticFamily } from '../core/build-graph/checker-semantic-authority';
 import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
 import {
@@ -16,6 +15,7 @@ import {
 } from '../core/typescript-semantic';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
+import type { CheckCounter } from '../execution/stats';
 import type { SourceFinding } from './findings';
 import { addImportRecordProblems } from './import-record-validation';
 import { addResourceModuleProblems } from './resource-module-findings';

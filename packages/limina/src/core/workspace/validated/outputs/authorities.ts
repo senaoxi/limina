@@ -1,7 +1,7 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { randomUUID } from 'node:crypto';
 import { LiminaStructuredError } from '../../../../check-reporting/errors';
-import type { LiminaCheckIssue } from '../../../../source-check/snapshot';
+import type { LiminaCheckIssue } from '../../../../check-reporting/snapshot';
 import type { WorkspaceOutputMutationAuthority } from '../types';
 import {
   createOutputAuthorityIssue,

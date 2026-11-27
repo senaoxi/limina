@@ -1,14 +1,14 @@
 import { planCapabilitySubscriptions } from '#core';
 import type { cac } from 'cac';
 import { currentProfile } from '../../application/analysis/observability';
-import { isRunSourceCheck } from '../../commands/source';
-import { LiminaPreflightManager } from '../../preflight';
-import type { SourceCheckIssue } from '../../source-check/report';
 import {
   type LiminaCheckIssue,
   writeCompletedStandaloneSourceCheckSnapshots,
   writeNotRunSourceIssueSnapshot,
-} from '../../source-check/snapshot';
+} from '../../check-reporting/snapshot';
+import { isRunSourceCheck } from '../../commands/source';
+import { LiminaPreflightManager } from '../../preflight';
+import type { SourceCheckIssue } from '../../source-check/report';
 import { loadStandaloneContext } from '../command-runtime';
 import { createCliFlow } from '../flow';
 import { createSourceIssueReportOptions } from '../parse';

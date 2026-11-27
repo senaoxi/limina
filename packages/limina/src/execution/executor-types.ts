@@ -1,8 +1,4 @@
 import type {
-  CheckRunRecorder,
-  LiminaCheckRunTaskStats,
-} from '../check-reporting/run-recorder';
-import type {
   CheckIssueSnapshot,
   LiminaCheckIssue,
   SourceIssueSnapshot,
@@ -11,6 +7,7 @@ import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import type { LiminaFlowReporter, LiminaFlowTreeNode } from '../flow';
 import type { LiminaPreflightManager } from '../preflight';
 import type { ResourceRequest } from './resources';
+import type { CheckRunRecorder, LiminaCheckRunTaskStats } from './run-recorder';
 import type {
   CompletedRunOutcome,
   ExecutionTask,

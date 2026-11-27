@@ -4,6 +4,7 @@ import {
   type LiminaWritableCheckIssueCode,
 } from '../check-reporting/codes';
 import { createFrameworkInferenceIssue } from '../check-reporting/framework-inference';
+import type { CheckIssueSnapshot } from '../check-reporting/snapshot';
 import { CHECK_ISSUE_SNAPSHOT_VERSION } from '../check-reporting/snapshot';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 import {
@@ -13,7 +14,6 @@ import {
   formatCheckRunSummaryHuman as formatCheckRunSummaryHumanWithColor,
   selectTopBlockers,
 } from '../check-reporting/summary';
-import type { CheckIssueSnapshot } from '../source-check/snapshot';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
 const ANSI_PATTERN = new RegExp(

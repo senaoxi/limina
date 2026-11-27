@@ -7,9 +7,9 @@ import {
   formatFrameworkInferenceWarnings,
 } from '../check-reporting/framework-inference';
 import { DEFAULT_VISIBLE_ISSUE_LIMIT } from '../check-reporting/inventory-presentation';
-import { createCheckRunRecorder } from '../check-reporting/run-recorder';
 import { formatCheckRunSummaryHuman } from '../check-reporting/summary';
 import type { RunExecutionResult } from '../execution/executor';
+import { createCheckRunRecorder } from '../execution/run-recorder';
 import { ExecutionTrace } from '../execution/trace';
 import {
   createDefaultExecutionPlan,

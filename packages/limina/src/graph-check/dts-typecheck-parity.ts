@@ -8,11 +8,11 @@ import {
 import { toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import type { CheckCounter } from '../check-reporting/stats';
 import {
   absoluteCompilerPaths,
   canImportTsExtensions,
 } from '../core/typescript-semantic/compiler-options';
+import type { CheckCounter } from '../execution/stats';
 import {
   comparableTypecheckOptions,
   formatCompilerOptionValue,

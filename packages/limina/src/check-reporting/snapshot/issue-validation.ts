@@ -4,7 +4,7 @@ import {
   getLiminaCheckIssueRuleMetadata,
   isReadableLiminaCheckIssueCode,
   type LiminaReadableCheckIssueCode,
-} from '../../check-reporting/codes';
+} from '../codes';
 import { isLiminaCheckRunSummary } from './run-validation';
 import type {
   CanonicalLiminaCheckIssue,

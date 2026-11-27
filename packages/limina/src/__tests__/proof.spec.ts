@@ -16,12 +16,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
+import {
+  type LiminaCheckIssue,
+  readCheckIssueSnapshot,
+} from '../check-reporting/snapshot';
 import { isRunProofCheck } from '../commands/proof';
+import { collectExpectedSourceFiles } from '../core/workspace/expected-source-files';
 import { collectValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
 import { createTaskProgressReporter } from '../execution/progress';
+import type { LiminaCheckRunTaskStats } from '../execution/run-recorder';
 import { LiminaFlowReporter } from '../flow';
 import { ProofLogger } from '../logger';
 import { LiminaPreflightManager } from '../preflight';
@@ -32,11 +37,6 @@ import {
   type ProofSemanticIssueCode,
 } from '../proof/findings';
 import { isRunProofCheckImpl } from '../proof/runner';
-import { collectExpectedSourceFiles } from '../proof/source-files';
-import {
-  type LiminaCheckIssue,
-  readCheckIssueSnapshot,
-} from '../source-check/snapshot';
 import { prepareAndMaterializeGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';

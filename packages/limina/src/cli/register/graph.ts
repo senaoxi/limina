@@ -3,6 +3,7 @@ import { planCapabilitySubscriptions } from '#core';
 import type { cac } from 'cac';
 import path from 'pathe';
 import { currentProfile } from '../../application/analysis/observability';
+import type { LiminaCheckIssue } from '../../check-reporting/snapshot';
 import {
   isRunGraphCheck,
   isRunGraphPrepare,
@@ -11,7 +12,6 @@ import {
 import { stringifyDependencyGraph } from '../../dependency-graph/runner';
 import { runObservedTask } from '../../execution/task-observers';
 import { LiminaPreflightManager } from '../../preflight';
-import type { LiminaCheckIssue } from '../../source-check/snapshot';
 import { loadCliConfig, loadStandaloneContext } from '../command-runtime';
 import { createCliFlow } from '../flow';
 import { parseDependencyGraphView } from '../parse';

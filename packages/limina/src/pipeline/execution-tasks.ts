@@ -5,6 +5,7 @@ import type {
   CoreAnalysisPhaseObserver,
 } from '#core';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import { createTaskFailureIssue } from '../check-reporting/snapshot';
 import { measureGraphMaterialization } from '../execution/graph-materialization-progress';
 import {
   measureTaskProgress,
@@ -17,7 +18,6 @@ import type {
   TaskId,
 } from '../execution/tasks';
 import { taskId } from '../execution/tasks';
-import { createTaskFailureIssue } from '../source-check/snapshot';
 import { runBuiltinTask } from './builtin-runner';
 import { runCommandStep } from './command-runner';
 import { getBuiltinTaskResources } from './resources';

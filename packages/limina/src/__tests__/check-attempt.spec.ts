@@ -11,23 +11,23 @@ import {
   type CheckIssueSnapshot,
   writeCheckIssueSnapshotOnly,
 } from '../check-reporting/snapshot';
-import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import {
   abortCheckAttempt,
   completeCheckAttempt,
   failCheckAttemptPersistence,
   getCheckAttemptPaths,
   publishCheckAttempt,
-} from '../source-check/snapshot/check-attempt-io';
-import { queryLatestCheckAttempt } from '../source-check/snapshot/check-attempt-query';
-import { cleanupAttemptRetention } from '../source-check/snapshot/check-attempt-retention';
+} from '../check-reporting/snapshot/check-attempt-io';
+import { queryLatestCheckAttempt } from '../check-reporting/snapshot/check-attempt-query';
+import { cleanupAttemptRetention } from '../check-reporting/snapshot/check-attempt-retention';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 
 vi.mock(
-  '../source-check/snapshot/check-attempt-retention',
+  '../check-reporting/snapshot/check-attempt-retention',
   async (importOriginal) => {
     const actual =
       await importOriginal<
-        typeof import('../source-check/snapshot/check-attempt-retention')
+        typeof import('../check-reporting/snapshot/check-attempt-retention')
       >();
     return {
       ...actual,

@@ -2,7 +2,7 @@ import { configContextPath, type ResolvedLiminaInputs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import { LiminaStructuredError } from '../../../../check-reporting/errors';
-import type { LiminaCheckIssue } from '../../../../source-check/snapshot';
+import type { LiminaCheckIssue } from '../../../../check-reporting/snapshot';
 import { outsideOutputs } from '../descriptors/stability';
 import { createWorkspaceIssue, displayWorkspacePath } from '../shared';
 import {

@@ -1,6 +1,6 @@
-import { writeJsonAtomically } from '../../check-reporting/atomic-writer';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import { acquireCrossProcessWriteLease } from '../../utils/mutation/cross-process-lease';
+import { writeJsonAtomically } from '../atomic-writer';
 import {
   type CheckAttemptStatus,
   type CheckAttemptTerminalState,

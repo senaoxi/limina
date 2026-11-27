@@ -12,10 +12,6 @@ import { fileURLToPath } from 'node:url';
 
 import type { AtomicWriteOptions } from '../../src/check-reporting/atomic-writer';
 import {
-  type CheckRunRecorder,
-  createCheckRunRecorder,
-} from '../../src/check-reporting/run-recorder';
-import {
   type LiminaCheckRunSummary,
   writeCheckIssueSnapshotOnly,
   writeSourceIssueSnapshotOnly,
@@ -25,6 +21,10 @@ import type {
   RunExecutionPlanOptions,
   RunExecutionResult,
 } from '../../src/execution/executor';
+import {
+  type CheckRunRecorder,
+  createCheckRunRecorder,
+} from '../../src/execution/run-recorder';
 import type { ExecutionPlan } from '../../src/execution/tasks';
 import { LiminaFlowReporter } from '../../src/flow';
 import {

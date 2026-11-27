@@ -17,7 +17,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { locateCheckIssueWorkspace } from '../check-reporting/workspace-locator';
+import { locateCheckIssueWorkspace } from '../cli/workspace-locator';
 import { loadConfig } from '../config/loader';
 import {
   collectValidatedWorkspaceContext,

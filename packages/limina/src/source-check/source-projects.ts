@@ -12,9 +12,9 @@ import {
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { existsSync } from 'node:fs';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import type { CheckCounter } from '../check-reporting/stats';
 import { createUnitByProjectPath } from '../core/project-dependencies/project-alignment';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
+import type { CheckCounter } from '../execution/stats';
 import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import { addProjectOwnerProblems } from './project-owner-findings';

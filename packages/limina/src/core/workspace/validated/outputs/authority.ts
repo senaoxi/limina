@@ -5,7 +5,7 @@ import {
   MutationBoundaryError,
 } from '#utils/mutation-boundary';
 import { normalizeAbsolutePath } from '#utils/path';
-import type { LiminaCheckIssue } from '../../../../source-check/snapshot';
+import type { LiminaCheckIssue } from '../../../../check-reporting/snapshot';
 import {
   createWorkspaceIssue,
   displayWorkspacePath,

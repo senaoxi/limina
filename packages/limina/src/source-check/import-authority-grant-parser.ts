@@ -1,5 +1,5 @@
 import rawPicomatch from 'picomatch';
-import type { CheckCounter } from '../check-reporting/stats';
+import type { CheckCounter } from '../execution/stats';
 import type { SourceFinding } from './findings';
 import { addImportAuthorityConfigFinding } from './import-authority-config-findings';
 import type { CompiledImportAuthorityAllowRule } from './source-types';
