@@ -11,7 +11,7 @@ import type { TypeEnvironmentRecord } from './type-environment';
 import type { VueContextRecord } from './vue-contracts';
 
 export const ANALYSIS_ADAPTER = 'analysis-facts-v1';
-export const ANALYSIS_SCHEMA = 18;
+export const ANALYSIS_SCHEMA = 19;
 
 export interface InputDependency {
   inputId: string;
@@ -208,6 +208,7 @@ export interface AnalysisSnapshot {
   configModules: ConfigModuleSnapshot;
   inputs: Record<string, AnalysisInput>;
   queries: Record<string, ResolutionRecord>;
+  runtimeQueries: Record<string, ResolutionRecord>;
   importers: Record<string, ImporterRecord>;
   files: Record<string, FileDependencyFacts>;
   projects: Record<string, ProjectRecord>;

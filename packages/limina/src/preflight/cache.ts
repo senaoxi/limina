@@ -1,3 +1,4 @@
+import type { CheckerSelectionResolution } from '#core';
 import type {
   GeneratedTsconfigGraphResult,
   ProducerBuildPlan,
@@ -21,6 +22,7 @@ import type { MaterializationSlot } from './materialization';
 export class PreflightGenerationCache {
   checkerEntryProjectRoutes?: Promise<CollectCheckerGraphProjectRoutesResult>;
   checkerRouteSnapshot?: Promise<CheckerRouteSnapshotCollection>;
+  coreAnalysis?: Promise<CheckerSelectionResolution>;
   expectedSourceFiles?: Promise<Set<string>>;
   generatedGraph?: Promise<GeneratedTsconfigGraphResult>;
   producerBuildPlan?: Promise<ProducerBuildPlan>;

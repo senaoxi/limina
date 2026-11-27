@@ -10,7 +10,10 @@ import { effectiveReferenceInputs } from './declaration-projection';
 import { getProjectSemanticCacheIdentity } from './identity';
 import { retainNativeObservation } from './native-evidence-retention';
 import { projectNativeReferenceFacts } from './native-reference-facts';
-import { collectProjectDependencies } from './provider';
+import {
+  collectProjectDependencies,
+  registerNativeConfigContext,
+} from './provider';
 import {
   createCollectionContext,
   projectDependencyFactsKey,
@@ -84,6 +87,7 @@ export function readReferenceGraphFacts(
     }
     // The dependency-only context owns detached compiler data after collection.
     request.caches?.typeScriptSemanticFactsCache.set(key, context);
+    registerNativeConfigContext(request, context);
     let facts: ReferenceGraphFacts | undefined;
     if (observer === undefined) {
       facts = projectNativeReferenceFacts(context, request.context);

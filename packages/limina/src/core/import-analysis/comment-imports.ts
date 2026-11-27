@@ -7,11 +7,11 @@ import {
 } from './records';
 import { collectReferenceDirectives } from './reference-directives';
 
-const jsDocumentImportRE = /import\(\s*['"]([^'"]+)['"]\s*\)(?:\.\w+)?/gu;
+const jsDocumentImportRE = /import\(\s*['"]([^'"]+)['"]\s*\)(?:\.\w+)?/dgu;
 const jsDocumentImportTagRE =
-  /@import\s+(?:\{[^}]*\}|\*\s+as\s+\w+)\s+from\s+['"]([^'"]+)['"]/gu;
-const jsxImportSourceRE = /@jsxImportSource\s+([^\s*]+)/gu;
-const environmentPragmaRE = /@(vitest|jest)-environment\s+([@\w./-]+)/gu;
+  /@import\s+(?:\{[^}]*\}|\*\s+as\s+\w+)\s+from\s+['"]([^'"]+)['"]/dgu;
+const jsxImportSourceRE = /@jsxImportSource\s+([^\s*]+)/dgu;
+const environmentPragmaRE = /@(vitest|jest)-environment\s+([@\w./-]+)/dgu;
 interface CommentImportOptions {
   commentStart: number;
   filePath: string;
@@ -87,8 +87,13 @@ function hasStringQuotes(options: {
 function getSpecifierOffset(
   match: RegExpMatchArray,
   specifier: string,
+  captureIndex: number,
 ): number {
-  return match[0].indexOf(specifier);
+  const matchStart = match.index ?? 0;
+  const captureRange = match.indices?.[captureIndex];
+  return captureRange !== undefined && match[captureIndex] === specifier
+    ? captureRange[0] - matchStart
+    : match[0].indexOf(specifier);
 }
 
 function getTokenStart(options: {
@@ -110,7 +115,13 @@ function appendCommentMatch(options: {
   match: RegExpMatchArray;
   specifier: string;
 }): void {
-  const offset = getSpecifierOffset(options.match, options.specifier);
+  const captureIndex =
+    options.collection.resolveSpecifier === undefined ? 1 : 2;
+  const offset = getSpecifierOffset(
+    options.match,
+    options.specifier,
+    captureIndex,
+  );
   const before = offset > 0 ? options.match[0][offset - 1] : undefined;
   const isQuoted = hasStringQuotes({
     after: options.match[0][offset + options.specifier.length],

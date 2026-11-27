@@ -18,6 +18,7 @@ import {
 import { ExecutionTrace } from '../execution/trace';
 import { createLiminaCheckFlowReporter } from '../flow';
 import type { LiminaPreflightManager } from '../preflight';
+import { encodeAnalysisProfile } from '../profiling/report-schema';
 
 function task(
   name: string,
@@ -333,5 +334,46 @@ describe('execution timing', () => {
       aborted.recorder.getRunSummary().tasks[0]?.durationMs,
     ).toBeUndefined();
     expect(aborted.context.running.size).toBe(0);
+  });
+
+  it('keeps readyQueueUs nonnegative and profile-encodable when waitOnlyWhenMatched bypasses an unsettled dependency', async () => {
+    const buildId = taskId('checker:build');
+    const prepareId = taskId('graph:materialize');
+    const tasks = [
+      task('graph:materialize', 0, {
+        id: prepareId,
+        issueTask: 'graph:materialize',
+        kind: 'preparation',
+      }),
+      task('checker:build', 1, {
+        id: buildId,
+        issueTask: 'checker:build',
+        requiresSuccessOf: [prepareId],
+        run: async () => {
+          await delay(40);
+          return { issues: [], status: 'passed' };
+        },
+      }),
+      task('graph:check', 2, {
+        issueTask: 'graph:check',
+        requiresSuccessOf: [prepareId],
+        requiresSuccessOfWhen: {
+          tasks: [buildId],
+          test: () => false,
+          waitOnlyWhenMatched: true,
+        },
+      }),
+    ];
+    const observer = new AnalysisObserver('limina check', performance.now());
+    const { context, trace } = scheduler(tasks, { concurrency: 3 });
+    await runWithProfile(observer, () => runScheduler(context));
+    trace.reportProfileTasks(observer, tasks);
+    observer.stop(true);
+    const snapshot = observer.snapshot();
+    const graphCheck = snapshot.tasks.find(
+      (entry) => entry.name === 'graph:check',
+    );
+    expect(graphCheck?.readyQueueUs).toBeGreaterThanOrEqual(0);
+    expect(() => encodeAnalysisProfile(snapshot)).not.toThrow();
   });
 });

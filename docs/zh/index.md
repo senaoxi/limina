@@ -4,8 +4,8 @@ pageClass: limina-home limina-zh-source-home
 
 hero:
   name: Limina
-  text: TypeScript 项目图与<span class="hero-accent">架构治理</span>工具
-  tagline: 从源码配置生成声明构建关系，持续检查源码归属与包边界
+  text: 让 TypeScript 工程<span class="hero-accent">井井有条</span>
+  tagline: 围绕 tsconfig 做项目治理
   actions:
     - theme: brand
       text: 开始接入

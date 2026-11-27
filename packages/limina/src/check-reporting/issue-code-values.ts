@@ -7,6 +7,7 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   checkerTargetSelectionFailed: 'LIMINA_CHECKER_TARGET_SELECTION_FAILED',
   checkerTypecheckFailed: 'LIMINA_CHECKER_TYPECHECK_FAILED',
   commandFailed: 'LIMINA_COMMAND_FAILED',
+  coreAnalyzeFailed: 'LIMINA_CORE_ANALYZE_FAILED',
   graphAccessDenied: 'LIMINA_GRAPH_ACCESS_DENIED',
   graphCheckFailed: 'LIMINA_GRAPH_CHECK_FAILED',
   graphConfigInvalid: 'LIMINA_GRAPH_CONFIG_INVALID',

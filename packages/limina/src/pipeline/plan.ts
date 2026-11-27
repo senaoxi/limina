@@ -4,8 +4,13 @@ import type { ExecutionPlan, ExecutionTask, TaskId } from '../execution/tasks';
 import { taskId } from '../execution/tasks';
 import type { LiminaPreflightManager } from '../preflight';
 import {
+  createFrameworkCheckerTargets,
+  getExecutionCheckers,
+} from '../typecheck/targets';
+import {
   createBuiltinExecutionTask,
   createCommandExecutionTask,
+  createCoreAnalysisTask,
   createMaterializationTask,
   createWorkspaceValidationTask,
 } from './execution-tasks';
@@ -169,15 +174,23 @@ function requireTaskSuccess(
   for (const task of tasks) task.requiresSuccessOf = [prerequisite.id];
 }
 
-function isCompleteGraphReady(preflight: LiminaPreflightManager): boolean {
+function hasTypecheckTargets(preflight: LiminaPreflightManager): boolean {
   const graph = preflight.getMaterializedGraph();
+  if (graph === undefined) return true;
   return (
-    graph !== undefined &&
-    (graph.governedSources.get('svelte-check')?.size ?? 0) === 0
+    getExecutionCheckers({
+      checkers: graph.checkers,
+      executionKind: 'typecheck',
+    }).length > 0 ||
+    createFrameworkCheckerTargets({
+      generatedGraph: graph,
+      workspaceRootDir: preflight.config.rootDir,
+    }).length > 0
   );
 }
 
 function appendDefaultTasks(options: {
+  config: ResolvedLiminaConfig;
   output: ExecutionTask[];
   segment: TaskSegment;
   validation: ExecutionTask;
@@ -188,17 +201,33 @@ function appendDefaultTasks(options: {
   const checks = options.segment.tasks.filter(
     (task) => task.issueTask !== 'checker:build',
   );
+  const coreAnalysis = createCoreAnalysisTask({
+    config: options.config,
+    generation: options.segment.generation,
+    segment: options.segment.index,
+  });
+  coreAnalysis.requiresSuccessOf = [options.validation.id];
   const materialization = createMaterializationTask({
     generation: options.segment.generation,
     segment: options.segment.index,
   });
-  materialization.requiresSuccessOf = [options.validation.id];
-  materialization.requiresSuccessOfWhen = {
-    tasks: builds.map((task) => task.id),
-    test: (preflight) => !isCompleteGraphReady(preflight),
-  };
+  materialization.requiresSuccessOf = [coreAnalysis.id];
+  requireTaskSuccess(builds, materialization);
   requireTaskSuccess(checks, materialization);
-  options.output.push(...builds, materialization, ...checks);
+  const buildIds = builds.map((task) => task.id);
+  if (buildIds.length > 0) {
+    for (const check of checks) {
+      check.requiresSuccessOfWhen = {
+        tasks: buildIds,
+        test: (preflight) =>
+          preflight.requiresPostBuildGraphFinalization() ||
+          (check.issueTask === 'checker:typecheck' &&
+            hasTypecheckTargets(preflight)),
+        waitOnlyWhenMatched: true,
+      };
+    }
+  }
+  options.output.push(coreAnalysis, materialization, ...builds, ...checks);
 }
 
 function appendBuiltinTasks(options: {

@@ -4,6 +4,10 @@ import type {
   ResolvedLiminaConfig,
 } from '#config/runner';
 import path from 'pathe';
+import {
+  planCapabilitySubscriptions,
+  type SubscriptionPlan,
+} from '../core/facts/subscription';
 import type { ExecutionPlan, ExecutionTask } from '../execution/tasks';
 import type { NormalizedPipelineStep } from './types';
 
@@ -25,6 +29,32 @@ export const defaultCheckPipeline: readonly PipelineStep[] = [
   'proof:check',
   'checker:typecheck',
 ];
+
+export function planPipelineSubscriptions(
+  config: ResolvedLiminaConfig,
+  pipelineName: string | undefined,
+): SubscriptionPlan {
+  const rawSteps =
+    pipelineName === undefined
+      ? defaultCheckPipeline
+      : (findPipelineSteps(config, pipelineName) ?? []);
+  const capabilities = rawSteps.flatMap((rawStep) => {
+    const step = normalizePipelineStep(rawStep);
+    return step.type === 'task' ? [step.name] : [];
+  });
+  return planCapabilitySubscriptions(capabilities);
+}
+
+export function requiresPipelineSemanticFacts(
+  config: ResolvedLiminaConfig,
+  pipelineName: string | undefined,
+): boolean {
+  return (
+    pipelineName === undefined ||
+    (findPipelineSteps(config, pipelineName) !== undefined &&
+      planPipelineSubscriptions(config, pipelineName).requiresSemanticFacts)
+  );
+}
 
 export function isBuiltinTaskName(value: string): value is BuiltinTaskName {
   return builtInTaskNames.has(value);

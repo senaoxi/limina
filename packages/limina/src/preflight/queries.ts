@@ -75,12 +75,9 @@ export async function loadCheckerEntryProjectRoutes(
 
 export async function loadExpectedSourceFiles(
   config: ResolvedLiminaConfig,
-  prerequisite: Promise<
-    [GeneratedTsconfigGraphResult, ValidatedWorkspaceContext]
-  >,
+  workspaceContext: Promise<ValidatedWorkspaceContext>,
 ): Promise<Set<string>> {
-  const [graph, context] = await prerequisite;
-  return collectExpectedSourceFiles(config, graph, context);
+  return collectExpectedSourceFiles(config, undefined, await workspaceContext);
 }
 
 export async function loadPackageEntrySelectionPlan(

@@ -1,8 +1,11 @@
+import { normalizeAbsolutePath } from '#utils/path';
 import { PathBindingReplay } from '../analysis-cache/directory-fingerprint';
+import { analysisHash } from '../analysis-cache/identity';
 import { appendVueExecutionInputs } from '../analysis-cache/vue-execution-inputs';
 import { collectDeclarationCompilationEvidence } from '../declaration-governance/evidence';
 import { managedOutputLookupIdentity } from '../import-graph/managed-output-provider';
 import { createTypeScriptSemanticDependencySnapshot } from '../typescript-semantic';
+import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import { withVueDeclarationLoading } from '../vue-semantic/loading-identity';
 import {
   cloneProjectDependencyCollection,
@@ -128,6 +131,74 @@ function deduplicateFailures(collection: ProjectDependencyCollection): void {
     .toArray();
 }
 
+function nativeConfigKeyForPath(
+  configPath: string,
+  context: ProjectDependencyRequest['context'],
+): string {
+  const virtuals =
+    context.virtualFiles === undefined || context.virtualFiles.size === 0
+      ? null
+      : analysisHash(Array.from(context.virtualFiles));
+  // Preserve `compilerOptions.paths` declaration order by using order-preserving JSON hashing.
+  return JSON.stringify([
+    normalizeAbsolutePath(configPath),
+    context.generation,
+    analysisHash(effectiveCompilerOptions(context.compilerOptions)),
+    context.semanticAuthority.family,
+    virtuals,
+  ]);
+}
+
+export function nativeConfigContextKey(
+  context: ProjectDependencyRequest['context'],
+): string {
+  return nativeConfigKeyForPath(context.configPath, context);
+}
+
+export function lookupSharedNativeContext(
+  request: Pick<ProjectDependencyRequest, 'caches' | 'context'>,
+): NonNullable<ProjectDependencyRequest['typeScriptSemanticContext']> | null {
+  const contexts = request.caches?.nativeContextsByConfig;
+  if (
+    contexts === undefined ||
+    request.context.semanticAuthority.family !== 'typescript'
+  ) {
+    return null;
+  }
+  const resolverPath = normalizeAbsolutePath(
+    request.context.resolverConfigPath,
+  );
+  const resolverContext =
+    resolverPath === normalizeAbsolutePath(request.context.configPath)
+      ? undefined
+      : contexts.get(nativeConfigKeyForPath(resolverPath, request.context));
+  return (
+    contexts.get(nativeConfigContextKey(request.context)) ??
+    resolverContext ??
+    null
+  );
+}
+
+export function registerNativeConfigContext(
+  request: ProjectDependencyRequest,
+  context: NonNullable<ProjectDependencyRequest['typeScriptSemanticContext']>,
+): void {
+  if (request.context.semanticAuthority.family !== 'typescript') return;
+  const contexts = request.caches?.nativeContextsByConfig;
+  if (contexts === undefined) return;
+  contexts.set(nativeConfigContextKey(request.context), context);
+  const resolverPath = normalizeAbsolutePath(
+    request.context.resolverConfigPath,
+  );
+  if (resolverPath === normalizeAbsolutePath(request.context.configPath)) {
+    return;
+  }
+  const resolverKey = nativeConfigKeyForPath(resolverPath, request.context);
+  if (!contexts.has(resolverKey)) {
+    contexts.set(resolverKey, context);
+  }
+}
+
 function collectProjectDependenciesWithNewContext(options: {
   factsCacheKey: string;
   request: ProjectDependencyRequest;
@@ -155,6 +226,7 @@ function collectProjectDependenciesWithNewContext(options: {
       options.factsCacheKey,
       snapshot,
     );
+    registerNativeConfigContext(options.request, snapshot);
   } finally {
     typeScriptSemanticContext.dispose();
   }
@@ -171,6 +243,10 @@ function collectProjectDependenciesWithContext(options: {
 }): ProjectDependencyCollection {
   options.request.caches?.typeScriptSemanticFactsCache.set(
     options.factsCacheKey,
+    options.typeScriptSemanticContext,
+  );
+  registerNativeConfigContext(
+    options.request,
     options.typeScriptSemanticContext,
   );
   const collection = createEmptyCollection();

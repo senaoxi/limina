@@ -10,7 +10,12 @@ export function getDirectNativeFact(options: {
   const context = isNativeRequest(options)
     ? options.request.typeScriptSemanticContext
     : undefined;
-  return context?.getDependencyFact(options.importRecord);
+  if (context === undefined) return undefined;
+  if (options.request.purpose === 'runtime-source') {
+    const matched = context.findDependencyFact?.(options.importRecord);
+    return matched?.nativeEvidence === undefined ? undefined : matched;
+  }
+  return context.getDependencyFact(options.importRecord);
 }
 
 function isNativeRequest(options: {

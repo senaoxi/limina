@@ -14,6 +14,7 @@ import type { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import type { CacheOrigin } from '../core/analysis-cache/profile-decisions';
 import { cloneAnalysisSnapshot } from '../core/analysis-cache/snapshot-receipts';
 import { snapshotModel } from '../core/analysis-cache/snapshot-records';
+import type { AnalysisBlockReadFilter } from '../core/analysis-cache/snapshot-shards';
 import {
   assertArtifactPathOperationSafe,
   type LiminaArtifactNamespace,
@@ -36,6 +37,7 @@ import {
 } from './profile-metrics';
 
 interface CacheStoreOptions {
+  blockReadFilter?: AnalysisBlockReadFilter;
   governanceRoot?: string;
   namespace: LiminaArtifactNamespace;
   identity: string;
@@ -147,6 +149,29 @@ export class AnalysisCacheStore {
       this.#publishedIndex = Buffer.from(`${encoded}\n`);
       this.#baseline = physicalRevision(this.#publishedIndex);
       this.#storedRevision = snapshot.header.revision;
+      const gcReport = await this.#blocks.sweepUnreachable(
+        index.storage.blocks,
+      );
+      if (this.#diagnosticMetrics !== undefined) {
+        this.#record({
+          name: 'analysis-cache',
+          kind: 'gc-active-bytes',
+          estimatedBytes: gcReport.activeReferencedBytes,
+        });
+        this.#record({
+          name: 'analysis-cache',
+          kind: 'gc-retained-bytes',
+          estimatedBytes: gcReport.retainedBytes,
+        });
+        if (gcReport.reclaimedBlocks > 0) {
+          this.#record({
+            name: 'analysis-cache',
+            kind: 'gc-reclaimed-bytes',
+            estimatedBytes: gcReport.reclaimedBytes,
+            count: gcReport.reclaimedBlocks,
+          });
+        }
+      }
       if (start !== undefined && this.#diagnosticMetrics !== undefined)
         this.#record({
           name: 'analysis-cache',
@@ -317,6 +342,8 @@ export class AnalysisCacheStore {
   }
 
   #publicationBlocker(cache: NativeAnalysisCache): string | undefined {
+    if (this.#options.blockReadFilter !== undefined)
+      return 'partial-restore-read-only';
     if (!this.#hasBaseline) return 'baseline-unreadable';
     if (this.#options.configVersion === undefined)
       return 'configuration-version-unknown';

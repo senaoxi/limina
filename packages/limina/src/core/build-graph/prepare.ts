@@ -104,7 +104,9 @@ async function prepareGraphInScope(
     vueSemanticContexts: ownedVueSemanticContexts,
   });
   const projectDependencyCaches = dependencyCaches(options);
-  beginCoreCollection(projectDependencyCaches);
+  if (options.precomputedCheckerSelection === undefined) {
+    beginCoreCollection(projectDependencyCaches);
+  }
   let analysis: DependencyAnalysisResult = {
     complete: true,
     facts: [],
@@ -113,14 +115,16 @@ async function prepareGraphInScope(
   try {
     const coloringStart = performance.now();
     const resolveCheckerSelections =
-      await prepareGeneratedGraphCheckerSelections({
-        config,
-        importAnalysisContext,
-        projectDependencyCaches,
-        projectConfigCache: options.projectConfigCache,
-        workspaceContext,
-        workspacePathIndex: activatedRegions,
-      });
+      options.precomputedCheckerSelection === undefined
+        ? await prepareGeneratedGraphCheckerSelections({
+            config,
+            importAnalysisContext,
+            projectDependencyCaches,
+            projectConfigCache: options.projectConfigCache,
+            workspaceContext,
+            workspacePathIndex: activatedRegions,
+          })
+        : () => options.precomputedCheckerSelection!;
     const { checkers, state } = withProjectDependencyReplay(
       projectDependencyCaches,
       () => {
@@ -362,7 +366,7 @@ export function prepareGeneratedTsconfigGraph(
     )) as GeneratedTsconfigGraphResult;
     retainGraphExecutionInputs(graph, inputs);
     return graph;
-  });
+  }, options.coreAnalysisWork);
 }
 
 export function prepareProducerBuildPlan(
@@ -388,10 +392,13 @@ export function prepareProducerBuildPlan(
 
 function observeCorePreparation<T extends PreparedTsconfigGraph>(
   prepare: () => Promise<T>,
+  coreAnalysisWork?: string,
 ): Promise<T> {
   const profile = currentProfile();
   if (profile === undefined) return prepare();
   const work = profile.start('graph.prepare.core');
+  if (coreAnalysisWork !== undefined)
+    profile.link('uses-result', work, coreAnalysisWork);
   return profile.inWork(work, async () => {
     try {
       const graph = await prepare();

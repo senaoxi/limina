@@ -199,24 +199,21 @@ async function runConfiguredTypecheck(
   options: RunCheckerTypecheckOptions,
   preflight: ReturnType<typeof resolvePreflight>,
 ): Promise<RunCheckerTypecheckResult> {
-  const receipt = await measureGraphMaterialization({
-    progress: options.progress,
-    purpose: 'complete',
-    materialize: (onAccess) =>
-      preflight.ensureGeneratedArtifactsMaterialized(onAccess),
+  const existingGraph = preflight.getMaterializedGraph();
+  const { graph } =
+    existingGraph === undefined
+      ? await measureGraphMaterialization({
+          progress: options.progress,
+          purpose: 'complete',
+          materialize: (onAccess) =>
+            preflight.ensureGeneratedArtifactsMaterialized(onAccess),
+        })
+      : { graph: existingGraph };
+  const context = createContext(options, graph);
+  const targets = createTypecheckTargets({
+    context,
+    generatedGraph: graph,
   });
-  const { context, targets } = await measureTaskProgress(
-    options.progress,
-    'discover typecheck targets',
-    () => {
-      const context = createContext(options, receipt.graph);
-      const targets = createTypecheckTargets({
-        context,
-        generatedGraph: receipt.graph,
-      });
-      return { context, targets };
-    },
-  );
   if (targets.length === 0)
     return createNoTypecheckCheckerResult({
       projectRootDir: context.projectRootDir,
@@ -225,7 +222,7 @@ async function runConfiguredTypecheck(
   return runMaterializedTypecheck(
     context,
     targets,
-    new ExecutionAdmission(preflight, receipt.graph, targets),
+    new ExecutionAdmission(preflight, graph, targets),
   );
 }
 
@@ -236,7 +233,7 @@ async function runMaterializedTypecheck(
 ): Promise<RunCheckerTypecheckResult> {
   const peerFailure = await measureTaskProgress(
     context.options.progress,
-    'validate checker typecheck dependencies',
+    'check typecheck prerequisites',
     () =>
       collectTypecheckPeerFailure({
         checkerPackageResolver: context.options.checkerPackageResolver,
@@ -268,14 +265,10 @@ export async function runCheckerTypecheckImpl(
   options: RunCheckerTypecheckOptions,
 ): Promise<RunCheckerTypecheckResult> {
   const preflight = resolvePreflight(options.config, options);
-  const hasSvelteCheckProjects = await measureTaskProgress(
-    options.progress,
-    'resolve framework checker scope',
-    async () => {
-      await preflight.ensureWorkspaceValidated();
-      return preflight.hasSvelteCheckProjects();
-    },
-  );
+  const hasSvelteCheckProjects = await (async () => {
+    await preflight.ensureWorkspaceValidated();
+    return preflight.hasSvelteCheckProjects();
+  })();
   if (!hasSvelteCheckProjects)
     return runConfiguredTypecheck(options, preflight);
   const producers = await ensureBuilt({ ...options, preflight });

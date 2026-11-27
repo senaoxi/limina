@@ -85,7 +85,10 @@ async function packEntryOutput(options: {
   );
   const elapsed = createElapsedTimer();
   try {
-    const packed = await packOutputTarball(options.entry.outDir);
+    const packed = await packOutputTarball(
+      options.entry.outDir,
+      options.runOptions.packageArtifacts,
+    );
     reportPacked({ elapsed, runOptions: options.runOptions, task });
     return packed;
   } catch (error) {

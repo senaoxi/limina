@@ -116,10 +116,11 @@ lexical exact cache 仍位于 canonicalization 之前；未命中才使用原 ca
 flowchart TB
   CLI["CLI / configuration"] --> Workspace["Validated workspace"]
   Workspace --> Ownership["Checker ownership / frozen semantic authority"]
-  Ownership -->|"No Svelte targets"| Complete["Materialize complete graph"]
+  Ownership -->|"No Svelte targets"| Complete["Prepare and materialize complete graph"]
   Complete --> Build["Checker build"]
-  Build -->|"Wait for settlement"| Checks["Graph / Source / Proof"]
-  Ownership -->|"Svelte targets"| Producers["Materialize producer graph"]
+  Complete -->|"Concurrent read-only checks (pinned providers)"| Checks["Graph / Proof / Source"]
+  Build -->|"Framework typecheck targets"| Typecheck["Checker typecheck"]
+  Ownership -->|"Svelte targets"| Producers["Prepare and materialize producer graph"]
   Producers --> ProducerBuild["Build declaration producers"]
   ProducerBuild -->|"Success"| Receipt["Current inputs / actual declaration outputs"]
   Receipt --> Resolution["Svelte compiler consumption / check projection"]
@@ -130,7 +131,7 @@ flowchart TB
   Command --> Workspace
 ```
 
-[steps](../../../packages/limina/src/pipeline/steps.ts) 按报告顺序定义五项默认任务。Checker Build 之后是 Graph、Source、Proof 和 Checker Typecheck。[构建执行器](../../../packages/limina/src/typecheck/checker/build-runner.ts) 在启动编译器目标前展示正在物化的是哪份引用图。[默认计划](../../../packages/limina/src/pipeline/plan.ts) 等 Build 结束后再让后续检查使用共享 preflight，以便先完成受管输出引发的刷新。如果当前 preflight 已持有物化且无 Svelte 目标的完整图，即使 Build 失败，`graph:materialize` 也会复用该图并放行后续检查。其余情况要求 Build 成功后才能物化完整图。准备失败会阻塞依赖任务。没有目标的 Checker Typecheck 标为 disabled。
+[steps](../../../packages/limina/src/pipeline/steps.ts) 按报告顺序定义五项默认任务。Checker Build 之后是 Graph、Source、Proof 和 Checker Typecheck。在[默认计划](../../../packages/limina/src/pipeline/plan.ts)中，`core:analyze`（Flow 展示为 `core analyze`）直接运行在 `workspace:validate` 之后，负责执行 Stage B1 Limina Core 语义、依赖与检查器归属解析（`discover checker ownership`、`analyze workspace dependencies`、`finalize checker ownership`）并发布 `WorkspaceSourceBoundary`；随后 `graph:materialize`（Flow 展示为 `prepare reference graph`）复用已产出的 Core 事实，在 `checker:build` 之前推导并物化引用图。当不存在 Svelte 生产者目标时，`graph:materialize` 一次性完成完整引用图的构建与物化，随后 `checker:build`、`graph:check` 与 `proof:check` 基于同一份已物化图并行启动（治理任务通过 `retainActiveProviders()` 持有活跃 provider 租约，避免并发的受管输出刷新提前销毁在用 provider；`source:check` 仍保留其工作区写锁屏障），若无框架类型检查目标则 `checker:typecheck` 立即标为 disabled。当存在 Svelte 目标时，`graph:materialize` 物化生产者引用图，下游检查按条件等待（`waitOnlyWhenMatched: true`）`checker:build` 签发生产者 receipt 并完成完整图最终化，若生产者构建失败则阻塞下游检查。准备阶段（`workspace:validate`、`core:analyze` 或 `graph:materialize`）失败会阻塞所有依赖任务。没有目标的 Checker Typecheck 标为 disabled。
 
 命名流水线保留配置中的步骤顺序。外部命令划分分析代次。各内置步骤按需准备自己的图。调度器区分执行顺序依赖与成功前提，并可在依赖任务都结束后，根据当前 preflight 决定是否要求成功。
 

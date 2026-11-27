@@ -98,7 +98,7 @@ function hasRuntimeImport(importDeclaration: ts.ImportDeclaration): boolean {
   );
 }
 
-function getRuntimeRelativeSpecifiers(sourceFile: ts.SourceFile): string[] {
+function getRuntimeSpecifiers(sourceFile: ts.SourceFile): string[] {
   const specifiers: string[] = [];
   for (const statement of sourceFile.statements) {
     if (
@@ -117,21 +117,63 @@ function getRuntimeRelativeSpecifiers(sourceFile: ts.SourceFile): string[] {
       specifiers.push(statement.moduleSpecifier.text);
     }
   }
-  return specifiers.filter((specifier) => specifier.startsWith('.'));
+  return specifiers.filter(
+    (specifier) => specifier.startsWith('.') || specifier.startsWith('#'),
+  );
 }
 
-function resolveRelativeProductionImport(
+const packageImportAliases: readonly [prefix: string, target: string][] = [
+  ['#core/', 'core/'],
+  ['#utils/', 'utils/'],
+  ['#config/', 'config/'],
+];
+
+function resolvePackageImportAlias(
+  specifier: string,
+  productionFiles: ReadonlySet<string>,
+): string | undefined {
+  if (specifier === '#core') {
+    const candidate = path.join(sourceRoot, 'core/index.ts');
+    return productionFiles.has(candidate) ? candidate : undefined;
+  }
+  if (specifier === '#checkers') {
+    const candidate = path.join(sourceRoot, 'checkers.ts');
+    return productionFiles.has(candidate) ? candidate : undefined;
+  }
+  for (const [prefix, target] of packageImportAliases) {
+    if (!specifier.startsWith(prefix)) continue;
+    const basePath = path.join(
+      sourceRoot,
+      `${target}${specifier.slice(prefix.length)}`,
+    );
+    return [`${basePath}.ts`, path.join(basePath, 'index.ts')].find(
+      (candidate) => productionFiles.has(candidate),
+    );
+  }
+  return undefined;
+}
+
+function resolveProductionImport(
   importer: string,
   specifier: string,
   productionFiles: ReadonlySet<string>,
 ): string | undefined {
+  if (specifier.startsWith('#')) {
+    return resolvePackageImportAlias(specifier, productionFiles);
+  }
   const basePath = path.resolve(path.dirname(importer), specifier);
   return [`${basePath}.ts`, path.join(basePath, 'index.ts')].find((candidate) =>
     productionFiles.has(candidate),
   );
 }
 
-async function collectRuntimeImportCycles(): Promise<string[][]> {
+async function collectRuntimeImportGraph(options?: {
+  includePackageAliases?: boolean;
+}): Promise<{
+  files: string[];
+  neighbors: Map<string, string[]>;
+}> {
+  const isIncludePackageAliases = options?.includePackageAliases === true;
   const files = await collectProductionSourceFiles();
   const productionFiles = new Set(files);
   const neighbors = new Map<string, string[]>();
@@ -145,13 +187,23 @@ async function collectRuntimeImportCycles(): Promise<string[][]> {
     );
     neighbors.set(
       filePath,
-      getRuntimeRelativeSpecifiers(sourceFile)
+      getRuntimeSpecifiers(sourceFile)
+        .filter(
+          (specifier) => isIncludePackageAliases || specifier.startsWith('.'),
+        )
         .map((specifier) =>
-          resolveRelativeProductionImport(filePath, specifier, productionFiles),
+          resolveProductionImport(filePath, specifier, productionFiles),
         )
         .filter((target): target is string => target !== undefined),
     );
   }
+  return { files, neighbors };
+}
+
+async function collectRuntimeImportCycles(): Promise<string[][]> {
+  const { files, neighbors } = await collectRuntimeImportGraph({
+    includePackageAliases: false,
+  });
   return collectStronglyConnectedComponents(
     files,
     (filePath) => neighbors.get(filePath) ?? [],
@@ -209,5 +261,70 @@ describe('production architecture boundaries', () => {
       );
       expect(executionImports, filePath).toHaveLength(0);
     }
+  });
+
+  it('prevents governance modules from directly importing Core low-level producers or cache stores', async () => {
+    const { neighbors } = await collectRuntimeImportGraph({
+      includePackageAliases: true,
+    });
+    const governanceRoots = [
+      'graph-check/',
+      'source-check/',
+      'proof/',
+      'dependency-graph/',
+      'package-check/',
+    ];
+    const forbiddenTargets = new Set([
+      'core/project-dependencies/runtime-source.ts',
+      'core/project-dependencies/runtime-source-resolution.ts',
+      'core/typescript-semantic/native-program-host.ts',
+      'preflight/analysis-cache-store.ts',
+    ]);
+    const violations: string[] = [];
+    for (const [filePath, targets] of neighbors) {
+      const relative = toPortablePath(path.relative(sourceRoot, filePath));
+      if (governanceRoots.every((prefix) => !relative.startsWith(prefix))) {
+        continue;
+      }
+      for (const target of targets) {
+        const relativeTarget = toPortablePath(
+          path.relative(sourceRoot, target),
+        );
+        if (forbiddenTargets.has(relativeTarget)) {
+          violations.push(`${relative} -> ${relativeTarget}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+    await expect(
+      findProductionCallers('collectRuntimeProjectDependencies'),
+    ).resolves.toEqual(['core/facts/session.ts']);
+  });
+
+  it('keeps Core Stage A/B1 facts modules independent of Stage B2 graph preparation', async () => {
+    const { neighbors } = await collectRuntimeImportGraph({
+      includePackageAliases: true,
+    });
+    const forbiddenStageB2Targets = new Set([
+      'core/build-graph.ts',
+      'core/build-graph/prepare.ts',
+      'core/build-graph/reference-inference.ts',
+      'core/build-graph/graph-validation.ts',
+      'core/build-graph/finish-prepared-graph.ts',
+    ]);
+    const violations: string[] = [];
+    for (const [filePath, targets] of neighbors) {
+      const relative = toPortablePath(path.relative(sourceRoot, filePath));
+      if (!relative.startsWith('core/facts/')) continue;
+      for (const target of targets) {
+        const relativeTarget = toPortablePath(
+          path.relative(sourceRoot, target),
+        );
+        if (forbiddenStageB2Targets.has(relativeTarget)) {
+          violations.push(`${relative} -> ${relativeTarget}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
   });
 });

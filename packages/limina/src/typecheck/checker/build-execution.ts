@@ -4,6 +4,7 @@ import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-c
 import { measureTaskProgress } from '../../execution/progress';
 import { TypecheckLogger } from '../../logger';
 import type { LiminaPreflightManager } from '../../preflight';
+import { acquireCrossProcessWriteLease } from '../../utils/mutation/cross-process-lease';
 import { ExecutionAdmission } from '../admission/execution-admission';
 import { proveExecutionPrerequisites } from '../admission/execution-prerequisites';
 import {
@@ -44,7 +45,7 @@ function createTargetOutcomes(options: {
     return target === undefined ? [] : [toCheckerTargetOutcome(target, result)];
   });
 }
-export async function executeCheckerBuildTargets(options: {
+interface CheckerBuildExecutionOptions {
   allCheckers: readonly ResolvedCheckerConfig[];
   config: RunCheckerBuildOptions['config'];
   flowDepth: number;
@@ -56,7 +57,35 @@ export async function executeCheckerBuildTargets(options: {
   targets: readonly TypecheckTarget[];
   watch: boolean | undefined;
   workspaceContext: ValidatedWorkspaceContext;
-}): Promise<CheckerBuildExecutionResult> {
+}
+
+const CHECKER_BUILD_LEASE = {
+  leaseName: 'checker-build',
+  timeoutMs: 10 * 60_000,
+};
+
+export async function executeCheckerBuildTargets(
+  options: CheckerBuildExecutionOptions,
+): Promise<CheckerBuildExecutionResult> {
+  if (options.watch === true || options.targets.length === 0)
+    return executeBuildTargets(options);
+
+  // Prerequisite proofs also scan compiler outputs. Keep the lease through
+  // both admission and declaration delivery.
+  const lease = await acquireCrossProcessWriteLease(
+    options.preflight.artifactNamespace.canonicalRootDir,
+    CHECKER_BUILD_LEASE,
+  );
+  try {
+    return await executeBuildTargets(options);
+  } finally {
+    await lease.release();
+  }
+}
+
+async function executeBuildTargets(
+  options: CheckerBuildExecutionOptions,
+): Promise<CheckerBuildExecutionResult> {
   const admission = new ExecutionAdmission(
     options.preflight,
     options.generatedGraph,
@@ -68,7 +97,7 @@ export async function executeCheckerBuildTargets(options: {
       ? await proveExecutionPrerequisites(options, admission)
       : await measureTaskProgress(
           options.runnerOptions.progress,
-          'prove checker build execution prerequisites',
+          'check build prerequisites',
           () => proveExecutionPrerequisites(options, admission),
         );
   const taskFlow = createCheckerTargetFlow({
@@ -110,7 +139,7 @@ export async function executeCheckerBuildTargets(options: {
             target.id,
             await measureTaskProgress(
               progress,
-              'deliver build declarations',
+              'publish build declarations',
               () =>
                 copySuccessfulBuildTarget(
                   {

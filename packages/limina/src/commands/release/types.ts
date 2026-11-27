@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { AnalysisProviderSet } from '#core';
+import type { AnalysisProviderSet, PackageArtifactProvider } from '#core';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import type { CheckIssueReportOptions } from '../../check-reporting/human';
 import type { LiminaCheckRunTaskStats } from '../../check-reporting/run-recorder';
@@ -37,6 +37,7 @@ export interface ReleaseEntryOptions {
   issueSink?: LiminaCheckIssue[];
   label: string;
   outDir: string;
+  packageArtifacts?: PackageArtifactProvider;
   progressItem?: TaskProgressItem;
   workspacePackages: readonly WorkspacePackage[];
 }

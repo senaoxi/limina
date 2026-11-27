@@ -69,6 +69,9 @@ export interface TypeScriptSemanticDependencyContext
   getTypeEnvironmentEntries?(): readonly DeclarationEntry[];
   getContributionFileNames?(): readonly string[];
   getDependencyFact(importRecord: ImportRecord): NativeDependencyFact;
+  findDependencyFact?(
+    importRecord: ImportRecord,
+  ): NativeDependencyFact | undefined;
   getImportRecords(fileName: string): readonly ImportRecord[];
   hasSourceFile(fileName: string): boolean;
   getCollectedDependencyFacts?(): ReadonlyMap<string, NativeDependencyFact>;

@@ -104,65 +104,67 @@ function reportSelectedTargetCount(
   });
 }
 
-async function checkBuildPeers(
+function planSelectedBuildTargets(
   context: CheckerBuildContext,
-  checkers: readonly ResolvedCheckerConfig[],
-): Promise<RunCheckerBuildResult | null> {
-  const problems = await measureTaskProgress(
+  configPath: string,
+) {
+  return measureTaskProgress(
     context.options.progress,
-    'validate checker build dependencies',
-    () =>
-      getCheckerBuildPeerProblems({
-        checkers,
-        projectRootDir: context.projectRootDir,
-        request: context.options,
-      }),
-    (problems) => problems.length === 0,
-  );
-  return createCheckerBuildPeerFailure({
-    flowDepth: context.flowDepth,
-    problems,
-    projectRootDir: context.projectRootDir,
-    request: context.options,
-  });
-}
-
-async function runSelectedCheckerBuild(
-  context: CheckerBuildContext,
-): Promise<RunCheckerBuildResult> {
-  const configPath = getExplicitConfigPath(context);
-  const selection = await measureTaskProgress(
-    context.options.progress,
-    'select checker build targets',
-    () =>
-      selectManagedCheckerBuildTargets({
+    'plan build targets',
+    () => {
+      const selection = selectManagedCheckerBuildTargets({
         allCheckers: context.allCheckers,
         checker: context.options.checker,
         configPath,
         cwd: context.cwd,
         generatedGraph: context.generatedGraph,
         projectRootDir: context.projectRootDir,
-      }),
-    (selection) => selection.kind === 'selected',
+      });
+      if (selection.kind === 'problem') {
+        return {
+          failure: createCheckerBuildSelectionFailure({
+            problem: selection.problem,
+            projectRootDir: context.projectRootDir,
+            report: context.options.report,
+          }),
+          kind: 'failed' as const,
+        };
+      }
+      const problems = getCheckerBuildPeerProblems({
+        checkers: selection.selected.map(({ checker }) => checker),
+        projectRootDir: context.projectRootDir,
+        request: context.options,
+      });
+      const peerFailure = createCheckerBuildPeerFailure({
+        flowDepth: context.flowDepth,
+        problems,
+        projectRootDir: context.projectRootDir,
+        request: context.options,
+      });
+      if (peerFailure !== null) {
+        return { failure: peerFailure, kind: 'failed' as const };
+      }
+      return {
+        kind: 'planned' as const,
+        targets: createManagedCheckerBuildTargets({
+          commandOverride: context.options.tscCommand,
+          projectRootDir: context.projectRootDir,
+          selected: selection.selected,
+          watch: context.options.watch,
+        }),
+      };
+    },
+    (result) => result.kind === 'planned',
   );
-  if (selection.kind === 'problem') {
-    return createCheckerBuildSelectionFailure({
-      problem: selection.problem,
-      projectRootDir: context.projectRootDir,
-      report: context.options.report,
-    });
-  }
-  const peerFailure = await checkBuildPeers(
-    context,
-    selection.selected.map(({ checker }) => checker),
-  );
-  if (peerFailure !== null) return peerFailure;
-  const targets = createManagedCheckerBuildTargets({
-    commandOverride: context.options.tscCommand,
-    projectRootDir: context.projectRootDir,
-    selected: selection.selected,
-    watch: context.options.watch,
-  });
+}
+
+async function runSelectedCheckerBuild(
+  context: CheckerBuildContext,
+): Promise<RunCheckerBuildResult> {
+  const configPath = getExplicitConfigPath(context);
+  const planned = await planSelectedBuildTargets(context, configPath);
+  if (planned.kind === 'failed') return planned.failure;
+  const { targets } = planned;
   const rootConfigPaths = targets.map((target) => target.configPath);
   reportSelectedTargetCount(context, targets.length);
   const execution = await executeCheckerBuildTargets({
@@ -189,22 +191,45 @@ async function runSelectedCheckerBuild(
   return createResult({ context, execution, rootConfigPaths });
 }
 
+function planGeneratedBuildTargets(context: CheckerBuildContext) {
+  return measureTaskProgress(
+    context.options.progress,
+    'plan build targets',
+    () => {
+      const problems = getCheckerBuildPeerProblems({
+        checkers: context.buildCheckers,
+        projectRootDir: context.projectRootDir,
+        request: context.options,
+      });
+      const peerFailure = createCheckerBuildPeerFailure({
+        flowDepth: context.flowDepth,
+        problems,
+        projectRootDir: context.projectRootDir,
+        request: context.options,
+      });
+      if (peerFailure !== null) {
+        return { failure: peerFailure, kind: 'failed' as const };
+      }
+      return {
+        kind: 'planned' as const,
+        targets: createGeneratedCheckerBuildTargets({
+          checkers: context.buildCheckers,
+          commandOverride: context.options.tscCommand,
+          generatedGraph: context.generatedGraph,
+          projectRootDir: context.projectRootDir,
+        }),
+      };
+    },
+    (result) => result.kind === 'planned',
+  );
+}
+
 async function runGeneratedCheckerBuild(
   context: CheckerBuildContext,
 ): Promise<RunCheckerBuildResult> {
-  const peerFailure = await checkBuildPeers(context, context.buildCheckers);
-  if (peerFailure !== null) return peerFailure;
-  const targets = await measureTaskProgress(
-    context.options.progress,
-    'select checker build targets',
-    () =>
-      createGeneratedCheckerBuildTargets({
-        checkers: context.buildCheckers,
-        commandOverride: context.options.tscCommand,
-        generatedGraph: context.generatedGraph,
-        projectRootDir: context.projectRootDir,
-      }),
-  );
+  const planned = await planGeneratedBuildTargets(context);
+  if (planned.kind === 'failed') return planned.failure;
+  const { targets } = planned;
   const rootConfigPaths = targets.map((target) => target.configPath);
   logGeneratedBuildStart({
     context,
@@ -241,15 +266,22 @@ async function createCheckerBuildContext(
 ): Promise<CheckerBuildContext> {
   const preflight = resolvePreflight(options.config, options);
   const executionPurpose = options.watch ? 'complete' : purpose;
-  const { graph: generatedGraph } = await measureGraphMaterialization({
-    progress: options.progress,
-    purpose: executionPurpose,
-    materialize: (onAccess) =>
-      preflight.ensureExecutionArtifactsMaterialized(
-        executionPurpose,
-        onAccess,
-      ),
-  });
+  const existingGraph =
+    executionPurpose === 'complete'
+      ? preflight.getMaterializedGraph()
+      : preflight.getMaterializedProducerGraph();
+  const { graph: generatedGraph } =
+    existingGraph === undefined
+      ? await measureGraphMaterialization({
+          progress: options.progress,
+          purpose: executionPurpose,
+          materialize: (onAccess) =>
+            preflight.ensureExecutionArtifactsMaterialized(
+              executionPurpose,
+              onAccess,
+            ),
+        })
+      : { graph: existingGraph };
   const workspaceContext = await preflight.ensureWorkspaceValidated();
   const allCheckers = generatedGraph.checkers;
   return {
@@ -273,11 +305,7 @@ export async function runCheckerBuildImpl(
 ): Promise<RunCheckerBuildResult> {
   if (options.watch) return runBuild(options);
   const preflight = resolvePreflight(options.config, options);
-  const hasSvelteCheckProjects = await measureTaskProgress(
-    options.progress,
-    'resolve Svelte producer scope',
-    () => preflight.hasSvelteCheckProjects(),
-  );
+  const hasSvelteCheckProjects = await preflight.hasSvelteCheckProjects();
   if (!hasSvelteCheckProjects) return runBuild({ ...options, preflight });
   if (options.configPath !== undefined)
     return runSelectedCheckerBuild(
@@ -291,12 +319,19 @@ export async function runCheckerBuildImpl(
   if (
     receipt !== undefined &&
     (receipt.plan.governedSources.get('svelte-check')?.size ?? 0) > 0
-  )
+  ) {
     await measureTaskProgress(
       options.progress,
-      'ensure Svelte consumer inputs',
+      'prepare Svelte consumer inputs',
       () => preflight.prepareConsumerPhase(receipt),
     );
+    await measureGraphMaterialization({
+      materialize: (onAccess) =>
+        preflight.ensureGeneratedArtifactsMaterialized(onAccess),
+      progress: options.progress,
+      purpose: 'complete',
+    });
+  }
   return built.reused
     ? {
         ...built.result,

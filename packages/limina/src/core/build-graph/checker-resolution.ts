@@ -14,12 +14,14 @@ import { prepareCheckerOwnership } from './checker-ownership-resolution';
 import { resolveBuildGraphImportAnalysis } from './import-analysis-context';
 import type {
   CheckerSelectionResolution,
+  CoreAnalysisPhaseObserver,
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 
 interface CheckerSelectionOptions {
   config: ResolvedLiminaInputs;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
+  onPhase?: CoreAnalysisPhaseObserver;
   projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceContext: NonNullable<
@@ -44,6 +46,7 @@ export function prepareGeneratedGraphCheckerSelections(
     activatedRegions,
     config: options.config,
     importAnalysisContext: resolveBuildGraphImportAnalysis(options),
+    onPhase: options.onPhase,
     projectDependencyCaches: options.projectDependencyCaches,
     projectConfigCache: options.projectConfigCache,
     workspaceSourceConfigPaths: options.workspaceContext.sourceConfigPaths,

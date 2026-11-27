@@ -35,6 +35,8 @@ import {
 import { createGeneratedGraphStructuredError } from './problems';
 import type {
   CheckerSelectionResolution,
+  CoreAnalysisPhase,
+  CoreAnalysisPhaseObserver,
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 
@@ -126,9 +128,42 @@ interface CheckerOwnershipOptions {
   importAnalysisContext: NonNullable<
     PrepareGeneratedTsconfigGraphOptions['importAnalysisContext']
   >;
+  onPhase?: CoreAnalysisPhaseObserver;
   projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceSourceConfigPaths: readonly string[];
+}
+
+async function withAsyncPhase<T>(
+  onPhase: CoreAnalysisPhaseObserver | undefined,
+  phase: CoreAnalysisPhase,
+  run: () => Promise<T>,
+): Promise<T> {
+  const handle = onPhase?.(phase);
+  try {
+    const result = await run();
+    handle?.pass();
+    return result;
+  } catch (error) {
+    handle?.fail();
+    throw error;
+  }
+}
+
+function withSyncPhase<T>(
+  onPhase: CoreAnalysisPhaseObserver | undefined,
+  phase: CoreAnalysisPhase,
+  run: () => T,
+): T {
+  const handle = onPhase?.(phase);
+  try {
+    const result = run();
+    handle?.pass();
+    return result;
+  } catch (error) {
+    handle?.fail();
+    throw error;
+  }
 }
 
 export async function prepareCheckerOwnership(
@@ -140,10 +175,13 @@ export async function prepareCheckerOwnership(
     projectDependencyCaches:
       options.projectDependencyCaches ?? createProjectDependencyCaches(),
   };
-  const discovery = await observeAsyncWork(
-    observer,
-    'checker-ownership-discovery',
-    () => discoverCheckerOwnership(scoped),
+  const discovery = await withAsyncPhase(
+    options.onPhase,
+    'ownership-discovery',
+    () =>
+      observeAsyncWork(observer, 'checker-ownership-discovery', () =>
+        discoverCheckerOwnership(scoped),
+      ),
   );
   return () => resolveCheckerOwnership(scoped, discovery);
 }
@@ -166,7 +204,9 @@ function resolveCheckerOwnership(
       options.projectDependencyCaches,
       discovery.ambiguities ?? [],
     );
-  collectFrozenDependencyFacts(options, discovery);
+  withSyncPhase(options.onPhase, 'dependency-analysis', () =>
+    collectFrozenDependencyFacts(options, discovery),
+  );
   if (options.projectDependencyCaches)
     coreCollectionRun(options.projectDependencyCaches).closed = true;
   assertOwnershipPhase({
@@ -177,8 +217,10 @@ function resolveCheckerOwnership(
   assertCollectedExecution(options.projectDependencyCaches);
   if (discovery.collectionInputFailure !== undefined)
     throw discovery.collectionInputFailure;
-  observeWork(observer, 'checker-ownership-finalization', () =>
-    finalizeLockedOwnership({ config: options.config, discovery }),
+  withSyncPhase(options.onPhase, 'ownership-finalization', () =>
+    observeWork(observer, 'checker-ownership-finalization', () =>
+      finalizeLockedOwnership({ config: options.config, discovery }),
+    ),
   );
   return {
     frozenProjectsByConfigPath: discovery.frozenProjectsByConfigPath,

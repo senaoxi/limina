@@ -44,6 +44,7 @@ async function compareWorkspaceOutput(
       expectedShasum: context.baseline.integrityResult.expectedShasum,
       ignoreRules: context.ignoreRules,
       integrity: context.baseline.integrityResult.integrity,
+      packageArtifacts: context.state.packageArtifacts,
       tarballUrl: context.baseline.tarballUrl,
       workspacePackage: context.workspacePackage,
     });

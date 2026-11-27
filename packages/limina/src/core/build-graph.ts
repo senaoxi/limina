@@ -1,28 +1,29 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import {
-  type GeneratedDependencyEdge,
-  type GeneratedTsconfigGraphResult,
   prepareGeneratedTsconfigGraph,
   prepareProducerBuildPlan,
-  type ProducerBuildPlan,
 } from '#core/build-graph/runner';
 import { withSourceConfigTextScope } from '#utils/source-config-text';
 import { currentProfile } from '../application/analysis/observability';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
-import { resolveGeneratedGraphCheckerSelections } from './build-graph/checker-resolution';
-import {
-  beginCoreCollection,
-  type FrameworkInferenceAmbiguity,
-  readFrameworkInferenceAmbiguities,
-} from './build-graph/core-collection-run';
+import type { FrameworkInferenceAmbiguity } from './build-graph/core-collection-run';
 import { observeGraphRequest } from './build-graph/graph-profile';
 import type { ProducerBuildReceipt } from './build-graph/producer-receipt';
 import { canExcludeSvelteProjects } from './build-graph/svelte-route-precheck';
+import type {
+  CheckerSelectionResolution,
+  GeneratedDependencyEdge,
+  GeneratedTsconfigGraphResult,
+  ProducerBuildPlan,
+} from './build-graph/types';
+import type { CoreOwnershipProvider } from './facts/ownership';
+import type { CoreFactSession } from './facts/session';
 import type { ImportCore } from './imports';
 import type { ProjectDependencyCaches } from './project-dependencies/contracts';
 import { createProjectDependencyCaches } from './project-dependencies/runner';
 import { mapPromise } from './promise';
+import { createWorkspaceSourceBoundaryFromProjects } from './typescript-semantic';
 import type { WorkspaceCore } from './workspace';
 
 export class BuildGraphCore {
@@ -38,44 +39,51 @@ export class BuildGraphCore {
 
   readonly #artifactNamespace: LiminaArtifactNamespace;
 
-  readonly #onGraphPrepared: (graph: GeneratedTsconfigGraphResult) => void;
+  readonly #facts: CoreFactSession;
+
+  readonly #ownership: CoreOwnershipProvider;
 
   #graphPromise: Promise<GeneratedTsconfigGraphResult> | undefined;
   #producerPromise: Promise<ProducerBuildPlan> | undefined;
-  #svelteProjects: Promise<boolean> | undefined;
   #svelteExclusion: Promise<boolean> | undefined;
   #producerReceipt: ProducerBuildReceipt | undefined;
-  #frameworkInferenceAmbiguities:
-    | readonly FrameworkInferenceAmbiguity[]
-    | undefined;
 
   constructor(options: {
     artifactNamespace: LiminaArtifactNamespace;
     config: ResolvedLiminaInputs;
+    facts: CoreFactSession;
     imports: ImportCore;
+    ownership: CoreOwnershipProvider;
     projectDependencies: ProjectDependencyCaches;
     projectConfigs: CheckerProjectConfigCache;
     workspace: WorkspaceCore;
-    onGraphPrepared(graph: GeneratedTsconfigGraphResult): void;
   }) {
     this.#artifactNamespace = options.artifactNamespace;
     this.#config = options.config;
+    this.#facts = options.facts;
     this.#imports = options.imports;
+    this.#ownership = options.ownership;
     this.#projectConfigs = options.projectConfigs;
     this.#projectDependencies = options.projectDependencies;
     this.#workspace = options.workspace;
-    this.#onGraphPrepared = options.onGraphPrepared;
   }
 
   #prepareGraph(): Promise<GeneratedTsconfigGraphResult> {
     const workspacePromise = Promise.all([
       this.#workspace.getValidatedContext(),
       this.#workspace.getPathIndex(),
+      this.getOwnershipProjection(),
     ]);
     const graphPromise = mapPromise(
       workspacePromise,
-      ([workspaceContext, workspacePathIndex]) =>
-        prepareGeneratedTsconfigGraph(this.#config, {
+      ([workspaceContext, workspacePathIndex, precomputedCheckerSelection]) => {
+        const profile = currentProfile();
+        return prepareGeneratedTsconfigGraph(this.#config, {
+          coreAnalysisWork:
+            profile === undefined
+              ? undefined
+              : this.#ownership.getProfileWork(profile),
+          precomputedCheckerSelection,
           producerBuildReceipt: this.#producerReceipt,
           artifactNamespace: this.#artifactNamespace,
           importAnalysisContext: this.#imports.context,
@@ -83,12 +91,26 @@ export class BuildGraphCore {
           projectConfigCache: this.#projectConfigs,
           workspaceContext,
           workspacePathIndex,
-        }),
+        });
+      },
     );
     return (async () => {
       try {
         const graph = await graphPromise;
-        this.#onGraphPrepared(graph);
+        this.#facts.publishWorkspaceSourceBoundary(
+          createWorkspaceSourceBoundaryFromProjects(
+            graph.governedSources
+              .values()
+              .flatMap((sources) => sources.values())
+              .map((source) => ({
+                ...source,
+                fileNames: source.ownedFileNames,
+              }))
+              .toArray(),
+            undefined,
+            graph.sourceConfigCoverage,
+          ),
+        );
         return graph;
       } finally {
         this.#retainInferenceDiagnostics(this.#projectDependencies);
@@ -119,9 +141,7 @@ export class BuildGraphCore {
   }
 
   #retainInferenceDiagnostics(caches: ProjectDependencyCaches): void {
-    const ambiguities = readFrameworkInferenceAmbiguities(caches);
-    if (ambiguities !== undefined)
-      this.#frameworkInferenceAmbiguities = ambiguities;
+    this.#ownership.retainInferenceDiagnostics(caches);
   }
 
   #requestCoreGraph<T extends GeneratedTsconfigGraphResult | ProducerBuildPlan>(
@@ -179,30 +199,16 @@ export class BuildGraphCore {
     return this.#svelteExclusion;
   }
 
+  /**
+   * Delegates to CoreOwnershipProvider (Stage B1). Kept as a thin facade for
+   * backwards compatibility while BuildGraphCore remains a pure Stage B2 consumer.
+   */
+  getOwnershipProjection(): Promise<CheckerSelectionResolution> {
+    return this.#ownership.getOwnershipProjection();
+  }
+
   hasSvelteCheckProjects(): Promise<boolean> {
-    this.#svelteProjects ??= withSourceConfigTextScope(async () => {
-      const [workspaceContext, workspacePathIndex] = await Promise.all([
-        this.#workspace.getValidatedContext(),
-        this.#workspace.getPathIndex(),
-      ]);
-      beginCoreCollection(this.#projectDependencies);
-      try {
-        const resolution = await resolveGeneratedGraphCheckerSelections({
-          config: this.#config,
-          workspaceContext,
-          workspacePathIndex,
-          importAnalysisContext: this.#imports.context,
-          projectConfigCache: this.#projectConfigs,
-          projectDependencyCaches: this.#projectDependencies,
-        });
-        return resolution.selections.some(
-          ({ checker }) => checker.name === 'svelte-check',
-        );
-      } finally {
-        this.#retainInferenceDiagnostics(this.#projectDependencies);
-      }
-    });
-    return this.#svelteProjects;
+    return this.#ownership.hasSvelteCheckProjects();
   }
 
   getProducerBuildPlan(): Promise<ProducerBuildPlan> {
@@ -217,7 +223,7 @@ export class BuildGraphCore {
   getFrameworkInferenceAmbiguities():
     | readonly FrameworkInferenceAmbiguity[]
     | undefined {
-    return this.#frameworkInferenceAmbiguities;
+    return this.#ownership.getFrameworkInferenceAmbiguities();
   }
 
   async getSourceToDts(checkerName: string): Promise<Map<string, string>> {

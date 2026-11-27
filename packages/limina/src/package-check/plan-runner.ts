@@ -99,6 +99,9 @@ function finishProgressItem(options: {
 
 async function runEntry(options: {
   entry: RunnableEntry;
+  packageArtifacts: ReturnType<
+    typeof resolvePreflight
+  >['providers']['packageArtifacts'];
   progressItems: ReadonlyMap<string, TaskProgressItem | undefined>;
   runOptions: RunPackageCheckOptions;
 }): Promise<PackageCheckEntryRunResult> {
@@ -113,6 +116,7 @@ async function runEntry(options: {
     issueSink: issues,
     label: options.entry.label,
     outDir: options.entry.outDir,
+    packageArtifacts: options.packageArtifacts,
     progressItem: options.progressItems.get(options.entry.label),
     rawEntry: options.entry.rawEntry,
   });
@@ -126,6 +130,9 @@ async function runEntry(options: {
 
 async function runEntries(options: {
   entries: readonly RunnableEntry[];
+  packageArtifacts: ReturnType<
+    typeof resolvePreflight
+  >['providers']['packageArtifacts'];
   progressItems: ReadonlyMap<string, TaskProgressItem | undefined>;
   runOptions: RunPackageCheckOptions;
 }): Promise<PackageCheckEntryRunResult[]> {
@@ -224,6 +231,7 @@ export async function isRunPackageCheckImpl(
   const progressItems = createProgressItems({ entries, runOptions: options });
   const entryResults = await runEntries({
     entries,
+    packageArtifacts: preflight.providers.packageArtifacts,
     progressItems,
     runOptions: options,
   });

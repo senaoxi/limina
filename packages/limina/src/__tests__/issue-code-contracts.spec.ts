@@ -34,7 +34,7 @@ describe('Limina issue code contracts', () => {
     ).sort((left, right) => Number(left > right) - Number(left < right));
     const metadata = listLiminaCheckIssueRuleMetadata();
 
-    expect(codes).toHaveLength(61);
+    expect(codes).toHaveLength(62);
     expect(coverageCodes).toEqual(codes);
     expect(
       metadata
@@ -54,8 +54,8 @@ describe('Limina issue code contracts', () => {
             metadata.filter((entry) => entry.status === status).length,
           ]),
       ),
-    ).toEqual({ active: 59, planned: 1, retired: 1 });
-    expect(LIMINA_CHECK_TASK_NAMES).toHaveLength(11);
+    ).toEqual({ active: 60, planned: 1, retired: 1 });
+    expect(LIMINA_CHECK_TASK_NAMES).toHaveLength(12);
   });
 
   it('records legal coverage states and locatable producers and tests', () => {
@@ -121,7 +121,7 @@ describe('Limina issue code contracts', () => {
       integration: 3,
       planned: 1,
       retired: 1,
-      unit: 6,
+      unit: 7,
     });
 
     expect(Object.keys(LIMINA_DETECTOR_SCENARIO_COVERAGE)).toHaveLength(19);
@@ -143,6 +143,7 @@ describe('Limina issue code contracts', () => {
       'checker:build': LIMINA_CHECK_ISSUE_CODES.checkerBuildFailed,
       'checker:typecheck': LIMINA_CHECK_ISSUE_CODES.checkerTypecheckFailed,
       command: LIMINA_CHECK_ISSUE_CODES.commandFailed,
+      'core:analyze': LIMINA_CHECK_ISSUE_CODES.coreAnalyzeFailed,
       'graph:check': LIMINA_CHECK_ISSUE_CODES.graphCheckFailed,
       'graph:materialize': LIMINA_CHECK_ISSUE_CODES.graphMaterializeFailed,
       'graph:prepare': LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,

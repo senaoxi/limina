@@ -33,6 +33,7 @@ import type {
 } from '../typescript-semantic/dependency-fact';
 
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
+import type { SubscriptionPlan } from '../facts/subscription';
 import type { ProjectDependencyEvidence } from './evidence';
 import type { ReferenceGraphFacts } from './reference-facts';
 import type { RuntimeSourceResolver } from './runtime-source-resolution';
@@ -191,6 +192,7 @@ export interface ProjectDependencyCaches {
   sourceConfigCoverage?: SourceConfigCoverageIndex;
   declarationContextPolicy?: DeclarationContextPolicy;
   readonly analysisCache?: NativeAnalysisCache;
+  readonly subscriptionPlan?: SubscriptionPlan;
   physicalSourceSyntax: Map<
     string,
     { generation: number; sourceText: string; records: ImportRecord[] }
@@ -202,6 +204,12 @@ export interface ProjectDependencyCaches {
     string,
     TypeScriptSemanticDependencyContext
   >;
+  nativeContextsByConfig?: Map<string, TypeScriptSemanticDependencyContext>;
+  runtimeSourceResolvers?: Map<string, RuntimeSourceResolver>;
+  factCounters?: {
+    nativeResolutionReuses: number;
+    runtimeOnlyResolutions: number;
+  };
 }
 
 export interface ProjectDependencyProvider {

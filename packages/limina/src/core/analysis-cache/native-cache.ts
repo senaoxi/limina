@@ -66,6 +66,8 @@ export class NativeAnalysisCache {
   readonly #syntaxWitnesses = new Map<string, Map<string, string>>();
   readonly #syntaxProofs = new Map<string, string>();
   readonly #resolutions: ResolutionQueries;
+  readonly #runtimeResolutions: ResolutionQueries;
+  readonly #runtimeMetrics: AnalysisCacheMetrics;
   readonly #facts: ImporterFacts;
   readonly #contexts: NativeContextRecords;
   #resolving = 0;
@@ -88,6 +90,7 @@ export class NativeAnalysisCache {
   };
   readonly invalidation: AnalysisInvalidation;
   readonly queries: Record<string, ResolutionRecord>;
+  readonly runtimeQueries: Record<string, ResolutionRecord>;
   readonly retainedQueryIds: ReadonlySet<string>;
   readonly importers: Record<string, ImporterRecord>;
   readonly files: AnalysisSnapshot['files'] = {};
@@ -145,6 +148,14 @@ export class NativeAnalysisCache {
       dirty: this.invalidation.resolutionDirty,
       origin: this.previousOrigin,
     });
+    this.#runtimeMetrics = emptyMetrics();
+    this.#runtimeResolutions = new ResolutionQueries({
+      inputs: this.inputs,
+      metrics: this.#runtimeMetrics,
+      previous: state.runtimeQueries,
+      dirty: this.invalidation.runtimeResolutionDirty,
+      origin: this.previousOrigin,
+    });
     this.#facts = new ImporterFacts({
       inputs: this.inputs,
       metrics: this.metrics,
@@ -153,6 +164,7 @@ export class NativeAnalysisCache {
       origin: this.previousOrigin,
     });
     this.queries = this.#resolutions.records;
+    this.runtimeQueries = this.#runtimeResolutions.records;
     this.retainedQueryIds = this.#resolutions.retained;
     this.importers = this.#facts.records;
     this.#contexts = new NativeContextRecords(this);
@@ -306,6 +318,7 @@ export class NativeAnalysisCache {
     file: string,
     text: string,
     project?: TypeScriptSemanticProject,
+    sourceFile?: ts.SourceFile,
   ): FileDependencyFacts {
     const version = analysisHash(text);
     const physicalVersion =
@@ -348,7 +361,7 @@ export class NativeAnalysisCache {
             : witnessed === version;
         if (!isWitnessed) throw new AnalysisInputDriftError(file);
       }
-      facts = extractFileDependencyFacts(file, text, version);
+      facts = extractFileDependencyFacts(file, text, version, sourceFile);
       if (physicalVersion !== undefined)
         facts.physicalVersion = physicalVersion;
       this.increment('syntaxFactBuilds');
@@ -370,6 +383,19 @@ export class NativeAnalysisCache {
     if (nativeFingerprint(facts) !== fingerprint) return;
     this.files[facts.filePath] = facts;
     this.#syntaxProofs.set(facts.filePath, fingerprint);
+  }
+  readFileDependencyFacts(file: string): FileDependencyFacts | undefined {
+    const facts = this.files[file];
+    if (facts === undefined || facts.compilerVersion !== ts.version) {
+      return undefined;
+    }
+    if (this.#syntaxProofs.get(file) !== nativeFingerprint(facts)) {
+      return undefined;
+    }
+    return this.inputs.observe(file, 'content').expectedVersion ===
+      facts.physicalVersion
+      ? structuredClone(facts)
+      : undefined;
   }
   readSourceSyntax(file: string): ImportRecord[] | undefined {
     const facts = this.files[file];
@@ -518,6 +544,27 @@ export class NativeAnalysisCache {
       return this.#resolutions.query(query);
     } finally {
       this.#resolving -= 1;
+    }
+  }
+
+  queryRuntime<T>(query: ResolutionQuery<T>): T {
+    const beforeCalls = this.#runtimeMetrics.resolverCalls;
+    const beforeHits = this.#runtimeMetrics.queryHits;
+    this.#resolving += 1;
+    try {
+      return this.#runtimeResolutions.query(query);
+    } finally {
+      this.#resolving -= 1;
+      const callsDelta = this.#runtimeMetrics.resolverCalls - beforeCalls;
+      const hitsDelta = this.#runtimeMetrics.queryHits - beforeHits;
+      if (callsDelta > 0) {
+        this.metrics.runtimeResolverCalls =
+          (this.metrics.runtimeResolverCalls ?? 0) + callsDelta;
+      }
+      if (hitsDelta > 0) {
+        this.metrics.runtimeQueryHits =
+          (this.metrics.runtimeQueryHits ?? 0) + hitsDelta;
+      }
     }
   }
 

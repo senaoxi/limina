@@ -132,6 +132,7 @@ export function collectFileSourceEvidence(
       fileName: options.fileName,
       identity: request.context.vueSemanticIdentity,
     }),
+    typeScriptSemanticContext: request.typeScriptSemanticContext,
     virtualSourceText: request.context.virtualFiles?.get(options.fileName),
   });
   addSourceDiagnostics({ base: options, diagnostics: source.diagnostics });
@@ -190,7 +191,8 @@ function collectVueSourceEvidence(
 }
 
 function getNativeSemanticContext(options: FilePreparationOptions) {
-  return options.request.context.semanticAuthority.family !== 'vue' &&
+  return options.request.purpose !== 'runtime-source' &&
+    options.request.context.semanticAuthority.family !== 'vue' &&
     isTypeScriptSemanticSource(options.fileName)
     ? options.request.typeScriptSemanticContext
     : undefined;

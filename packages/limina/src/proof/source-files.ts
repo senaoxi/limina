@@ -224,7 +224,7 @@ function createOptionalGitignoreFilter(
 
 export async function collectExpectedSourceFiles(
   config: ResolvedLiminaConfig,
-  _generatedGraph: GeneratedTsconfigGraphResult,
+  _generatedGraph: GeneratedTsconfigGraphResult | undefined,
   workspaceContext: ValidatedWorkspaceContext,
 ): Promise<Set<string>> {
   const configured = getConfiguredSourcePatterns(config);

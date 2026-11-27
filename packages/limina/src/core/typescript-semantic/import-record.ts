@@ -1,3 +1,4 @@
+import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type {
   ImportRecord,
@@ -33,6 +34,58 @@ export function createImportRecordIdentity(importRecord: ImportRecord): string {
     ],
     specifier: importRecord.specifier,
   });
+}
+
+/**
+ * Canonical span-based keys for matching lexical ImportRecords against
+ * Native compiler observations regardless of syntactic kind normalization
+ * (e.g. `import-type` vs `static`, `jsdoc-import` vs `import-type`) or
+ * quoted vs unquoted triple-slash directive offsets.
+ */
+export function nativeOccurrenceSpanKeys(
+  importRecord: ImportRecord,
+): readonly string[] {
+  const filePath = normalizeAbsolutePath(importRecord.filePath);
+  const { sourceStart, sourceEnd } = importRecord.locator;
+  if (sourceStart < 0) return [];
+  if (
+    importRecord.kind === 'triple-slash-path' ||
+    importRecord.kind === 'triple-slash-types'
+  ) {
+    const keys = [
+      JSON.stringify([
+        filePath,
+        importRecord.kind,
+        importRecord.specifier,
+        sourceStart,
+        sourceEnd,
+      ]),
+    ];
+    if (sourceEnd - sourceStart === importRecord.specifier.length + 2) {
+      keys.push(
+        JSON.stringify([
+          filePath,
+          importRecord.kind,
+          importRecord.specifier,
+          sourceStart + 1,
+          sourceEnd - 1,
+        ]),
+      );
+    }
+    return keys;
+  }
+  if (!isModuleImportRecord(importRecord)) return [];
+  const role =
+    importRecord.kind === 'module-augmentation' ? 'augmentation' : 'module';
+  return [
+    JSON.stringify([
+      filePath,
+      role,
+      importRecord.specifier,
+      sourceStart,
+      sourceEnd,
+    ]),
+  ];
 }
 
 function isMatchesRange(

@@ -6,7 +6,7 @@ import type {
   ResolvedLiminaConfig,
   RuntimeEnvironment,
 } from '#config/runner';
-import type { AnalysisProviderSet } from '#core';
+import type { AnalysisProviderSet, PackageArtifactProvider } from '#core';
 import type { CheckIssueReportOptions } from '../check-reporting/human';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import type { LiminaCheckIssue } from '../check-reporting/snapshot';
@@ -76,6 +76,7 @@ export interface RunPackageCheckEntryOptions {
   issueSink?: LiminaCheckIssue[];
   label: string;
   outDir: string;
+  packageArtifacts?: PackageArtifactProvider;
   progressItem?: TaskProgressItem;
   rawEntry: PackageEntry;
 }

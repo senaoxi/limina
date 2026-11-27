@@ -3,13 +3,36 @@ import { joinRunning, settleOneRunning } from './scheduler-settlement';
 import { finishSynthetic, startTask } from './scheduler-tasks';
 import type { SchedulerContext } from './scheduler-types';
 import { assertActiveGeneration } from './task-execution';
-import { type ExecutionTask, getTaskDependencies } from './tasks';
+import type { ExecutionTask } from './tasks';
 
 function isDependenciesSettled(
   task: ExecutionTask,
   context: SchedulerContext,
 ): boolean {
-  return [...getTaskDependencies(task)].every((id) => context.outcomes.has(id));
+  const after = task.after ?? [];
+  const required = task.requiresSuccessOf ?? [];
+  for (const id of after) {
+    if (!context.outcomes.has(id)) return false;
+  }
+  for (const id of required) {
+    if (!context.outcomes.has(id)) return false;
+  }
+  const conditional = task.requiresSuccessOfWhen;
+  const isBypassedConditional =
+    conditional?.waitOnlyWhenMatched === true &&
+    !conditional.test(context.options.preflight);
+  if (
+    conditional !== undefined &&
+    !isBypassedConditional &&
+    conditional.tasks.some((id) => !context.outcomes.has(id))
+  ) {
+    return false;
+  }
+  context.options.checkRunRecorder?.trace?.dependenciesSettled(
+    task,
+    conditional !== undefined && !isBypassedConditional,
+  );
+  return true;
 }
 
 type RootBlocker = ReturnType<typeof resolveRootBlocker>;

@@ -1,15 +1,14 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { AnalysisProviderSet } from '#core';
+import type { AnalysisProviderSet, SubscribedCoreFactView } from '#core';
 import type { ProjectInfo } from '#core/import-graph/context';
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
 import type { CheckCounter } from '../check-reporting/stats';
 import { getCheckerSemanticFamily } from '../core/build-graph/checker-semantic-authority';
 import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
 import {
-  collectRuntimeProjectDependencies,
   createParsedProjectSemanticContext,
   type ProjectDependency,
-  type ProjectDependencyCaches,
+  type ProjectDependencyCollection,
 } from '../core/project-dependencies/runner';
 import {
   createWorkspaceSourceBoundary,
@@ -29,11 +28,11 @@ import type {
 interface SourceImportOptions {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
+  coreFacts: SubscribedCoreFactView;
   importAnalysis: AnalysisProviderSet['imports']['context'];
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   packages: WorkspacePackage[];
   pathIndex: WorkspaceRegionPathIndex;
-  projectDependencyCaches: ProjectDependencyCaches;
   findings: SourceFinding[];
   rootPackage: WorkspacePackage | null;
   resourceResolver: ResourceResolver;
@@ -76,9 +75,7 @@ function getSourceOwner(
     : base.workspaceLookup.findOwnerForFile(firstFileName);
 }
 
-function assertSourceCollection(
-  collection: ReturnType<typeof collectRuntimeProjectDependencies>,
-): void {
+function assertSourceCollection(collection: ProjectDependencyCollection): void {
   const failure = collection.failures[0];
   if (failure === undefined) return;
   throw new Error(
@@ -157,8 +154,7 @@ function processSourceProject(
     fileNames: [...entry.fileNames],
     ownedFileNames: [...entry.fileNames],
   };
-  const collection = collectRuntimeProjectDependencies({
-    caches: base.projectDependencyCaches,
+  const collection = base.coreFacts.getRuntimeProjectDependencies({
     context: createParsedProjectSemanticContext({
       authority,
       packageRootDir: packageRootDirectory,
@@ -176,7 +172,7 @@ function processSourceProject(
 
 function processSourceDependencies(options: {
   base: SourceImportOptions;
-  collection: ReturnType<typeof collectRuntimeProjectDependencies>;
+  collection: ProjectDependencyCollection;
   entry: SourceProjectEntry;
   project: ProjectInfo;
 }): void {
@@ -193,7 +189,7 @@ function processSourceDependencies(options: {
 
 function processSourceObservations(options: {
   base: SourceImportOptions;
-  collection: ReturnType<typeof collectRuntimeProjectDependencies>;
+  collection: ProjectDependencyCollection;
   entry: SourceProjectEntry;
   project: ProjectInfo;
 }): void {
@@ -205,9 +201,7 @@ function processSourceObservations(options: {
 function processSourceObservation(options: {
   base: SourceImportOptions;
   entry: SourceProjectEntry;
-  observation: ReturnType<
-    typeof collectRuntimeProjectDependencies
-  >['observations'][number];
+  observation: ProjectDependencyCollection['observations'][number];
   project: ProjectInfo;
 }): void {
   if (options.observation.kind === 'unmapped-generated') return;

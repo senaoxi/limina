@@ -8,12 +8,14 @@ import {
   qualifyAnalysisSnapshotRoot,
 } from '../core/analysis-cache/snapshot-schema';
 import {
+  type AnalysisBlockReadFilter,
   type AnalysisBlockReference,
   readAnalysisBlocks,
 } from '../core/analysis-cache/snapshot-shards';
 import { compareConfigModules } from './config-module-comparison';
 import type { ConfigObservation } from './config-observation';
 interface DecodeOptions {
+  blockReadFilter?: AnalysisBlockReadFilter;
   identity: string;
   configPath: string;
   configVersion?: string;
@@ -95,7 +97,9 @@ export class AnalysisSnapshotDecoder {
     const start = this.#startMeasurement();
     try {
       return parseStoredAnalysisSnapshot(
-        readAnalysisBlocks(value, this.#options.readBlock),
+        readAnalysisBlocks(value, this.#options.readBlock, {
+          filter: this.#options.blockReadFilter,
+        }),
         this.#options.identity,
         this.#options.configVersion,
       );

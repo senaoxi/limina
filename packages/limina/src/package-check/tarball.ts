@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { PackageArtifactProvider } from '#core';
 import { toRelativePath } from '#utils/path';
 import { pack } from '@publint/pack';
 import { existsSync } from 'node:fs';
@@ -8,7 +9,7 @@ import path from 'pathe';
 import type { DistPackageJson as DistributionPackageJson } from './manifest';
 import type { PackedPackageTarball } from './runner-types';
 
-export async function packOutputTarball(
+async function packOutputTarballUncached(
   outDirectory: string,
 ): Promise<PackedPackageTarball> {
   const destination = await mkdtemp(path.join(tmpdir(), '__LIMINA_PACKAGE__'));
@@ -36,6 +37,34 @@ export async function packOutputTarball(
     await cleanupDestination();
     throw error;
   }
+}
+
+export async function packOutputTarball(
+  outDirectory: string,
+  packageArtifacts?: PackageArtifactProvider,
+): Promise<PackedPackageTarball> {
+  if (packageArtifacts === undefined) {
+    return packOutputTarballUncached(outDirectory);
+  }
+  const cached = await packageArtifacts.getOrPackTarball(
+    outDirectory,
+    async () => {
+      const packed = await packOutputTarballUncached(outDirectory);
+      try {
+        return {
+          tarball: packed.tarball,
+          tarballName: path.basename(packed.tarballPath),
+        };
+      } finally {
+        await packed.cleanup();
+      }
+    },
+  );
+  return {
+    cleanup: () => Promise.resolve(),
+    tarball: Buffer.from(cached.tarball),
+    tarballPath: path.join(cached.outDir, cached.tarballName),
+  };
 }
 
 function getEntryLabel(label: string | undefined): string {

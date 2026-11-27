@@ -1,5 +1,11 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
+import {
+  type AnalysisProviderSet,
+  type CheckerSelectionResolution,
+  type CoreAnalysisPhaseObserver,
+  createAnalysisProviders,
+  type SubscriptionPlan,
+} from '#core';
 import type {
   GeneratedTsconfigGraphResult,
   PreparedTsconfigGraph,
@@ -8,6 +14,7 @@ import type {
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import type * as CheckerRoutes from '#core/tsconfig/actions';
 import type * as Workspace from '#core/workspace/actions';
+import { randomUUID } from 'node:crypto';
 import type {
   AnalysisMetricsRecorder,
   AnalysisRun,
@@ -56,12 +63,14 @@ import type {
   PackageEntryPlanOptions,
 } from './types';
 export class LiminaPreflightManager {
+  readonly #instanceId = randomUUID();
   readonly #generatedGraphProvider:
     | (() => Promise<GeneratedTsconfigGraphResult>)
     | undefined;
   readonly #metrics: AnalysisMetricsRecorder;
   readonly #profilingMetrics: AnalysisMetricsRecorder | undefined;
   readonly #signal: AbortSignal;
+  readonly #subscriptionPlan: SubscriptionPlan | undefined;
   #cache = new PreflightGenerationCache(0);
   #generation = 0;
   #providerGeneration = 0;
@@ -71,6 +80,8 @@ export class LiminaPreflightManager {
   readonly #usesCustomProviders: boolean;
   #analysisCache: AnalysisCacheController | undefined;
   readonly #configuration: { assertStable(): void };
+  readonly #retainedProviders = new Map<AnalysisProviderSet, number>();
+  readonly #deferredDisposals = new Set<AnalysisProviderSet>();
   #disposed = false;
   #producerReceipt: ProducerBuildReceipt | undefined;
   #frameworkInferenceAmbiguities:
@@ -90,6 +101,7 @@ export class LiminaPreflightManager {
     this.#metrics = setup.resolveMetrics(options);
     this.#profilingMetrics = options.metrics;
     this.#signal = setup.resolveSignal(options);
+    this.#subscriptionPlan = options.subscriptionPlan;
     this.#usesCustomProviders = options.providers !== undefined;
     this.artifactNamespace = setup.resolveArtifactNamespace(options);
     this.#analysisCache = setup.createAnalysisCache(
@@ -179,14 +191,22 @@ export class LiminaPreflightManager {
       this.config,
       this.artifactNamespace,
       this.#profilingMetrics,
-      { analysisCache },
+      { analysisCache, subscriptionPlan: this.#subscriptionPlan },
     );
     if (this.#producerReceipt !== undefined)
       this.providers.buildGraph.useProducerBuildReceipt(this.#producerReceipt);
     this.run = this.#createRun();
   }
+  #disposeProviderSet(providerSet: AnalysisProviderSet): void {
+    if ((this.#retainedProviders.get(providerSet) ?? 0) > 0) {
+      this.#deferredDisposals.add(providerSet);
+      return;
+    }
+    this.#deferredDisposals.delete(providerSet);
+    providerSet.dispose?.();
+  }
   #disposeProviders(): void {
-    this.providers.dispose?.();
+    this.#disposeProviderSet(this.providers);
   }
   #assertActive(): void {
     if (this.#disposed) throw new Error('Preflight manager has been disposed.');
@@ -194,11 +214,21 @@ export class LiminaPreflightManager {
   #createRun(): AnalysisRun {
     return setup.createPreflightRun({
       generation: this.#generation,
+      instanceId: this.#instanceId,
       providerGeneration: this.#providerGeneration,
       rootDir: this.config.rootDir,
       metrics: this.#metrics,
       signal: this.#signal,
     });
+  }
+  #retryCoreAnalysis(): void {
+    const previous = this.#cache;
+    this.#replaceProviderGeneration({
+      slot: previous.materializationSlot,
+      clearDiagnostics: true,
+      reason: 'analysis-retry',
+    });
+    this.#cache.coreAnalysis = previous.coreAnalysis;
   }
   #retryAnalysis(purpose: PreparedTsconfigGraph['purpose']): void {
     const previous = this.#cache;
@@ -299,6 +329,7 @@ export class LiminaPreflightManager {
           config: this.config,
           metrics: this.#profilingMetrics,
           signal: this.#signal,
+          subscriptionPlan: this.#subscriptionPlan,
         },
         this.#providerGeneration + 1,
       ),
@@ -389,11 +420,37 @@ export class LiminaPreflightManager {
       this.providers.releaseDependencyMemos();
     await this.#analysisCache?.publish();
   }
+  retainActiveProviders(): () => void {
+    const providerSet = this.providers;
+    this.#retainedProviders.set(
+      providerSet,
+      (this.#retainedProviders.get(providerSet) ?? 0) + 1,
+    );
+    let isReleased = false;
+    return () => {
+      if (isReleased) return;
+      isReleased = true;
+      const remaining = (this.#retainedProviders.get(providerSet) ?? 1) - 1;
+      if (remaining > 0) {
+        this.#retainedProviders.set(providerSet, remaining);
+        return;
+      }
+      this.#retainedProviders.delete(providerSet);
+      if (!this.#deferredDisposals.has(providerSet)) return;
+      this.#deferredDisposals.delete(providerSet);
+      providerSet.dispose?.();
+    };
+  }
   dispose(): void {
     if (this.#disposed) {
       return;
     }
     this.#disposed = true;
+    for (const providerSet of this.#deferredDisposals) {
+      providerSet.dispose?.();
+    }
+    this.#deferredDisposals.clear();
+    this.#retainedProviders.clear();
     this.providers.dispose?.();
   }
   ensureGeneratedGraph(
@@ -427,6 +484,17 @@ export class LiminaPreflightManager {
   getMaterializedGraph(): GeneratedTsconfigGraphResult | undefined {
     const graph = this.#cache.materializationSlot.receipt?.graph;
     return graph?.purpose === 'complete' ? graph : undefined;
+  }
+  getMaterializedProducerGraph(): ProducerBuildPlan | undefined {
+    const graph = this.#cache.producerMaterializationSlot.receipt?.graph;
+    return graph?.purpose === 'producer-build' ? graph : undefined;
+  }
+  requiresPostBuildGraphFinalization(): boolean {
+    const graph = this.getMaterializedGraph();
+    return (
+      graph === undefined ||
+      (graph.governedSources.get('svelte-check')?.size ?? 0) > 0
+    );
   }
   getFrameworkInferenceAmbiguities(): readonly FrameworkInferenceAmbiguity[] {
     return this.#frameworkInferenceAmbiguities ?? [];
@@ -613,6 +681,59 @@ export class LiminaPreflightManager {
       this.providers.workspace.getRegionBoundaries();
     return this.#cache.workspaceRegionBoundaries;
   }
+  ensureCoreAnalysisPrepared(options?: {
+    onPhase?: CoreAnalysisPhaseObserver;
+  }): Promise<CheckerSelectionResolution> {
+    if (this.#cache.coreAnalysis !== undefined) {
+      return this.#cache.coreAnalysis;
+    }
+    const generation = this.#generation;
+    const analyze = async () => {
+      await this.ensureWorkspaceValidated();
+      const profile = currentProfile();
+      if (profile === undefined) {
+        return this.providers.ownership.getOwnershipProjection(options);
+      }
+      const providerRun = this.#observeProviderRun(profile);
+      return profile.withProviderRun(providerRun, () =>
+        this.providers.ownership.getOwnershipProjection(options),
+      );
+    };
+    const pending = this.#observeInferenceDiagnostics(
+      this.#analysisCache === undefined
+        ? (async () => {
+            this.assertExecutionConfigurationStable();
+            const resolution = await analyze();
+            this.assertExecutionConfigurationStable();
+            return resolution;
+          })()
+        : this.#analysisCache.analyze({
+            analyze,
+            refresh: () => this.#retryCoreAnalysis(),
+          }),
+    );
+    const run = async (): Promise<CheckerSelectionResolution> => {
+      try {
+        return await pending;
+      } catch (error) {
+        if (
+          this.#cache.coreAnalysis === wrapped &&
+          generation === this.#generation
+        ) {
+          this.#cache.coreAnalysis = undefined;
+        }
+        throw error;
+      }
+    };
+    const wrapped = run();
+    this.#cache.coreAnalysis = wrapped;
+    return wrapped;
+  }
+  ensureOwnershipProjection(): ReturnType<
+    AnalysisProviderSet['ownership']['getOwnershipProjection']
+  > {
+    return this.providers.ownership.getOwnershipProjection();
+  }
   async ensureSourceGraphProjectExtensions(): Promise<CheckerRoutes.CollectSourceGraphProjectExtensionsResult> {
     this.#cache.sourceGraphProjectExtensions ??=
       queries.loadSourceGraphProjectExtensions(
@@ -642,10 +763,7 @@ export class LiminaPreflightManager {
   ensureExpectedSourceFiles(): Promise<Set<string>> {
     this.#cache.expectedSourceFiles ??= queries.loadExpectedSourceFiles(
       this.config,
-      Promise.all([
-        this.ensureGeneratedGraph(),
-        this.ensureWorkspaceValidated(),
-      ]),
+      this.ensureWorkspaceValidated(),
     );
     return this.#cache.expectedSourceFiles;
   }

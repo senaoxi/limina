@@ -1,3 +1,4 @@
+import { planCapabilitySubscriptions } from '#core';
 import type { cac } from 'cac';
 import { isRunProofCheck } from '../../commands/proof';
 import { LiminaPreflightManager } from '../../preflight';
@@ -27,7 +28,10 @@ async function runProofAction(
         flags,
         'proof',
       );
-      const preflight = new LiminaPreflightManager({ config });
+      const preflight = new LiminaPreflightManager({
+        config,
+        subscriptionPlan: planCapabilitySubscriptions(['proof:check']),
+      });
       const issues: LiminaCheckIssue[] = [];
       registerSession({
         command: 'limina proof check',

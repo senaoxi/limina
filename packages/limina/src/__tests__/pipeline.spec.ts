@@ -106,6 +106,129 @@ describe('ExecutionPlan construction', () => {
     }
   });
 
+  it('runs core:analyze before graph:materialize and reuses Stage B1 ownership facts without recomputing them', async () => {
+    const fixture = await createConfig();
+    const plan = createDefaultExecutionPlan(fixture.config);
+    const preflight = new LiminaPreflightManager({ config: fixture.config });
+    const ownershipSpy = vi.spyOn(
+      preflight.providers.ownership,
+      'getOwnershipProjection',
+    );
+    const phases: string[] = [];
+    const coreAnalysis = plan.tasks.find(
+      (task) => task.issueTask === 'core:analyze',
+    )!;
+    const originalCoreRun = coreAnalysis.run;
+    coreAnalysis.run = async (context) => {
+      phases.push('core:analyze:start');
+      const result = await originalCoreRun(context);
+      phases.push('core:analyze:end');
+      return result;
+    };
+    const materializer = plan.tasks.find(
+      (task) => task.issueTask === 'graph:materialize',
+    )!;
+    const originalMaterializerRun = materializer.run;
+    materializer.run = async (context) => {
+      phases.push('graph:materialize:start');
+      const result = await originalMaterializerRun(context);
+      phases.push('graph:materialize:end');
+      return result;
+    };
+    for (const task of plan.tasks) {
+      if (task.kind === 'task') {
+        task.run = async () => ({ issues: [], status: 'passed' });
+      }
+    }
+
+    try {
+      const result = await runExecutionTasks({
+        command: 'limina check',
+        preflight,
+        rootDir: fixture.config.rootDir,
+        tasks: plan.tasks,
+      });
+      expect(result.passed).toBe(true);
+      expect(phases).toEqual([
+        'core:analyze:start',
+        'core:analyze:end',
+        'graph:materialize:start',
+        'graph:materialize:end',
+      ]);
+      // Stage B1 runs in core:analyze and BuildGraphCore reuses the cached promise
+      expect(ownershipSpy).toHaveBeenCalledTimes(2);
+      expect(ownershipSpy.mock.results[0]?.value).toBe(
+        ownershipSpy.mock.results[1]?.value,
+      );
+    } finally {
+      preflight.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('records LIMINA_CORE_ANALYZE_FAILED and blocks graph:materialize and downstream tasks when core:analyze fails', async () => {
+    const fixture = await createConfig();
+    const plan = createDefaultExecutionPlan(fixture.config);
+    const preflight = new LiminaPreflightManager({ config: fixture.config });
+    vi.spyOn(preflight, 'ensureCoreAnalysisPrepared').mockRejectedValue(
+      new Error('simulated core analysis failure'),
+    );
+    const coreAnalysis = plan.tasks.find(
+      (task) => task.issueTask === 'core:analyze',
+    )!;
+    const materializerRun = vi.fn();
+    const materializer = plan.tasks.find(
+      (task) => task.issueTask === 'graph:materialize',
+    )!;
+    materializer.run = async () => {
+      materializerRun();
+      return { issues: [], status: 'passed' };
+    };
+    const userRuns = plan.tasks
+      .filter((task) => task.kind === 'task')
+      .map((task) => {
+        const run = vi.fn();
+        task.run = async () => {
+          run();
+          return { issues: [], status: 'passed' };
+        };
+        return { run, task };
+      });
+
+    try {
+      const result = await runExecutionTasks({
+        command: 'limina check',
+        preflight,
+        rootDir: fixture.config.rootDir,
+        tasks: plan.tasks,
+      });
+      expect(result.passed).toBe(false);
+      expect(materializerRun).not.toHaveBeenCalled();
+      for (const { run } of userRuns) expect(run).not.toHaveBeenCalled();
+      const coreResult = result.results.find(
+        (entry) => entry.id === coreAnalysis.id,
+      );
+      expect(coreResult?.status).toBe('failed');
+      expect(coreResult?.issues).toContainEqual(
+        expect.objectContaining({
+          code: 'LIMINA_CORE_ANALYZE_FAILED',
+          task: 'core:analyze',
+        }),
+      );
+      const materializeResult = result.results.find(
+        (entry) => entry.id === materializer.id,
+      );
+      expect(materializeResult?.status).toBe('blocked');
+      for (const { task } of userRuns) {
+        const taskResult = result.results.find((entry) => entry.id === task.id);
+        expect(taskResult?.status).toBe('blocked');
+      }
+    } finally {
+      preflight.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   it('holds graph consumers until final materialization finishes', async () => {
     const fixture = await createConfig();
     const plan = createDefaultExecutionPlan(fixture.config);
@@ -146,9 +269,8 @@ describe('ExecutionPlan construction', () => {
             throw new Error('Execution completed before materialization.');
           })(),
         ]);
-        for (const { run, isProducer } of userRuns) {
-          if (isProducer) expect(run).toHaveBeenCalledOnce();
-          else expect(run).not.toHaveBeenCalled();
+        for (const { run } of userRuns) {
+          expect(run).not.toHaveBeenCalled();
         }
       } finally {
         releaseMaterializer.resolve();
@@ -156,6 +278,142 @@ describe('ExecutionPlan construction', () => {
       }
 
       for (const { run } of userRuns) expect(run).toHaveBeenCalledOnce();
+    } finally {
+      preflight.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('runs graph and proof checks concurrently with checker:build once the complete graph is ready', async () => {
+    const fixture = await createConfig();
+    const plan = createDefaultExecutionPlan(fixture.config);
+    const buildStarted = deferred<void>();
+    const releaseBuild = deferred<void>();
+    const graphFinished = deferred<void>();
+    const proofFinished = deferred<void>();
+    const preflight = new LiminaPreflightManager({ config: fixture.config });
+    vi.spyOn(preflight, 'requiresPostBuildGraphFinalization').mockReturnValue(
+      false,
+    );
+    const materializer = plan.tasks.find(
+      (task) => task.issueTask === 'graph:materialize',
+    )!;
+    materializer.run = async () => ({ issues: [], status: 'passed' });
+    const build = plan.tasks.find(
+      (task) => task.issueTask === 'checker:build',
+    )!;
+    build.run = async () => {
+      buildStarted.resolve();
+      await releaseBuild.promise;
+      return { issues: [], status: 'passed' };
+    };
+    const graph = plan.tasks.find((task) => task.issueTask === 'graph:check')!;
+    graph.run = async () => {
+      graphFinished.resolve();
+      return { issues: [], status: 'passed' };
+    };
+    const proof = plan.tasks.find((task) => task.issueTask === 'proof:check')!;
+    proof.run = async () => {
+      proofFinished.resolve();
+      return { issues: [], status: 'passed' };
+    };
+    const source = plan.tasks.find(
+      (task) => task.issueTask === 'source:check',
+    )!;
+    source.run = async () => ({ issues: [], status: 'passed' });
+    const typecheck = plan.tasks.find(
+      (task) => task.issueTask === 'checker:typecheck',
+    )!;
+    typecheck.run = async () => ({ issues: [], status: 'disabled' });
+
+    try {
+      const execution = runExecutionTasks({
+        command: 'limina check',
+        preflight,
+        rootDir: fixture.config.rootDir,
+        tasks: plan.tasks,
+      });
+      try {
+        await Promise.all([
+          buildStarted.promise,
+          graphFinished.promise,
+          proofFinished.promise,
+        ]);
+      } finally {
+        releaseBuild.resolve();
+      }
+      await expect(execution).resolves.toMatchObject({ passed: true });
+    } finally {
+      preflight.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('holds and blocks downstream checks on checker:build when post-build graph finalization is required', async () => {
+    const fixture = await createConfig();
+    const plan = createDefaultExecutionPlan(fixture.config);
+    const preflight = new LiminaPreflightManager({ config: fixture.config });
+    vi.spyOn(preflight, 'requiresPostBuildGraphFinalization').mockReturnValue(
+      true,
+    );
+    const materializer = plan.tasks.find(
+      (task) => task.issueTask === 'graph:materialize',
+    )!;
+    materializer.run = async () => ({ issues: [], status: 'passed' });
+    const build = plan.tasks.find(
+      (task) => task.issueTask === 'checker:build',
+    )!;
+    build.run = async () => ({ issues: [], status: 'failed' });
+    const downstreamRuns = plan.tasks
+      .filter(
+        (task) => task.kind === 'task' && task.issueTask !== 'checker:build',
+      )
+      .map((task) => {
+        const run = vi.fn();
+        task.run = async () => {
+          run();
+          return { issues: [], status: 'passed' };
+        };
+        return { run, task };
+      });
+
+    try {
+      const result = await runExecutionTasks({
+        command: 'limina check',
+        preflight,
+        rootDir: fixture.config.rootDir,
+        tasks: plan.tasks,
+      });
+      expect(result.passed).toBe(false);
+      expect(result.outcome).toMatchObject({
+        blocker: { id: build.id },
+        state: 'blocked',
+      });
+      for (const { run, task } of downstreamRuns) {
+        expect(run).not.toHaveBeenCalled();
+        expect(
+          result.results.find((entry) => entry.id === task.id),
+        ).toMatchObject({
+          status: 'blocked',
+        });
+      }
+    } finally {
+      preflight.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('defers provider disposal while concurrent governance tasks retain active providers', async () => {
+    const fixture = await createConfig();
+    const preflight = new LiminaPreflightManager({ config: fixture.config });
+    try {
+      const disposeSpy = vi.spyOn(preflight.providers, 'dispose');
+      const release = preflight.retainActiveProviders();
+      await preflight.ensureGeneratedArtifactsMaterialized();
+      await preflight.refreshAfterManagedOutputs('complete');
+      expect(disposeSpy).not.toHaveBeenCalled();
+      release();
+      expect(disposeSpy).toHaveBeenCalledTimes(1);
     } finally {
       preflight.dispose();
       await fixture.cleanup();
@@ -634,10 +892,12 @@ describe('runPipeline', () => {
       ]);
 
       const output = chunks.join('');
+      expect(output).toContain('◇      checker build\n');
       expect(output).toContain('◇      graph check\n');
       expect(output).toContain('◇      source check\n');
       expect(output).toContain('◇      proof check\n');
-      expect(output).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] {6}checker build\n/u);
+      expect(output).toContain('core analyze');
+      expect(output).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] {6}prepare reference graph\n/u);
       expect(output).toMatch(
         /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] {8}materialize complete reference graph\n/u,
       );
@@ -1363,18 +1623,26 @@ describe('fixed default tasks', () => {
         );
         expect(preparations.map((task) => task.issueTask)).toEqual([
           'workspace:validate',
+          'core:analyze',
           'graph:materialize',
         ]);
-        const [validation, materializer] = preparations;
+        const [validation, coreAnalysis, materializer] = preparations;
         const build = tasks.find((task) => task.issueTask === 'checker:build')!;
-        expect(materializer!.requiresSuccessOf).toEqual([validation!.id]);
-        expect(materializer!.requiresSuccessOfWhen?.tasks).toEqual([build.id]);
-        expect(build.requiresSuccessOf).toEqual([validation!.id]);
+        const checks = tasks.filter(
+          (task) => task.issueTask !== 'checker:build',
+        );
+        expect(coreAnalysis!.requiresSuccessOf).toEqual([validation!.id]);
+        expect(coreAnalysis!.requiresSuccessOfWhen).toBeUndefined();
+        expect(materializer!.requiresSuccessOf).toEqual([coreAnalysis!.id]);
+        expect(materializer!.requiresSuccessOfWhen).toBeUndefined();
+        expect(build.requiresSuccessOf).toEqual([materializer!.id]);
         expect(
-          tasks.every(
+          checks.every(
             (task) =>
-              task.requiresSuccessOf?.[0] ===
-              (task === build ? validation!.id : materializer!.id),
+              task.requiresSuccessOf?.[0] === materializer!.id &&
+              task.requiresSuccessOfWhen?.waitOnlyWhenMatched === true &&
+              task.requiresSuccessOfWhen?.tasks.length === 1 &&
+              task.requiresSuccessOfWhen?.tasks[0] === build.id,
           ),
         ).toBe(true);
       } finally {

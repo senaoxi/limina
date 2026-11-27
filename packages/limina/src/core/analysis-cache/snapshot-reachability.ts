@@ -42,6 +42,7 @@ export function referencedSnapshotInputs(
   records: {
     importers: Record<string, ImporterRecord>;
     queries: Record<string, ResolutionRecord>;
+    runtimeQueries: Record<string, ResolutionRecord>;
   },
 ): Set<string> {
   // Stream every forward receipt without allocating an expanded copy of the
@@ -65,6 +66,7 @@ export function referencedSnapshotInputs(
       addInputs(referenced, context.sharedEnvironment.dependencies);
   }
   addDependencies(referenced, Object.values(records.queries));
+  addDependencies(referenced, Object.values(records.runtimeQueries));
   addDependencies(referenced, Object.values(records.importers));
   return referenced;
 }

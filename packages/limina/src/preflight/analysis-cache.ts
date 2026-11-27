@@ -10,6 +10,7 @@ import {
 import type { EpochInputs } from '../core/analysis-cache/epoch-inputs';
 import { NativeAnalysisCache } from '../core/analysis-cache/native-cache';
 import { cacheCause } from '../core/analysis-cache/profile-decisions';
+import type { AnalysisBlockReadFilter } from '../core/analysis-cache/snapshot-shards';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { analysisCacheIdentity } from './analysis-cache-identity';
 import { AnalysisCacheStore } from './analysis-cache-store';
@@ -35,6 +36,7 @@ export class AnalysisCacheController {
     config: ResolvedLiminaConfig,
     namespace: LiminaArtifactNamespace,
     options: {
+      blockReadFilter?: AnalysisBlockReadFilter;
       metrics?: AnalysisMetricsRecorder;
       canPublish?: boolean;
       force?: boolean;
@@ -49,13 +51,15 @@ export class AnalysisCacheController {
         kind: 'tool-identity',
         durationMs: performance.now() - toolStart,
       });
-    this.#canPublish = options.canPublish !== false;
+    this.#canPublish =
+      options.canPublish !== false && options.blockReadFilter === undefined;
     this.#force = options.force === true;
     this.#configuration = new ConfigObservation(config);
     this.#configPath = config.configPath;
     this.#metrics = metrics;
     this.#configVersion = effectiveConfigVersion(config);
     this.#store = new AnalysisCacheStore({
+      blockReadFilter: options.blockReadFilter,
       namespace,
       governanceRoot: config.rootDir,
       identity: analysisCacheIdentity(config, this.#tools.identity),

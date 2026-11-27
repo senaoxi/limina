@@ -6,6 +6,12 @@ import {
 
 export const workspaceIssueRules: readonly LiminaCheckIssueRuleDefinition[] = [
   defineIssueRule({
+    code: C.coreAnalyzeFailed,
+    description:
+      'Core semantic and dependency analysis failed before downstream checks started.',
+    task: 'core:analyze',
+  }),
+  defineIssueRule({
     code: C.workspaceOutputCycle,
     description:
       'Workspace descriptor and output visibility does not reach a stable state.',

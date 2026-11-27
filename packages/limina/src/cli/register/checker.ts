@@ -1,3 +1,4 @@
+import { planCapabilitySubscriptions } from '#core';
 import type { cac } from 'cac';
 import { runCheckerBuild, runCheckerTypecheck } from '../../commands/typecheck';
 import { LiminaPreflightManager } from '../../preflight';
@@ -79,7 +80,10 @@ async function isExecuteCheckerBuild(options: {
     options.flags,
     commandKind,
   );
-  const preflight = new LiminaPreflightManager({ config });
+  const preflight = new LiminaPreflightManager({
+    config,
+    subscriptionPlan: planCapabilitySubscriptions(['checker:build']),
+  });
   const issues: LiminaCheckIssue[] = [];
   options.registerSession({
     command: 'limina checker build',
@@ -126,7 +130,10 @@ async function isExecuteCheckerTypecheck(options: {
     options.flags,
     'check',
   );
-  const preflight = new LiminaPreflightManager({ config });
+  const preflight = new LiminaPreflightManager({
+    config,
+    subscriptionPlan: planCapabilitySubscriptions(['checker:typecheck']),
+  });
   const issues: LiminaCheckIssue[] = [];
   options.registerSession({
     command: 'limina checker typecheck',

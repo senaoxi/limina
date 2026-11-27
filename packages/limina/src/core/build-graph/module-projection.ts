@@ -36,6 +36,9 @@ export function moduleProjectionInputs(
         continue;
       const entries = inputs.get(context.inputs.config) ?? [];
       const jsonInputs = jsonMembershipInputs(snapshot, context.id);
+      const resolutionByRequestId = new Map(
+        snapshot.resolutions.map((item) => [item.requestId, item]),
+      );
       for (const request of snapshot.requests) {
         if (
           inactive.has(request.id) ||
@@ -44,9 +47,7 @@ export function moduleProjectionInputs(
           request.sourceFile === null
         )
           continue;
-        const resolution = snapshot.resolutions.find(
-          (item) => item.requestId === request.id,
-        );
+        const resolution = resolutionByRequestId.get(request.id);
         if (
           resolution?.state !== 'unresolved' &&
           (resolution?.state !== 'resolved' || resolution.target === null)

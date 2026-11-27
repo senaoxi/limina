@@ -5,6 +5,7 @@ import {
   readTypeScriptSourceText,
 } from '../import-analysis/typescript-imports';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import type { TypeScriptSemanticDependencyContext } from '../typescript-semantic/contracts';
 import { cloneSourceEvidence } from './cache';
 import type { ProjectDependencyCaches, SourceEvidence } from './contracts';
 
@@ -41,6 +42,7 @@ interface CollectSourceEvidenceOptions {
   packageRootDir: string;
   semanticFamily?: 'astro' | 'svelte' | 'typescript' | 'vue';
   sourceProfile?: VueSourceProfile;
+  typeScriptSemanticContext?: TypeScriptSemanticDependencyContext;
   virtualSourceText?: string;
 }
 
@@ -91,10 +93,20 @@ function collectTypeScriptRecords(
   options: CollectSourceEvidenceOptions,
 ): SourceEvidence['records'] {
   const { caches, filePath, generation, virtualSourceText } = options;
+  if (options.sourceProfile !== undefined)
+    return parseSourceText(
+      options,
+      virtualSourceText ?? readTypeScriptSourceText(filePath),
+    );
+  const contextFacts =
+    options.typeScriptSemanticContext?.getFileDependencyFacts?.(filePath);
+  if (contextFacts !== undefined) {
+    return contextFacts.requests
+      .filter((request) => !request.externalModuleOnly)
+      .map((request) => request.occurrence);
+  }
   if (virtualSourceText !== undefined)
     return parseSourceText(options, virtualSourceText);
-  if (options.sourceProfile !== undefined)
-    return parseSourceText(options, readTypeScriptSourceText(filePath));
   const qualified = caches?.analysisCache?.readSourceSyntax(filePath);
   if (qualified !== undefined) return qualified;
 

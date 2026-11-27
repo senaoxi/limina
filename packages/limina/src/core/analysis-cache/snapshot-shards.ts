@@ -49,6 +49,7 @@ function emptyRecords(): Records {
     inputs: {},
     files: {},
     queries: {},
+    runtimeQueries: {},
     importers: {},
     projects: {},
     contexts: {},
@@ -71,6 +72,7 @@ function scopeReaders(
     vueContexts: (id) => snapshot.vueContexts[id]!.project.configPath,
     sourceConfigs: (id) => id,
     queries: (id) => contextScope(snapshot, snapshot.queries[id]!.contextId),
+    runtimeQueries: (id) => snapshot.runtimeQueries[id]!.contextId,
     importers: (id) =>
       contextScope(snapshot, snapshot.importers[id]!.contextId),
   };
@@ -189,9 +191,14 @@ function addScope(scopes: Set<string | null>, scope: string | null): void {
   if (scopes.has(scope)) throw new Error('Duplicate analysis scope.');
   scopes.add(scope);
 }
+export interface AnalysisBlockReadFilter {
+  readonly scopes?: ReadonlySet<string>;
+}
+
 export function readAnalysisBlocks(
   value: unknown,
   read: (reference: AnalysisBlockReference) => Buffer,
+  options?: { readonly filter?: AnalysisBlockReadFilter },
 ): unknown {
   const root = requireRecord(value);
   const { blocks } = storage.parse(root.storage);
@@ -206,8 +213,17 @@ export function readAnalysisBlocks(
   const [pool] = pools;
   const shared = unpackRecordTable(readPayload(pool, read(pool)));
   if (!Array.isArray(shared)) throw new Error('Invalid shared record pool.');
+  const allowedScopes = options?.filter?.scopes;
   const records = emptyRecords();
-  for (const block of facts)
+  for (const block of facts) {
+    if (
+      allowedScopes !== undefined &&
+      block.scope !== null &&
+      !allowedScopes.has(block.scope)
+    ) {
+      continue;
+    }
     mergeRecords(records, readBlock(block, read(block), shared));
+  }
   return { header: root.header, configModules: root.configModules, ...records };
 }

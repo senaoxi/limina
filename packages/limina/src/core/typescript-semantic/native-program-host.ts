@@ -35,6 +35,7 @@ interface HostInputs extends NativeHostFailures {
   frontier: NativeProgramFrontier;
   requests: NativeProgramRequests;
   configReads: string[];
+  collectSyntaxParents?: boolean;
 }
 
 function resolveCallback<T>(
@@ -230,18 +231,53 @@ function referenceConfig(input: HostInputs, configPath: string) {
   return parsed;
 }
 
+function isExternalLibrarySource(
+  fileName: string,
+  defaultLibraryPrefix: string,
+): boolean {
+  const normalized = normalizeAbsolutePath(fileName);
+  return (
+    normalized.includes('/node_modules/') ||
+    normalized.startsWith(defaultLibraryPrefix)
+  );
+}
+
 export function createNativeProgramHost(input: HostInputs): ts.CompilerHost {
   const base = input.compiler.createCompilerHost(input.project.options);
   // Only physical fallbacks belong to the filesystem epoch. Staged answers
   // are bound to the candidate plan and may materialize during this command.
   observeNativeHostInputs(base);
   applyNativeVirtualInputs(base, input.project.virtualFiles);
+  const parentBase =
+    input.collectSyntaxParents === true
+      ? input.compiler.createCompilerHost(input.project.options, true)
+      : undefined;
+  if (parentBase !== undefined) {
+    parentBase.readFile = base.readFile;
+  }
+  const defaultLibraryPrefix =
+    parentBase === undefined
+      ? ''
+      : `${normalizeAbsolutePath(
+          path.dirname(
+            input.compiler.getDefaultLibFilePath(input.project.options),
+          ),
+        )}/`;
+  const sourceHostFor = (fileName: string): ts.CompilerHost =>
+    parentBase !== undefined &&
+    !isExternalLibrarySource(fileName, defaultLibraryPrefix)
+      ? parentBase
+      : base;
   const host: ts.CompilerHost = {
     ...base,
     getSourceFile: (...arguments_) =>
       input.loads.allow(arguments_[0])
         ? readNativeSource(input, arguments_[0], () =>
-            observeSource(input, base, base.getSourceFile(...arguments_)),
+            observeSource(
+              input,
+              base,
+              sourceHostFor(arguments_[0]).getSourceFile(...arguments_),
+            ),
           )
         : undefined,
     getParsedCommandLine: (configPath) => referenceConfig(input, configPath),
@@ -253,7 +289,10 @@ export function createNativeProgramHost(input: HostInputs): ts.CompilerHost {
             observeSource(
               input,
               base,
-              base.getSourceFileByPath!(...arguments_),
+              (
+                sourceHostFor(arguments_[0]).getSourceFileByPath ??
+                base.getSourceFileByPath!
+              )(...arguments_),
             ),
           )
         : undefined;

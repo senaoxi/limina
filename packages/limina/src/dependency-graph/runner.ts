@@ -1,5 +1,9 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
+import {
+  type AnalysisProviderSet,
+  createAnalysisProviders,
+  planCapabilitySubscriptions,
+} from '#core';
 import {
   createFileOwnerLookup,
   type ImportAnalysisContext,
@@ -8,7 +12,6 @@ import {
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
 import type { ProjectDependencyCaches } from '../core/project-dependencies/contracts';
-import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
 import {
   createWorkspaceSourceBoundaryFromProjects,
   type WorkspaceSourceBoundary,
@@ -108,7 +111,9 @@ function resolveCollectionCore(options: {
     return { core: options.providers, ownsCore: false };
   }
   return {
-    core: createAnalysisProviders(options.config),
+    core: createAnalysisProviders(options.config, undefined, undefined, {
+      subscriptionPlan: planCapabilitySubscriptions(['dependency-graph']),
+    }),
     ownsCore: true,
   };
 }
@@ -148,7 +153,7 @@ async function createDependencyGraphCollectionContext(options: {
       outputRoots,
       pathIndex,
       problems,
-      projectDependencyCaches: createProjectDependencyCaches(),
+      projectDependencyCaches: core.projectDependencies,
       projects,
       view: normalizeDependencyGraphView(options.graphOptions.view),
       workspaceLookup,

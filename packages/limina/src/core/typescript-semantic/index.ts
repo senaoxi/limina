@@ -41,11 +41,15 @@ export function createTypeScriptDependencyContext(
   options: {
     metrics?: AnalysisMetricsRecorder;
     analysisCache?: NativeAnalysisCache;
+    collectFileDependencyFacts?: boolean;
   } = {},
 ): TypeScriptSemanticDependencyContext & { dispose(): void } {
   return createNativeDependencyContext(
     project,
     options.analysisCache,
     options.metrics,
+    {
+      collectFileDependencyFacts: options.collectFileDependencyFacts,
+    },
   );
 }

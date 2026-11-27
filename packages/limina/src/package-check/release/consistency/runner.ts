@@ -38,7 +38,10 @@ function createContext(
     options,
     packageManifestPath: path.join(options.outDir, 'package.json'),
     packedManifestPath: `${tarballPath}#package.json`,
-    state: createReleaseConsistencyState(options.registryConfiguration),
+    state: createReleaseConsistencyState(
+      options.registryConfiguration,
+      options.packageArtifacts,
+    ),
     tarballPath,
     workspacePackages: options.workspacePackages.filter(
       isNamedWorkspacePackage,

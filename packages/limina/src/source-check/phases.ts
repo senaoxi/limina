@@ -1,4 +1,5 @@
 import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
+import { planRuleSubscriptions } from '#core';
 import {
   collectGeneratedSourceConfigPaths,
   collectGovernedSourceConfigPaths,
@@ -155,14 +156,17 @@ async function runSourceImportAuthorityPhase(
     findings: state.findings,
     ownerIdentities: collectOwnerIdentities(state),
   });
+  const coreFacts = state.preflight.providers.facts.createSubscribedView(
+    planRuleSubscriptions(['source:import-authority']),
+  );
   addSourceImportProblems({
     checks: state.checks,
     config: state.config,
+    coreFacts,
     importAnalysis: state.preflight.importAnalysis,
     importAuthorityAllowRules,
     packages: state.packages,
     pathIndex: state.workspacePathIndex,
-    projectDependencyCaches: state.preflight.providers.projectDependencies,
     findings: state.findings,
     rootPackage: state.rootPackage,
     sourceProjectEntries: state.sourceProjectEntries,

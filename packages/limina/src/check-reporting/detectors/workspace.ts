@@ -3,6 +3,21 @@ import { FALLBACK_CONTRACT_TEST, FAULT_FIXTURE_TEST } from './shared';
 import type { PartialDetectorCoverageRegistry } from './types';
 
 export const WORKSPACE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
+  [LIMINA_CHECK_ISSUE_CODES.coreAnalyzeFailed]: {
+    kind: 'unit',
+    producers: [
+      'packages/limina/src/check-reporting/codes.ts#DEFAULT_ISSUE_CODE_BY_TASK',
+      'packages/limina/src/execution/task-execution.ts#createInfrastructureIssue',
+      'packages/limina/src/pipeline/execution-tasks.ts#createCoreAnalysisTask',
+    ],
+    reason:
+      'Core analysis fallback covers unexpected non-structured failures during Stage B1 ownership and semantic fact preparation; pipeline unit tests inject the failure boundary and verify blocking of downstream graph preparation and checks.',
+    task: 'core:analyze',
+    tests: [
+      FALLBACK_CONTRACT_TEST,
+      'packages/limina/src/__tests__/pipeline.spec.ts',
+    ],
+  },
   [LIMINA_CHECK_ISSUE_CODES.workspaceRegionOverlap]: {
     kind: 'fixture',
     producers: [

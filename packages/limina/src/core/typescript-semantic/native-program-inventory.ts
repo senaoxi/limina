@@ -49,9 +49,26 @@ function moduleResolution(
 }
 
 function moduleTarget(target: ts.ResolvedModuleFull | undefined) {
+  const packageId = target?.packageId;
+  const peerDependencies =
+    packageId !== undefined &&
+    'peerDependencies' in packageId &&
+    typeof packageId.peerDependencies === 'string'
+      ? packageId.peerDependencies
+      : undefined;
   return {
     target: target?.resolvedFileName,
     external: target?.isExternalLibraryImport,
+    ...(packageId !== undefined && {
+      packageId: {
+        name: packageId.name,
+        subModuleName: packageId.subModuleName,
+        version: packageId.version,
+        ...(peerDependencies !== undefined && {
+          peerDependencies,
+        }),
+      },
+    }),
   };
 }
 

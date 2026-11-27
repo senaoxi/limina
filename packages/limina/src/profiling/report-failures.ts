@@ -6,6 +6,7 @@ type FailedWork = Extract<Work, { reason: string; time: unknown }>;
 
 const stageNames = new Map([
   ['cli.config-load', 'Configuration loading'],
+  ['core.analyze', 'Core analysis'],
   ['graph.prepare.core', 'Graph preparation (core)'],
   ['graph.prepare.preflight', 'Graph preparation (preflight)'],
   ['graph.apply.artifacts', 'Graph artifact application'],

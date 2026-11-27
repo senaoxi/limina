@@ -65,7 +65,10 @@ export async function packReleaseTarball(
   ReleaseLogger.info(`release tarball packing started: ${entry.label}`);
 
   try {
-    const packed = await packOutputTarball(entry.outDir);
+    const packed = await packOutputTarball(
+      entry.outDir,
+      entry.packageArtifacts,
+    );
     logPackSuccess(entry, elapsed);
     task?.pass();
     return packed;

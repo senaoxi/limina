@@ -151,6 +151,8 @@ export type PreparedTsconfigGraph =
   | ProducerBuildPlan;
 
 export interface PrepareGeneratedTsconfigGraphOptions {
+  coreAnalysisWork?: string;
+  precomputedCheckerSelection?: CheckerSelectionResolution;
   producerBuildReceipt?: ProducerBuildReceipt;
   artifactNamespace: LiminaArtifactNamespace;
   importAnalysisContext?: ImportAnalysisContext;
@@ -294,6 +296,20 @@ export interface ResolvedCheckerEntrySelection {
   checker: ResolvedCheckerConfig;
   selection: CheckerEntrySelection;
 }
+
+export type CoreAnalysisPhase =
+  | 'dependency-analysis'
+  | 'ownership-discovery'
+  | 'ownership-finalization';
+
+export interface CoreAnalysisPhaseHandle {
+  fail(): void;
+  pass(): void;
+}
+
+export type CoreAnalysisPhaseObserver = (
+  phase: CoreAnalysisPhase,
+) => CoreAnalysisPhaseHandle | undefined;
 
 export interface CheckerSelectionResolution {
   frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>;

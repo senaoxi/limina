@@ -56,6 +56,7 @@ export async function isExecuteReleaseCommand(
   const entryResults = await runReleaseCheckEntries({
     registryConfiguration: registryConfig,
     entries: plan.entries,
+    packageArtifacts: context.preflight.providers.packageArtifacts,
     runOptions: context.options,
     workspacePackages,
   });

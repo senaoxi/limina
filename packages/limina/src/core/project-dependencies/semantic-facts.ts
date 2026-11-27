@@ -78,6 +78,8 @@ function collectionServices(request: ProjectDependencyRequest) {
   if (caches === undefined) return {};
   return {
     analysisCache: persistentCollectionCache(request),
+    collectFileDependencyFacts:
+      caches.subscriptionPlan?.products.includes('runtime-only') === true,
     metrics: caches.metrics,
   };
 }

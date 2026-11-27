@@ -107,8 +107,9 @@ it('refreshes all default task inventories after governance domains are omitted'
   expect(current.run!.createdAt).not.toEqual(previous.run!.createdAt);
   expect(current.run!.tasks.map((task) => [task.label, task.state])).toEqual([
     ['workspace:validate', 'passed'],
-    ['checker:build', 'passed'],
+    ['core:analyze', 'passed'],
     ['graph:materialize', 'passed'],
+    ['checker:build', 'passed'],
     ['graph:check', 'passed'],
     ['source:check', 'passed'],
     ['proof:check', 'passed'],
@@ -172,12 +173,11 @@ it('runs default governance after a compiler error on the complete graph', async
   const preparation = result.stdout.indexOf(
     '[pass] materialize complete reference graph',
   );
+  const preparedTask = result.stdout.indexOf('[pass] prepare reference graph');
   const compiler = result.stdout.indexOf('[start] tsc -b');
   expect(preparation, result.stdout).toBeGreaterThanOrEqual(0);
-  expect(compiler, result.stdout).toBeGreaterThan(preparation);
-  expect(result.stdout).toMatch(
-    /^\s*\[pass\] reuse complete reference graph$/mu,
-  );
+  expect(preparedTask, result.stdout).toBeGreaterThan(preparation);
+  expect(compiler, result.stdout).toBeGreaterThan(preparedTask);
   expect(result.stdout).toMatch(
     /^\s*\[skip\] checker typecheck \(disabled: no framework targets\)$/mu,
   );
@@ -187,6 +187,7 @@ it('runs default governance after a compiler error on the complete graph', async
   );
   expect(states).toMatchObject({
     'checker:build': 'failed',
+    'core:analyze': 'passed',
     'graph:materialize': 'passed',
     'graph:check': 'passed',
     'source:check': 'passed',

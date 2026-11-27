@@ -116,11 +116,13 @@ export interface ExecutionTask extends ExecutionTaskIdentity {
   invalidatesPreflight?: boolean;
   order: number;
   requiresSuccessOf?: readonly TaskId[];
-  // Always waits for these tasks to settle. The predicate decides whether
-  // a non-successful outcome blocks dispatch using the current preflight.
+  // When waitOnlyWhenMatched is true, static dependencies (after / requiresSuccessOf)
+  // settle first and these tasks are awaited only if test(preflight) returns true.
+  // Otherwise the scheduler always waits for these tasks to settle before testing.
   requiresSuccessOfWhen?: Readonly<{
     tasks: readonly TaskId[];
     test: (preflight: LiminaPreflightManager) => boolean;
+    waitOnlyWhenMatched?: boolean;
   }>;
   resources: ResourceRequest;
   run: (context: ExecutionTaskRunContext) => Promise<ExecutionTaskRunResult>;

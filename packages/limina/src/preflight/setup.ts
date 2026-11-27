@@ -53,7 +53,10 @@ export function resolveProviders(options: {
         options.managerOptions.config,
         options.artifactNamespace,
         options.managerOptions.metrics,
-        { analysisCache: options.analysisCache },
+        {
+          analysisCache: options.analysisCache,
+          subscriptionPlan: options.managerOptions.subscriptionPlan,
+        },
       )
     : options.managerOptions.providers;
 }
@@ -70,6 +73,7 @@ export function createAnalysisCache(
     return undefined;
   return options.analysisCache
     ? new AnalysisCacheController(options.config, namespace, {
+        blockReadFilter: options.cacheBlockReadFilter,
         metrics: options.metrics,
         canPublish: options.analysisCache !== 'read-only',
         force: options.forceAnalysisCache,
@@ -89,6 +93,7 @@ export function observeUncachedConfig(
 
 export function createPreflightRun(options: {
   generation: number;
+  instanceId: string;
   providerGeneration: number;
   rootDir: string;
   metrics: AnalysisMetricsRecorder;
@@ -99,7 +104,7 @@ export function createPreflightRun(options: {
     metrics: options.metrics,
     signal: options.signal,
     snapshotToken: identifier<'RepositorySnapshotToken'>(
-      `${options.rootDir}:${options.generation}:${options.providerGeneration}`,
+      `${options.rootDir}:${options.instanceId}:${options.generation}:${options.providerGeneration}`,
     ),
   });
 }
@@ -127,6 +132,7 @@ export function managedRefreshOptions(
       options.config,
       namespace,
       options.metrics,
+      { subscriptionPlan: options.subscriptionPlan },
     ),
   };
 }

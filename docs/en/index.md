@@ -4,8 +4,8 @@ pageClass: limina-home limina-en-source-home
 
 hero:
   name: Limina
-  text: TypeScript project graph and <span class="hero-accent">architecture governance</span>
-  tagline: Derive declaration build relationships from source configs and continuously check source ownership and package boundaries
+  text: Keep your TypeScript projects <span class="hero-accent">in order.</span>
+  tagline: Governance built around tsconfig.
   actions:
     - theme: brand
       text: Get Started

@@ -28,7 +28,12 @@ export function currentSnapshotRecords(
   const queries = Object.fromEntries(
     Object.entries(cache.queries).filter(([id]) => used.has(id)),
   );
-  const referenced = referencedSnapshotInputs(cache, { importers, queries });
+  const runtimeQueries = { ...cache.runtimeQueries };
+  const referenced = referencedSnapshotInputs(cache, {
+    importers,
+    queries,
+    runtimeQueries,
+  });
   const members = new Set([
     ...Object.values(cache.projects).flatMap((project) => project.members),
     ...Object.values(cache.contexts).flatMap(
@@ -50,6 +55,7 @@ export function currentSnapshotRecords(
     configModules: cache.configModules,
     inputs,
     queries,
+    runtimeQueries,
     importers,
     files: Object.fromEntries(
       Object.entries(cache.files).filter(([file]) => members.has(file)),
@@ -77,6 +83,7 @@ export function emptySnapshot(
     inputs: {},
     projects: {},
     queries: {},
+    runtimeQueries: {},
     importers: {},
     files: {},
     contexts: {},

@@ -231,6 +231,7 @@ const snapshot = z.strictObject({
   configModules: configModuleSnapshotSchema,
   inputs: z.record(text, inputsRecord),
   queries: z.record(text, queriesRecord),
+  runtimeQueries: z.record(text, queriesRecord),
   importers: z.record(text, importersRecord),
   files: z.record(text, fileFacts),
   projects: z.record(text, projectsRecord),
@@ -256,6 +257,7 @@ export function parseStoredAnalysisSnapshot(
   freezeStoredBinding(parsed.projects);
   freezeStoredBinding(parsed.importers);
   freezeStoredBinding(parsed.queries);
+  freezeStoredBinding(parsed.runtimeQueries);
   Object.freeze(parsed.header);
   Object.freeze(parsed);
   storedBindings.add(parsed);

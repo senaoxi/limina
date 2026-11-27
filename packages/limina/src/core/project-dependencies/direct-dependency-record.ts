@@ -1,10 +1,14 @@
+import { resolveCheckerSourceModuleName } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import type { VueGraphOccurrence } from '../analysis-cache/vue-graph-facts';
 import type { DeclarationReferenceRequirement } from '../dependency-semantics';
 import { lockedCheckerEvidence } from '../import-analysis/checker-resolution-provider';
 import type { CanonicalImportResolutionEvidence } from '../import-analysis/runner';
+import { classifyImportRuntimeEvidence } from '../import-analysis/runtime-evidence';
 import { getResolvedTargetKind } from '../import-graph/declaration-classifier';
 import type { TypeEvidence } from '../type-evidence/cache';
+import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
+import { isModuleImportRecord } from '../typescript-semantic/import-record';
 import type {
   DirectSourceDependency,
   ProjectDependencyCollection,
@@ -18,7 +22,10 @@ import {
 import { createDirectDependencyEvidence } from './evidence';
 import { createProjectDependencyFailure } from './failure';
 import { getDirectNativeFact, getNativeTargetPath } from './native-dependency';
-import { getDirectResolutionMode } from './resolution-mode';
+import {
+  getDirectResolutionMode,
+  getExplicitResolutionMode,
+} from './resolution-mode';
 import { isNativeProjectDependencyTarget } from './source-evidence';
 
 export interface CollectRecordOptions {
@@ -70,14 +77,57 @@ function createDirectDependency(options: {
   };
 }
 
+const TYPESCRIPT_EXTENSIONS = new Set([
+  '.cjs',
+  '.cts',
+  '.d.cts',
+  '.d.mts',
+  '.d.ts',
+  '.js',
+  '.json',
+  '.jsx',
+  '.mjs',
+  '.mts',
+  '.ts',
+  '.tsx',
+]);
+
+function hasCheckerOnlyExtensions(extensions: readonly string[]): boolean {
+  return extensions.some(
+    (extension) => !TYPESCRIPT_EXTENSIONS.has(extension.toLowerCase()),
+  );
+}
+
+function isReusableNativeRuntimeFact(
+  options: CollectRecordOptions,
+  nativeFact: NativeDependencyFact,
+): boolean {
+  if (nativeFact.resolution.target !== null) return true;
+  const requestId = nativeFact.nativeEvidence?.requestId;
+  const observed =
+    requestId === undefined
+      ? undefined
+      : options.request.typeScriptSemanticContext?.nativeEvidence?.resolutions.find(
+          (resolution) => resolution.requestId === requestId,
+        );
+  return !(
+    observed?.state === 'unavailable' &&
+    observed.pathSelection?.state !== 'disabled' &&
+    isModuleImportRecord(options.importRecord)
+  );
+}
+
 function getDirectResolvedFilePath(
   options: CollectRecordOptions,
   evidence: CanonicalImportResolutionEvidence,
 ): string | undefined {
   const nativeFact = getDirectNativeFact(options);
-  return nativeFact === undefined
+  if (nativeFact === undefined) return getDirectCheckerTargetPath(evidence);
+  const nativeTarget = getNativeTargetPath(nativeFact);
+  if (nativeTarget !== undefined) return nativeTarget;
+  return options.request.purpose === 'runtime-source'
     ? getDirectCheckerTargetPath(evidence)
-    : getNativeTargetPath(nativeFact);
+    : undefined;
 }
 
 function getDirectCheckerTargetPath(
@@ -90,13 +140,64 @@ function getDirectCheckerTargetPath(
   return target?.resolvedFileName;
 }
 
+function evidenceFromMatchedNativeFact(
+  options: CollectRecordOptions,
+  nativeFact: NativeDependencyFact,
+): CanonicalImportResolutionEvidence {
+  const target =
+    nativeFact.resolution.target === null &&
+    isModuleImportRecord(options.importRecord) &&
+    hasCheckerOnlyExtensions(options.request.context.extensions)
+      ? resolveCheckerSourceModuleName({
+          specifier: options.importRecord.specifier,
+          containingFile: options.importRecord.filePath,
+          compilerOptions: options.request.context.compilerOptions,
+          extensions: [...options.request.context.extensions],
+        })
+      : nativeFact.resolution.target;
+  return {
+    eligibility: {
+      kind: 'not-applicable',
+      reason:
+        'Source/runtime view reuses locked Native compiler resolution without conferring compilation obligations.',
+    },
+    oxcResolvedFilePath: null,
+    typeScriptResolution: target,
+    runtimeEvidence: classifyImportRuntimeEvidence({
+      specifier: options.importRecord.specifier,
+      containingFile: options.importRecord.filePath,
+      compilerOptions: options.request.context.compilerOptions,
+      extensions: [...options.request.context.extensions],
+      oxcResolvedFilePath: null,
+      typeScriptResolution: target,
+    }),
+  };
+}
+
 function resolveDirectCheckerEvidence(options: CollectRecordOptions) {
+  if (options.request.purpose === 'runtime-source') {
+    const matchedNative = getDirectNativeFact(options);
+    if (
+      matchedNative !== undefined &&
+      isReusableNativeRuntimeFact(options, matchedNative)
+    ) {
+      if (options.request.caches?.factCounters !== undefined) {
+        options.request.caches.factCounters.nativeResolutionReuses += 1;
+      }
+      return evidenceFromMatchedNativeFact(options, matchedNative);
+    }
+  }
   const runtime = options.request.runtimeSourceResolver?.resolve(
     options.importRecord,
+    getExplicitResolutionMode(options),
   );
-  return runtime === undefined
-    ? resolveSemanticCheckerEvidence(options)
-    : runtime.evidence;
+  if (runtime !== undefined) {
+    if (options.request.caches?.factCounters !== undefined) {
+      options.request.caches.factCounters.runtimeOnlyResolutions += 1;
+    }
+    return runtime.evidence;
+  }
+  return resolveSemanticCheckerEvidence(options);
 }
 
 function resolveSemanticCheckerEvidence(options: CollectRecordOptions) {
@@ -112,7 +213,10 @@ function resolveSemanticCheckerEvidence(options: CollectRecordOptions) {
       resolverConfigPath: options.request.context.resolverConfigPath,
       semanticFamily: options.request.context.semanticAuthority.family,
       svelteSemanticProject: options.request.context.svelteSemanticProject,
-      typeScriptSemanticContext: options.request.typeScriptSemanticContext,
+      typeScriptSemanticContext:
+        options.request.purpose === 'runtime-source'
+          ? undefined
+          : options.request.typeScriptSemanticContext,
       vueSemanticIdentity: options.request.context.vueSemanticIdentity,
     },
   );

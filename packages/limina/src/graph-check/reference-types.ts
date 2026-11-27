@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { SubscribedCoreFactView } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
@@ -25,6 +26,7 @@ export type ExpectedReferencesByProjectPath = Map<
 
 export interface ExpectedReferenceCollectionOptions {
   config: ResolvedLiminaConfig;
+  coreFacts: SubscribedCoreFactView;
   fileOwnerLookup: Map<string, string[]>;
   generatedGraph: GeneratedTsconfigGraphResult;
   graphRules: NormalizedGraphRules;

@@ -3,7 +3,9 @@ import { freezeNativeData } from '../../domain/analysis/native-evidence-freeze';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptSemanticDependencyContext } from '../typescript-semantic/contracts';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
+import type { FileDependencyFacts } from '../typescript-semantic/file-dependency-facts';
 import { createTypeScriptResolutionIdentity } from '../typescript-semantic/identity';
+import { nativeOccurrenceSpanKeys } from '../typescript-semantic/import-record';
 import { isLiveNativeInventory } from '../typescript-semantic/native-context-inventory';
 import { nativeFileRequest } from '../typescript-semantic/native-file-requests';
 import type { ImporterRecord, NativeContextRecord } from './contracts';
@@ -42,7 +44,9 @@ export function restoredDependencyContext(
   importers: Record<string, ImporterRecord>,
   cache: NativeAnalysisCache,
 ): TypeScriptSemanticDependencyContext {
-  const facts = storedContextFacts(identity, context, importers);
+  const facts = storedContextFacts(identity, context, importers, (file) =>
+    cache.readFileDependencyFacts(file),
+  );
   restoreExecutionInputs(context, facts.nativeEvidence, cache);
   if (context.complete) retainQualifiedNativeContext(facts);
   return facts;
@@ -55,12 +59,37 @@ export function storedContextFacts(
   identity: string,
   context: NativeContextRecord,
   importers: Record<string, ImporterRecord>,
+  readFileDependencyFacts?: (file: string) => FileDependencyFacts | undefined,
 ): TypeScriptSemanticDependencyContext {
   const evidence = restoredNativeEvidence(context);
   const restoredIdentity = restoredContextIdentity(identity, evidence);
   const importerFor = (file: string) => {
     const id = context.sources[normalizeAbsolutePath(file)];
     return id == null ? undefined : importers[id];
+  };
+  const spanIndices = new Map<
+    string,
+    Map<string, { fact: NativeDependencyFact; record: ImportRecord }>
+  >();
+  const spanIndexFor = (file: string) => {
+    const normalized = normalizeAbsolutePath(file);
+    let index = spanIndices.get(normalized);
+    if (index !== undefined) return index;
+    index = new Map();
+    const importer = importerFor(normalized);
+    if (importer !== undefined) {
+      for (const occurrence of importer.occurrences) {
+        const fact = importer.facts[occurrenceKey(occurrence)];
+        if (fact === undefined) continue;
+        for (const spanKey of nativeOccurrenceSpanKeys(occurrence)) {
+          if (!index.has(spanKey)) {
+            index.set(spanKey, { fact, record: occurrence });
+          }
+        }
+      }
+    }
+    spanIndices.set(normalized, index);
+    return index;
   };
   const factFor = (record: ImportRecord) => {
     const fact = importerFor(record.filePath)?.facts[occurrenceKey(record)];
@@ -77,6 +106,10 @@ export function storedContextFacts(
       context.native === undefined
         ? undefined
         : freezeNativeData(context.native.inventory),
+    ...(readFileDependencyFacts !== undefined && {
+      getFileDependencyFacts: (file: string) =>
+        readFileDependencyFacts(normalizeAbsolutePath(file)),
+    }),
     getTypeEnvironmentEntries: () => structuredClone(context.typeEntries),
     getContributionFileNames: () => Object.keys(context.sources),
     hasSourceFile: (file) =>
@@ -88,6 +121,21 @@ export function storedContextFacts(
     getImportRecords: (file) =>
       structuredClone(importerFor(file)?.occurrences ?? []),
     getDependencyFact: (record) => structuredClone(factFor(record)),
+    findDependencyFact: (record) => {
+      const exact = importerFor(record.filePath)?.facts[occurrenceKey(record)];
+      if (exact !== undefined) {
+        return structuredClone(restoredFact(exact, record, restoredIdentity));
+      }
+      const index = spanIndexFor(record.filePath);
+      const matched = nativeOccurrenceSpanKeys(record)
+        .map((spanKey) => index.get(spanKey))
+        .find((entry) => entry !== undefined);
+      return matched === undefined
+        ? undefined
+        : structuredClone(
+            restoredFact(matched.fact, matched.record, restoredIdentity),
+          );
+    },
     resolveImportRecord: (record) =>
       structuredClone(factFor(record).resolution),
   };

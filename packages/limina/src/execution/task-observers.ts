@@ -9,7 +9,7 @@ export function nowIso(): string {
 
 export function formatFlowTaskName(task: ExecutionTask): string {
   if (task.issueTask === 'graph:materialize') {
-    return 'ensure complete reference graph';
+    return 'prepare reference graph';
   }
   return task.kind === 'command'
     ? `command: ${task.label}`

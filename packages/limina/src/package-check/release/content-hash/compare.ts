@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { PackageArtifactProvider } from '#core';
 import type { NamedWorkspacePackage } from '#core/workspace/actions';
 import { formatErrorMessage } from '../../../logger';
 import { packOutputTarball } from '../../runner';
@@ -31,6 +32,7 @@ export async function compareLocalWorkspacePackageOutputToBaseline(options: {
   expectedShasum?: string;
   ignoreRules: readonly ContentHashIgnoreRule[];
   integrity: string;
+  packageArtifacts?: PackageArtifactProvider;
   tarballUrl: string;
   workspacePackage: NamedWorkspacePackage;
 }): Promise<WorkspacePackageOutputComparison> {
@@ -50,7 +52,10 @@ export async function compareLocalWorkspacePackageOutputToBaseline(options: {
     tarballUrl: options.tarballUrl,
     version: options.baselineVersion,
   });
-  const localPackedTarball = await packOutputTarball(localOutDirectory);
+  const localPackedTarball = await packOutputTarball(
+    localOutDirectory,
+    options.packageArtifacts,
+  );
   try {
     const [remoteArtifact, localArtifact] = await Promise.all([
       readPackedArtifactContent(publishedTarball),

@@ -58,9 +58,11 @@ function createInfrastructureIssue(
 ): LiminaCheckIssue {
   const message = error instanceof Error ? error.message : String(error);
   const code =
-    task.issueTask === 'graph:materialize'
-      ? 'LIMINA_GRAPH_MATERIALIZE_FAILED'
-      : undefined;
+    task.issueTask === 'core:analyze'
+      ? 'LIMINA_CORE_ANALYZE_FAILED'
+      : task.issueTask === 'graph:materialize'
+        ? 'LIMINA_GRAPH_MATERIALIZE_FAILED'
+        : undefined;
   return createTaskFailureIssue({
     code,
     detailLines: [message],

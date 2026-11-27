@@ -42,11 +42,12 @@ export class NativeProgramRequests {
     const previous = this.#entries.get(id);
     const redirects =
       input.redirects ?? previous?.resolution.rawRedirectEvidenceIds;
+    const packageId = input.packageId ?? previous?.resolution.packageId;
     this.#entries.set(id, {
       request: nativeRequest(this.context, input, this.identities),
       resolution: nativeResolution(
         id,
-        { ...input, redirects },
+        { ...input, packageId, redirects },
         this.identities,
       ),
     });
@@ -97,14 +98,38 @@ export function moduleChannel(
   return literal.pos < 0 ? 'implicit' : 'module';
 }
 
+function copyPackageId(
+  packageId: ts.PackageId | undefined,
+): NativeRequestInput['packageId'] {
+  if (packageId === undefined) return undefined;
+  const peerDependencies =
+    'peerDependencies' in packageId &&
+    typeof packageId.peerDependencies === 'string'
+      ? packageId.peerDependencies
+      : undefined;
+  return {
+    name: packageId.name,
+    subModuleName: packageId.subModuleName,
+    version: packageId.version,
+    ...(peerDependencies !== undefined && {
+      peerDependencies,
+    }),
+  };
+}
+
 function moduleTarget(
   target:
-    | { resolvedFileName?: string; isExternalLibraryImport?: boolean }
+    | {
+        resolvedFileName?: string;
+        isExternalLibraryImport?: boolean;
+        packageId?: ts.PackageId;
+      }
     | undefined,
 ) {
   return {
     target: target?.resolvedFileName,
     external: target?.isExternalLibraryImport,
+    packageId: copyPackageId(target?.packageId),
   };
 }
 

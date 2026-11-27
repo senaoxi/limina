@@ -123,6 +123,7 @@ export function validatedSnapshot(
 ): AnalysisSnapshot | undefined {
   const records = [
     ...Object.values(snapshot.queries),
+    ...Object.values(snapshot.runtimeQueries),
     ...Object.values(snapshot.importers),
     ...Object.values(snapshot.contexts),
     ...Object.values(snapshot.vueContexts),
@@ -144,6 +145,9 @@ export function validatedSnapshot(
         }),
     ),
     Object.values(snapshot.queries).some(
+      (query) => !hasResolutionReceipt(query),
+    ),
+    Object.values(snapshot.runtimeQueries).some(
       (query) => !hasResolutionReceipt(query),
     ),
     hasBrokenInputs(snapshot, records),

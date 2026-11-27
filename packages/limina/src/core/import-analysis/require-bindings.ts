@@ -75,6 +75,18 @@ function getResolveRequireKind(
     : null;
 }
 
+function hasRequireCandidateCallee(
+  node: ts.CallExpression,
+  tsModule: typeof ts,
+): boolean {
+  if (node.questionDotToken !== undefined) return false;
+  const expression = node.expression;
+  return (
+    tsModule.isIdentifier(expression) ||
+    isRequireResolveAccess(expression, tsModule)
+  );
+}
+
 function getRequireCallKind(options: {
   bindings: PreparedRequireBindings;
   node: ts.CallExpression;
@@ -106,7 +118,12 @@ function collectCallRecord(options: {
   tsModule: typeof ts;
 }): CollectedImportRecord | null {
   const argument = getLiteralArgument(options.node, options.tsModule);
-  if (argument === null) return null;
+  if (
+    argument === null ||
+    !hasRequireCandidateCallee(options.node, options.tsModule)
+  ) {
+    return null;
+  }
   const kind = getRequireCallKind({
     bindings: options.bindings(),
     node: options.node,

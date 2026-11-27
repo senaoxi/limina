@@ -8,6 +8,10 @@ import {
 import type { NativeAnalysisCache } from './analysis-cache/native-cache';
 import { AstroSemanticContextManager } from './astro-semantic/context';
 import { BuildGraphCore } from './build-graph';
+import { CoreOwnershipProvider } from './facts/ownership';
+import { PackageArtifactProvider } from './facts/package-artifacts';
+import { CoreFactSession } from './facts/session';
+import type { SubscriptionPlan } from './facts/subscription';
 import type { ImportAnalysisMetricsRecorder } from './import-analysis/runner';
 import { ImportCore } from './imports';
 import { PackageDomainCore } from './packages';
@@ -20,10 +24,6 @@ import { SvelteSemanticContextManager } from './svelte-semantic/context';
 import { TsconfigCore } from './tsconfig';
 import { TypeEvidenceCore } from './type-evidence';
 import type { TypeEvidenceMetricsRecorder } from './type-evidence/cache';
-import {
-  createWorkspaceSourceBoundaryFromProjects,
-  type WorkspaceSourceBoundary,
-} from './typescript-semantic';
 import { VueSemanticContextManager } from './vue-semantic/context';
 import {
   WorkspaceCore,
@@ -37,6 +37,38 @@ type AnalysisCoreMetricsRecorder = ImportAnalysisMetricsRecorder &
   AnalysisMetricsRecorder;
 
 export { BuildGraphCore } from './build-graph';
+export type {
+  CheckerSelectionResolution,
+  CoreAnalysisPhase,
+  CoreAnalysisPhaseHandle,
+  CoreAnalysisPhaseObserver,
+} from './build-graph/types';
+export { CoreOwnershipProvider } from './facts/ownership';
+export { PackageArtifactProvider } from './facts/package-artifacts';
+export type { CachedPackedTarball } from './facts/package-artifacts';
+export {
+  CoreFactSession,
+  CoreSubscriptionViolationError,
+  type SubscribedCoreFactView,
+} from './facts/session';
+export {
+  BUILTIN_CAPABILITY_SUBSCRIPTIONS,
+  BUILTIN_RULE_SUBSCRIPTIONS,
+  CORE_FACT_PRODUCERS,
+  planCapabilitySubscriptions,
+  planRuleSubscriptions,
+} from './facts/subscription';
+export type {
+  CapabilitySubscription,
+  FactProducerDescriptor,
+  FactProduct,
+  FactStage,
+  GovernanceCapabilityId,
+  GovernanceRuleId,
+  PackageArtifactProduct,
+  RuleSubscription,
+  SubscriptionPlan,
+} from './facts/subscription';
 export { ImportCore } from './imports';
 export type { ResolvedImportRecord, ResolveImportOptions } from './imports';
 export { PackageDomainCore } from './packages';
@@ -57,6 +89,7 @@ export { WorkspaceCore } from './workspace';
 
 export interface AnalysisProviderSetDependencies {
   readonly analysisCache?: NativeAnalysisCache;
+  readonly subscriptionPlan?: SubscriptionPlan;
   readonly workspace?: WorkspaceCoreDependencies;
 }
 
@@ -72,7 +105,10 @@ export class AnalysisProviderSet {
   readonly astroSemanticContexts: AstroSemanticContextManager;
   readonly buildGraph: BuildGraphCore;
   readonly config: ResolvedLiminaInputs;
+  readonly facts: CoreFactSession;
   readonly imports: ImportCore;
+  readonly ownership: CoreOwnershipProvider;
+  readonly packageArtifacts: PackageArtifactProvider;
   readonly packages: PackageDomainCore;
   readonly projectConfigs: CheckerProjectConfigCache;
   readonly projectDependencies: ProjectDependencyCaches;
@@ -83,30 +119,6 @@ export class AnalysisProviderSet {
   readonly vueSemanticContexts: VueSemanticContextManager;
 
   constructor(options: AnalysisProviderSetOptions) {
-    let buildGraph: BuildGraphCore;
-    let workspaceSourceBoundary: WorkspaceSourceBoundary | undefined;
-    const setWorkspaceSourceBoundary = (
-      generatedGraph: Awaited<ReturnType<BuildGraphCore['getGraph']>>,
-    ): void => {
-      workspaceSourceBoundary = createWorkspaceSourceBoundaryFromProjects(
-        generatedGraph.governedSources
-          .values()
-          .flatMap((sources) => sources.values())
-          .map((source) => ({ ...source, fileNames: source.ownedFileNames }))
-          .toArray(),
-        undefined,
-        generatedGraph.sourceConfigCoverage,
-      );
-    };
-    const getWorkspaceSourceBoundary = (): WorkspaceSourceBoundary => {
-      if (workspaceSourceBoundary !== undefined) {
-        return workspaceSourceBoundary;
-      }
-      throw new Error(
-        'Workspace source boundary is unavailable before generated graph preparation.',
-      );
-    };
-
     this.artifactNamespace = options.artifactNamespace;
     this.config = options.config;
     this.projectConfigs = new CheckerProjectConfigCache(
@@ -120,7 +132,13 @@ export class AnalysisProviderSet {
     this.projectDependencies = createProjectDependencyCaches(
       options.dependencies.analysisCache,
       options.metrics,
+      options.dependencies.subscriptionPlan,
     );
+    this.facts = new CoreFactSession(
+      this.projectDependencies,
+      options.dependencies.subscriptionPlan,
+    );
+    this.packageArtifacts = new PackageArtifactProvider();
     this.workspace = new WorkspaceCore(options.config, options.metrics, {
       ...options.dependencies.workspace,
       runWithInputs: (operation) => {
@@ -144,13 +162,7 @@ export class AnalysisProviderSet {
       metrics: options.metrics,
       svelteSemanticContexts: this.svelteSemanticContexts,
       vueSemanticContexts: this.vueSemanticContexts,
-      workspaceSourceBoundaryProvider: getWorkspaceSourceBoundary,
-    });
-    this.tsconfig = new TsconfigCore({
-      config: options.config,
-      generatedGraphProvider: () => buildGraph.getGraph(),
-      projectConfigCache: this.projectConfigs,
-      workspace: this.workspace,
+      workspaceSourceBoundaryProvider: this.facts.getWorkspaceSourceBoundary,
     });
     this.typeEvidence = new TypeEvidenceCore({
       analysisCache: options.dependencies.analysisCache,
@@ -158,18 +170,32 @@ export class AnalysisProviderSet {
       importAnalysis: this.imports.context,
       metrics: options.metrics,
       vueSemanticContexts: this.vueSemanticContexts,
-      workspaceSourceBoundaryProvider: getWorkspaceSourceBoundary,
+      workspaceSourceBoundaryProvider: this.facts.getWorkspaceSourceBoundary,
     });
-    buildGraph = new BuildGraphCore({
+    this.ownership = new CoreOwnershipProvider({
+      config: options.config,
+      facts: this.facts,
+      imports: this.imports,
+      projectConfigs: this.projectConfigs,
+      projectDependencies: this.projectDependencies,
+      workspace: this.workspace,
+    });
+    this.buildGraph = new BuildGraphCore({
       artifactNamespace: options.artifactNamespace,
       config: options.config,
+      facts: this.facts,
       imports: this.imports,
+      ownership: this.ownership,
       projectDependencies: this.projectDependencies,
       projectConfigs: this.projectConfigs,
       workspace: this.workspace,
-      onGraphPrepared: setWorkspaceSourceBoundary,
     });
-    this.buildGraph = buildGraph;
+    this.tsconfig = new TsconfigCore({
+      config: options.config,
+      generatedGraphProvider: () => this.buildGraph.getGraph(),
+      projectConfigCache: this.projectConfigs,
+      workspace: this.workspace,
+    });
     this.packages = new PackageDomainCore({
       buildGraph: this.buildGraph,
       workspace: this.workspace,
@@ -177,11 +203,14 @@ export class AnalysisProviderSet {
   }
 
   releaseDependencyMemos(): void {
+    this.facts.dispose();
     releaseProjectDependencyMemos(this.projectDependencies);
     this.imports.releaseDependencyMemos();
   }
 
   dispose(): void {
+    this.facts.dispose();
+    this.packageArtifacts.dispose();
     this.typeEvidence.dispose();
     this.astroSemanticContexts.dispose();
     this.svelteSemanticContexts.dispose();

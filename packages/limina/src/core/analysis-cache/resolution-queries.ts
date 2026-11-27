@@ -35,7 +35,7 @@ interface QueryOptions {
   metrics: AnalysisCacheMetrics;
   dirty: ReadonlySet<string>;
   origin?: CacheOrigin;
-  previousReceipt(contextId: string, id: string): string | undefined;
+  previousReceipt?(contextId: string, id: string): string | undefined;
 }
 
 type ResolutionRejection = string | { dependency: InputDependency };
@@ -153,7 +153,7 @@ export class ResolutionQueries {
     const rejection = this.#rejection(old, query);
     if (rejection !== undefined) return rejection;
     return query.receipts &&
-      this.#options.previousReceipt(query.contextId, id) !==
+      this.#options.previousReceipt?.(query.contextId, id) !==
         nativeFingerprint(old)
       ? 'resolution-context-receipt-mismatch'
       : undefined;

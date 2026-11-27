@@ -1,3 +1,4 @@
+import { planRuleSubscriptions } from '#core';
 import type { ProjectInfo } from '#core/import-graph/context';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
@@ -154,8 +155,12 @@ export function runProjectReferencePhase(state: GraphCheckState): void {
 
 export function runReferenceCompletenessPhase(state: GraphCheckState): void {
   state.checkItems.start('reference completeness');
+  const coreFacts = state.preflight.providers.facts.createSubscribedView(
+    planRuleSubscriptions(['graph:reference-completeness']),
+  );
   const expectedReferencesByProjectPath = collectExpectedReferences({
     config: state.config,
+    coreFacts,
     fileOwnerLookup: state.fileOwnerLookup,
     generatedGraph: state.generatedGraph,
     graphRules: state.graphRules,

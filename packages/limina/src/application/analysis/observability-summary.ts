@@ -763,29 +763,43 @@ function deriveMode(input: SummaryInput, workById: Map<string, WorkRecord>) {
   const producerIds = new Set(
     completed.flatMap((graph) => (graph.producer ? [graph.producer] : [])),
   );
-  const owner = workOwners(producerIds, workById);
+  const rootToProducers = new Map<string, string[]>();
+  for (const producerId of producerIds) {
+    rootToProducers.set(producerId, [producerId]);
+  }
+  const links = input.links ?? [];
+  for (const link of links) {
+    if (link.kind !== 'uses-result' || !producerIds.has(link.from)) continue;
+    incrementGroup(rootToProducers, link.to, link.from);
+  }
+  const owner = workOwners(new Set(rootToProducers.keys()), workById);
+  const ownersOf = (workId: string): readonly string[] => {
+    const root = owner(workId);
+    return root === undefined ? [] : (rootToProducers.get(root) ?? []);
+  };
   const byId = new Map(input.decisions.map((d) => [d.id, d]));
   const contexts = new Map(
     input.contexts.map((context) => [context.id, context]),
   );
   const programs = new Map<string, WorkRecord>();
   for (const work of input.work) {
-    const producer = owner(work.id);
-    if (
-      producer !== undefined &&
-      !programs.has(producer) &&
-      isGraphSemanticProgram(work, contexts)
-    )
-      programs.set(producer, work);
+    if (!isGraphSemanticProgram(work, contexts)) continue;
+    for (const producer of ownersOf(work.id)) {
+      if (!programs.has(producer)) programs.set(producer, work);
+    }
   }
   const facts = new Map<string, DecisionRecord[]>();
-  for (const decision of input.decisions)
+  for (const decision of input.decisions) {
     if (
-      decision.layer === 'analysis-graph' ||
-      isSemanticContextLayer(decision.layer) ||
-      (decision.outcome === 'adopted' && isSemanticFactLayer(decision.layer))
+      decision.layer !== 'analysis-graph' &&
+      !isSemanticContextLayer(decision.layer) &&
+      !(decision.outcome === 'adopted' && isSemanticFactLayer(decision.layer))
     )
-      incrementGroup(facts, owner(decision.work), decision);
+      continue;
+    for (const producer of ownersOf(decision.work)) {
+      incrementGroup(facts, producer, decision);
+    }
+  }
   const globalSnapshots = input.decisions.filter(isSnapshotDecision);
   const adoptions = globalSnapshots.filter((d) => d.stage === 'adoption');
   const isUnambiguousBaseline = adoptions.length <= 1;

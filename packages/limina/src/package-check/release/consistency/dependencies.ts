@@ -17,6 +17,7 @@ export function isLinkDependencySpecifier(specifier: string): boolean {
 
 export function createReleaseConsistencyState(
   registryConfig: ReleaseRegistryConfig,
+  packageArtifacts?: ReleaseConsistencyState['packageArtifacts'],
 ): ReleaseConsistencyState {
   return {
     registryConfiguration: registryConfig,
@@ -24,6 +25,7 @@ export function createReleaseConsistencyState(
     directWorkspaceDependencies: [],
     edges: new Map<string, Set<string>>(),
     findings: [],
+    packageArtifacts,
     registryMetadataCache: new Map(),
     unpublishedPackageNames: new Set<string>(),
     visitedPackages: new Set<string>(),

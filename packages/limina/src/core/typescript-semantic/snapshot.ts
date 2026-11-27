@@ -5,7 +5,11 @@ import type {
   TypeScriptSemanticResolution,
 } from './contracts';
 import type { NativeDependencyFact } from './dependency-fact';
-import { createImportRecordIdentity } from './import-record';
+import type { FileDependencyFacts } from './file-dependency-facts';
+import {
+  createImportRecordIdentity,
+  nativeOccurrenceSpanKeys,
+} from './import-record';
 import { nativeFileRequest } from './native-file-requests';
 
 function cloneImportRecord(record: ImportRecord): ImportRecord {
@@ -26,22 +30,31 @@ function captureSourceFile(options: {
   context: TypeScriptSemanticDependencyContext;
   fileName: string;
   facts: Map<string, NativeDependencyFact>;
+  factsBySpan: Map<string, NativeDependencyFact>;
   recordsByFileName: Map<string, readonly ImportRecord[]>;
   resolutionsByImportRecord: Map<string, TypeScriptSemanticResolution>;
   sourceFileNames: Set<string>;
+  syntaxByFileName: Map<string, FileDependencyFacts>;
 }): void {
   const normalized = normalizeAbsolutePath(options.fileName);
   if (!options.context.hasSourceFile(normalized)) return;
   options.sourceFileNames.add(normalized);
+  const syntax = options.context.getFileDependencyFacts?.(normalized);
+  if (syntax !== undefined) {
+    options.syntaxByFileName.set(normalized, structuredClone(syntax));
+  }
   const records = options.context
     .getImportRecords(normalized)
     .map(cloneImportRecord);
   options.recordsByFileName.set(normalized, records);
   for (const record of records) {
-    options.facts.set(
-      createImportRecordIdentity(record),
-      capturedFact(options.context, record),
-    );
+    const fact = capturedFact(options.context, record);
+    options.facts.set(createImportRecordIdentity(record), fact);
+    for (const spanKey of nativeOccurrenceSpanKeys(record)) {
+      if (!options.factsBySpan.has(spanKey)) {
+        options.factsBySpan.set(spanKey, fact);
+      }
+    }
     options.resolutionsByImportRecord.set(
       createImportRecordIdentity(record),
       cloneResolution(options.context.resolveImportRecord(record)),
@@ -54,12 +67,14 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
   fileNames: readonly string[];
 }): TypeScriptSemanticDependencyContext {
   const facts = new Map<string, NativeDependencyFact>();
+  const factsBySpan = new Map<string, NativeDependencyFact>();
   const recordsByFileName = new Map<string, readonly ImportRecord[]>();
   const resolutionsByImportRecord = new Map<
     string,
     TypeScriptSemanticResolution
   >();
   const sourceFileNames = new Set<string>();
+  const syntaxByFileName = new Map<string, FileDependencyFacts>();
 
   const contributionFiles = contributionFileNames(options.context);
   const files = new Set([...options.fileNames, ...contributionFiles]);
@@ -67,10 +82,12 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
     captureSourceFile({
       context: options.context,
       facts,
+      factsBySpan,
       fileName,
       recordsByFileName,
       resolutionsByImportRecord,
       sourceFileNames,
+      syntaxByFileName,
     });
   }
 
@@ -78,6 +95,10 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
     nativeEvidence: options.context.nativeEvidence,
     nativeInventory: options.context.nativeInventory,
     identity: options.context.identity,
+    getFileDependencyFacts(fileName) {
+      const syntax = syntaxByFileName.get(normalizeAbsolutePath(fileName));
+      return syntax === undefined ? undefined : structuredClone(syntax);
+    },
     getTypeEnvironmentEntries: (() => {
       const entries = options.context.getTypeEnvironmentEntries?.() ?? [];
       return () => structuredClone(entries);
@@ -90,6 +111,14 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
           'Native dependency fact is absent from the semantic snapshot.',
         );
       return structuredClone(fact);
+    },
+    findDependencyFact(record) {
+      const matched =
+        facts.get(createImportRecordIdentity(record)) ??
+        nativeOccurrenceSpanKeys(record)
+          .map((spanKey) => factsBySpan.get(spanKey))
+          .find((entry) => entry !== undefined);
+      return matched === undefined ? undefined : structuredClone(matched);
     },
     getNativeFileRequests:
       options.context.getNativeFileRequests &&

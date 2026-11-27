@@ -91,11 +91,23 @@ export async function withTemporaryVirtualEntries<T>(
   };
 
   try {
-    const projects = await Promise.all(
+    const settled = await Promise.allSettled(
       ownerProjects.map((ownerProject) =>
         createVirtualEntryProject({ ownerProject, state }),
       ),
     );
+    const rejected = settled.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (rejected !== undefined) {
+      throw rejected.reason;
+    }
+    const projects: KnipOwnerProject[] = [];
+    for (const result of settled) {
+      if (result.status === 'fulfilled') {
+        projects.push(result.value);
+      }
+    }
     return await run(projects);
   } finally {
     await cleanupVirtualEntries(state);

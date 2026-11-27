@@ -1,3 +1,4 @@
+import { planRuleSubscriptions } from '#core';
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import {
   isNamedWorkspacePackage,
@@ -6,11 +7,11 @@ import {
 } from '#core/workspace/actions';
 import { isPathInsideDirectory, toRelativePath } from '#utils/path';
 import path from 'pathe';
-import type { ProjectDependency } from '../core/project-dependencies/contracts';
-import {
-  collectRuntimeProjectDependencies,
-  createParsedProjectSemanticContext,
-} from '../core/project-dependencies/runner';
+import type {
+  ProjectDependency,
+  ProjectDependencyCollection,
+} from '../core/project-dependencies/contracts';
+import { createParsedProjectSemanticContext } from '../core/project-dependencies/runner';
 import {
   describeWorkspaceConsumptionFailure,
   getWorkspaceConsumptionFailure,
@@ -359,8 +360,10 @@ function collectDependencyGraphProject(options: {
   );
   const packageRootDirectory =
     owner === null ? options.context.config.rootDir : owner.directory;
-  return collectRuntimeProjectDependencies({
-    caches: options.context.projectDependencyCaches,
+  const coreFacts = options.context.core.facts.createSubscribedView(
+    planRuleSubscriptions(['dependency-graph:export']),
+  );
+  return coreFacts.getRuntimeProjectDependencies({
     context: createParsedProjectSemanticContext({
       authority: options.authority,
       packageRootDir: packageRootDirectory,
@@ -373,7 +376,7 @@ function collectDependencyGraphProject(options: {
 
 function collectDependencyGraphFailures(
   context: DependencyGraphCollectionContext,
-  failures: ReturnType<typeof collectRuntimeProjectDependencies>['failures'],
+  failures: ProjectDependencyCollection['failures'],
 ): void {
   for (const failure of failures) {
     context.problems.push(
@@ -389,7 +392,7 @@ function collectDependencyGraphFailures(
 }
 
 function collectDependencyGraphDependencies(options: {
-  collection: ReturnType<typeof collectRuntimeProjectDependencies>;
+  collection: ProjectDependencyCollection;
   context: DependencyGraphCollectionContext;
   project: ProjectInfo;
 }): void {
@@ -437,9 +440,7 @@ function isAddConsumptionFailure(
 
 function collectDependencyGraphObservations(
   context: DependencyGraphCollectionContext,
-  observations: ReturnType<
-    typeof collectRuntimeProjectDependencies
-  >['observations'],
+  observations: ProjectDependencyCollection['observations'],
 ): void {
   for (const observation of observations) {
     if (observation.kind !== 'unmapped-generated')

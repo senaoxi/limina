@@ -32,11 +32,18 @@ function getCheckerTargetFlowLabel(options: {
     (!nested || target.checkerFamily !== undefined)
   )
     return target.label;
-  const path = toRelativePath(
+  const relativePath = toRelativePath(
     projectRootDir,
     target.sourceConfigPath ?? target.configPath,
   );
-  return `${target.checkerName ?? prefix}: ${path}`;
+  const { checkerName } = target;
+  return nested &&
+    checkerName !== undefined &&
+    (target.sourceConfigPath === undefined ||
+      target.sourceConfigPath === target.configPath) &&
+    relativePath.startsWith('.limina/')
+    ? checkerName
+    : `${checkerName ?? prefix}: ${relativePath}`;
 }
 
 function observeTargetProgress<T>(observe: () => T): T | undefined {
@@ -140,7 +147,7 @@ export function startCheckerTargetAdmission(
   progress: TaskProgressReporter | undefined,
 ): FinishCheckerTargetAdmission | undefined {
   const item = observeTargetProgress(() =>
-    progress?.planItem('admit checker target execution'),
+    progress?.planItem('verify build inputs'),
   );
   if (item === undefined) return undefined;
   observeTargetProgress(() => item.start());

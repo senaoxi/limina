@@ -1,8 +1,10 @@
+import type ts from 'typescript';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import { captureBoundedContext } from '../analysis-cache/bounded-context-capture';
 import type { BoundedObservationPlan } from '../analysis-cache/bounded-observation-plan';
 import { EpochInputs } from '../analysis-cache/epoch-inputs';
 import { retainContextExecutionInputs } from '../analysis-cache/execution-inputs';
+import { analysisHash } from '../analysis-cache/identity';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
 import { recordCacheHit } from '../analysis-cache/profile-decisions';
 import {
@@ -14,6 +16,10 @@ import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticProject,
 } from './contracts';
+import {
+  extractFileDependencyFacts,
+  type FileDependencyFactsReader,
+} from './file-dependency-facts';
 import { composeNativeContext } from './native-context-composition';
 import { failedNativeDependencyContext } from './native-context-failure';
 import { nativeContextInputs } from './native-context-inputs';
@@ -35,6 +41,7 @@ export function createNativeDependencyContext(
   project: TypeScriptSemanticProject,
   cache?: NativeAnalysisCache,
   metrics?: AnalysisMetricsRecorder,
+  options?: { collectFileDependencyFacts?: boolean },
 ): CollectedContext {
   const reads = new EpochInputs(cache?.inputs);
   const input = reads.collect(() => ({
@@ -55,7 +62,11 @@ export function createNativeDependencyContext(
   }
   const context = reads.collect(() => {
     try {
-      return observeProgram(input, cache).context;
+      return observeProgram(
+        input,
+        cache,
+        options?.collectFileDependencyFacts === true,
+      ).context;
     } catch (error) {
       if (nativeObservationFailureKind(error) === 'input-drift') throw error;
       return failedNativeDependencyContext(input, error);
@@ -82,9 +93,30 @@ export function createNativeDependencyContext(
   return context;
 }
 
+function createProgramSyntaxReader(
+  input: NativeProgramObservationOptions,
+  cache: NativeAnalysisCache | undefined,
+  shouldCollectFileDependencyFacts: boolean,
+): FileDependencyFactsReader | undefined {
+  if (cache !== undefined) {
+    return (file: string, text: string, sourceFile?: ts.SourceFile) =>
+      cache.readFileSyntax(
+        file,
+        text,
+        input.queries && input.project,
+        sourceFile,
+      );
+  }
+  return shouldCollectFileDependencyFacts
+    ? (file: string, text: string, sourceFile?: ts.SourceFile) =>
+        extractFileDependencyFacts(file, text, analysisHash(text), sourceFile)
+    : undefined;
+}
+
 function observeProgram(
   input: NativeProgramObservationOptions,
   cache?: NativeAnalysisCache,
+  shouldCollectFileDependencyFacts = false,
 ) {
   if (cache !== undefined) {
     input.metrics?.record({
@@ -96,13 +128,15 @@ function observeProgram(
     });
     cache.recordProgram();
   }
-  const adapter = new NativeObservationAdapter(input);
+  const adapter = new NativeObservationAdapter({
+    ...input,
+    collectSyntaxParents:
+      cache !== undefined || shouldCollectFileDependencyFacts,
+  });
   const context = new NativeDependencyContext(
     input,
     adapter,
-    cache &&
-      ((file, text) =>
-        cache.readFileSyntax(file, text, input.queries && input.project)),
+    createProgramSyntaxReader(input, cache, shouldCollectFileDependencyFacts),
   );
   return { adapter, context };
 }

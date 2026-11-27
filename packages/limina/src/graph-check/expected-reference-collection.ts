@@ -2,10 +2,9 @@ import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../core/import-graph/declaration-reference-evidence';
 import { effectiveReferenceInputs } from '../core/project-dependencies/declaration-projection';
 import {
-  collectProjectDependencies,
-  collectRuntimeProjectDependencies,
   createParsedProjectSemanticContext,
   type ProjectDependency,
+  type ProjectDependencyCollection,
 } from '../core/project-dependencies/runner';
 import { createImportRecordIdentity } from '../core/typescript-semantic/import-record';
 import { qualifiedNativeDependencyTarget } from '../core/typescript-semantic/native-fact-qualification';
@@ -179,9 +178,7 @@ function getGraphPackageRoot(
   return owner === null ? context.config.rootDir : owner.directory;
 }
 
-function assertGraphCollection(
-  collection: ReturnType<typeof collectProjectDependencies>,
-): void {
+function assertGraphCollection(collection: ProjectDependencyCollection): void {
   const failure = collection.failures[0];
   if (failure === undefined) return;
   throw new Error(
@@ -199,7 +196,6 @@ function graphDependencyRequest(options: {
     options.project,
   );
   return {
-    caches: options.context.projectDependencyCaches,
     managedOutputLookup: options.context.managedOutputLookup,
     context: createParsedProjectSemanticContext({
       authority,
@@ -217,21 +213,21 @@ function collectExpectedReferencesForProject(
 ): void {
   if (!isProjectSelected(context, project)) return;
   const request = graphDependencyRequest({ context, project });
-  const runtime = collectRuntimeProjectDependencies(request);
-  assertGraphCollection(runtime);
-  recordRuntimeDependencyGovernance(context, project, runtime);
-  const collection = collectProjectDependencies({
+  const collection = context.coreFacts.getSemanticProjectDependencies({
     ...request,
     compilationObligationScope: 'generated-declaration-project-v1',
   });
   assertGraphCollection(collection);
+  const runtime = context.coreFacts.getRuntimeProjectDependencies(request);
+  assertGraphCollection(runtime);
+  recordRuntimeDependencyGovernance(context, project, runtime);
   collectExpectedDependencies(context, project, collection);
 }
 
 function collectExpectedDependencies(
   context: ExpectedReferenceCollectionContext,
   project: ProjectInfo,
-  collection: ReturnType<typeof collectProjectDependencies>,
+  collection: ProjectDependencyCollection,
 ): void {
   const eligible = new Set(
     effectiveReferenceInputs(collection).map((dependency) =>

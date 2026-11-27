@@ -1,3 +1,4 @@
+import { planCapabilitySubscriptions } from '#core';
 import type { cac } from 'cac';
 import { currentProfile } from '../../application/analysis/observability';
 import { isRunSourceCheck } from '../../commands/source';
@@ -41,6 +42,7 @@ async function isExecuteSourceCheck(options: {
   const preflight = new LiminaPreflightManager({
     config,
     analysisCache: 'read-only',
+    subscriptionPlan: planCapabilitySubscriptions(['source:check']),
   });
   const issues: LiminaCheckIssue[] = [];
   let completedSourceIssues: readonly SourceCheckIssue[] | undefined;

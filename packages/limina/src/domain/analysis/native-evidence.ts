@@ -58,6 +58,13 @@ export interface NativePathSelection {
   readonly reason?: string;
 }
 
+export interface NativePackageIdentity {
+  readonly name: string;
+  readonly subModuleName: string;
+  readonly version: string;
+  readonly peerDependencies?: string;
+}
+
 export interface NativeResolution {
   readonly pathSelection?: NativePathSelection;
   readonly requestId: string;
@@ -65,6 +72,7 @@ export interface NativeResolution {
   readonly target: NativeFileIdentity | null;
   readonly rawRedirectEvidenceIds: readonly string[];
   readonly externalLibrary: boolean | null;
+  readonly packageId?: NativePackageIdentity;
   readonly compilerLoad: 'loaded' | 'attempted' | 'not-observed' | 'unknown';
   readonly evidenceIds: readonly string[];
 }

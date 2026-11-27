@@ -7,36 +7,39 @@ export function requestEligibility(
   file: ts.SourceFile,
   record: ImportRecord,
   compiler: typeof ts,
+  options?: {
+    externalModule?: boolean;
+    filePath?: string;
+  },
 ): { governance: boolean; expansion: boolean } {
+  const filePath = options?.filePath ?? file.fileName;
+  const isExternalModule =
+    options?.externalModule ?? compiler.isExternalModule(file);
   const isIgnored = [
-    isDocumentationOnly(file, record),
+    isDocumentationOnly(filePath, record),
     record.kind === 'require-resolve',
-    isInvalidAmbientImport(file, record, compiler),
+    isInvalidAmbientImport(file, record, compiler, isExternalModule),
   ].some(Boolean);
   return {
     governance: !isIgnored,
     expansion: !isIgnored && record.kind !== 'module-augmentation',
   };
 }
-function isDocumentationOnly(
-  file: ts.SourceFile,
-  record: ImportRecord,
-): boolean {
+function isDocumentationOnly(filePath: string, record: ImportRecord): boolean {
   return (
     (record.kind === 'environment-pragma' &&
       record.compilerRequest === undefined) ||
-    [record.kind === 'jsdoc-import', !/\.[cm]?jsx?$/.test(file.fileName)].every(
+    [record.kind === 'jsdoc-import', !/\.[cm]?jsx?$/.test(filePath)].every(
       Boolean,
     )
   );
 }
 function isRelativeAmbientCandidate(
-  file: ts.SourceFile,
+  isExternalModule: boolean,
   record: ImportRecord,
-  compiler: typeof ts,
 ): boolean {
   return [
-    !compiler.isExternalModule(file),
+    !isExternalModule,
     ['static', 'export', 'import-equals'].includes(record.kind),
     /^\.\.?\//.test(record.specifier),
   ].every(Boolean);
@@ -58,8 +61,9 @@ function isInvalidAmbientImport(
   file: ts.SourceFile,
   record: ImportRecord,
   compiler: typeof ts,
+  isExternalModule: boolean,
 ): boolean {
-  if (!isRelativeAmbientCandidate(file, record, compiler)) return false;
+  if (!isRelativeAmbientCandidate(isExternalModule, record)) return false;
   const literal = findImportRecordLiteral({
     importRecord: record,
     sourceFile: file,
@@ -99,12 +103,13 @@ function augmentationName(
 }
 function augmentationRecord(
   file: ts.SourceFile,
+  filePath: string,
   name: ts.StringLiteral,
   occurrence: number,
 ): ImportRecord {
   return {
     domain: 'typescript',
-    filePath: file.fileName,
+    filePath,
     kind: 'module-augmentation',
     specifier: name.text,
     line: file.getLineAndCharacterOfPosition(name.getStart(file)).line + 1,
@@ -119,6 +124,7 @@ function augmentationRecord(
 export function potentialAugmentations(
   file: ts.SourceFile,
   compiler: typeof ts,
+  filePath: string = file.fileName,
 ): ImportRecord[] {
   const records: ImportRecord[] = [];
   for (const statement of file.statements) {
@@ -127,6 +133,7 @@ export function potentialAugmentations(
     records.push(
       augmentationRecord(
         file,
+        filePath,
         name,
         records.filter((record) => record.specifier === name.text).length,
       ),

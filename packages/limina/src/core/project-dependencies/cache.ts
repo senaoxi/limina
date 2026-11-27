@@ -1,5 +1,6 @@
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import type { NativeAnalysisCache } from '../analysis-cache/native-cache';
+import type { SubscriptionPlan } from '../facts/subscription';
 import { cloneTypeEvidence } from '../framework-semantic/prepared-dependency';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeEvidence } from '../type-evidence/cache';
@@ -21,16 +22,24 @@ export {
 export function createProjectDependencyCaches(
   analysisCache?: NativeAnalysisCache,
   metrics?: AnalysisMetricsRecorder,
+  subscriptionPlan?: SubscriptionPlan,
 ): ProjectDependencyCaches {
   return {
     metrics,
     analysisCache,
+    subscriptionPlan,
     referenceFacts: new Map(),
     physicalSourceSyntax: new Map(),
     projectDependencyCache: new Map(),
     projectDependencyPreparationCache: new Map(),
     sourceEvidenceCache: new Map(),
     typeScriptSemanticFactsCache: new Map(),
+    nativeContextsByConfig: new Map(),
+    runtimeSourceResolvers: new Map(),
+    factCounters: {
+      nativeResolutionReuses: 0,
+      runtimeOnlyResolutions: 0,
+    },
   };
 }
 
@@ -45,6 +54,8 @@ export function releaseProjectDependencyMemos(
   caches.projectDependencyPreparationCache.clear();
   caches.sourceEvidenceCache.clear();
   caches.typeScriptSemanticFactsCache.clear();
+  caches.nativeContextsByConfig?.clear();
+  caches.runtimeSourceResolvers?.clear();
 }
 
 export function cloneProjectDependencyCollection(

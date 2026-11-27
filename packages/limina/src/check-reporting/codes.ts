@@ -134,6 +134,7 @@ export const DEFAULT_ISSUE_CODE_BY_TASK: Readonly<
   'checker:build': LIMINA_CHECK_ISSUE_CODES.checkerBuildFailed,
   'checker:typecheck': LIMINA_CHECK_ISSUE_CODES.checkerTypecheckFailed,
   command: LIMINA_CHECK_ISSUE_CODES.commandFailed,
+  'core:analyze': LIMINA_CHECK_ISSUE_CODES.coreAnalyzeFailed,
   'graph:check': LIMINA_CHECK_ISSUE_CODES.graphCheckFailed,
   'graph:materialize': LIMINA_CHECK_ISSUE_CODES.graphMaterializeFailed,
   'graph:prepare': LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,

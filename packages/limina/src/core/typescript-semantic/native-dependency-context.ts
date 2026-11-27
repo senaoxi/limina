@@ -11,7 +11,10 @@ import type {
   FileDependencyFacts,
   FileDependencyFactsReader,
 } from './file-dependency-facts';
-import { createImportRecordIdentity } from './import-record';
+import {
+  createImportRecordIdentity,
+  nativeOccurrenceSpanKeys,
+} from './import-record';
 import {
   captureNativeContextInventory,
   type NativeContextInventory,
@@ -47,6 +50,7 @@ export class NativeDependencyContext
 {
   readonly #records = new Map<string, ImportRecord[]>();
   readonly #facts: Map<string, NativeDependencyFact>;
+  readonly #factsBySpan = new Map<string, NativeDependencyFact>();
   readonly #files: Set<string>;
   readonly #typeEntries: DeclarationEntry[];
   readonly #syntax: ReadonlyMap<string, FileDependencyFacts>;
@@ -76,6 +80,14 @@ export class NativeDependencyContext
       const records = this.#records.get(record.filePath) ?? [];
       records.push(record);
       this.#records.set(record.filePath, records);
+      const fact = this.#facts.get(createImportRecordIdentity(record));
+      if (fact !== undefined) {
+        for (const spanKey of nativeOccurrenceSpanKeys(record)) {
+          if (!this.#factsBySpan.has(spanKey)) {
+            this.#factsBySpan.set(spanKey, fact);
+          }
+        }
+      }
     }
   }
 
@@ -104,6 +116,16 @@ export class NativeDependencyContext
 
   getDependencyFact(record: ImportRecord): NativeDependencyFact {
     return structuredClone(this.#fact(record));
+  }
+
+  findDependencyFact(record: ImportRecord): NativeDependencyFact | undefined {
+    const exact = this.#facts.get(createImportRecordIdentity(record));
+    if (exact !== undefined) return structuredClone(exact);
+    for (const spanKey of nativeOccurrenceSpanKeys(record)) {
+      const matched = this.#factsBySpan.get(spanKey);
+      if (matched !== undefined) return structuredClone(matched);
+    }
+    return undefined;
   }
 
   resolveImportRecord(record: ImportRecord): TypeScriptSemanticResolution {
@@ -150,7 +172,7 @@ function sourceSyntax(
   return new Map(
     adapter.program.getSourceFiles().map((source) => {
       const file = normalizeAbsolutePath(source.fileName);
-      return [file, read(file, source.text)];
+      return [file, read(file, source.text, source)];
     }),
   );
 }

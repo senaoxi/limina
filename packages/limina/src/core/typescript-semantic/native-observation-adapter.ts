@@ -28,6 +28,7 @@ export interface NativeProgramObservationOptions {
   metrics?: AnalysisMetricsRecorder;
   queries?: BoundedResolutionQueries;
   profileRole?: 'type-evidence';
+  collectSyntaxParents?: boolean;
 }
 
 /**

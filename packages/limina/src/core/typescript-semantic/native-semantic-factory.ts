@@ -31,8 +31,13 @@ export function createNativeSemanticContext(
         input,
         cache === undefined
           ? undefined
-          : (file, text) =>
-              cache.readFileSyntax(file, text, input.queries && input.project),
+          : (file, text, sourceFile) =>
+              cache.readFileSyntax(
+                file,
+                text,
+                input.queries && input.project,
+                sourceFile,
+              ),
       ),
     };
   });

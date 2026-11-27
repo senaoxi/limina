@@ -389,7 +389,7 @@ it('reports a cold cache and the cause of a failed graph preparation in the defa
     const report = result.stderr.slice(reportStart);
     expect(report).toContain('Analysis cache: cold');
     expect(report).toMatch(
-      /^ {2}\[fail\] Graph preparation \(core\) failed after (?:<1ms|\d+ms|\d+\.\d{2}s)$/mu,
+      /^ {2}\[fail\] Core analysis failed after (?:<1ms|\d+ms|\d+\.\d{2}s)$/mu,
     );
     expect(report).toContain('Missing external checker');
     expect(report).toContain('vue-tsc');
@@ -398,9 +398,9 @@ it('reports a cold cache and the cause of a failed graph preparation in the defa
     expect(profile.summary.firstCompleteReceiptCommittedUs).toBeNull();
     expect(profile.work).toContainEqual(
       expect.objectContaining({
-        op: 'graph.materialize',
+        op: 'core.analyze',
         end: 'failed',
-        reason: 'materialization-failed',
+        reason: 'core-analysis-failed',
       }),
     );
     expect(

@@ -255,6 +255,7 @@ function selectPipelineStep(
     case 'source:check': {
       return definition.task satisfies BuiltinTaskName;
     }
+    case 'core:analyze':
     case 'graph:materialize': {
       return 'checker:build';
     }

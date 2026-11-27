@@ -1289,4 +1289,96 @@ describe('import analysis', () => {
       await rm(rootDirectory, { force: true, recursive: true });
     }
   });
+
+  it('prefilters non-candidate property and optional calls without preparing CommonJS bindings', () => {
+    const sourceText = Array.from(
+      { length: 64 },
+      (_, index) =>
+        `console.log('msg-${index}'); map.get('key-${index}'); obj?.resolve('opt-${index}'); require?.('opt-req-${index}');`,
+    ).join('\n');
+    const sourceFile = ts.createSourceFile(
+      '/virtual/non-candidates.ts',
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const forEachChild = vi.fn(ts.forEachChild);
+    const records = collectRequireImportsFromSourceFile({
+      filePath: sourceFile.fileName,
+      sourceFile,
+      sourceText,
+      scriptKind: ts.ScriptKind.TS,
+      tsModule: { ...ts, forEachChild } as typeof ts,
+    });
+    expect(records).toEqual([]);
+    // Only the single collection traversal runs; prepareRequireBindings does not add a second scope-building pass.
+    const singleWalkNodes = (() => {
+      let count = 0;
+      const walk = (node: ts.Node): void => {
+        count += 1;
+        ts.forEachChild(node, walk);
+      };
+      walk(sourceFile);
+      return count;
+    })();
+    expect(forEachChild.mock.calls.length).toBe(singleWalkNodes);
+  });
+
+  it.each(['types.d.ts', 'types.d.mts', 'types.d.cts'])(
+    'retains require() calls inside declaration files (%s)',
+    (fileName) => {
+      const sourceText =
+        'export declare class Derived extends require("pkg").Base {}\n';
+      const records = collectTypeScriptSourceTextImports({
+        filePath: `/virtual/${fileName}`,
+        sourceText,
+      });
+      expect(
+        records.map((record) => ({
+          kind: record.kind,
+          specifier: record.specifier,
+        })),
+      ).toEqual([{ kind: 'commonjs', specifier: 'pkg' }]);
+    },
+  );
+
+  it('locates the exact module literal span in JSDoc @import tags when binding name matches specifier', () => {
+    const sourceText = [
+      "/** @import { x } from 'x' */",
+      "/** @import * as pkg from 'pkg' */",
+      'export const value = 1;',
+      '',
+    ].join('\n');
+    const records = collectTypeScriptSourceTextImports({
+      filePath: '/virtual/jsdoc-tag.ts',
+      sourceText,
+    });
+    expect(
+      records.map((record) => ({
+        kind: record.kind,
+        specifier: record.specifier,
+        token: sourceText.slice(
+          record.locator.sourceStart,
+          record.locator.sourceEnd,
+        ),
+        start: record.locator.sourceStart,
+        end: record.locator.sourceEnd,
+      })),
+    ).toEqual([
+      {
+        kind: 'jsdoc-import',
+        specifier: 'x',
+        token: "'x'",
+        start: 23,
+        end: 26,
+      },
+      {
+        kind: 'jsdoc-import',
+        specifier: 'pkg',
+        token: "'pkg'",
+        start: 56,
+        end: 61,
+      },
+    ]);
+  });
 });

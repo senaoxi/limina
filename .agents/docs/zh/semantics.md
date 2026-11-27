@@ -12,7 +12,7 @@
 
 普通叶子配置本身及其每个直接 root 都按 TypeScript 使用的路径和物理路径校验最近清单。即使当前 root 集为空，配置也须有唯一绑定。指向整个包的目录链接可以满足这一条件。若链接只暴露另一包的源码子目录，编译器可能采用链接所在包的模块格式或 `#imports`，图准备会拒绝这种归属。
 
-**当前实现：**[Native Evidence v5](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 18；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
+**当前实现：**[Native Evidence v5](../../../packages/limina/src/domain/analysis/native-evidence.ts) 已接入 Native provider 和 schema 19；领域合同本身不携带 Program、AST、Host 或执行权限，也没有新增用户 API。它保留请求、原始解析、Coverage、停止原因、项目关系、编译义务、完整性与执行失败。[发布](../../../packages/limina/src/domain/analysis/native-evidence-freeze.ts)复制并冻结 JSON 数据，拒绝编译器句柄、可变集合、accessor 和循环。生产切换验收与版本兼容性仍须通过各自门禁，接入代码本身不证明验收通过。
 
 **Coverage 证明：**[索引合同](../../../packages/limina/src/domain/analysis/native-coverage.ts)先从已激活入口和 solution traversal 建立全集，再判断解析成功。成员查询只针对当前 Checker 的实际目标（`resolvedFileName`），使用该 Compiler 的 `toPath`、Host 当前目录与 canonical-name 策略；实际解析输入必须具有相同 key。物理身份和输入版本只校验已有的键关联，物理别名与 Resolver `originalPath` 都不能增加成员。发现闭合且当前枚举有效时才能证明零/唯一成员。同键绑定冲突即使遇到 local root 也为 unavailable；无关的未闭合发现仍保留独立 root 责任。多个已确认成员保留 ambiguity，但不完整证据不能授权委托。完整零成员是 uncovered，继续走 consumer 政策，不选择别名 Owner。
 
@@ -136,7 +136,7 @@ Native 数据流为：编译器实际请求 → 原始解析 → Coverage fronti
 
 JSON 根仍是编译器成员，也可以成为导入目标。TypeScript 的 JSON SourceFile 不产生向外的导入 occurrence，即使开头的注释含三斜线路径指令。当编译器 inventory 已绑定该 JSON 根，且没有来自它的请求时，Native 图可以直接投影。
 
-[Runtime source collector](../../../packages/limina/src/core/project-dependencies/runtime-source.ts)保留 source/package 治理及导出图需要的词法 require、createRequire 和 require.resolve。Source Check 可为唯一匹配的 Checker 复用同一 occurrence 已取得的运行时分类。分类缺失或 Checker 不匹配时调用已有解析器。物理资源是否存在仍在当前源码阶段检查。仅用于运行时的请求保有独立的缓存身份和输出资格，`referenceRequirement` 为 null。Graph Check 的 Native 目标使用[已证明义务](../../../packages/limina/src/core/typescript-semantic/native-fact-qualification.ts)，不由 FileOwnerLookup 命中重新推出。
+[Runtime source collector](../../../packages/limina/src/core/project-dependencies/runtime-source.ts)保留 source/package 治理及导出图需要的词法 require、createRequire、require.resolve 以及 `.ts` JSDoc `import()`，并通过跨类型范围归一化索引复用已锁定的 Native 编译器观测（覆盖 `import type`、JS `require`、三斜线指令及 `noResolve` 的真实解析目标，同时不混淆被遮蔽的 JS `require` 或 `module-augmentation`）。自 0.6.0 起，[RuntimeSourceResolver](../../../packages/limina/src/core/project-dependencies/runtime-source-resolution.ts) 不再保留任何 `ts.SourceFile` AST，并在启用 package `exports` 解析模式（`Node16`/`NodeNext`/`Bundler`/`resolvePackageJsonExports`）时将 CommonJS 运行时调用（`require`、`require.resolve` 以及 `createRequire` 别名及其 `.resolve()`）统一按固定 `CommonJS`（`require` 条件）解析。Source Check 可为唯一匹配的 Checker 复用同一 occurrence 已取得的运行时分类。分类缺失或 Checker 不匹配时调用已有解析器。物理资源是否存在仍在当前源码阶段检查。仅用于运行时的请求保有独立的缓存身份和输出资格，`referenceRequirement` 为 null。Graph Check 的 Native 目标使用[已证明义务](../../../packages/limina/src/core/typescript-semantic/native-fact-qualification.ts)，不由 FileOwnerLookup 命中重新推出。
 
 Graph Check 通过[独立 workspace Governance 消费者](../../../packages/limina/src/graph-check/native-coverage-governance.ts)读取已证明无覆盖的实现文件事实。既有 source-package 策略可报告 unmapped/outside-graph import，不依赖其编译义务资格。不可用 Coverage 与声明停止不满足该诊断条件；缺失或无类型的包入口仍使用既有 runtime 策略诊断。该消费者不创建 reference 边。文件系统 detector fixtures 保留这两类策略反例，也保留被拒绝的生成 reference，后者必须继续在图中可见。
 
@@ -144,7 +144,7 @@ TypeEvidence 是独立按需类型证明，不能创造或抹除编译义务；�
 
 JSDoc 定位将既有 occurrence 绑定到真实解析 AST 节点，并覆盖所有相邻注释块；TypeScript 公开的 tag ownership helper 会遗漏部分编译器请求。[定位器](../../../packages/limina/src/core/typescript-semantic/source-file-literals.ts)保留精确 UTF-16 范围与节点身份，不发现新请求、不伪造 SourceFile，也不只凭 specifier 解析。框架类型查询将脱离 Program 的候选重新绑定到当前 Program，并要求其 inventory 包含同一个 JSDoc 字面量后才查询 Symbol。元数据缺失、范围不匹配或歧义仍为 scoped unavailable；已定位的编译器 miss 保持 missing，独立观察继续保留。[JSDoc 回归](../../../packages/limina/src/__tests__/jsdoc-semantic-location.spec.ts)覆盖原始 node:test 注解、重复 occurrence、@import、被忽略的文档、noResolve 和物理截断。缓存 adapter 身份使旧观察失效；不改变 roots、编译器选项、references 或发现权威。
 
-框架支持输入展开在一次解析源码批次中定位合格模块 occurrence，匹配 specifier 和精确范围，并拒绝歧义节点。索引只在本次展开内存在；可变 AST 与后续上下文重新读取。CommonJS 收集器在遇到首个字面量调用候选时才建立词法作用域图，仍保留全文件遮蔽、别名和重新赋值检查。这消除了重复 AST 工作，不改变准入、解析或发现权威。[Import 收集测试](../../../packages/limina/src/__tests__/import-analysis.spec.ts)与 [occurrence 回归](../../../packages/limina/src/__tests__/jsdoc-semantic-location.spec.ts)同时保留计算量边界和语义反例。
+框架支持输入展开在一次解析源码批次中定位合格模块 occurrence，匹配 specifier 和精确范围，并拒绝歧义节点。索引只在本次展开内存在；可变 AST 与后续上下文重新读取。CommonJS 收集器在惰性建立词法作用域图前先预检调用表达式形状（纯标识符或非可选链的 `.resolve` 属性访问），仍保留全文件遮蔽、别名、重新赋值及声明文件（`extends require(...)`）检查。[FileDependencyFacts](../../../packages/limina/src/core/typescript-semantic/file-dependency-facts.ts) 在复用 Bounded Program 的 `SourceFile` AST（创建时 `setParentNodes: true`）的同时，完全基于配置中立的纯 AST 语法计算 `externalModule` 与显式 `resolution-mode`，避免 `moduleDetection: "force"` 或 `impliedNodeFormat` 污染共享语法事实。这消除了重复 AST 工作，不改变准入、解析或发现权威。[Import 收集测试](../../../packages/limina/src/__tests__/import-analysis.spec.ts)、[Core 事实合同测试](../../../packages/limina/src/__tests__/core-facts-and-subscriptions.spec.ts)与 [occurrence 回归](../../../packages/limina/src/__tests__/jsdoc-semantic-location.spec.ts)同时保留计算量边界和语义反例。
 
 ## Locked resolution 与 framework preparation
 

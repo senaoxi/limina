@@ -190,6 +190,7 @@ async function assertPackedRelease(options: {
     label: options.entry.label,
     outDir: options.entry.outDir,
     outputManifest: options.manifest,
+    packageArtifacts: options.entry.packageArtifacts,
     packedTarball: options.packed.tarball,
     packedTarballPath: options.packed.tarballPath,
     workspacePackages: options.entry.workspacePackages,

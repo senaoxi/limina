@@ -62,6 +62,12 @@ const pathSelection = z.object({
   rule: text,
   reason: text.optional(),
 });
+const packageIdentity = z.object({
+  name: text,
+  subModuleName: text,
+  version: text,
+  peerDependencies: text.optional(),
+});
 const resolution = z.object({
   pathSelection: pathSelection.optional(),
   requestId: text,
@@ -69,6 +75,7 @@ const resolution = z.object({
   target: nativeFileIdentitySchema.nullable(),
   rawRedirectEvidenceIds: texts,
   externalLibrary: z.boolean().nullable(),
+  packageId: packageIdentity.optional(),
   compilerLoad: z.enum(['loaded', 'attempted', 'not-observed', 'unknown']),
   evidenceIds: texts,
 });

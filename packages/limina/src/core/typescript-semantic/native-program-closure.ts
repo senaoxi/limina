@@ -70,6 +70,7 @@ export function createBoundedProgramClosure(
       requests,
       contextId: context.id,
       failures,
+      collectSyntaxParents: options.collectSyntaxParents,
     });
     const create = () =>
       initializeNativeCompiler(() =>

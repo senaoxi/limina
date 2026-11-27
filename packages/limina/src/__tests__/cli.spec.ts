@@ -231,6 +231,7 @@ const PUBLIC_CHECK_ISSUE_TASKS = [
   'checker:build',
   'checker:typecheck',
   'command',
+  'core:analyze',
   'graph:check',
   'graph:materialize',
   'graph:prepare',

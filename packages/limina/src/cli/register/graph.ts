@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { planCapabilitySubscriptions } from '#core';
 import type { cac } from 'cac';
 import path from 'pathe';
 import { currentProfile } from '../../application/analysis/observability';
@@ -122,6 +123,7 @@ async function isExecuteGraphValidation(options: {
   const preflight = new LiminaPreflightManager({
     config,
     analysisCache: options.action === 'prepare' || 'read-only',
+    subscriptionPlan: planCapabilitySubscriptions([descriptor.task]),
   });
   const command = `limina graph ${options.action}`;
   const issues: LiminaCheckIssue[] = [];

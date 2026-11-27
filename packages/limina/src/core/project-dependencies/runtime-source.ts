@@ -4,11 +4,32 @@ import type {
 } from './contracts';
 import { getProjectSemanticCacheIdentity } from './identity';
 import { collectProjectDependencyFile } from './preparation';
+import { lookupSharedNativeContext, nativeConfigContextKey } from './provider';
 import { RuntimeSourceResolver } from './runtime-source-resolution';
 
+function getSharedRuntimeResolver(
+  input: Pick<ProjectDependencyRequest, 'caches' | 'context'>,
+): RuntimeSourceResolver | undefined {
+  if (input.context.semanticAuthority.family !== 'typescript') {
+    return undefined;
+  }
+  const resolvers = input.caches?.runtimeSourceResolvers;
+  const key = `${nativeConfigContextKey(input.context)}:${JSON.stringify(input.context.extensions)}`;
+  const existing = resolvers?.get(key);
+  if (existing !== undefined) return existing;
+  const resolver = new RuntimeSourceResolver(
+    input.context,
+    input.caches?.analysisCache,
+  );
+  resolvers?.set(key, resolver);
+  return resolver;
+}
+
 /**
- * Runtime/source observations use the source parser, including runtime calls
- * absent from the compiler's request inventory. They confer no compilation
+ * Runtime/source observations reuse locked Native compiler evidence when
+ * available and fall back to RuntimeSourceResolver ONLY for runtime-only
+ * occurrences absent from the compiler's request inventory (such as
+ * require.resolve / createRequire / TS require). They confer no compilation
  * obligation and never enter the Native evidence or reference projection.
  */
 export function collectRuntimeProjectDependencies(
@@ -26,13 +47,12 @@ export function collectRuntimeProjectDependencies(
     failures: [],
     observations: [],
   };
+  const sharedNativeContext = lookupSharedNativeContext(input) ?? undefined;
   const request: ProjectDependencyRequest = {
     ...input,
     purpose: 'runtime-source',
-    runtimeSourceResolver:
-      input.context.semanticAuthority.family === 'typescript'
-        ? new RuntimeSourceResolver(input.context)
-        : undefined,
+    typeScriptSemanticContext: sharedNativeContext,
+    runtimeSourceResolver: getSharedRuntimeResolver(input),
   };
   const semanticRequest = {
     ...request,

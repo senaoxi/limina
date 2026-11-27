@@ -116,10 +116,11 @@ Executable boundaries are protected by the test-only linear oracle for trie sema
 flowchart TB
   CLI["CLI / configuration"] --> Workspace["Validated workspace"]
   Workspace --> Ownership["Checker ownership / frozen semantic authority"]
-  Ownership -->|"No Svelte targets"| Complete["Materialize complete graph"]
+  Ownership -->|"No Svelte targets"| Complete["Prepare and materialize complete graph"]
   Complete --> Build["Checker build"]
-  Build -->|"Wait for settlement"| Checks["Graph / Source / Proof"]
-  Ownership -->|"Svelte targets"| Producers["Materialize producer graph"]
+  Complete -->|"Concurrent read-only checks (pinned providers)"| Checks["Graph / Proof / Source"]
+  Build -->|"Framework typecheck targets"| Typecheck["Checker typecheck"]
+  Ownership -->|"Svelte targets"| Producers["Prepare and materialize producer graph"]
   Producers --> ProducerBuild["Build declaration producers"]
   ProducerBuild -->|"Success"| Receipt["Current inputs / actual declaration outputs"]
   Receipt --> Resolution["Svelte compiler consumption / check projection"]
@@ -130,7 +131,7 @@ flowchart TB
   Command --> Workspace
 ```
 
-[Steps](../../packages/limina/src/pipeline/steps.ts) defines the five default tasks in report order. Checker Build is followed by Graph, Source, Proof and Checker Typecheck. The [build runner](../../packages/limina/src/typecheck/checker/build-runner.ts) reports which reference graph it materializes before launching compiler targets. The [default plan](../../packages/limina/src/pipeline/plan.ts) waits for Build to settle before consumers use the shared preflight. This lets any managed output refresh finish first. If the current preflight already holds a materialized complete graph without Svelte targets, `graph:materialize` reuses it and releases the checks even when Build failed. Otherwise the complete graph task requires Build success. Failed preparation blocks its dependent tasks. Checker Typecheck without targets is disabled.
+[Steps](../../packages/limina/src/pipeline/steps.ts) defines the five default tasks in report order. Checker Build is followed by Graph, Source, Proof and Checker Typecheck. In the [default plan](../../packages/limina/src/pipeline/plan.ts), `core:analyze` (`core analyze`) runs directly after `workspace:validate` to perform Stage B1 Limina Core semantic, dependency, and checker-ownership analysis (`discover checker ownership`, `analyze workspace dependencies`, `finalize checker ownership`) and publish `WorkspaceSourceBoundary`. Immediately after `core:analyze` succeeds, `graph:materialize` (`prepare reference graph`) consumes those prepared Core facts to derive and materialize the reference graph before `checker:build`. When no Svelte producer targets exist, `graph:materialize` prepares and materializes the complete reference graph once; `checker:build`, `graph:check`, and `proof:check` then start concurrently on that materialized graph (with governance tasks pinning active providers via `retainActiveProviders()` so a concurrent managed-output refresh never disposes an in-use provider set, while `source:check` retains its workspace barrier), and `checker:typecheck` skips immediately when no framework typecheck targets exist. When Svelte targets exist, `graph:materialize` materializes the producer reference graph, downstream checks wait conditionally (`waitOnlyWhenMatched: true`) for `checker:build` to publish the producer receipt and finalize the complete reference graph, and a producer build failure blocks those checks. Failed preparation (`workspace:validate`, `core:analyze`, or `graph:materialize`) blocks all dependent tasks. Checker Typecheck without targets is disabled.
 
 Named pipelines preserve configured step order. Commands divide generations. Each built-in step prepares its own graph as needed. The scheduler distinguishes an ordering dependency from a required success and can condition success on the current preflight after its dependencies settle.
 

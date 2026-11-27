@@ -1,8 +1,9 @@
 import type { AnalysisObserver } from '../application/analysis/observability';
-import { type ExecutionTask, getTaskDependencies, type TaskId } from './tasks';
+import type { ExecutionTask, TaskId } from './tasks';
 
 interface TaskTiming {
   dispatchedAt?: number;
+  readyAt?: number;
   runnerStartedAt?: number;
   runnerCompletedAt?: number;
   settledAt?: number;
@@ -15,15 +16,34 @@ function elapsedUs(start?: number, end?: number): number | undefined {
     : Math.round((end - start) * 1000);
 }
 
+function getAwaitedDependencies(
+  task: ExecutionTask,
+  shouldIncludeConditional: boolean,
+): TaskId[] {
+  return [
+    ...(task.after ?? []),
+    ...(task.requiresSuccessOf ?? []),
+    ...(shouldIncludeConditional
+      ? (task.requiresSuccessOfWhen?.tasks ?? [])
+      : []),
+  ];
+}
+
 export class ExecutionTrace {
   readonly #tasks = new Map<TaskId, TaskTiming>();
   readonly #profileTaskIds = new Map<TaskId, string>();
   readonly #generations = new Map<number, number>();
   #schedulerStart?: number;
-  #readyAt(task: ExecutionTask): number | undefined {
+  #readyAt(
+    task: ExecutionTask,
+    shouldIncludeConditional = true,
+  ): number | undefined {
     let readyAt = this.#generations.get(task.generation);
     if (readyAt === undefined) return undefined;
-    for (const dependency of getTaskDependencies(task)) {
+    for (const dependency of getAwaitedDependencies(
+      task,
+      shouldIncludeConditional,
+    )) {
       const settledAt = this.#tasks.get(dependency)?.settledAt;
       if (settledAt === undefined) return undefined;
       readyAt = Math.max(readyAt, settledAt);
@@ -51,6 +71,15 @@ export class ExecutionTrace {
 
   generationStarted(generation: number): void {
     this.#generations.set(generation, performance.now());
+  }
+
+  dependenciesSettled(
+    task: ExecutionTask,
+    shouldIncludeConditional: boolean,
+  ): void {
+    const timing = this.#tasks.get(task.id);
+    if (timing === undefined || timing.readyAt !== undefined) return;
+    timing.readyAt = this.#readyAt(task, shouldIncludeConditional);
   }
 
   dispatched(id: TaskId): void {
@@ -87,13 +116,19 @@ export class ExecutionTrace {
     for (const task of tasks) {
       const observed = this.#tasks.get(task.id);
       const dispatchedAt = observed?.dispatchedAt;
+      const readyAt =
+        observed?.readyAt ??
+        this.#readyAt(
+          task,
+          task.requiresSuccessOfWhen?.waitOnlyWhenMatched !== true,
+        );
       observer.task(this.profileTaskId(task.id), {
         name: task.issueTask,
         queueWaitUs: elapsedUs(this.#schedulerStart, dispatchedAt),
         readyQueueUs:
           dispatchedAt === undefined
             ? undefined
-            : elapsedUs(this.#readyAt(task), dispatchedAt),
+            : elapsedUs(readyAt, dispatchedAt),
         dispatchToRunnerUs: elapsedUs(dispatchedAt, observed?.runnerStartedAt),
         runnerUs: elapsedUs(
           observed?.runnerStartedAt,

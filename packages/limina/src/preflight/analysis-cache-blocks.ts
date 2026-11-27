@@ -1,4 +1,5 @@
 import { lstatSync, readFileSync } from 'node:fs';
+import { readdir, rmdir, unlink } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import path from 'pathe';
 import { currentProfile } from '../application/analysis/observability';
@@ -54,6 +55,15 @@ export function readAnalysisCacheFile(
     );
   }
 }
+
+export interface AnalysisCacheGcReport {
+  readonly activeReferencedBytes: number;
+  readonly retainedBytes: number;
+  readonly reclaimedBytes: number;
+  readonly reclaimedBlocks: number;
+}
+
+export const DEFAULT_ANALYSIS_CACHE_GC_GRACE_MS: number = 10 * 60 * 1000;
 
 export class AnalysisCacheBlocks {
   readonly #namespace: LiminaArtifactNamespace;
@@ -119,6 +129,83 @@ export class AnalysisCacheBlocks {
         storage: { version: ANALYSIS_STORAGE, blocks },
       },
       writtenBytes,
+    };
+  }
+
+  async sweepUnreachable(
+    activeBlocks: readonly AnalysisBlockReference[],
+    options: { graceMs?: number; now?: number } = {},
+  ): Promise<AnalysisCacheGcReport> {
+    const graceMs = options.graceMs ?? DEFAULT_ANALYSIS_CACHE_GC_GRACE_MS;
+    const now = options.now ?? Date.now();
+    const activePaths = new Set(activeBlocks.map((block) => this.#path(block)));
+    const activeReferencedBytes = activeBlocks.reduce(
+      (sum, block) => sum + block.bytes,
+      0,
+    );
+    const scopesDirectory = path.join(this.#directory, 'scopes');
+    let retainedBytes = 0;
+    let reclaimedBytes = 0;
+    let reclaimedBlocks = 0;
+    let scopeEntries: string[];
+    try {
+      scopeEntries = await readdir(scopesDirectory);
+    } catch {
+      return {
+        activeReferencedBytes,
+        retainedBytes: activeReferencedBytes,
+        reclaimedBytes: 0,
+        reclaimedBlocks: 0,
+      };
+    }
+    for (const scopeName of scopeEntries) {
+      const scopeDirectory = path.join(scopesDirectory, scopeName);
+      let blockFiles: string[];
+      try {
+        assertArtifactPathLexicallyContained(this.#namespace, scopeDirectory);
+        const scopeStats = lstatSync(scopeDirectory);
+        if (!scopeStats.isDirectory() || scopeStats.isSymbolicLink()) continue;
+        blockFiles = await readdir(scopeDirectory);
+      } catch {
+        continue;
+      }
+      let remaining = blockFiles.length;
+      for (const fileName of blockFiles) {
+        if (!fileName.endsWith('.liminainfo')) continue;
+        const filePath = path.join(scopeDirectory, fileName);
+        try {
+          assertArtifactPathLexicallyContained(this.#namespace, filePath);
+          const stats = lstatSync(filePath);
+          if (!stats.isFile() || stats.isSymbolicLink()) continue;
+          if (activePaths.has(filePath)) {
+            retainedBytes += stats.size;
+            continue;
+          }
+          if (now - stats.mtimeMs >= graceMs) {
+            await unlink(filePath);
+            reclaimedBytes += stats.size;
+            reclaimedBlocks += 1;
+            remaining -= 1;
+          } else {
+            retainedBytes += stats.size;
+          }
+        } catch {
+          // Best-effort GC must never fail a committed publication.
+        }
+      }
+      if (remaining === 0) {
+        try {
+          await rmdir(scopeDirectory);
+        } catch {
+          // Ignore non-empty or concurrently modified scope directories.
+        }
+      }
+    }
+    return {
+      activeReferencedBytes,
+      retainedBytes,
+      reclaimedBytes,
+      reclaimedBlocks,
     };
   }
 }

@@ -17,6 +17,10 @@ import {
   runDefaultCheckWithResult,
   runPipelineWithResult,
 } from '../pipeline/runner';
+import {
+  planPipelineSubscriptions,
+  requiresPipelineSemanticFacts,
+} from '../pipeline/steps';
 import { LiminaPreflightManager } from '../preflight';
 import {
   qualifyProfileRuntime,
@@ -235,8 +239,13 @@ async function createExecutionContext(options: {
 }): Promise<CheckExecutionContext> {
   const config = await loadCliConfig(options.flags, 'check');
   const command = createCommandLabel(options.pipeline);
+  const subscriptionPlan = planPipelineSubscriptions(config, options.pipeline);
+  const requiresSemanticCache = requiresPipelineSemanticFacts(
+    config,
+    options.pipeline,
+  );
   currentProfile()?.setPolicy(
-    config.cache === false
+    !requiresSemanticCache || config.cache === false
       ? 'disabled'
       : options.flags.force === true
         ? 'forced'
@@ -244,8 +253,9 @@ async function createExecutionContext(options: {
   );
   const preflight = new LiminaPreflightManager({
     config,
-    analysisCache: true,
+    analysisCache: requiresSemanticCache,
     forceAnalysisCache: options.flags.force === true,
+    subscriptionPlan,
   });
   try {
     const sourceIssueReport = {

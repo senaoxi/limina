@@ -9,8 +9,9 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LiminaPreflightManager } from '../preflight';
+import { executeCheckerBuildTargets } from '../typecheck/checker/build-execution';
 import {
   ManagedCheckerMutationCoordinator,
   proveManagedCheckerMutationContext,
@@ -143,6 +144,95 @@ async function prepareManagedTarget(
 }
 
 describe('managed checker mutation proof', () => {
+  it('admits a second build of the same outputs after the first compiler exits', async () => {
+    const fixture = await createFixture();
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    const waiting = Promise.withResolvers<void>();
+    const events: string[] = [];
+    const pending: Promise<unknown>[] = [];
+    const managers: LiminaPreflightManager[] = [];
+
+    async function prepareRun() {
+      const { manager, target } = await prepareManagedTarget(fixture);
+      managers.push(manager);
+      const generatedGraph = manager.getMaterializedGraph()!;
+      return {
+        allCheckers: generatedGraph.checkers,
+        config: fixture.config,
+        flowDepth: 0,
+        generatedGraph,
+        label: 'checker build',
+        preflight: manager,
+        projectRootDir: fixture.rootDir,
+        targets: [target],
+        watch: false,
+        workspaceContext: await manager.ensureWorkspaceValidated(),
+      };
+    }
+
+    try {
+      const firstOptions = await prepareRun();
+      const secondOptions = await prepareRun();
+      const first = executeCheckerBuildTargets({
+        ...firstOptions,
+        runnerOptions: {
+          config: fixture.config,
+          runner: async (target) => {
+            events.push('first started');
+            started.resolve();
+            await finish.promise;
+            events.push('first exited');
+            return { configPath: target.configPath, status: 7 };
+          },
+        },
+      });
+      pending.push(first);
+      await Promise.race([started.promise, first]);
+      expect(events).toEqual(['first started']);
+
+      // Let the first runner finish once the second sees the live lease.
+      const kill = process.kill;
+      const ownerProbe = vi
+        .spyOn(process, 'kill')
+        .mockImplementation((pid, signal) => {
+          const isAlive = kill(pid, signal);
+          if (signal === 0 && pid === process.pid) waiting.resolve();
+          return isAlive;
+        });
+      try {
+        const second = executeCheckerBuildTargets({
+          ...secondOptions,
+          runnerOptions: {
+            config: fixture.config,
+            runner: (target) => {
+              events.push('second started');
+              return { configPath: target.configPath, status: 0 };
+            },
+          },
+        });
+        pending.push(second);
+        await Promise.race([waiting.promise, second]);
+        finish.resolve();
+        const [failed, passed] = await Promise.all([first, second]);
+        expect(events).toEqual([
+          'first started',
+          'first exited',
+          'second started',
+        ]);
+        expect(failed.failedResults).toMatchObject([{ status: 7 }]);
+        expect(passed.passed).toBe(true);
+      } finally {
+        ownerProbe.mockRestore();
+      }
+    } finally {
+      finish.resolve();
+      await Promise.allSettled(pending);
+      for (const manager of managers) manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   it('projects JS, declaration, map, and exact tsbuildinfo outputs from effective config', async () => {
     const fixture = await createFixture();
     try {

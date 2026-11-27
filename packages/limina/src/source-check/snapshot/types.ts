@@ -12,6 +12,7 @@ export const LIMINA_CHECK_TASK_NAMES = [
   'checker:build',
   'checker:typecheck',
   'command',
+  'core:analyze',
   'graph:check',
   'graph:materialize',
   'graph:prepare',

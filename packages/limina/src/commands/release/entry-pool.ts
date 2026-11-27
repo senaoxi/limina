@@ -11,6 +11,7 @@ import type { ReleaseRegistryConfig } from '../../package-check/release/registry
 import { isRunReleaseCheckEntry } from './entry';
 import type {
   ReleaseCheckEntryRunResult,
+  ReleaseEntryOptions,
   ReleasePlanEntry,
   RunReleaseCheckOptions,
 } from './types';
@@ -89,6 +90,7 @@ function createEntryErrorResult(options: {
 async function executePoolEntry(options: {
   registryConfiguration: ReleaseRegistryConfig;
   entry: ReleasePlanEntry;
+  packageArtifacts?: ReleaseEntryOptions['packageArtifacts'];
   progressItem: TaskProgressItem | undefined;
   runOptions: RunReleaseCheckOptions;
   workspacePackages: readonly WorkspacePackage[];
@@ -103,6 +105,7 @@ async function executePoolEntry(options: {
     issueSink: issues,
     label: options.entry.label,
     outDir: options.entry.outDir,
+    packageArtifacts: options.packageArtifacts,
     progressItem: options.progressItem,
     workspacePackages: options.workspacePackages,
   });
@@ -117,6 +120,7 @@ async function executePoolEntry(options: {
 export async function runReleaseCheckEntries(options: {
   registryConfiguration: ReleaseRegistryConfig;
   entries: readonly ReleasePlanEntry[];
+  packageArtifacts?: ReleaseEntryOptions['packageArtifacts'];
   runOptions: RunReleaseCheckOptions;
   workspacePackages: readonly WorkspacePackage[];
 }): Promise<ReleaseCheckEntryRunResult[]> {
@@ -143,6 +147,7 @@ export async function runReleaseCheckEntries(options: {
       executePoolEntry({
         registryConfiguration: options.registryConfiguration,
         entry,
+        packageArtifacts: options.packageArtifacts,
         progressItem: progressItems.get(entry.label),
         runOptions: options.runOptions,
         workspacePackages: options.workspacePackages,

@@ -15,7 +15,8 @@ export default defineDetectorFixture({
     runOutcome: 'blocked',
     snapshot: { complete: true, expected: true },
     taskStates: {
-      'checker:build': 'passed',
+      'checker:build': 'blocked',
+      'core:analyze': 'passed',
       'graph:check': 'blocked',
       'graph:materialize': 'failed',
       'workspace:validate': 'passed',

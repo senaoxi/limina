@@ -172,10 +172,15 @@ export function collectTypeScriptSourceFileImports(options: {
   ]);
 }
 
+export function hasCompleteParentPointers(sourceFile: ts.SourceFile): boolean {
+  return sourceFile.endOfFileToken?.parent === sourceFile;
+}
+
 export function ensureParentPointers(
   sourceFile: ts.SourceFile,
   tsModule: typeof ts,
 ): void {
+  if (hasCompleteParentPointers(sourceFile)) return;
   const visit = (node: ts.Node, parent?: ts.Node): void => {
     if (parent !== undefined && node.parent === undefined) {
       (node as unknown as { parent: ts.Node }).parent = parent;

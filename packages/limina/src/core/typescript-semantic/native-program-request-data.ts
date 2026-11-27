@@ -1,6 +1,7 @@
 import type ts from 'typescript';
 import type { NativeEvidenceContext } from '../../domain/analysis/native-context';
 import type {
+  NativePackageIdentity,
   NativeRequest,
   NativeResolution,
 } from '../../domain/analysis/native-evidence';
@@ -16,6 +17,7 @@ export interface NativeRequestInput {
   mode?: ts.ResolutionMode;
   target?: string;
   external?: boolean;
+  packageId?: NativePackageIdentity;
   ambient?: boolean;
   unavailable?: boolean;
   redirects?: readonly string[];
@@ -136,6 +138,7 @@ function resolutionTarget(
 function resolutionMetadata(input: NativeRequestInput) {
   return {
     externalLibrary: input.external ?? null,
+    ...(input.packageId !== undefined && { packageId: input.packageId }),
     rawRedirectEvidenceIds: input.redirects ?? [],
   };
 }

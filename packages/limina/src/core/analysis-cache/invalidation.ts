@@ -7,6 +7,7 @@ Rebuilt from forward records; no second persistent source of truth.
 export class AnalysisInvalidation {
   readonly #snapshot: AnalysisSnapshot | undefined;
   readonly resolutionDirty: Set<string> = new Set<string>();
+  readonly runtimeResolutionDirty: Set<string> = new Set<string>();
   readonly semanticDirty: Set<string> = new Set<string>();
   readonly contextDirty: Set<string> = new Set<string>();
   readonly syntaxDirty: Set<string> = new Set<string>();
@@ -39,6 +40,10 @@ export class AnalysisInvalidation {
 
     for (const [id, query] of Object.entries(snapshot.queries))
       if (query.dependencies.some(isInputChanged)) this.resolutionDirty.add(id);
+    // Runtime-only query invalidation is strictly isolated from Native semanticDirty.
+    for (const [id, query] of Object.entries(snapshot.runtimeQueries))
+      if (query.dependencies.some(isInputChanged))
+        this.runtimeResolutionDirty.add(id);
     if (resolutionContexts.size > 0)
       for (const importer of Object.values(snapshot.importers))
         if (resolutionContexts.has(importer.contextId))

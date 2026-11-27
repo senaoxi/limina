@@ -2,6 +2,7 @@ import type {
   ReleaseContentHashConfigArguments,
   ResolvedLiminaConfig,
 } from '#config/runner';
+import type { PackageArtifactProvider } from '#core';
 import type {
   NamedWorkspacePackage,
   PublishDependencySectionName,
@@ -187,6 +188,7 @@ export interface ReleaseConsistencyState {
   directWorkspaceDependencies: DirectWorkspaceDependency[];
   edges: Map<string, Set<string>>;
   findings: ReleaseFinding[];
+  packageArtifacts?: PackageArtifactProvider;
   registryMetadataCache: Map<string, RegistryMetadataResult>;
   unpublishedPackageNames: Set<string>;
   visitedPackages: Set<string>;
@@ -197,6 +199,7 @@ export interface AssertPackageReleaseConsistencyOptions {
   config: ResolvedLiminaConfig;
   label: string;
   outputManifest: PublishManifest;
+  packageArtifacts?: PackageArtifactProvider;
   packedTarballPath: string;
   packedTarball: Buffer;
   outDir: string;

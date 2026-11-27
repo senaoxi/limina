@@ -43,6 +43,7 @@ export default defineConfig({
     regions: { extendNestedPackageScopes: true },
   },
   source: {
+    forbidCrossPackageRelativeImports: true,
     knip: {
       workspaces: {
         limina: {
