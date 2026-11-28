@@ -201,24 +201,36 @@ function resolveDirectCheckerEvidence(options: CollectRecordOptions) {
 }
 
 function resolveSemanticCheckerEvidence(options: CollectRecordOptions) {
-  return options.request.importAnalysis.resolveCheckerImportEvidence(
-    options.importRecord,
-    options.importRecord.filePath,
-    options.request.context.compilerOptions,
-    {
-      astroSemanticProject: options.request.context.astroSemanticProject,
-      checkerPresets: [],
-      configPath: options.request.context.configPath,
-      extensions: [...options.request.context.extensions],
-      resolverConfigPath: options.request.context.resolverConfigPath,
-      semanticFamily: options.request.context.semanticAuthority.family,
-      svelteSemanticProject: options.request.context.svelteSemanticProject,
-      typeScriptSemanticContext:
-        options.request.purpose === 'runtime-source'
-          ? undefined
-          : options.request.typeScriptSemanticContext,
-      vueSemanticIdentity: options.request.context.vueSemanticIdentity,
-    },
+  const context = {
+    astroSemanticProject: options.request.context.astroSemanticProject,
+    checkerPresets: [],
+    configPath: options.request.context.configPath,
+    extensions: [...options.request.context.extensions],
+    resolverConfigPath: options.request.context.resolverConfigPath,
+    semanticFamily: options.request.context.semanticAuthority.family,
+    svelteSemanticProject: options.request.context.svelteSemanticProject,
+    typeScriptSemanticContext:
+      options.request.purpose === 'runtime-source'
+        ? undefined
+        : options.request.typeScriptSemanticContext,
+    vueSemanticIdentity: options.request.context.vueSemanticIdentity,
+  };
+  const runtime =
+    options.request.purpose === 'runtime-source'
+      ? options.request.importAnalysis.resolveCheckerRuntimeImportEvidence?.({
+          compilerOptions: options.request.context.compilerOptions,
+          context,
+          importRecord: options.importRecord,
+        })
+      : undefined;
+  return (
+    runtime ??
+    options.request.importAnalysis.resolveCheckerImportEvidence(
+      options.importRecord,
+      options.importRecord.filePath,
+      options.request.context.compilerOptions,
+      context,
+    )
   );
 }
 

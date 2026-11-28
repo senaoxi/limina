@@ -7,7 +7,14 @@ import type {
   SourceKnipWorkspaceConfig,
 } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
@@ -2987,6 +2994,102 @@ packages:
       await fixture.cleanup();
     }
   });
+
+  it.each(
+    (['astro', 'svelte-check'] as const).flatMap((checker) =>
+      (['NodeNext', 'Bundler'] as const).map((resolution) => ({
+        checker,
+        resolution,
+      })),
+    ),
+  )(
+    'checks each #imports occurrence in ordinary TypeScript with $checker and $resolution',
+    async ({ checker, resolution }) => {
+      const isNodeNext = resolution === 'NodeNext';
+      const toolchain: Record<string, string> = {
+        typescript: 'typescript',
+        ...(checker === 'astro'
+          ? { astro: 'astro', '@astrojs/check': '@astrojs/check' }
+          : {
+              svelte: 'svelte-v4-min',
+              'svelte-check': 'svelte-check-v4-min',
+              svelte2tsx: 'svelte2tsx',
+            }),
+      };
+      const devDependencies = Object.fromEntries(
+        Object.keys(toolchain).map((name) => [name, '*']),
+      );
+      const fixture = await createFixture(
+        {
+          'app/package.json': stringifyConfig({
+            name: 'app',
+            type: 'module',
+            dependencies: {
+              [isNodeNext ? 'esm-branch' : 'cjs-branch']: '1.0.0',
+            },
+            devDependencies,
+            imports: {
+              '#pick': { import: 'esm-branch', require: 'cjs-branch' },
+            },
+          }),
+          'app/tsconfig.json': stringifyConfig({
+            compilerOptions: {
+              module: isNodeNext ? 'NodeNext' : 'ESNext',
+              moduleResolution: resolution,
+              noLib: true,
+              types: [],
+            },
+            files: ['src/index.ts'],
+          }),
+          'app/src/index.ts': [
+            "import { value } from '#pick';",
+            "import type { Value } from '#pick' with { 'resolution-mode': 'require' };",
+            'export const selected: Value = value;',
+          ].join('\n'),
+          ...createNodeModulePackage(
+            'esm-branch',
+            'export declare const value: 1;',
+          ),
+          ...createNodeModulePackage('cjs-branch', 'export type Value = 1;'),
+        },
+        { source: { knip: false } },
+      );
+      try {
+        for (const [name, installed] of Object.entries(toolchain)) {
+          const link = fixture.path('app/node_modules', name);
+          await mkdir(path.dirname(link), { recursive: true });
+          await symlink(
+            await realpath(
+              new URL(`../../node_modules/${installed}`, import.meta.url),
+            ),
+            link,
+            'junction',
+          );
+        }
+        fixture.config.scope!.checkers = {
+          [checker]: { include: ['app/tsconfig.json'] },
+        };
+        const sourceIssues: SourceCheckIssue[] = [];
+        await isRunSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        });
+        expect(sourceIssues).toMatchObject([
+          {
+            code: LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized,
+            facts: {
+              dependencyName: isNodeNext ? 'cjs-branch' : 'esm-branch',
+              line: isNodeNext ? 2 : 1,
+              specifier: '#pick',
+            },
+          },
+        ]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('allows # package imports that resolve to declared workspace packages', async () => {
     const pathOptions = {

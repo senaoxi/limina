@@ -16,6 +16,10 @@ interface StructuralProgram extends ts.Program {
         resolvedRef: ts.ResolvedProjectReference;
       }
     | undefined;
+  getRedirectFromOutput?(
+    file: ts.Path,
+  ): { resolvedRef: ts.ResolvedProjectReference } | undefined;
+  toPath?(file: string): ts.Path;
 }
 
 /** A project member is not necessarily a declaration redirect (notably JSON
@@ -90,6 +94,41 @@ function readCompilerReference(
   return hasLegacyReferenceApi(program, compiler)
     ? legacyReferenceRedirect(program, target)
     : null;
+}
+
+export function getCompilerReferenceForModuleQuery(
+  program: StructuralProgram,
+  source: ts.SourceFile,
+  compiler: typeof ts,
+  realpath?: (file: string) => string,
+): ts.ResolvedProjectReference | undefined {
+  if (!hasReferences(program)) return undefined;
+  const { originalFileName = source.fileName, path } =
+    source as ts.SourceFile & {
+      originalFileName?: string;
+      path: ts.Path;
+    };
+  const direct = readCompilerReference(program, originalFileName, compiler);
+  if (direct === null)
+    throw new NativeObservationError(
+      'unsupported',
+      'Compiler module query reference map is unavailable.',
+    );
+  if (direct !== undefined || !source.isDeclarationFile)
+    return direct?.resolvedRef;
+  const output = program.getRedirectFromOutput?.(path);
+  if (output !== undefined) return output.resolvedRef;
+  if (
+    realpath !== undefined &&
+    program.toPath !== undefined &&
+    program.getCompilerOptions().preserveSymlinks &&
+    originalFileName.includes('/node_modules/')
+  ) {
+    const real = program.toPath(realpath(originalFileName));
+    if (real !== path)
+      return program.getRedirectFromOutput?.(real)?.resolvedRef;
+  }
+  return undefined;
 }
 
 /** The real map can qualify a declaration context when a suppressed directive

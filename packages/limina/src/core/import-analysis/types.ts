@@ -124,6 +124,11 @@ export interface ImportAnalysisContext {
     filePath: string;
     managedOutputLookup?: ManagedOutputDeclarationLookup;
   }) => FrameworkSemanticDependencyPreparation;
+  resolveCheckerRuntimeImportEvidence?: (options: {
+    compilerOptions: ts.CompilerOptions;
+    context: ImportResolveContextFields;
+    importRecord: ImportRecord;
+  }) => CanonicalImportResolutionEvidence | undefined;
   resolveCheckerImportEvidence: (
     ...arguments_: ImportRecordResolutionArguments
   ) => CanonicalImportResolutionEvidence;

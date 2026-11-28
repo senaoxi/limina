@@ -12,6 +12,7 @@ export type ResolutionProvider = Pick<
   ImportAnalysisContext,
   | 'prepareCheckerSemanticDependencies'
   | 'resolveCheckerImportEvidence'
+  | 'resolveCheckerRuntimeImportEvidence'
   | 'resolveInternalImport'
   | 'resolveImportEvidence'
   | 'resolveModulePair'

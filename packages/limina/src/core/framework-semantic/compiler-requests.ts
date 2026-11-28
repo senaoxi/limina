@@ -58,6 +58,10 @@ export class FrameworkCompilerRequests {
     ts.SourceFile,
     Map<string, FrameworkCompilerRequest[]>
   >();
+  #importsByStart = new WeakMap<
+    ts.SourceFile,
+    Map<number, FrameworkCompilerRequest>
+  >();
   readonly typeResolutions: FrameworkTypeResolution[] = [];
   readonly moduleResolutions: Resolution[] = [];
   readonly optionsBySource: Map<ts.SourceFile, ts.CompilerOptions> = new Map();
@@ -82,6 +86,7 @@ export class FrameworkCompilerRequests {
     this.#raw = new WeakMap();
     this.#files = new WeakMap();
     this.#byOccurrence = new WeakMap();
+    this.#importsByStart = new WeakMap();
   }
   observeType(input: FrameworkTypeResolution): void {
     this.typeResolutions.push(input);
@@ -120,6 +125,28 @@ export class FrameworkCompilerRequests {
       this.#byOccurrence.set(source, entries);
     }
     return entries.get(occurrenceId(record.specifier, id)) ?? [];
+  }
+
+  sourceImport(
+    program: ts.Program,
+    source: ts.SourceFile,
+    record: ImportRecord,
+  ): FrameworkCompilerRequest | undefined {
+    let imports = this.#importsByStart.get(source);
+    if (imports === undefined) {
+      imports = new Map();
+      for (const request of this.collect(program, source)) {
+        const start = request.record.locator.sourceStart;
+        if (request.role === 'import' && start >= 0)
+          imports.set(start, request);
+      }
+      this.#importsByStart.set(source, imports);
+    }
+    const match = imports.get(record.locator.sourceStart);
+    return match?.record.specifier === record.specifier &&
+      match.record.locator.sourceEnd === record.locator.sourceEnd
+      ? match
+      : undefined;
   }
 
   collect(

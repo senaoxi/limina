@@ -14,6 +14,7 @@ import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-out
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { SvelteDependencyPreparation } from './dependency';
 import { prepareSvelteSemanticDependencies } from './dependency';
+import { createBoundedProgram } from './generated-script';
 import { svelteCompilerOptions, svelteSemanticOptions } from './project';
 import {
   resolveSvelteSemanticToolchain,
@@ -70,6 +71,8 @@ export class SvelteSemanticContext {
   >();
 
   #disposed = false;
+
+  #boundedProgram: ReturnType<typeof createBoundedProgram> | undefined;
 
   readonly project: SvelteSemanticProject;
 
@@ -130,6 +133,15 @@ export class SvelteSemanticContext {
     return preparation;
   }
 
+  get boundedProgram(): ReturnType<typeof createBoundedProgram> {
+    this.assertActive();
+    this.#boundedProgram ??= createBoundedProgram({
+      project: this.project,
+      toolchain: this.toolchain,
+    });
+    return this.#boundedProgram;
+  }
+
   profileScope(
     observer: ReturnType<typeof currentProfile>,
   ): ProfileScope | undefined {
@@ -157,6 +169,8 @@ export class SvelteSemanticContext {
       'svelte-context-dispose',
       () => {
         this.#preparedByFileName.clear();
+        this.#boundedProgram?.compilerRequests.dispose();
+        this.#boundedProgram = undefined;
       },
       priorProfileContextScope(observer, this),
     );

@@ -19,6 +19,7 @@ import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import {
   createBoundedProgram,
   createGeneratedSemanticScript,
+  type GeneratedSemanticScript,
 } from './generated-script';
 import {
   createSvelteModuleTarget,
@@ -68,7 +69,7 @@ function createFailure(
 
 function getStructuralProgram(options: {
   supportInputBoundary?: WorkspaceSourceBoundary;
-  generated: Parameters<typeof createBoundedProgram>[0]['generated'];
+  generated: GeneratedSemanticScript;
   project: SvelteSemanticProject;
   resolved: Extract<
     ReturnType<typeof collectSvelteMappedCandidates>,
@@ -78,7 +79,7 @@ function getStructuralProgram(options: {
 }): ts.Program | undefined {
   return options.supportInputBoundary !== undefined ||
     options.resolved.some((item) => requiresReferenceStructure(item.target))
-    ? createBoundedProgram(options)
+    ? createBoundedProgram(options).program
     : undefined;
 }
 
@@ -88,7 +89,7 @@ function prepareProjectedCandidates(options: {
     FrameworkSemanticDependencyPreparation,
     { kind: 'supported' }
   >['directSourceRecords'];
-  generated: Parameters<typeof createBoundedProgram>[0]['generated'];
+  generated: GeneratedSemanticScript;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
   project: SvelteSemanticProject;
   resolved: Extract<
@@ -163,7 +164,7 @@ function prepareUnchecked(options: {
     project: options.project,
     toolchain: options.toolchain,
   });
-  const program = createBoundedProgram({ ...options, generated });
+  const { program } = createBoundedProgram({ ...options, generated });
   const requests = generated.compilerRequests.collect(
     program,
     generated.sourceFile,

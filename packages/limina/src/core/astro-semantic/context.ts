@@ -27,9 +27,10 @@ import {
 } from '../analysis-profile';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
+import type { FrameworkRuntimeModuleResolver } from '../framework-semantic/runtime-dependencies';
+import { createVolarRuntimeResolution } from '../framework-semantic/volar-runtime-resolution';
 import type { ImportAnalysisMetricsRecorder } from '../import-analysis/types';
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
-import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import type { AstroMaterializedServiceScript } from './context-host';
 import {
@@ -66,6 +67,7 @@ export class AstroSemanticContext {
   #disposed = false;
   readonly identity: string;
   readonly compilerRequests: FrameworkCompilerRequests;
+  readonly resolveRuntimeModule: FrameworkRuntimeModuleResolver;
   readonly language: AstroLanguage;
   readonly languageServiceHost: ts.LanguageServiceHost;
   readonly project: AstroMaterializedProject;
@@ -86,9 +88,10 @@ export class AstroSemanticContext {
       sync: (id) => this.#syncScript(id),
       toolchain: options.toolchain,
     });
+    const runtime = createVolarRuntimeResolution(options.toolchain.tsModule);
     const { getExtraServiceScript, languageServiceHost: host } =
       options.toolchain.volarTypeScript.createLanguageServiceHost(
-        originTracingCompiler(options.toolchain.tsModule),
+        runtime.compiler,
         observedCompilerSystem(
           options.toolchain.tsModule,
           options.project.seed.configPath,
@@ -104,6 +107,15 @@ export class AstroSemanticContext {
       host,
     );
     this.languageServiceHost = host;
+    const resolveRuntime = host.resolveModuleNameLiterals?.bind(host);
+    this.resolveRuntimeModule = (source, literal, occurrence) =>
+      runtime.resolve(
+        resolveRuntime,
+        this.program,
+        source,
+        literal,
+        occurrence,
+      );
     this.#boundedHost = createBoundedLanguageServiceHost({
       observeModule: (input) => this.compilerRequests.observe(input),
       observeType: (input) => this.compilerRequests.observeType(input),

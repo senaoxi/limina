@@ -43,7 +43,7 @@ function isCheckerSourcePath(options: {
   ].some((extension) => normalized.endsWith(extension.toLowerCase()));
 }
 
-function createCheckerResolution(options: {
+export function createAstroCheckerResolution(options: {
   project: AstroMaterializedProject;
   resolvedModule: ts.ResolvedModuleFull;
 }): ResolvedCheckerModuleName {
@@ -118,7 +118,7 @@ function createCandidateResolution(options: {
   resolvedModule: ts.ResolvedModuleFull | undefined;
 }): ResolvedCheckerModuleName | null {
   if (options.resolvedModule === undefined) return null;
-  return createCheckerResolution({
+  return createAstroCheckerResolution({
     project: options.project,
     resolvedModule: options.resolvedModule,
   });

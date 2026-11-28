@@ -9,11 +9,14 @@ import {
   type FrameworkCompilerRequest,
   FrameworkCompilerRequests,
 } from '../framework-semantic/compiler-requests';
+import type { FrameworkRuntimeModuleResolver } from '../framework-semantic/runtime-dependencies';
 import { buildLineStarts } from '../import-analysis/records';
 import { TypeScriptInclusionLedger } from '../typescript-semantic/admission';
 import { observeNativeHostInputs } from '../typescript-semantic/native-host-inputs';
 import { observedResolutionHost } from '../typescript-semantic/observed-resolution-host';
+import { getCompilerReferenceForModuleQuery } from '../typescript-semantic/reference-redirect';
 import { resolveModuleWithOrigin } from '../typescript-semantic/resolution-origin';
+import { runtimeModuleResolutionMode } from '../typescript-semantic/runtime-module-queries';
 import { prepareTypeScriptSupportInputs } from '../typescript-semantic/support-inputs';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
@@ -23,13 +26,19 @@ import type { SvelteSemanticProject } from './types';
 
 export interface GeneratedSemanticScript {
   compilerRequests: FrameworkCompilerRequests;
-  program?: ts.Program;
+  boundedProgram?: SvelteBoundedProgram;
   resolutionHost: ts.ModuleResolutionHost;
   resolutionCache: ts.ModuleResolutionCache;
   filePath: string;
   lineStarts: readonly number[];
   sourceFile: ts.SourceFile;
   trace: TraceMap;
+}
+
+interface SvelteBoundedProgram {
+  compilerRequests: FrameworkCompilerRequests;
+  program: ts.Program;
+  resolveRuntimeModule: FrameworkRuntimeModuleResolver;
 }
 
 export function createGeneratedSemanticScript(options: {
@@ -79,12 +88,12 @@ export function createGeneratedSemanticScript(options: {
 }
 
 function createOverlayHost(options: {
-  generated: GeneratedSemanticScript;
+  generated?: GeneratedSemanticScript;
   project: SvelteSemanticProject;
   toolchain: SvelteSemanticToolchain;
 }): ts.CompilerHost {
   const tsModule = options.toolchain.tsModule;
-  const generatedPath = normalizeAbsolutePath(options.generated.filePath);
+  const generatedPath = options.generated?.filePath;
   const physical = tsModule.createCompilerHost(options.project.options, true);
   observeNativeHostInputs(physical);
   const host = withVirtualResolutionFiles(
@@ -106,12 +115,14 @@ function createOverlayHost(options: {
     fileExists(fileName) ||
     componentHost.fileExists(fileName);
   host.readFile = (fileName) =>
+    options.generated !== undefined &&
     normalizeAbsolutePath(fileName) === generatedPath
       ? options.generated.sourceFile.text
       : readFile(fileName);
   host.getSourceFile = (...arguments_) => {
     const name = normalizeAbsolutePath(arguments_[0]);
-    if (name === generatedPath) return options.generated.sourceFile;
+    if (name === generatedPath && options.generated !== undefined)
+      return options.generated.sourceFile;
     const text = options.project.virtualFiles?.get(name);
     return text === undefined
       ? getSourceFile(...arguments_)
@@ -167,7 +178,11 @@ export function observeSvelteNativeComponentRequests(
           mappings: '',
         }),
       };
-      const program = createBoundedProgram({ generated, project, toolchain });
+      const { program } = createBoundedProgram({
+        generated,
+        project,
+        toolchain,
+      });
       return generated.compilerRequests
         .collect(program, sourceFile)
         .filter(
@@ -177,11 +192,12 @@ export function observeSvelteNativeComponentRequests(
 }
 
 export function createBoundedProgram(options: {
-  generated: GeneratedSemanticScript;
+  generated?: GeneratedSemanticScript;
   project: SvelteSemanticProject;
   toolchain: SvelteSemanticToolchain;
-}): ts.Program {
-  if (options.generated.program !== undefined) return options.generated.program;
+}): SvelteBoundedProgram {
+  if (options.generated?.boundedProgram !== undefined)
+    return options.generated.boundedProgram;
   const nativeRoots = options.project.fileNames.filter(
     (fileName) => !/\.(?:astro|svelte|vue)$/iu.test(fileName),
   );
@@ -189,14 +205,34 @@ export function createBoundedProgram(options: {
     configPath: options.project.configPath,
     fileNames: [
       ...nativeRoots,
-      normalizeAbsolutePath(options.generated.filePath),
+      ...(options.generated === undefined ? [] : [options.generated.filePath]),
     ],
     options: options.project.options,
     workspaceSourceBoundary: createWorkspaceSourceBoundary([]),
   };
   const tsModule = options.toolchain.tsModule;
+  const compilerRequests =
+    options.generated?.compilerRequests ??
+    new FrameworkCompilerRequests(tsModule, project.configPath);
   const admission = new TypeScriptInclusionLedger(project, tsModule);
   const raw = createOverlayHost(options);
+  const resolve = (
+    specifier: string,
+    containingFile: string,
+    compilerOptions: ts.CompilerOptions,
+    redirect: ts.ResolvedProjectReference | undefined,
+    mode: ts.ResolutionMode,
+  ) =>
+    resolveModuleWithOrigin(
+      tsModule,
+      specifier,
+      containingFile,
+      compilerOptions,
+      raw,
+      undefined,
+      redirect,
+      mode,
+    );
   const host: ts.CompilerHost = {
     ...raw,
     getSourceFile: (...arguments_) => {
@@ -216,13 +252,10 @@ export function createBoundedProgram(options: {
         sourceFile,
       ] = arguments_;
       return literals.map((literal) => {
-        const result = resolveModuleWithOrigin(
-          tsModule,
+        const result = resolve(
           literal.text,
           containingFile,
           compilerOptions,
-          raw,
-          undefined,
           redirected,
           tsModule.getModeForUsageLocation(
             sourceFile,
@@ -230,7 +263,7 @@ export function createBoundedProgram(options: {
             compilerOptions,
           ),
         );
-        options.generated.compilerRequests.observe({
+        compilerRequests.observe({
           source: sourceFile,
           literal,
           options: compilerOptions,
@@ -254,11 +287,11 @@ export function createBoundedProgram(options: {
     observer === undefined
       ? undefined
       : profileContextScope(observer, {
-          instance: options.generated,
+          instance: options.generated ?? options.project,
           configPath: project.configPath,
           checker: 'svelte-check',
           provider: 'svelte',
-          role: 'component',
+          role: options.generated === undefined ? 'source' : 'component',
         });
   let pass = 0;
   do {
@@ -286,8 +319,40 @@ export function createBoundedProgram(options: {
           );
     prepareTypeScriptSupportInputs({ admission, host: raw, project, tsModule });
   } while (admission.needsProgramRebuild());
-  options.generated.program = program;
-  return program;
+  const bounded: SvelteBoundedProgram = {
+    compilerRequests,
+    program,
+    resolveRuntimeModule(source, literal, occurrence) {
+      const redirect = getCompilerReferenceForModuleQuery(
+        program,
+        source,
+        tsModule,
+        raw.realpath,
+      );
+      const compilerOptions =
+        redirect?.commandLine.options ?? program.getCompilerOptions();
+      const mode = runtimeModuleResolutionMode({
+        compiler: tsModule,
+        source,
+        literal,
+        options: compilerOptions,
+        occurrence,
+      });
+      return {
+        mode,
+        resolved: resolve(
+          literal.text,
+          source.fileName,
+          compilerOptions,
+          redirect,
+          mode,
+        ).resolvedModule,
+      };
+    },
+  };
+  if (options.generated !== undefined)
+    options.generated.boundedProgram = bounded;
+  return bounded;
 }
 
 function isAdmittedSource(
