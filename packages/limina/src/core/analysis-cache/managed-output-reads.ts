@@ -7,7 +7,8 @@ function isDirectoryObservation(input: AnalysisRead): boolean {
 export function isAffectedByOutput(input: AnalysisRead, file: string): boolean {
   return (
     input.path === file ||
-    (!isDirectoryObservation(input) && isDescendantObservation(input, file))
+    (input.membership?.mayChangeWith(file) ??
+      (!isDirectoryObservation(input) && isDescendantObservation(input, file)))
   );
 }
 function isDescendantObservation(input: AnalysisRead, file: string): boolean {
@@ -60,7 +61,7 @@ function isManagedMembership(
   change: { input: AnalysisRead; before: string[]; after: string[] },
   outputs: ReadonlySet<string>,
 ): boolean {
-  if (!hasEnumerationDescriptor(change.input)) return false;
+  if (!isEnumeration(change.input)) return false;
   const changed = new Set(change.before).symmetricDifference(
     new Set(change.after),
   );
@@ -91,9 +92,12 @@ function hasDirectoryDescriptor(input: AnalysisRead): boolean {
     input.descriptor?.kind ?? '',
   );
 }
-function hasEnumerationDescriptor(input: AnalysisRead): boolean {
-  return ['directories', 'glob', 'ts-directory'].includes(
-    input.descriptor?.kind ?? '',
+function isEnumeration(input: AnalysisRead): boolean {
+  return (
+    input.membership !== undefined ||
+    ['directories', 'glob', 'ts-directory'].includes(
+      input.descriptor?.kind ?? '',
+    )
   );
 }
 function isManagedPathChange(

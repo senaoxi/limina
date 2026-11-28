@@ -10,6 +10,10 @@ export function normalizeAbsolutePath(value: string): string {
     : resolve(value);
 }
 
+export function isInsideNodeModules(filePath: string): boolean {
+  return normalizeAbsolutePath(filePath).split('/').includes('node_modules');
+}
+
 export function toRelativePath(
   rootDirectory: string,
   absolutePath: string,

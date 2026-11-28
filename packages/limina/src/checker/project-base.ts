@@ -20,6 +20,7 @@ import {
   projectResolvedConfig,
   type ResolvedConfigProjection,
 } from './resolved-config';
+import { retainSvelteSourceMembership } from './svelte-source-membership';
 import type {
   CheckerConfigClosureEntry,
   CheckerProjectConfigParseOptions,
@@ -343,12 +344,20 @@ export function parseProjectConfigWithExtensions(
 ): ParsedCheckerProjectConfig {
   const resolvedExtensions = resolveExtensionsForChecker(options, extensions);
   const extraFileExtensions = createExtraFileExtensions(resolvedExtensions);
+  const request = {
+    extraFileExtensions:
+      extraFileExtensions.length === 0 ? undefined : extraFileExtensions,
+    parseOptions: options,
+  };
+  const projection = parseTypeScriptCommandLine(request);
+  if (resolvedExtensions.includes('.svelte'))
+    retainSvelteSourceMembership(
+      options.configPath,
+      projection,
+      () => parseConfig(request).parsed.fileNames,
+    );
   const { configClosure, configuredVueExtensions, parsed, rootSelectors } =
-    parseTypeScriptCommandLine({
-      extraFileExtensions:
-        extraFileExtensions.length === 0 ? undefined : extraFileExtensions,
-      parseOptions: options,
-    });
+    projection;
   return {
     ...createParsedCheckerProjectConfig({
       configClosure,

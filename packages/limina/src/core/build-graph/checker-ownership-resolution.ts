@@ -1,4 +1,6 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
+import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import { toRelativePath } from '#utils/path';
 import { currentProfile } from '../../application/analysis/observability';
 import { LiminaStructuredError } from '../../check-reporting/errors';
@@ -37,7 +39,6 @@ import type {
   CheckerSelectionResolution,
   CoreAnalysisPhase,
   CoreAnalysisPhaseObserver,
-  PrepareGeneratedTsconfigGraphOptions,
 } from './types';
 
 function hasVueRequirement(state: TypeConfigOwnershipState): boolean {
@@ -125,12 +126,10 @@ function runVuePromotion(options: {
 interface CheckerOwnershipOptions {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaInputs;
-  importAnalysisContext: NonNullable<
-    PrepareGeneratedTsconfigGraphOptions['importAnalysisContext']
-  >;
+  importAnalysisContext: ImportAnalysisContext;
   onPhase?: CoreAnalysisPhaseObserver;
   projectDependencyCaches?: ProjectDependencyCaches;
-  projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
+  projectConfigCache?: CheckerProjectConfigCache;
   workspaceSourceConfigPaths: readonly string[];
 }
 

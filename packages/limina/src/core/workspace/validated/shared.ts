@@ -5,7 +5,6 @@ import {
   normalizeSlashes,
   toRelativePath,
 } from '#utils/path';
-import { realpathSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import path from 'pathe';
 import type { LiminaWritableCheckIssueCode } from '../../../check-reporting/codes';
@@ -15,6 +14,8 @@ import type {
   WorkspaceDescriptorCandidate,
   WorkspaceDescriptorKind,
 } from './types';
+
+export { canonicalProjectedPathSync } from '#utils/physical-file-identity';
 
 export function isInsideOrEqual(
   parentPath: string,
@@ -116,47 +117,6 @@ export function canonicalProjectedPath(targetPath: string): Promise<string> {
     cursor: normalizeAbsolutePath(targetPath),
     suffix: [],
     targetPath,
-  });
-}
-
-function tryCanonicalPathSync(
-  cursor: string,
-  suffix: readonly string[],
-): string | null {
-  try {
-    return normalizeAbsolutePath(
-      path.join(realpathSync.native(cursor), ...suffix.toReversed()),
-    );
-  } catch (error) {
-    if (isMissingPathError(error)) return null;
-    throw error;
-  }
-}
-
-function resolveCanonicalPathSync(options: {
-  cursor: string;
-  normalizedTarget: string;
-  suffix: readonly string[];
-}): string {
-  let cursor = options.cursor;
-  const suffix = [...options.suffix];
-  let canonicalPath = tryCanonicalPathSync(cursor, suffix);
-  while (canonicalPath === null) {
-    const parent = path.dirname(cursor);
-    suffix.push(path.basename(cursor));
-    if (parent === cursor) return options.normalizedTarget;
-    cursor = parent;
-    canonicalPath = tryCanonicalPathSync(cursor, suffix);
-  }
-  return canonicalPath;
-}
-
-export function canonicalProjectedPathSync(targetPath: string): string {
-  const normalizedTarget = normalizeAbsolutePath(targetPath);
-  return resolveCanonicalPathSync({
-    cursor: normalizedTarget,
-    normalizedTarget,
-    suffix: [],
   });
 }
 

@@ -78,6 +78,28 @@ export function resolvePhysicalPath(file: string, isLink?: boolean): string {
   return path.join(canonical, path.basename(file));
 }
 
+export function canonicalProjectedPathSync(targetPath: string): string {
+  const normalizedTarget = normalizeAbsolutePath(targetPath);
+  const suffix: string[] = [];
+  let cursor = normalizedTarget;
+  for (;;) {
+    try {
+      return normalizeAbsolutePath(
+        path.join(realpathSync.native(cursor), ...suffix.toReversed()),
+      );
+    } catch (error) {
+      if (
+        !(error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      )
+        throw error;
+    }
+    const parent = path.dirname(cursor);
+    if (parent === cursor) return normalizedTarget;
+    suffix.push(path.basename(cursor));
+    cursor = parent;
+  }
+}
+
 /**
 Membership and canonical binding do not assert content freshness.
 */

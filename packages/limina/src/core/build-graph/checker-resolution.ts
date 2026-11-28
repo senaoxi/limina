@@ -3,7 +3,6 @@ import type {
   ResolvedLiminaInputs,
 } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
-import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { SvelteSemanticContextManager } from '../svelte-semantic/context';
 import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
@@ -12,46 +11,7 @@ import {
 } from '../workspace/validated-context';
 import { prepareCheckerOwnership } from './checker-ownership-resolution';
 import { resolveBuildGraphImportAnalysis } from './import-analysis-context';
-import type {
-  CheckerSelectionResolution,
-  CoreAnalysisPhaseObserver,
-  PrepareGeneratedTsconfigGraphOptions,
-} from './types';
-
-interface CheckerSelectionOptions {
-  config: ResolvedLiminaInputs;
-  importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
-  onPhase?: CoreAnalysisPhaseObserver;
-  projectDependencyCaches?: ProjectDependencyCaches;
-  projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
-  workspaceContext: NonNullable<
-    PrepareGeneratedTsconfigGraphOptions['workspaceContext']
-  >;
-  workspacePathIndex?: WorkspaceRegionPathIndex;
-}
-
-export async function resolveGeneratedGraphCheckerSelections(
-  options: CheckerSelectionOptions,
-): Promise<CheckerSelectionResolution> {
-  return (await prepareGeneratedGraphCheckerSelections(options))();
-}
-
-export function prepareGeneratedGraphCheckerSelections(
-  options: CheckerSelectionOptions,
-): Promise<() => CheckerSelectionResolution> {
-  const activatedRegions =
-    options.workspacePathIndex ??
-    new WorkspaceRegionPathIndex(options.workspaceContext);
-  return prepareCheckerOwnership({
-    activatedRegions,
-    config: options.config,
-    importAnalysisContext: resolveBuildGraphImportAnalysis(options),
-    onPhase: options.onPhase,
-    projectDependencyCaches: options.projectDependencyCaches,
-    projectConfigCache: options.projectConfigCache,
-    workspaceSourceConfigPaths: options.workspaceContext.sourceConfigPaths,
-  });
-}
+import type { PrepareGeneratedTsconfigGraphOptions } from './types';
 
 export async function resolveGeneratedGraphCheckers(
   config: ResolvedLiminaInputs,
@@ -72,14 +32,16 @@ export async function resolveGeneratedGraphCheckers(
     importAnalysisContext: options.importAnalysisContext,
   });
   try {
-    const resolution = await resolveGeneratedGraphCheckerSelections({
+    const resolveOwnership = await prepareCheckerOwnership({
+      activatedRegions:
+        options.workspacePathIndex ??
+        new WorkspaceRegionPathIndex(workspaceContext),
       config,
       importAnalysisContext: ownedImportAnalysis.context,
       projectConfigCache: options.projectConfigCache,
-      workspaceContext,
-      workspacePathIndex: options.workspacePathIndex,
+      workspaceSourceConfigPaths: workspaceContext.sourceConfigPaths,
     });
-    return resolution.selections.map(({ checker }) => checker);
+    return resolveOwnership().selections.map(({ checker }) => checker);
   } finally {
     disposeOwnedImportAnalysis(ownedImportAnalysis);
   }

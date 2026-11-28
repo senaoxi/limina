@@ -32,6 +32,10 @@ export function withSourceConfigTextScope<T>(operation: () => T): T {
     : operation();
 }
 
+export function withoutSourceConfigTextScope<T>(operation: () => T): T {
+  return scopes.exit(operation);
+}
+
 function readOverlayText(
   file: string,
   virtualFiles: ReadonlyMap<string, string>,

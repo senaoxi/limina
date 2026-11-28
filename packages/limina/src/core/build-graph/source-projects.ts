@@ -2,6 +2,7 @@ import { isBuildCapablePreset } from '#checkers';
 import type { ResolvedLiminaInputs } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import {
+  isInsideNodeModules,
   isPathInsideDirectory,
   normalizeAbsolutePath,
   toRelativePath,
@@ -24,10 +25,6 @@ import type {
   SolutionProject,
   SourceProject,
 } from './types';
-
-export function isInsideNodeModules(filePath: string): boolean {
-  return normalizeAbsolutePath(filePath).split('/').includes('node_modules');
-}
 
 export function createSourceProject(options: {
   checkerName: SourceProject['checkerName'];

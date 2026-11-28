@@ -379,6 +379,8 @@ Resolution、preparation、显式 TypeEvidence、依赖观察及支持输入枚�
 
 普通 Astro 或 Svelte 图为每个框架目标保留[消费收据](../../../packages/limina/src/core/analysis-cache/framework-execution-inputs.ts)。每次收集按本轮配置解析、组件与配套源码的根集合、工具链文件和文件系统查找观测绑定目标。框架配套的物理 TypeScript 源码还按本次收集使用的工作区源码边界绑定 Native 上下文。框架收集器在各自的阶段复核锁定的所有权事实和出向关系。带预处理逻辑的可执行 Svelte 配置，以及使用无法观测的嵌入式编辑器集成的 Astro 组件，仍需现场收集。托管 Svelte 检查还会先取得本轮生产者收据，再生成声明镜像和消费端检查配置。[跨进程回归](../../../packages/limina/src/__tests__/framework-analysis-cache.spec.ts)覆盖跨调用的源码配置和执行前输入校验。
 
+生成的 Svelte 检查配置显式列出源文件。启动检查器时，Limina 还会复核原始源码 tsconfig 选中的根文件。新增匹配组件会使该目标已物化的图失效，新增被源码配置排除的文件则保留原有根集合。即使所有源文件都没有改变，上一代 provider 签发的消费收据也会在启动前被拒绝。[Svelte 启动测试](../../../packages/limina/src/__tests__/typecheck.spec.ts)
+
 ## 声明上下文 receipt 与撤销
 
 Checker-qualified evidence v5 与 receipt v3 绑定源分析／执行权威、实际工具链入口、上下文、Coverage、物理绑定、显式选择、生成配置闭包、有效环境及已观察请求。快照 header 拒绝旧记录。awaiting-selection 判定会撤销当前结果里对应的政策边。

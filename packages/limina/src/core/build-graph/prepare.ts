@@ -17,7 +17,7 @@ import {
   createGraphPreparationError,
   failedGraphAnalysis,
 } from './analysis-failure';
-import { prepareGeneratedGraphCheckerSelections } from './checker-resolution';
+import { prepareCheckerOwnership } from './checker-ownership-resolution';
 import { beginCoreCollection } from './core-collection-run';
 import { finishPreparedGraph } from './finish-prepared-graph';
 import { recordGraphPreparation } from './graph-profile';
@@ -118,13 +118,13 @@ async function prepareGraphInScope(
     const coloringStart = performance.now();
     const resolveCheckerSelections =
       options.precomputedCheckerSelection === undefined
-        ? await prepareGeneratedGraphCheckerSelections({
+        ? await prepareCheckerOwnership({
+            activatedRegions,
             config,
             importAnalysisContext,
             projectDependencyCaches,
             projectConfigCache: options.projectConfigCache,
-            workspaceContext,
-            workspacePathIndex: activatedRegions,
+            workspaceSourceConfigPaths: workspaceContext.sourceConfigPaths,
           })
         : () => options.precomputedCheckerSelection!;
     const { checkers, state } = withProjectDependencyReplay(

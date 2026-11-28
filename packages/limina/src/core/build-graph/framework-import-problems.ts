@@ -8,13 +8,16 @@ import {
   isBarePackageSpecifier,
   isRelativeSpecifier,
 } from '#utils/module-specifier';
-import { isPathInsideDirectory, toRelativePath } from '#utils/path';
+import {
+  isInsideNodeModules,
+  isPathInsideDirectory,
+  toRelativePath,
+} from '#utils/path';
 import path from 'pathe';
 import { isKnownFrameworkVirtualSpecifier } from '../import-analysis/virtual-modules';
 import type { ReferenceDependency } from '../project-dependencies/reference-facts';
 import { compilerFileKey } from '../typescript-semantic/compiler-coverage';
 import type { ReferenceImportContext } from './reference-import-types';
-import { isInsideNodeModules } from './source-projects';
 import type { GovernedSourceUnit, SourceProject } from './types';
 
 function isRelativeOrAbsoluteSpecifier(specifier: string): boolean {

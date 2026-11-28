@@ -1,7 +1,7 @@
 import type { CheckerPackageResolver } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { readAstroTestToolchain } from '@limina/gates/test-support/astro-toolchain';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import {
   mkdir,
   mkdtemp,
@@ -4015,6 +4015,25 @@ describe('checker targets after materialization', () => {
     },
   );
 
+  const svelteLaunchRejection = (configPath: string, message: string) => ({
+    passed: false,
+    failureKind: 'execution-admission',
+    targetResults: [],
+    failedTargets: [
+      {
+        checkerName: 'svelte-check',
+        configPath,
+        message: expect.stringContaining(message),
+        admission: {
+          status: 'admission-rejected',
+          stage: 'launch',
+          decision: 'unavailable',
+          diagnostics: [{ code: 'LIMINA_EXECUTION_INPUT_UNAVAILABLE' }],
+        },
+      },
+    ],
+  });
+
   it('rejects a consumer receipt from before Svelte handoff without launching Svelte', async () => {
     const fixture = await createFixture({
       'svelte/src/App.svelte': '<p>hello</p>',
@@ -4061,6 +4080,72 @@ describe('checker targets after materialization', () => {
       await fixture.cleanup();
     }
   });
+
+  it.each([
+    { file: 'Added.svelte', launch: false },
+    { file: 'App.svelte', launch: false },
+    { file: 'Excluded.svelte', launch: true },
+  ])(
+    'checks launch admission after changing Svelte input $file',
+    async ({ file, launch }) => {
+      const fixture = await createFixture({
+        'svelte/src/App.svelte': '<p>hello</p>',
+        'svelte/tsconfig.json': tsconfig({
+          compilerOptions: { noLib: true, types: [] },
+          include: ['src/**/*'],
+          exclude: ['src/Excluded.svelte'],
+        }),
+      });
+      const config = createLiminaConfig(fixture.rootDir);
+      const preflight = new LiminaPreflightManager({ config });
+      const configPath = fixture.path('svelte/tsconfig.json');
+      const input = fixture.path('svelte/src', file);
+      const contents = '<p>after materialization</p>';
+      const planItem = (name: string) => ({
+        fail: vi.fn(),
+        pass: () => {
+          if (name === 'materialize complete reference graph')
+            writeFileSync(input, contents);
+        },
+        skip: vi.fn(),
+        start: vi.fn(),
+      });
+      try {
+        const calls: TypecheckTarget[] = [];
+        const result = await runCheckerTypecheck({
+          config,
+          preflight,
+          progress: {
+            planItem,
+            planItems: (names) => names.map(planItem),
+            startItem: planItem,
+          },
+          runner: passingRunner(calls),
+        });
+        expect(await readFile(input, 'utf8')).toBe(contents);
+        if (launch) {
+          expect(result).toMatchObject({
+            passed: true,
+            targetResults: [{ status: 0 }],
+          });
+          expect(calls).toMatchObject([
+            { checkerName: 'svelte-check', sourceConfigPath: configPath },
+          ]);
+        } else {
+          expect(result).toMatchObject(
+            svelteLaunchRejection(
+              configPath,
+              'Analysis input changed during analysis',
+            ),
+          );
+          expect(calls).toHaveLength(0);
+        }
+      } finally {
+        preflight.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('rejects changed source inputs in the current Svelte consumer generation without launching again', async () => {
     const fixture = await createFixture({

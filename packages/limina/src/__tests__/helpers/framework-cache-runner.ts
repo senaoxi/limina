@@ -1,6 +1,6 @@
 import { resolveAstroSemanticToolchain } from '#checkers';
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type ts from 'typescript';
 import {
@@ -67,6 +67,15 @@ try {
   const inputs = frameworkExecutionInputs(unit);
   await inputs.assertStable();
   if (phase === 'warm') {
+    if (checker === 'svelte-check') {
+      const added = path.resolve('src/Added.svelte');
+      await writeFile(added, '<p>added</p>');
+      await assert.rejects(inputs.assertStable(), {
+        name: 'AnalysisInputDriftError',
+        inputPath: unit.configPath,
+      });
+      await unlink(added);
+    }
     await writeFile(component!, '<p>changed</p>');
     await assert.rejects(inputs.assertStable(), {
       name: 'AnalysisInputDriftError',

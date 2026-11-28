@@ -47,6 +47,7 @@ export interface AnalysisRead {
   workspaceTopology?: boolean;
   virtual?: true;
   descriptor?: AnalysisReadDescriptor;
+  membership?: { mayChangeWith(file: string): boolean };
   configStamp?: string;
   path: string;
   key: string;

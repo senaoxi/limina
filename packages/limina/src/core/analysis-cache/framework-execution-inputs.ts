@@ -1,11 +1,13 @@
 import type { ResolvedLiminaInputs } from '#config/runner';
 import {
+  observeAnalysisRead,
   readAnalysisFileDigest,
   readAnalysisInput,
 } from '#utils/analysis-input';
 import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
 import { currentProfile } from '../../application/analysis/observability';
+import { svelteSourceMembership } from '../../checker/svelte-source-membership';
 import { observeWork, profileContextScope } from '../analysis-profile';
 import type {
   GovernedSourceUnit,
@@ -244,6 +246,14 @@ export function collectFrameworkExecutionInputs<
     for (const file of input.project.fileNames) readContent(file);
     const result = collect();
     try {
+      if (input.source.semanticAuthority.family === 'svelte') {
+        const membership = svelteSourceMembership(input.project.options);
+        if (membership === undefined)
+          throw new Error(
+            `Svelte source root observations are unavailable: ${input.project.configPath}`,
+          );
+        inputs.run(() => observeAnalysisRead(membership));
+      }
       collectConsumption(input, result);
     } catch (error) {
       failure = asError(error);

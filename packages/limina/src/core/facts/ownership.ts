@@ -6,7 +6,7 @@ import {
   currentProfile,
 } from '../../application/analysis/observability';
 import { EpochInputs } from '../analysis-cache/epoch-inputs';
-import { resolveGeneratedGraphCheckerSelections } from '../build-graph/checker-resolution';
+import { prepareCheckerOwnership } from '../build-graph/checker-ownership-resolution';
 import {
   beginCoreCollection,
   type FrameworkInferenceAmbiguity,
@@ -70,17 +70,18 @@ export class CoreOwnershipProvider {
         beginCoreCollection(this.#projectDependencies);
         try {
           const inputs = new EpochInputs();
-          const resolution = await inputs.collect(() =>
-            resolveGeneratedGraphCheckerSelections({
+          const resolution = await inputs.collect(async () => {
+            const resolveOwnership = await prepareCheckerOwnership({
+              activatedRegions: workspacePathIndex,
               config: this.#config,
-              workspaceContext,
-              workspacePathIndex,
               importAnalysisContext: this.#imports.context,
               onPhase: options?.onPhase,
               projectConfigCache: this.#projectConfigs,
               projectDependencyCaches: this.#projectDependencies,
-            }),
-          );
+              workspaceSourceConfigPaths: workspaceContext.sourceConfigPaths,
+            });
+            return resolveOwnership();
+          });
           if (!this.#facts.hasWorkspaceSourceBoundary()) {
             this.#facts.publishWorkspaceSourceBoundary(
               createWorkspaceSourceBoundaryFromProjects(
