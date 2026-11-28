@@ -33,7 +33,7 @@ not replace repository acceptance or existing unit/integration/smoke suites.
 
 - [Initialization](initialization.md): noninteractive adoption and preserved inputs.
 - [Graph](graph.md): validation, materialization and JSON export views.
-- [Checks and findings](checks.md): default/standalone checks and stored queries.
+- [Checks and findings](checks.md): default, standalone and named checks, stored queries and analysis profiles.
 - [Builds](builds.md): real declaration checking, failures and output boundaries.
 - [Migration](migration.md): separate CLI preview and explicit apply prerequisites.
 

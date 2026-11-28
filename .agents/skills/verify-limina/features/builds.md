@@ -33,10 +33,22 @@ Preconditions: fresh configured seed and its real TypeScript executable bridge.
 - **Framework entry:** `python3 "$CONTROL" drive "$RUN" framework limina checker typecheck`.
   The seed has no framework targets: a disabled result is expected but does not
   prove framework checking. Add a real supported framework fixture first.
-- **Other build entries:** inspect `limina build --help` and the
-  [build contract](../../../../skills/limina/references/cli.md#build-targets).
-  Managed outputs and explicit checker configurations are not seeded. Record
-  this missing precondition rather than running a different build as proof.
+- **Select the checker target.** On a fresh seed run
+  `python3 "$CONTROL" drive "$RUN" explicit limina checker build tsconfig.json --preset tsc`.
+  Require the same internal declaration and check that `src/index.js` is absent.
+- **Compare artifact builds.** Run
+  `python3 "$CONTROL" drive "$RUN" no-outputs limina build tsconfig.json` on
+  the unmodified config. Expect exit 1 and the diagnostic about missing
+  `liminaOptions.outputs`. Then run
+  `python3 "$CONTROL" drive "$RUN" raw limina build tsconfig.json --raw --preset tsc`.
+  Expect exit 0 and a new `src/index.js` exporting `answer = 42`.
+- **Declare an output directory.** In a fresh seed, add
+  `"liminaOptions": {"outputs": {"rootDir": "./src", "outDir": "./dist"}}`
+  at the top level of `tsconfig.json`. Run
+  `python3 "$CONTROL" drive "$RUN" managed limina build tsconfig.json`.
+  Require exit 0, `dist/index.js` exporting `answer` and no `src/index.js`.
+  See the [build contract](../../../../skills/limina/references/cli.md#build-targets)
+  for supported targets.
 
 ## Gotchas
 
