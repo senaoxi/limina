@@ -29,6 +29,11 @@ edge; an empty edges array is expected and is not evidence for edge inference.
   Parse `$WORK/graph-all.json` and require the seeded package node and no edges.
   Repeat with labels `graph-source`, `graph-artifact`, matching `--view` and
   `--output` values. Each file must identify its requested view.
+  On the `graph-source` drive, add `--profile`. Expect a schema v1 graph
+  in `graph-source.json` and a separate
+  schema v2 report under `$WORK/.limina/profiles/`. Check the report's
+  `invocation.command` is `limina graph export`, its `result` is `passed`
+  and its `cachePolicy` is `read-only` on this seed.
 - **Invalid view:** `python3 "$CONTROL" drive "$RUN" graph-invalid limina graph export --view invalid --output invalid.json`.
   Require nonzero exit, a view validation diagnostic and no `invalid.json`.
 - **Stdout entry:** omit `--output` with a new label and parse the JSON in the

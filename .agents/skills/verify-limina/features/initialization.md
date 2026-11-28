@@ -6,7 +6,7 @@ package without installing its dependencies.
 ## Sub-features
 
 - `init-yes`: accept default initialization without prompts.
-- `init-preserve`: preserve existing source inputs and an existing build script.
+- `init-preserve`: keep source inputs and unrelated scripts when initializing.
 - `init-interactive`: answer adoption prompts and the optional skill prompt.
 
 ## How to get to it (user POV)
@@ -33,10 +33,11 @@ bridges exist, but there is no `limina.config.mjs` or `.limina` state.
   `python3 "$CONTROL" drive "$RUN" init-repaired-issues query check --issues --format json`.
   Require exit 0, a fresh passed run without issues and generated declarations.
   Retain both the failed journey and this input repair in the proof.
-- **Preservation variant:** on a fresh bare seed, add
-  `"limina:build": "node -e \"console.log('existing')\"` to `scripts` in the
-  manifest before init. Run the same init command and require that exact script
-  to survive; do not execute it as a substitute for `limina check`.
+- **Existing scripts.** On a fresh bare seed, set `scripts.build` to
+  `echo local-build` and `scripts["limina:build"]` to `echo custom-limina-build`
+  in `package.json`. Run the same `init --yes` drive and compare the captured
+  manifests. Expect `build` to retain its value and `limina:build` to become
+  `limina checker build`. The `--yes` flag accepts the overwrite prompt.
 - **Interactive entry:** report untested with this recorder. Use an owned
   interactive PTY and capture the prompt/action sequence if this entry is in
   scope; do not infer prompt behavior from `--yes`.

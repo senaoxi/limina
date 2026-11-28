@@ -9,6 +9,7 @@ checks. A successful query can describe an unsuccessful or older run.
 - `check-standalone`: run source or proof validation directly.
 - `check-findings`: query current issues in JSON, NDJSON or human output.
 - `check-pipeline`: run an explicitly configured named pipeline.
+- `check-profile`: capture an analysis report for one check invocation.
 
 ## How to get to it (user POV)
 
@@ -42,10 +43,22 @@ Preconditions: fresh configured seed with no `scripts/tool.ts`.
   `python3 "$CONTROL" drive "$RUN" source limina source check` and
   `python3 "$CONTROL" drive "$RUN" proof limina proof check`. Require exit 0
   and each command's pass result. For a standalone failure, use the invocation
-  query printed by that command; latest default-check inventory is different.
-- **Named pipeline:** the seed lacks this precondition. Follow the repository's
-  [pipeline configuration](../../../../docs/en/config/pipelines.md), capture
-  the exact named steps, and verify their effects; report untested until done.
+  query printed by that command. A query without `--invocation` reads the
+  latest default or named check.
+- **Named pipeline.** Set `$WORK/limina.config.mjs` to
+  `export default { pipelines: { audit: ['proof:check'] } };` on a fresh seed.
+  Run `python3 "$CONTROL" drive "$RUN" audit limina check audit`, then
+  `python3 "$CONTROL" drive "$RUN" audit-issues query check --issues --format json`.
+  Require `run.command` to be `limina check audit`, a passed result and
+  `proof:check` as the only pipeline step. The inventory also records preparation.
+- **Analysis profile.** On a fresh seed run
+  `python3 "$CONTROL" drive "$RUN" forced limina check --force --profile-output ../profiles`.
+  Require exit 0 and one JSON file under `$RUN/profiles/`. Check
+  `schemaVersion: 2` and the invocation's `command` (`limina check`),
+  `result` (`passed`) and `cachePolicy` (`forced`).
+  Run `python3 "$CONTROL" drive "$RUN" query-profile query check --issues --profile --format json`.
+  Expect exit 1 and a profiling diagnostic on stderr. See the
+  [profiling options](../../../../docs/en/cli.md#profile-analysis) for supported commands.
 
 ## Gotchas
 
