@@ -1,14 +1,1 @@
-import type {
-  CheckerConfigMode,
-  CheckerName,
-  CheckerScope,
-} from './pipeline-checker-types';
-
-export function getNamedCheckerConfigs(
-  checkers: CheckerConfigMode | undefined,
-): Partial<Record<CheckerName, CheckerScope>> {
-  if (checkers === undefined) return {};
-  const named = { ...checkers };
-  delete named.auto;
-  return named;
-}
+export { getNamedCheckerConfigs } from '../checker/named-checkers';

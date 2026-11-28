@@ -1,4 +1,3 @@
-import { getNamedCheckerConfigs } from '#config/named-checkers';
 import type {
   BuildCheckerName,
   CheckerConfig,
@@ -12,6 +11,7 @@ import {
   getTypeScriptCheckerExtensions,
   normalizeExtensions,
 } from './extensions';
+import { getNamedCheckerConfigs } from './named-checkers';
 import { getCheckerAdapter } from './registry';
 import type { CheckerAdapter } from './types';
 

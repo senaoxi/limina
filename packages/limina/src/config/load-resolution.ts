@@ -1,11 +1,11 @@
+import { analysisHash } from '#utils/analysis-hash';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { pathBinding } from '#utils/path-binding';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'pathe';
 import type { ConfigResolution } from '../core/analysis-cache/contracts';
-import { pathBinding } from '../core/analysis-cache/directory-fingerprint';
-import { analysisHash } from '../core/analysis-cache/identity';
 import type { ConfigModuleEvidence } from './load-evidence';
 export type ObservedConfigResolution = Omit<
   ConfigResolution,

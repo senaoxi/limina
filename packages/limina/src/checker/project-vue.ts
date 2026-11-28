@@ -1,7 +1,7 @@
+import { AnalysisInputDriftError } from '#utils/analysis-input-drift';
 import { cloneCompilerOptions } from '#utils/compiler-options';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import type ts from 'typescript';
-import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
 import { createFormatHost } from './project-base';
 import type {
   CheckerProjectConfigParseOptions,

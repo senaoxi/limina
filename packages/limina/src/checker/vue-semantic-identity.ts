@@ -1,5 +1,7 @@
 import { readAnalysisFileDigest } from '#utils/analysis-input';
+import { AnalysisInputDriftError } from '#utils/analysis-input-drift';
 import { compareCodeUnits } from '#utils/collections';
+import { compilerPathPolicy } from '#utils/compiler-path-policy';
 import { normalizeAbsolutePath } from '#utils/path';
 import { parseLiveConfig } from '#utils/resolved-config-cache';
 import {
@@ -12,8 +14,6 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'pathe';
 import type ts from 'typescript';
-import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
-import { compilerPathPolicy } from '../core/typescript-semantic/compiler-path-key';
 import { normalizeExtensions } from './extensions';
 import {
   canReuseConfigProjection,

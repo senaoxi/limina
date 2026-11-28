@@ -3,14 +3,16 @@ import {
   readAnalysisInput,
   typeScriptDirectoryDescriptor,
 } from '#utils/analysis-input';
+import { AnalysisInputDriftError } from '#utils/analysis-input-drift';
 import { cloneCompilerOptions } from '#utils/compiler-options';
 import { normalizeAbsolutePath } from '#utils/path';
 import { parseLiveConfig } from '#utils/resolved-config-cache';
 import { readSourceConfigText } from '#utils/source-config-text';
 import ts from 'typescript';
-import { currentProfile } from '../application/analysis/observability';
-import { AnalysisInputDriftError } from '../core/analysis-cache/contracts';
-import { observeWork } from '../core/analysis-profile';
+import {
+  currentProfile,
+  observeWork,
+} from '../application/analysis/observability';
 import {
   createExtraFileExtensions,
   normalizeExtensions,

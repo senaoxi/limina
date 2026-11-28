@@ -1,8 +1,8 @@
+import { analysisHash } from '#utils/analysis-hash';
 import { normalizeAbsolutePath } from '#utils/path';
+import { pathBinding } from '#utils/path-binding';
 import { realpathSync } from 'node:fs';
 import path from 'pathe';
-import { pathBinding } from '../core/analysis-cache/directory-fingerprint';
-import { analysisHash } from '../core/analysis-cache/identity';
 import type { ConfigLoadEvidence } from './load-evidence';
 
 function physicalPath(file: string): string {

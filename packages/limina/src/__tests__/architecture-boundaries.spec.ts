@@ -412,13 +412,6 @@ const forbiddenByLayer = new Map<string, ReadonlySet<string>>([
   ['execution', new Set(higherCheckSubsystems)],
 ]);
 
-const allowedCoreCycleMembers = new Set([
-  'checker',
-  'checkers.ts',
-  'config',
-  'core',
-]);
-
 function topLevelNode(filePath: string): string {
   const relative = toPortablePath(path.relative(sourceRoot, filePath));
   const slashIndex = relative.indexOf('/');
@@ -468,11 +461,7 @@ function findUnexpectedTopLevelCycles(
     layerNeighbors.keys().toArray(),
     (layer) => [...(layerNeighbors.get(layer) ?? [])],
   )
-    .filter(
-      (component) =>
-        component.length > 1 &&
-        component.some((member) => !allowedCoreCycleMembers.has(member)),
-    )
+    .filter((component) => component.length > 1)
     .map((component) =>
       component.toSorted(
         (left, right) => Number(left > right) - Number(left < right),

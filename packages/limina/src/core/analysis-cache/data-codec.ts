@@ -4,12 +4,9 @@ Plain data only. Tags preserve undefined and ordered Map/Set entries.
 import { isPublishedNativeData } from '../../domain/analysis/native-evidence-freeze';
 import { isDecodedRecord, ownDecodedRecord } from './record-table';
 
+import { type ScalarDataNode, scalarNode } from '#utils/data-scalar';
 export type DataNode =
-  | ['undefined']
-  | ['null']
-  | ['string', string]
-  | ['boolean', boolean]
-  | ['number', number]
+  | ScalarDataNode
   | ['array', DataNode[]]
   | ['set', DataNode[]]
   | ['object', [string, DataNode][]]
@@ -158,20 +155,6 @@ function encodeObject(value: object, stack: Set<object>): DataNode {
     },
   );
   return ['object', entries];
-}
-function scalarNode(value: unknown): DataNode | undefined {
-  // Avoid constructing lookup tables and closures for every visited value.
-  if (value === undefined) return ['undefined'];
-  return value === null ? ['null'] : typedScalar(value);
-}
-function typedScalar(value: unknown): DataNode | undefined {
-  if (typeof value === 'string') return ['string', value];
-  return typeof value === 'boolean' ? ['boolean', value] : numberNode(value);
-}
-function numberNode(value: unknown): DataNode | undefined {
-  if (typeof value !== 'number') return undefined;
-  if (!Number.isFinite(value)) throw new Error('Non-finite data.');
-  return ['number', value];
 }
 function requireObject(value: unknown, stack: Set<object>): object {
   if (typeof value !== 'object') throw new Error('Executable data.');

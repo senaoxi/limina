@@ -1,3 +1,5 @@
+import { analysisHash } from '#utils/analysis-hash';
+import { pathBinding } from '#utils/path-binding';
 import { readFileSync, statSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import type {
@@ -5,8 +7,6 @@ import type {
   ConfigModuleFile,
   ConfigResolution,
 } from '../core/analysis-cache/contracts';
-import { pathBinding } from '../core/analysis-cache/directory-fingerprint';
-import { analysisHash } from '../core/analysis-cache/identity';
 import {
   observeConfigResolution,
   type ObservedConfigResolution,

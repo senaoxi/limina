@@ -1,20 +1,10 @@
+import { analysisHash } from '#utils/analysis-hash';
 import { normalizeAbsolutePath } from '#utils/path';
-import { createHash } from 'node:crypto';
 import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type { TypeScriptSemanticProject } from '../typescript-semantic/contracts';
 import { ANALYSIS_ADAPTER } from './contracts';
 
-const trueVersion = hashJson('true');
-const falseVersion = hashJson('false');
-
-export function analysisHash(value: unknown): string {
-  if (typeof value === 'boolean') return value ? trueVersion : falseVersion;
-  return hashJson(JSON.stringify(value) ?? 'undefined');
-}
-
-function hashJson(text: string): string {
-  return createHash('sha256').update(text).digest('hex');
-}
+export { analysisHash } from '#utils/analysis-hash';
 
 // Roots and the workspace boundary are compared as project state and per-target
 // conditions. They are deliberately absent from this cross-process identity.

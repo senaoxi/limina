@@ -1,45 +1,12 @@
 import ts from 'typescript';
 import { NATIVE_PROGRAM_ADAPTER } from './native-program-api';
 
-type PathHost = Pick<
-  ts.CompilerHost,
-  'getCurrentDirectory' | 'getCanonicalFileName'
->;
-type PathCompiler = typeof ts & {
-  toPath(
-    file: string,
-    directory: string,
-    canonicalize: (file: string) => string,
-  ): string;
-};
-
-/**
-Capture the actual Host policy once; physical identity is never a path key.
-*/
-interface CompilerPathPolicy {
-  readonly key: (file: string) => string;
-  readonly identity: string;
-}
-
-export function compilerPathPolicy(
-  compiler: typeof ts,
-  host: PathHost,
-): CompilerPathPolicy {
-  const directory = host.getCurrentDirectory();
-  const canonicalize = host.getCanonicalFileName;
-  const key = (file: string) =>
-    (compiler as PathCompiler).toPath(file, directory, canonicalize);
-  return {
-    key,
-    identity: JSON.stringify([
-      'typescript.toPath-v1',
-      compiler.version,
-      directory,
-      canonicalize('Aa/BB.ts'),
-      canonicalize('aa/bb.ts'),
-    ]),
-  };
-}
+import {
+  compilerPathPolicy,
+  type CompilerPathPolicy,
+  type PathHost,
+} from '#utils/compiler-path-policy';
+export { compilerPathPolicy } from '#utils/compiler-path-policy';
 
 const nativePolicies = new Map<string, CompilerPathPolicy>();
 

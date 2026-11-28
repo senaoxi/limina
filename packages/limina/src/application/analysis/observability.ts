@@ -516,3 +516,23 @@ export class AnalysisObserver extends ProfileInventory {
     };
   }
 }
+
+export function observeWork<T>(
+  observer: AnalysisObserver | undefined,
+  op: string,
+  action: () => T,
+  scope?: ProfileScope,
+  pass?: number,
+  end: 'performed' | 'computed' = 'performed',
+): T {
+  if (observer === undefined) return action();
+  const work = observer.start(op, scope, undefined, pass);
+  try {
+    const result = observer.inWork(work, action);
+    observer.finish(work, end);
+    return result;
+  } catch (error) {
+    observer.finish(work, 'failed');
+    throw error;
+  }
+}

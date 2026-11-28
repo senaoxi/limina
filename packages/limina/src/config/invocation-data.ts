@@ -1,6 +1,6 @@
+import { scalarNode } from '#utils/data-scalar';
 import { createHash } from 'node:crypto';
 import { types } from 'node:util';
-import { encodeData } from '../core/analysis-cache/data-codec';
 
 function hasDataPrototype(value: object): boolean {
   const allowed = Array.isArray(value)
@@ -93,7 +93,11 @@ function hasArrayDataShape(value: object): boolean {
 }
 
 function versionData(value: unknown): unknown {
-  if (!isObjectData(value)) return encodeData(value);
+  if (!isObjectData(value)) {
+    const scalar = scalarNode(value);
+    if (scalar === undefined) throw new Error('Executable data.');
+    return scalar;
+  }
   // Enumeration affects effective data consumption even after deep freezing.
   // Preserve that shape for every property, without classifying config fields.
   const entries = Object.entries(Object.getOwnPropertyDescriptors(value)).map(
