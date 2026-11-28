@@ -30,7 +30,7 @@ import {
   type NativeProgramObservationOptions,
 } from './native-observation-adapter';
 import { nativeObservationFailureKind } from './native-observation-failure';
-import type { NativeRuntimeModuleQuery } from './runtime-module-queries';
+import type { CaptureNativeRuntimeModuleQuery } from './runtime-module-queries';
 
 type CollectedContext = TypeScriptSemanticDependencyContext & {
   dispose(): void;
@@ -46,7 +46,7 @@ export function createNativeDependencyContext(
   options?: {
     collectFileDependencyFacts?: boolean;
     syntaxFileNames?: readonly string[];
-    captureRuntimeModuleQuery?: (query: NativeRuntimeModuleQuery) => void;
+    captureRuntimeModuleQuery?: CaptureNativeRuntimeModuleQuery;
     requireRuntimeModuleQuery?: boolean;
   },
 ): CollectedContext {
@@ -56,7 +56,6 @@ export function createNativeDependencyContext(
       { ...project, admissionMode: 'coverage-bounded' },
       cache,
     ),
-    captureRuntimeModuleQuery: options?.captureRuntimeModuleQuery,
     syntaxFiles:
       cache === undefined && options?.collectFileDependencyFacts === true
         ? new Set(
@@ -70,24 +69,32 @@ export function createNativeDependencyContext(
   if (cache && input.queries && options?.requireRuntimeModuleQuery !== true) {
     const plan = cache.observationPlan(input.project);
     if (plan !== undefined) {
-      const partial = observeChangedImporters(
-        { ...input, captureRuntimeModuleQuery: undefined },
-        cache,
-        reads,
-        plan,
-      );
-      if (partial !== undefined) return partial;
+      const partial = observeChangedImporters(input, cache, reads, plan);
+      if (partial !== undefined) {
+        options?.captureRuntimeModuleQuery?.(
+          partial.adapter.createRuntimeModuleQuery(),
+          // An unchanged root can also be loaded transitively by the partial Program.
+          (file) =>
+            !partial.restoredFiles.has(normalizeAbsolutePath(file)) &&
+            partial.adapter.program.getSourceFile(file) !== undefined,
+        );
+        return partial.context;
+      }
       cache.fallback('partial-inventory-unqualified');
       input.queries.ids.clear();
     }
   }
   const context = reads.collect(() => {
     try {
-      return observeProgram(
+      const observed = observeProgram(
         input,
         cache,
         options?.collectFileDependencyFacts === true,
-      ).context;
+      );
+      options?.captureRuntimeModuleQuery?.(
+        observed.adapter.createRuntimeModuleQuery(),
+      );
+      return observed.context;
     } catch (error) {
       if (nativeObservationFailureKind(error) === 'input-drift') throw error;
       return failedNativeDependencyContext(input, error);
@@ -167,7 +174,9 @@ function observeChangedImporters(
   cache: NativeAnalysisCache,
   baseReads: EpochInputs,
   plan: BoundedObservationPlan,
-): NativeDependencyContext | undefined {
+):
+  | (ReturnType<typeof observeProgram> & { restoredFiles: ReadonlySet<string> })
+  | undefined {
   const reads = new EpochInputs(cache.inputs);
   reads.append(baseReads);
   const result = reads.run(() => {
@@ -175,7 +184,7 @@ function observeChangedImporters(
       { ...input, observationRootNames: plan.observationRoots },
       cache,
     );
-    return composeNativeContext({
+    const composed = composeNativeContext({
       adapter,
       observed: context,
       previous: storedContextFacts(
@@ -187,6 +196,7 @@ function observeChangedImporters(
       readPreviousSyntax: (file) =>
         cache.previousFileSyntax(input.project, file),
     });
+    return composed && { ...composed, adapter };
   });
   if (result === undefined) return undefined;
   reads.append(plan.priorDiscovery);
@@ -220,5 +230,5 @@ function observeChangedImporters(
     cache.increment('restoredImporters');
     recordCacheHit('importer-facts', cache.previousOrigin, file);
   }
-  return context;
+  return result;
 }

@@ -12,6 +12,11 @@ export type NativeRuntimeModuleQuery = (
   explicitMode: ts.ResolutionMode,
 ) => ResolutionQueryBinding<NativeRuntimeModuleResult>;
 
+export type CaptureNativeRuntimeModuleQuery = (
+  query: NativeRuntimeModuleQuery,
+  isObservedImporter?: (file: string) => boolean,
+) => void;
+
 export function createNativeRuntimeModuleQuery(
   compiler: typeof ts,
   program: ts.Program,

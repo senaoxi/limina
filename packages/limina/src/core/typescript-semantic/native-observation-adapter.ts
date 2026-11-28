@@ -34,7 +34,6 @@ export interface NativeProgramObservationOptions {
   profileRole?: 'type-evidence';
   collectSyntaxParents?: boolean;
   syntaxFiles?: ReadonlySet<string>;
-  captureRuntimeModuleQuery?: (query: NativeRuntimeModuleQuery) => void;
 }
 
 /**
@@ -49,6 +48,7 @@ export class NativeObservationAdapter {
   readonly frontier: NativeProgramFrontier;
   readonly options: NativeProgramObservationOptions;
   readonly references: ReadonlyMap<string, NativeReferenceObservation>;
+  readonly createRuntimeModuleQuery: () => NativeRuntimeModuleQuery;
 
   constructor(
     options: NativeProgramObservationOptions,
@@ -120,8 +120,7 @@ export class NativeObservationAdapter {
     this.snapshot = freezeNativeData(snapshot);
     this.frontier.identities.assertStable();
     assertNativeObservationInputs(options, compiler);
-    options.captureRuntimeModuleQuery?.(
-      createNativeRuntimeModuleQuery(compiler, program, host, this.configReads),
-    );
+    this.createRuntimeModuleQuery = () =>
+      createNativeRuntimeModuleQuery(compiler, program, host, this.configReads);
   }
 }

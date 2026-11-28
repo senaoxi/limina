@@ -1201,6 +1201,89 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
     }
   });
 
+  it.each(['source:check', 'graph:prepare'] as const)(
+    'resolves edited and unchanged runtime imports after a %s snapshot',
+    async (seedStep) => {
+      const fixture = createWorkspaceFixture({
+        'packages/a/package.json': JSON.stringify({
+          name: 'a',
+          type: 'module',
+        }),
+        'packages/a/tsconfig.json': JSON.stringify({
+          compilerOptions: { module: 'NodeNext', noLib: true },
+          include: ['src/*.ts'],
+        }),
+        'packages/a/src/edited.ts': "export const a = require('../old.cjs');",
+        'packages/a/src/stable.ts':
+          "export const b = require('../stable.cjs');",
+        'packages/a/old.d.cts': 'export declare const a: number;',
+        'packages/a/new.d.cts': 'export declare const a: string;',
+        'packages/a/stable.d.cts': 'export declare const b: number;',
+      });
+      const identity = 'incremental-runtime-imports';
+      const providersFor = (
+        cache: NativeAnalysisCache,
+        step: typeof seedStep,
+      ) =>
+        createAnalysisProviders(fixture.config, undefined, undefined, {
+          analysisCache: cache,
+          subscriptionPlan: planCapabilitySubscriptions([step]),
+        });
+      try {
+        const seed = new NativeAnalysisCache(identity, undefined, 'cfg');
+        const initial = providersFor(seed, seedStep);
+        try {
+          await initial.buildGraph.getGraph();
+        } finally {
+          initial.dispose();
+        }
+        const snapshot = seed.snapshot();
+        snapshot.header.baselineTime = Date.now() + 10_000;
+        const edited = fixture.path('packages/a/src/edited.ts');
+        writeFileSync(edited, "export const a = require('../new.cjs');");
+        const editTime = new Date(snapshot.header.baselineTime + 1000);
+        utimesSync(edited, editTime, editTime);
+
+        const cache = new NativeAnalysisCache(identity, snapshot, 'cfg');
+        const current = providersFor(cache, 'source:check');
+        try {
+          const graph = await current.buildGraph.getGraph();
+          const unit = graph.governedSources
+            .values()
+            .flatMap((units) => units.values())
+            .find(
+              (entry) =>
+                entry.configPath === fixture.path('packages/a/tsconfig.json'),
+            );
+          const runtime = current.facts
+            .createSubscribedView(planCapabilitySubscriptions(['source:check']))
+            .getRuntimeProjectDependencies(unit!);
+          expect(runtime.failures).toEqual([]);
+          expect(
+            runtime.dependencies.map((entry) => [
+              entry.importRecord.filePath,
+              entry.resolvedFilePath,
+            ]),
+          ).toEqual([
+            [edited, fixture.path('packages/a/new.d.cts')],
+            [
+              fixture.path('packages/a/src/stable.ts'),
+              fixture.path('packages/a/stable.d.cts'),
+            ],
+          ]);
+          expect(cache.metrics.partialContexts).toBe(1);
+          expect(cache.metrics.semanticPrograms).toBe(
+            seedStep === 'source:check' ? 1 : 2,
+          );
+        } finally {
+          current.dispose();
+        }
+      } finally {
+        fixture.cleanup();
+      }
+    },
+  );
+
   it('scopes setParentNodes to workspace sources and caches per-file explicit resolution modes', () => {
     const fixture = createWorkspaceFixture({
       'packages/a/package.json': JSON.stringify({

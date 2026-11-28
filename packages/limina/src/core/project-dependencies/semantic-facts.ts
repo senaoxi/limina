@@ -43,14 +43,17 @@ export function createCollectionContext(
     request.context.semanticAuthority.family === 'typescript' &&
     project.configPath === project.sourceConfigPath;
   let query: NativeRuntimeModuleQuery | undefined;
+  let files = services.syntaxFileNames ?? project.fileNames;
   const context = createTypeScriptDependencyContext(project, {
     ...services,
     requireRuntimeModuleQuery: captureRuntimeModuleQuery !== undefined,
     captureRuntimeModuleQuery:
       captureRuntimeModuleQuery ??
       (canRetainLiveQueries
-        ? (prepare) => {
+        ? (prepare, isObservedImporter) => {
             query = prepare;
+            if (isObservedImporter !== undefined)
+              files = files.filter(isObservedImporter);
           }
         : undefined),
   });
@@ -58,7 +61,7 @@ export function createCollectionContext(
     retainLiveNativeRuntimeReceipts({
       cache: services.analysisCache,
       context,
-      files: services.syntaxFileNames ?? project.fileNames,
+      files,
       project,
       query,
     });
