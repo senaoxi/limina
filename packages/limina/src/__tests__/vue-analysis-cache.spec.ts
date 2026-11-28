@@ -634,7 +634,7 @@ describe('persistent Vue and mixed graph analysis', () => {
   });
 
   function outputTargetFixture() {
-    const f = fixture();
+    const f = fixture({ noLib: true });
     const config = JSON.parse(
       readFileSync(f.path('vue/tsconfig.json'), 'utf8'),
     );

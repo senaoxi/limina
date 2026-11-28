@@ -15,6 +15,7 @@ import type { DeclarationCompilationEvidence } from '../../domain/analysis/decla
 import type { SourceConfigCoverageIndex } from '../../domain/analysis/native-coverage';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import type { ArtifactChange, ArtifactPlan } from '../../domain/artifacts/plan';
+import type { EpochInputs } from '../analysis-cache/epoch-inputs';
 import type { CheckerEntrySelection } from '../checkers/entry-selection';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
@@ -152,7 +153,7 @@ export type PreparedTsconfigGraph =
 
 export interface PrepareGeneratedTsconfigGraphOptions {
   coreAnalysisWork?: string;
-  precomputedCheckerSelection?: CheckerSelectionResolution;
+  precomputedCheckerSelection?: ObservedCheckerSelection;
   producerBuildReceipt?: ProducerBuildReceipt;
   artifactNamespace: LiminaArtifactNamespace;
   importAnalysisContext?: ImportAnalysisContext;
@@ -315,6 +316,10 @@ export interface CheckerSelectionResolution {
   frozenProjectsByConfigPath: ReadonlyMap<string, FrozenSemanticProject>;
   ownershipPlan: CheckerOwnershipPlan;
   selections: ResolvedCheckerEntrySelection[];
+}
+
+export interface ObservedCheckerSelection extends CheckerSelectionResolution {
+  readonly inputs: EpochInputs;
 }
 
 export interface CheckerOutputGraph {

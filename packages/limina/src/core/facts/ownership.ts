@@ -5,6 +5,7 @@ import {
   type AnalysisObserver,
   currentProfile,
 } from '../../application/analysis/observability';
+import { EpochInputs } from '../analysis-cache/epoch-inputs';
 import { resolveGeneratedGraphCheckerSelections } from '../build-graph/checker-resolution';
 import {
   beginCoreCollection,
@@ -12,8 +13,8 @@ import {
   readFrameworkInferenceAmbiguities,
 } from '../build-graph/core-collection-run';
 import type {
-  CheckerSelectionResolution,
   CoreAnalysisPhaseObserver,
+  ObservedCheckerSelection,
 } from '../build-graph/types';
 import type { ImportCore } from '../imports';
 import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
@@ -34,7 +35,7 @@ export class CoreOwnershipProvider {
   readonly #projectDependencies: ProjectDependencyCaches;
   readonly #workspace: WorkspaceCore;
 
-  #ownershipPromise: Promise<CheckerSelectionResolution> | undefined;
+  #ownershipPromise: Promise<ObservedCheckerSelection> | undefined;
   #svelteProjectsPromise: Promise<boolean> | undefined;
   #frameworkInferenceAmbiguities:
     | readonly FrameworkInferenceAmbiguity[]
@@ -59,7 +60,7 @@ export class CoreOwnershipProvider {
 
   getOwnershipProjection(options?: {
     onPhase?: CoreAnalysisPhaseObserver;
-  }): Promise<CheckerSelectionResolution> {
+  }): Promise<ObservedCheckerSelection> {
     this.#ownershipPromise ??= withSourceConfigTextScope(async () => {
       const execute = async () => {
         const [workspaceContext, workspacePathIndex] = await Promise.all([
@@ -68,15 +69,18 @@ export class CoreOwnershipProvider {
         ]);
         beginCoreCollection(this.#projectDependencies);
         try {
-          const resolution = await resolveGeneratedGraphCheckerSelections({
-            config: this.#config,
-            workspaceContext,
-            workspacePathIndex,
-            importAnalysisContext: this.#imports.context,
-            onPhase: options?.onPhase,
-            projectConfigCache: this.#projectConfigs,
-            projectDependencyCaches: this.#projectDependencies,
-          });
+          const inputs = new EpochInputs();
+          const resolution = await inputs.collect(() =>
+            resolveGeneratedGraphCheckerSelections({
+              config: this.#config,
+              workspaceContext,
+              workspacePathIndex,
+              importAnalysisContext: this.#imports.context,
+              onPhase: options?.onPhase,
+              projectConfigCache: this.#projectConfigs,
+              projectDependencyCaches: this.#projectDependencies,
+            }),
+          );
           if (!this.#facts.hasWorkspaceSourceBoundary()) {
             this.#facts.publishWorkspaceSourceBoundary(
               createWorkspaceSourceBoundaryFromProjects(
@@ -87,7 +91,7 @@ export class CoreOwnershipProvider {
               ),
             );
           }
-          return resolution;
+          return { ...resolution, inputs };
         } finally {
           this.retainInferenceDiagnostics(this.#projectDependencies);
         }

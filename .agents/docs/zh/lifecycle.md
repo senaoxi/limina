@@ -297,6 +297,8 @@ Holder 发布的 rename 返回 `EEXIST` 或 `ENOTEMPTY` 时已经证明发生争
 
 物化与执行各自拥有独立准入。诊断候选可以物化，同时适用的 `deny.refs` 阻止受管 Checker target 执行。[Execution Admission](../../../packages/limina/src/typecheck/admission/execution-admission.ts) 由受管 build 和独立的框架 typecheck pool 共用，在物化 revision lease 与当前输入证明下检查 mutation、launch、output-copy 边界。它不调用完整 `graph:check`，不改变 Core 完成状态，不删除关系，也不保证 Checker 最终成功。
 
+[Core 归属分析](../../../packages/limina/src/core/facts/ownership.ts) 让选定结果保留原始输入观察。[完整图准备](../../../packages/limina/src/core/build-graph/prepare.ts) 将这些观察交给执行准入，以原始图输入为基线重放源码发现。[Svelte 类型检查回归](../../../packages/limina/src/__tests__/typecheck.spec.ts) 覆盖交接成功、拒绝旧代际计划，以及启动前有源码加入当前代际配置的 include 集合时的拒绝。
+
 执行准入不比较宿主 TypeScript 与 tsgo 的输入集合、版本化类型分支或外部库排除关系。Reservation 和 permit 不再使用 Native preview observer 或其专属异步重放。通用图／输入重放、精确 Checker identity、声明责任、artifact lease 和副作用边界检查保持完整。缓存恢复合格的宿主事实，不恢复执行许可。工具身份保留 tsgo 包、启动入口／执行文件、平台二进制及宿主编译器，不再扫描未使用的 Native observer JavaScript。详见[语义权威](./semantics.md)。
 
 受管 Checker 根据冻结的 Native 请求证据和实际生成的 leaf 根集决定是否复用 build-info。外部实现输入、已加载或尝试加载的非根声明，以及尚未解析的非库请求，都可能使已有增量结果过期。包删除最后一个声明后，请求仍在，而当前 Program 已没有可供比较的声明路径。编译器自带库属于工具链，真实解析到的替换包按声明输入处理。

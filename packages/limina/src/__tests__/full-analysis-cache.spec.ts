@@ -1761,7 +1761,7 @@ try {
     },
   );
 
-  it('physically stops a non-root implementation while the full Oracle loads its support and restores that boundary', () => {
+  function oracleSupportFixture() {
     const f = fixture();
     f.write(
       'limina.config.mjs',
@@ -1797,24 +1797,34 @@ try {
       }),
     );
     f.write('b/index.ts', 'export interface Value {n:number}');
-    const run = 'console.log(JSON.stringify(await runCache()));';
-    f.execute<GraphRunResult>(run);
-    const warm = f.execute<GraphRunResult>(run);
-    expectRestoredFacts(warm);
-    f.write('src/value.d.ts', 'import "compat";export interface V {}');
-    f.write(
-      'node_modules/compat/package.json',
-      JSON.stringify({ name: 'compat', version: '1.0.0', main: 'index.js' }),
-    );
-    f.write(
-      'node_modules/compat/index.js',
-      'function use(require){return require("./nested");}export {};',
-    );
-    f.write(
-      'node_modules/compat/nested.d.ts',
-      'import type {Value} from "../../b/index";export declare const value:Value;',
-    );
-    const compatibility = f.execute<GraphRunResult>(run);
+    const addOracleSupport = () => {
+      f.write('src/value.d.ts', 'import "compat";export interface V {}');
+      f.write(
+        'node_modules/compat/package.json',
+        JSON.stringify({ name: 'compat', version: '1.0.0', main: 'index.js' }),
+      );
+      f.write(
+        'node_modules/compat/index.js',
+        'function use(require){return require("./nested");}export {};',
+      );
+      f.write(
+        'node_modules/compat/nested.d.ts',
+        'import type {Value} from "../../b/index";export declare const value:Value;',
+      );
+    };
+    const run = () =>
+      f.execute<GraphRunResult>(
+        'console.log(JSON.stringify(await runCache()));',
+      );
+    return { ...f, addOracleSupport, run };
+  }
+
+  it('physically stops a non-root implementation while the full Oracle loads its support', () => {
+    const f = oracleSupportFixture();
+    f.run();
+    expectRestoredFacts(f.run());
+    f.addOracleSupport();
+    const compatibility = f.run();
     expect(compatibility.graph.edges).toEqual([]);
     const original = f.project();
     const compilerProgram = ts.createProgram({
@@ -1828,7 +1838,14 @@ try {
       compatibility.events.find((event) => event.kind === 'semanticPrograms')
         ?.count,
     ).toBeGreaterThan(0);
-    const restored = f.execute<GraphRunResult>(run);
+  });
+
+  it('restores the non-root boundary and recognizes a later direct reference', () => {
+    const f = oracleSupportFixture();
+    f.addOracleSupport();
+    const compatibility = f.run();
+    expect(compatibility.graph.edges).toEqual([]);
+    const restored = f.run();
     expect(restored.graph).toEqual(compatibility.graph);
     expectRestoredFacts(restored);
     expect(restored.events).toContainEqual(
@@ -1838,7 +1855,7 @@ try {
       'src/value.d.ts',
       'import type {Value} from "../b/index";export interface V extends Value {}',
     );
-    const recovered = f.execute<GraphRunResult>(run);
+    const recovered = f.run();
     expect(recovered.graph.edges.map((edge) => edge.toConfigPath)).toEqual([
       f.file('b/tsconfig.json'),
     ]);

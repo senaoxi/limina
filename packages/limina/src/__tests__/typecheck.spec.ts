@@ -4015,36 +4015,87 @@ describe('checker targets after materialization', () => {
     },
   );
 
-  it('rejects changed source inputs behind a stale consumer receipt without launching Svelte', async () => {
+  it('rejects a consumer receipt from before Svelte handoff without launching Svelte', async () => {
     const fixture = await createFixture({
       'svelte/src/App.svelte': '<p>hello</p>',
-      'svelte/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+      'svelte/tsconfig.json': tsconfig({
+        compilerOptions: { noLib: true, types: [] },
+        include: ['src/**/*'],
+      }),
     });
     const config = createLiminaConfig(fixture.rootDir);
-    const first = new LiminaPreflightManager({ config });
-    const second = new LiminaPreflightManager({ config });
+    const preflight = new LiminaPreflightManager({ config });
     try {
-      const receipt = await first.ensureGeneratedArtifactsMaterialized();
-      await writeText(fixture.path('svelte/src/Added.svelte'), '<p>added</p>');
-
-      await second.ensureGeneratedArtifactsMaterialized();
-      vi.spyOn(first, 'ensureGeneratedArtifactsMaterialized').mockResolvedValue(
-        receipt,
-      );
+      const receipt = await preflight.ensureGeneratedArtifactsMaterialized();
+      const namespace = preflight.artifactNamespace;
+      vi.spyOn(
+        preflight,
+        'ensureGeneratedArtifactsMaterialized',
+      ).mockResolvedValueOnce(receipt);
       const calls: TypecheckTarget[] = [];
       await expect(
         runCheckerTypecheck({
           config,
-          preflight: first,
+          preflight,
           runner: passingRunner(calls),
         }),
       ).resolves.toMatchObject({
         passed: false,
         failureKind: 'execution-admission',
+        targetResults: [],
         failedTargets: [
           expect.objectContaining({
             admission: expect.objectContaining({
               status: 'admission-rejected',
+              stage: 'launch',
+            }),
+            message:
+              'Artifact plan belongs to a different preflight generation.',
+          }),
+        ],
+      });
+      expect(preflight.artifactNamespace).not.toBe(namespace);
+      expect(calls).toHaveLength(0);
+    } finally {
+      preflight.dispose();
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects changed source inputs in the current Svelte consumer generation without launching again', async () => {
+    const fixture = await createFixture({
+      'svelte/src/App.svelte': '<p>hello</p>',
+      'svelte/tsconfig.json': tsconfig({
+        compilerOptions: { noLib: true, types: [] },
+        include: ['src/**/*'],
+      }),
+    });
+    const config = createLiminaConfig(fixture.rootDir);
+    const preflight = new LiminaPreflightManager({ config });
+    const calls: TypecheckTarget[] = [];
+    const check = () =>
+      runCheckerTypecheck({ config, preflight, runner: passingRunner(calls) });
+    try {
+      const initialNamespace = preflight.artifactNamespace;
+      await expect(check()).resolves.toMatchObject({ passed: true });
+      const consumerNamespace = preflight.artifactNamespace;
+      expect(consumerNamespace).not.toBe(initialNamespace);
+      expect(calls.map((target) => target.sourceConfigPath)).toEqual([
+        fixture.path('svelte/tsconfig.json'),
+      ]);
+
+      calls.length = 0;
+      await writeText(fixture.path('svelte/src/Added.svelte'), '<p>added</p>');
+
+      await expect(check()).resolves.toMatchObject({
+        passed: false,
+        failureKind: 'execution-admission',
+        targetResults: [],
+        failedTargets: [
+          expect.objectContaining({
+            admission: expect.objectContaining({
+              status: 'admission-rejected',
+              stage: 'launch',
             }),
             message: expect.stringMatching(
               /Analysis input changed during analysis/u,
@@ -4052,10 +4103,10 @@ describe('checker targets after materialization', () => {
           }),
         ],
       });
+      expect(preflight.artifactNamespace).toBe(consumerNamespace);
       expect(calls).toHaveLength(0);
     } finally {
-      first.dispose();
-      second.dispose();
+      preflight.dispose();
       await fixture.cleanup();
     }
   });

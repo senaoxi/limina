@@ -12,9 +12,9 @@ import { observeGraphRequest } from './build-graph/graph-profile';
 import type { ProducerBuildReceipt } from './build-graph/producer-receipt';
 import { canExcludeSvelteProjects } from './build-graph/svelte-route-precheck';
 import type {
-  CheckerSelectionResolution,
   GeneratedDependencyEdge,
   GeneratedTsconfigGraphResult,
+  ObservedCheckerSelection,
   ProducerBuildPlan,
 } from './build-graph/types';
 import type { CoreOwnershipProvider } from './facts/ownership';
@@ -203,7 +203,7 @@ export class BuildGraphCore {
    * Delegates to CoreOwnershipProvider (Stage B1). Kept as a thin facade for
    * backwards compatibility while BuildGraphCore remains a pure Stage B2 consumer.
    */
-  getOwnershipProjection(): Promise<CheckerSelectionResolution> {
+  getOwnershipProjection(): Promise<ObservedCheckerSelection> {
     return this.#ownership.getOwnershipProjection();
   }
 

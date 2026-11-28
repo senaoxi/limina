@@ -113,6 +113,8 @@ async function prepareGraphInScope(
     diagnostics: [],
   };
   try {
+    // Shared ownership can finish before this graph starts collecting inputs.
+    options.precomputedCheckerSelection?.inputs.publish();
     const coloringStart = performance.now();
     const resolveCheckerSelections =
       options.precomputedCheckerSelection === undefined
