@@ -6,10 +6,12 @@
     "types": ["node", "vitest/globals"]
   },
   "include": [
+    "bench/**/*.ts",
     "fixtures/detectors/**/case.mts",
     "integration/**/*.mjs",
     "integration/**/*.ts",
     "src/**/__tests__/**/*.ts",
+    "vitest.bench.config.ts",
     "vitest.config.ts",
     "vitest.integration.config.ts"
   ]

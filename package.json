@@ -25,6 +25,7 @@
     "test:integration": "pnpm --filter limina run test:integration && pnpm --filter limina-migrate run test:integration",
     "test:tooling": "pnpm --filter @limina/gates test && node --import tsx --test scripts/release/*.spec.ts scripts/docs/*.spec.ts scripts/git/*.spec.ts docs/.vitepress/theme/evals-cohorts.spec.ts",
     "test:smoke": "pnpm --dir smoke test",
+    "bench": "pnpm --filter limina run bench",
     "smoke": "pnpm run build && pnpm run test:smoke",
     "docs:dev": "pnpm --dir docs run docs:dev",
     "docs:build": "pnpm --dir docs run docs:build",
