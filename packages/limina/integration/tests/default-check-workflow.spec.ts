@@ -160,6 +160,61 @@ it.each([undefined, { knip: false }])(
   },
 );
 
+it('reports a resource collection failure only under Source in the default check', async () => {
+  const f = await fixture();
+  await f.config({ scope, source: { knip: false } });
+  await writeFile(
+    f.file('packages/app/package.json'),
+    JSON.stringify({
+      name: '@fixture/app',
+      private: true,
+      type: 'module',
+      imports: {
+        '#theme.css': { 'node-addons': './theme.css', default: './theme.css' },
+      },
+    }),
+  );
+  await writeFile(
+    f.file('packages/app/tsconfig.json'),
+    JSON.stringify({
+      compilerOptions: {
+        composite: true,
+        module: 'NodeNext',
+        outDir: 'dist',
+        // TypeScript accepts this condition, but Node cannot receive it in argv.
+        customConditions: ['invalid\0condition'],
+      },
+      include: ['src'],
+    }),
+  );
+  await writeFile(f.file('packages/app/theme.css'), '.theme {}');
+  await writeFile(f.file('packages/app/src/index.ts'), "import '#theme.css';");
+  await writeFile(
+    f.file('packages/app/src/styles.d.ts'),
+    "declare module '*.css';",
+  );
+
+  const result = await f.run(['check']);
+  expect(result.code, result.stdout + result.stderr).toBe(1);
+  const snapshot = await inventory(f);
+  const tasks = snapshot.run!.tasks;
+  expect(tasks.find((task) => task.issueTask === 'graph:check')?.state).toBe(
+    'passed',
+  );
+  expect(
+    tasks
+      .filter((task) => task.state === 'failed')
+      .map((task) => task.issueTask),
+  ).toEqual(['source:check']);
+  expect(snapshot.issues).toMatchObject([
+    {
+      task: 'source:check',
+      code: codes.sourceCheckFailed,
+      reason: expect.stringContaining('--conditions=invalid'),
+    },
+  ]);
+});
+
 it('runs default governance after a compiler error on the complete graph', async () => {
   const f = await fixture();
   await f.config({ ...full, scope });
