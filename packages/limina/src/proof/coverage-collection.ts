@@ -179,6 +179,7 @@ function createCheckerCoverageEntries(options: {
       createCheckerProjectCoverageEntries({
         config: options.config,
         configPath,
+        projectConfigCache: options.projectConfigCache,
         target,
         virtualFiles: options.virtualFiles,
       }),

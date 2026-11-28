@@ -93,32 +93,41 @@ export function validateModuleProjection(
     input.parsed.fileNames,
     input.generatedConfig,
   );
+  const resolutions = new Map<string, ts.ResolvedModuleFull | null>();
   for (const entry of input.requests) {
     if (entry.request.channel !== 'module') continue;
     const file = entry.request.sourceFile!.lexicalPath;
+    const { specifier } = entry.request;
+    const mode = resolutionMode(entry);
     // The locked inventory already enforces the declaration frontier. A
     // consumer-retained declaration need not be a parsed root; do not drop its
     // requests or expand a delegated provider's private closure here.
-    const resolved = ts.resolveModuleName(
-      entry.request.specifier,
-      file,
-      input.parsed.options,
-      host,
-      undefined,
-      undefined,
-      resolutionMode(entry),
-    ).resolvedModule;
+    const key = JSON.stringify([file, specifier, mode ?? null]);
+    let resolved = resolutions.get(key);
+    if (resolved === undefined) {
+      resolved =
+        ts.resolveModuleName(
+          specifier,
+          file,
+          input.parsed.options,
+          host,
+          undefined,
+          undefined,
+          mode,
+        ).resolvedModule ?? null;
+      resolutions.set(key, resolved);
+    }
     // Projection uses the same semantic authority as source observation.
     // A preserved miss remains the execution Checker's diagnostic; another
     // compiler's versioned selection cannot change this graph's evidence.
-    if (resolved === undefined && entry.target === null) continue;
+    if (resolved === null && entry.target === null) continue;
     if (
-      resolved === undefined ||
+      resolved === null ||
       normalizeAbsolutePath(resolved.resolvedFileName) !== entry.target ||
       Boolean(resolved.isExternalLibraryImport) !== entry.external
     )
       throw new DeclarationObservationUnavailable(
-        `Generated module resolution changes a compiler request: ${input.generatedConfig}\n  ${file}: ${entry.request.specifier}\n  source: ${entry.target ?? 'unresolved'}\n  generated: ${resolved?.resolvedFileName ?? 'unresolved'}. Preserve the source package mapping before generating references.`,
+        `Generated module resolution changes a compiler request: ${input.generatedConfig}\n  ${file}: ${specifier}\n  source: ${entry.target ?? 'unresolved'}\n  generated: ${resolved?.resolvedFileName ?? 'unresolved'}. Preserve the source package mapping before generating references.`,
       );
   }
 }

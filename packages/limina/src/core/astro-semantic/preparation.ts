@@ -15,8 +15,8 @@ import type { ImportRecord } from '../import-analysis/records';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type {
-  AstroMaterializedServiceScript,
   AstroSemanticContext,
+  AstroServiceScriptDescriptor,
 } from './context';
 import type { AstroSemanticCandidate } from './dependency';
 import { mapAstroServiceCandidates } from './projection';
@@ -48,7 +48,7 @@ type PreparationFailure = Extract<
 
 function isUnregisteredTransitiveExtra(
   options: { context: AstroSemanticContext; filePath: string },
-  script: AstroMaterializedServiceScript,
+  script: AstroServiceScriptDescriptor,
 ): boolean {
   const extraFile = script.serviceScript.fileName;
   if (
@@ -71,7 +71,7 @@ function collectServiceCandidates(options: {
   context: AstroSemanticContext;
   directSourceRecords: ImportRecord[];
   filePath: string;
-  services: readonly AstroMaterializedServiceScript[];
+  services: readonly AstroServiceScriptDescriptor[];
   sourceText: string;
   unmapped: Extract<
     FrameworkSemanticDependencyPreparation,
@@ -79,18 +79,18 @@ function collectServiceCandidates(options: {
   >['unmapped'];
 }): PreparationFailure | { candidates: AstroCandidate[]; kind: 'supported' } {
   const candidates: AstroCandidate[] = [];
-  for (const detached of options.services) {
+  for (const descriptor of options.services) {
     const sourceFile = options.context.program.getSourceFile(
-      detached.sourceFile.fileName,
+      descriptor.fileName,
     );
     if (sourceFile === undefined) {
-      if (isUnregisteredTransitiveExtra(options, detached)) continue;
+      if (isUnregisteredTransitiveExtra(options, descriptor)) continue;
       return createFailure(
         'Astro service script is absent from the Compiler Program.',
         'service-script-materialization',
       );
     }
-    const service = { ...detached, sourceFile };
+    const service = { ...descriptor, sourceFile };
     const mapped = mapAstroServiceCandidates({ ...options, service });
     if (mapped.kind === 'unsupported') return mapped;
     candidates.push(...mapped.candidates);
@@ -130,7 +130,8 @@ function resolveCandidates(
                 compilerRequests: context.compilerRequests,
                 configPath: context.project.seed.configPath,
                 getService: (fileName) =>
-                  context.getServiceScripts(fileName)[0]?.serviceScript,
+                  context.getServiceScriptDescriptors(fileName)[0]
+                    ?.serviceScript,
               },
               requests.filter(
                 (request) => request.literal === candidate.literal,
@@ -220,7 +221,9 @@ function prepareUnchecked(options: {
   filePath: string;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
 }): FrameworkSemanticDependencyPreparation {
-  const services = options.context.getServiceScripts(options.filePath);
+  const services = options.context.getServiceScriptDescriptors(
+    options.filePath,
+  );
   if (services.length === 0) {
     return createFailure(
       'Astro semantic context did not materialize a primary or extra TypeScript service script.',

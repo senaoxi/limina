@@ -11,11 +11,15 @@ import type ts from 'typescript';
 import type { ImportAnalysisMetricsRecorder } from '../import-analysis/types';
 import type { AstroSemanticContext } from './context';
 
-export interface AstroMaterializedServiceScript {
+export interface AstroServiceScriptDescriptor {
   fileName: string;
   serviceScript: AstroServiceScript;
-  sourceFile: ts.SourceFile;
   sourceScript: AstroSourceScript;
+}
+
+export interface AstroMaterializedServiceScript
+  extends AstroServiceScriptDescriptor {
+  sourceFile: ts.SourceFile;
 }
 
 type AstroProjectHost = Parameters<
@@ -109,24 +113,25 @@ function getGeneratedServiceScripts(options: {
   ];
 }
 
-export function materializeAstroServiceScripts(options: {
+export function getAstroServiceScriptDescriptors(options: {
   fileName: string;
   sourceScript: AstroSourceScript;
-  toolchain: AstroSemanticToolchain;
-}): AstroMaterializedServiceScript[] {
-  return getGeneratedServiceScripts(options).map((serviceScript) => {
-    const fileName = serviceScript.fileName ?? options.fileName;
-    return {
-      fileName,
-      serviceScript,
-      sourceFile: createSourceFile({
-        fileName,
-        serviceScript,
-        toolchain: options.toolchain,
-      }),
-      sourceScript: options.sourceScript,
-    };
-  });
+}): AstroServiceScriptDescriptor[] {
+  return getGeneratedServiceScripts(options).map((serviceScript) => ({
+    fileName: serviceScript.fileName ?? options.fileName,
+    serviceScript,
+    sourceScript: options.sourceScript,
+  }));
+}
+
+export function materializeAstroServiceScripts(
+  descriptors: readonly AstroServiceScriptDescriptor[],
+  toolchain: AstroSemanticToolchain,
+): AstroMaterializedServiceScript[] {
+  return descriptors.map((descriptor) => ({
+    ...descriptor,
+    sourceFile: createSourceFile({ ...descriptor, toolchain }),
+  }));
 }
 
 function getResolvedEntries(options: {

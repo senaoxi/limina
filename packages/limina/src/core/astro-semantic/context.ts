@@ -32,18 +32,25 @@ import { createVolarRuntimeResolution } from '../framework-semantic/volar-runtim
 import type { ImportAnalysisMetricsRecorder } from '../import-analysis/types';
 import { observedCompilerSystem } from '../typescript-semantic/observed-resolution-host';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
-import type { AstroMaterializedServiceScript } from './context-host';
+import type {
+  AstroMaterializedServiceScript,
+  AstroServiceScriptDescriptor,
+} from './context-host';
 import {
   canReuseAstroContext,
   createAstroLanguage,
   createAstroProjectHost,
   getAstroLanguageId,
+  getAstroServiceScriptDescriptors,
   materializeAstroServiceScripts,
   recordAstroMetric,
   resolveAstroModuleNameLiterals,
 } from './context-host';
 
-export type { AstroMaterializedServiceScript } from './context-host';
+export type {
+  AstroMaterializedServiceScript,
+  AstroServiceScriptDescriptor,
+} from './context-host';
 
 interface SnapshotEntry {
   snapshot: ts.IScriptSnapshot;
@@ -235,7 +242,9 @@ export class AstroSemanticContext {
     this.#uriByFileName.set(normalized, uri);
     return uri;
   }
-  getServiceScripts(fileName: string): AstroMaterializedServiceScript[] {
+  getServiceScriptDescriptors(
+    fileName: string,
+  ): AstroServiceScriptDescriptor[] {
     this.assertActive();
     const normalized = normalizeAbsolutePath(fileName);
     const sourceScript = this.language.scripts.get(
@@ -244,11 +253,16 @@ export class AstroSemanticContext {
       true,
     );
     if (sourceScript === undefined) return [];
-    return materializeAstroServiceScripts({
+    return getAstroServiceScriptDescriptors({
       fileName: normalized,
       sourceScript,
-      toolchain: this.toolchain,
     });
+  }
+  getServiceScripts(fileName: string): AstroMaterializedServiceScript[] {
+    return materializeAstroServiceScripts(
+      this.getServiceScriptDescriptors(fileName),
+      this.toolchain,
+    );
   }
   isUnregisteredExtraServiceScript(fileName: string): boolean {
     return (
