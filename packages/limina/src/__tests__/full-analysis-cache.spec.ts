@@ -1,3 +1,5 @@
+import { compareCodeUnits } from '#utils/collections';
+import { normalizeAbsolutePath } from '#utils/path';
 import { execFileSync } from 'node:child_process';
 import {
   mkdirSync,
@@ -33,6 +35,7 @@ import { occurrenceKey } from '../core/analysis-cache/semantic-state';
 import { parseAnalysisSnapshot } from '../core/analysis-cache/snapshot-schema';
 import type { CheckerOwnershipPlan } from '../core/build-graph/checker-ownership-types';
 import type { GeneratedTsconfigGraphManifest } from '../core/build-graph/manifest-types';
+import type { GeneratedDependencyEdge } from '../core/build-graph/types';
 import { projectNativeReferenceFacts } from '../core/project-dependencies/native-reference-facts';
 import { createBoundedTypeScriptSemanticContext } from '../core/typescript-semantic';
 import type { TypeScriptSemanticProject } from '../core/typescript-semantic/contracts';
@@ -44,6 +47,12 @@ import {
   readStoredAnalysisSnapshot,
   writeStoredAnalysisSnapshot,
 } from './helpers/analysis-snapshot';
+import {
+  conditionalProviders,
+  conditionalReferenceFiles,
+  type ConditionalReferenceMode,
+  expectConditionalReferenceEdges,
+} from './helpers/conditional-reference-fixture';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { readFixtureSourceCoverage } from './helpers/native-coverage';
 import { graphMeaning, nativeFactMeaning } from './helpers/native-meaning';
@@ -57,7 +66,37 @@ afterEach(() => {
   for (const root of roots.splice(0))
     rmSync(root, { recursive: true, force: true });
 });
-function fixture() {
+const defaultFixtureFiles = {
+  'package.json': JSON.stringify({
+    name: 'fixture',
+    private: true,
+    type: 'commonjs',
+    packageManager: 'npm@11.6.1',
+  }),
+  'package-lock.json': JSON.stringify({
+    name: 'fixture',
+    lockfileVersion: 3,
+    packages: { '': {} },
+  }),
+  'limina.config.mjs':
+    'export default {scope: {checkers:{tsc:{include:["tsconfig.json"]}}}};',
+  'tsconfig.json': JSON.stringify({
+    compilerOptions: {
+      composite: true,
+      declaration: true,
+      noLib: true,
+      types: [],
+      module: 'NodeNext',
+      moduleResolution: 'NodeNext',
+      outDir: 'dist',
+    },
+    include: ['src/**/*.ts'],
+  }),
+  'src/a.ts': "import type { V } from './value.js'; export type T = V;",
+  'src/value.d.ts': 'export interface V { value: string }',
+};
+
+function fixture(initialFiles: Record<string, string> = defaultFixtureFiles) {
   const temporary = mkdtempSync(path.join(tmpdir(), 'limina-full-cache-'));
   const root = realpathSync.native(temporary);
   roots.push(root);
@@ -66,44 +105,8 @@ function fixture() {
     mkdirSync(path.dirname(file(name)), { recursive: true });
     writeFileSync(file(name), content);
   };
-  write(
-    'package.json',
-    JSON.stringify({
-      name: 'fixture',
-      private: true,
-      type: 'commonjs',
-      packageManager: 'npm@11.6.1',
-    }),
-  );
-  write(
-    'package-lock.json',
-    JSON.stringify({
-      name: 'fixture',
-      lockfileVersion: 3,
-      packages: { '': {} },
-    }),
-  );
-  write(
-    'limina.config.mjs',
-    'export default {scope: {checkers:{tsc:{include:["tsconfig.json"]}}}};',
-  );
-  write(
-    'tsconfig.json',
-    JSON.stringify({
-      compilerOptions: {
-        composite: true,
-        declaration: true,
-        noLib: true,
-        types: [],
-        module: 'NodeNext',
-        moduleResolution: 'NodeNext',
-        outDir: 'dist',
-      },
-      include: ['src/**/*.ts'],
-    }),
-  );
-  write('src/a.ts', "import type { V } from './value.js'; export type T = V;");
-  write('src/value.d.ts', 'export interface V { value: string }');
+  for (const [name, content] of Object.entries(initialFiles))
+    write(name, content);
   const config = withFixtureGovernanceRoot({
     rootDir: root,
     configPath: file('limina.config.mjs'),
@@ -863,9 +866,9 @@ interface GraphRunResult {
   graph: {
     manifest: GeneratedTsconfigGraphManifest;
     ownershipPlan: CheckerOwnershipPlan;
-    edges: { fromConfigPath: string; toConfigPath: string }[];
+    edges: GeneratedDependencyEdge[];
   };
-  events: { name?: string; kind?: string; count?: number }[];
+  events: AnalysisMetricMeasurement[];
   isPassed: boolean;
 }
 
@@ -881,6 +884,108 @@ function expectRestoredFacts(result: GraphRunResult): void {
   expect(cacheCount(result, 'restoredContexts')).toBeGreaterThan(0);
   expect(cacheCount(result, 'graphBuilds')).toBeGreaterThan(0);
 }
+
+describe('persistent Native conditional self-references', () => {
+  const profiledRun =
+    'console.log(JSON.stringify(await profileGraph({materialize:true})));';
+  const consumerAdoption = expect.objectContaining({
+    layer: 'native-context',
+    stage: 'adoption',
+    outcome: 'adopted',
+    origin: 'prior-disk',
+    subject: 'app/tsconfig.json',
+  });
+
+  function expectMaterializedReferences(
+    f: ReturnType<typeof fixture>,
+    modes: readonly ConditionalReferenceMode[],
+  ): void {
+    const manifest = JSON.parse(
+      readFileSync(f.file('.limina/manifest.json'), 'utf8'),
+    ) as GeneratedTsconfigGraphManifest;
+    const mapping = manifest.checkers.tsc!.sourceToDts;
+    const references = (source: string) => {
+      const config = f.file(mapping[source]!);
+      const parsed = ts.getParsedCommandLineOfConfigFile(
+        config,
+        {},
+        {
+          ...ts.sys,
+          onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+            throw new Error(
+              ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+            );
+          },
+        },
+      )!;
+      expect(parsed.errors).toEqual([]);
+      return (parsed.projectReferences ?? [])
+        .map(({ path }) => normalizeAbsolutePath(path))
+        .sort(compareCodeUnits);
+    };
+    expect(references('app/tsconfig.json')).toEqual(
+      modes
+        .map((mode) => f.file(mapping[conditionalProviders[mode].config]!))
+        .sort(compareCodeUnits),
+    );
+    for (const { config } of Object.values(conditionalProviders)) {
+      expect(references(config)).toEqual([]);
+    }
+  }
+
+  it('restores both conditional self-reference occurrences to erased generated configs', () => {
+    const modes = ['require', 'import'] as const;
+    const f = fixture(conditionalReferenceFiles(modes));
+    const cold = f.execute<ProfiledGraphRunResult>(profiledRun);
+    expectConditionalReferenceEdges(cold.graph.edges, f.file, modes);
+    expectMaterializedReferences(f, modes);
+
+    const store = new AnalysisCacheStore({
+      namespace: createLiminaArtifactNamespace({
+        rootDir: f.root,
+        generation: 0,
+      }),
+      configPath: f.config.configPath,
+      identity: 'unused',
+    });
+    expect(statSync(store.path).isFile()).toBe(true);
+    rmSync(f.file('.limina/tsconfig'), { recursive: true });
+    rmSync(f.file('.limina/manifest.json'));
+
+    const warm = f.execute<ProfiledGraphRunResult>(profiledRun);
+    expect(warm.profile.decisions).toContainEqual(consumerAdoption);
+    expect(warm.events).toContainEqual(
+      expect.objectContaining({ kind: 'semanticPrograms', count: 0 }),
+    );
+    expectConditionalReferenceEdges(warm.graph.edges, f.file, modes);
+    expectMaterializedReferences(f, modes);
+  }, 60_000);
+
+  it('rebuilds a consumer when its conditional self-reference switches resolution mode', () => {
+    const f = fixture(conditionalReferenceFiles(['require']));
+    const cold = f.execute<ProfiledGraphRunResult>(profiledRun);
+    expectConditionalReferenceEdges(cold.graph.edges, f.file, ['require']);
+    expectMaterializedReferences(f, ['require']);
+
+    f.write(
+      'app/index.ts',
+      conditionalReferenceFiles(['import'])['app/index.ts']!,
+    );
+    const changed = f.execute<ProfiledGraphRunResult>(profiledRun);
+    expect(changed.profile.decisions).not.toContainEqual(consumerAdoption);
+    expect(changed.events).toContainEqual(
+      expect.objectContaining({
+        name: 'analysis-cache',
+        kind: 'context-rebuilt',
+        provider: 'typescript',
+        context: f.file('app/tsconfig.json'),
+      }),
+    );
+    expect(cacheCount(changed, 'semanticPrograms')).toBeGreaterThan(0);
+    expectConditionalReferenceEdges(changed.graph.edges, f.file, ['import']);
+    expectMaterializedReferences(f, ['import']);
+  }, 60_000);
+});
 
 it('revalidates the containing scope when a manifest shadows and releases a source subtree', () => {
   const f = fixture();

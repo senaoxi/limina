@@ -1,3 +1,4 @@
+import { loadConfig } from '#config/loader';
 import type { ResolvedLiminaConfig, SourceCheckConfig } from '#config/runner';
 import { resolveGeneratedGraphCheckers } from '#core/build-graph/runner';
 import {
@@ -42,6 +43,12 @@ import * as nativeFactory from '../core/typescript-semantic/native-semantic-fact
 import { VueSemanticContextManager } from '../core/vue-semantic/context';
 import { collectVueRequestInventory } from '../core/vue-semantic/request-inventory';
 import { summarizeCompilationObligation } from '../domain/analysis/native-obligation';
+import {
+  conditionalProviders,
+  conditionalReferenceFiles,
+  type ConditionalReferenceMode,
+  expectConditionalReferenceEdges,
+} from './helpers/conditional-reference-fixture';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import {
@@ -49,6 +56,7 @@ import {
   toPortablePath,
   toPortableRelativePaths,
 } from './helpers/path';
+import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 const execFileAsync = promisify(execFile);
 const requireFromTest = createRequire(import.meta.url);
@@ -9607,7 +9615,133 @@ export default className;
   });
 });
 
+function parseGeneratedProject(configPath: string): ts.ParsedCommandLine {
+  const parsed = ts.getParsedCommandLineOfConfigFile(
+    configPath,
+    {},
+    {
+      ...ts.sys,
+      onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+        throw new Error(
+          ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+        );
+      },
+    },
+  )!;
+  expect(parsed.errors).toEqual([]);
+  return parsed;
+}
+
+function generatedDeclaration(
+  project: ts.ParsedCommandLine,
+  source: string,
+): string {
+  const declarations = ts
+    .getOutputFileNames(project, source, !ts.sys.useCaseSensitiveFileNames)
+    .filter((file) => /\.d\.[cm]?ts$/.test(file));
+  expect(declarations).toHaveLength(1);
+  return normalizeAbsolutePath(declarations[0]!);
+}
+
+async function buildGeneratedProject(
+  root: string,
+  configPath: string,
+  project: ts.ParsedCommandLine,
+): Promise<string[]> {
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        requireFromTest.resolve('typescript/bin/tsc'),
+        '-b',
+        configPath,
+        '--pretty',
+        'false',
+      ],
+      { cwd: root },
+    );
+  } catch (error) {
+    const failure = error as Error & { stdout?: string; stderr?: string };
+    throw new Error(failure.stdout || failure.stderr || failure.message, {
+      cause: error,
+    });
+  }
+  const program = ts.createProgram({
+    rootNames: project.fileNames,
+    options: project.options,
+    projectReferences: project.projectReferences,
+  });
+  expect(ts.getPreEmitDiagnostics(program)).toEqual([]);
+  return program
+    .getSourceFiles()
+    .map((file) => normalizeAbsolutePath(file.fileName));
+}
+
+function directGeneratedReferences(project: ts.ParsedCommandLine): string[] {
+  return (project.projectReferences ?? [])
+    .map(({ path }) => normalizeAbsolutePath(path))
+    .sort(compareCodeUnits);
+}
+
 describe('reference graph repair compiler differentials', () => {
+  it.each([
+    { label: 'require', modes: ['require'] },
+    { label: 'import', modes: ['import'] },
+    { label: 'require then import', modes: ['require', 'import'] },
+    { label: 'import then require', modes: ['import', 'require'] },
+  ] satisfies { label: string; modes: ConditionalReferenceMode[] }[])(
+    'preserves conditional self-reference occurrences and build inputs: $label',
+    async ({ modes }: { modes: readonly ConditionalReferenceMode[] }) => {
+      const fixture = await createSemanticRepairFixture(
+        conditionalReferenceFiles(modes),
+      );
+      try {
+        const config = await loadConfig({
+          configPath: fixture.path('limina.config.mjs'),
+        });
+        const graph = await prepareGeneratedTsconfigGraph(config);
+        expectConditionalReferenceEdges(
+          graph.dependencyEdges,
+          fixture.path,
+          modes,
+        );
+        const mapping = graph.sourceToDts.get('tsc')!;
+        const appConfig = mapping.get(fixture.path('app/tsconfig.json'))!;
+        const app = parseGeneratedProject(appConfig);
+        const providers = (['require', 'import'] as const).map((mode) => {
+          const provider = conditionalProviders[mode];
+          const configPath = mapping.get(fixture.path(provider.config))!;
+          const parsed = parseGeneratedProject(configPath);
+          expect(directGeneratedReferences(parsed)).toEqual([]);
+          return {
+            configPath,
+            declaration: generatedDeclaration(
+              parsed,
+              fixture.path(provider.source),
+            ),
+            source: fixture.path(provider.source),
+            requested: modes.includes(mode),
+          };
+        });
+        expect(directGeneratedReferences(app)).toEqual(
+          providers
+            .filter(({ requested }) => requested)
+            .map(({ configPath }) => configPath)
+            .sort(compareCodeUnits),
+        );
+        const files = await buildGeneratedProject(fixture.root, appConfig, app);
+        for (const { declaration, source, requested } of providers) {
+          expect(files.includes(declaration)).toBe(requested);
+          expect(existsSync(declaration)).toBe(requested);
+          expect(files).not.toContain(source);
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    30_000,
+  );
+
   it.each([
     'relative-types',
     'relative-types-extends',
@@ -11313,6 +11447,108 @@ describe('ambient references and compiler membership', () => {
         await fixture.cleanup();
       }
     },
+  );
+
+  it.each([
+    { directA: 'declaration shadow', target: './refs/a.d.ts' },
+    { directA: 'provider source', target: './a/index.ts' },
+  ])(
+    "resolves emitted declaration imports through the referenced project's paths: $directA",
+    async ({ target }) => {
+      const compilerOptions = {
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        composite: true,
+        strict: true,
+        types: [],
+        lib: ['es5'],
+      };
+      const packageIdentity = { name: 'paths-fixture', version: '1.0.0' };
+      const fixture = await createSemanticRepairFixture({
+        'package.json': json({
+          ...packageIdentity,
+          private: true,
+          type: 'module',
+          packageManager: 'npm@11.6.1',
+        }),
+        'package-lock.json': json({
+          ...packageIdentity,
+          lockfileVersion: 3,
+          packages: { '': packageIdentity },
+        }),
+        'limina.config.mjs':
+          'export default {scope:{checkers:{tsc:{include:["tsconfig.json"]}}}};',
+        'tsconfig.json': json({
+          files: [],
+          references: ['a', 'b', 'c'].map((leaf) => ({
+            path: `./tsconfig.${leaf}.json`,
+          })),
+        }),
+        'tsconfig.a.json': json({ compilerOptions, files: ['a/index.ts'] }),
+        'tsconfig.b.json': json({
+          compilerOptions: {
+            ...compilerOptions,
+            paths: { '@ref/a': ['./a/index.ts'] },
+          },
+          files: ['b/index.ts'],
+        }),
+        'tsconfig.c.json': json({
+          compilerOptions: {
+            ...compilerOptions,
+            paths: { '@ref/a': [target] },
+          },
+          files: ['c/index.ts'],
+        }),
+        'a/index.ts': "export class A { readonly kind = 'provider'; }",
+        'refs/a.d.ts': "export declare class A { readonly kind: 'shadow'; }",
+        'b/index.ts':
+          "import { A } from '@ref/a'; export const b: A = new A();",
+        'c/index.ts': [
+          "import { b } from '../b/index';",
+          "export const fromB: 'provider' = b.kind;",
+          "import type { A as DirectA } from '@ref/a';",
+          "export type DirectKind = DirectA['kind'];",
+        ].join('\n'),
+      });
+      try {
+        const config = await loadConfig({
+          configPath: fixture.path('limina.config.mjs'),
+        });
+        const graph = await prepareGeneratedTsconfigGraph(config);
+        const mapping = graph.sourceToDts.get('tsc')!;
+        const aConfig = mapping.get(fixture.path('tsconfig.a.json'))!;
+        const bConfig = mapping.get(fixture.path('tsconfig.b.json'))!;
+        const cConfig = mapping.get(fixture.path('tsconfig.c.json'))!;
+        const a = parseGeneratedProject(aConfig);
+        const b = parseGeneratedProject(bConfig);
+        const c = parseGeneratedProject(cConfig);
+        const hasDeclarationShadow = target === './refs/a.d.ts';
+        expect(directGeneratedReferences(a)).toEqual([]);
+        expect(directGeneratedReferences(b)).toEqual([aConfig]);
+        expect(directGeneratedReferences(c)).toEqual(
+          hasDeclarationShadow
+            ? [bConfig]
+            : [aConfig, bConfig].sort(compareCodeUnits),
+        );
+        const aSource = fixture.path('a/index.ts');
+        const bSource = fixture.path('b/index.ts');
+        const aDeclaration = generatedDeclaration(a, aSource);
+        const bDeclaration = generatedDeclaration(b, bSource);
+        const files = await buildGeneratedProject(fixture.root, cConfig, c);
+        expect(await readFile(bDeclaration, 'utf8')).toContain('@ref/a');
+        expect(files).toEqual(
+          expect.arrayContaining([aDeclaration, bDeclaration]),
+        );
+        expect(files.includes(fixture.path('refs/a.d.ts'))).toBe(
+          hasDeclarationShadow,
+        );
+        expect(files).not.toContain(aSource);
+        expect(files).not.toContain(bSource);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    30_000,
   );
 
   it.each([
