@@ -6,16 +6,13 @@ import {
 } from '#core';
 import {
   createFileOwnerLookup,
-  type ImportAnalysisContext,
   type ProjectInfo,
 } from '#core/import-graph/context';
 import type { WorkspacePackage } from '#core/workspace/actions';
-import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
-import type { ProjectDependencyCaches } from '../core/project-dependencies/contracts';
 import {
-  createWorkspaceSourceBoundaryFromProjects,
-  type WorkspaceSourceBoundary,
-} from '../core/typescript-semantic';
+  type PreparedDependencyGraphProject,
+  prepareDependencyGraphProjects,
+} from '../core/facts/graph-projects';
 import {
   createWorkspaceLookupIndex,
   type WorkspaceLookupIndex,
@@ -33,20 +30,15 @@ import {
 
 export interface DependencyGraphCollectionContext {
   config: ResolvedLiminaConfig;
-  core: AnalysisProviderSet;
   edgesByKey: Map<string, DependencyGraphEdge>;
   fileOwnerLookup: Map<string, string[]>;
-  importAnalysis: ImportAnalysisContext;
-  ownsCore: boolean;
   outputRoots: readonly string[];
   pathIndex: WorkspaceRegionPathIndex;
   problems: string[];
-  projectDependencyCaches: ProjectDependencyCaches;
-  projects: ProjectInfo[];
+  projectDependencies: readonly PreparedDependencyGraphProject[];
   view: DependencyGraphView;
   workspaceLookup: WorkspaceLookupIndex;
   workspacePackages: WorkspacePackage[];
-  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
 function filterProjectInfoToActivatedRegion(
@@ -120,76 +112,60 @@ function resolveCollectionCore(options: {
 
 async function createDependencyGraphCollectionContext(options: {
   config: ResolvedLiminaConfig;
-  graphOptions: CollectDependencyGraphOptions;
+  core: AnalysisProviderSet;
+  view: DependencyGraphView;
 }): Promise<DependencyGraphCollectionContext> {
-  const { core, ownsCore } = resolveCollectionCore({
-    config: options.config,
-    providers: options.graphOptions.providers,
-  });
-  try {
-    const checkerProjects = await core.tsconfig.getSourceGraphProjects();
-    const problems = [...checkerProjects.problems];
-    const workspacePackages = await core.workspace.getPackages();
-    const { workspaceLookup, outputRoots, pathIndex } =
-      await createWorkspaceLookup({
-        config: options.config,
-        core,
-        workspacePackages,
-      });
-    const projects = checkerProjects.projects.map((project) =>
-      filterProjectInfoToActivatedRegion(project, workspaceLookup),
-    );
-    const importAnalysis = core.imports.context;
-    const membership = createFileOwnerLookup(projects);
-    throwGraphProblems(problems);
-
-    return {
-      config: options.config,
+  const { config, core, view } = options;
+  const checkerProjects = await core.tsconfig.getSourceGraphProjects();
+  const workspacePackages = await core.workspace.getPackages();
+  const { workspaceLookup, outputRoots, pathIndex } =
+    await createWorkspaceLookup({
+      config,
       core,
-      edgesByKey: new Map(),
-      fileOwnerLookup: membership,
-      importAnalysis,
-      ownsCore,
-      outputRoots,
-      pathIndex,
-      problems,
-      projectDependencyCaches: core.projectDependencies,
-      projects,
-      view: normalizeDependencyGraphView(options.graphOptions.view),
-      workspaceLookup,
       workspacePackages,
-      workspaceSourceBoundary: createWorkspaceSourceBoundaryFromProjects(
-        projects,
-        {
-          membership: new FileOwnerLookup(projects),
-          isWorkspaceFile: (file) =>
-            pathIndex.findPackageForPath(file) !== null,
-        },
-      ),
-    };
-  } catch (error) {
-    if (ownsCore) core.dispose();
-    throw error;
-  }
-}
+    });
+  const projects = checkerProjects.projects.map((project) =>
+    filterProjectInfoToActivatedRegion(project, workspaceLookup),
+  );
+  throwGraphProblems(checkerProjects.problems);
 
-function assertDependencyGraphProblemsEmpty(
-  context: DependencyGraphCollectionContext,
-): void {
-  throwGraphProblems(context.problems);
+  return {
+    config,
+    edgesByKey: new Map(),
+    fileOwnerLookup: createFileOwnerLookup(projects),
+    outputRoots,
+    pathIndex,
+    problems: [],
+    projectDependencies: await prepareDependencyGraphProjects({
+      generatedGraph: await core.buildGraph.getGraph(),
+      pathIndex,
+      projects,
+      providers: core,
+      rootDir: config.rootDir,
+      workspaceLookup,
+    }),
+    view,
+    workspaceLookup,
+    workspacePackages,
+  };
 }
 
 export async function collectDependencyGraph(
   config: ResolvedLiminaConfig,
   options: CollectDependencyGraphOptions = {},
 ): Promise<DependencyGraphDocument> {
-  const context = await createDependencyGraphCollectionContext({
+  const { core, ownsCore } = resolveCollectionCore({
     config,
-    graphOptions: options,
+    providers: options.providers,
   });
   try {
+    const context = await createDependencyGraphCollectionContext({
+      config,
+      core,
+      view: normalizeDependencyGraphView(options.view),
+    });
     collectDependencyGraphEdges(context);
-    assertDependencyGraphProblemsEmpty(context);
+    throwGraphProblems(context.problems);
     return {
       edges: sortEdges(context.edgesByKey.values().toArray()),
       nodes: createNodes(config, context.workspacePackages),
@@ -198,7 +174,7 @@ export async function collectDependencyGraph(
       view: context.view,
     };
   } finally {
-    if (context.ownsCore) context.core.dispose();
+    if (ownsCore) core.dispose();
   }
 }
 

@@ -111,13 +111,20 @@ export const CORE_FACT_PRODUCERS: readonly FactProducerDescriptor[] =
       id: 'runtime-only',
       stage: 'stage-a',
       supplies: ['runtime-only'],
-      requires: ['workspace', 'config', 'membership', 'occurrence', 'native'],
+      requires: [
+        'workspace',
+        'config',
+        'membership',
+        'occurrence',
+        'native',
+        'framework',
+      ],
     },
     {
       id: 'resource-observation',
       stage: 'stage-a',
       supplies: ['resource'],
-      requires: ['workspace', 'config', 'occurrence'],
+      requires: ['runtime-only'],
     },
     {
       id: 'ownership-finalization',

@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { expect, it } from 'vitest';
+import { ResourceResolver } from '../core/facts/resource-resolver';
 import { collectTypeScriptSourceTextImports } from '../core/import-analysis/typescript-imports';
-import { ResourceResolver } from '../source-check/resource-resolver';
+import { toPortablePath } from './helpers/path';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 it.each(['exports', 'imports', 'exact-imports'])(
@@ -59,6 +61,7 @@ it.each(['exports', 'imports', 'exact-imports'])(
             options: { customConditions: [...conditions] },
           }),
         ).toMatchObject({
+          authority: field === 'exact-imports' ? 'package-export' : 'oxc',
           kind: 'file',
           filePath: fixture.path(prefix + target),
         });
@@ -175,6 +178,7 @@ it.each([
           options: {},
         }),
       ).toMatchObject({
+        authority: 'package-export',
         kind: 'file',
         filePath: fixture.path(
           field === 'exports' ? 'node_modules/asset' : '.',
@@ -187,3 +191,49 @@ it.each([
     }
   },
 );
+
+it('preserves complete package-import keys at physical resolution', async () => {
+  const imports = {
+    '#foo': './base.svg',
+    '#foo/bar': './nested.svg',
+    '#foo?raw': './raw.svg',
+    '#foo#fragment': './fragment.svg',
+  };
+  const fixture = await createSemanticRepairFixture({
+    'package.json': JSON.stringify({
+      name: 'fixture',
+      type: 'module',
+      imports,
+    }),
+    ...Object.fromEntries(
+      Object.values(imports).map((target) => [target, '<svg />\n']),
+    ),
+  });
+  const resolver = new ResourceResolver();
+  try {
+    const filePath = fixture.path('index.ts');
+    const records = collectTypeScriptSourceTextImports({
+      filePath,
+      sourceText: Object.keys(imports)
+        .map((specifier) => `import ${JSON.stringify(specifier)};`)
+        .join('\n'),
+    });
+    const requireFromFixture = createRequire(pathToFileURL(filePath));
+    for (const importRecord of records) {
+      const expectedPath = toPortablePath(
+        requireFromFixture.resolve(importRecord.specifier),
+      );
+      expect(
+        resolver.resolve({
+          importRecord,
+          options: {},
+          resolutionMode: 'import',
+        }),
+      ).toMatchObject({ kind: 'file', filePath: expectedPath });
+    }
+    expect(records).toHaveLength(Object.keys(imports).length);
+  } finally {
+    resolver.dispose();
+    await fixture.cleanup();
+  }
+});

@@ -739,6 +739,8 @@ describe('production architecture boundaries', () => {
       'package-check/',
     ];
     const forbiddenTargets = new Set([
+      'core/facts/resource-resolver.ts',
+      'core/facts/resource-node-resolution.ts',
       'core/project-dependencies/runtime-source.ts',
       'core/project-dependencies/runtime-source-resolution.ts',
       'core/typescript-semantic/native-program-host.ts',

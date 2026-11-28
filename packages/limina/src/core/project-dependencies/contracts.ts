@@ -170,6 +170,7 @@ export interface SourceEvidence {
 export interface ProjectDependencyRequest {
   vueGraphFacts?: VueGraphFactReader;
   purpose?: 'runtime-source';
+  runtimeFileNames?: readonly string[];
   runtimeSourceResolver?: RuntimeSourceResolver;
   compilationObligationScope?: 'generated-declaration-project-v1';
   caches?: ProjectDependencyCaches;
@@ -189,6 +190,7 @@ export interface ProjectDependencyCaches {
   coreCollectionRun?: CoreCollectionRun;
   readonly metrics?: AnalysisMetricsRecorder;
   nativeObservations?: Map<string, NativeEvidenceSnapshot>;
+  lockedWorkspaceSourceBoundary?: WorkspaceSourceBoundary;
   sourceConfigCoverage?: SourceConfigCoverageIndex;
   declarationContextPolicy?: DeclarationContextPolicy;
   readonly analysisCache?: NativeAnalysisCache;

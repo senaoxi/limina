@@ -27,6 +27,21 @@ import {
 } from './resolution-origin';
 import { withVirtualResolutionFiles } from './virtual-resolution-host';
 
+export interface NativeProgramHost extends ts.CompilerHost {
+  resolveRuntimeModule(
+    request: ModuleQuery,
+    host: ts.ModuleResolutionHost,
+  ): ts.ResolvedModuleWithFailedLookupLocations;
+}
+
+interface ModuleQuery {
+  file: string;
+  name: string;
+  mode: ts.ResolutionMode;
+  effective: ts.CompilerOptions;
+  redirect: ts.ResolvedProjectReference | undefined;
+}
+
 interface HostInputs extends NativeHostFailures {
   queries?: BoundedResolutionQueries;
   loads: NativeProgramLoads;
@@ -36,6 +51,7 @@ interface HostInputs extends NativeHostFailures {
   requests: NativeProgramRequests;
   configReads: string[];
   collectSyntaxParents?: boolean;
+  syntaxFiles?: ReadonlySet<string>;
 }
 
 function resolveCallback<T>(
@@ -50,7 +66,7 @@ function resolveCallback<T>(
 }
 
 function attachModuleResolver(
-  host: ts.CompilerHost,
+  host: NativeProgramHost,
   input: HostInputs,
   cache: ts.ModuleResolutionCache,
 ): void {
@@ -77,15 +93,11 @@ function attachModuleResolver(
           source,
         },
         (observed) =>
-          resolveModuleWithOrigin(
+          resolveNativeModule(
             input.compiler,
-            literal.text,
-            from,
-            effective,
+            { file: from, name: literal.text, effective, redirect, mode },
             observed,
             input.queries ? undefined : cache,
-            redirect,
-            mode,
           ),
       );
       if (!sourceOptions.noResolve)
@@ -94,6 +106,24 @@ function attachModuleResolver(
       return raw;
     });
   };
+}
+
+function resolveNativeModule(
+  compiler: typeof ts,
+  request: ModuleQuery,
+  host: ts.ModuleResolutionHost,
+  cache?: ts.ModuleResolutionCache,
+) {
+  return resolveModuleWithOrigin(
+    compiler,
+    request.name,
+    request.file,
+    request.effective,
+    host,
+    cache,
+    request.redirect,
+    request.mode,
+  );
 }
 
 function configuredTypeField(
@@ -227,6 +257,11 @@ function referenceConfig(input: HostInputs, configPath: string) {
     tsModule: input.compiler,
     virtualFiles: input.project.virtualFiles,
   });
+  const config = parsed?.options.configFile as
+    | ts.TsConfigSourceFile
+    | undefined;
+  if (config?.extendedSourceFiles !== undefined)
+    input.configReads.push(...config.extendedSourceFiles);
   recordNativeConfigFailure(input, configPath, parsed);
   return parsed;
 }
@@ -242,7 +277,7 @@ function isExternalLibrarySource(
   );
 }
 
-export function createNativeProgramHost(input: HostInputs): ts.CompilerHost {
+export function createNativeProgramHost(input: HostInputs): NativeProgramHost {
   const base = input.compiler.createCompilerHost(input.project.options);
   // Only physical fallbacks belong to the filesystem epoch. Staged answers
   // are bound to the candidate plan and may materialize during this command.
@@ -265,11 +300,14 @@ export function createNativeProgramHost(input: HostInputs): ts.CompilerHost {
         )}/`;
   const sourceHostFor = (fileName: string): ts.CompilerHost =>
     parentBase !== undefined &&
+    input.syntaxFiles?.has(normalizeAbsolutePath(fileName)) !== false &&
     !isExternalLibrarySource(fileName, defaultLibraryPrefix)
       ? parentBase
       : base;
-  const host: ts.CompilerHost = {
+  const host: NativeProgramHost = {
     ...base,
+    resolveRuntimeModule: (request, resolutionHost) =>
+      resolveNativeModule(input.compiler, request, resolutionHost),
     getSourceFile: (...arguments_) =>
       input.loads.allow(arguments_[0])
         ? readNativeSource(input, arguments_[0], () =>

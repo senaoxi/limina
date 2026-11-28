@@ -1,4 +1,3 @@
-import { resolveCheckerSourceModuleName } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import type { VueGraphOccurrence } from '../analysis-cache/vue-graph-facts';
 import type { DeclarationReferenceRequirement } from '../dependency-semantics';
@@ -7,8 +6,10 @@ import type { CanonicalImportResolutionEvidence } from '../import-analysis/runne
 import { classifyImportRuntimeEvidence } from '../import-analysis/runtime-evidence';
 import { getResolvedTargetKind } from '../import-graph/declaration-classifier';
 import type { TypeEvidence } from '../type-evidence/cache';
-import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
-import { isModuleImportRecord } from '../typescript-semantic/import-record';
+import {
+  nativeObservationFailureKind,
+  observationErrorDetail,
+} from '../typescript-semantic/native-observation-failure';
 import type {
   DirectSourceDependency,
   ProjectDependencyCollection,
@@ -65,7 +66,8 @@ function createDirectDependency(options: {
       nativeFact,
       resolutionMode,
     }),
-    nativeFact,
+    nativeFact:
+      options.request.purpose === 'runtime-source' ? undefined : nativeFact,
     referenceRequirement: options.referenceRequirement,
     importRecord: options.importRecord,
     provenance: 'direct-source',
@@ -75,46 +77,6 @@ function createDirectDependency(options: {
     targetKind: getResolvedTargetKind(resolvedFilePath),
     typeEvidence: options.typeEvidence,
   };
-}
-
-const TYPESCRIPT_EXTENSIONS = new Set([
-  '.cjs',
-  '.cts',
-  '.d.cts',
-  '.d.mts',
-  '.d.ts',
-  '.js',
-  '.json',
-  '.jsx',
-  '.mjs',
-  '.mts',
-  '.ts',
-  '.tsx',
-]);
-
-function hasCheckerOnlyExtensions(extensions: readonly string[]): boolean {
-  return extensions.some(
-    (extension) => !TYPESCRIPT_EXTENSIONS.has(extension.toLowerCase()),
-  );
-}
-
-function isReusableNativeRuntimeFact(
-  options: CollectRecordOptions,
-  nativeFact: NativeDependencyFact,
-): boolean {
-  if (nativeFact.resolution.target !== null) return true;
-  const requestId = nativeFact.nativeEvidence?.requestId;
-  const observed =
-    requestId === undefined
-      ? undefined
-      : options.request.typeScriptSemanticContext?.nativeEvidence?.resolutions.find(
-          (resolution) => resolution.requestId === requestId,
-        );
-  return !(
-    observed?.state === 'unavailable' &&
-    observed.pathSelection?.state !== 'disabled' &&
-    isModuleImportRecord(options.importRecord)
-  );
 }
 
 function getDirectResolvedFilePath(
@@ -140,26 +102,14 @@ function getDirectCheckerTargetPath(
   return target?.resolvedFileName;
 }
 
-function evidenceFromMatchedNativeFact(
+function nativeRuntimeEvidence(
   options: CollectRecordOptions,
-  nativeFact: NativeDependencyFact,
+  target: CanonicalImportResolutionEvidence['typeScriptResolution'],
 ): CanonicalImportResolutionEvidence {
-  const target =
-    nativeFact.resolution.target === null &&
-    isModuleImportRecord(options.importRecord) &&
-    hasCheckerOnlyExtensions(options.request.context.extensions)
-      ? resolveCheckerSourceModuleName({
-          specifier: options.importRecord.specifier,
-          containingFile: options.importRecord.filePath,
-          compilerOptions: options.request.context.compilerOptions,
-          extensions: [...options.request.context.extensions],
-        })
-      : nativeFact.resolution.target;
   return {
     eligibility: {
       kind: 'not-applicable',
-      reason:
-        'Source/runtime view reuses locked Native compiler resolution without conferring compilation obligations.',
+      reason: 'Runtime resolution does not establish compilation obligations.',
     },
     oxcResolvedFilePath: null,
     typeScriptResolution: target,
@@ -175,27 +125,25 @@ function evidenceFromMatchedNativeFact(
 }
 
 function resolveDirectCheckerEvidence(options: CollectRecordOptions) {
-  if (options.request.purpose === 'runtime-source') {
+  const resolver = options.request.runtimeSourceResolver;
+  if (resolver !== undefined) {
     const matchedNative = getDirectNativeFact(options);
-    if (
-      matchedNative !== undefined &&
-      isReusableNativeRuntimeFact(options, matchedNative)
-    ) {
+    if (matchedNative !== undefined) {
       if (options.request.caches?.factCounters !== undefined) {
         options.request.caches.factCounters.nativeResolutionReuses += 1;
       }
-      return evidenceFromMatchedNativeFact(options, matchedNative);
+      return nativeRuntimeEvidence(options, matchedNative.resolution.target);
     }
-  }
-  const runtime = options.request.runtimeSourceResolver?.resolve(
-    options.importRecord,
-    getExplicitResolutionMode(options),
-  );
-  if (runtime !== undefined) {
-    if (options.request.caches?.factCounters !== undefined) {
+    const runtime = resolver.resolve(
+      options.importRecord,
+      getExplicitResolutionMode(options),
+    );
+    if (
+      runtime !== undefined &&
+      options.request.caches?.factCounters !== undefined
+    )
       options.request.caches.factCounters.runtimeOnlyResolutions += 1;
-    }
-    return runtime.evidence;
+    return nativeRuntimeEvidence(options, runtime?.target ?? null);
   }
   return resolveSemanticCheckerEvidence(options);
 }
@@ -346,10 +294,28 @@ export function collectProjectDependencyRecord(
   const projected = options.request.vueGraphFacts?.occurrence(
     options.importRecord,
   );
-  const evidence =
-    projected === undefined
-      ? resolveDirectCheckerEvidence(options)
-      : projectVueEvidence(options, projected);
+  let evidence: CanonicalImportResolutionEvidence;
+  try {
+    evidence =
+      projected === undefined
+        ? resolveDirectCheckerEvidence(options)
+        : projectVueEvidence(options, projected);
+  } catch (error) {
+    if (
+      options.request.runtimeSourceResolver === undefined ||
+      nativeObservationFailureKind(error) === 'input-drift'
+    )
+      throw error;
+    options.collection.failures.push(
+      createProjectDependencyFailure({
+        importRecord: options.importRecord,
+        reason: observationErrorDetail(error),
+        request: options.request,
+        stage: 'module-resolution',
+      }),
+    );
+    return;
+  }
   if (isCollectNonDependency(options, evidence)) return;
   const resolved = {
     evidence,

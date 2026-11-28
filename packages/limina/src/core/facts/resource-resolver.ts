@@ -1,11 +1,11 @@
-import type { ImportRecord } from '#core/import-graph/context';
 import type { PackageManifest } from '#core/workspace/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { ResolverFactory } from 'oxc-resolver';
 import type ts from 'typescript';
-import type { RuntimeEvidence } from '../core/import-analysis/evidence';
+import type { RuntimeEvidence } from '../import-analysis/evidence';
+import type { ImportRecord } from '../import-analysis/records';
 import { ResourceNodeCompatibility } from './resource-node-compatibility';
 import { resolveResourceWithNode } from './resource-node-resolution';
 
@@ -14,6 +14,10 @@ interface ResourceRequest {
   options: ts.CompilerOptions;
   resolutionMode: string;
 }
+
+export type PhysicalResourceEvidence = Readonly<
+  Extract<RuntimeEvidence, { kind: 'file' | 'missing' }>
+>;
 
 function getOccurrenceMode(request: ResourceRequest): 'import' | 'require' {
   if (['1', 'require'].includes(request.resolutionMode)) return 'require';
@@ -32,7 +36,7 @@ function isLocalSpecifier(specifier: string): boolean {
   return specifier.startsWith('.') || path.isAbsolute(specifier);
 }
 
-function resolveLocalResource(record: ImportRecord): RuntimeEvidence {
+function resolveLocalResource(record: ImportRecord): PhysicalResourceEvidence {
   const checkedPath = normalizeAbsolutePath(
     path.resolve(path.dirname(record.filePath), record.specifier),
   );
@@ -44,7 +48,7 @@ function resolveLocalResource(record: ImportRecord): RuntimeEvidence {
 function getPhysicalEvidence(
   resolved: string | null | undefined,
   authority: 'oxc' | 'package-export',
-): RuntimeEvidence {
+): PhysicalResourceEvidence {
   if (!resolved) return { kind: 'missing' };
   return existsSync(resolved)
     ? { authority, filePath: normalizeAbsolutePath(resolved), kind: 'file' }
@@ -67,7 +71,7 @@ export class ResourceResolver {
 
   readonly #resolvers = new Map<string, ResolverFactory>();
 
-  readonly #results = new Map<string, RuntimeEvidence>();
+  readonly #results = new Map<string, PhysicalResourceEvidence>();
 
   constructor(
     readOwnerManifest?: (manifestPath: string) => PackageManifest | undefined,
@@ -101,7 +105,7 @@ export class ResourceResolver {
     return resolver;
   }
 
-  #resolvePackage(request: ResourceRequest): RuntimeEvidence {
+  #resolvePackage(request: ResourceRequest): PhysicalResourceEvidence {
     const { filePath, specifier } = request.importRecord;
     const result = this.#getResolver(request).sync(
       path.dirname(filePath),
@@ -120,7 +124,7 @@ export class ResourceResolver {
     return getPhysicalEvidence(result.path, 'oxc');
   }
 
-  #resolveExactImport(request: ResourceRequest): RuntimeEvidence {
+  #resolveExactImport(request: ResourceRequest): PhysicalResourceEvidence {
     const resolved = resolveResourceWithNode({
       conditions: request.options.customConditions ?? [],
       filePath: request.importRecord.filePath,
@@ -131,14 +135,16 @@ export class ResourceResolver {
     return getPhysicalEvidence(resolved, 'package-export');
   }
 
-  resolve(request: ResourceRequest): RuntimeEvidence {
+  resolve(request: ResourceRequest): PhysicalResourceEvidence {
     const { specifier } = request.importRecord;
     const key = getResourceCacheKey(request);
     const cached = this.#results.get(key);
     if (cached !== undefined) return cached;
-    const result = isLocalSpecifier(specifier)
-      ? resolveLocalResource(request.importRecord)
-      : this.#resolvePackage(request);
+    const result = Object.freeze(
+      isLocalSpecifier(specifier)
+        ? resolveLocalResource(request.importRecord)
+        : this.#resolvePackage(request),
+    );
     this.#results.set(key, result);
     return result;
   }

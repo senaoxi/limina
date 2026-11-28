@@ -43,7 +43,10 @@ interface SvelteBoundedProgram {
 
 export function createGeneratedSemanticScript(options: {
   filePath: string;
-  generated: ReturnType<SvelteSemanticToolchain['transform']>;
+  generated: Pick<
+    ReturnType<SvelteSemanticToolchain['transform']>,
+    'code' | 'map'
+  >;
   toolchain: SvelteSemanticToolchain;
   project: SvelteSemanticProject;
 }): GeneratedSemanticScript {

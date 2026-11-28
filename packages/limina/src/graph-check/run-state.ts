@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import {
@@ -5,6 +6,10 @@ import {
   type ProjectInfo,
 } from '#core/import-graph/context';
 import type { WorkspacePackage } from '#core/workspace/actions';
+import {
+  type PreparedGraphProjectDependencies,
+  prepareGraphProjectDependencies,
+} from '../core/facts/graph-projects';
 import {
   createManagedOutputDeclarationLookup,
   type ManagedOutputDeclarationLookup,
@@ -44,8 +49,9 @@ export interface GraphCheckState {
   managedOutputLookup: ManagedOutputDeclarationLookup;
   options: RunGraphCheckImplOptions;
   packages: WorkspacePackage[];
-  preflight: LiminaPreflightManager;
+  preparedProjectDependencies: readonly PreparedGraphProjectDependencies[];
   projectCheckerNamesByPath: Map<string, string>;
+  projectConfigCache: CheckerProjectConfigCache;
   projectPaths: string[];
   projects: ProjectInfo[];
   projectsByPath: Map<string, ProjectInfo>;
@@ -83,7 +89,7 @@ export async function createGraphCheckState(
     () => checks.value,
     { plannedItems: GRAPH_CHECK_ITEM_NAMES, progress: options.progress },
   );
-  const preflight = resolvePreflight(config, options);
+  const preflight = resolvePreflight(config, options, 'graph:check');
   const generatedGraph = await preflight.ensureGeneratedGraph();
   const graphRoute = await preflight.ensureSourceGraphProjectExtensions();
   const projectPaths = graphRoute.projectExtensionsByPath
@@ -114,6 +120,22 @@ export async function createGraphCheckState(
     projectPathAliases: createGeneratedGraphPathAliases(generatedGraph),
     projectPaths,
   });
+  const managedOutputLookup = createManagedOutputDeclarationLookup(
+    createGraphCheckManagedOutputProjectContexts({
+      config,
+      findings,
+      projectCheckerNamesByPath,
+      projects,
+    }),
+  );
+  const preparedProjectDependencies = await prepareGraphProjectDependencies({
+    generatedGraph,
+    managedOutputLookup,
+    projects,
+    providers: preflight.providers,
+    rootDir: config.rootDir,
+    workspaceLookup,
+  });
 
   return {
     checks,
@@ -124,18 +146,12 @@ export async function createGraphCheckState(
     generatedGraph,
     graphRoute,
     graphRules,
-    managedOutputLookup: createManagedOutputDeclarationLookup(
-      createGraphCheckManagedOutputProjectContexts({
-        config,
-        findings,
-        projectCheckerNamesByPath,
-        projects,
-      }),
-    ),
+    managedOutputLookup,
     options,
     packages,
-    preflight,
+    preparedProjectDependencies,
     projectCheckerNamesByPath,
+    projectConfigCache: preflight.providers.projectConfigs,
     projectPaths,
     projects,
     projectsByPath,

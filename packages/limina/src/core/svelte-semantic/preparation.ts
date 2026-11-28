@@ -1,7 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
-import { currentProfile } from '../../application/analysis/observability';
-import { observeWork } from '../analysis-profile';
 import { frameworkCompilationObligation } from '../framework-semantic/compilation-obligation';
 import type {
   FrameworkSemanticDependencyPreparation,
@@ -10,10 +8,13 @@ import type {
 import { enumerateGeneratedSemanticDependencies } from '../framework-semantic/generated-dependencies';
 import {
   mergePreparedDirectSourceRecords,
+  mergePreparedRuntimeFacts,
   prepareResolvedFrameworkCandidates,
 } from '../framework-semantic/prepared-dependency';
 import { requiresReferenceStructure } from '../framework-semantic/prepared-type-evidence';
+import { collectGeneratedRuntimeFacts } from '../framework-semantic/runtime-dependencies';
 import { collectFrameworkSupportContributions } from '../framework-semantic/support-contributions';
+import { buildLineStarts } from '../import-analysis/records';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import {
@@ -25,9 +26,16 @@ import {
   createSvelteModuleTarget,
   resolveSvelteModuleOccurrence,
 } from './module-resolution';
-import { collectSvelteMappedCandidates } from './projection';
-import { isSvelteTypeScriptSource } from './source-records';
+import {
+  collectSvelteMappedCandidates,
+  createSvelteMappedSourceRecord,
+} from './projection';
+import { mapGeneratedRange } from './source-mapping';
 import type { SvelteSemanticToolchain } from './toolchain';
+import {
+  type SvelteTransformCache,
+  transformSvelteComponent,
+} from './transform';
 import type { SvelteSemanticProject } from './types';
 
 function createIdentity(options: {
@@ -135,36 +143,36 @@ function prepareProjectedCandidates(options: {
   };
 }
 
-function prepareUnchecked(options: {
+interface SveltePreparationOptions {
   supportInputBoundary?: WorkspaceSourceBoundary;
   filePath: string;
+  includeRuntimeOnly?: boolean;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
   project: SvelteSemanticProject;
   sourceText: string;
   toolchain: SvelteSemanticToolchain;
-}): FrameworkSemanticDependencyPreparation {
+  transforms?: SvelteTransformCache;
+}
+
+function prepareUnchecked(
+  options: SveltePreparationOptions,
+): FrameworkSemanticDependencyPreparation {
   const filePath = normalizeAbsolutePath(options.filePath);
-  const observer = currentProfile();
-  const transformOptions = {
-    filename: filePath,
-    isTsFile: isSvelteTypeScriptSource(options.sourceText),
-    parse: options.toolchain.compiler.parse as never,
-    version: options.toolchain.compilerVersion,
-    namespace: options.project.svelteOptions?.namespace,
-  };
-  const generatedOutput =
-    observer === undefined
-      ? options.toolchain.transform(options.sourceText, transformOptions)
-      : observeWork(observer, 'svelte-transform', () =>
-          options.toolchain.transform(options.sourceText, transformOptions),
-        );
+  const generatedOutput = transformSvelteComponent(
+    filePath,
+    options.sourceText,
+    options.project.svelteOptions?.namespace,
+    options.toolchain,
+    options.transforms,
+  );
   const generated = createGeneratedSemanticScript({
     filePath,
     generated: generatedOutput,
     project: options.project,
     toolchain: options.toolchain,
   });
-  const { program } = createBoundedProgram({ ...options, generated });
+  const bounded = createBoundedProgram({ ...options, generated });
+  const { program } = bounded;
   const requests = generated.compilerRequests.collect(
     program,
     generated.sourceFile,
@@ -210,7 +218,7 @@ function prepareUnchecked(options: {
       'Svelte generated component consumption has no qualified source association.',
       'toolchain-compatibility',
     );
-  return prepareProjectedCandidates({
+  const preparation = prepareProjectedCandidates({
     supportInputBoundary: options.supportInputBoundary,
     directSourceRecords,
     generated,
@@ -257,20 +265,53 @@ function prepareUnchecked(options: {
     toolchain: options.toolchain,
     unmapped,
   });
+  if (!options.includeRuntimeOnly || preparation.kind === 'unsupported')
+    return preparation;
+  const sourceLineStarts = buildLineStarts(options.sourceText);
+  const runtime = collectGeneratedRuntimeFacts({
+    framework: 'svelte',
+    compiler: options.toolchain.tsModule,
+    compilerRequests: generated.compilerRequests,
+    program,
+    resolve: bounded.resolveRuntimeModule,
+    source: generated.sourceFile,
+    target: (resolved) =>
+      createSvelteModuleTarget(resolved, options.toolchain.tsModule)!,
+    projectOccurrence: (dependency) => {
+      const mapped = mapGeneratedRange({
+        generatedLineStarts: generated.lineStarts,
+        generatedRecord: dependency.record,
+        sourceFilePath: filePath,
+        sourceLineStarts,
+        trace: generated.trace,
+      });
+      return mapped.kind === 'mapped'
+        ? {
+            kind: 'mapped',
+            sourceRecord: createSvelteMappedSourceRecord({
+              generatedRecord: dependency.record,
+              range: mapped.range,
+              sourceFilePath: filePath,
+              sourceText: options.sourceText,
+            }),
+          }
+        : mapped;
+    },
+  });
+  if (runtime.kind === 'unsupported') return runtime;
+  const merged = mergePreparedRuntimeFacts('svelte', runtime.facts);
+  return merged.kind === 'supported'
+    ? { ...preparation, facts: [...preparation.facts, ...merged.facts] }
+    : merged;
 }
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function prepareSvelteSemanticDependencies(options: {
-  supportInputBoundary?: WorkspaceSourceBoundary;
-  filePath: string;
-  managedOutputLookup?: ManagedOutputDeclarationLookup;
-  project: SvelteSemanticProject;
-  sourceText: string;
-  toolchain: SvelteSemanticToolchain;
-}): FrameworkSemanticDependencyPreparation {
+export function prepareSvelteSemanticDependencies(
+  options: SveltePreparationOptions,
+): FrameworkSemanticDependencyPreparation {
   try {
     return prepareUnchecked(options);
   } catch (error) {

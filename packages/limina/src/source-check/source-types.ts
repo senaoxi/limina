@@ -1,17 +1,12 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
+import type { ImportRecord } from '#core/import-graph/context';
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
 import type { PackageImportMatch } from '../core/packages/authority';
 import type { NearestPackageInfo } from '../core/packages/owners';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { SourceFinding } from './findings';
 
-export interface SourceProjectEntry {
-  checkerNames: string[];
-  companionFileNames: string[];
-  fileNames: string[];
-  project: ProjectInfo;
-}
+export type { SourceProjectEntry } from '../core/facts/source-entries';
 
 export interface TsconfigOwnershipResolution {
   matchedOwnerConfigPaths: string[];

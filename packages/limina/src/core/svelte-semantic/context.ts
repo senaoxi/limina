@@ -20,6 +20,7 @@ import {
   resolveSvelteSemanticToolchain,
   type SvelteSemanticToolchain,
 } from './toolchain';
+import type { SvelteTransformCache } from './transform';
 import type { SvelteSemanticProject } from './types';
 
 interface PreparedFile {
@@ -70,6 +71,8 @@ export class SvelteSemanticContext {
     Map<string, PreparedFile>
   >();
 
+  readonly #transforms: SvelteTransformCache;
+
   #disposed = false;
 
   #boundedProgram: ReturnType<typeof createBoundedProgram> | undefined;
@@ -81,9 +84,11 @@ export class SvelteSemanticContext {
   constructor(options: {
     project: SvelteSemanticProject;
     toolchain: SvelteSemanticToolchain;
+    transforms: SvelteTransformCache;
   }) {
     this.project = options.project;
     this.toolchain = options.toolchain;
+    this.#transforms = options.transforms;
   }
 
   #getPreparationCache(
@@ -101,24 +106,31 @@ export class SvelteSemanticContext {
     fileName: string,
     managedOutputLookup?: ManagedOutputDeclarationLookup,
     supportInputBoundary?: WorkspaceSourceBoundary,
+    shouldIncludeRuntimeOnly?: boolean,
   ): SvelteDependencyPreparation {
     this.assertActive();
     const normalized = normalizeAbsolutePath(fileName);
-    const sourceText = readAnalysisInput(normalized, () =>
-      readFileSync(normalized, 'utf8'),
-    );
+    const sourceText =
+      this.project.virtualFiles?.get(normalized) ??
+      readAnalysisInput(normalized, () => readFileSync(normalized, 'utf8'));
     const cache = this.#getPreparationCache(managedOutputLookup);
-    const key = preparationKey(normalized, supportInputBoundary);
+    const key = preparationKey(
+      normalized,
+      supportInputBoundary,
+      shouldIncludeRuntimeOnly,
+    );
     const cached = cache.get(key);
     if (cached?.sourceText === sourceText) return cached.preparation;
     const observer = currentProfile();
     const request = {
       filePath: normalized,
+      includeRuntimeOnly: shouldIncludeRuntimeOnly,
       supportInputBoundary,
       managedOutputLookup,
       project: this.project,
       sourceText,
       toolchain: this.toolchain,
+      transforms: this.#transforms,
     };
     const preparation =
       observer === undefined
@@ -180,6 +192,10 @@ export class SvelteSemanticContext {
 export class SvelteSemanticContextManager {
   readonly #toolchainByRoot = new Map<string, SvelteSemanticToolchain>();
 
+  readonly #transforms: SvelteTransformCache = new Map();
+
+  #transformGeneration: number | undefined;
+
   #active: SvelteSemanticContext | undefined;
 
   #activeIdentity: string | undefined;
@@ -214,6 +230,10 @@ export class SvelteSemanticContextManager {
     const active = this.getReusableActive(identity);
     if (active !== undefined) return active;
     this.#active?.dispose();
+    if (this.#transformGeneration !== project.generation) {
+      this.#transforms.clear();
+      this.#transformGeneration = project.generation;
+    }
     const packageRootDirectory = normalizeAbsolutePath(project.packageRootDir);
     const observer = currentProfile();
     const projectId = observer?.project(project.configPath);
@@ -225,6 +245,7 @@ export class SvelteSemanticContextManager {
         return new SvelteSemanticContext({
           project: configureSourceProject(project, toolchain),
           toolchain,
+          transforms: this.#transforms,
         });
       },
       projectId === undefined ? undefined : ['project', projectId],
@@ -241,12 +262,18 @@ export class SvelteSemanticContextManager {
     this.#active = undefined;
     this.#activeIdentity = undefined;
     this.#toolchainByRoot.clear();
+    this.#transforms.clear();
   }
 }
 
 function preparationKey(
   fileName: string,
   boundary?: WorkspaceSourceBoundary,
+  shouldIncludeRuntimeOnly?: boolean,
 ): string {
-  return JSON.stringify([fileName, boundary?.identity]);
+  return JSON.stringify([
+    fileName,
+    boundary?.identity,
+    shouldIncludeRuntimeOnly ?? false,
+  ]);
 }

@@ -17,7 +17,14 @@ import {
 } from './profile-decisions';
 import { QueryTrace } from './query-trace';
 
-export interface ResolutionQuery<T> {
+export interface ResolutionQueryBinding<T> {
+  configPaths?: readonly string[];
+  formatManifests?: readonly string[];
+  host: ts.ModuleResolutionHost;
+  resolve(host: ts.ModuleResolutionHost): T;
+}
+
+export type ResolutionQuery<T> = {
   contextId: string;
   file: string;
   identity: unknown;
@@ -25,10 +32,8 @@ export interface ResolutionQuery<T> {
   receipts?: Set<string>;
   owners?(target: string): string[] | undefined;
   configPaths?: readonly string[];
-  formatManifests?: readonly string[];
-  host: ts.ModuleResolutionHost;
-  resolve(host: ts.ModuleResolutionHost): T;
-}
+  observeSource?: boolean;
+} & (ResolutionQueryBinding<T> | { prepare(): ResolutionQueryBinding<T> });
 interface QueryOptions {
   inputs: AnalysisInputs;
   previous: Record<string, ResolutionRecord>;
@@ -110,21 +115,29 @@ export class ResolutionQueries {
 
   #resolve<T>(query: ResolutionQuery<T>, id: string): T {
     const trace = new QueryTrace(this.#options.inputs);
-    const configPaths = query.configPaths ?? [];
+    const binding = 'prepare' in query ? query.prepare() : query;
+    const configPaths = new Set([
+      ...(query.configPaths ?? []),
+      ...(binding.configPaths ?? []),
+    ]);
     for (const path of configPaths) trace.add(path, 'config-mtime');
-    const formatManifests = query.formatManifests ?? [];
+    const formatManifests = binding.formatManifests ?? [];
     for (const path of formatManifests) trace.add(path, 'manifest');
+    if (query.observeSource) {
+      trace.add(query.file, 'content');
+      trace.add(query.file, 'binding');
+    }
     this.#options.metrics.resolverCalls += 1;
     const resolve = () => {
-      const host = trace.host(query.host);
+      const host = trace.host(binding.host);
       const observer = currentProfile();
-      if (observer === undefined) return query.resolve(host);
+      if (observer === undefined) return binding.resolve(host);
       const scope = observer.currentScope;
       observer.metric('cache.native-resolution.resolve', scope, 'calls', 1);
       return observer.sumElapsed(
         'cache.native-resolution.resolve-elapsed-sum',
         scope,
-        () => query.resolve(host),
+        () => binding.resolve(host),
       );
     };
     const raw =

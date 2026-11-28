@@ -7,6 +7,7 @@ import type {
 } from './contracts';
 import { createNativeDependencyContext } from './native-context-factory';
 import { createNativeSemanticContext } from './native-semantic-factory';
+import type { NativeRuntimeModuleQuery } from './runtime-module-queries';
 export type * from './contracts';
 export {
   createTypeScriptProjectDependencyFactsIdentity,
@@ -42,14 +43,15 @@ export function createTypeScriptDependencyContext(
     metrics?: AnalysisMetricsRecorder;
     analysisCache?: NativeAnalysisCache;
     collectFileDependencyFacts?: boolean;
+    syntaxFileNames?: readonly string[];
+    captureRuntimeModuleQuery?: (query: NativeRuntimeModuleQuery) => void;
+    requireRuntimeModuleQuery?: boolean;
   } = {},
 ): TypeScriptSemanticDependencyContext & { dispose(): void } {
   return createNativeDependencyContext(
     project,
     options.analysisCache,
     options.metrics,
-    {
-      collectFileDependencyFacts: options.collectFileDependencyFacts,
-    },
+    options,
   );
 }

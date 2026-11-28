@@ -1,16 +1,13 @@
-import { compareCodeUnits } from '#utils/collections';
-import { normalizeAbsolutePath } from '#utils/path';
-import { analysisHash } from '../analysis-cache/identity';
-import { managedOutputLookupIdentity } from '../import-graph/managed-output-provider';
+import type { GovernedSourceUnit } from '../build-graph/types';
 import type {
   ProjectDependencyCaches,
   ProjectDependencyCollection,
   ProjectDependencyRequest,
 } from '../project-dependencies/contracts';
+import { createProjectSemanticCacheIdentity } from '../project-dependencies/identity';
 import { collectProjectDependencies } from '../project-dependencies/provider';
 import { collectRuntimeProjectDependencies } from '../project-dependencies/runtime-source';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
-import { effectiveCompilerOptions } from '../typescript-semantic/compiler-options';
 import type { FactProduct, SubscriptionPlan } from './subscription';
 
 export class CoreSubscriptionViolationError extends Error {
@@ -29,39 +26,10 @@ export class CoreSubscriptionViolationError extends Error {
 
 export interface SubscribedCoreFactView {
   readonly plan: SubscriptionPlan;
-  getWorkspaceSourceBoundary(): WorkspaceSourceBoundary;
   getRuntimeProjectDependencies(
-    request: Omit<ProjectDependencyRequest, 'caches'>,
+    unit: GovernedSourceUnit,
   ): ProjectDependencyCollection;
-  getSemanticProjectDependencies(
-    request: Omit<ProjectDependencyRequest, 'caches'>,
-  ): ProjectDependencyCollection;
-}
-
-function runtimeWorkIdentity(request: ProjectDependencyRequest): string {
-  const { context } = request;
-  const virtuals =
-    context.virtualFiles === undefined || context.virtualFiles.size === 0
-      ? null
-      : analysisHash(Array.from(context.virtualFiles));
-  const sortedFiles = [...context.fileNames]
-    .map((fileName) => normalizeAbsolutePath(fileName))
-    .sort(compareCodeUnits);
-  // Plain TypeScript runtime collections never consult managedOutputLookup;
-  // omitting it lets graph:check and source:check reuse the same runtime facts.
-  const managedOutput =
-    context.semanticAuthority.family === 'typescript'
-      ? null
-      : (managedOutputLookupIdentity(request.managedOutputLookup) ?? null);
-  return JSON.stringify([
-    normalizeAbsolutePath(context.configPath),
-    context.generation,
-    sortedFiles,
-    analysisHash(effectiveCompilerOptions(context.compilerOptions)),
-    context.semanticAuthority.family,
-    managedOutput,
-    virtuals,
-  ]);
+  getWorkspaceSourceBoundary(): WorkspaceSourceBoundary;
 }
 
 /**
@@ -75,6 +43,10 @@ export class CoreFactSession {
   readonly #subscriptionPlan: SubscriptionPlan | undefined;
   readonly #runtimeDependenciesByWorkId = new Map<
     string,
+    ProjectDependencyCollection
+  >();
+  readonly #governedRuntime = new Map<
+    GovernedSourceUnit,
     ProjectDependencyCollection
   >();
   #runtimeCollectionReuses = 0;
@@ -100,6 +72,13 @@ export class CoreFactSession {
     return this.#subscriptionPlan;
   }
 
+  getLockedWorkspaceSourceBoundary(): WorkspaceSourceBoundary {
+    return (
+      this.#projectDependencies.lockedWorkspaceSourceBoundary ??
+      this.getWorkspaceSourceBoundary()
+    );
+  }
+
   publishWorkspaceSourceBoundary(boundary: WorkspaceSourceBoundary): void {
     this.#workspaceSourceBoundary = boundary;
   }
@@ -108,23 +87,45 @@ export class CoreFactSession {
     return this.#workspaceSourceBoundary !== undefined;
   }
 
-  getRuntimeProjectDependencies(
-    request: Omit<ProjectDependencyRequest, 'caches'>,
-  ): ProjectDependencyCollection {
+  requireProduct(product: FactProduct): void {
     if (
       this.#subscriptionPlan !== undefined &&
-      !this.#subscriptionPlan.products.includes('runtime-only')
+      !this.#subscriptionPlan.products.includes(product)
     ) {
       throw new CoreSubscriptionViolationError(
-        'runtime-only',
+        product,
         this.#subscriptionPlan.capabilities,
       );
     }
-    const fullRequest: ProjectDependencyRequest = {
+  }
+
+  getGovernedRuntime(
+    unit: GovernedSourceUnit,
+  ): ProjectDependencyCollection | undefined {
+    this.requireProduct('runtime-only');
+    return this.#governedRuntime.get(unit);
+  }
+
+  publishGovernedRuntime(
+    unit: GovernedSourceUnit,
+    collection: ProjectDependencyCollection,
+  ): ProjectDependencyCollection {
+    this.#governedRuntime.set(unit, collection);
+    return collection;
+  }
+
+  prepareRuntimeProjectDependencies(
+    request: Omit<ProjectDependencyRequest, 'caches' | 'managedOutputLookup'>,
+  ): ProjectDependencyCollection {
+    this.requireProduct('runtime-only');
+    const fullRequest = {
       ...request,
       caches: this.#projectDependencies,
     };
-    const workId = runtimeWorkIdentity(fullRequest);
+    const workId = JSON.stringify([
+      createProjectSemanticCacheIdentity(request.context),
+      request.runtimeFileNames,
+    ]);
     const cached = this.#runtimeDependenciesByWorkId.get(workId);
     if (cached !== undefined) {
       this.#runtimeCollectionReuses += 1;
@@ -135,9 +136,10 @@ export class CoreFactSession {
     return collection;
   }
 
-  getSemanticProjectDependencies(
+  prepareSemanticProjectDependencies(
     request: Omit<ProjectDependencyRequest, 'caches'>,
   ): ProjectDependencyCollection {
+    this.requireProduct('native');
     return collectProjectDependencies({
       ...request,
       caches: this.#projectDependencies,
@@ -153,21 +155,20 @@ export class CoreFactSession {
     };
     return Object.freeze({
       plan,
+      getRuntimeProjectDependencies: (
+        unit: GovernedSourceUnit,
+      ): ProjectDependencyCollection => {
+        requireProduct('runtime-only');
+        const collection = this.getGovernedRuntime(unit);
+        if (collection === undefined)
+          throw new Error(
+            `Runtime facts have not been prepared for ${unit.configPath}.`,
+          );
+        return collection;
+      },
       getWorkspaceSourceBoundary: (): WorkspaceSourceBoundary => {
         requireProduct('membership');
         return this.getWorkspaceSourceBoundary();
-      },
-      getRuntimeProjectDependencies: (
-        request: Omit<ProjectDependencyRequest, 'caches'>,
-      ): ProjectDependencyCollection => {
-        requireProduct('runtime-only');
-        return this.getRuntimeProjectDependencies(request);
-      },
-      getSemanticProjectDependencies: (
-        request: Omit<ProjectDependencyRequest, 'caches'>,
-      ): ProjectDependencyCollection => {
-        requireProduct('native');
-        return this.getSemanticProjectDependencies(request);
       },
     });
   }
@@ -187,6 +188,7 @@ export class CoreFactSession {
   }
 
   dispose(): void {
+    this.#governedRuntime.clear();
     this.#runtimeDependenciesByWorkId.clear();
   }
 }

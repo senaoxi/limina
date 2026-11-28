@@ -89,7 +89,7 @@ export async function createSourceCommandContext(
   config: ResolvedLiminaConfig,
   options: RunSourceCheckOptions,
 ): Promise<SourceCommandContext> {
-  const preflight = resolvePreflight(config, options);
+  const preflight = resolvePreflight(config, options, 'source:check');
   await writeInitialSnapshot(config, options, preflight);
 
   if (shouldClearScreen(options)) {

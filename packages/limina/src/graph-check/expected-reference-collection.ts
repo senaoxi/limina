@@ -1,11 +1,10 @@
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../core/import-graph/declaration-reference-evidence';
+import type {
+  ProjectDependency,
+  ProjectDependencyCollection,
+} from '../core/project-dependencies/contracts';
 import { effectiveReferenceInputs } from '../core/project-dependencies/declaration-projection';
-import {
-  createParsedProjectSemanticContext,
-  type ProjectDependency,
-  type ProjectDependencyCollection,
-} from '../core/project-dependencies/runner';
 import { createImportRecordIdentity } from '../core/typescript-semantic/import-record';
 import { qualifiedNativeDependencyTarget } from '../core/typescript-semantic/native-fact-qualification';
 import { getPreferredGeneratedTargetProjectPath } from './generated-project-paths';
@@ -30,14 +29,6 @@ function createExpectedReferenceCollectionContext(
     ...options,
     expectedReferencesByProjectPath: new Map(),
   };
-}
-
-function isProjectSelected(
-  context: ExpectedReferenceCollectionContext,
-  project: ProjectInfo,
-): boolean {
-  const selectedPaths = context.selectedProjectPaths;
-  return !selectedPaths || selectedPaths.has(project.configPath);
 }
 
 function createResolvedTarget(options: {
@@ -162,68 +153,6 @@ function collectResolvedExpectedReference(options: {
   });
 }
 
-function getGraphAuthority(project: ProjectInfo) {
-  const authority = project.semanticAuthority;
-  if (authority !== undefined) return authority;
-  throw new Error(
-    `Missing frozen semantic authority for graph-check project ${project.configPath}.`,
-  );
-}
-
-function getGraphPackageRoot(
-  context: ExpectedReferenceCollectionContext,
-  project: ProjectInfo,
-): string {
-  const owner = context.workspaceLookup.findOwnerForFile(project.configPath);
-  return owner === null ? context.config.rootDir : owner.directory;
-}
-
-function assertGraphCollection(collection: ProjectDependencyCollection): void {
-  const failure = collection.failures[0];
-  if (failure === undefined) return;
-  throw new Error(
-    `Graph-check semantic dependency collection failed at ${failure.stage}: ${failure.reason}`,
-  );
-}
-
-function graphDependencyRequest(options: {
-  context: ExpectedReferenceCollectionContext;
-  project: ProjectInfo;
-}) {
-  const authority = getGraphAuthority(options.project);
-  const packageRootDirectory = getGraphPackageRoot(
-    options.context,
-    options.project,
-  );
-  return {
-    managedOutputLookup: options.context.managedOutputLookup,
-    context: createParsedProjectSemanticContext({
-      authority,
-      packageRootDir: packageRootDirectory,
-      project: options.project,
-      workspaceSourceBoundary: options.context.workspaceSourceBoundary,
-    }),
-    importAnalysis: options.context.importAnalysis,
-  };
-}
-
-function collectExpectedReferencesForProject(
-  context: ExpectedReferenceCollectionContext,
-  project: ProjectInfo,
-): void {
-  if (!isProjectSelected(context, project)) return;
-  const request = graphDependencyRequest({ context, project });
-  const collection = context.coreFacts.getSemanticProjectDependencies({
-    ...request,
-    compilationObligationScope: 'generated-declaration-project-v1',
-  });
-  assertGraphCollection(collection);
-  const runtime = context.coreFacts.getRuntimeProjectDependencies(request);
-  assertGraphCollection(runtime);
-  recordRuntimeDependencyGovernance(context, project, runtime);
-  collectExpectedDependencies(context, project, collection);
-}
-
 function collectExpectedDependencies(
   context: ExpectedReferenceCollectionContext,
   project: ProjectInfo,
@@ -261,8 +190,13 @@ export function collectExpectedReferences(
 ): ExpectedReferencesByProjectPath {
   const context = createExpectedReferenceCollectionContext(options);
 
-  for (const project of context.projects) {
-    collectExpectedReferencesForProject(context, project);
+  for (const {
+    declaration,
+    project,
+    runtime,
+  } of context.preparedProjectDependencies) {
+    recordRuntimeDependencyGovernance(context, project, runtime);
+    collectExpectedDependencies(context, project, declaration);
   }
 
   return context.expectedReferencesByProjectPath;

@@ -54,6 +54,7 @@ export function createProjectSemanticCacheIdentity(
 ): string {
   const canonicalIdentity = JSON.stringify({
     adapterContractVersion: PROJECT_DEPENDENCY_ADAPTER_VERSION,
+    checker: context.analysisChecker,
     astro: getAstroCacheIdentity(context),
     authority: context.semanticAuthority,
     configPath: context.configPath,

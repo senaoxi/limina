@@ -7,10 +7,13 @@ import type {
 } from '../framework-semantic/contracts';
 import {
   mergePreparedDirectSourceRecords,
+  mergePreparedRuntimeFacts,
   prepareResolvedFrameworkCandidates,
 } from '../framework-semantic/prepared-dependency';
 import { requiresReferenceStructure } from '../framework-semantic/prepared-type-evidence';
+import { collectGeneratedRuntimeFacts } from '../framework-semantic/runtime-dependencies';
 import { collectFrameworkSupportContributions } from '../framework-semantic/support-contributions';
+import { strictBackprojectVolarDependency } from '../framework-semantic/volar-backprojection';
 import type { ImportRecord } from '../import-analysis/records';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
@@ -20,7 +23,10 @@ import type {
 } from './context';
 import type { AstroSemanticCandidate } from './dependency';
 import { mapAstroServiceCandidates } from './projection';
-import { createResolvedAstroCandidate } from './resolution-candidate';
+import {
+  createAstroCheckerResolution,
+  createResolvedAstroCandidate,
+} from './resolution-candidate';
 
 type AstroCandidate = FrameworkSemanticCandidate<
   ts.SourceFile,
@@ -71,14 +77,22 @@ function collectServiceCandidates(options: {
   context: AstroSemanticContext;
   directSourceRecords: ImportRecord[];
   filePath: string;
+  includeRuntimeOnly?: boolean;
   services: readonly AstroServiceScriptDescriptor[];
   sourceText: string;
   unmapped: Extract<
     FrameworkSemanticDependencyPreparation,
     { kind: 'supported' }
   >['unmapped'];
-}): PreparationFailure | { candidates: AstroCandidate[]; kind: 'supported' } {
+}):
+  | PreparationFailure
+  | {
+      candidates: AstroCandidate[];
+      kind: 'supported';
+      runtimeFacts: PreparedDependencyFact[];
+    } {
   const candidates: AstroCandidate[] = [];
+  const runtimeFacts: PreparedDependencyFact[] = [];
   for (const descriptor of options.services) {
     const sourceFile = options.context.program.getSourceFile(
       descriptor.fileName,
@@ -94,8 +108,36 @@ function collectServiceCandidates(options: {
     const mapped = mapAstroServiceCandidates({ ...options, service });
     if (mapped.kind === 'unsupported') return mapped;
     candidates.push(...mapped.candidates);
+    if (!options.includeRuntimeOnly) continue;
+    const { context, filePath, sourceText } = options;
+    const mapper = context.language.maps.get(
+      service.serviceScript.code,
+      service.sourceScript,
+    );
+    const runtime = collectGeneratedRuntimeFacts({
+      framework: 'astro',
+      compiler: context.toolchain.tsModule,
+      compilerRequests: context.compilerRequests,
+      program: context.program,
+      source: sourceFile,
+      resolve: context.resolveRuntimeModule,
+      target: (resolvedModule) =>
+        createAstroCheckerResolution({
+          project: context.project,
+          resolvedModule,
+        }),
+      projectOccurrence: (dependency) =>
+        strictBackprojectVolarDependency({
+          dependency,
+          mapper,
+          sourceFilePath: filePath,
+          sourceText,
+        }),
+    });
+    if (runtime.kind === 'unsupported') return runtime;
+    runtimeFacts.push(...runtime.facts);
   }
-  return { candidates, kind: 'supported' };
+  return { candidates, kind: 'supported', runtimeFacts };
 }
 
 function resolveCandidates(
@@ -219,6 +261,7 @@ function prepareUnchecked(options: {
   supportInputBoundary?: WorkspaceSourceBoundary;
   context: AstroSemanticContext;
   filePath: string;
+  includeRuntimeOnly?: boolean;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
 }): FrameworkSemanticDependencyPreparation {
   const services = options.context.getServiceScriptDescriptors(
@@ -247,7 +290,7 @@ function prepareUnchecked(options: {
     unmapped,
   });
   if (mapped.kind === 'unsupported') return mapped;
-  return prepareMappedServices({
+  const preparation = prepareMappedServices({
     supportInputBoundary: options.supportInputBoundary,
     candidates: mapped.candidates,
     context: options.context,
@@ -255,6 +298,12 @@ function prepareUnchecked(options: {
     managedOutputLookup: options.managedOutputLookup,
     unmapped,
   });
+  if (mapped.runtimeFacts.length === 0 || preparation.kind === 'unsupported')
+    return preparation;
+  const runtime = mergePreparedRuntimeFacts('astro', mapped.runtimeFacts);
+  return runtime.kind === 'supported'
+    ? { ...preparation, facts: [...preparation.facts, ...runtime.facts] }
+    : runtime;
 }
 
 function formatError(error: unknown): string {
@@ -265,6 +314,7 @@ export function prepareAstroSemanticDependencies(options: {
   supportInputBoundary?: WorkspaceSourceBoundary;
   context: AstroSemanticContext;
   filePath: string;
+  includeRuntimeOnly?: boolean;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
 }): FrameworkSemanticDependencyPreparation {
   try {

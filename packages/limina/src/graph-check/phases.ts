@@ -1,8 +1,5 @@
-import { planRuleSubscriptions } from '#core';
 import type { ProjectInfo } from '#core/import-graph/context';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { FileOwnerLookup } from '../core/build-graph/file-owner-lookup';
-import { createWorkspaceSourceBoundaryFromProjects } from '../core/typescript-semantic';
 import { addDeniedReferenceProblems } from './access-denied';
 import { addDtsOptionProblems } from './dts-declaration-options';
 import { addTypecheckParityProblems } from './dts-typecheck-parity';
@@ -123,7 +120,7 @@ function validateProjectReferences(
     state.findings,
     state.checks,
     checkerName,
-    state.preflight.providers.projectConfigs,
+    state.projectConfigCache,
   );
   addDeniedReferenceProblems({
     checks: state.checks,
@@ -155,34 +152,20 @@ export function runProjectReferencePhase(state: GraphCheckState): void {
 
 export function runReferenceCompletenessPhase(state: GraphCheckState): void {
   state.checkItems.start('reference completeness');
-  const coreFacts = state.preflight.providers.facts.createSubscribedView(
-    planRuleSubscriptions(['graph:reference-completeness']),
-  );
   const expectedReferencesByProjectPath = collectExpectedReferences({
     config: state.config,
-    coreFacts,
     fileOwnerLookup: state.fileOwnerLookup,
     generatedGraph: state.generatedGraph,
     graphRules: state.graphRules,
-    importAnalysis: state.preflight.importAnalysis,
     managedOutputLookup: state.managedOutputLookup,
     packages: state.packages,
+    preparedProjectDependencies: state.preparedProjectDependencies,
     projectCheckerNamesByPath: state.projectCheckerNamesByPath,
-    projectDependencyCaches: state.preflight.providers.projectDependencies,
     findings: state.findings,
     projectPaths: state.projectPaths,
     projects: state.projects,
     projectsByPath: state.projectsByPath,
     workspaceLookup: state.workspaceLookup,
-    workspaceSourceBoundary: createWorkspaceSourceBoundaryFromProjects(
-      state.projects,
-      {
-        membership: new FileOwnerLookup(state.projects),
-        isWorkspaceFile: (file) =>
-          state.workspaceLookup.findOwnerForFile(file) !== null,
-      },
-      state.generatedGraph.sourceConfigCoverage,
-    ),
   });
 
   const packageTargets = referencePackageTargets(

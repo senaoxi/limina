@@ -13,6 +13,7 @@ import type {
   PackageOwner,
   WorkspacePackage,
 } from '#core/workspace/actions';
+import type { SourceGovernanceFacts } from '../core/facts/source-projects';
 import type { WorkspaceDependencyDeclaration } from '../core/packages/authority';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionBoundary } from '../core/workspace/regions';
@@ -32,6 +33,7 @@ export class PreflightGenerationCache {
   materializationSlot: MaterializationSlot;
   packageOwners?: Promise<PackageOwner[]>;
   rawWorkspacePackages?: Promise<WorkspacePackage[]>;
+  sourceGovernance?: Promise<SourceGovernanceFacts>;
   sourceGraphProjectExtensions?: Promise<CollectSourceGraphProjectExtensionsResult>;
   validatedWorkspaceContext?: Promise<ValidatedWorkspaceContext>;
   workspaceDependencies?: Promise<WorkspaceDependencyDeclaration[]>;

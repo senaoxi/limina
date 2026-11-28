@@ -125,11 +125,15 @@ function isAddTypedTargetObservation(options: CollectFactOptions): boolean {
 function addTargetlessFact(options: CollectFactOptions): void {
   const typeEvidence = options.fact.typeEvidence;
   if (typeEvidence === undefined) {
+    const evidence = createPreparedDependencyEvidence(options);
     options.collection.observations.push({
-      evidence: createPreparedDependencyEvidence(options),
+      evidence,
       importRecord: options.fact.importRecord,
       resolutionMode: options.fact.resolutionMode,
-      kind: 'missing',
+      kind:
+        evidence.runtime?.classification === 'resource'
+          ? 'resource'
+          : 'missing',
     });
     return;
   }
@@ -171,6 +175,11 @@ function addObservedTargetlessFact(
 export function collectPreparedProjectDependencyFact(
   options: CollectFactOptions,
 ): void {
+  if (options.fact.runtimeOnly) {
+    if (options.request.purpose === 'runtime-source')
+      collectFactTarget(options, null);
+    return;
+  }
   if (isFrameworkProjectTarget(options)) collectDecidedFact(options);
   else collectFactTarget(options, null);
 }

@@ -1,5 +1,4 @@
 import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
-import { planRuleSubscriptions } from '#core';
 import {
   collectGeneratedSourceConfigPaths,
   collectGovernedSourceConfigPaths,
@@ -118,11 +117,10 @@ type SourceImportAuthorityPhaseInput = Readonly<
     | 'checkItems'
     | 'checks'
     | 'config'
-    | 'core'
     | 'findings'
     | 'packageOwners'
     | 'packages'
-    | 'preflight'
+    | 'projectFacts'
     | 'rootPackage'
     | 'sourceProjectEntries'
     | 'workspaceLookup'
@@ -156,21 +154,16 @@ async function runSourceImportAuthorityPhase(
     findings: state.findings,
     ownerIdentities: collectOwnerIdentities(state),
   });
-  const coreFacts = state.preflight.providers.facts.createSubscribedView(
-    planRuleSubscriptions(['source:import-authority']),
-  );
   addSourceImportProblems({
     checks: state.checks,
     config: state.config,
-    coreFacts,
-    importAnalysis: state.preflight.importAnalysis,
+    projectFacts: state.projectFacts,
     importAuthorityAllowRules,
     packages: state.packages,
     pathIndex: state.workspacePathIndex,
     findings: state.findings,
     rootPackage: state.rootPackage,
     sourceProjectEntries: state.sourceProjectEntries,
-    typeEvidence: state.core.typeEvidence,
     workspaceLookup: state.workspaceLookup,
   });
   state.checkItems.record('source import authority');
@@ -243,11 +236,10 @@ export async function isFinishSourceCheckAnalysis(
       checkItems: state.checkItems,
       checks: state.checks,
       config: state.config,
-      core: state.core,
+      projectFacts: state.projectFacts,
       findings: state.findings,
       packageOwners: state.packageOwners,
       packages: state.packages,
-      preflight: state.preflight,
       rootPackage: state.rootPackage,
       sourceProjectEntries: state.sourceProjectEntries,
       workspaceLookup: state.workspaceLookup,

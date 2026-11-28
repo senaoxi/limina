@@ -434,7 +434,17 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
       'packages/a/src/index.ts': 'export const a = 1;\n',
       'packages/a/tsconfig.json': createTsconfig(['src/**/*.ts']),
     });
-    const providers = createAnalysisProviders(fixture.config);
+    const providers = createAnalysisProviders(
+      fixture.config,
+      undefined,
+      undefined,
+      {
+        subscriptionPlan: planCapabilitySubscriptions([
+          'source:check',
+          'graph:check',
+        ]),
+      },
+    );
     try {
       const ownership = await providers.buildGraph.getOwnershipProjection();
       expect(ownership.selections.length).toBeGreaterThanOrEqual(1);
@@ -462,36 +472,14 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
             unit.configPath === fixture.path('packages/a/tsconfig.json'),
         );
       expect(unitA).toBeDefined();
-      const parsedProject = await providers.tsconfig.getProject(
-        unitA!.configPath,
-        unitA!.context,
+      expect(() => packageView.getRuntimeProjectDependencies(unitA!)).toThrow(
+        CoreSubscriptionViolationError,
       );
-      const request = {
-        context: {
-          compilerOptions: parsedProject.options,
-          configPath: unitA!.configPath,
-          extensions: [...unitA!.context.extensions],
-          fileNames: [...unitA!.ownedFileNames],
-          generation: providers.artifactNamespace.generation,
-          packageRootByFileName: new Map(
-            unitA!.ownedFileNames.map((file) => [
-              file,
-              fixture.path('packages/a'),
-            ]),
-          ),
-          packageRootDir: fixture.path('packages/a'),
-          references: [],
-          resolverConfigPath: unitA!.configPath,
-          semanticAuthority: parsedProject.semanticAuthority!,
-          workspaceSourceBoundary: graphView.getWorkspaceSourceBoundary(),
-        },
-        importAnalysis: providers.imports.context,
-      };
-
-      const fromGraph = graphView.getRuntimeProjectDependencies(request);
-      const fromSource = sourceView.getRuntimeProjectDependencies(request);
+      const counters = providers.facts.getFactCounters();
+      const fromGraph = graphView.getRuntimeProjectDependencies(unitA!);
+      const fromSource = sourceView.getRuntimeProjectDependencies(unitA!);
       expect(fromSource).toBe(fromGraph);
-      expect(providers.facts.getFactCounters().runtimeCollectionReuses).toBe(1);
+      expect(providers.facts.getFactCounters()).toEqual(counters);
     } finally {
       providers.dispose();
       fixture.cleanup();
@@ -742,34 +730,10 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
               unit.configPath === fixture.path('packages/a/tsconfig.json'),
           );
         expect(unitA).toBeDefined();
-        const parsed = await providers.tsconfig.getProject(
-          unitA!.configPath,
-          unitA!.context,
-        );
         const view = providers.facts.createSubscribedView(
           planCapabilitySubscriptions(['source:check']),
         );
-        const runtime = view.getRuntimeProjectDependencies({
-          context: {
-            compilerOptions: parsed.options,
-            configPath: unitA!.configPath,
-            extensions: [...unitA!.context.extensions],
-            fileNames: [...unitA!.ownedFileNames],
-            generation: providers.artifactNamespace.generation,
-            packageRootByFileName: new Map(
-              unitA!.ownedFileNames.map((file) => [
-                file,
-                fixture.path('packages/a'),
-              ]),
-            ),
-            packageRootDir: fixture.path('packages/a'),
-            references: [],
-            resolverConfigPath: unitA!.configPath,
-            semanticAuthority: parsed.semanticAuthority!,
-            workspaceSourceBoundary: view.getWorkspaceSourceBoundary(),
-          },
-          importAnalysis: providers.imports.context,
-        });
+        const runtime = view.getRuntimeProjectDependencies(unitA!);
         const bDependencies = runtime.dependencies.filter(
           (dependency) => dependency.importRecord.specifier === '@example/b',
         );
@@ -865,7 +829,7 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
       );
       try {
         expect(() =>
-          gatedProviders.facts.getRuntimeProjectDependencies({
+          gatedProviders.facts.prepareRuntimeProjectDependencies({
             context: {
               compilerOptions: {},
               configPath: fixture.path('packages/a/tsconfig.json'),
@@ -933,45 +897,18 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
               unit.configPath === fixture.path('packages/a/tsconfig.json'),
           );
         expect(unitA).toBeDefined();
-        const parsed = await providers.tsconfig.getProject(
-          unitA!.configPath,
-          unitA!.context,
-        );
-        const context = {
-          compilerOptions: parsed.options,
-          configPath: unitA!.configPath,
-          extensions: [...unitA!.context.extensions],
-          fileNames: [...unitA!.ownedFileNames],
-          generation: providers.artifactNamespace.generation,
-          packageRootByFileName: new Map(
-            unitA!.ownedFileNames.map((file) => [
-              file,
-              fixture.path('packages/a'),
-            ]),
-          ),
-          packageRootDir: fixture.path('packages/a'),
-          references: [],
-          resolverConfigPath: unitA!.configPath,
-          semanticAuthority: parsed.semanticAuthority!,
-          workspaceSourceBoundary: providers.facts.getWorkspaceSourceBoundary(),
-        };
         const sourceView = providers.facts.createSubscribedView(
           planCapabilitySubscriptions(['source:check']),
         );
         const graphView = providers.facts.createSubscribedView(
           planCapabilitySubscriptions(['graph:check']),
         );
-        const runtimeFromGraph = graphView.getRuntimeProjectDependencies({
-          context,
-          importAnalysis: providers.imports.context,
-          managedOutputLookup: { resolve: () => null },
-        });
-        const runtimeFromSource = sourceView.getRuntimeProjectDependencies({
-          context,
-          importAnalysis: providers.imports.context,
-        });
-        // Plain TypeScript runtime collection is shared across graph:check and source:check
-        // even when graph:check supplies managedOutputLookup and source:check omits it.
+        const runtimeFromGraph = graphView.getRuntimeProjectDependencies(
+          unitA!,
+        );
+        const runtimeFromSource = sourceView.getRuntimeProjectDependencies(
+          unitA!,
+        );
         expect(runtimeFromSource).toBe(runtimeFromGraph);
         expect(providers.facts.getFactCounters().nativeResolutionReuses).toBe(
           1,
@@ -1008,7 +945,7 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
     }
   });
 
-  it('persists isolated runtimeQueries across commands, hits warm .d.cts targets, isolates invalidation from Native, and observes new .vue fallbacks', async () => {
+  it('restores bounded runtime results and reobserves stale queries through the governing checker', async () => {
     const fixture = createWorkspaceFixture({
       'packages/a/package.json': JSON.stringify({
         name: '@example/a',
@@ -1017,6 +954,7 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
       }),
       'packages/a/src/index.ts': [
         "import { esm } from './local';",
+        '/** @type {import("@example/b").esm} */',
         "const cjs = require('@example/b');",
         "const maybeVue = require('./Widget');",
         'export const result = [esm, cjs, maybeVue];',
@@ -1028,6 +966,7 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
           module: 'NodeNext',
           moduleResolution: 'NodeNext',
           noEmit: true,
+          noLib: true,
           skipLibCheck: true,
           target: 'ES2022',
         },
@@ -1050,6 +989,95 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
       await linkSemanticWorkspacePackages(fixture.rootDir, ['b']);
       const identity = 'runtime-cache-phase4-test';
       const configVersion = 'cfg-v1';
+      const expectedDependencies = (cjsTarget: string) => [
+        {
+          importRecord: { kind: 'jsdoc-import', specifier: '@example/b' },
+          resolutionMode: 'import',
+          resolvedFilePath: fixture.path('packages/b/dist/esm.d.mts'),
+          referenceRequirement: null,
+        },
+        {
+          importRecord: { kind: 'commonjs', specifier: '@example/b' },
+          resolutionMode: 'require',
+          resolvedFilePath: fixture.path('packages/b/dist', cjsTarget),
+          referenceRequirement: null,
+        },
+      ];
+      const sourcePlan = planCapabilitySubscriptions(['source:check']);
+      const runRuntime = async (
+        cache: NativeAnalysisCache | undefined,
+        shouldPrepareLiveNative = false,
+      ) => {
+        const providers = createAnalysisProviders(
+          fixture.config,
+          undefined,
+          undefined,
+          {
+            analysisCache: cache,
+            subscriptionPlan: sourcePlan,
+          },
+        );
+        try {
+          await providers.ownership.getOwnershipProjection();
+          const configPath = fixture.path('packages/a/tsconfig.json');
+          const parsed = await providers.tsconfig.getProject(configPath, {
+            checkerPresets: ['tsc'],
+            extensions: ['.ts', '.vue'],
+          });
+          const request = {
+            context: {
+              compilerOptions: parsed.options,
+              configPath,
+              extensions: ['.ts', '.vue'],
+              fileNames: [...parsed.fileNames],
+              generation: providers.artifactNamespace.generation,
+              packageRootByFileName: new Map(
+                parsed.fileNames.map((file) => [
+                  file,
+                  fixture.path('packages/a'),
+                ]),
+              ),
+              packageRootDir: fixture.path('packages/a'),
+              references: [],
+              resolverConfigPath: configPath,
+              semanticAuthority: {
+                family: 'typescript' as const,
+                kind: 'locked' as const,
+                source: 'baseline' as const,
+              },
+              workspaceSourceBoundary: providers.facts
+                .createSubscribedView(sourcePlan)
+                .getWorkspaceSourceBoundary(),
+            },
+            importAnalysis: providers.imports.context,
+          };
+          if (shouldPrepareLiveNative)
+            providers.facts.prepareSemanticProjectDependencies({
+              ...request,
+              compilationObligationScope: 'generated-declaration-project-v1',
+            });
+          const programsBefore = cache?.metrics.semanticPrograms;
+          const runtime =
+            providers.facts.prepareRuntimeProjectDependencies(request);
+          if (shouldPrepareLiveNative)
+            expect(cache?.metrics.semanticPrograms).toBe(programsBefore);
+          return runtime;
+        } finally {
+          providers.dispose();
+        }
+      };
+      expect((await runRuntime(undefined)).dependencies).toMatchObject(
+        expectedDependencies('cjs.d.cts'),
+      );
+      const cacheWithLiveNative = new NativeAnalysisCache(
+        identity,
+        undefined,
+        configVersion,
+      );
+      expect(
+        (await runRuntime(cacheWithLiveNative, true)).dependencies,
+      ).toMatchObject(expectedDependencies('cjs.d.cts'));
+      expect(cacheWithLiveNative.metrics.runtimeResolverCalls).toBe(3);
 
       // Run 1: graph:prepare (no runtime-only subscription) persists Native contexts + FileDependencyFacts.
       const cache1 = new NativeAnalysisCache(
@@ -1082,68 +1110,18 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
       expect(snapshot1!.header.schema).toBe(ANALYSIS_SCHEMA);
       expect(Object.keys(snapshot1!.runtimeQueries)).toHaveLength(0);
 
-      // Run 2: Stage B1 ownership + source:check restores Native + FileDependencyFacts with
-      // 0 Bounded Programs and 0 syntax parses, and supplements runtimeQueries (including a .d.cts target).
       const cache2 = new NativeAnalysisCache(
         identity,
         snapshot1,
         configVersion,
       );
-      const providers2 = createAnalysisProviders(
-        fixture.config,
-        undefined,
-        undefined,
-        {
-          analysisCache: cache2,
-          subscriptionPlan: planCapabilitySubscriptions(['source:check']),
-        },
+      const runtime2 = await runRuntime(cache2);
+      expect(cache2.metrics.semanticPrograms ?? 0).toBe(1);
+      expect(cache2.metrics.sourceSyntaxParses ?? 0).toBe(0);
+      expect(cache2.metrics.runtimeResolverCalls).toBe(3);
+      expect(runtime2.dependencies).toMatchObject(
+        expectedDependencies('cjs.d.cts'),
       );
-      try {
-        await providers2.ownership.getOwnershipProjection();
-        const configPath = fixture.path('packages/a/tsconfig.json');
-        const parsed = await providers2.tsconfig.getProject(configPath, {
-          checkerPresets: ['tsc'],
-          extensions: ['.ts', '.vue'],
-        });
-        const view = providers2.facts.createSubscribedView(
-          planCapabilitySubscriptions(['source:check']),
-        );
-        const runtime2 = view.getRuntimeProjectDependencies({
-          context: {
-            compilerOptions: parsed.options,
-            configPath,
-            extensions: ['.ts', '.vue'],
-            fileNames: [...parsed.fileNames],
-            generation: providers2.artifactNamespace.generation,
-            packageRootByFileName: new Map(
-              parsed.fileNames.map((file) => [
-                file,
-                fixture.path('packages/a'),
-              ]),
-            ),
-            packageRootDir: fixture.path('packages/a'),
-            references: [],
-            resolverConfigPath: configPath,
-            semanticAuthority: {
-              family: 'typescript',
-              kind: 'locked',
-              source: 'baseline',
-            },
-            workspaceSourceBoundary: view.getWorkspaceSourceBoundary(),
-          },
-          importAnalysis: providers2.imports.context,
-        });
-        expect(cache2.metrics.semanticPrograms ?? 0).toBe(0);
-        expect(cache2.metrics.sourceSyntaxParses ?? 0).toBe(0);
-        expect(cache2.metrics.runtimeResolverCalls).toBe(2);
-        expect(
-          runtime2.dependencies.find(
-            (dependency) => dependency.importRecord.specifier === '@example/b',
-          )?.resolvedFilePath,
-        ).toBe(fixture.path('packages/b/dist/cjs.d.cts'));
-      } finally {
-        providers2.dispose();
-      }
       const rawSnapshot2 = cache2.snapshot();
       rawSnapshot2.header.baselineTime = Date.now() + 10_000;
       const snapshot2 = parseStoredAnalysisSnapshot(
@@ -1152,7 +1130,7 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
         configVersion,
       );
       expect(snapshot2).toBeDefined();
-      expect(Object.keys(snapshot2!.runtimeQueries)).toHaveLength(2);
+      expect(Object.keys(snapshot2!.runtimeQueries)).toHaveLength(3);
 
       // Run 3: Warm source:check hits persisted runtimeQueries (including .d.cts!) with 0 runtime resolver calls.
       const cache3 = new NativeAnalysisCache(
@@ -1160,60 +1138,22 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
         snapshot2,
         configVersion,
       );
-      const providers3 = createAnalysisProviders(
-        fixture.config,
-        undefined,
-        undefined,
-        {
-          analysisCache: cache3,
-          subscriptionPlan: planCapabilitySubscriptions(['source:check']),
-        },
+      const runtime3 = await runRuntime(cache3);
+      expect(cache3.metrics.semanticPrograms ?? 0).toBe(0);
+      expect(cache3.metrics.sourceSyntaxParses ?? 0).toBe(0);
+      expect(cache3.metrics.runtimeResolverCalls ?? 0).toBe(0);
+      expect(cache3.metrics.runtimeQueryHits).toBe(3);
+      expect(runtime3.dependencies).toMatchObject(
+        expectedDependencies('cjs.d.cts'),
       );
-      try {
-        await providers3.ownership.getOwnershipProjection();
-        const configPath = fixture.path('packages/a/tsconfig.json');
-        const parsed = await providers3.tsconfig.getProject(configPath, {
-          checkerPresets: ['tsc'],
-          extensions: ['.ts', '.vue'],
-        });
-        const view = providers3.facts.createSubscribedView(
-          planCapabilitySubscriptions(['source:check']),
-        );
-        view.getRuntimeProjectDependencies({
-          context: {
-            compilerOptions: parsed.options,
-            configPath,
-            extensions: ['.ts', '.vue'],
-            fileNames: [...parsed.fileNames],
-            generation: providers3.artifactNamespace.generation,
-            packageRootByFileName: new Map(
-              parsed.fileNames.map((file) => [
-                file,
-                fixture.path('packages/a'),
-              ]),
-            ),
-            packageRootDir: fixture.path('packages/a'),
-            references: [],
-            resolverConfigPath: configPath,
-            semanticAuthority: {
-              family: 'typescript',
-              kind: 'locked',
-              source: 'baseline',
-            },
-            workspaceSourceBoundary: view.getWorkspaceSourceBoundary(),
-          },
-          importAnalysis: providers3.imports.context,
-        });
-        expect(cache3.metrics.semanticPrograms ?? 0).toBe(0);
-        expect(cache3.metrics.sourceSyntaxParses ?? 0).toBe(0);
-        expect(cache3.metrics.runtimeResolverCalls ?? 0).toBe(0);
-        expect(cache3.metrics.runtimeQueryHits).toBe(2);
-      } finally {
-        providers3.dispose();
-      }
+      expect(runtime3.observations).toContainEqual(
+        expect.objectContaining({
+          importRecord: expect.objectContaining({ specifier: './Widget' }),
+          kind: 'missing',
+          resolutionMode: 'require',
+        }),
+      );
 
-      // Run 4: Adding ./Widget.vue (checker-only fallback) is immediately observed despite cached TS miss,
-      // and modifying @example/b's runtime-only target invalidates runtimeResolutionDirty without tainting Native semanticDirty!
       writeFileSync(
         fixture.path('packages/a/src/Widget.vue'),
         '<script setup lang="ts">\nexport const w = 1;\n</script>\n',
@@ -1244,69 +1184,18 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
         0,
       );
       expect(cache4.invalidation.semanticDirty.size).toBe(0);
-      const providers4 = createAnalysisProviders(
-        fixture.config,
-        undefined,
-        undefined,
-        {
-          analysisCache: cache4,
-          subscriptionPlan: planCapabilitySubscriptions(['source:check']),
-        },
+      const runtime4 = await runRuntime(cache4);
+      expect(cache4.metrics.semanticPrograms ?? 0).toBe(1);
+      expect(runtime4.dependencies).toMatchObject(
+        expectedDependencies('cjs-v2.d.cts'),
       );
-      try {
-        await providers4.ownership.getOwnershipProjection();
-        const configPath = fixture.path('packages/a/tsconfig.json');
-        const parsed = await providers4.tsconfig.getProject(configPath, {
-          checkerPresets: ['tsc'],
-          extensions: ['.ts', '.vue'],
-        });
-        const view = providers4.facts.createSubscribedView(
-          planCapabilitySubscriptions(['source:check']),
-        );
-        const runtime4 = view.getRuntimeProjectDependencies({
-          context: {
-            compilerOptions: parsed.options,
-            configPath,
-            extensions: ['.ts', '.vue'],
-            fileNames: [...parsed.fileNames],
-            generation: providers4.artifactNamespace.generation,
-            packageRootByFileName: new Map(
-              parsed.fileNames.map((file) => [
-                file,
-                fixture.path('packages/a'),
-              ]),
-            ),
-            packageRootDir: fixture.path('packages/a'),
-            references: [],
-            resolverConfigPath: configPath,
-            semanticAuthority: {
-              family: 'typescript',
-              kind: 'locked',
-              source: 'baseline',
-            },
-            workspaceSourceBoundary: view.getWorkspaceSourceBoundary(),
-          },
-          importAnalysis: providers4.imports.context,
-        });
-        // Native context was NOT invalidated or rebuilt!
-        expect(cache4.metrics.semanticPrograms ?? 0).toBe(0);
-        // Updated runtime-only target resolved to cjs-v2.d.cts!
-        expect(
-          runtime4.dependencies.find(
-            (dependency) => dependency.importRecord.specifier === '@example/b',
-          )?.resolvedFilePath,
-        ).toBe(fixture.path('packages/b/dist/cjs-v2.d.cts'));
-        // Newly added ./Widget.vue observed via checker-source fallback!
-        expect(
-          runtime4.observations.find(
-            (obs) =>
-              obs.kind === 'resource' &&
-              obs.importRecord.specifier === './Widget',
-          )?.evidence.runtime?.classification,
-        ).toBe('checker-source');
-      } finally {
-        providers4.dispose();
-      }
+      expect(runtime4.observations).toContainEqual(
+        expect.objectContaining({
+          importRecord: expect.objectContaining({ specifier: './Widget' }),
+          kind: 'missing',
+          resolutionMode: 'require',
+        }),
+      );
     } finally {
       fixture.cleanup();
     }

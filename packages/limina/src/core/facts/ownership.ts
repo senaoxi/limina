@@ -84,12 +84,13 @@ export class CoreOwnershipProvider {
           });
           if (!this.#facts.hasWorkspaceSourceBoundary()) {
             this.#facts.publishWorkspaceSourceBoundary(
-              createWorkspaceSourceBoundaryFromProjects(
-                resolution.frozenProjectsByConfigPath
-                  .values()
-                  .map((frozen) => frozen.project)
-                  .toArray(),
-              ),
+              this.#projectDependencies.lockedWorkspaceSourceBoundary ??
+                createWorkspaceSourceBoundaryFromProjects(
+                  resolution.frozenProjectsByConfigPath
+                    .values()
+                    .map((frozen) => frozen.project)
+                    .toArray(),
+                ),
             );
           }
           return { ...resolution, inputs };

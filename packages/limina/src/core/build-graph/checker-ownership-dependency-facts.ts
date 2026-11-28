@@ -139,6 +139,7 @@ export function collectCheckerDependencyFacts(options: {
   );
   const caches =
     options.projectDependencyCaches ?? createProjectDependencyCaches();
+  caches.lockedWorkspaceSourceBoundary = workspaceSourceBoundary;
   caches.sourceConfigCoverage = options.discovery.sourceConfigCoverage;
   const regions = options.discovery.activatedRegions;
   if (regions && caches.sourceConfigCoverage)

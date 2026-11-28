@@ -7,6 +7,7 @@ import type {
   DirectSourceDependency,
   ProjectDependencyRequest,
 } from './contracts';
+import { getDirectNativeFact } from './native-dependency';
 
 const EMPTY_EXPLICIT_MODES: ReadonlyMap<string, ts.ResolutionMode> = new Map();
 const explicitModesByContext = new WeakMap<
@@ -90,19 +91,14 @@ function getTypeScriptResolutionMode(options: {
   request: ProjectDependencyRequest;
 }): ts.ResolutionMode | undefined {
   if (options.request.purpose === 'runtime-source') {
-    const matched =
-      options.request.typeScriptSemanticContext?.findDependencyFact?.(
-        options.importRecord,
-      );
-    if (matched?.nativeEvidence !== undefined) {
-      return matched.resolution.resolutionMode;
-    }
+    const runtime = options.request.runtimeSourceResolver?.getResolution(
+      options.importRecord,
+    );
+    return runtime === undefined
+      ? getDirectNativeFact(options)?.resolution.resolutionMode
+      : runtime.mode;
   }
-  const runtime = options.request.runtimeSourceResolver;
-  return runtime === undefined
-    ? semanticResolutionMode(options)
-    : runtime.resolve(options.importRecord, getExplicitResolutionMode(options))
-        ?.mode;
+  return semanticResolutionMode(options);
 }
 
 function semanticResolutionMode(options: {

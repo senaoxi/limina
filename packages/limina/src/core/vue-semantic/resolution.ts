@@ -86,7 +86,7 @@ function isClassifyMissingScript(options: {
   return false;
 }
 
-function createCheckerResolution(options: {
+export function createVueCheckerResolution(options: {
   context: ReturnType<VueSemanticContextManager['acquire']>;
   resolvedModule: ts.ResolvedModuleFull;
 }): ResolvedCheckerModuleName {
@@ -148,7 +148,7 @@ function projectBoundModule(
         target:
           raw.resolvedModule === undefined
             ? null
-            : createCheckerResolution({
+            : createVueCheckerResolution({
                 context,
                 resolvedModule: raw.resolvedModule,
               }),
@@ -235,7 +235,7 @@ function createResolvedCandidate(options: {
   const resolution =
     resolvedModule === undefined
       ? null
-      : createCheckerResolution({
+      : createVueCheckerResolution({
           context: options.context,
           resolvedModule,
         });
@@ -318,7 +318,7 @@ function resolveCompilerCandidates(
       resolution:
         request.raw?.resolvedModule === undefined
           ? null
-          : createCheckerResolution({
+          : createVueCheckerResolution({
               context,
               resolvedModule: request.raw.resolvedModule,
             }),

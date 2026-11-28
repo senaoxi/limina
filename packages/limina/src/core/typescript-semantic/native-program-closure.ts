@@ -13,7 +13,10 @@ import {
   type NativeObservedProgram,
 } from './native-program-api';
 import type { NativeProgramFrontier } from './native-program-frontier';
-import { createNativeProgramHost } from './native-program-host';
+import {
+  createNativeProgramHost,
+  type NativeProgramHost,
+} from './native-program-host';
 import { collectNativeProgramInventory } from './native-program-inventory';
 import { NativeProgramLoads } from './native-program-loads';
 import {
@@ -29,6 +32,7 @@ export function createBoundedProgramClosure(
   frontier: NativeProgramFrontier,
 ): {
   program: NativeObservedProgram;
+  host: NativeProgramHost;
   modules: readonly NativeModuleObservation[];
   requests: NativeProgramRequests;
   loads: NativeProgramLoads;
@@ -54,13 +58,14 @@ export function createBoundedProgramClosure(
   });
   let requests: NativeProgramRequests;
   let program: NativeObservedProgram;
+  let host: NativeProgramHost;
   let modules: readonly NativeModuleObservation[];
   let isRepeat: boolean;
   do {
     const revision = loads.revision;
     requests = new NativeProgramRequests(context, frontier.identities);
     loads.paths.clear();
-    const host = createNativeProgramHost({
+    const passHost = createNativeProgramHost({
       project,
       compiler,
       queries: options.queries,
@@ -71,14 +76,16 @@ export function createBoundedProgramClosure(
       contextId: context.id,
       failures,
       collectSyntaxParents: options.collectSyntaxParents,
+      syntaxFiles: options.syntaxFiles,
     });
+    host = passHost;
     const create = () =>
       initializeNativeCompiler(() =>
         compiler.createProgram({
           rootNames: [...observationRootNames],
           options: project.options,
           projectReferences: project.projectReferences,
-          host,
+          host: passHost,
         }),
       );
     const passNumber = observer === undefined ? undefined : ++pass;
@@ -138,7 +145,7 @@ export function createBoundedProgramClosure(
       resolution.target === null ? [] : [resolution.target.lexicalPath],
     ),
   );
-  return { program, modules, requests, loads, configReads, failures };
+  return { program, host, modules, requests, loads, configReads, failures };
 }
 
 function nativeProgramProfileScope(

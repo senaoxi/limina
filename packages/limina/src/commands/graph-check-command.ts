@@ -51,7 +51,7 @@ export function createGraphCheckCommandContext(
     config,
     elapsed: createElapsedTimer(),
     options,
-    preflight: resolvePreflight(config, options),
+    preflight: resolvePreflight(config, options, 'graph:check'),
     task: createGraphCommandTask(options, 'graph check'),
   };
 }

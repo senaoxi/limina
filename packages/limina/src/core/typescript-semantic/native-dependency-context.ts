@@ -169,8 +169,15 @@ function sourceSyntax(
   adapter: NativeObservationAdapter,
   read: FileDependencyFactsReader,
 ): ReadonlyMap<string, FileDependencyFacts> {
+  const files = adapter.options.syntaxFiles;
+  const sources =
+    files === undefined
+      ? adapter.program.getSourceFiles()
+      : [...files]
+          .map((file) => adapter.program.getSourceFile(file))
+          .filter((source) => source !== undefined);
   return new Map(
-    adapter.program.getSourceFiles().map((source) => {
+    sources.map((source) => {
       const file = normalizeAbsolutePath(source.fileName);
       return [file, read(file, source.text, source)];
     }),

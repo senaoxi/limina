@@ -1,3 +1,4 @@
+import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type { AnalysisMetricsRecorder } from '../../application/analysis/analysis-run';
 import { captureBoundedContext } from '../analysis-cache/bounded-context-capture';
@@ -29,6 +30,7 @@ import {
   type NativeProgramObservationOptions,
 } from './native-observation-adapter';
 import { nativeObservationFailureKind } from './native-observation-failure';
+import type { NativeRuntimeModuleQuery } from './runtime-module-queries';
 
 type CollectedContext = TypeScriptSemanticDependencyContext & {
   dispose(): void;
@@ -41,7 +43,12 @@ export function createNativeDependencyContext(
   project: TypeScriptSemanticProject,
   cache?: NativeAnalysisCache,
   metrics?: AnalysisMetricsRecorder,
-  options?: { collectFileDependencyFacts?: boolean },
+  options?: {
+    collectFileDependencyFacts?: boolean;
+    syntaxFileNames?: readonly string[];
+    captureRuntimeModuleQuery?: (query: NativeRuntimeModuleQuery) => void;
+    requireRuntimeModuleQuery?: boolean;
+  },
 ): CollectedContext {
   const reads = new EpochInputs(cache?.inputs);
   const input = reads.collect(() => ({
@@ -49,12 +56,26 @@ export function createNativeDependencyContext(
       { ...project, admissionMode: 'coverage-bounded' },
       cache,
     ),
+    captureRuntimeModuleQuery: options?.captureRuntimeModuleQuery,
+    syntaxFiles:
+      cache === undefined && options?.collectFileDependencyFacts === true
+        ? new Set(
+            (options.syntaxFileNames ?? project.fileNames).map(
+              normalizeAbsolutePath,
+            ),
+          )
+        : undefined,
     metrics,
   }));
-  if (cache && input.queries) {
+  if (cache && input.queries && options?.requireRuntimeModuleQuery !== true) {
     const plan = cache.observationPlan(input.project);
     if (plan !== undefined) {
-      const partial = observeChangedImporters(input, cache, reads, plan);
+      const partial = observeChangedImporters(
+        { ...input, captureRuntimeModuleQuery: undefined },
+        cache,
+        reads,
+        plan,
+      );
       if (partial !== undefined) return partial;
       cache.fallback('partial-inventory-unqualified');
       input.queries.ids.clear();

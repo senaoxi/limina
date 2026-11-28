@@ -26,8 +26,9 @@ import {
 import { declarationLoadingCeiling } from '../declaration-governance/loading';
 import { createBoundedLanguageServiceHost } from '../framework-semantic/bounded-host';
 import { FrameworkCompilerRequests } from '../framework-semantic/compiler-requests';
+import type { FrameworkRuntimeModuleResolver } from '../framework-semantic/runtime-dependencies';
+import { createVolarRuntimeResolution } from '../framework-semantic/volar-runtime-resolution';
 import { compilerPathPolicy } from '../typescript-semantic/compiler-path-key';
-import { originTracingCompiler } from '../typescript-semantic/resolution-origin';
 import { withVirtualResolutionFiles } from '../typescript-semantic/virtual-resolution-host';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic/workspace-source-boundary';
 import {
@@ -186,6 +187,8 @@ export class VueSemanticContext {
 
   readonly compilerRequests: FrameworkCompilerRequests;
 
+  readonly resolveRuntimeModule: FrameworkRuntimeModuleResolver;
+
   readonly identity: VueProjectSemanticIdentity;
 
   readonly language: VolarLanguage;
@@ -268,9 +271,10 @@ export class VueSemanticContext {
           };
 
     this.#snapshots = store.snapshots;
+    const runtime = createVolarRuntimeResolution(this.tsModule);
     const hostResult =
       identity.toolchain.volarTypeScript.createLanguageServiceHost(
-        originTracingCompiler(this.tsModule),
+        runtime.compiler,
         this.sys,
         this.language,
         (fileName) => fileName,
@@ -279,6 +283,18 @@ export class VueSemanticContext {
     hostResult.languageServiceHost.getProjectVersion = () =>
       `${identity.generation}:${identity.id}`;
     this.languageServiceHost = hostResult.languageServiceHost;
+    const resolveRuntime =
+      this.languageServiceHost.resolveModuleNameLiterals?.bind(
+        this.languageServiceHost,
+      );
+    this.resolveRuntimeModule = (source, literal, occurrence) =>
+      runtime.resolve(
+        resolveRuntime,
+        this.program,
+        source,
+        literal,
+        occurrence,
+      );
     analysisTrace?.moduleReplay?.wrap(this.languageServiceHost);
     const referenceFiles = vueProjectConfigFiles(identity);
     const referenceHost = identity.outputProjection

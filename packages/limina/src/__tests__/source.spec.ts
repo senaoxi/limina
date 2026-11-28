@@ -33,6 +33,9 @@ import type { LiminaCheckRunTaskStats } from '../execution/run-recorder';
 import { LiminaOptionalToolMissingError } from '../execution/tools';
 import { LiminaFlowReporter } from '../flow';
 import { SourceLogger } from '../logger';
+import { runPipelineWithResult } from '../pipeline/runner';
+import { planPipelineSubscriptions } from '../pipeline/steps';
+import { LiminaPreflightManager } from '../preflight';
 import {
   createSourceUnusedModuleFinding,
   createSourceUnusedWorkspaceDependencyFinding,
@@ -3086,6 +3089,77 @@ packages:
           },
         ]);
       } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(
+    (
+      [
+        ['source:check'],
+        ['graph:check', 'source:check'],
+        ['source:check', 'graph:check'],
+      ] as const
+    ).flatMap((steps) => [false, true].map((cache) => ({ cache, steps }))),
+  )(
+    'enforces #imports package authority with cache=$cache and steps=$steps',
+    async ({ cache, steps }) => {
+      const fixture = await createFixture(
+        {
+          'limina.config.mjs': 'export default {};',
+          'app/package.json': stringifyConfig({
+            name: 'app',
+            private: true,
+            type: 'module',
+            dependencies: { permitted: '1.0.0' },
+            imports: {
+              '#pick': { import: 'permitted', require: 'restricted' },
+            },
+          }),
+          'app/tsconfig.json': stringifyConfig({
+            compilerOptions: { module: 'NodeNext', noLib: true, types: [] },
+            include: ['src/*.ts'],
+          }),
+          'app/src/permitted.ts':
+            "import type { Branch } from '#pick' with { 'resolution-mode': 'import' };\nexport type Selected = Branch;\n",
+          'app/src/restricted.ts':
+            "import type { Branch } from '#pick' with { 'resolution-mode': 'require' };\nexport type Selected = Branch;\n",
+          ...createNodeModulePackage('permitted', 'export interface Branch {}'),
+          ...createNodeModulePackage(
+            'restricted',
+            'export interface Branch {}',
+          ),
+        },
+        { source: { knip: false } },
+      );
+      const { config } = fixture;
+      config.cache = cache;
+      config.pipelines = { authority: [...steps] };
+      const preflight = new LiminaPreflightManager({
+        config,
+        analysisCache: true,
+        subscriptionPlan: planPipelineSubscriptions(config, 'authority'),
+      });
+
+      try {
+        const result = await runPipelineWithResult(config, 'authority', {
+          preflight,
+        });
+        expect(result.issues).toEqual([
+          expect.objectContaining({
+            code: LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized,
+            filePath: 'app/src/restricted.ts',
+            task: 'source:check',
+          }),
+        ]);
+        expect(
+          result.results.slice(-steps.length).map(({ status }) => status),
+        ).toEqual(
+          steps.map((step) => (step === 'source:check' ? 'failed' : 'passed')),
+        );
+      } finally {
+        preflight.dispose();
         await fixture.cleanup();
       }
     },

@@ -1,15 +1,12 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { SubscribedCoreFactView } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
-import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import type { ImporterInfo, WorkspacePackage } from '#core/workspace/actions';
+import type { PreparedGraphProjectDependencies } from '../core/facts/graph-projects';
 import type {
   ManagedOutputDeclarationLookup,
   ManagedOutputDeclarationProvider,
 } from '../core/import-graph/managed-output-provider';
-import type { ProjectDependencyCaches } from '../core/project-dependencies/contracts';
-import type { WorkspaceSourceBoundary } from '../core/typescript-semantic';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { GraphFinding } from './findings';
 import type { NormalizedGraphRules } from './rules';
@@ -26,22 +23,18 @@ export type ExpectedReferencesByProjectPath = Map<
 
 export interface ExpectedReferenceCollectionOptions {
   config: ResolvedLiminaConfig;
-  coreFacts: SubscribedCoreFactView;
   fileOwnerLookup: Map<string, string[]>;
   generatedGraph: GeneratedTsconfigGraphResult;
   graphRules: NormalizedGraphRules;
-  importAnalysis: ImportAnalysisContext;
   managedOutputLookup: ManagedOutputDeclarationLookup;
   packages: WorkspacePackage[];
+  preparedProjectDependencies: readonly PreparedGraphProjectDependencies[];
   projectCheckerNamesByPath: Map<string, string>;
-  projectDependencyCaches: ProjectDependencyCaches;
   findings: GraphFinding[];
   projectPaths: string[];
   projects: ProjectInfo[];
   projectsByPath: Map<string, ProjectInfo>;
-  selectedProjectPaths?: Set<string>;
   workspaceLookup: WorkspaceLookupIndex;
-  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
 export interface ExpectedReferenceCollectionContext

@@ -41,7 +41,7 @@ const SOURCE_ONLY_KINDS = new Set([
   'triple-slash-types',
 ]);
 
-function createSourceRecord(options: {
+export function createSvelteMappedSourceRecord(options: {
   generatedRecord: GeneratedSemanticDependency['record'];
   range: { end: number; start: number };
   sourceFilePath: string;
@@ -87,7 +87,7 @@ function createMappedCandidate(options: {
     literal,
     provenance: 'strict-source-map',
     semanticSpecifier: options.generatedDependency.record.specifier,
-    sourceRecord: createSourceRecord({
+    sourceRecord: createSvelteMappedSourceRecord({
       generatedRecord: options.generatedDependency.record,
       range: options.range,
       sourceFilePath: options.sourceFilePath,
@@ -126,7 +126,7 @@ function classifyMappedDependency(options: {
 }): ProjectionResult {
   if (SOURCE_ONLY_KINDS.has(options.dependency.record.kind)) {
     options.directSourceRecords.push(
-      createSourceRecord({
+      createSvelteMappedSourceRecord({
         generatedRecord: options.dependency.record,
         range: options.range,
         sourceFilePath: options.sourceFilePath,

@@ -17,6 +17,7 @@ import type {
   ObservedCheckerSelection,
   ProducerBuildPlan,
 } from './build-graph/types';
+import { prepareGovernedRuntime } from './facts/governance';
 import type { CoreOwnershipProvider } from './facts/ownership';
 import type { CoreFactSession } from './facts/session';
 import type { ImportCore } from './imports';
@@ -111,6 +112,21 @@ export class BuildGraphCore {
             graph.sourceConfigCoverage,
           ),
         );
+        if (
+          this.#facts.getSubscriptionPlan()?.products.includes('runtime-only')
+        ) {
+          const ownership = await this.getOwnershipProjection();
+          for (const units of graph.governedSources.values()) {
+            for (const unit of units.values()) {
+              prepareGovernedRuntime({
+                facts: this.#facts,
+                ownership,
+                importAnalysis: this.#imports.context,
+                unit,
+              });
+            }
+          }
+        }
         return graph;
       } finally {
         this.#retainInferenceDiagnostics(this.#projectDependencies);

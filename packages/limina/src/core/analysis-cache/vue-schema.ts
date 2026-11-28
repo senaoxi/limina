@@ -69,7 +69,7 @@ const compilationObligation = z.object({
   reason: text,
   requests: z.array(compilerRequest),
 });
-const fact = z.object({
+const compilerFact = z.object({
   compilationObligation,
   eligibility: requestEligibilitySchema.optional(),
   framework: z.literal('vue'),
@@ -80,6 +80,7 @@ const fact = z.object({
     'compiler-request',
   ]),
   resolutionMode: text,
+  runtimeOnly: z.never().optional(),
   semanticSpecifier: text,
   target: target.nullable(),
   redirect: redirectSchema.optional(),
@@ -95,6 +96,31 @@ const fact = z.object({
   compilerMembership: z
     .enum(['covered', 'not-covered', 'unobserved'])
     .optional(),
+});
+const runtimeOccurrence = z.object({
+  compilerRequest: z.never().optional(),
+  configurationSource: z.never().optional(),
+  kind: z.enum(['commonjs', 'require-resolve', 'jsdoc-import']),
+});
+const runtimeFact = z.strictObject({
+  compilationObligation: z.never().optional(),
+  framework: z.literal('vue'),
+  importRecord: occurrenceSchema.and(runtimeOccurrence),
+  provenance: z.literal('strict-source-map'),
+  resolutionMode: z.enum(['default', 'import', 'require']),
+  runtimeOnly: z.literal(true),
+  semanticSpecifier: text,
+  target: target.nullable(),
+  typeEvidence: z.never().optional(),
+  typeEvidenceOrigin: z.never().optional(),
+});
+const preparation = z.object({
+  kind: z.literal('supported'),
+  directSourceRecords: z.array(occurrenceSchema),
+  facts: z.array(compilerFact),
+  unmapped: z.array(
+    z.object({ generatedFilePath: text, semanticSpecifier: text }),
+  ),
 });
 const schemas = {
   'request-inventory': z.object({
@@ -112,13 +138,9 @@ const schemas = {
     redirect: redirectSchema.optional(),
   }),
   evidence,
-  preparation: z.object({
-    kind: z.literal('supported'),
-    directSourceRecords: z.array(occurrenceSchema),
-    facts: z.array(fact),
-    unmapped: z.array(
-      z.object({ generatedFilePath: text, semanticSpecifier: text }),
-    ),
+  preparation,
+  'runtime-preparation': preparation.extend({
+    facts: z.array(z.union([compilerFact, runtimeFact])),
   }),
   resolution: z.object({
     framework: z.literal('vue'),
@@ -191,6 +213,7 @@ const querySchema = z.object({
     'request-inventory',
     'compiler-source',
     'preparation',
+    'runtime-preparation',
     'resolution',
     'evidence',
     'dependency-observation',

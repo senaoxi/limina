@@ -8,9 +8,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { svelte2tsx } from 'svelte2tsx';
 import ts from 'typescript';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createImportAnalysisContext } from '../core/import-analysis/context';
 import type { ImportRecord } from '../core/import-analysis/runner';
+import { SvelteSemanticContextManager } from '../core/svelte-semantic/context';
 import { createGeneratedSemanticScript } from '../core/svelte-semantic/generated-script';
 import { prepareSvelteSemanticDependencies } from '../core/svelte-semantic/preparation';
 import { mapGeneratedRange } from '../core/svelte-semantic/source-mapping';
@@ -87,6 +88,22 @@ function createToolchain(): SvelteSemanticToolchain {
     typeScriptPath: requireFromTest.resolve('typescript'),
     typeScriptVersion: ts.version,
   };
+}
+
+async function linkSvelteToolchain(root: string): Promise<void> {
+  const fixturePath = createFixturePathResolver(root);
+  await mkdir(fixturePath('node_modules'));
+  for (const [name, manifestPath] of [
+    ['svelte', requireFromSvelte2Tsx.resolve('svelte/package.json')],
+    ['svelte2tsx', requireFromTest.resolve('svelte2tsx/package.json')],
+    ['typescript', requireFromTest.resolve('typescript/package.json')],
+  ]) {
+    await symlink(
+      path.dirname(manifestPath!),
+      fixturePath('node_modules', name!),
+      'junction',
+    );
+  }
 }
 
 async function createProject(options?: { ambientCss?: boolean }): Promise<{
@@ -171,18 +188,7 @@ describe('Svelte strict generated dependency provenance', () => {
       };
       await writeFile(fixturePath('package.json'), JSON.stringify(manifest));
       await writeFile(fixturePath('tsconfig.json'), '{}');
-      await mkdir(fixturePath('node_modules'));
-      for (const [name, manifestPath] of [
-        ['svelte', requireFromSvelte2Tsx.resolve('svelte/package.json')],
-        ['svelte2tsx', requireFromTest.resolve('svelte2tsx/package.json')],
-        ['typescript', requireFromTest.resolve('typescript/package.json')],
-      ]) {
-        await symlink(
-          path.dirname(manifestPath!),
-          fixturePath('node_modules', name!),
-          'junction',
-        );
-      }
+      await linkSvelteToolchain(root);
       const importAnalysis = createImportAnalysisContext();
       try {
         const consumerPath = fixturePath('Consumer.svelte');
@@ -357,6 +363,57 @@ describe('Svelte public bounded semantic adapter', () => {
         (fact) => fact.importRecord.filePath === fixture.appPath,
       ),
     ).toBe(true);
+  });
+
+  it('reuses the transform across project views and resolves their imports independently', async () => {
+    const { appPath, project } = await createProject();
+    const file = createFixturePathResolver(project.packageRootDir);
+    await linkSvelteToolchain(project.packageRootDir);
+    await writeFile(
+      appPath,
+      '<script lang="ts">import { value } from "alias";</script><p>{value}</p>',
+    );
+    for (const name of ['a', 'b']) {
+      await writeFile(
+        file(`${name}.d.ts`),
+        'export declare const value: string;',
+      );
+    }
+    const manager = new SvelteSemanticContextManager();
+    const prepare = (name: string, generation: number) => {
+      const context = manager.acquire({
+        ...project,
+        generation,
+        options: {
+          ...project.options,
+          noLib: true,
+          types: [],
+          paths: { alias: [file(`${name}.d.ts`)] },
+        },
+      });
+      const result = context.prepare(appPath);
+      expect(result.kind).toBe('supported');
+      if (result.kind !== 'supported') throw new Error(result.reason);
+      return result.facts.find(
+        (fact) => fact.importRecord.specifier === 'alias',
+      )?.target?.resolvedFileName;
+    };
+    try {
+      const transform = vi.spyOn(
+        manager.acquire(project).toolchain,
+        'transform',
+      );
+      expect(prepare('a', 1)).toBe(file('a.d.ts'));
+      expect(prepare('b', 1)).toBe(file('b.d.ts'));
+      expect(transform).toHaveBeenCalledTimes(1);
+      expect(prepare('b', 2)).toBe(file('b.d.ts'));
+      expect(transform).toHaveBeenCalledTimes(2);
+      await writeFile(appPath, '<p>no imports</p>');
+      expect(prepare('b', 2)).toBeUndefined();
+      expect(transform).toHaveBeenCalledTimes(3);
+    } finally {
+      manager.dispose();
+    }
   });
 
   it('keeps an unresolved resource request without querying ambient TypeChecker evidence', async () => {

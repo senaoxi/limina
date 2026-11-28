@@ -112,7 +112,7 @@ function queryVuePreparation(
   let result: FrameworkSemanticDependencyPreparation | undefined;
   const restored = options.manager.query({
     identity: options.identity,
-    kind: 'preparation',
+    kind: options.includeRuntimeOnly ? 'runtime-preparation' : 'preparation',
     request: [options.filePath, lookup],
     collect: () => {
       result = runUncachedVuePreparation(options);
@@ -129,6 +129,7 @@ function runUncachedVuePreparation(
     return prepareVueSemanticDependencies({
       context: options.manager.acquire(options.identity),
       filePath: options.filePath,
+      includeRuntimeOnly: options.includeRuntimeOnly,
       managedOutputLookup: options.managedOutputLookup,
     });
   } catch (error) {
@@ -188,6 +189,7 @@ function runAstroPreparation(
       context: options.manager.acquire(options.project),
       supportInputBoundary: options.supportInputBoundary,
       filePath: options.filePath,
+      includeRuntimeOnly: options.includeRuntimeOnly,
       managedOutputLookup: options.managedOutputLookup,
     });
   } catch (error) {
@@ -251,6 +253,7 @@ function runSveltePreparation(
         options.filePath,
         options.managedOutputLookup,
         options.supportInputBoundary,
+        options.includeRuntimeOnly,
       );
   } catch (error) {
     return {

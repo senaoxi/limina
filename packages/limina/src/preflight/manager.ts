@@ -34,6 +34,10 @@ import {
   assertProducerBuildReceipt,
   type ProducerBuildReceipt,
 } from '../core/build-graph/producer-receipt';
+import {
+  prepareSourceProjectFacts,
+  type SourceGovernanceFacts,
+} from '../core/facts/source-projects';
 import type { WorkspaceDependencyDeclaration } from '../core/packages/authority';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionBoundary } from '../core/workspace/regions';
@@ -745,6 +749,26 @@ export class LiminaPreflightManager {
       );
     return this.#cache.sourceGraphProjectExtensions;
   }
+  ensureSourceGovernanceFacts(
+    graphRoute: CheckerRoutes.CollectSourceGraphProjectExtensionsResult,
+  ): Promise<SourceGovernanceFacts> {
+    return (this.#cache.sourceGovernance ??= (async () => {
+      const [generatedGraph, workspaceLookup, pathIndex] = await Promise.all([
+        this.ensureGeneratedGraph(),
+        this.ensureWorkspaceLookupIndex(),
+        this.ensureWorkspacePathIndex(),
+      ]);
+      return prepareSourceProjectFacts({
+        generatedGraph,
+        graphRoute,
+        workspaceLookup,
+        pathIndex,
+        providers: this.providers,
+        rootDir: this.config.rootDir,
+      });
+    })());
+  }
+
   async ensureGraphProjectRoutes(): Promise<CheckerRoutes.CollectCheckerGraphProjectRoutesResult> {
     this.#cache.graphProjectRoutes ??= queries.loadGraphProjectRoutes(
       this.config,

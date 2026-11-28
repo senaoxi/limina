@@ -1,8 +1,12 @@
 import { createAstroCheckerResolution } from '../astro-semantic/resolution-candidate';
 import type { FrameworkSemanticKind } from '../framework-semantic/contracts';
-import { resolveFrameworkRuntimeOccurrence } from '../framework-semantic/runtime-dependencies';
+import {
+  isFrameworkRuntimeCandidate,
+  resolveFrameworkRuntimeOccurrence,
+} from '../framework-semantic/runtime-dependencies';
 import { createSvelteModuleTarget } from '../svelte-semantic/module-resolution';
 import { isModuleImportRecord } from '../typescript-semantic/import-record';
+import { createVueCheckerResolution } from '../vue-semantic/resolution';
 import { lockedCheckerEvidence } from './checker-resolution-provider';
 import type { ProviderDependencies } from './resolution-provider-types';
 import type { ImportAnalysisContext, ModuleResolutionPair } from './types';
@@ -15,10 +19,24 @@ type RuntimeOptions = Parameters<RuntimeResolver>[0];
 function runtimeAdapter(
   dependencies: ProviderDependencies,
   options: RuntimeOptions,
-  framework: Exclude<FrameworkSemanticKind, 'vue'>,
+  framework: FrameworkSemanticKind,
 ):
   | Omit<Parameters<typeof resolveFrameworkRuntimeOccurrence>[0], 'occurrence'>
   | undefined {
+  if (framework === 'vue') {
+    const identity = options.context.vueSemanticIdentity;
+    if (identity === undefined) return undefined;
+    const context = dependencies.vueSemanticContexts?.acquire(identity);
+    if (context === undefined) return undefined;
+    return {
+      compiler: context.tsModule,
+      compilerRequests: context.compilerRequests,
+      program: context.program,
+      resolve: context.resolveRuntimeModule,
+      target: (resolvedModule) =>
+        createVueCheckerResolution({ context, resolvedModule }),
+    };
+  }
   if (framework === 'astro') {
     const project = options.context.astroSemanticProject;
     if (project === undefined) return undefined;
@@ -54,10 +72,11 @@ function runtimeAdapter(
 function resolveRuntimePair(
   dependencies: ProviderDependencies,
   options: RuntimeOptions,
-  framework: Exclude<FrameworkSemanticKind, 'vue'>,
+  framework: FrameworkSemanticKind,
 ): ModuleResolutionPair {
   const { importRecord, context } = options;
   const identityId =
+    context.vueSemanticIdentity?.id ??
     context.astroSemanticProject?.seed.id ??
     context.svelteSemanticProject?.configPath ??
     context.configPath ??
@@ -110,12 +129,15 @@ function resolveRuntimePair(
 function isDirectFrameworkImport(
   framework: RuntimeOptions['context']['semanticFamily'],
   record: RuntimeOptions['importRecord'],
-): framework is Exclude<FrameworkSemanticKind, 'vue'> {
+): framework is FrameworkSemanticKind {
   return (
-    (framework === 'astro' || framework === 'svelte') &&
-    record.domain === 'typescript' &&
-    record.kind !== 'module-augmentation' &&
-    isModuleImportRecord(record)
+    framework !== undefined &&
+    framework !== 'typescript' &&
+    (isFrameworkRuntimeCandidate(record) ||
+      (framework !== 'vue' &&
+        record.domain === 'typescript' &&
+        record.kind !== 'module-augmentation' &&
+        isModuleImportRecord(record)))
   );
 }
 

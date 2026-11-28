@@ -2,6 +2,7 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
+import type { SourceProjectFacts } from '../core/facts/source-projects';
 import type { WorkspaceDependencyDeclaration } from '../core/packages/authority';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type {
@@ -25,7 +26,6 @@ import {
   type RunSourceCheckImplOptions,
   SOURCE_CHECK_ITEM_NAMES,
 } from './runner-types';
-import { createSourceProjectEntries } from './source-projects';
 import type { SourceProjectEntry } from './source-types';
 
 export interface SourceCheckState {
@@ -46,6 +46,7 @@ export interface SourceCheckState {
   readonly projectPaths: string[];
   readonly rootPackage: WorkspacePackage | null;
   readonly sourceIssues: SourceCheckIssue[];
+  readonly projectFacts: ReadonlyMap<string, SourceProjectFacts>;
   readonly sourceProjectEntries: SourceProjectEntry[];
   readonly workspaceContext: ValidatedWorkspaceContext;
   readonly workspaceDependencyDeclarations: WorkspaceDependencyDeclaration[];
@@ -65,22 +66,17 @@ export async function createSourceCheckState(
     () => checks.value,
     { plannedItems: SOURCE_CHECK_ITEM_NAMES, progress: options.progress },
   );
-  const preflight = resolvePreflight(config, options);
-  const core = preflight.providers;
+  const preflight = resolvePreflight(config, options, 'source:check');
   const generatedGraph = await preflight.ensureGeneratedGraph();
   const graphRoute = await preflight.ensureSourceGraphProjectExtensions();
+  const core = preflight.providers;
   const projectPaths = graphRoute.projectExtensionsByPath
     .keys()
     .toArray()
     .sort((left, right) => Number(left > right) - Number(left < right));
   const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
-  const sourceProjectEntries = await createSourceProjectEntries({
-    generatedGraph,
-    projectContextsByPath: graphRoute.projectContextsByPath,
-    projectPaths,
-    providers: core,
-    workspaceLookup,
-  });
+  const { entries: sourceProjectEntries, projectFacts } =
+    await preflight.ensureSourceGovernanceFacts(graphRoute);
   const packages = await preflight.ensureWorkspacePackages();
   const workspaceContext = await preflight.ensureWorkspaceValidated();
   const workspacePathIndex = await preflight.ensureWorkspacePathIndex();
@@ -106,6 +102,7 @@ export async function createSourceCheckState(
     packages,
     preflight,
     projectPaths,
+    projectFacts,
     rootPackage: findWorkspaceRootPackage({ config, packages }),
     sourceIssues,
     sourceProjectEntries,

@@ -23,6 +23,7 @@ export interface VueQueryResults {
     FrameworkSemanticDependencyPreparation,
     { kind: 'supported' }
   >;
+  'runtime-preparation': VueQueryResults['preparation'];
   resolution: Omit<FrameworkSemanticEvidence, 'identityId'>;
   evidence: Exclude<TypeEvidence, { kind: 'unsupported-checker' }>;
 }

@@ -4,6 +4,7 @@ import type { PreparedDependencyFact } from '../framework-semantic/contracts';
 import type { ImportRuntimeResolutionEvidence } from '../import-analysis/evidence';
 import type { ImportRecord } from '../import-analysis/records';
 import type { CanonicalImportResolutionEvidence } from '../import-analysis/runner';
+import { classifyImportRuntimeEvidence } from '../import-analysis/runtime-evidence';
 import type { NativeDependencyFact } from '../typescript-semantic/dependency-fact';
 import type { ProjectDependencyRequest } from './contracts';
 import {
@@ -146,6 +147,16 @@ export function createPreparedDependencyEvidence(options: {
     occurrence: options.fact.importRecord,
     resolutionMode: options.fact.resolutionMode,
     checker: { kind: 'framework', fact: options.fact },
+    runtime: options.fact.runtimeOnly
+      ? classifyImportRuntimeEvidence({
+          compilerOptions: options.request.context.compilerOptions,
+          containingFile: options.fact.importRecord.filePath,
+          extensions: options.request.context.extensions,
+          oxcResolvedFilePath: null,
+          specifier: options.fact.importRecord.specifier,
+          typeScriptResolution: options.fact.target,
+        })
+      : undefined,
   });
 }
 

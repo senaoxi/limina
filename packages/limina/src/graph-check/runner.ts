@@ -94,7 +94,7 @@ export async function runGraphExportImpl(
   config: ResolvedLiminaConfig,
   options: RunGraphExportOptions = {},
 ): Promise<DependencyGraphDocument> {
-  const preflight = resolvePreflight(config, options);
+  const preflight = resolvePreflight(config, options, 'dependency-graph');
 
   try {
     await preflight.ensureWorkspaceValidated();

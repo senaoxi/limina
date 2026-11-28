@@ -122,6 +122,7 @@ export interface ImportAnalysisContext {
     supportInputBoundary?: WorkspaceSourceBoundary;
     context: ImportResolveContextFields;
     filePath: string;
+    includeRuntimeOnly?: boolean;
     managedOutputLookup?: ManagedOutputDeclarationLookup;
   }) => FrameworkSemanticDependencyPreparation;
   resolveCheckerRuntimeImportEvidence?: (options: {

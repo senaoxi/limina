@@ -2,12 +2,15 @@ import { isNativeTypeScriptProjectInput } from '#checkers';
 import {
   createTypeScriptDependencyContext,
   createTypeScriptProjectDependencyFactsIdentity,
+  type TypeScriptSemanticProject,
 } from '../typescript-semantic';
+import type { NativeRuntimeModuleQuery } from '../typescript-semantic/runtime-module-queries';
 import type { ProjectDependencyRequest } from './contracts';
 import {
   getProjectSemanticCacheIdentity,
   getWorkspaceSourceBoundarySnapshotIdentity,
 } from './identity';
+import { retainLiveNativeRuntimeReceipts } from './native-runtime-receipts';
 
 export function projectDependencyFactsKey(
   request: ProjectDependencyRequest,
@@ -30,11 +33,36 @@ export function projectDependencyFactsKey(
 
 export function createCollectionContext(
   request: ProjectDependencyRequest,
+  captureRuntimeModuleQuery?: (query: NativeRuntimeModuleQuery) => void,
 ): ReturnType<typeof createTypeScriptDependencyContext> {
-  return createTypeScriptDependencyContext(
-    collectionProject(request),
-    collectionServices(request),
-  );
+  const project = collectionProject(request);
+  const services = collectionServices(request);
+  const canRetainLiveQueries =
+    captureRuntimeModuleQuery === undefined &&
+    services.collectFileDependencyFacts &&
+    request.context.semanticAuthority.family === 'typescript' &&
+    project.configPath === project.sourceConfigPath;
+  let query: NativeRuntimeModuleQuery | undefined;
+  const context = createTypeScriptDependencyContext(project, {
+    ...services,
+    requireRuntimeModuleQuery: captureRuntimeModuleQuery !== undefined,
+    captureRuntimeModuleQuery:
+      captureRuntimeModuleQuery ??
+      (canRetainLiveQueries
+        ? (prepare) => {
+            query = prepare;
+          }
+        : undefined),
+  });
+  if (query !== undefined)
+    retainLiveNativeRuntimeReceipts({
+      cache: services.analysisCache,
+      context,
+      files: services.syntaxFileNames ?? project.fileNames,
+      project,
+      query,
+    });
+  return context;
 }
 
 export function restoreCollectionContext(
@@ -58,7 +86,9 @@ function collectionBinding(request: ProjectDependencyRequest) {
     }),
   };
 }
-function collectionProject(request: ProjectDependencyRequest) {
+export function collectionProject(
+  request: ProjectDependencyRequest,
+): TypeScriptSemanticProject {
   return {
     compilationObligationScope: request.compilationObligationScope,
     admissionMode: 'coverage-bounded' as const,
@@ -75,12 +105,22 @@ function collectionProject(request: ProjectDependencyRequest) {
 
 function collectionServices(request: ProjectDependencyRequest) {
   const caches = request.caches;
-  if (caches === undefined) return {};
+  const shouldCollectRuntimeSyntax =
+    request.purpose === 'runtime-source' ||
+    caches?.subscriptionPlan?.products.includes('runtime-only') === true;
+  const { fileNames, packageRootByFileName } = request.context;
+  let syntaxFileNames: readonly string[] | undefined;
+  if (shouldCollectRuntimeSyntax)
+    syntaxFileNames =
+      request.runtimeFileNames ??
+      (packageRootByFileName.size === 0
+        ? fileNames
+        : fileNames.filter((file) => packageRootByFileName.has(file)));
   return {
     analysisCache: persistentCollectionCache(request),
-    collectFileDependencyFacts:
-      caches.subscriptionPlan?.products.includes('runtime-only') === true,
-    metrics: caches.metrics,
+    collectFileDependencyFacts: shouldCollectRuntimeSyntax,
+    syntaxFileNames,
+    metrics: caches?.metrics,
   };
 }
 

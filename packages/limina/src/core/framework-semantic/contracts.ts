@@ -57,6 +57,7 @@ export interface PreparedDependencyFact {
   importRecord: ImportRecord;
   provenance: FrameworkSemanticProvenance;
   resolutionMode: string;
+  runtimeOnly?: true;
   semanticSpecifier: string;
   target: ResolvedCheckerModuleName | null;
   typeEvidence?: TypeEvidence;

@@ -166,6 +166,7 @@ function prepareGeneratedSemanticDependencies(options: {
       supportInputBoundary:
         options.base.request.context.workspaceSourceBoundary,
       filePath: options.base.fileName,
+      includeRuntimeOnly: options.base.request.purpose === 'runtime-source',
       managedOutputLookup: options.base.request.managedOutputLookup,
     },
   );

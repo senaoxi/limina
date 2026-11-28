@@ -1,5 +1,4 @@
-import { planRuleSubscriptions } from '#core';
-import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
+import type { ImportRecord } from '#core/import-graph/context';
 import {
   isNamedWorkspacePackage,
   type NamedWorkspacePackage,
@@ -11,7 +10,6 @@ import type {
   ProjectDependency,
   ProjectDependencyCollection,
 } from '../core/project-dependencies/contracts';
-import { createParsedProjectSemanticContext } from '../core/project-dependencies/runner';
 import {
   describeWorkspaceConsumptionFailure,
   getWorkspaceConsumptionFailure,
@@ -199,11 +197,9 @@ interface EdgeCandidate {
 
 interface ImportProcessingOptions {
   context: DependencyGraphCollectionContext;
-  fileName: string;
   importerPackage: WorkspacePackage;
   importRecord: ImportRecord;
   projectDependency: ProjectDependency;
-  project: ProjectInfo;
 }
 
 function resolveExternalCandidate(
@@ -318,62 +314,6 @@ function processImportRecord(options: ImportProcessingOptions): void {
   }
 }
 
-function collectProjectEdges(
-  context: DependencyGraphCollectionContext,
-  project: ProjectInfo,
-): void {
-  const authority = getDependencyGraphAuthority(context, project);
-  if (authority === null) {
-    return;
-  }
-  const collection = collectDependencyGraphProject({
-    authority,
-    context,
-    project,
-  });
-  collectDependencyGraphFailures(context, collection.failures);
-  collectDependencyGraphObservations(context, collection.observations);
-  collectDependencyGraphDependencies({ collection, context, project });
-}
-
-function getDependencyGraphAuthority(
-  context: DependencyGraphCollectionContext,
-  project: ProjectInfo,
-) {
-  const authority = project.semanticAuthority;
-  if (authority === undefined) {
-    context.problems.push(
-      `Missing frozen semantic authority for dependency graph project ${project.configPath}.`,
-    );
-    return null;
-  }
-  return authority;
-}
-
-function collectDependencyGraphProject(options: {
-  authority: NonNullable<ProjectInfo['semanticAuthority']>;
-  context: DependencyGraphCollectionContext;
-  project: ProjectInfo;
-}) {
-  const owner = options.context.workspaceLookup.findPackageForFile(
-    options.project.configPath,
-  );
-  const packageRootDirectory =
-    owner === null ? options.context.config.rootDir : owner.directory;
-  const coreFacts = options.context.core.facts.createSubscribedView(
-    planRuleSubscriptions(['dependency-graph:export']),
-  );
-  return coreFacts.getRuntimeProjectDependencies({
-    context: createParsedProjectSemanticContext({
-      authority: options.authority,
-      packageRootDir: packageRootDirectory,
-      project: options.project,
-      workspaceSourceBoundary: options.context.workspaceSourceBoundary,
-    }),
-    importAnalysis: options.context.importAnalysis,
-  });
-}
-
 function collectDependencyGraphFailures(
   context: DependencyGraphCollectionContext,
   failures: ProjectDependencyCollection['failures'],
@@ -391,22 +331,20 @@ function collectDependencyGraphFailures(
   }
 }
 
-function collectDependencyGraphDependencies(options: {
-  collection: ProjectDependencyCollection;
-  context: DependencyGraphCollectionContext;
-  project: ProjectInfo;
-}): void {
-  for (const projectDependency of options.collection.dependencies) {
-    const fileName = projectDependency.importRecord.filePath;
-    const importerPackage =
-      options.context.workspaceLookup.findPackageForFile(fileName);
+function collectDependencyGraphDependencies(
+  context: DependencyGraphCollectionContext,
+  dependencies: ProjectDependencyCollection['dependencies'],
+): void {
+  for (const projectDependency of dependencies) {
+    const importRecord = projectDependency.importRecord;
+    const importerPackage = context.workspaceLookup.findPackageForFile(
+      importRecord.filePath,
+    );
     if (importerPackage === null) continue;
     processImportRecord({
-      context: options.context,
-      fileName,
+      context,
       importerPackage,
-      importRecord: projectDependency.importRecord,
-      project: options.project,
+      importRecord,
       projectDependency,
     });
   }
@@ -415,8 +353,14 @@ function collectDependencyGraphDependencies(options: {
 export function collectDependencyGraphEdges(
   context: DependencyGraphCollectionContext,
 ): void {
-  for (const project of context.projects) {
-    collectProjectEdges(context, project);
+  for (const collection of context.projectDependencies) {
+    if (typeof collection === 'string') {
+      context.problems.push(collection);
+      continue;
+    }
+    collectDependencyGraphFailures(context, collection.failures);
+    collectDependencyGraphObservations(context, collection.observations);
+    collectDependencyGraphDependencies(context, collection.dependencies);
   }
 }
 

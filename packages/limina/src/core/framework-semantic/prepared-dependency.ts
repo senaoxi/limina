@@ -242,6 +242,18 @@ function mergePreparedGroups(options: {
   return { facts, kind: 'supported' };
 }
 
+export function mergePreparedRuntimeFacts(
+  framework: FrameworkSemanticKind,
+  facts: readonly PreparedDependencyFact[],
+): PreparedDependencyMergeResult {
+  const merged = mergePreparedGroups({
+    framework,
+    grouped: groupByIdentity(facts, occurrenceIdentity),
+  });
+  if (merged.kind === 'supported') finalizeOccurrences(merged.facts);
+  return merged;
+}
+
 export function prepareResolvedFrameworkCandidates(options: {
   checkerName: string;
   framework: FrameworkSemanticKind;

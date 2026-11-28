@@ -19,6 +19,10 @@ import {
   nativeRootFailures,
 } from './native-program-validity';
 import type { NativeReferenceObservation } from './reference-redirect';
+import {
+  createNativeRuntimeModuleQuery,
+  type NativeRuntimeModuleQuery,
+} from './runtime-module-queries';
 
 export interface NativeProgramObservationOptions {
   project: TypeScriptSemanticProject;
@@ -29,6 +33,8 @@ export interface NativeProgramObservationOptions {
   queries?: BoundedResolutionQueries;
   profileRole?: 'type-evidence';
   collectSyntaxParents?: boolean;
+  syntaxFiles?: ReadonlySet<string>;
+  captureRuntimeModuleQuery?: (query: NativeRuntimeModuleQuery) => void;
 }
 
 /**
@@ -73,7 +79,7 @@ export class NativeObservationAdapter {
         'input-drift',
         'Native observation roots must belong to the current project.',
       );
-    const { program, modules, requests, loads, configReads, failures } =
+    const { program, host, modules, requests, loads, configReads, failures } =
       createBoundedProgramClosure(
         { ...options, observationRootNames },
         compiler,
@@ -114,5 +120,8 @@ export class NativeObservationAdapter {
     this.snapshot = freezeNativeData(snapshot);
     this.frontier.identities.assertStable();
     assertNativeObservationInputs(options, compiler);
+    options.captureRuntimeModuleQuery?.(
+      createNativeRuntimeModuleQuery(compiler, program, host, this.configReads),
+    );
   }
 }

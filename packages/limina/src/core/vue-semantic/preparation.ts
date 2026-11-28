@@ -8,9 +8,12 @@ import type { CompilationObligationProof } from '../dependency-semantics';
 import type { FrameworkSemanticDependencyPreparation } from '../framework-semantic/contracts';
 import {
   mergePreparedDirectSourceRecords,
+  mergePreparedRuntimeFacts,
   prepareResolvedFrameworkCandidates,
 } from '../framework-semantic/prepared-dependency';
 import { requiresReferenceStructure } from '../framework-semantic/prepared-type-evidence';
+import { collectGeneratedRuntimeFacts } from '../framework-semantic/runtime-dependencies';
+import { strictBackprojectVolarDependency } from '../framework-semantic/volar-backprojection';
 import type { ImportRecord } from '../import-analysis/records';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import { getResolutionOrigin } from '../typescript-semantic/resolution-origin';
@@ -18,6 +21,7 @@ import { vueCompilationObligation } from './compilation-obligation';
 import type { VueSemanticContext } from './context';
 import { getVueServiceScript } from './dependency';
 import { collectVueMappedCandidates, type VueCandidate } from './projection';
+import { createVueCheckerResolution } from './resolution';
 
 interface ResolvedVueCandidate {
   compilationObligation: CompilationObligationProof;
@@ -163,6 +167,7 @@ function getMaterializedService(options: {
 function prepareUnchecked(options: {
   context: VueSemanticContext;
   filePath: string;
+  includeRuntimeOnly?: boolean;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
 }): FrameworkSemanticDependencyPreparation {
   const materialized = getMaterializedService(options);
@@ -192,13 +197,42 @@ function prepareUnchecked(options: {
     unmapped,
   });
   if (projected.kind === 'unsupported') return projected;
-  return prepareMappedCandidates({
+  const preparation = prepareMappedCandidates({
     candidates: projected.candidates,
     context: options.context,
     directSourceRecords,
     managedOutputLookup: options.managedOutputLookup,
     unmapped,
   });
+  if (!options.includeRuntimeOnly || preparation.kind === 'unsupported')
+    return preparation;
+  const { context } = options;
+  const mapper = context.language.maps.get(
+    service.serviceScript.code,
+    service.sourceScript,
+  );
+  const runtime = collectGeneratedRuntimeFacts({
+    framework: 'vue',
+    compiler: context.tsModule,
+    compilerRequests: context.compilerRequests,
+    program: context.program,
+    source: sourceFile,
+    resolve: context.resolveRuntimeModule,
+    target: (resolvedModule) =>
+      createVueCheckerResolution({ context, resolvedModule }),
+    projectOccurrence: (dependency) =>
+      strictBackprojectVolarDependency({
+        dependency,
+        mapper,
+        sourceFilePath: filePath,
+        sourceText,
+      }),
+  });
+  if (runtime.kind === 'unsupported') return runtime;
+  const merged = mergePreparedRuntimeFacts('vue', runtime.facts);
+  return merged.kind === 'supported'
+    ? { ...preparation, facts: [...preparation.facts, ...merged.facts] }
+    : merged;
 }
 
 function formatError(error: unknown): string {
@@ -208,6 +242,7 @@ function formatError(error: unknown): string {
 export function prepareVueSemanticDependencies(options: {
   context: VueSemanticContext;
   filePath: string;
+  includeRuntimeOnly?: boolean;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
 }): FrameworkSemanticDependencyPreparation {
   try {
