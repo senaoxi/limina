@@ -1,21 +1,6 @@
 import path from 'pathe';
 
-export const capabilityDiscoveryExtensions: string[] = [
-  '.astro',
-  '.cts',
-  '.d.cts',
-  '.d.mts',
-  '.d.ts',
-  '.js',
-  '.jsx',
-  '.json',
-  '.mjs',
-  '.mts',
-  '.svelte',
-  '.ts',
-  '.tsx',
-  '.vue',
-];
+export { capabilityDiscoveryExtensions } from '../../tsconfig/capability-discovery-extensions';
 
 const compoundDeclarationExtensions = ['.d.cts', '.d.mts', '.d.ts'];
 

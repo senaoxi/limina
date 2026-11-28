@@ -8,13 +8,13 @@ import type {
   GovernedSourceUnit,
 } from '#core/build-graph/runner';
 import { uniqueValues } from '#utils/collections';
-import { capabilityDiscoveryExtensions } from '../build-graph/generated/file-extensions';
 import type {
   CheckerRouteSnapshot,
   CheckerRouteSnapshotCollection,
   CollectCheckerGraphProjectRoutesResult,
   CollectSourceGraphProjectExtensionsResult,
 } from './action-types';
+import { capabilityDiscoveryExtensions } from './capability-discovery-extensions';
 import { projectCheckerRoutesForProjection } from './checker-route-projection';
 import { collectCheckerRouteSnapshot } from './checker-route-snapshot';
 import { isDtsConfigPath } from './config-paths';

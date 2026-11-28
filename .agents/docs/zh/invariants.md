@@ -211,6 +211,7 @@
 ## Supporting invariants 与 implementation details
 
 - [architecture-boundaries.spec.ts](../../../packages/limina/src/__tests__/architecture-boundaries.spec.ts) 检查指定的 materializer 和 controller 调用方，并校验子系统单向分层边界（`check-reporting`、`preflight`、`execution` 不得静态运行时导入更高层目录，且顶层目录和根目录文件之间的运行时依赖必须构成有向无环图）。运行时导入图在 `verbatimModuleSyntax` 语义下沿相对路径（含显式 `.js`/`.mjs`/`.cjs`/`.ts` 扩展名）、`package.json#imports` 全部包内别名与 `package.json#exports` 自身包名引用解析生产文件之间的静态运行时导入和重导出（包括空具名 `import {}`／`export {}`），同时报告多文件环与单文件自环。动态导入（例如运行时 `import(entryURL)`）、隐式依赖，以及通过命名空间或重导出的符号发起的调用均在这些检查的范围之外。
+- 在静态运行时依赖图中，`core/facts/` 下的 Stage A/B1 模块不得经由导入或重导出到达受保护的 Stage B2 建图模块。Core 实现不得在运行时导入或重导出装配入口 `core/index.ts`。该入口为外部调用方组装各个 provider。
 - portable `/` path、code-unit sorting、snapshot schema versions、manifest legacy cleanup policy、Svelte source-map 不重复 rebasing Windows drive 都是重要 supporting contracts；归各 source/tests 与[生命周期页](./lifecycle.md)。
 - helper 命名、目录层数、active context slot 数量、默认 timeout、adapter version tag 是 implementation details；只有当改动影响上述 core 性质时才触发 architecture review。
 - 产品受众、长期插件扩展、兼容承诺与为何选某工具链是 human judgments。不能用测试写死尚未决定的方向。

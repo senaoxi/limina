@@ -4,7 +4,11 @@ import path from 'pathe';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { collectStronglyConnectedComponents } from '../utils/strongly-connected-components';
-import { toPortablePath } from './helpers/path';
+import {
+  toPortablePath,
+  toPortableRelativePath,
+  toPortableRelativePaths,
+} from './helpers/path';
 
 const sourceRoot = fileURLToPath(new URL('..', import.meta.url));
 const packageRoot = path.resolve(sourceRoot, '..');
@@ -469,6 +473,81 @@ function findUnexpectedTopLevelCycles(
     );
 }
 
+function findRuntimeImportPath(
+  neighbors: ReadonlyMap<string, readonly string[]>,
+  importer: string,
+  destinations: ReadonlySet<string>,
+): string[] | undefined {
+  const previousByFile = new Map<string, string | undefined>([
+    [importer, undefined],
+  ]);
+  const queue = [importer];
+  let index = 0;
+  while (index < queue.length) {
+    const file = queue[index]!;
+    index += 1;
+    if (destinations.has(file)) {
+      const route: string[] = [];
+      for (
+        let step: string | undefined = file;
+        step !== undefined;
+        step = previousByFile.get(step)
+      ) {
+        route.push(step);
+      }
+      return route.toReversed();
+    }
+    const targets = neighbors.get(file) ?? [];
+    for (const target of targets) {
+      if (previousByFile.has(target)) continue;
+      previousByFile.set(target, file);
+      queue.push(target);
+    }
+  }
+  return undefined;
+}
+
+function findFactsImportsOfStageB2(
+  neighbors: ReadonlyMap<string, readonly string[]>,
+): string[] {
+  const factsDirectory = path.join(sourceRoot, 'core/facts');
+  const stageB2Entries = new Set(
+    [
+      'core/build-graph.ts',
+      'core/build-graph/prepare.ts',
+      'core/build-graph/reference-inference.ts',
+      'core/build-graph/graph-validation.ts',
+      'core/build-graph/finish-prepared-graph.ts',
+    ].map((entry) => path.join(sourceRoot, entry)),
+  );
+  const violations: string[] = [];
+  for (const importer of neighbors.keys()) {
+    if (!importer.startsWith(`${factsDirectory}/`)) continue;
+    const route = findRuntimeImportPath(neighbors, importer, stageB2Entries);
+    if (route !== undefined) {
+      violations.push(toPortableRelativePaths(sourceRoot, route).join(' -> '));
+    }
+  }
+  return violations;
+}
+
+function findCoreBarrelImporters(
+  neighbors: ReadonlyMap<string, readonly string[]>,
+): string[] {
+  const coreDirectory = path.join(sourceRoot, 'core');
+  const barrel = path.join(coreDirectory, 'index.ts');
+  return neighbors
+    .entries()
+    .filter(
+      ([file, targets]) =>
+        file !== barrel &&
+        file.startsWith(`${coreDirectory}/`) &&
+        targets.includes(barrel),
+    )
+    .map(([file]) => toPortableRelativePath(sourceRoot, file))
+    .toArray();
+}
+
 describe('production architecture boundaries', () => {
   it('keeps relative, package-alias, and self-export runtime imports acyclic', async () => {
     await expect(collectRuntimeImportCycles()).resolves.toEqual([]);
@@ -688,26 +767,73 @@ describe('production architecture boundaries', () => {
 
   it('keeps Core Stage A/B1 facts modules independent of Stage B2 graph preparation', async () => {
     const { neighbors } = await collectRuntimeImportGraph();
-    const forbiddenStageB2Targets = new Set([
-      'core/build-graph.ts',
-      'core/build-graph/prepare.ts',
-      'core/build-graph/reference-inference.ts',
-      'core/build-graph/graph-validation.ts',
-      'core/build-graph/finish-prepared-graph.ts',
+    expect(findFactsImportsOfStageB2(neighbors)).toEqual([]);
+  });
+
+  it('reports the facts-to-B2 path through a B1 helper and cyclic re-export chain', async () => {
+    const manifest = await loadPackageManifest();
+    const stageB2Specifier =
+      'limina/internal/core/build-graph/reference-inference';
+    const analyze = (reExport: string) => {
+      const { neighbors } = buildRuntimeImportGraph(
+        new Map([
+          [
+            path.join(sourceRoot, 'core/facts/probe.ts'),
+            "import { lookup } from '../build-graph/file-owner-lookup.js'; export const probe = lookup;",
+          ],
+          [
+            path.join(sourceRoot, 'core/build-graph/file-owner-lookup.ts'),
+            "export { lookup } from '../../utils/facts-bridge';",
+          ],
+          [
+            path.join(sourceRoot, 'utils/facts-bridge.ts'),
+            `import '../core/build-graph/file-owner-lookup'; export const lookup = 1; ${reExport}`,
+          ],
+          [
+            path.join(sourceRoot, 'core/build-graph/reference-inference.ts'),
+            'export type Result = number; export const result = 1;',
+          ],
+        ]),
+        manifest,
+      );
+      return findFactsImportsOfStageB2(neighbors);
+    };
+
+    expect(
+      analyze(`export type { Result } from '${stageB2Specifier}';`),
+    ).toEqual([]);
+    expect(analyze(`export { result } from '${stageB2Specifier}';`)).toEqual([
+      'core/facts/probe.ts -> core/build-graph/file-owner-lookup.ts -> utils/facts-bridge.ts -> core/build-graph/reference-inference.ts',
     ]);
-    const violations: string[] = [];
-    for (const [filePath, targets] of neighbors) {
-      const relative = toPortablePath(path.relative(sourceRoot, filePath));
-      if (!relative.startsWith('core/facts/')) continue;
-      for (const target of targets) {
-        const relativeTarget = toPortablePath(
-          path.relative(sourceRoot, target),
-        );
-        if (forbiddenStageB2Targets.has(relativeTarget)) {
-          violations.push(`${relative} -> ${relativeTarget}`);
-        }
-      }
-    }
-    expect(violations).toEqual([]);
+  });
+
+  it('keeps Core modules free of direct runtime dependencies on core/index.ts', async () => {
+    const { neighbors } = await collectRuntimeImportGraph();
+    expect(findCoreBarrelImporters(neighbors)).toEqual([]);
+  });
+
+  it('detects a Core barrel re-export from a loose Core file and allows external or type-only imports', async () => {
+    const { neighbors } = buildRuntimeImportGraph(
+      new Map([
+        [
+          path.join(sourceRoot, 'core/index.ts'),
+          'export type Value = number; export const value = 1;',
+        ],
+        [
+          path.join(sourceRoot, 'core/probe.ts'),
+          "export { value } from '#core';",
+        ],
+        [
+          path.join(sourceRoot, 'core/facts/typed.ts'),
+          "import type { Value } from '../index.js'; export type Typed = Value;",
+        ],
+        [
+          path.join(sourceRoot, 'preflight/probe.ts'),
+          "import { value } from '#core'; export const probe = value;",
+        ],
+      ]),
+      await loadPackageManifest(),
+    );
+    expect(findCoreBarrelImporters(neighbors)).toEqual(['core/probe.ts']);
   });
 });
