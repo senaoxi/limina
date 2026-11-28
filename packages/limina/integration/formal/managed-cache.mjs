@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  appendFileSync,
   cpSync,
   mkdirSync,
   mkdtempSync,
@@ -47,12 +48,13 @@ async function replay() {
   // The fixture config is plain ESM; avoid involving a TypeScript config loader in the cache oracle.
   renameSync(file('limina.config.mts'), file('limina.config.mjs'));
   const reports = [];
-  async function launch(label) {
+  async function launch(label, cacheBlockReadFilter) {
     const config = await loadConfig({ configPath: file('limina.config.mjs') });
     const events = [];
     const manager = new LiminaPreflightManager({
       config,
       analysisCache: true,
+      cacheBlockReadFilter,
       metrics: {
         record: (event) => {
           events.push(event);
@@ -139,6 +141,24 @@ async function replay() {
   assert.ok(warm.restoredContexts > 0);
   assert.equal(warm.semanticPrograms, 0);
 
+  const fullIndex = readFileSync(index);
+  const snapshotBeforeFilter = readStoredAnalysisSnapshot(index);
+  const scopes = new Set(
+    Object.values(snapshotBeforeFilter.contexts).map(
+      (context) => context.project.configPath,
+    ),
+  );
+  const { record: included } = await launch('included-scopes', { scopes });
+  assert.ok(included.restoredContexts > 0);
+  assert.equal(included.semanticPrograms, 0);
+  assert.deepEqual(readFileSync(index), fullIndex);
+  const { record: excluded } = await launch('excluded-scopes', {
+    scopes: new Set(),
+  });
+  assert.equal(excluded.restoredContexts, 0);
+  assert.ok(excluded.semanticPrograms > 0);
+  assert.deepEqual(readFileSync(index), fullIndex);
+
   const bytes = readFileSync(declarationConfig, 'utf8');
   const declaration = JSON.parse(bytes);
   assert.equal(declaration.references.length, 1);
@@ -164,7 +184,15 @@ async function replay() {
   const { record: reopened } = await launch('reopened');
   assert.ok(reopened.restoredContexts > 0);
   assert.equal(reopened.semanticPrograms, 0);
-  for (const record of [cold, warm, repaired, recollected, reopened]) {
+  for (const record of [
+    cold,
+    warm,
+    included,
+    excluded,
+    repaired,
+    recollected,
+    reopened,
+  ]) {
     assert.equal(record.graphBuilds, 1);
     assert.equal(record.owner, 'tsc');
     assert.equal(record.refs.length, 1);
@@ -187,6 +215,26 @@ async function replay() {
   const { record: allowed } = await launch('unselected-label');
   assert.equal(allowed.launched.length, 1);
   assert.deepEqual(allowed.failures, []);
+  const beforeChange = readFileSync(index);
+  appendFileSync(source, '\nexport const changed = 1;\n');
+  const { record: partial } = await launch('changed-input-scoped', {
+    scopes: new Set(),
+  });
+  assert.ok(partial.semanticPrograms > 0);
+  assert.equal(partial.launched.length, 1);
+  assert.deepEqual(
+    readFileSync(index),
+    beforeChange,
+    'partial restore replaced the full index',
+  );
+  const { record: full } = await launch('changed-input-full');
+  assert.ok(full.semanticPrograms > 0);
+  assert.equal(full.launched.length, 1);
+  assert.notDeepEqual(
+    readFileSync(index),
+    beforeChange,
+    'eligible full writer did not publish the change',
+  );
 }
 try {
   await replay();

@@ -6,10 +6,11 @@
     "packages/limina/src/execution/executor.ts": "runExecution",
     "packages/limina/src/__tests__/preflight.spec.ts": "deduplicates in-flight materialization",
     ".agents/docs/lifecycle.md": "Execution",
-    ".agents/docs/invariants.md": "I09"
+    ".agents/docs/invariants.md": "I09",
+    "packages/limina/src/preflight/cache.ts": "this.materializationSlot = materializationSlot"
   },
   "stateVariables": {
-    "g,slot,provider,refreshes": "Generation identity versus provider-only replan.",
+    "g,slot,provider,refreshes": "Command generation, distinct complete-slot identity, provider generation, and slot-preserving refresh count.",
     "state,originSlot,originG,starts": "Per-request tokens rather than JS objects.",
     "flight,receipt,receiptG": "Current slot fields.",
     "staleAdopted,cancelledNew": "Event monitors: commit and clear."
@@ -21,9 +22,10 @@
     "Begin": "packages/limina/src/preflight/materialization.ts::options.slot.inFlight = inFlight",
     "Success": "packages/limina/src/preflight/materialization.ts::options.slot.receipt = receipt",
     "Failure": "packages/limina/src/preflight/materialization.ts::clearFailedInFlight",
-    "Stay": "packages/limina/src/preflight/materialization.ts::ensureMaterialization"
+    "Stay": "packages/limina/src/preflight/materialization.ts::ensureMaterialization",
+    "ReplaceSlot": "packages/limina/src/preflight/manager.ts::this.#replaceProviderGeneration({ refreshReason: 'producer-handoff' })"
   },
-  "assumptions": "Atomic commit/clear after await. No concurrent managers or filesystem effects.",
+  "assumptions": "The active complete slot may be handed across a provider-only replan or Core retry, or replaced at the same command generation during producer handoff. Commit and clear run synchronously after await. Independent producer slots and private manager publication are outside this model.",
   "safety": {
     "TypeOK": "Slot and request domains.",
     "ReceiptCurrentGeneration": "Stored receipt belongs to current generation.",
@@ -48,18 +50,23 @@
     "receipt-expanded.cfg": {
       "breaks": [],
       "stable": false
+    },
+    "mutation-generation-only.cfg": {
+      "breaks": ["NoStaleAdoption"],
+      "stable": false
     }
   },
   "bounds": {
     "maxStates": 100000,
-    "dimensions": "1 advance and provider replan, 2 or 3 attempts.",
+    "dimensions": "One command advance, one slot-preserving replan or Core retry, one same-command slot replacement, and two or three attempts.",
     "pruning": "None: no state/action constraints, symmetry or view filtering."
   },
   "counterexamples": "Late-receipt removes three guards together; never infer that each is necessary.",
   "empiricalVerification": "Run preflight.spec.ts (in-flight materialization and replacement cases).",
   "driftReview": {
-    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
-    "sourceHash": "ccb579186207f2c1155bace7b3dfcbfbf05b99966d700061d7f6e7e766679ad3",
-    "modelHash": "61191d69107a73678261b55ce4352b571d7d7c528f933a9d3157a6cd6c214afb"
+    "committedSourceHash": "76d0f5513af16c4734837d8bfe9f2590f2620ace921c0e7f805f1f7b343f2613",
+    "baseline": "4e01f53ed00a3885de94dcf37013eb39d8932882",
+    "sourceHash": "2585cb56191a59c99f3ae8ab77de8567af321904262f21fd2c96bf272177a6ce",
+    "modelHash": "81edc03fc10a69ab23efac09c3764e20433751922417dc811d33af6ebbb583f9"
   }
 }

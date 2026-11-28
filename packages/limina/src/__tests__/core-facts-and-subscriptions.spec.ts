@@ -365,6 +365,7 @@ describe('0.6.0 Core fact production, subscriptions, and cache contracts', () =>
 
       const now = Date.now();
       const oldTime = new Date(now - 60 * 60 * 1000);
+      utimesSync(activeFile, oldTime, oldTime);
       utimesSync(expiredFile, oldTime, oldTime);
 
       const blocks = new AnalysisCacheBlocks(namespace, cacheDirectory);

@@ -21,28 +21,43 @@
     "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/limina.config.mts": "deny:",
     "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/tsconfig.a.json": "implicitRefs",
     "packages/limina/fixtures/detectors/checker/admission-denied-reference/repo/tsconfig.json": "references",
-    "pnpm-workspace.yaml": "typescript:"
+    "pnpm-workspace.yaml": "typescript:",
+    "packages/limina/src/typecheck/admission/execution-permit.ts": "assertExecutionPermit",
+    "packages/limina/src/typecheck/admission/target-identity.ts": "captureExecutionBinding",
+    "packages/limina/src/core/build-graph/governed-sources.ts": "governedSourceConfig",
+    "packages/limina/src/core/facts/ownership.ts": "getOwnershipProjection",
+    "packages/limina/src/core/build-graph.ts": "precomputedCheckerSelection",
+    "packages/limina/src/core/analysis-cache/epoch-inputs.ts": "publish()",
+    "packages/limina/src/core/analysis-cache/execution-inputs.ts": "graphExecutionInputScope",
+    "packages/limina/src/core/build-graph/types.ts": "ObservedCheckerSelection",
+    "packages/limina/src/__tests__/typecheck.spec.ts": "changed source inputs in the current Svelte consumer generation"
   },
   "stateVariables": {
     "view": "Manager/provider/graph/input identity changes abstracted to a version.",
     "pc": "Each target has its own next stage; completed effects are historical.",
     "held": "One live target/stage permit, releases on callback return.",
-    "effect": "Most recent protected effect, its basis and identity at the boundary."
+    "effect": "Most recent protected effect, its basis and identity at the boundary.",
+    "membership,observed,graphInputs": "Live include-set version, original ownership observation and its handoff into complete graph input collection."
   },
-  "initialState": "Two new targets at mutation; selectable source policy, no permit.",
+  "initialState": "Ownership discovery has not yet captured the include set. Two targets start at mutation without a permit.",
   "actions": {
     "Issue": "packages/limina/src/typecheck/admission/execution-admission.ts::withAuthorizedTarget",
     "Release": "packages/limina/src/typecheck/admission/execution-admission.ts::withExecutionPermit",
     "Consume": "packages/limina/src/typecheck/checker/managed-execution.ts::assertPermit",
     "Finish": "packages/limina/src/typecheck/checker/managed-execution.ts::return launched.state",
-    "Refresh": "packages/limina/src/typecheck/admission/input-coordinator.ts::#handoff"
+    "Refresh": "packages/limina/src/typecheck/admission/input-coordinator.ts::#handoff",
+    "ObserveOwnership": "packages/limina/src/core/facts/ownership.ts::inputs.collect",
+    "PrepareGraph": "packages/limina/src/core/build-graph/prepare.ts::precomputedCheckerSelection?.inputs.publish()",
+    "ChangeMembership": "packages/limina/src/__tests__/typecheck.spec.ts::changed source inputs in the current Svelte consumer generation"
   },
-  "assumptions": "Two-edge chain, applying the middle source label denies its provider edge. The independent target has no such label. Output-copy is a distinct output stage. The model trusts view identity. Concrete Svelte producer inputs and closure bindings are observed by the producer receipt regression.",
+  "assumptions": "Two-edge chain, applying the middle source label denies its provider edge. The independent target has no such label. Output-copy is a distinct output stage. The model trusts view identity. Concrete Svelte producer inputs and closure bindings are observed by the producer receipt regression. Full graph preparation can reuse finalized Core ownership. Framework closure inputs come from the governed source config. The membership profile isolates one relevant source-discovery input for the selected launch. It changes at most once, outside a live permit, while the execution view stays the same. Filesystem changes after the last validation and the physical spawn race are outside this property.",
   "safety": {
     "DeniedHasNoEffect": "No effect of a forbidden target at the event view.",
     "ScopedEffect": "Issued identity and stage match the actual effect.",
     "NoIndependentCompletion": "Reachability control for independent completion despite refusal.",
-    "NoLateCopyRefusal": "Reachability control for refusing copy after legal launch."
+    "NoLateCopyRefusal": "Reachability control for refusing copy after legal launch.",
+    "CurrentDiscoveryAtLaunch": "A selected launch uses the original discovery membership when the graph consumes precomputed ownership.",
+    "NoSameViewRefusal": "Reachability control for a refusal due to changed membership within the same view."
   },
   "liveness": "None: no caller or external-process completion guarantee.",
   "fairness": "None; terminal stuttering represents quiescence only.",
@@ -94,18 +109,31 @@
     "two-refreshes.cfg": {
       "breaks": [],
       "stable": false
+    },
+    "same-view-membership.cfg": {
+      "breaks": [],
+      "stable": true
+    },
+    "mutation-drop-discovery-input.cfg": {
+      "breaks": ["CurrentDiscoveryAtLaunch"],
+      "stable": true
+    },
+    "cover-same-view-refusal.cfg": {
+      "breaks": ["NoSameViewRefusal"],
+      "stable": false
     }
   },
   "bounds": {
     "maxStates": 100000,
-    "dimensions": "2 targets, 1 intermediate, 1 provider, 1–2 view changes, one callback at a time.",
+    "dimensions": "2 targets, 1 intermediate, 1 provider, 1–2 view changes, one callback at a time. One source include-set observation, one subsequent complete graph and at most one membership edit.",
     "pruning": "None: no state/action constraints, symmetry or view filtering."
   },
   "counterexamples": "Mutants model stale admission or wrong effects. The implementation replay checks that a missing on-disk reference is repaired before admission. Cover profiles intentionally negate observable legal states.",
-  "empiricalVerification": "Run evidence/managed-cache/replay.mjs; execution-admission, execution-input-handoff and checker/admission-denied-reference.",
+  "empiricalVerification": "Run evidence/managed-cache/replay.mjs; execution-admission, execution-input-handoff and checker/admission-denied-reference. Run both Svelte handoff cases in typecheck.spec.ts. Removing the ownership input publication must allow the current-generation stale membership case to reach the runner.",
   "driftReview": {
-    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
-    "sourceHash": "3cb0a0cc2478e806621defec942eddb20b1e404644ad39da72f99ceb44bd3e03",
-    "modelHash": "4b51a4294bf89b36441ba5e704f1705d209a878aeb50b5c008569ca785615b3a"
+    "committedSourceHash": "1e8f6ce9a4a602ae89b5cefe703659fa222279958c939012fac629208abba253",
+    "baseline": "4e01f53ed00a3885de94dcf37013eb39d8932882",
+    "sourceHash": "246f8dfdbe1623fbb30253c31ccb252baf3ea3898f55d7c2c0e65c30ab0706c9",
+    "modelHash": "76409b5ce9974557d1c0a75e675640f8042afa4a6181bbbc8e316c8e9c40cca0"
   }
 }

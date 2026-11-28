@@ -1,6 +1,6 @@
 ---- MODULE AnalysisPublication ----
 EXTENDS Naturals
-CONSTANTS Policy, ConfigKnown, SavedQualified, MaxDrifts, RespectCAS, RespectFinalValidation, RetryEffects
+CONSTANTS Policy, ConfigKnown, SavedQualified, MaxDrifts, RespectCAS, RespectFinalValidation, RetryEffects, Scoped, IgnoreReadFilter
 VARIABLES phase, input, observed, epoch, capturedEpoch, retries, provider,
           configStable, externalIndex, baseline, index, restored, commands,
           published, badPublish, rejected, storageFailure
@@ -41,7 +41,7 @@ AbortAnalysis == /\ phase="analyzing"
 EnterPublication == /\ phase="checked"
                     /\ IF ~configStable \/ (Enabled /\ observed#input)
                           THEN /\ phase'="aborted" /\ rejected'=TRUE
-                          ELSE /\ phase'=IF MayPublish THEN "lease" ELSE "closed"
+                          ELSE /\ phase'=IF MayPublish /\ (~Scoped \/ IgnoreReadFilter) THEN "lease" ELSE "closed"
                                /\ UNCHANGED rejected
                     /\ UNCHANGED <<input,observed,epoch,capturedEpoch,retries,provider,configStable,externalIndex,baseline,index,restored,commands,published,badPublish,storageFailure>>
 WriteBlocks == /\ phase="lease"
@@ -68,6 +68,6 @@ TypeOK == /\ phase \in {"before-command","ready","analyzing","checked","lease","
           /\ index \in 0..2 /\ commands \in 0..2
 NoEffectReplay == commands<=1
 RestorePolicy == restored => (Enabled /\ Policy#"force" /\ ConfigKnown /\ SavedQualified)
-PublishPolicy == published => MayPublish
+PublishPolicy == published => (MayPublish /\ ~Scoped)
 NoStalePublication == ~badPublish
 ====

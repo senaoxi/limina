@@ -1,5 +1,5 @@
 {
-  "scope": "Qualified adoption of semantic facts and parsed source config projections on reopen, and cooperative publication (I09–I11). Internal epoch returns belong to EpochValidation.",
+  "scope": "Qualified adoption of semantic facts, runtime queries and parsed source configs, scoped reads, cooperative publication and post-commit block reclamation (I09–I11).",
   "sourceMapping": {
     "packages/limina/src/core/analysis-cache/physical-entry.ts": "physicalEntry",
     "packages/limina/src/core/analysis-cache/package-scopes.ts": "invalidatedPackageConfigs",
@@ -35,13 +35,19 @@
     "packages/limina/src/__tests__/vue-analysis-cache.spec.ts": "keeps the selected Vue module when a lower-priority declaration sibling appears",
     "packages/limina/integration/tests/analysis-observation.spec.ts": "attributes Vue output projection work and cache adoption to the source project",
     "packages/limina/src/core/analysis-cache/bounded-context-validity.ts": "hasValidBoundedContext",
-    "packages/limina/src/core/build-graph/prepare.ts": "prepareGraph"
+    "packages/limina/src/core/build-graph/prepare.ts": "prepareGraph",
+    "packages/limina/src/core/analysis-cache/invalidation.ts": "runtimeResolutionDirty",
+    "packages/limina/src/core/analysis-cache/native-cache.ts": "#runtimeResolutions",
+    "packages/limina/src/core/analysis-cache/snapshot-shards.ts": "const allowedScopes",
+    "packages/limina/src/preflight/analysis-cache-blocks.ts": "activePaths.has(filePath)",
+    "packages/limina/src/preflight/setup.ts": "cacheBlockReadFilter",
+    "packages/limina/src/__tests__/core-facts-and-subscriptions.spec.ts": "reclaims expired unreachable cache blocks"
   },
   "stateVariables": {
     "writer,lease": "Per-controller read baseline, observed input, phase, retry and cooperative writer lease.",
-    "input,disk,blocks": "Input content version, physical index identity and staged payloads.",
-    "reader,adopted": "One reopened reader; independent semantic fact and parsed-config adoption, with the qualifications observed on reopen.",
-    "lastCommit": "Baseline, live bytes, input and block existence at commit."
+    "input,disk,blocks": "Input version, physical index and one representative payload per revision. A leased sweep can remove expired unreferenced payloads.",
+    "lastCommit": "Baseline, live bytes, input and block existence at commit.",
+    "reader,candidate,adopted": "One reopened reader; independent semantic fact and parsed-config adoption, with the qualifications observed on reopen. Candidate holds one index across block decoding and subsequent uses in memory."
   },
   "initialState": "Arbitrary previous envelope in valid storage with independently valid or invalid content, semantic context, request inventory and parsed-config qualification.",
   "actions": {
@@ -54,16 +60,27 @@
     "Retry": "packages/limina/src/preflight/analysis-cache.ts::operations.refresh()",
     "Drift": "packages/limina/src/preflight/analysis-cache.ts::AnalysisInputDriftError",
     "ReplayConfig": "packages/limina/src/core/analysis-cache/source-config-projection.ts::#restoreRecord",
-    "Reopen": "packages/limina/src/core/analysis-cache/context-records.ts::#restoreNew"
+    "Reopen": "packages/limina/src/core/analysis-cache/context-records.ts::#restoreNew",
+    "ReadIndex": "packages/limina/src/preflight/analysis-cache-store.ts::#readMeasuredBytes",
+    "ReadBlocks": "packages/limina/src/core/analysis-cache/snapshot-shards.ts::const allowedScopes",
+    "Sweep": "packages/limina/src/preflight/analysis-cache-blocks.ts::await unlink(filePath)",
+    "Release": "packages/limina/src/preflight/analysis-cache-store.ts::await this.#releaseLease(lease)",
+    "ReplayRuntime": "packages/limina/src/core/analysis-cache/native-cache.ts::this.#runtimeResolutions"
   },
-  "assumptions": "Physical digests are unique revisions, blocks are immutable, and writers cooperate. Context qualification, request inventory completeness and parsed-config replay are separate predicates. The config predicate includes the current parse request identity, semantic authority, package scope and the parser's observed inputs. For eligible Vue sources, the request includes the current Vue options, their config reads and the extension inputs to the TypeScript parser. Qualification also compares the raw-byte digests of config files read by Vue metadata resolution or the TypeScript parse. The oracle supplies filesystem, decoder and compiler facts, including live Vue metadata and current toolchain observations. The model checks each adoption against its own observation. A fresh parse may independently re-establish compatibility with semantic facts. A Vue directory enumeration can change while TypeScript still selects the same roots. Later generation and publication checks own use after an observation.",
+  "assumptions": "Physical digests are unique revisions, blocks are immutable, and writers cooperate. Context qualification, request inventory completeness and parsed-config replay are separate predicates. The config predicate includes the current parse request identity, semantic authority, package scope and the parser's observed inputs. For eligible Vue sources, the request includes the current Vue options, their config reads and the extension inputs to the TypeScript parser. Qualification also compares the raw-byte digests of config files read by Vue metadata resolution or the TypeScript parse. The oracle supplies filesystem, decoder and compiler facts, including live Vue metadata and current toolchain observations. The model checks each adoption against its own observation. A fresh parse may independently re-establish compatibility with semantic facts. A Vue directory enumeration can change while TypeScript still selects the same roots. Later generation and publication checks own use after an observation. One representative project block accompanies a valid shared pool and input ledger. A reader captures one index and decodes its selected bytes once. The runtime oracle supplies query-specific qualification. A sweep may remove any eligible orphan or retain it. Age, filesystem errors, digest collisions and external input changes after the final observation are outside the model.",
   "safety": {
     "CurrentAdoption": "Restored semantic facts qualify against the reader observation.",
     "CurrentConfigAdoption": "A restored parsed-config projection qualifies independently against the current selection, parser and observed inputs.",
     "PhysicalCAS": "Old baseline cannot replace a competitor index.",
     "CurrentCommit": "Commit at matching input with write permission.",
     "IndexLast": "All indexed blocks exist at commit.",
-    "NoPublishedHit": "Reachability control for warm use of newly published facts."
+    "NoPublishedHit": "Reachability control for warm use of newly published facts.",
+    "ActiveBlockSurvives": "A committed index backed at replacement keeps its active block during garbage collection.",
+    "RuntimeAdoption": "Runtime-only query adoption requires its own valid query and input evidence within the selected scope.",
+    "RecentBlockSurvives": "A representative orphan inside the grace window survives the sweep.",
+    "NoScopedHit": "Reachability control for adoption of a selected project scope.",
+    "NoRuntimeHit": "Reachability control for an independently qualified runtime query.",
+    "NoOrphanReclaimed": "Reachability control for reclamation of a formerly referenced payload."
   },
   "liveness": "None: no caller or external-process completion guarantee.",
   "fairness": "None; terminal stuttering represents quiescence only.",
@@ -111,18 +128,63 @@
     "write.cfg": {
       "breaks": [],
       "stable": true
+    },
+    "scoped-included.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "scoped-excluded.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "runtime-query.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "mutation-partial-write.cfg": {
+      "breaks": ["CurrentCommit"],
+      "stable": false
+    },
+    "mutation-ignore-scope.cfg": {
+      "breaks": ["CurrentAdoption", "CurrentConfigAdoption"],
+      "stable": false
+    },
+    "mutation-trust-semantic.cfg": {
+      "breaks": ["RuntimeAdoption"],
+      "stable": false
+    },
+    "mutation-sweep-active.cfg": {
+      "breaks": ["ActiveBlockSurvives"],
+      "stable": false
+    },
+    "mutation-ignore-grace.cfg": {
+      "breaks": ["RecentBlockSurvives"],
+      "stable": false
+    },
+    "cover-scoped-hit.cfg": {
+      "breaks": ["NoScopedHit"],
+      "stable": false
+    },
+    "cover-runtime-hit.cfg": {
+      "breaks": ["NoRuntimeHit"],
+      "stable": false
+    },
+    "cover-orphan-reclaimed.cfg": {
+      "breaks": ["NoOrphanReclaimed"],
+      "stable": false
     }
   },
   "bounds": {
-    "maxStates": 100000,
-    "dimensions": "1–2 writers, 2 input versions, 16 seed envelopes, 1 reader, 1 retry per writer.",
+    "maxStates": 200000,
+    "dimensions": "1–2 writers, 2 input versions, 16 seed envelopes, 1 reader, 1 retry per writer. New profiles distinguish selected and omitted scope, independent runtime query qualification and activity under the writer lease. One orphan stays within the grace window throughout this run.",
     "pruning": "None: no state/action constraints, symmetry or view filtering."
   },
   "counterexamples": "Mutants discard one independent qualification. Physical faults outside cooperative lease and process crashes are not covered.",
-  "empiricalVerification": "Run evidence/managed-cache/replay.mjs, analysis-cache-{lifecycle,shards}, full-analysis-cache, and source-config-projection for current parser observation and fallback behavior. Run the Vue cases in analysis-observation.spec.ts for fresh-process source parse adoption, separate Vue output observation, and fallback when equal-size, equal-mtime inputs change. Run vue-analysis-cache.spec.ts for independent semantic context qualification after a lower-priority sibling appears, and for newly present preferred candidates that change resolution.",
+  "empiricalVerification": "Run evidence/managed-cache/replay.mjs, analysis-cache-{lifecycle,shards}, full-analysis-cache, and source-config-projection for current parser observation and fallback behavior. Run the Vue cases in analysis-observation.spec.ts for fresh-process source parse adoption, separate Vue output observation, and fallback when equal-size, equal-mtime inputs change. Run vue-analysis-cache.spec.ts for independent semantic context qualification after a lower-priority sibling appears, and for newly present preferred candidates that change resolution. Run the selective block read, runtime-only invalidation and expired active versus expired unreachable block cases in core-facts-and-subscriptions.spec.ts, and the scoped reopen in the managed-cache replay.",
   "driftReview": {
-    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
-    "sourceHash": "698ee21dc3061a8db9325524ba5be66c94907bf4df591ea635f5f4976625121a",
-    "modelHash": "3e22618c6beb2ea19306f7739aa183174e11cc8eadaf5deb1abfb00272696cc3"
+    "committedSourceHash": "28d42d457503bd55035fc9c62c446f7bdc16af0f1db809e27c2f363da13c7188",
+    "baseline": "4e01f53ed00a3885de94dcf37013eb39d8932882",
+    "sourceHash": "ded1cc8ab3938dd3119637150ae169fdf9926de04309277b8f69239f720a41fb",
+    "modelHash": "98029cbb223ff0fd72f4a096c86ef6b7b8170ca5a2595563c669676e81804763"
   }
 }

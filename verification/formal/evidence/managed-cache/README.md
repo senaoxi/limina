@@ -12,10 +12,14 @@ node verification/formal/run.mjs --suite cache --profile cache/mutation-trust-en
 | Invocation in the same fixture                          | Required observation                                                                                                             |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Cold and warm                                           | Fresh graph preparation each time. Warm consumes Native facts with zero semantic Programs. Both deny and retain the B reference. |
+| Include all persisted project scopes                    | Restore contexts with zero semantic Programs. Preserve the full index bytes.                                                     |
+| Exclude all project scopes                              | Run semantic Programs with zero restored contexts. Preserve the full index bytes and the same denial.                            |
 | Materialized declaration config loses B                 | Restore the same declaration config bytes using cached facts and current project policy. Deny with `LIMINA_GRAPH_ACCESS_DENIED`. |
 | Complete storage envelope loses the consumer root facts | Recollect the affected facts, retain the B reference, and deny with the same diagnostic.                                         |
 | Reopen the repair                                       | Zero semantic Programs. The owner, output references and denial remain the same.                                                 |
 | Deselect only the policy label                          | Same target reaches the recording runner.                                                                                        |
+
+After the allowed launch, the replay changes the consumer source. An empty scope filter must preserve the full index bytes. Repeating the same request with a full writer must replace them.
 
 The [selected raw TLC excerpt](old-graph.trace.txt) shows a hypothetical handoff that issues a view-1 permit using view-0 edges. The replay checks current graph derivation and materialization before the actual admission boundary. Each denied row requires zero launches. The detector checks the user-facing rejection. The full analysis cache suite also exercises repair across processes, and this replay uses fresh managers in one Node process.
 

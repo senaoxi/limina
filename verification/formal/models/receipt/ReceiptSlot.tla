@@ -18,8 +18,12 @@ Begin == /\ receipt=0 /\ flight=0 /\ starts < MaxAttempts
          /\ UNCHANGED <<g,slot,provider,refreshes,receipt,receiptG,staleAdopted,cancelledNew>>
 Replan == /\ refreshes=0 /\ provider'=provider+1 /\ refreshes'=1
           /\ UNCHANGED <<g,slot,flight,receipt,receiptG,state,originSlot,originG,starts,staleAdopted,cancelledNew>>
-Advance == /\ g=0 /\ g'=1 /\ slot'=1 /\ provider'=provider+1 /\ flight'=0 /\ receipt'=0 /\ receiptG'=1
+Advance == /\ g=0 /\ g'=1 /\ slot'=slot+1 /\ provider'=provider+1 /\ flight'=0 /\ receipt'=0 /\ receiptG'=1
            /\ UNCHANGED <<refreshes,state,originSlot,originG,starts,staleAdopted,cancelledNew>>
+\* A producer handoff replaces the complete slot without advancing the command.
+ReplaceSlot == /\ slot=g /\ slot'=slot+1 /\ provider'=provider+1
+               /\ flight'=0 /\ receipt'=0 /\ receiptG'=g
+               /\ UNCHANGED <<g,refreshes,state,originSlot,originG,starts,staleAdopted,cancelledNew>>
 Success(t) == /\ state[t]="pending"
               /\ LET rg == IF WrongGeneration THEN 1-originG[t] ELSE originG[t]
                      current == ((GuardSlot => slot=originSlot[t])
@@ -40,9 +44,9 @@ Failure(t) == /\ state[t]="pending"
 Stay == /\ \A t \in Tokens : state[t] # "pending"
         /\ receipt#0 \/ flight#0 \/ starts=MaxAttempts
         /\ UNCHANGED vars
-Next == Begin \/ Replan \/ Advance \/ (\E t \in Tokens : Success(t) \/ Failure(t)) \/ Stay
+Next == Begin \/ Replan \/ ReplaceSlot \/ Advance \/ (\E t \in Tokens : Success(t) \/ Failure(t)) \/ Stay
 Spec == Init /\ [][Next]_vars
-TypeOK == /\ g \in 0..1 /\ slot=g /\ provider=g+refreshes /\ refreshes \in 0..1
+TypeOK == /\ g \in 0..1 /\ slot \in g..(g+1) /\ provider=slot+refreshes /\ refreshes \in 0..1
           /\ flight \in 0..MaxAttempts /\ receipt \in 0..MaxAttempts /\ starts \in 0..MaxAttempts
           /\ state \in [Tokens -> {"unused","pending","resolved","failed"}]
 ReceiptCurrentGeneration == receipt=0 \/ receiptG=g

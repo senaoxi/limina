@@ -28,7 +28,11 @@
     "packages/limina/src/core/build-graph/native-source-baseline.ts": "collectUnavailableSourceDiagnostics",
     "packages/limina/src/core/project-dependencies/semantic-facts.ts": "collectionBinding",
     "packages/limina/src/utils/source-config-text.ts": "readRawSourceConfig",
-    "packages/limina/src/core/build-graph/framework-intent.ts": "inspectFrameworkIntent"
+    "packages/limina/src/core/build-graph/framework-intent.ts": "inspectFrameworkIntent",
+    "packages/limina/src/core/facts/ownership.ts": "publishWorkspaceSourceBoundary",
+    "packages/limina/src/core/facts/session.ts": "hasWorkspaceSourceBoundary",
+    "packages/limina/src/core/build-graph.ts": "precomputedCheckerSelection",
+    "packages/limina/src/__tests__/core-facts-and-subscriptions.spec.ts": "without triggering Stage B2 graph preparation"
   },
   "stateVariables": {
     "scenario": "Named selection, direct configuration intents, exceptional role proof, selected checker outcome, and exact component pins. At most one named checker.",
@@ -37,7 +41,8 @@
     "frozen,family": "Authority snapshot vs current family after coloring.",
     "owner,solution": "Single source owner, separate checker set for nested or empty solution.",
     "contexts": "Prepared source context and any separately purposed TypeScript companion context.",
-    "phase": "Role discovery, intent collection, freeze, source preparation, execution selection, manifest, component rejection, or unavailable scope."
+    "phase": "Role discovery, intent collection, freeze, source preparation, execution selection, manifest, component rejection, or unavailable scope.",
+    "boundaryReady": "Whether the scoped fact session holds the workspace source boundary when ownership is returned."
   },
   "initialState": "A registered discovery candidate and direct configuration intents in unspecified delivery order. No prepared context or published owner.",
   "actions": {
@@ -47,9 +52,10 @@
     "Freeze": "packages/limina/src/core/build-graph/checker-semantic-authority.ts::freezeSemanticAuthorities",
     "PrepareSource": "packages/limina/src/core/build-graph/source-config-projects.ts::prepareSourceConfigProjects",
     "Manifest": "packages/limina/src/core/build-graph/manifest-ownership.ts::createOwnershipManifest",
-    "Finish": "packages/limina/src/core/build-graph/manifest-ownership.ts::solutions.sort"
+    "Finish": "packages/limina/src/core/build-graph/manifest-ownership.ts::solutions.sort",
+    "ReturnOwnership": "packages/limina/src/core/facts/ownership.ts::return { ...resolution, inputs }"
   },
-  "assumptions": "One representative candidate and a fixed sibling for the shared solution. The role oracle supplies the outcome of an exceptional default-config probe. The selected source parser's preparation outcome is trusted. CacheReopen owns qualification when the selected parser can restore a result. Framework companion scenarios require one delegated TypeScript purpose. Multiple inferred framework intents permit the Native baseline; CLI tests own warning reporting. Independent diagnostic collection and execution outcomes after later framework failures are implementation witnesses. Explicit-selection conflicts, coverage impacts of other failed scopes, file membership, parser internals and compiler passes are outside the model.",
+  "assumptions": "One representative candidate and a fixed sibling for the shared solution. The role oracle supplies the outcome of an exceptional default-config probe. The selected source parser's preparation outcome is trusted. CacheReopen owns qualification when the selected parser can restore a result. Framework companion scenarios require one delegated TypeScript purpose. Multiple inferred framework intents permit the Native baseline; CLI tests own warning reporting. Independent diagnostic collection and execution outcomes after later framework failures are implementation witnesses. Explicit-selection conflicts, coverage impacts of other failed scopes, file membership, parser internals and compiler passes are outside the model. One provider generation with an initially absent boundary. Ownership can be consumed before graph preparation. Boundary membership and later refinement by the graph are outside this property. Original discovery observations travel with the returned selection. ManagedAdmission checks their replay when a full graph consumes it.",
   "safety": {
     "FrozenAuthority": "Do not rewrite frozen authority.",
     "ConfigAuthority": "Named selection wins. A single direct framework intent determines the family. Zero or multiple direct intents freeze Native.",
@@ -59,7 +65,8 @@
     "ExactComponent": "Same semantic family is not exact execution identity.",
     "SourceOwner": "Admitted source has a primary checker.",
     "SolutionConsumers": "Solution collects checkers of member sources only.",
-    "LegalCases": "The legal examples must not be refused."
+    "LegalCases": "The legal examples must not be refused.",
+    "BoundaryOnReturn": "Successful standalone ownership preparation supplies a workspace source boundary before returning, including the empty solution."
   },
   "liveness": "None: no caller or external-process completion guarantee.",
   "fairness": "None; terminal stuttering represents quiescence only.",
@@ -103,6 +110,10 @@
     "mutation-unbound-companion.cfg": {
       "breaks": ["LockedContexts"],
       "stable": true
+    },
+    "mutation-skip-boundary.cfg": {
+      "breaks": ["BoundaryOnReturn"],
+      "stable": true
     }
   },
   "bounds": {
@@ -111,10 +122,11 @@
     "pruning": "None: no state/action constraints, symmetry or view filtering."
   },
   "counterexamples": "Last-wins makes implicit authority depend on order. Inherited intent changes a leaf's authority. A failed role probe drops an unenumerated scope. Generic pending collection duplicates locked collection. Detached companion analysis loses its owning framework. A shared solution can consume multiple exact checkers.",
-  "empiricalVerification": "Run generated-graph.spec.ts (direct and ambiguous intent, solution discovery, Vue promotion and shared solutions), typecheck.spec.ts (inherited named ownership), analysis-observation.spec.ts (source and companion purposes), independent-core-governance.spec.ts (scoped failure), and analysis-completion.spec.ts (Core outcome and admission boundaries).",
+  "empiricalVerification": "Run generated-graph.spec.ts (direct and ambiguous intent, solution discovery, Vue promotion and shared solutions), typecheck.spec.ts (inherited named ownership), analysis-observation.spec.ts (source and companion purposes), independent-core-governance.spec.ts (scoped failure), and analysis-completion.spec.ts (Core outcome and admission boundaries). Exercise standalone Stage B1 ownership in core-facts-and-subscriptions.spec.ts.",
   "driftReview": {
-    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
-    "sourceHash": "b3d72db19e54541df7f8bde9148fff9faeefad419d7f4c1bc109b3e6b58f84a5",
-    "modelHash": "70693175b8becc48ced7b77804fc335e982d589788b9c0732862757d33f01043"
+    "committedSourceHash": "7024af14ba7c4cd3c56915d3f2bf161f65850a57616cae07fa30fe5e9ba199d6",
+    "baseline": "4e01f53ed00a3885de94dcf37013eb39d8932882",
+    "sourceHash": "577a5005d0ac56de87258fcbd628aeb60c9a7b7ccdfa11d035c66a1954551254",
+    "modelHash": "128bde3c7fbe24f8a9200770035ca17bbd90a5d11998707eb195c52a8cd045f2"
   }
 }

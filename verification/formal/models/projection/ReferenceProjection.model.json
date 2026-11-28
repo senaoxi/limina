@@ -8,7 +8,10 @@
     "packages/limina/src/__tests__/reference-validation.spec.ts": "omitted independent targets",
     ".agents/docs/semantics.md": "TypeScript",
     ".agents/docs/invariants.md": "I09",
-    "pnpm-workspace.yaml": "typescript:"
+    "pnpm-workspace.yaml": "typescript:",
+    "packages/limina/src/core/build-graph.ts": "precomputedCheckerSelection",
+    "packages/limina/src/core/facts/ownership.ts": "getOwnershipProjection",
+    "packages/limina/src/core/build-graph/generated-manifest-binding.ts": "assertGeneratedManifestBinding"
   },
   "stateVariables": {
     "shape": "Input family of staged config bytes, including malformed writes.",
@@ -21,7 +24,7 @@
     "Validate": "packages/limina/src/core/build-graph/reference-validation.ts::validateReferences",
     "Finish": "packages/limina/src/core/build-graph/reference-validation.ts::state: diagnostics.length"
   },
-  "assumptions": "Each path binds one distinct managed config. Physical paths/compiler options not modeled. A check projection may reference a different checker; inbound check edges from declaration roots are not legal.",
+  "assumptions": "Each path binds one distinct managed config. Physical paths/compiler options not modeled. A check projection may reference a different checker; inbound check edges from declaration roots are not legal. The input is the staged full graph. A separately obtained ownership result does not grant admission. Config identity collisions and denied versus unavailable diagnostics have implementation tests.",
   "safety": {
     "Sound": "Malformed shapes cannot pass.",
     "CompleteControls": "Shared DAG and outbound check exceptions must pass."
@@ -62,8 +65,9 @@
   "counterexamples": "A self-consistent omission is still missing if required by source; scheduling can conceal the loss only in a mutant.",
   "empiricalVerification": "Run reference-validation.spec.ts and the cache bridge; inspect actual serialized files.",
   "driftReview": {
-    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
-    "sourceHash": "8c8c02ef2a0e13e992b88eec3af84af75bececc7ddb999c5058702dae5d4375e",
+    "committedSourceHash": "ca76b86f7141e3fc1ab694341023aab82808f21998ad7ca9cbd16713761e0774",
+    "baseline": "4e01f53ed00a3885de94dcf37013eb39d8932882",
+    "sourceHash": "d23f5020655eed3534d4ba3117c42abec52e46d215655c0c3857989a56f25f4f",
     "modelHash": "fb529d0545c965a5ed9c82ae9df4ec8695e076430625fe99fab18e3f5e7c6283"
   }
 }

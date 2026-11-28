@@ -10,7 +10,11 @@
     "packages/limina/src/preflight/manager.ts": "refreshAfterManagedOutputs",
     "packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts": "bounds repeated drift",
     ".agents/docs/lifecycle.md": "Execution",
-    ".agents/docs/invariants.md": "I09"
+    ".agents/docs/invariants.md": "I09",
+    "packages/limina/src/preflight/cache.ts": "coreAnalysis",
+    "packages/limina/src/core/analysis-cache/epoch-inputs.ts": "assertStable",
+    "packages/limina/src/utils/analysis-input.ts": "observeAnalysisRead",
+    "packages/limina/src/pipeline/execution-tasks.ts": "ensureCoreAnalysisPrepared"
   },
   "stateVariables": {
     "phase": "Before/after asynchronous validation.",
@@ -24,7 +28,7 @@
     "FinishValidation": "packages/limina/src/preflight/analysis-cache.ts::return result",
     "Stay": "packages/limina/src/preflight/analysis-cache.ts::return result"
   },
-  "assumptions": "One stable observation; replacement is possible only at the configured caller boundary.",
+  "assumptions": "One stable observation; replacement is possible only at the configured caller boundary. Graph and standalone Core analysis use the same controller attempt. The replay calls the controller directly, with stable input and publication disabled.",
   "safety": {
     "TypeOK": "Phase and identity domains.",
     "AcceptedResultUsesActiveEpoch": "Stronger diagnostic property of the return, not a universal product contract."
@@ -55,10 +59,11 @@
     "pruning": "None: no state/action constraints, symmetry or view filtering."
   },
   "counterexamples": "During validation: internal API can return old result. Proposed recheck is model-only.",
-  "empiricalVerification": "See evidence/epoch/README.md and replay.mjs; distinguish historical return from publish.",
+  "empiricalVerification": "Run evidence/epoch/replay.mjs for serialized completion and replacement on either side of the identity check. The internal return can be detached; publication and CLI consumption are separate boundaries.",
   "driftReview": {
-    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
-    "sourceHash": "5ca0b59f231941fb6c975c5b9a6d1f01be2b5d74f71a14444e2af0708313bdf4",
+    "committedSourceHash": "07ffdc8f91f435716d4ed36adae01208e67d7e266c56aae085bcc4d34c8f67c4",
+    "baseline": "4e01f53ed00a3885de94dcf37013eb39d8932882",
+    "sourceHash": "4681640065e098dec46ffe2a3c0671776275eb4a9653295baf74abbd7a6519f0",
     "modelHash": "76f69bd34f3fb73234dfaa2ac9e49fab15ef938aeb230d126ccac4a2afab82cc"
   }
 }

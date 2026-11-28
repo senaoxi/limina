@@ -3,14 +3,18 @@
   "sourceMapping": {
     "packages/limina/src/preflight/analysis-cache.ts": "async analyze",
     "packages/limina/src/preflight/analysis-cache-store.ts": "#publishChanged",
-    "packages/limina/src/preflight/manager.ts": "publishAnalysisCache",
+    "packages/limina/src/preflight/manager.ts": "#retryCoreAnalysis",
     "packages/limina/src/execution/executor.ts": "runExecution",
     "packages/limina/src/__tests__/analysis-cache-lifecycle.spec.ts": "does not replay a completed command",
     ".agents/docs/lifecycle.md": "Execution",
     ".agents/docs/invariants.md": "I09",
     "packages/limina/src/preflight/analysis-cache-decode.ts": "AnalysisSnapshotDecoder",
     "packages/limina/src/preflight/analysis-cache-tools.ts": "AnalysisToolObservation",
-    "packages/limina/src/core/analysis-cache/context-records.ts": "hasValidBoundedContext"
+    "packages/limina/src/core/analysis-cache/context-records.ts": "hasValidBoundedContext",
+    "packages/limina/src/preflight/setup.ts": "cacheBlockReadFilter",
+    "packages/limina/src/core/analysis-cache/snapshot-shards.ts": "AnalysisBlockReadFilter",
+    "packages/limina/src/preflight/analysis-cache-blocks.ts": "sweepUnreachable",
+    "packages/limina/src/pipeline/execution-tasks.ts": "ensureCoreAnalysisPrepared"
   },
   "stateVariables": {
     "phase,commands,retries": "Command settled once; only analysis retries.",
@@ -34,12 +38,12 @@
     "StorageFailure": "packages/limina/src/preflight/analysis-cache-store.ts::isStorageError",
     "Stay": "packages/limina/src/preflight/analysis-cache-store.ts::async publish"
   },
-  "assumptions": "OtherIndexWrite is an environment action; actual cooperative leases are in CacheReopen. SavedQualified is not an oracle for decoding.",
+  "assumptions": "OtherIndexWrite is an environment action; actual cooperative leases are in CacheReopen. SavedQualified is not an oracle for decoding. The scope flag represents a block filter on a write-capable invocation. Final observation and index replacement abstract cooperating writers and stable external inputs across rename. Post-commit block reclamation is checked by CacheReopen. One completed command precedes the dependent analysis. Concurrent independent pipeline tasks and deferred provider disposal are outside this ordering.",
   "safety": {
     "TypeOK": "Finite phase/counter domains.",
     "NoEffectReplay": "One command despite analysis retry.",
     "RestorePolicy": "Policy precondition only.",
-    "PublishPolicy": "Only permitted writers publish.",
+    "PublishPolicy": "Only eligible full writers publish. A controller opened with a block filter is read-only even if its caller requested writes.",
     "NoStalePublication": "Commit under qualified input and baseline."
   },
   "liveness": "None: no caller or external-process completion guarantee.",
@@ -60,6 +64,14 @@
     "mutation-replay-effects.cfg": {
       "breaks": ["NoEffectReplay"],
       "stable": true
+    },
+    "scoped-read.cfg": {
+      "breaks": [],
+      "stable": false
+    },
+    "mutation-publish-scoped.cfg": {
+      "breaks": ["PublishPolicy"],
+      "stable": false
     }
   },
   "bounds": {
@@ -70,8 +82,9 @@
   "counterexamples": "Snapshots distinguish old physical bytes from semantic equivalence.",
   "empiricalVerification": "Run analysis-cache-lifecycle.spec.ts retry, final validation and physical baseline cases.",
   "driftReview": {
-    "baseline": "c7fad53a4502d07589f1b542f53bff301bb63282",
-    "sourceHash": "560a2d11c83f03932c9d0f3fc3e9f9d35e6663b1619cfc3842d03c90cf5808e9",
-    "modelHash": "25aa9a3e4ba7765cd681d8381f80d389c09409d232ba35f25c33bd429bd56469"
+    "committedSourceHash": "4fcef4a46b95e81b04950944e1335118750329a2ad0bdc6705deb15c57b9aa4a",
+    "baseline": "4e01f53ed00a3885de94dcf37013eb39d8932882",
+    "sourceHash": "d37ae3209febb2a3a6230602651255d35b5a3ecca53b662440b8c0fe0dbdf8f3",
+    "modelHash": "5bb449e81e33e6b7e168c5c56e376010d190fa90b9286b54223d6b0c638e1ab1"
   }
 }

@@ -18,7 +18,7 @@ const configPath = path.join(root, 'limina.config.mjs');
 writeFileSync(configPath, 'export default {};');
 const config = await loadConfig({ cwd: root, configPath });
 const observations = [];
-for (const timing of ['before-identity', 'during-validation']) {
+for (const timing of ['serialized', 'before-identity', 'during-validation']) {
   const controller = new AnalysisCacheController(
     config,
     createLiminaArtifactNamespace({ rootDir: root, generation: 0 }),
@@ -49,6 +49,11 @@ for (const timing of ['before-identity', 'during-validation']) {
     resume.resolve();
     await rejected;
     observations.push({ timing, result: 'rejected' });
+  } else if (timing === 'serialized') {
+    await enter.promise;
+    resume.resolve();
+    assert.equal(await result, controller.cache);
+    observations.push({ timing, result: 'returned active epoch' });
   } else {
     await enter.promise;
     controller.refresh();
